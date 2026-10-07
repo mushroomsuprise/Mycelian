@@ -4,8 +4,8 @@
     {
       "path": "README.md",
       "install": "README.md",
-      "sha256": "f7f6523ab6bdc84843792abc3f3c94628aadd4b90fb5e345612906ce26031b9c",
-      "size": 6872,
+      "sha256": "53189cb457e3661c27ad396e451d70a6a5f5e985ee7e526bca9f82accef3c818",
+      "size": 6697,
       "action": "replace"
     },
     {
@@ -25,8 +25,8 @@
     {
       "path": "assets/default_assets/alert_queue.js",
       "install": "assets/default_assets/alert_queue.js",
-      "sha256": "7c9d7e12ee58c7309905f410778b2cd2b5908160e5bea482ff2c068eb7375392",
-      "size": 6467,
+      "sha256": "66e05320934466f312461c2702e8f1e697a807e334127d25c80ab01f5780d111",
+      "size": 6277,
       "action": "replace"
     },
     {
@@ -760,71 +760,71 @@
     {
       "path": "assets/default_assets/overlay_recovery.js",
       "install": "assets/default_assets/overlay_recovery.js",
-      "sha256": "9b0cf5e0e28ec730ce0acaa2999d6ca87035a2e65e21ae13d8adb4af10776c66",
-      "size": 4350,
+      "sha256": "c02bc19a74f9972691dae19f8bd1fba72f0f5c5b79cea14e6af89077f26f547f",
+      "size": 4217,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/container_editor.css",
       "install": "assets/default_assets/spore_studio/container_editor.css",
-      "sha256": "070edbd336fc67951ed9bacb98177e7efacab5a7a9295c73b04827e6527a703e",
-      "size": 5401,
+      "sha256": "49b5a6a26d853606f43ac16cb69369fa1e97a57e86bac05a34d5d1aa1dc9f76d",
+      "size": 5166,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/container_editor.js",
       "install": "assets/default_assets/spore_studio/container_editor.js",
-      "sha256": "c56259239eb3827554a546142243e709ebd40a4a9f80b3fea1aca35322cd1853",
-      "size": 60534,
+      "sha256": "aacd7a3bed27dcb0094efd8948c7a8ac135aa782b583af064309d97ba89c0cf5",
+      "size": 59102,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/container_layout.js",
       "install": "assets/default_assets/spore_studio/container_layout.js",
-      "sha256": "8f95a20ce320128892d7756ec42b66e5b81492876ad2ad7eff606c4a6e7981b5",
-      "size": 12781,
+      "sha256": "93218984c749afb38e80d6b39096f668646eb91a82d38d2dcc8aa31b3304e826",
+      "size": 12403,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/container_shell.js",
       "install": "assets/default_assets/spore_studio/container_shell.js",
-      "sha256": "d5e89ac412a9ab5f555ed8ba1d0abd4cc11ab18cca9e29104a510e0c98a35ad1",
-      "size": 7866,
+      "sha256": "1b2922dfeec4d5d4289a70ed564af0fe3fcc7e66442faeb79ff7c48aaf76f290",
+      "size": 7644,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/editor.css",
       "install": "assets/default_assets/spore_studio/editor.css",
-      "sha256": "890d82ec467de46147d61e4d1f410cabcf5b31fc30bf7402f9af2b87800954b3",
-      "size": 27379,
+      "sha256": "7c91917a7b63505908e9c6729fd6a1caaaee131f8769a96daaa0d63161813a48",
+      "size": 26349,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/editor.html",
       "install": "assets/default_assets/spore_studio/editor.html",
-      "sha256": "906b549b118b6905d6b2e61e389dfbe65b4c7c624eebe058fac71cf46812db34",
-      "size": 20647,
+      "sha256": "711c92157789c59104a622c80447dc5fd4a5fdfe0eb128720db18c3ef6cc4e4a",
+      "size": 20307,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/editor.js",
       "install": "assets/default_assets/spore_studio/editor.js",
-      "sha256": "8ce5496d9ac9b33e739ac566ce72091a7242896cd756d66b7816d79a1f615fb7",
-      "size": 289757,
+      "sha256": "a3a2c326449061fbf856d813a8bddc0ec6a9c927e7306bb502c75454a961eb1e",
+      "size": 282918,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/template_logger.js",
       "install": "assets/default_assets/template_logger.js",
-      "sha256": "4458c3250fb3a6e29ae9eb0be857b232ca9a2ceb7c3fd56b9ec78ae1ea7f708b",
-      "size": 6512,
+      "sha256": "712b991ce4452db8757f87c63217c37d2bba52abe6ff7208146757b0c5eeeeff",
+      "size": 6307,
       "action": "replace"
     },
     {
       "path": "assets/ff7/accessory_names_en.json",
       "install": "assets/ff7/accessory_names_en.json",
-      "sha256": "69b0b217c8e52f84212c6da2f6e6f8b351cf01aadfcb9a10734bb8ed10464d0d",
-      "size": 734,
+      "sha256": "e400447e5d82cb56de1416362038b82def39ab2b35413193109055052906f2aa",
+      "size": 700,
       "action": "replace"
     },
     {
@@ -837,15 +837,15 @@
     {
       "path": "assets/ff7/armor_materia_slot_types.json",
       "install": "assets/ff7/armor_materia_slot_types.json",
-      "sha256": "213071d59e74bc6794dc17d5af9e8140187a710dff96b4f15ed1256c6c62e8ea",
-      "size": 1401,
+      "sha256": "d348921f098e4cfd320ddb5c92812736836f18916d3b045a991724bd31862081",
+      "size": 1080,
       "action": "replace"
     },
     {
       "path": "assets/ff7/armor_names_en.json",
       "install": "assets/ff7/armor_names_en.json",
-      "sha256": "f7e0ef130b1052fa4b194d684ae9a69514be48aa973f2114052810a6b754ff8c",
-      "size": 802,
+      "sha256": "cfb1cd622ec42c8e5c8138b5a0355358b4a947deee9d2695bf3be8e3d2114e7e",
+      "size": 768,
       "action": "replace"
     },
     {
@@ -858,8 +858,8 @@
     {
       "path": "assets/ff7/battle_log_names_en.json",
       "install": "assets/ff7/battle_log_names_en.json",
-      "sha256": "f6720d9813508c2575e87a95aa758a6312648365d6a419ae1db1d37a73287c41",
-      "size": 374,
+      "sha256": "7a550e66b2d2c16d28c3eb369ae0ea09c9fb51b104ea3e2b0812c23ddc97c1df",
+      "size": 369,
       "action": "replace"
     },
     {
@@ -893,8 +893,8 @@
     {
       "path": "assets/ff7/equip_allowlists.json",
       "install": "assets/ff7/equip_allowlists.json",
-      "sha256": "3f7d7fe3f54af3a4f4e1c0359ca49f59042c08bcfbb8d279ba1310e6d02c910a",
-      "size": 5172,
+      "sha256": "0c9dc949bbd2a9d71026fc8bd38646571a0669206edd212cc2bbec9530a090bc",
+      "size": 4701,
       "action": "replace"
     },
     {
@@ -907,8 +907,8 @@
     {
       "path": "assets/ff7/item_names_en.json",
       "install": "assets/ff7/item_names_en.json",
-      "sha256": "cc2119b41c10089d4fddb134c2e2a78ff6dd2652825ff06e8a2f2b9b54d17584",
-      "size": 2396,
+      "sha256": "9d415dc0010f7f377d9478cc81e342eb3ff84b053b92c7523314283b1041240e",
+      "size": 2289,
       "action": "replace"
     },
     {
@@ -921,15 +921,15 @@
     {
       "path": "assets/ff7/materia_names_en.json",
       "install": "assets/ff7/materia_names_en.json",
-      "sha256": "120c9017354235188330aa19d49f7f6f30f874e99a608d646da042e2a1fc2eca",
-      "size": 1753,
+      "sha256": "d5ac939f6d83db464ed2d92278bacd4f575bef22c3f4450e91eb7663f0d52197",
+      "size": 1661,
       "action": "replace"
     },
     {
       "path": "assets/ff7/materia_orb_by_id.json",
       "install": "assets/ff7/materia_orb_by_id.json",
-      "sha256": "b775cd65a8129f4d96280bcee575f5bf4e6d5f74c846bbf4305bb1ec31a8a68a",
-      "size": 2350,
+      "sha256": "bb34b8f8c9910a9e68f0c64611965e4af35a60d58afbf10982de96f98555d43d",
+      "size": 2257,
       "action": "replace"
     },
     {
@@ -984,15 +984,15 @@
     {
       "path": "assets/ff7/weapon_materia_slot_types.json",
       "install": "assets/ff7/weapon_materia_slot_types.json",
-      "sha256": "dc59fa488cad3945041ee017aff0ca8e1596006431d8784b591ca9d1e96b673f",
-      "size": 5653,
+      "sha256": "991050bec7395d4fe1f580ebfe21b110a10f876e1dc2b3b84da24db3a2d044d8",
+      "size": 4372,
       "action": "replace"
     },
     {
       "path": "assets/ff7/weapon_names_en.json",
       "install": "assets/ff7/weapon_names_en.json",
-      "sha256": "a1fc258c711f2bd48e3ddff856bdfa1a35cbb0941f635e14048192b9203da9eb",
-      "size": 3096,
+      "sha256": "1ef24c5f38a76060b90dcd84e383f7cd95ee0fb912c343800243f02f3553a79e",
+      "size": 2966,
       "action": "replace"
     },
     {
@@ -1033,8 +1033,8 @@
     {
       "path": "factorio_mod/mycelian-stats/changelog.txt",
       "install": "factorio_mod/mycelian-stats/changelog.txt",
-      "sha256": "bc850a59c460c93634dfcb910d03e3b34f5e58196fcc988baebe9b378b47dc0d",
-      "size": 1458,
+      "sha256": "558217c37277e84f3dddcc99b5e3093f9a08593960dede787b675067fa7e816c",
+      "size": 1430,
       "action": "replace"
     },
     {
@@ -1047,15 +1047,15 @@
     {
       "path": "factorio_mod/mycelian-stats/info.json",
       "install": "factorio_mod/mycelian-stats/info.json",
-      "sha256": "bb47c02aec3df9f14e25a7218b980058bc083d5fb4ec224ace28abb0ae1848c2",
-      "size": 286,
+      "sha256": "a5e6d226fe78b4fb8ede663d6af4e584f2530f5c4ef18ef68b23340c1418c0b1",
+      "size": 278,
       "action": "replace"
     },
     {
       "path": "factorio_mod/mycelian-stats/locale/en/mycelian-stats.cfg",
       "install": "factorio_mod/mycelian-stats/locale/en/mycelian-stats.cfg",
-      "sha256": "b82cf33c9c08adb43283e4a727faf21271b7e367fa9aa382c26c1ac532ededba",
-      "size": 507,
+      "sha256": "c1aa8e04b26edd91b4121cf2f99dbd6262b79f79e637ca43609c35f676918cfc",
+      "size": 494,
       "action": "replace"
     },
     {
@@ -1236,29 +1236,29 @@
     {
       "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/connector-action.html",
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/connector-action.html",
-      "sha256": "d162995860ade414b5e66b46a9a6dfb9e35b95b9e9af96a30ea59b0ed833fc10",
-      "size": 12834,
+      "sha256": "b964b494cc3a34662e0c261bb86a9b7fdeb0868b71d78adb08d8e21d45932225",
+      "size": 12499,
       "action": "replace"
     },
     {
       "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/template-action.html",
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/template-action.html",
-      "sha256": "4aeb04d911296d5c9bfd884f8d61fdc3cbf00105458dbe4e424b90ed3b0c945d",
-      "size": 33120,
+      "sha256": "a1b84ba09aab0ff5ee15048e38a25a92e156332eb21de22f3a0cc33d50389699",
+      "size": 32331,
       "action": "replace"
     },
     {
       "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/toggle-alerts.html",
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/toggle-alerts.html",
-      "sha256": "fc896f132f18d679a3b8511211f3155b482beaae02344c7bcb2dd0047fd4822e",
-      "size": 5424,
+      "sha256": "ed3f669cf59aa399965cb0382e4031118bb0c7361a41228f549bd99de8e89d92",
+      "size": 5272,
       "action": "replace"
     },
     {
       "path": "templates/_boilerplates/instant_alert.html",
       "install": "templates/_boilerplates/instant_alert.html",
-      "sha256": "a41887c441fd940316882b9284b9bb0c4ba1906a21156378e4d763bc06b0ddb5",
-      "size": 13664,
+      "sha256": "3a67f4639a4a80ce1f9cbe47edab016d247b4537b47322707c36cd0b5567a0c0",
+      "size": 13330,
       "action": "replace"
     },
     {
@@ -1271,8 +1271,8 @@
     {
       "path": "templates/_boilerplates/queue_alert.html",
       "install": "templates/_boilerplates/queue_alert.html",
-      "sha256": "4fac4b0472fbd239394e9a37ce64e996706aec48307b983c1a5cf2b8f45f2d52",
-      "size": 20347,
+      "sha256": "c2da577c824bb26456d0e52a2af60db3cc384333106315af32acfecde4f0632c",
+      "size": 19825,
       "action": "replace"
     },
     {
@@ -1292,8 +1292,8 @@
     {
       "path": "templates/_boilerplates/spore_data_runtime.js",
       "install": "templates/_boilerplates/spore_data_runtime.js",
-      "sha256": "8e8551c717ec2be6cd3c3d6d8d106f3e29f5e337c7abc9b2044af3b59adc9571",
-      "size": 42142,
+      "sha256": "ff7e9cce0067eb07acabb2117dba2e790ecf1832ca0a800d2e57f159a6fde656",
+      "size": 41075,
       "action": "replace"
     },
     {
@@ -1306,106 +1306,106 @@
     {
       "path": "templates/activity_feed.html",
       "install": "templates/activity_feed.html",
-      "sha256": "1c6dd954d8f53f41fe8ff1567ca4ee7138769e73b361133f27832f1c2f6000d5",
-      "size": 119156,
+      "sha256": "7c6b18cee202a9322fdac2739d22cf02d62a28e399bffd2ba417ab35305a6874",
+      "size": 116232,
       "action": "replace"
     },
     {
       "path": "templates/alerts.html",
       "install": "templates/alerts.html",
-      "sha256": "9b4adb345fa5e5eb77a6feb5c1eda178aa46d610c69c2054ba85bf579d1f205b",
-      "size": 134339,
+      "sha256": "ab06298578ba35a30ed4c707808dc3ebf3e486fd900ae84a5470ec89a02f2bcc",
+      "size": 131197,
       "action": "replace"
     },
     {
       "path": "templates/bitbar.html",
       "install": "templates/bitbar.html",
-      "sha256": "4fd3b21122941bb4599f516e271dad9fab9386a6c3e1fc8d65a148a38aa55f2f",
-      "size": 33321,
+      "sha256": "e2504aea66dcf9e4ebeefca30804944cdf49a0d157c6ae38b61722af20afcf3a",
+      "size": 32411,
       "action": "replace"
     },
     {
       "path": "templates/bitboss.html",
       "install": "templates/bitboss.html",
-      "sha256": "1bf6631eefcbcaa6aa6fc986584127fd15a4214b51cbf64cdd7e2497abbf9354",
-      "size": 67408,
+      "sha256": "d35731cf6b8219b2f4641c95b93deafde8c4eceac0b81a589f5179d5acb83728",
+      "size": 65760,
       "action": "replace"
     },
     {
       "path": "templates/bitcounter.html",
       "install": "templates/bitcounter.html",
-      "sha256": "f2eaeac7eef53cf1afd19ac4274b384e1ba63364ee9eba39f8fb05e2189b5a44",
-      "size": 51575,
+      "sha256": "137f353279353de1c5a75c585b92bc0ebc279e7fc68bdf445bac63d3bcef4955",
+      "size": 50348,
       "action": "replace"
     },
     {
       "path": "templates/chat.html",
       "install": "templates/chat.html",
-      "sha256": "35a0c8281f08a4b3a452a97b863ff4fc5a694b0a898b57fdd28557b0f39cc908",
-      "size": 191545,
+      "sha256": "c57b7f32ed281b3c43c26f85533b4fd5a68ddaac9e28556b93a88d47d6b1a247",
+      "size": 187364,
       "action": "replace"
     },
     {
       "path": "templates/counter.html",
       "install": "templates/counter.html",
-      "sha256": "36264bfcd42a1a0c8672fb6b64dbf12a00682f12ab5e08a2ac37d030aa78148a",
-      "size": 23207,
+      "sha256": "9155de7c09a151bf161d0da2668d2a4aebde8017406e78d954d7a38c041676a1",
+      "size": 22548,
       "action": "replace"
     },
     {
       "path": "templates/factorio.html",
       "install": "templates/factorio.html",
-      "sha256": "7ab587607dd3393629235977594938adad6feb3b033df86730155832a035e6b2",
-      "size": 48187,
+      "sha256": "bea3c33f11665d0051a1dd0c0a88c56570b271b30a764910d1773feb1d73f331",
+      "size": 47022,
       "action": "replace"
     },
     {
       "path": "templates/ff7.html",
       "install": "templates/ff7.html",
-      "sha256": "9b2bd771e9cc066d5edf22e7cbf37d02ebaf7e36eff3b3f12c656d7ccdd74842",
-      "size": 133235,
+      "sha256": "74862fc7931f2d4b848422cafd4954bc5f042d16ceb13cf2ed7aba9201362e6f",
+      "size": 130114,
       "action": "replace"
     },
     {
       "path": "templates/giveaway.html",
       "install": "templates/giveaway.html",
-      "sha256": "0407ce0fd60535b7d3b935f83f41a0433eeb3ad4ab55b555958bfdd888204849",
-      "size": 29231,
+      "sha256": "5deabafc9f07c5ff84973d319e09af58eabb0e583328199ec9f7d6ae33646e1c",
+      "size": 28545,
       "action": "replace"
     },
     {
       "path": "templates/pausedalerts.html",
       "install": "templates/pausedalerts.html",
-      "sha256": "11e9f41c700f795dce76b7a157c48834088d90c349f16850ce9ff7d88d54a761",
-      "size": 21716,
+      "sha256": "14f52a11f7ee36b1f84e608fca88018f2978f85a3efa961cb1b537a688f44dbd",
+      "size": 21164,
       "action": "replace"
     },
     {
       "path": "templates/roulette.html",
       "install": "templates/roulette.html",
-      "sha256": "33646b684299e315b4402c0933fb88f3a2cfbe1d454f344b57b6d4d88784b917",
-      "size": 118199,
+      "sha256": "3268dc97e449b76cc664231ff767d20886c89825fc3f4b1135f8cb30bb7aaa8c",
+      "size": 115243,
       "action": "replace"
     },
     {
       "path": "templates/source_controls.html",
       "install": "templates/source_controls.html",
-      "sha256": "4ae21f86840dbd3971aa4d0714ca3df2305783b34e1d2e11d97a53c4f1160775",
-      "size": 62010,
+      "sha256": "d6de9974a9f39de443b259ccd017f3612bba02b374b28f8831a9fedf7cafedc4",
+      "size": 60391,
       "action": "replace"
     },
     {
       "path": "templates/spotify.html",
       "install": "templates/spotify.html",
-      "sha256": "68cd96e58195850796e35cc14b9f14aa0051d54aa68584ada48c64db1ad63d6c",
-      "size": 41106,
+      "sha256": "40764b964d727a1193d67b60e986fe0740ca348325f5c7769bb1ccd86533b7ce",
+      "size": 40109,
       "action": "replace"
     },
     {
       "path": "templates/subbar.html",
       "install": "templates/subbar.html",
-      "sha256": "5493ab093b5afa8674a2c4dd370e881aff53a20ed739e2b7660db69a6fd694a0",
-      "size": 31603,
+      "sha256": "5ef02f77d11039e992d8af644ff0c416c9ac00cc2f8ba4bb75cd758440c34648",
+      "size": 30805,
       "action": "replace"
     },
     {
@@ -1418,8 +1418,8 @@
     {
       "path": "templates/template_configs/alerts.json",
       "install": "templates/template_configs/alerts.json",
-      "sha256": "8ea90f2404dd3cf03432fdab8a3d27fba5b68570dad5b0f41e233e2f1e294916",
-      "size": 59679,
+      "sha256": "8ca17dbdd8a1ad0a8b3577ca064c5d4533d3768900afa6ade00f56d5913bb2da",
+      "size": 57836,
       "action": "merge"
     },
     {
@@ -1446,8 +1446,8 @@
     {
       "path": "templates/template_configs/chat.json",
       "install": "templates/template_configs/chat.json",
-      "sha256": "39dfeda0b12fe5ae813c5a5ea69e8a6e4f38a7647bbf182ff759489282149bc5",
-      "size": 58019,
+      "sha256": "f63775e5a5ba492a983cedb211e5c8f6a362d9a63fbf5891d33980398e3bd26c",
+      "size": 56187,
       "action": "merge"
     },
     {
@@ -1460,15 +1460,15 @@
     {
       "path": "templates/template_configs/factorio.json",
       "install": "templates/template_configs/factorio.json",
-      "sha256": "3bd35bbb63bef825ae8a94f626fe8f1916de5e1ee4212944374e6038576612af",
-      "size": 28295,
+      "sha256": "f6eba0550598ac98b7221fcec145b4c685526f9ccc4095b0410a3af80a19ed5b",
+      "size": 27381,
       "action": "merge"
     },
     {
       "path": "templates/template_configs/ff7.json",
       "install": "templates/template_configs/ff7.json",
-      "sha256": "9b3dc9a7f639b4a2a8c55c1971acc9c7b672fac96bc23008f966411767b7f149",
-      "size": 23097,
+      "sha256": "b5fc07742bcd851b68832a9fae0de644586da247a574a5624abdc03fb556e826",
+      "size": 22404,
       "action": "merge"
     },
     {
@@ -1488,8 +1488,8 @@
     {
       "path": "templates/template_configs/roulette.json",
       "install": "templates/template_configs/roulette.json",
-      "sha256": "3568fb28e15778140dabc1f10cad24fec7340bba3ae1b8721b26b8cabf0f35a8",
-      "size": 119676,
+      "sha256": "11ee16e9956205aea382e777259184df8a4f7730433701e935118c1bc0d3fcc6",
+      "size": 115853,
       "action": "merge"
     },
     {
@@ -1516,120 +1516,120 @@
     {
       "path": "templates/template_configs/title.json",
       "install": "templates/template_configs/title.json",
-      "sha256": "7e10615c316d6eacdf6722de0e297c0876495c6de578bdfcfb1e1a1dcb112e8c",
-      "size": 20861,
+      "sha256": "1424d83fdbcc16d2e2881452b02361233020355c96c3d0741c8874622e7e4764",
+      "size": 20265,
       "action": "merge"
     },
     {
       "path": "templates/title.html",
       "install": "templates/title.html",
-      "sha256": "9c1448315e6b6f39e1e6b442e67817fd2b536f3daf034c6fbc6ca6223119504d",
-      "size": 47806,
+      "sha256": "5106bca04f52e1943a9867e3778087f6e62950397e80cd04cc5b3e34e0cf9b0d",
+      "size": 46607,
       "action": "replace"
     },
     {
       "path": "themes/arctic_theme.json",
       "install": "themes/arctic_theme.json",
-      "sha256": "3d2f3d41cda654f9d60cff3d26e4d3a7b411edd294e239e69389a207f4fd12e0",
-      "size": 1079,
+      "sha256": "d510611be2089e97ac67f8a28a2906db6c20df7e8e1e37c8397e02a10f342d0e",
+      "size": 1049,
       "action": "if-missing"
     },
     {
       "path": "themes/crimson_night_theme.json",
       "install": "themes/crimson_night_theme.json",
-      "sha256": "c64955b0e6a74e8ec6ad389f575be8c0d56d260cf2e8f46876dea38d6749c45c",
-      "size": 1116,
+      "sha256": "6b029d8ffd0df5bed2efc826c77741ecfad5f50816f47ae47d2044a46199a01f",
+      "size": 1086,
       "action": "if-missing"
     },
     {
       "path": "themes/cyberpunk_theme.json",
       "install": "themes/cyberpunk_theme.json",
-      "sha256": "d1edbc0098a197cb717c8aaf30f01712f92da42f664563ac9c9d654d55f18fbc",
-      "size": 1107,
+      "sha256": "091295f175742318b0ac54d56d021eee7b53a1152fd5c0c2abd77b7a5d8a0c7f",
+      "size": 1077,
       "action": "if-missing"
     },
     {
       "path": "themes/dark_theme.json",
       "install": "themes/dark_theme.json",
-      "sha256": "5cb07de32bbac39e177b59b230bc411e28f5c9692887641cc848bb661b572897",
-      "size": 1099,
+      "sha256": "5957af95bacec615f16982aae204dd193a55558fa45c92c51704f9045d7342a3",
+      "size": 1069,
       "action": "if-missing"
     },
     {
       "path": "themes/emerald_dark_theme.json",
       "install": "themes/emerald_dark_theme.json",
-      "sha256": "d657f9b0a5b2c4db407598e179426317f4b62f8cfbcfb30d704f1df62119e46a",
-      "size": 1116,
+      "sha256": "54d9386cd874e7434f31513b0a647cbb2c91756d164a259eb6330655a7a45153",
+      "size": 1086,
       "action": "if-missing"
     },
     {
       "path": "themes/forest_glade_theme.json",
       "install": "themes/forest_glade_theme.json",
-      "sha256": "2f8cc36de8c209d47dc527e1fa3b3b2be67b16c469b7724fb98e16d51bbd26cf",
-      "size": 1087,
+      "sha256": "b4f4678a2f43d54eb003a160c2e2a101f9a4267dc8489839fd57e153b4807bef",
+      "size": 1057,
       "action": "if-missing"
     },
     {
       "path": "themes/lavender_mist_theme.json",
       "install": "themes/lavender_mist_theme.json",
-      "sha256": "acc979a23fd52aec1bd9a1103465326a9298f161feba03e8048f222406190142",
-      "size": 1094,
+      "sha256": "46d099ff5b497b270d14e12cede209670dd2c21d277d32d88c1e55973da2d2c4",
+      "size": 1064,
       "action": "if-missing"
     },
     {
       "path": "themes/light_theme.json",
       "install": "themes/light_theme.json",
-      "sha256": "bed5c3f68668138f2e80f19797971903d59c5ca20124b7cd1bc0f93dd2a23e32",
-      "size": 1078,
+      "sha256": "25c83fec79c9eb7b3fe730c768ba527ab44574302786e45eaecef645202d1560",
+      "size": 1048,
       "action": "if-missing"
     },
     {
       "path": "themes/monokai_theme.json",
       "install": "themes/monokai_theme.json",
-      "sha256": "ac02aeb6ea7058d03cf332f76a295b1b8e73ba339cc1a4f2146a4a74ff46f108",
-      "size": 1117,
+      "sha256": "087c1dc975ba1b7d565177b6183c157cfaef0b33977a75caa48c881a1a4a73e1",
+      "size": 1087,
       "action": "if-missing"
     },
     {
       "path": "themes/nord_dark_theme.json",
       "install": "themes/nord_dark_theme.json",
-      "sha256": "9d716004e3a93e34a731b9d1a03d5b88c1e3a3eacf6e419d118dc78ebfa73566",
-      "size": 1124,
+      "sha256": "c0582fa4498afefbbaed8a69d4b3e7ab7024dc0d89af504ffeb876d6ea66b15a",
+      "size": 1094,
       "action": "if-missing"
     },
     {
       "path": "themes/ocean_breeze_theme.json",
       "install": "themes/ocean_breeze_theme.json",
-      "sha256": "5601d89f5139418f6a3e2b3edeab809a14f7fd4ca94e72df0af1a21e1904d894",
-      "size": 1091,
+      "sha256": "28e452f7957b6e82bd16aedb45d92f9422660fa859159670944b9e1efc86d9db",
+      "size": 1061,
       "action": "if-missing"
     },
     {
       "path": "themes/ocean_depths_theme.json",
       "install": "themes/ocean_depths_theme.json",
-      "sha256": "5bc49dc6020953ab0b0cfe14079f8ad2d21338a9f0b0090fc742e76127c24fd7",
-      "size": 1110,
+      "sha256": "0ea360e6cb1a4dcf37ade9f24f15ccb878d277c8b35fa8ddcdbe287382e7a944",
+      "size": 1080,
       "action": "if-missing"
     },
     {
       "path": "themes/rose_garden_theme.json",
       "install": "themes/rose_garden_theme.json",
-      "sha256": "34aec2861247d6171990f90f3177aadb9feffe9d2823da63641ae453b7a9c637",
-      "size": 1085,
+      "sha256": "da0063429f89df36d4a93e2d0bd684cbbd1ab7419c1843df4ce7727584ee825c",
+      "size": 1055,
       "action": "if-missing"
     },
     {
       "path": "themes/sunset_dark_theme.json",
       "install": "themes/sunset_dark_theme.json",
-      "sha256": "509e8c3560dae22933f999fb782ca21db9fd82f279df780a7147060a3e66eedb",
-      "size": 1114,
+      "sha256": "85b58e4a478128f784f3aa56bdf2088de586195dd17e45a0ebedfa8888e652a7",
+      "size": 1084,
       "action": "if-missing"
     },
     {
       "path": "themes/sunset_glow_theme.json",
       "install": "themes/sunset_glow_theme.json",
-      "sha256": "7ea3b3c6dd593a84c321bf42e99737db2509e81bacbfb9037e218586bba0f60d",
-      "size": 1089,
+      "sha256": "73277fe1c1d5a301e624cbe75eb9ad1392f03932f5523b2550437ab87258399a",
+      "size": 1059,
       "action": "if-missing"
     },
     {

@@ -1573,12 +1573,43 @@ def copy_binaries_to_project_root(project_root: Path, dist_dir: Path):
 GITHUB_MAX_FILE_BYTES = 100 * 1024 * 1024
 
 
+# Git stores these as text. Hash the LF form so the manifest matches GitHub.
+_TEXT_SUFFIXES = {
+    ".html",
+    ".json",
+    ".js",
+    ".css",
+    ".md",
+    ".txt",
+    ".xml",
+    ".map",
+    ".svg",
+    ".py",
+    ".sh",
+    ".yml",
+    ".yaml",
+    ".toml",
+    ".ini",
+    ".cfg",
+}
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _release_hash_and_size(src: Path) -> tuple[str, int]:
+    """Hash the bytes GitHub serves. Text is LF-normalized; binaries stay exact."""
+    if src.suffix.lower() in _TEXT_SUFFIXES:
+        data = src.read_bytes()
+        if b"\0" not in data:
+            data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        return hashlib.sha256(data).hexdigest(), len(data)
+    return _sha256_file(src), src.stat().st_size
 
 
 def _manifest_entry(
@@ -1590,7 +1621,7 @@ def _manifest_entry(
     os_name: str | None = None,
     bundle: bool = False,
 ) -> dict:
-    size = src.stat().st_size
+    digest, size = _release_hash_and_size(src)
     if size >= GITHUB_MAX_FILE_BYTES:
         raise RuntimeError(
             f"{src} is {size / (1024 * 1024):.1f} MB. "
@@ -1600,7 +1631,7 @@ def _manifest_entry(
     entry = {
         "path": repo_path.replace("\\", "/"),
         "install": install_path.replace("\\", "/"),
-        "sha256": _sha256_file(src),
+        "sha256": digest,
         "size": size,
         "action": action,
     }

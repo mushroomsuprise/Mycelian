@@ -199,11 +199,15 @@ def plan_changes(
     entries: List[Dict[str, Any]],
     local_manifest: Dict[str, Any],
     dest_exists: Callable[[Dict[str, Any]], bool],
+    installed_unchanged: Optional[Callable[[Dict[str, Any]], bool]] = None,
 ) -> Dict[str, Any]:
     """Decide downloads and deletions from manifest hashes.
 
     ``if-missing`` files are downloaded only when the destination is absent.
-    Only ``replace`` paths that disappeared from the release are deleted.
+    A ``replace`` file is left alone when the installed copy already matches
+    the release, even on the first update. ``merge`` files are compared by
+    the last applied release hash, because the installed JSON contains user
+    values. Only ``replace`` paths that disappeared from the release are deleted.
     """
     local_files = local_manifest.get("files") if isinstance(local_manifest, dict) else None
     if not isinstance(local_files, dict):
@@ -217,8 +221,15 @@ def plan_changes(
             continue
         previous = local_files.get(entry["install"])
         previous_sha = previous.get("sha256") if isinstance(previous, dict) else None
-        if previous_sha != entry["sha256"]:
-            downloads.append(entry)
+        if previous_sha == entry["sha256"]:
+            continue
+        if (
+            entry["action"] == "replace"
+            and installed_unchanged is not None
+            and installed_unchanged(entry)
+        ):
+            continue
+        downloads.append(entry)
 
     remote_installs = {entry["install"] for entry in entries}
     deletes: List[Dict[str, Any]] = []
@@ -246,12 +257,52 @@ def release_file_url(owner: str, repo: str, tag: str, path: str) -> str:
     return f"https://raw.githubusercontent.com/{owner}/{repo}/{safe_tag}/{safe_path}"
 
 
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def content_matches(data: bytes, expected: str) -> bool:
+    """True when ``data`` is the release file, ignoring CR/LF differences in text.
+
+    The manifest hash may be the Windows working copy while GitHub serves the
+    LF blob stored in git. Both describe the same text file.
+    """
+    if _sha256_bytes(data) == expected:
+        return True
+    if b"\0" in data:
+        return False
+    normalized = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    if _sha256_bytes(normalized) == expected:
+        return True
+    return _sha256_bytes(normalized.replace(b"\n", b"\r\n")) == expected
+
+
+def file_matches(path: Path, expected: str) -> bool:
+    """True when an installed file already has the release contents."""
+    if not path.is_file():
+        return False
+    if _sha256_file(path) == expected:
+        return True
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    # Keep newline folding off large binaries. Text payload files are small.
+    if size > 8 * 1024 * 1024:
+        return False
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    return content_matches(data, expected)
 
 
 def _directory_writable(path: Path) -> bool:
@@ -356,8 +407,7 @@ async def _download_file(
                         raise UpdateCancelled("Update cancelled.")
                     handle.write(chunk)
                     progress(len(chunk))
-        actual = _sha256_file(partial)
-        if actual != expected_sha:
+        if not file_matches(partial, expected_sha):
             raise UpdateSyncError(
                 f"Downloaded {dest.name} did not match the release manifest."
             )
@@ -777,7 +827,13 @@ async def sync_release(
         def dest_exists(entry: Dict[str, Any]) -> bool:
             return destination_for(entry, data_root, bundle_root).exists()
 
-        planned = plan_changes(entries, local, dest_exists)
+        def installed_unchanged(entry: Dict[str, Any]) -> bool:
+            return file_matches(
+                destination_for(entry, data_root, bundle_root),
+                str(entry["sha256"]),
+            )
+
+        planned = plan_changes(entries, local, dest_exists, installed_unchanged)
         downloads: List[Dict[str, Any]] = planned["downloads"]
         if _cancelled(cancel_event):
             raise UpdateCancelled("Update cancelled.")
