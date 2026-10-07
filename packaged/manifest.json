@@ -1,0 +1,1728 @@
+{
+  "version": "1.13.3",
+  "files": [
+    {
+      "path": "README.md",
+      "install": "README.md",
+      "sha256": "f7f6523ab6bdc84843792abc3f3c94628aadd4b90fb5e345612906ce26031b9c",
+      "size": 6872,
+      "action": "replace"
+    },
+    {
+      "path": "assets/bitboss/default_avatar.png",
+      "install": "assets/bitboss/default_avatar.png",
+      "sha256": "d7da16ca03c4543195c9d6a545d0c7a590067b329ae8527672505d6b9899f52d",
+      "size": 2235,
+      "action": "if-missing"
+    },
+    {
+      "path": "assets/bitboss/ff7_boss_death.mp3",
+      "install": "assets/bitboss/ff7_boss_death.mp3",
+      "sha256": "6344480aa880bfd55e5d5056ec3fa7c0c23298375ce97abc5678e74e52d27208",
+      "size": 72235,
+      "action": "if-missing"
+    },
+    {
+      "path": "assets/default_assets/alert_queue.js",
+      "install": "assets/default_assets/alert_queue.js",
+      "sha256": "7c9d7e12ee58c7309905f410778b2cd2b5908160e5bea482ff2c068eb7375392",
+      "size": 6467,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/AlfaSlabOne-Regular.ttf",
+      "install": "assets/default_assets/fonts/AlfaSlabOne-Regular.ttf",
+      "sha256": "5973b4362364338163f3e44d858e466b8ed4735100e54786cb2349c3adb7eb6f",
+      "size": 92956,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/AmaticSC-Bold.ttf",
+      "install": "assets/default_assets/fonts/AmaticSC-Bold.ttf",
+      "sha256": "046da5ed5e476902671c28ff17b5d001dc01f0ed0c0ca23bda278f71e4ee62cc",
+      "size": 146796,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/AmaticSC-Regular.ttf",
+      "install": "assets/default_assets/fonts/AmaticSC-Regular.ttf",
+      "sha256": "f3772587b6b7bab9d32ee774ff26687ee21be817720b62cc23d8e113a1b62ef5",
+      "size": 142696,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Anton-Regular.ttf",
+      "install": "assets/default_assets/fonts/Anton-Regular.ttf",
+      "sha256": "28beb8f6542f642ba4143bd4a1d1cfc7be7b1dedc951096efd8e0942502ea1bf",
+      "size": 161588,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/BAUHS93.TTF",
+      "install": "assets/default_assets/fonts/BAUHS93.TTF",
+      "sha256": "8afb4da281e19745d582814bdc66006bd56f43eb2fd0d2f88d854771472420b3",
+      "size": 47644,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/BerkshireSwash-Regular.ttf",
+      "install": "assets/default_assets/fonts/BerkshireSwash-Regular.ttf",
+      "sha256": "f92ce92f2c7c529c748ef969c2e0fa0a12f3abd718779a31965a10d340bdf563",
+      "size": 58364,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/CASTELAR.TTF",
+      "install": "assets/default_assets/fonts/CASTELAR.TTF",
+      "sha256": "5d5db8ae79e77adca68e52454088f3a456f363acc9f577cc6dd08b18fa996bda",
+      "size": 48252,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Candara.ttf",
+      "install": "assets/default_assets/fonts/Candara.ttf",
+      "sha256": "9f02f6bf076197ed2a1335fe59a3bdf88e7ad4a849bf68037a528f37cce36791",
+      "size": 219532,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Candarab.ttf",
+      "install": "assets/default_assets/fonts/Candarab.ttf",
+      "sha256": "5346840fa85a1969699dc97635e838cd2c42dad7f8a4999d7368eb888fceb04b",
+      "size": 227604,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Candarai.ttf",
+      "install": "assets/default_assets/fonts/Candarai.ttf",
+      "sha256": "fc68cb42582e1207bcc397df7b60870a74ae068b17d7bd79f2e9f63af89796b4",
+      "size": 227648,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Cinzel-VariableFont_wght.ttf",
+      "install": "assets/default_assets/fonts/Cinzel-VariableFont_wght.ttf",
+      "sha256": "e7093fd80b66eeb7bf1c7614fa229331ebf72865eeaea1e1059473c1871a6178",
+      "size": 124700,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Creepster-Regular.ttf",
+      "install": "assets/default_assets/fonts/Creepster-Regular.ttf",
+      "sha256": "af46f60f81e666d31db895554b2fe255fe6b896a899363edb713b7c714c204c3",
+      "size": 61368,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/DancingScript-VariableFont_wght.ttf",
+      "install": "assets/default_assets/fonts/DancingScript-VariableFont_wght.ttf",
+      "sha256": "9ec266a75e3a908da28206e13e9c868f498a8c1d6a16f384ea5405aec6a23d7c",
+      "size": 130480,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/DeliciousHandrawn-Regular.ttf",
+      "install": "assets/default_assets/fonts/DeliciousHandrawn-Regular.ttf",
+      "sha256": "e438e03818403e7266329dd7cf867b0714dffb3e3a0b03152dc71a712773a09e",
+      "size": 73972,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Fasthand-Regular.ttf",
+      "install": "assets/default_assets/fonts/Fasthand-Regular.ttf",
+      "sha256": "75334fae93db52309874785596a528b4a8848a22887f74d01aba1c4aceadcbf4",
+      "size": 212500,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/GajrajOne-Regular.ttf",
+      "install": "assets/default_assets/fonts/GajrajOne-Regular.ttf",
+      "sha256": "bc364fef56194adf1338d389a888a641c3278d854676e454425e297f46fd9664",
+      "size": 149772,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/GhostsItalcPersonalUseBoldItalic-GOo8O.ttf",
+      "install": "assets/default_assets/fonts/GhostsItalcPersonalUseBoldItalic-GOo8O.ttf",
+      "sha256": "6fbd110f546a744154ddbb141fb2169512a0fd44bf1e58cedc9d8dfbed4a3837",
+      "size": 1559776,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Glazkrak.otf",
+      "install": "assets/default_assets/fonts/Glazkrak.otf",
+      "sha256": "7cb2654d0c82b314f9334aa5e1194c6bcfc8bdb73b5dd985971bf2679260790a",
+      "size": 29924,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/GreatVibes-Regular.ttf",
+      "install": "assets/default_assets/fonts/GreatVibes-Regular.ttf",
+      "sha256": "4be017b263079e8f123260a2bcb317451fe35f51188c1dd149277398cb87146d",
+      "size": 445300,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Hanalei-Regular.ttf",
+      "install": "assets/default_assets/fonts/Hanalei-Regular.ttf",
+      "sha256": "dd928ec14e7173c6d3959374fd469209eea726eb754319c7cba7fb4a9b926d71",
+      "size": 182920,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Highway To Heck.otf",
+      "install": "assets/default_assets/fonts/Highway To Heck.otf",
+      "sha256": "44d113fa0e74e851eca91a8bf89dd3edf3e8008da76b574814d5df9d4cfc5ab4",
+      "size": 41824,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/IndieFlower-Regular.ttf",
+      "install": "assets/default_assets/fonts/IndieFlower-Regular.ttf",
+      "sha256": "e6a139213baa54b2ff51d300f98cc1c16d690b5046a4b0e42435cbf791767853",
+      "size": 55416,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Lobster-Regular.ttf",
+      "install": "assets/default_assets/fonts/Lobster-Regular.ttf",
+      "sha256": "cddd7779fb2e78382a654f91dd5a656218cf133a244e17a2f5d960c06f95d73c",
+      "size": 396740,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/LuckiestGuy-Regular.ttf",
+      "install": "assets/default_assets/fonts/LuckiestGuy-Regular.ttf",
+      "sha256": "fbe683091b0db0faa8f38e5227ad3bc17dc67f119f27ff10a63d72f5f9bb9da3",
+      "size": 58324,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Monoton-Regular.ttf",
+      "install": "assets/default_assets/fonts/Monoton-Regular.ttf",
+      "sha256": "1565b395f454d5c2642d0f411030051e7342fbaf6d5bfc5da5899c47ecd3511e",
+      "size": 49908,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/OpenSans-Italic-VariableFont_wdth,wght.ttf",
+      "install": "assets/default_assets/fonts/OpenSans-Italic-VariableFont_wdth,wght.ttf",
+      "sha256": "412a16bfd878e82457fdf765a853373b6777f8f177475b2b9dbe3351ecdc2e6d",
+      "size": 580280,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/OpenSans-VariableFont_wdth,wght.ttf",
+      "install": "assets/default_assets/fonts/OpenSans-VariableFont_wdth,wght.ttf",
+      "sha256": "13744bbc079f0f492e4fb3b14a15d242b8d9600faacd423d58cdf937fea7ce6b",
+      "size": 529700,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/PARCHM.TTF",
+      "install": "assets/default_assets/fonts/PARCHM.TTF",
+      "sha256": "5b4a73788f013c252eb5877a7974e5836eeffc1189dd7319a219080fcc908f80",
+      "size": 151256,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Pacifico-Regular.ttf",
+      "install": "assets/default_assets/fonts/Pacifico-Regular.ttf",
+      "sha256": "4dac9db3fa9ca072f7861fd916bf04bdceac6069d0f3a886f5e523d922e918f1",
+      "size": 315408,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/PermanentMarker-Regular.ttf",
+      "install": "assets/default_assets/fonts/PermanentMarker-Regular.ttf",
+      "sha256": "4a613a4e0a67ad9c48ee6bbf664a59f73450069ad27c08d4ed21e1b9b1893590",
+      "size": 73620,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Pijamas-ejPO.ttf",
+      "install": "assets/default_assets/fonts/Pijamas-ejPO.ttf",
+      "sha256": "88ec7d497c437ac3b7bd074cc539b965bfdaf5e469eb8dbbfe71b63da3bc830d",
+      "size": 181456,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Reactor7.ttf",
+      "install": "assets/default_assets/fonts/Reactor7.ttf",
+      "sha256": "11bb0bc921c7cd923cb8cbff2dc7f777833ca5278af98204d37316c50a36ad55",
+      "size": 306076,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Renogare.ttf",
+      "install": "assets/default_assets/fonts/Renogare.ttf",
+      "sha256": "22aabb9182df1e966a210195c51c49a756d0f6ed8f879b0ca314f672dc672617",
+      "size": 140072,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Roboto-Bold.ttf",
+      "install": "assets/default_assets/fonts/Roboto-Bold.ttf",
+      "sha256": "24571503140760240924dcd1238f77e7cd0454c0d8b0793990cefa2fad71471f",
+      "size": 163448,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Roboto-Regular.ttf",
+      "install": "assets/default_assets/fonts/Roboto-Regular.ttf",
+      "sha256": "16466ef65064e6f3885a6d2806b8949ac1ac38b524dd0cf8fc96565eb4cc28e8",
+      "size": 158604,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Roboto-ThinItalic.ttf",
+      "install": "assets/default_assets/fonts/Roboto-ThinItalic.ttf",
+      "sha256": "400458c3b9558c9e8453d2728d3f684c053ca9773fba25ea15e3d889290b491c",
+      "size": 151148,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/RubikGemstones-Regular.ttf",
+      "install": "assets/default_assets/fonts/RubikGemstones-Regular.ttf",
+      "sha256": "d0ae1a29e3d7653fc8ab3abb4479e9a997264de445b21c222425a6e358e006c1",
+      "size": 264876,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/RubikIso-Regular.ttf",
+      "install": "assets/default_assets/fonts/RubikIso-Regular.ttf",
+      "sha256": "3f2b0a7eb4ba59c690e366f674a704bbebb1608d1bea53e96c11302e9539b280",
+      "size": 132092,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/SHOWG.TTF",
+      "install": "assets/default_assets/fonts/SHOWG.TTF",
+      "sha256": "80cd2486979c2c18f9dd59277c0fd800959afa1ce23820dcf7bce31f208647af",
+      "size": 52316,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/STENCIL.TTF",
+      "install": "assets/default_assets/fonts/STENCIL.TTF",
+      "sha256": "5d53b38fa8ff33d15676cdcd78b261681bfda861c449b4f7ddfd7574a5c11e18",
+      "size": 55596,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Sacramento-Regular.ttf",
+      "install": "assets/default_assets/fonts/Sacramento-Regular.ttf",
+      "sha256": "a5b9de67be454a826b46d858512e32eec8c30312beb4c4f864aee2390414e9c5",
+      "size": 64808,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Sitka.ttc",
+      "install": "assets/default_assets/fonts/Sitka.ttc",
+      "sha256": "18f4d0f9de114e04a6f0b21955a96177154ff0f55fb4a94c68af5c51449bf107",
+      "size": 945616,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/SitkaB.ttc",
+      "install": "assets/default_assets/fonts/SitkaB.ttc",
+      "sha256": "eac5da16a297e4292decbf8c6735d0912f342c6ba9c2844d362126b3de1136ca",
+      "size": 933972,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/SitkaI.ttc",
+      "install": "assets/default_assets/fonts/SitkaI.ttc",
+      "sha256": "1581ff0e4ecc7ec2835c02678b62ee7c8e89937e4142aff11030548ff04d40a7",
+      "size": 990728,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/SitkaZ.ttc",
+      "install": "assets/default_assets/fonts/SitkaZ.ttc",
+      "sha256": "9ba07e98c2dfe00c7f00a44cc74da52a9818d39988a105c6af6974a63d04b9ad",
+      "size": 980296,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/SixCaps-Regular.ttf",
+      "install": "assets/default_assets/fonts/SixCaps-Regular.ttf",
+      "sha256": "a707f13f97455f4addb3c38492bb473372db3cc03448b062be70d67c6bf4e599",
+      "size": 42660,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Staatliches-Regular.ttf",
+      "install": "assets/default_assets/fonts/Staatliches-Regular.ttf",
+      "sha256": "a3013f4b37fedec7466f1c6ab340efcda490cca091ed39b0be757cd1eea3ea25",
+      "size": 61400,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TEMPSITC.TTF",
+      "install": "assets/default_assets/fonts/TEMPSITC.TTF",
+      "sha256": "1b20b818be881cf16e711daf7e3c44be66a93b581bcd7b580a4423f18595fb35",
+      "size": 76100,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TektonPro-Bold.otf",
+      "install": "assets/default_assets/fonts/TektonPro-Bold.otf",
+      "sha256": "7f5749057c72e74e49ef27331b760384068c36386464641ea16ec50b33a3d306",
+      "size": 99920,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TektonPro-BoldCond.otf",
+      "install": "assets/default_assets/fonts/TektonPro-BoldCond.otf",
+      "sha256": "7077d3506d6a50363300acdb8b35bb94458868ef3ef472f4fca1a18b1b6baccf",
+      "size": 98816,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TektonPro-BoldExt.otf",
+      "install": "assets/default_assets/fonts/TektonPro-BoldExt.otf",
+      "sha256": "a96dc4b4518d9b3113beab74a1a75f9abe78337b79131cad247ef565e49a7212",
+      "size": 101252,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TektonPro-BoldObl.otf",
+      "install": "assets/default_assets/fonts/TektonPro-BoldObl.otf",
+      "sha256": "7d9f99409750c52b5020e58ba08daae8ff2c89f664ce91f2fb7cb3f81243d66f",
+      "size": 112996,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TheYeti-6YXXY.ttf",
+      "install": "assets/default_assets/fonts/TheYeti-6YXXY.ttf",
+      "sha256": "a2f2d1c4c48f66a0796fb187002a457b618d71da4709b16909ef5b3cecb5b64b",
+      "size": 320464,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-Black.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-Black.ttf",
+      "sha256": "09c98a384ee96f6b4e9cc2206cfb8d74b2bbc1fc337877503bb8f381891ae132",
+      "size": 43664,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-Bold.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-Bold.ttf",
+      "sha256": "fe3d6895510631f14e0bff85e487b32be20972364a457e7df4047b58f41559c2",
+      "size": 53896,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-BoldItalic.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-BoldItalic.ttf",
+      "sha256": "b0aa4933862f69af4126f2db8d71eb32d72051e2f312f3ab9a9241aa6969daeb",
+      "size": 62924,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-ExtraLight.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-ExtraLight.ttf",
+      "sha256": "96db1f9f826461d9132e116f1537edd99cc0121a6148d933646bb8a5f4fb0e7d",
+      "size": 56724,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-ExtraLightItalic.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-ExtraLightItalic.ttf",
+      "sha256": "2aef09f80d400021cff9b3b836c41800cf29f40da711dbcd2cd7dc3e7f39d88f",
+      "size": 60848,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-Italic.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-Italic.ttf",
+      "sha256": "d2bb5f00f1b7ff1265c88872e37e3859b5a7fc5e9492c3d8a556fc2db571fcce",
+      "size": 65284,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-Light.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-Light.ttf",
+      "sha256": "10606c76bb84cbc0c6fda46cb9c57ae6da49cae2312245f333a8a46db19b6f46",
+      "size": 57600,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-LightItalic.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-LightItalic.ttf",
+      "sha256": "885f3206c0c3419400340d3a5de1617f80e16cfaf407ce138227098f46108917",
+      "size": 64560,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-Regular.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-Regular.ttf",
+      "sha256": "486e78be7ca7596376418b5120443ee1a359e95488da17f7a88282d82f34d51c",
+      "size": 57392,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-SemiBold.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-SemiBold.ttf",
+      "sha256": "3a285881faadbb793538867d008dc972ec70a7244099b6ed84bb5691c519be28",
+      "size": 56752,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TitilliumWeb-SemiBoldItalic.ttf",
+      "install": "assets/default_assets/fonts/TitilliumWeb-SemiBoldItalic.ttf",
+      "sha256": "f9a81b17cca11ea77793751ad4d2d4c863bb7b3ccf6d554f8ff39b81d44e6fde",
+      "size": 64816,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Trajan Pro Regular.ttf",
+      "install": "assets/default_assets/fonts/Trajan Pro Regular.ttf",
+      "sha256": "c30c4f0c2efbfaf4c06363c3421ae7991f83c6df3c2bba443d69b7d98ba07780",
+      "size": 66484,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TrajanPro-Bold.otf",
+      "install": "assets/default_assets/fonts/TrajanPro-Bold.otf",
+      "sha256": "8be3a4b25193ebe367a6478f9d56bbca0d07f64e775c7484b2ffb20b9dfdc1a0",
+      "size": 69540,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/TrajanPro-Regular.otf",
+      "install": "assets/default_assets/fonts/TrajanPro-Regular.otf",
+      "sha256": "a2462b735538ee2387d98bec1623834ecdfd115e41b03f96b0df4f8f966375c1",
+      "size": 69524,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/VLADIMIR.TTF",
+      "install": "assets/default_assets/fonts/VLADIMIR.TTF",
+      "sha256": "ede635464683ba465c949d7dd6894f9dff49a76229618cb0b73e0c85b93e4169",
+      "size": 54308,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Zeyada-Regular.ttf",
+      "install": "assets/default_assets/fonts/Zeyada-Regular.ttf",
+      "sha256": "7ca864ae9f551edff7030f097e47e43de0b68f70a294b5ae3d4b9dcc179ac0f4",
+      "size": 57468,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/calibri.ttf",
+      "install": "assets/default_assets/fonts/calibri.ttf",
+      "sha256": "198e8dac512206f27c9bdbfeb3d5b3e55a33de9dcf58d801823ef8c5ef5a76dc",
+      "size": 1648120,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/calibrib.ttf",
+      "install": "assets/default_assets/fonts/calibrib.ttf",
+      "sha256": "4d5c56c07c41315022cd5a24966ade3983ceebce8bc81524e56e4632dd3f242f",
+      "size": 1613668,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/calibrii.ttf",
+      "install": "assets/default_assets/fonts/calibrii.ttf",
+      "sha256": "5c85b9adedde710e754b3163005291eca16cd0ccccc7c8d7ff526070e8980202",
+      "size": 1196672,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/cambria.ttc",
+      "install": "assets/default_assets/fonts/cambria.ttc",
+      "sha256": "84e70ccc1664482f4a960442c7a166c91a1b2cf98ff88c33cb73f79403f66d7b",
+      "size": 1792664,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/cambriab.ttf",
+      "install": "assets/default_assets/fonts/cambriab.ttf",
+      "sha256": "6685c657a7e292083e28f19bbf1a1e90509ce3e1130dbc4ed1c62ba3f9140543",
+      "size": 841440,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/cambriai.ttf",
+      "install": "assets/default_assets/fonts/cambriai.ttf",
+      "sha256": "6905f0ac846d1ec4326cd14a46cb7379204940aa293b098ee4c1a69723bbd165",
+      "size": 892620,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/constan.ttf",
+      "install": "assets/default_assets/fonts/constan.ttf",
+      "sha256": "495577bf8ef74deab6ecc2e7acf63cd966184148f9bc2044a1068cd58501577e",
+      "size": 448376,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/constanb.ttf",
+      "install": "assets/default_assets/fonts/constanb.ttf",
+      "sha256": "b6c66a1858370fe575629e19d53c05350738bf5105e18ceac07fe9efc9cd008d",
+      "size": 451824,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/constani.ttf",
+      "install": "assets/default_assets/fonts/constani.ttf",
+      "sha256": "2314a03c53506fa79525bc479ea4be9c036d1ebd86a1ffb5837ca5b43ff51f07",
+      "size": 448748,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/dosapp.fon",
+      "install": "assets/default_assets/fonts/dosapp.fon",
+      "sha256": "0da0d4ed89fd1e8810c7f2cdb5372abfb02cb3d031acacc1a5bbc853f879c2bd",
+      "size": 36656,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/segoeui.ttf",
+      "install": "assets/default_assets/fonts/segoeui.ttf",
+      "sha256": "ba32a222b23d727267cf1aba4e5296fe84ce99b9d910915103fc085d7931bc88",
+      "size": 955804,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/segoeuib.ttf",
+      "install": "assets/default_assets/fonts/segoeuib.ttf",
+      "sha256": "1b242874a2f57529060e770ba313e027a99d40b3c36e1c7e8b2dece16ad6ed88",
+      "size": 951724,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/segoeuii.ttf",
+      "install": "assets/default_assets/fonts/segoeuii.ttf",
+      "sha256": "9adf7d619c593ee38c96af06bb15b4bd893e4087bcc1a0b7becee8f4ae15bb1c",
+      "size": 529712,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/sylfaen.ttf",
+      "install": "assets/default_assets/fonts/sylfaen.ttf",
+      "sha256": "c7a5df780936c04804287e32c1b77e78b9b0e46b8d2723a85bda987eec8de024",
+      "size": 256528,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/verdana.ttf",
+      "install": "assets/default_assets/fonts/verdana.ttf",
+      "sha256": "6a8481fe107ee547893c018b13dba291c2020bec3de5da6525d9ac09f6bc2105",
+      "size": 243304,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/verdanab.ttf",
+      "install": "assets/default_assets/fonts/verdanab.ttf",
+      "sha256": "f3245f5f38f61bd1ceefb0f1338a5b88a21e6220832c2f43a38bbc7e1547c36f",
+      "size": 211260,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/verdanai.ttf",
+      "install": "assets/default_assets/fonts/verdanai.ttf",
+      "sha256": "14f2ebcdaa1b77e5993a8533662e4bd3ebfe2c5771b6daafd8ccb39b2ad588b9",
+      "size": 223268,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/vgaoem.fon",
+      "install": "assets/default_assets/fonts/vgaoem.fon",
+      "sha256": "011326f65e151d83c157ef6fdd23a2d851e8d0f2662d8409ea0b4a142e343a13",
+      "size": 5168,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/icons/Mycelian.ico",
+      "install": "assets/default_assets/icons/Mycelian.ico",
+      "sha256": "2da6b95215e1bf815272831086f058861e56923980b4d892df3fe1a5986f8cb1",
+      "size": 73306,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/Mycelian.png",
+      "install": "assets/default_assets/images/Mycelian.png",
+      "sha256": "b4b6476330e1f5fcbe416d2bb42791b8ab627b45554ccf05926b727f7aa4695a",
+      "size": 14713,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/NoAlbumArt.jpeg",
+      "install": "assets/default_assets/images/NoAlbumArt.jpeg",
+      "sha256": "9a151e10ee07e85b2bd9b1f51e8d2b89759905690343d2c7cbf7b0434d805615",
+      "size": 10426,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/PauseBtn.png",
+      "install": "assets/default_assets/images/PauseBtn.png",
+      "sha256": "9694edb8cbf10707ff7a75561dd0647861ebf3662b826564392a11b5aa7de308",
+      "size": 5777,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/PauseBtnDM.png",
+      "install": "assets/default_assets/images/PauseBtnDM.png",
+      "sha256": "279b77630a30afb208a2141dda5b45e26b3fc0507fd811f1118ff4fca8ff17ed",
+      "size": 6291,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/PlayBtn.png",
+      "install": "assets/default_assets/images/PlayBtn.png",
+      "sha256": "85151fe692b393fff9a5eb32d9a9341444e6dd5eec953878e756efd98ab91969",
+      "size": 12179,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/PlayBtnDM.png",
+      "install": "assets/default_assets/images/PlayBtnDM.png",
+      "sha256": "5b138979b4a8f508082e7cccf890a553ba850c869c6c6a34bc43bd7f2cc8ab58",
+      "size": 10382,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/cheer1.gif",
+      "install": "assets/default_assets/images/cheer1.gif",
+      "sha256": "2e87cb7e621724f2131b422272bd05bd6e8bc940a3d77a134517985984e8530e",
+      "size": 96090,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/cheer100.gif",
+      "install": "assets/default_assets/images/cheer100.gif",
+      "sha256": "cc28f4bde0fc0df681addfe7e738531afce218bf5e1b94eec8df39b38f0c7094",
+      "size": 1288914,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/cheer1000.gif",
+      "install": "assets/default_assets/images/cheer1000.gif",
+      "sha256": "c62e833fba578d66564599d91c0caff5fa328a6c7d924652ad3352500c3abcc2",
+      "size": 2311436,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/cheer10000.gif",
+      "install": "assets/default_assets/images/cheer10000.gif",
+      "sha256": "43b32b7b8331faec8423a73d9dbafe3a71021dbcda86f49690076dcd91972f2d",
+      "size": 2287419,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/cheer100000.gif",
+      "install": "assets/default_assets/images/cheer100000.gif",
+      "sha256": "9a111526072c6f229d0618b65ab1051f6ae89b7bc36c947dd55b571f201d51da",
+      "size": 5272803,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/cheer5000.gif",
+      "install": "assets/default_assets/images/cheer5000.gif",
+      "sha256": "d943b4a968636eea7ff758d93f99c59dca9ce6d3d6986b5496ee2491666a7ec3",
+      "size": 147986,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/notconnected.png",
+      "install": "assets/default_assets/images/notconnected.png",
+      "sha256": "d7da16ca03c4543195c9d6a545d0c7a590067b329ae8527672505d6b9899f52d",
+      "size": 2235,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/notingame.png",
+      "install": "assets/default_assets/images/notingame.png",
+      "sha256": "ea7aa033f9a979b8bdd2169285796273afe0fa94c99882eab629778231e9fbf5",
+      "size": 2619,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/pause.png",
+      "install": "assets/default_assets/images/pause.png",
+      "sha256": "a2c34eebd66cbd8d88767f5d68f4b3935f0bb4304036c790e5cb500e655055c6",
+      "size": 16354,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/platinum.png",
+      "install": "assets/default_assets/images/platinum.png",
+      "sha256": "d57ea570fea2d1a8f7f735fb41255c12c457b772542d176b9278563d7c842c90",
+      "size": 183250,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/overlay_recovery.js",
+      "install": "assets/default_assets/overlay_recovery.js",
+      "sha256": "9b0cf5e0e28ec730ce0acaa2999d6ca87035a2e65e21ae13d8adb4af10776c66",
+      "size": 4350,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/container_editor.css",
+      "install": "assets/default_assets/spore_studio/container_editor.css",
+      "sha256": "070edbd336fc67951ed9bacb98177e7efacab5a7a9295c73b04827e6527a703e",
+      "size": 5401,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/container_editor.js",
+      "install": "assets/default_assets/spore_studio/container_editor.js",
+      "sha256": "c56259239eb3827554a546142243e709ebd40a4a9f80b3fea1aca35322cd1853",
+      "size": 60534,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/container_layout.js",
+      "install": "assets/default_assets/spore_studio/container_layout.js",
+      "sha256": "8f95a20ce320128892d7756ec42b66e5b81492876ad2ad7eff606c4a6e7981b5",
+      "size": 12781,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/container_shell.js",
+      "install": "assets/default_assets/spore_studio/container_shell.js",
+      "sha256": "d5e89ac412a9ab5f555ed8ba1d0abd4cc11ab18cca9e29104a510e0c98a35ad1",
+      "size": 7866,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/editor.css",
+      "install": "assets/default_assets/spore_studio/editor.css",
+      "sha256": "890d82ec467de46147d61e4d1f410cabcf5b31fc30bf7402f9af2b87800954b3",
+      "size": 27379,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/editor.html",
+      "install": "assets/default_assets/spore_studio/editor.html",
+      "sha256": "906b549b118b6905d6b2e61e389dfbe65b4c7c624eebe058fac71cf46812db34",
+      "size": 20647,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/editor.js",
+      "install": "assets/default_assets/spore_studio/editor.js",
+      "sha256": "8ce5496d9ac9b33e739ac566ce72091a7242896cd756d66b7816d79a1f615fb7",
+      "size": 289757,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/template_logger.js",
+      "install": "assets/default_assets/template_logger.js",
+      "sha256": "4458c3250fb3a6e29ae9eb0be857b232ca9a2ceb7c3fd56b9ec78ae1ea7f708b",
+      "size": 6512,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/accessory_names_en.json",
+      "install": "assets/ff7/accessory_names_en.json",
+      "sha256": "69b0b217c8e52f84212c6da2f6e6f8b351cf01aadfcb9a10734bb8ed10464d0d",
+      "size": 734,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/aerith.png",
+      "install": "assets/ff7/aerith.png",
+      "sha256": "ebf6b191d8b37fd4d229669c2ea539b381da2640b6007cbf2fa2c08e8e2909bf",
+      "size": 11293,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/armor_materia_slot_types.json",
+      "install": "assets/ff7/armor_materia_slot_types.json",
+      "sha256": "213071d59e74bc6794dc17d5af9e8140187a710dff96b4f15ed1256c6c62e8ea",
+      "size": 1401,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/armor_names_en.json",
+      "install": "assets/ff7/armor_names_en.json",
+      "sha256": "f7e0ef130b1052fa4b194d684ae9a69514be48aa973f2114052810a6b754ff8c",
+      "size": 802,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/barrett.png",
+      "install": "assets/ff7/barrett.png",
+      "sha256": "7f153f9b93da37da24c1ab46efe3172207f9fab608cfa78657e35f49b9e01264",
+      "size": 9176,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/battle_log_names_en.json",
+      "install": "assets/ff7/battle_log_names_en.json",
+      "sha256": "f6720d9813508c2575e87a95aa758a6312648365d6a419ae1db1d37a73287c41",
+      "size": 374,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/blue_materia.png",
+      "install": "assets/ff7/blue_materia.png",
+      "sha256": "d85512efc3fe61fd0a8845b9b37b9ab269f949e9f504590f62d699f3862b9873",
+      "size": 1718,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/caitsith.png",
+      "install": "assets/ff7/caitsith.png",
+      "sha256": "1b6e2ada0cdb68a0327b910d006748905e583c77e9e9c7cd9b12e76c4752a1ff",
+      "size": 9210,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/cid.png",
+      "install": "assets/ff7/cid.png",
+      "sha256": "d6465c3d41f085e2c8d2696915098a6b52d81422a78989c2e2828a006ddb774b",
+      "size": 11359,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/cloud.png",
+      "install": "assets/ff7/cloud.png",
+      "sha256": "dae435898ca4d00e29021aa1f0ebba6a98c1140044e9d191eb968530560aa949",
+      "size": 12701,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/equip_allowlists.json",
+      "install": "assets/ff7/equip_allowlists.json",
+      "sha256": "3f7d7fe3f54af3a4f4e1c0359ca49f59042c08bcfbb8d279ba1310e6d02c910a",
+      "size": 5172,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/green_materia.png",
+      "install": "assets/ff7/green_materia.png",
+      "sha256": "d928820a2bb778bd82690d2570da7e9b5257cf322f5f7d11b07f10de7f89d11c",
+      "size": 1821,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/item_names_en.json",
+      "install": "assets/ff7/item_names_en.json",
+      "sha256": "cc2119b41c10089d4fddb134c2e2a78ff6dd2652825ff06e8a2f2b9b54d17584",
+      "size": 2396,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/linked_slots.png",
+      "install": "assets/ff7/linked_slots.png",
+      "sha256": "247978b34b78d945ab8cd84f9506a2545a647d3b48a1192578f83b40a3d28403",
+      "size": 3201,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/materia_names_en.json",
+      "install": "assets/ff7/materia_names_en.json",
+      "sha256": "120c9017354235188330aa19d49f7f6f30f874e99a608d646da042e2a1fc2eca",
+      "size": 1753,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/materia_orb_by_id.json",
+      "install": "assets/ff7/materia_orb_by_id.json",
+      "sha256": "b775cd65a8129f4d96280bcee575f5bf4e6d5f74c846bbf4305bb1ec31a8a68a",
+      "size": 2350,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/purple_materia.png",
+      "install": "assets/ff7/purple_materia.png",
+      "sha256": "c62a0e7272470e6f0c820672efdd758f7247625ba3d3b8f2255e21c47762537b",
+      "size": 1758,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/red13.png",
+      "install": "assets/ff7/red13.png",
+      "sha256": "266d38a4cd572e3723be9fdc0c0b62d8631fca3878b7ee8b16d2380797b1ec6c",
+      "size": 12144,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/red_materia.png",
+      "install": "assets/ff7/red_materia.png",
+      "sha256": "9b49e4a1cf5e569e2240461e317e84a017a65a5e3ac35d0f89072f9392309d04",
+      "size": 1783,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/sephiroth.png",
+      "install": "assets/ff7/sephiroth.png",
+      "sha256": "58d6146072932100dbb55e28f1a45e26f35c5ff5e94cdf7ce6458810d38c98f1",
+      "size": 12693,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/single_slot.png",
+      "install": "assets/ff7/single_slot.png",
+      "sha256": "29470652937f431cf58e74073085ffb15a1e20c0b984c5298971de95a1ae0a46",
+      "size": 2127,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/tifa.png",
+      "install": "assets/ff7/tifa.png",
+      "sha256": "e53605e78ebec6843391911c083e68c4b23cf5985092752f2f79579ad633e9a2",
+      "size": 11389,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/vincent.png",
+      "install": "assets/ff7/vincent.png",
+      "sha256": "f0d2415ae00adf1dd52ab8219db3fdbe32eb02ca3752b627985d3b3e537741cc",
+      "size": 10850,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/weapon_materia_slot_types.json",
+      "install": "assets/ff7/weapon_materia_slot_types.json",
+      "sha256": "dc59fa488cad3945041ee017aff0ca8e1596006431d8784b591ca9d1e96b673f",
+      "size": 5653,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/weapon_names_en.json",
+      "install": "assets/ff7/weapon_names_en.json",
+      "sha256": "a1fc258c711f2bd48e3ddff856bdfa1a35cbb0941f635e14048192b9203da9eb",
+      "size": 3096,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/yellow_materia.png",
+      "install": "assets/ff7/yellow_materia.png",
+      "sha256": "e333149bacbf5dedeca87b140fa74e9e235a8583a3da6d4c343e259e07d42718",
+      "size": 1849,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/youngcloud.png",
+      "install": "assets/ff7/youngcloud.png",
+      "sha256": "6a0d3c3823f7dba475780d6716fb15219340a0a987e80ec401df6e396cd683c1",
+      "size": 12849,
+      "action": "replace"
+    },
+    {
+      "path": "assets/ff7/yuffie.png",
+      "install": "assets/ff7/yuffie.png",
+      "sha256": "adc6bf8aebd7d49d50224999f9117ddad8a60925367b47f316f780b8b815e555",
+      "size": 11251,
+      "action": "replace"
+    },
+    {
+      "path": "assets/pausedalerts/PlayBtnDM.png",
+      "install": "assets/pausedalerts/PlayBtnDM.png",
+      "sha256": "5b138979b4a8f508082e7cccf890a553ba850c869c6c6a34bc43bd7f2cc8ab58",
+      "size": 10382,
+      "action": "if-missing"
+    },
+    {
+      "path": "assets/pausedalerts/pause.png",
+      "install": "assets/pausedalerts/pause.png",
+      "sha256": "a2c34eebd66cbd8d88767f5d68f4b3935f0bb4304036c790e5cb500e655055c6",
+      "size": 16354,
+      "action": "if-missing"
+    },
+    {
+      "path": "factorio_mod/mycelian-stats/changelog.txt",
+      "install": "factorio_mod/mycelian-stats/changelog.txt",
+      "sha256": "bc850a59c460c93634dfcb910d03e3b34f5e58196fcc988baebe9b378b47dc0d",
+      "size": 1458,
+      "action": "replace"
+    },
+    {
+      "path": "factorio_mod/mycelian-stats/control.lua",
+      "install": "factorio_mod/mycelian-stats/control.lua",
+      "sha256": "141cc2893fb08ee33d555bc0475b617c55b1154caefdbb2099a5784b34cec449",
+      "size": 28122,
+      "action": "replace"
+    },
+    {
+      "path": "factorio_mod/mycelian-stats/info.json",
+      "install": "factorio_mod/mycelian-stats/info.json",
+      "sha256": "bb47c02aec3df9f14e25a7218b980058bc083d5fb4ec224ace28abb0ae1848c2",
+      "size": 286,
+      "action": "replace"
+    },
+    {
+      "path": "factorio_mod/mycelian-stats/locale/en/mycelian-stats.cfg",
+      "install": "factorio_mod/mycelian-stats/locale/en/mycelian-stats.cfg",
+      "sha256": "b82cf33c9c08adb43283e4a727faf21271b7e367fa9aa382c26c1ac532ededba",
+      "size": 507,
+      "action": "replace"
+    },
+    {
+      "path": "factorio_mod/mycelian-stats/settings.lua",
+      "install": "factorio_mod/mycelian-stats/settings.lua",
+      "sha256": "e9c3fe534413c67fb2930431f697f6ea45cc20cf34e64e84d5d464ccb7cf0f49",
+      "size": 390,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/package.json",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/package.json",
+      "sha256": "b5cc4b082f2065f41c8d38fad0ce5fb1883e504d8d5a64fc3b5cccc69125905e",
+      "size": 20,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js",
+      "sha256": "16175a864de0970cf2dc8805f883e996f39e6c5814e14b7cf61cf779b23f6c7c",
+      "size": 79794,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js.map",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js.map",
+      "sha256": "4d60513f74d6b7862eaadce73d6e8c77a4a8370e18a32c44a1382ce3a6b5384c",
+      "size": 483050,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/connector/icon.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/connector/icon.png",
+      "sha256": "298f198b58230a61c6649923794ea71baca271f48e610f4aabefb65091551aa1",
+      "size": 296,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/connector/icon@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/connector/icon@2x.png",
+      "sha256": "f061ab969870f785ddcb1af007088728b0b98ead5b09111defbd0a9714a9b6ea",
+      "size": 310,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/connector/key.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/connector/key.png",
+      "sha256": "6426eef67709954c02f821f5d949223adb2a772a4b7027acce60db2f77ccec72",
+      "size": 302,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/connector/key@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/connector/key@2x.png",
+      "sha256": "120bd0367370eaaa1ad83631f44a60f69dbce1cc35640c12c265aa3f35a7fd98",
+      "size": 316,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/counter/icon.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/counter/icon.png",
+      "sha256": "2a00450977109285be25c40b56077077aa9f5c8c1c40a32becab2bf587e0f9c8",
+      "size": 265,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/counter/icon@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/counter/icon@2x.png",
+      "sha256": "95dc5b79c30a74ffea9b1dd51cbd9b96d1d38ddbe107cb958d4af9980f981a07",
+      "size": 387,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/counter/key.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/counter/key.png",
+      "sha256": "4cc30565dfcee849130875ea1896ab51f9fda37fac7d423e2d6ff45e8574ba64",
+      "size": 827,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/counter/key@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/counter/key@2x.png",
+      "sha256": "e986ce70635d1a7462645c8b0c5fe34e4ed74b75ac25652f7db3842797b12d52",
+      "size": 1709,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/templateaction/icon.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/templateaction/icon.png",
+      "sha256": "298f198b58230a61c6649923794ea71baca271f48e610f4aabefb65091551aa1",
+      "size": 296,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/templateaction/icon@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/templateaction/icon@2x.png",
+      "sha256": "f061ab969870f785ddcb1af007088728b0b98ead5b09111defbd0a9714a9b6ea",
+      "size": 310,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/templateaction/key.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/templateaction/key.png",
+      "sha256": "6426eef67709954c02f821f5d949223adb2a772a4b7027acce60db2f77ccec72",
+      "size": 302,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/templateaction/key@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/templateaction/key@2x.png",
+      "sha256": "120bd0367370eaaa1ad83631f44a60f69dbce1cc35640c12c265aa3f35a7fd98",
+      "size": 316,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/togglealerts/icon.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/togglealerts/icon.png",
+      "sha256": "7631560fa2b76aaa5370ef6a50d416b78f355a7c6a82120001b9ad8174ade8d9",
+      "size": 187,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/togglealerts/icon@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/togglealerts/icon@2x.png",
+      "sha256": "e255946f37ceaee9cb888c5e4410c3ecc20b54b6674e474190ee8e9c511f7cc8",
+      "size": 125,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/togglealerts/key.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/togglealerts/key.png",
+      "sha256": "0019c00782f0dd231ade6de2d69204ff0e6e9470a285ef749dcbb2802c56ef16",
+      "size": 188,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/togglealerts/key@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/togglealerts/key@2x.png",
+      "sha256": "51f6f84b3fc1d56d67d8159d27517fe5f277b8ea93139768f081b476a0bf4d4e",
+      "size": 130,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/plugin/category-icon.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/plugin/category-icon.png",
+      "sha256": "f1b14728932d977827a662a622b9af7d53f4241f0d5182507b4d40f7bed88cfd",
+      "size": 1064,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/plugin/category-icon@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/plugin/category-icon@2x.png",
+      "sha256": "1bcbbc4e50509738dd2b92e51f5abb2d66bbdf80ebea67125de71f085031305a",
+      "size": 2350,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/plugin/marketplace.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/plugin/marketplace.png",
+      "sha256": "ddde35618866ae9d72033855b07400a8ce9f3bfbf44091b312f11ee3c6259cee",
+      "size": 53075,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/plugin/marketplace@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/plugin/marketplace@2x.png",
+      "sha256": "cdd90968b2c7c7d48834204d9ba0a292f34d02cf22383a39376ff42a39a6e69d",
+      "size": 123111,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.0.log",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.0.log",
+      "sha256": "40f9a440af24318b4c355b8dc2cda422cfb46c1cb0ab22800382af5bfb77358f",
+      "size": 32471,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.1.log",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.1.log",
+      "sha256": "55616b9f5ad44baafe0bcda386b04a26262b314a1ca43381ee18b518169d4afa",
+      "size": 34259,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.2.log",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.2.log",
+      "sha256": "90270a2f29c73548f36b7b4101424b3d8cc4705bab28b1cbfcc9900c75eb7e61",
+      "size": 297563,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.3.log",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.3.log",
+      "sha256": "8fb30fccc8a719ccfbe9f9bef65b350c625f1fcf977c1334cd0bdde9962f0983",
+      "size": 9422,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.4.log",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.4.log",
+      "sha256": "6cad9bd27da1c430a2e195ce8f152537285189516f7672850ba5666af59de673",
+      "size": 4311,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.5.log",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.5.log",
+      "sha256": "75bf5fe53b51e5cb68db5a8a8adb2d5a2181713a6732b2245b40b9cd08d479a3",
+      "size": 4311,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.6.log",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.6.log",
+      "sha256": "591ce92ff0ef1d6bd0037f60f89fc3f347959a56d509c9f42b56a5f3efb288f0",
+      "size": 11923,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.7.log",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.7.log",
+      "sha256": "86bdd6d8b4396f905a108c958bf582f129c3696534614648e73cdfe7cdbab7e2",
+      "size": 4311,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.8.log",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.8.log",
+      "sha256": "97bb087223a991d421c0604d08fdc38985ca64a91effc5cbfd98550cedc6332d",
+      "size": 549,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.9.log",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/logs/com.mushroomsuprise.mycelian.9.log",
+      "sha256": "d6f634c4a281b67206ff7522be971dcdc5f13105108382b259be2fe442053e5b",
+      "size": 549,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/manifest.json",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/manifest.json",
+      "sha256": "06554c6f85c7a3abdb599caae91e2f9261d56607dd4cb2a612ba0d4525862128",
+      "size": 1913,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/connector-action.html",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/connector-action.html",
+      "sha256": "d162995860ade414b5e66b46a9a6dfb9e35b95b9e9af96a30ea59b0ed833fc10",
+      "size": 12834,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/template-action.html",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/template-action.html",
+      "sha256": "4aeb04d911296d5c9bfd884f8d61fdc3cbf00105458dbe4e424b90ed3b0c945d",
+      "size": 33120,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/toggle-alerts.html",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/toggle-alerts.html",
+      "sha256": "fc896f132f18d679a3b8511211f3155b482beaae02344c7bcb2dd0047fd4822e",
+      "size": 5424,
+      "action": "replace"
+    },
+    {
+      "path": "templates/_boilerplates/instant_alert.html",
+      "install": "templates/_boilerplates/instant_alert.html",
+      "sha256": "a41887c441fd940316882b9284b9bb0c4ba1906a21156378e4d763bc06b0ddb5",
+      "size": 13664,
+      "action": "replace"
+    },
+    {
+      "path": "templates/_boilerplates/instant_alert.json",
+      "install": "templates/_boilerplates/instant_alert.json",
+      "sha256": "06d286924e36080698038a1eea52fe8f8c870644bd779aeeaa4213a860689c1c",
+      "size": 946,
+      "action": "replace"
+    },
+    {
+      "path": "templates/_boilerplates/queue_alert.html",
+      "install": "templates/_boilerplates/queue_alert.html",
+      "sha256": "4fac4b0472fbd239394e9a37ce64e996706aec48307b983c1a5cf2b8f45f2d52",
+      "size": 20347,
+      "action": "replace"
+    },
+    {
+      "path": "templates/_boilerplates/queue_alert.json",
+      "install": "templates/_boilerplates/queue_alert.json",
+      "sha256": "3b855945298eccb19ddb2de67ca69c80840bd41e4ecd15b41ae11bab4c9264ac",
+      "size": 1466,
+      "action": "replace"
+    },
+    {
+      "path": "templates/_boilerplates/spore_anim_runtime.js",
+      "install": "templates/_boilerplates/spore_anim_runtime.js",
+      "sha256": "eeab42852e0bbfcd096eb9d392bbf01622e9f67a42d7b39e8b169ba7ef95e869",
+      "size": 6295,
+      "action": "replace"
+    },
+    {
+      "path": "templates/_boilerplates/spore_data_runtime.js",
+      "install": "templates/_boilerplates/spore_data_runtime.js",
+      "sha256": "8e8551c717ec2be6cd3c3d6d8d106f3e29f5e337c7abc9b2044af3b59adc9571",
+      "size": 42142,
+      "action": "replace"
+    },
+    {
+      "path": "templates/_spore/bitcounter.spore.json",
+      "install": "templates/_spore/bitcounter.spore.json",
+      "sha256": "7580f1a422f049770873eb8a1e0a14ede390ad0f1cdb2faf062f59d2bf1c9414",
+      "size": 6009,
+      "action": "replace"
+    },
+    {
+      "path": "templates/activity_feed.html",
+      "install": "templates/activity_feed.html",
+      "sha256": "1c6dd954d8f53f41fe8ff1567ca4ee7138769e73b361133f27832f1c2f6000d5",
+      "size": 119156,
+      "action": "replace"
+    },
+    {
+      "path": "templates/alerts.html",
+      "install": "templates/alerts.html",
+      "sha256": "9b4adb345fa5e5eb77a6feb5c1eda178aa46d610c69c2054ba85bf579d1f205b",
+      "size": 134339,
+      "action": "replace"
+    },
+    {
+      "path": "templates/bitbar.html",
+      "install": "templates/bitbar.html",
+      "sha256": "4fd3b21122941bb4599f516e271dad9fab9386a6c3e1fc8d65a148a38aa55f2f",
+      "size": 33321,
+      "action": "replace"
+    },
+    {
+      "path": "templates/bitboss.html",
+      "install": "templates/bitboss.html",
+      "sha256": "1bf6631eefcbcaa6aa6fc986584127fd15a4214b51cbf64cdd7e2497abbf9354",
+      "size": 67408,
+      "action": "replace"
+    },
+    {
+      "path": "templates/bitcounter.html",
+      "install": "templates/bitcounter.html",
+      "sha256": "f2eaeac7eef53cf1afd19ac4274b384e1ba63364ee9eba39f8fb05e2189b5a44",
+      "size": 51575,
+      "action": "replace"
+    },
+    {
+      "path": "templates/chat.html",
+      "install": "templates/chat.html",
+      "sha256": "35a0c8281f08a4b3a452a97b863ff4fc5a694b0a898b57fdd28557b0f39cc908",
+      "size": 191545,
+      "action": "replace"
+    },
+    {
+      "path": "templates/counter.html",
+      "install": "templates/counter.html",
+      "sha256": "36264bfcd42a1a0c8672fb6b64dbf12a00682f12ab5e08a2ac37d030aa78148a",
+      "size": 23207,
+      "action": "replace"
+    },
+    {
+      "path": "templates/factorio.html",
+      "install": "templates/factorio.html",
+      "sha256": "7ab587607dd3393629235977594938adad6feb3b033df86730155832a035e6b2",
+      "size": 48187,
+      "action": "replace"
+    },
+    {
+      "path": "templates/ff7.html",
+      "install": "templates/ff7.html",
+      "sha256": "9b2bd771e9cc066d5edf22e7cbf37d02ebaf7e36eff3b3f12c656d7ccdd74842",
+      "size": 133235,
+      "action": "replace"
+    },
+    {
+      "path": "templates/giveaway.html",
+      "install": "templates/giveaway.html",
+      "sha256": "0407ce0fd60535b7d3b935f83f41a0433eeb3ad4ab55b555958bfdd888204849",
+      "size": 29231,
+      "action": "replace"
+    },
+    {
+      "path": "templates/pausedalerts.html",
+      "install": "templates/pausedalerts.html",
+      "sha256": "11e9f41c700f795dce76b7a157c48834088d90c349f16850ce9ff7d88d54a761",
+      "size": 21716,
+      "action": "replace"
+    },
+    {
+      "path": "templates/roulette.html",
+      "install": "templates/roulette.html",
+      "sha256": "33646b684299e315b4402c0933fb88f3a2cfbe1d454f344b57b6d4d88784b917",
+      "size": 118199,
+      "action": "replace"
+    },
+    {
+      "path": "templates/source_controls.html",
+      "install": "templates/source_controls.html",
+      "sha256": "4ae21f86840dbd3971aa4d0714ca3df2305783b34e1d2e11d97a53c4f1160775",
+      "size": 62010,
+      "action": "replace"
+    },
+    {
+      "path": "templates/spotify.html",
+      "install": "templates/spotify.html",
+      "sha256": "68cd96e58195850796e35cc14b9f14aa0051d54aa68584ada48c64db1ad63d6c",
+      "size": 41106,
+      "action": "replace"
+    },
+    {
+      "path": "templates/subbar.html",
+      "install": "templates/subbar.html",
+      "sha256": "5493ab093b5afa8674a2c4dd370e881aff53a20ed739e2b7660db69a6fd694a0",
+      "size": 31603,
+      "action": "replace"
+    },
+    {
+      "path": "templates/template_configs/activity_feed.json",
+      "install": "templates/template_configs/activity_feed.json",
+      "sha256": "56bf53fefc75e2f89b2e1bfdf64a53beea09f1d29a7e7b16a401ea8d6cb391f0",
+      "size": 6333,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/alerts.json",
+      "install": "templates/template_configs/alerts.json",
+      "sha256": "8ea90f2404dd3cf03432fdab8a3d27fba5b68570dad5b0f41e233e2f1e294916",
+      "size": 59679,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/bitbar.json",
+      "install": "templates/template_configs/bitbar.json",
+      "sha256": "72424708cc6d3750a4b114db86b2157b58756266b0cc7746dc57577645c5eb7a",
+      "size": 37061,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/bitboss.json",
+      "install": "templates/template_configs/bitboss.json",
+      "sha256": "1dd2ef3c9b1980a5ca6c48d272c6513c46bf8bd80028c24676774351ed4bc38a",
+      "size": 39572,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/bitcounter.json",
+      "install": "templates/template_configs/bitcounter.json",
+      "sha256": "5d4eab49f5398274b5943decce5798555535c52c58f4729f97fb52add384b2a3",
+      "size": 10478,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/chat.json",
+      "install": "templates/template_configs/chat.json",
+      "sha256": "39dfeda0b12fe5ae813c5a5ea69e8a6e4f38a7647bbf182ff759489282149bc5",
+      "size": 58019,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/counter.json",
+      "install": "templates/template_configs/counter.json",
+      "sha256": "9222e3e199eae10a5d365736b87c1fd864f6a33dbd284e8fbead829e332484b9",
+      "size": 16585,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/factorio.json",
+      "install": "templates/template_configs/factorio.json",
+      "sha256": "3bd35bbb63bef825ae8a94f626fe8f1916de5e1ee4212944374e6038576612af",
+      "size": 28295,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/ff7.json",
+      "install": "templates/template_configs/ff7.json",
+      "sha256": "9b3dc9a7f639b4a2a8c55c1971acc9c7b672fac96bc23008f966411767b7f149",
+      "size": 23097,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/giveaway.json",
+      "install": "templates/template_configs/giveaway.json",
+      "sha256": "0c15a58ade7e096b6209f028b9db8292dec450d41007cab82b51d02bfbd325ff",
+      "size": 32071,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/pausedalerts.json",
+      "install": "templates/template_configs/pausedalerts.json",
+      "sha256": "7ecdb0ec5703107ff8604adf3e5827f3d3db9bfe8d1bc0616194ea3f74ffecfe",
+      "size": 15507,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/roulette.json",
+      "install": "templates/template_configs/roulette.json",
+      "sha256": "3568fb28e15778140dabc1f10cad24fec7340bba3ae1b8721b26b8cabf0f35a8",
+      "size": 119676,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/source_controls.json",
+      "install": "templates/template_configs/source_controls.json",
+      "sha256": "d3180151bc3d2f6e64b06936cbec49cbf23f8acb0f36d4606dcce2f6abc57226",
+      "size": 1838,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/spotify.json",
+      "install": "templates/template_configs/spotify.json",
+      "sha256": "1022a51c972fe08230488b5716fb6544f4f6931c086a6c60eab5796697423181",
+      "size": 25011,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/subbar.json",
+      "install": "templates/template_configs/subbar.json",
+      "sha256": "42c8bfa2cc38a51b9229afa3a0a2d1ab03d62bfb3b0347090ac91b631bd24c70",
+      "size": 37997,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/title.json",
+      "install": "templates/template_configs/title.json",
+      "sha256": "7e10615c316d6eacdf6722de0e297c0876495c6de578bdfcfb1e1a1dcb112e8c",
+      "size": 20861,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/trophies.json",
+      "install": "templates/template_configs/trophies.json",
+      "sha256": "5142021d479792a7c5a6f0319cb493fc05a55ba5fd8eb45c9076ca8bb6b19df5",
+      "size": 37583,
+      "action": "merge"
+    },
+    {
+      "path": "templates/title.html",
+      "install": "templates/title.html",
+      "sha256": "9c1448315e6b6f39e1e6b442e67817fd2b536f3daf034c6fbc6ca6223119504d",
+      "size": 47806,
+      "action": "replace"
+    },
+    {
+      "path": "templates/trophies.html",
+      "install": "templates/trophies.html",
+      "sha256": "0b2c5c11293303ba9fa14acafd1f5cc6f8084ca1fb3c71e81c02ffaa6108da59",
+      "size": 43554,
+      "action": "replace"
+    },
+    {
+      "path": "themes/arctic_theme.json",
+      "install": "themes/arctic_theme.json",
+      "sha256": "3d2f3d41cda654f9d60cff3d26e4d3a7b411edd294e239e69389a207f4fd12e0",
+      "size": 1079,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/crimson_night_theme.json",
+      "install": "themes/crimson_night_theme.json",
+      "sha256": "c64955b0e6a74e8ec6ad389f575be8c0d56d260cf2e8f46876dea38d6749c45c",
+      "size": 1116,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/cyberpunk_theme.json",
+      "install": "themes/cyberpunk_theme.json",
+      "sha256": "d1edbc0098a197cb717c8aaf30f01712f92da42f664563ac9c9d654d55f18fbc",
+      "size": 1107,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/dark_theme.json",
+      "install": "themes/dark_theme.json",
+      "sha256": "5cb07de32bbac39e177b59b230bc411e28f5c9692887641cc848bb661b572897",
+      "size": 1099,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/emerald_dark_theme.json",
+      "install": "themes/emerald_dark_theme.json",
+      "sha256": "d657f9b0a5b2c4db407598e179426317f4b62f8cfbcfb30d704f1df62119e46a",
+      "size": 1116,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/forest_glade_theme.json",
+      "install": "themes/forest_glade_theme.json",
+      "sha256": "2f8cc36de8c209d47dc527e1fa3b3b2be67b16c469b7724fb98e16d51bbd26cf",
+      "size": 1087,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/lavender_mist_theme.json",
+      "install": "themes/lavender_mist_theme.json",
+      "sha256": "acc979a23fd52aec1bd9a1103465326a9298f161feba03e8048f222406190142",
+      "size": 1094,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/light_theme.json",
+      "install": "themes/light_theme.json",
+      "sha256": "bed5c3f68668138f2e80f19797971903d59c5ca20124b7cd1bc0f93dd2a23e32",
+      "size": 1078,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/monokai_theme.json",
+      "install": "themes/monokai_theme.json",
+      "sha256": "ac02aeb6ea7058d03cf332f76a295b1b8e73ba339cc1a4f2146a4a74ff46f108",
+      "size": 1117,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/nord_dark_theme.json",
+      "install": "themes/nord_dark_theme.json",
+      "sha256": "9d716004e3a93e34a731b9d1a03d5b88c1e3a3eacf6e419d118dc78ebfa73566",
+      "size": 1124,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/ocean_breeze_theme.json",
+      "install": "themes/ocean_breeze_theme.json",
+      "sha256": "5601d89f5139418f6a3e2b3edeab809a14f7fd4ca94e72df0af1a21e1904d894",
+      "size": 1091,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/ocean_depths_theme.json",
+      "install": "themes/ocean_depths_theme.json",
+      "sha256": "5bc49dc6020953ab0b0cfe14079f8ad2d21338a9f0b0090fc742e76127c24fd7",
+      "size": 1110,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/rose_garden_theme.json",
+      "install": "themes/rose_garden_theme.json",
+      "sha256": "34aec2861247d6171990f90f3177aadb9feffe9d2823da63641ae453b7a9c637",
+      "size": 1085,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/sunset_dark_theme.json",
+      "install": "themes/sunset_dark_theme.json",
+      "sha256": "509e8c3560dae22933f999fb782ca21db9fd82f279df780a7147060a3e66eedb",
+      "size": 1114,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/sunset_glow_theme.json",
+      "install": "themes/sunset_glow_theme.json",
+      "sha256": "7ea3b3c6dd593a84c321bf42e99737db2509e81bacbfb9037e218586bba0f60d",
+      "size": 1089,
+      "action": "if-missing"
+    },
+    {
+      "path": "packaged/windows/Mycelian.exe",
+      "install": "Mycelian.exe",
+      "sha256": "d286cb050061d95a73553fb871777730d8e8c7764e0569fba90d44ccf657ebd5",
+      "size": 75105978,
+      "action": "replace",
+      "os": "windows"
+    }
+  ]
+}
