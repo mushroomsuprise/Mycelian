@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) 2024-2026 Mycelian
 # SPDX-License-Identifier: MIT
-"""Tests for updater installer launch vs shutdown child reaping."""
+"""Tests for the update helper launch vs shutdown child reaping."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from modules import shutdown, updater  # noqa: E402
+from modules import shutdown, update_sync, updater  # noqa: E402
 
 
 SLEEP_SNIPPET = "import time; time.sleep(60)"
@@ -87,26 +87,24 @@ class _FakeProc:
 class UpdaterInstallerTests(unittest.TestCase):
     def setUp(self) -> None:
         shutdown._protected_child_pids.clear()
-        updater._installer_helper_proc = None
 
     def tearDown(self) -> None:
         shutdown._protected_child_pids.clear()
-        updater._installer_helper_proc = None
 
-    def test_windows_installer_creationflags_include_breakaway(self) -> None:
-        flags = updater._windows_installer_creationflags()
-        self.assertTrue(flags & updater._CREATE_NEW_PROCESS_GROUP)
-        self.assertTrue(flags & updater._DETACHED_PROCESS)
-        self.assertTrue(flags & updater._CREATE_BREAKAWAY_FROM_JOB)
-        without = updater._windows_installer_creationflags(breakaway=False)
-        self.assertEqual(without & updater._CREATE_BREAKAWAY_FROM_JOB, 0)
-        self.assertTrue(without & updater._DETACHED_PROCESS)
+    def test_windows_helper_creationflags_include_breakaway(self) -> None:
+        flags = update_sync._windows_creationflags(breakaway=True)
+        self.assertTrue(flags & update_sync._CREATE_NEW_PROCESS_GROUP)
+        self.assertTrue(flags & update_sync._DETACHED_PROCESS)
+        self.assertTrue(flags & update_sync._CREATE_BREAKAWAY_FROM_JOB)
+        self.assertTrue(flags & update_sync._CREATE_NO_WINDOW)
+        without = update_sync._windows_creationflags(breakaway=False)
+        self.assertEqual(without & update_sync._CREATE_BREAKAWAY_FROM_JOB, 0)
+        self.assertTrue(without & update_sync._DETACHED_PROCESS)
 
     def test_windows_helper_passes_breakaway_flags(self) -> None:
         captured: dict = {}
         fake = mock.Mock()
         fake.pid = 99
-        fake.poll.return_value = None
 
         def fake_popen(*args, **kwargs):
             captured["args"] = args
@@ -114,17 +112,18 @@ class UpdaterInstallerTests(unittest.TestCase):
             return fake
 
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(updater.subprocess, "Popen", fake_popen):
-                with mock.patch.object(tempfile, "gettempdir", lambda: tmp):
-                    proc = updater._run_installer_windows_detached(
-                        str(Path(tmp) / "Setup.exe")
+            log_path = Path(tmp) / "launch.log"
+            with mock.patch.object(update_sync.sys, "platform", "win32"):
+                with mock.patch.object(update_sync.subprocess, "Popen", fake_popen):
+                    proc = update_sync._popen_hidden(
+                        ["powershell.exe", "-File", "apply.ps1"], log_path
                     )
         self.assertIs(proc, fake)
         flags = captured["kwargs"]["creationflags"]
-        self.assertTrue(flags & updater._DETACHED_PROCESS)
-        self.assertTrue(flags & updater._CREATE_NEW_PROCESS_GROUP)
-        self.assertTrue(flags & updater._CREATE_BREAKAWAY_FROM_JOB)
-        self.assertEqual(captured["args"][0][0], "wscript.exe")
+        self.assertTrue(flags & update_sync._DETACHED_PROCESS)
+        self.assertTrue(flags & update_sync._CREATE_NEW_PROCESS_GROUP)
+        self.assertTrue(flags & update_sync._CREATE_BREAKAWAY_FROM_JOB)
+        self.assertEqual(captured["args"][0][0], "powershell.exe")
         env = captured["kwargs"]["env"]
         for var in ("_MEIPASS2", "PYTHONHOME", "PYTHONPATH", "_PYI_BOOTSTRAP"):
             self.assertNotIn(var, env)
@@ -133,7 +132,6 @@ class UpdaterInstallerTests(unittest.TestCase):
         flags_seen: list[int] = []
         fake = mock.Mock()
         fake.pid = 77
-        fake.poll.return_value = None
 
         def fake_popen(*args, **kwargs):
             flags_seen.append(kwargs.get("creationflags", 0))
@@ -142,66 +140,49 @@ class UpdaterInstallerTests(unittest.TestCase):
             return fake
 
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(updater.subprocess, "Popen", fake_popen):
-                with mock.patch.object(tempfile, "gettempdir", lambda: tmp):
-                    proc = updater._run_installer_windows_detached(
-                        str(Path(tmp) / "Setup.exe")
+            log_path = Path(tmp) / "launch.log"
+            with mock.patch.object(update_sync.sys, "platform", "win32"):
+                with mock.patch.object(update_sync.subprocess, "Popen", fake_popen):
+                    proc = update_sync._popen_hidden(
+                        ["powershell.exe", "-File", "apply.ps1"], log_path
                     )
         self.assertIs(proc, fake)
         self.assertEqual(len(flags_seen), 2)
-        self.assertTrue(flags_seen[0] & updater._CREATE_BREAKAWAY_FROM_JOB)
-        self.assertEqual(flags_seen[1] & updater._CREATE_BREAKAWAY_FROM_JOB, 0)
-        self.assertTrue(flags_seen[1] & updater._DETACHED_PROCESS)
+        self.assertTrue(flags_seen[0] & update_sync._CREATE_BREAKAWAY_FROM_JOB)
+        self.assertEqual(flags_seen[1] & update_sync._CREATE_BREAKAWAY_FROM_JOB, 0)
+        self.assertTrue(flags_seen[1] & update_sync._DETACHED_PROCESS)
 
-    def test_run_installer_and_exit_protects_helper_then_exits(self) -> None:
-        fake = mock.Mock()
-        fake.pid = 4242
-        fake.poll.return_value = None
+    def test_finish_update_protects_helper_then_exits(self) -> None:
         exits: list[bool] = []
-        patches = [
-            mock.patch.object(updater, name, lambda path, _fake=fake: _fake)
-            for name in (
-                "_run_installer_windows_detached",
-                "_run_installer_macos_detached",
-                "_run_installer_linux_detached",
-            )
-        ]
-        patches.append(
-            mock.patch.object(
-                updater, "_force_application_exit", lambda: exits.append(True)
-            )
-        )
-        with patches[0], patches[1], patches[2], patches[3]:
-            updater.run_installer_and_exit("/tmp/Setup.exe")
+        with mock.patch.object(
+            updater, "_force_application_exit", lambda: exits.append(True)
+        ):
+            updater.finish_update_and_exit(4242)
 
         self.assertIn(4242, shutdown._protected_child_pids)
         self.assertEqual(exits, [True])
-        self.assertIs(updater._installer_helper_proc, fake)
 
-    def test_run_installer_and_exit_does_not_exit_if_helper_died(self) -> None:
-        fake = mock.Mock()
-        fake.pid = 9
-        fake.poll.return_value = 1
-        fake.returncode = 1
+    def test_finish_update_does_not_exit_without_a_helper(self) -> None:
         exits: list[bool] = []
-        patches = [
-            mock.patch.object(updater, name, lambda path, _fake=fake: _fake)
-            for name in (
-                "_run_installer_windows_detached",
-                "_run_installer_macos_detached",
-                "_run_installer_linux_detached",
-            )
-        ]
-        patches.append(
-            mock.patch.object(
-                updater, "_force_application_exit", lambda: exits.append(True)
-            )
-        )
-        with patches[0], patches[1], patches[2], patches[3]:
-            updater.run_installer_and_exit("/tmp/Setup.exe")
+        with mock.patch.object(
+            updater, "_force_application_exit", lambda: exits.append(True)
+        ):
+            with self.assertRaises(update_sync.UpdateSyncError):
+                updater.finish_update_and_exit(0)
 
         self.assertEqual(exits, [])
-        self.assertNotIn(9, shutdown._protected_child_pids)
+        self.assertNotIn(0, shutdown._protected_child_pids)
+
+    def test_launch_helper_refuses_a_dead_pid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            staging = Path(tmp)
+            script = staging / "apply.ps1"
+            script.write_text("noop", encoding="utf-8")
+            with mock.patch.object(update_sync, "_write_helper_script", lambda _staging: script):
+                with mock.patch.object(update_sync, "_popen_hidden", lambda *args, **kwargs: mock.Mock(pid=1)):
+                    with mock.patch.object(update_sync, "_wait_for_helper_pid", lambda *args, **kwargs: 0):
+                        with self.assertRaises(update_sync.UpdateSyncError):
+                            update_sync.launch_apply_helper(staging, elevate=False)
 
     def test_reap_skips_protected_child_and_kills_unprotected(self) -> None:
         protected = _FakeProc(100, child_pids=[101])

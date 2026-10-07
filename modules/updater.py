@@ -27,27 +27,17 @@ import asyncio
 import copy
 import logging
 import os
-import subprocess
-import sys
-import tempfile
 import threading
 import time
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import aiohttp
 
+from . import update_sync
 from .notification_engine import notify
 from .ui_timer import app_schedule
 from packaging.version import \
     parse as parse_version  # For robust version comparison
-
-# Platform-specific imports
-if sys.platform != "win32":
-    # Unix-like systems have setsid
-    import os
-    setsid_available = hasattr(os, 'setsid')
-else:
-    setsid_available = False
 
 logger = logging.getLogger(__name__)
 
@@ -60,14 +50,6 @@ GITHUB_API_BASE = "https://api.github.com"
 _GITHUB_RELEASE_CACHE_TTL_SEC = 60.0
 _github_release_cache_lock = threading.Lock()
 _github_release_cache: Optional[Tuple[float, Optional[Dict[str, Any]]]] = None
-
-# Keep a reference so the installer helper is not GC'd before we exit.
-_installer_helper_proc: Optional[subprocess.Popen] = None
-
-# Windows CreateProcess flags (numeric fallbacks for non-Windows unit tests).
-_CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
-_DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
-_CREATE_BREAKAWAY_FROM_JOB = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000)
 
 # Ensure 'packaging' and 'aiohttp' libraries are installed: pip install packaging aiohttp
 
@@ -84,60 +66,13 @@ def _compare_versions(current_v_str: str, new_v_str: str) -> bool:
         logger.error(f"Error comparing versions '{current_v_str}' and '{new_v_str}': {e}", exc_info=True)
         return False
 
-def _select_os_appropriate_asset(assets: list) -> str:
-    """
-    Select the most appropriate asset for the current operating system.
-    
-    Args:
-        assets (list): List of GitHub release assets
-        
-    Returns:
-        str: Download URL for the most appropriate asset, or empty string if none found
-    """
-    try:
-        current_os = sys.platform.lower()
-        
-        # Define OS-specific file extensions in priority order
-        if current_os == "win32":
-            # Windows: prefer .exe, then .msi, then .zip
-            preferred_extensions = [".exe", ".msi", ".zip"]
-        elif current_os == "darwin":
-            # macOS: prefer .dmg, then .pkg, then .zip
-            preferred_extensions = [".dmg", ".pkg", ".zip"]
-        else:
-            # Linux and others: prefer .deb, .rpm, .AppImage, then .tar.gz, then .zip
-            preferred_extensions = [".deb", ".rpm", ".appimage", ".tar.gz", ".zip"]
-        
-        # Try to find assets matching the preferred extensions in order
-        for extension in preferred_extensions:
-            for asset in assets:
-                asset_name = asset.get("name", "").lower()
-                if asset_name.endswith(extension):
-                    download_url = asset.get("browser_download_url", "")
-                    if download_url:
-                        logger.info(f"Selected OS-appropriate asset for {current_os}: {asset.get('name')} ({extension})")
-                        return download_url
-
-        # Do not fall back across OS families (e.g. offering a Windows .exe on Linux).
-        logger.warning(
-            "No appropriate installer asset found for OS: %s "
-            "(looked for %s)",
-            current_os,
-            ", ".join(preferred_extensions),
-        )
-        return ""
-        
-    except Exception as e:
-        logger.error(f"Error selecting OS-appropriate asset: {e}", exc_info=True)
-        return ""
-
 async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
     """
     Fetches the latest update information from GitHub releases API asynchronously.
     
     Returns:
-        dict: A dictionary with 'latest_version', 'download_url', 'release_notes',
-              or None if data is not found, invalid, or an error occurs.
+        dict: A dictionary with 'latest_version', 'tag_name', 'release_notes',
+              and 'release_url', or None if data is not found, invalid, or an error occurs.
     """
     global _github_release_cache
 
@@ -172,26 +107,14 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
                     # Extract version from tag_name (remove 'v' prefix if present)
                     tag_name = data.get("tag_name", "")
                     latest_version = tag_name.lstrip("v")
-                    
-                    # Get download URL from assets based on current OS
-                    download_url = ""
-                    assets = data.get("assets", [])
-                    if assets:
-                        download_url = _select_os_appropriate_asset(assets)
-                    
-                    # If no assets, use the release page URL
-                    if not download_url:
-                        download_url = data.get("html_url", "")
-                    
-                    # Get release notes and release page URL
                     release_notes = data.get("body", "")
                     release_page_url = data.get("html_url", "")
-                    
+
                     if latest_version:
                         logger.info(f"Successfully fetched update info from GitHub: version {latest_version}")
                         result = {
                             "latest_version": latest_version,
-                            "download_url": download_url,
+                            "tag_name": tag_name,
                             "release_notes": release_notes,
                             "release_url": release_page_url,
                         }
@@ -237,8 +160,8 @@ async def check_for_updates(current_app_version: str, *, force_refresh: bool = F
         current_app_version (str): The current version of the running application.
 
     Returns:
-        dict: A dictionary containing 'latest_version', 'download_url', 
-              and 'release_notes' if an update is available. Otherwise, returns None.
+        dict: Release info when a newer version is available, otherwise None.
+              File sync uses ``tag_name`` and does not download an installer.
     """
     logger.info(f"Checking for updates on GitHub. Current application version: {current_app_version}")
     update_info = await fetch_latest_update_info_from_github(force_refresh=force_refresh)
@@ -255,329 +178,15 @@ async def check_for_updates(current_app_version: str, *, force_refresh: bool = F
 
     return None
 
-async def download_update(download_url: str, progress_callback=None):
-    """
-    Download the update file from the given URL.
-    
-    Args:
-        download_url (str): URL to download the update from
-        progress_callback (callable): Optional callback function to report download progress
-        
-    Returns:
-        str: Path to the downloaded file, or None if download failed
-    """
-    try:
-        logger.info(f"Starting download from: {download_url}")
-        
-        # Create a temporary directory for the download
-        temp_dir = tempfile.mkdtemp(prefix="mycelian_update_")
-        
-        # Extract filename from URL or use an OS-appropriate default name
-        filename = download_url.split("/")[-1]
-        if not filename or "." not in filename:
-            # Determine extension based on platform
-            current_os = sys.platform.lower()
-            if current_os == "win32":
-                filename = "mycelian_update.exe"
-            elif current_os == "darwin":
-                filename = "mycelian_update.dmg"
-            else:
-                # Linux/Unix - prefer .deb for wider compatibility
-                filename = "mycelian_update.deb"
-        
-        file_path = os.path.join(temp_dir, filename)
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(download_url) as response:
-                if response.status == 200:
-                    total_size = int(response.headers.get('content-length', 0))
-                    downloaded_size = 0
-                    
-                    with open(file_path, 'wb') as file:
-                        async for chunk in response.content.iter_chunked(8192):
-                            file.write(chunk)
-                            downloaded_size += len(chunk)
-                            
-                            # Report progress if callback provided (0..1 for compatibility)
-                            if progress_callback and total_size > 0:
-                                progress_fraction = downloaded_size / total_size
-                                try:
-                                    progress_callback(progress_fraction)
-                                except TypeError:
-                                    # Backward compatibility if callback expects percent
-                                    progress_callback(progress_fraction * 100.0)
-                    
-                    logger.info(f"Download completed: {file_path}")
-                    return file_path
-                else:
-                    logger.error(f"Download failed with status {response.status}")
-                    return None
-                    
-    except Exception as e:
-        logger.error(f"Error downloading update: {e}", exc_info=True)
-        return None
+def finish_update_and_exit(helper_pid: int) -> None:
+    """Keep the apply helper alive, then exit so it can replace files and relaunch."""
+    if not isinstance(helper_pid, int) or helper_pid <= 0:
+        raise update_sync.UpdateSyncError("The update helper did not start.")
+    from .shutdown import protect_child_process_trees
 
-def _sanitized_installer_env() -> dict:
-    sanitized_env = os.environ.copy()
-    for var_name in ["_MEIPASS2", "PYTHONHOME", "PYTHONPATH", "_PYI_BOOTSTRAP"]:
-        sanitized_env.pop(var_name, None)
-    return sanitized_env
+    protect_child_process_trees([helper_pid])
+    _force_application_exit()
 
-
-def _windows_installer_creationflags(*, breakaway: bool = True) -> int:
-    flags = _CREATE_NEW_PROCESS_GROUP | _DETACHED_PROCESS
-    if breakaway:
-        flags |= _CREATE_BREAKAWAY_FROM_JOB
-    return flags
-
-
-def _installer_helper_running(proc: Optional[subprocess.Popen]) -> bool:
-    if proc is None:
-        return False
-    pid = getattr(proc, "pid", None)
-    if not isinstance(pid, int) or pid <= 0:
-        return False
-    poll = getattr(proc, "poll", None)
-    if callable(poll):
-        try:
-            if poll() is not None:
-                return False
-        except Exception:
-            return False
-    return True
-
-
-def run_installer_and_exit(installer_path: str):
-    """
-    Run the installer and exit the current application.
-    This function creates a detached installer process and schedules app termination.
-    
-    Args:
-        installer_path (str): Path to the installer file
-    """
-    global _installer_helper_proc
-    try:
-        logger.info(f"Running installer: {installer_path}")
-        
-        if sys.platform == "win32":
-            proc = _run_installer_windows_detached(installer_path)
-        elif sys.platform == "darwin":
-            proc = _run_installer_macos_detached(installer_path)
-        else:
-            proc = _run_installer_linux_detached(installer_path)
-
-        if not _installer_helper_running(proc):
-            logger.error(
-                "Installer helper failed to start (pid=%s returncode=%s); "
-                "not exiting so the current app can keep running",
-                getattr(proc, "pid", None),
-                getattr(proc, "returncode", None),
-            )
-            return
-
-        from .shutdown import protect_child_process_trees
-
-        _installer_helper_proc = proc
-        protect_child_process_trees([proc.pid])
-        logger.info(
-            "Installer helper started pid=%s. Exiting application.", proc.pid
-        )
-
-        _force_application_exit()
-        
-    except Exception as e:
-        logger.error(f"Error running installer: {e}", exc_info=True)
-        raise
-
-def _run_installer_windows_detached(installer_path: str) -> subprocess.Popen:
-    """
-    Run installer on Windows with proper process detachment.
-    Uses VBScript to avoid showing any console windows and properly wait for parent process exit.
-    """
-    import tempfile
-    import time
-
-    # Get current process ID
-    current_pid = os.getpid()
-    
-    # Create a VBScript that waits for parent process to exit
-    vbscript_content = f'''
-Dim WshShell, oExec, parentPID, installerPath
-Set WshShell = CreateObject("WScript.Shell")
-parentPID = {current_pid}
-installerPath = "{installer_path.replace('"', '""')}"
-
-' Wait for parent process to exit
-Do While ProcessExists(parentPID)
-    WScript.Sleep 1000
-Loop
-
-' Additional delay for cleanup
-WScript.Sleep 2000
-
-' Run the installer
-WshShell.Run """" & installerPath & """", 1, False
-
-' Clean up this script file
-Set fso = CreateObject("Scripting.FileSystemObject")
-On Error Resume Next
-fso.DeleteFile WScript.ScriptFullName
-On Error GoTo 0
-
-Function ProcessExists(pid)
-    Dim objWMIService, colProcesses, objProcess
-    Set objWMIService = GetObject("winmgmts:\\\\localhost\\root\\cimv2")
-    Set colProcesses = objWMIService.ExecQuery("SELECT * FROM Win32_Process WHERE ProcessId = " & pid)
-    ProcessExists = (colProcesses.Count > 0)
-End Function
-'''
-    
-    # Write VBScript to temp file
-    temp_dir = tempfile.gettempdir()
-    vbs_path = os.path.join(temp_dir, f"mycelian_updater_{int(time.time())}.vbs")
-    
-    with open(vbs_path, 'w') as f:
-        f.write(vbscript_content)
-    
-    # Launch VBScript with wscript.exe (no console window)
-    # IMPORTANT: When a PyInstaller-packed app launches another PyInstaller-packed
-    # executable (directly or indirectly through the installer), the special
-    # environment variable `_MEIPASS2` may leak to the child process. This causes
-    # the newly launched app to look for Python DLLs in the parent's temp
-    # extraction directory, which no longer exists, resulting in
-    # "Failed to load Python DLL ... _MEIxxxx/python3xx.dll" errors.
-    # To prevent this, launch the helper (wscript.exe) with a sanitized
-    # environment that omits PyInstaller-related variables.
-    sanitized_env = _sanitized_installer_env()
-    popen_kwargs = dict(
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        env=sanitized_env,
-    )
-    try:
-        proc = subprocess.Popen(
-            ["wscript.exe", vbs_path],
-            creationflags=_windows_installer_creationflags(breakaway=True),
-            **popen_kwargs,
-        )
-    except OSError:
-        logger.debug(
-            "CREATE_BREAKAWAY_FROM_JOB rejected; retrying installer helper without it"
-        )
-        proc = subprocess.Popen(
-            ["wscript.exe", vbs_path],
-            creationflags=_windows_installer_creationflags(breakaway=False),
-            **popen_kwargs,
-        )
-    logger.info("Windows installer helper started pid=%s", proc.pid)
-    return proc
-
-def _popen_unix_installer_helper(script_path: str) -> subprocess.Popen:
-    sanitized_env = _sanitized_installer_env()
-    popen_kwargs: Dict[str, Any] = dict(
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=sanitized_env,
-    )
-    if setsid_available:
-        popen_kwargs["preexec_fn"] = os.setsid
-    proc = subprocess.Popen(["nohup", script_path], **popen_kwargs)
-    logger.info("Unix installer helper started pid=%s", proc.pid)
-    return proc
-
-def _run_installer_macos_detached(installer_path: str) -> subprocess.Popen:
-    """
-    Run installer on macOS with proper process detachment.
-    """
-    current_pid = os.getpid()
-    
-    # Create a shell script that waits for the parent process to exit
-    script_content = f"""#!/bin/bash
-# Wait for parent process to exit
-while kill -0 {current_pid} 2>/dev/null; do
-    sleep 1
-done
-
-# Additional delay for cleanup
-sleep 2
-
-# Open the installer
-open "{installer_path}"
-
-# Remove this script
-rm "$0"
-"""
-    
-    import tempfile
-    import time
-
-    # Write script to temp file
-    temp_dir = tempfile.gettempdir()
-    script_path = os.path.join(temp_dir, f"mycelian_updater_{int(time.time())}.sh")
-    
-    with open(script_path, 'w') as f:
-        f.write(script_content)
-    
-    # Make script executable
-    os.chmod(script_path, 0o755)
-    
-    return _popen_unix_installer_helper(script_path)
-
-def _run_installer_linux_detached(installer_path: str) -> subprocess.Popen:
-    """
-    Run installer on Linux with proper process detachment.
-    """
-    current_pid = os.getpid()
-    
-    # Create a shell script that waits for the parent process to exit
-    script_content = f"""#!/bin/bash
-# Wait for parent process to exit
-while kill -0 {current_pid} 2>/dev/null; do
-    sleep 1
-done
-
-# Additional delay for cleanup
-sleep 2
-
-# Make installer executable if needed
-chmod +x "{installer_path}"
-
-# Try different ways to run the installer
-if [[ "{installer_path}" == *.deb ]]; then
-    # Debian package
-    sudo dpkg -i "{installer_path}" 2>/dev/null || xdg-open "{installer_path}"
-elif [[ "{installer_path}" == *.rpm ]]; then
-    # RPM package
-    sudo rpm -i "{installer_path}" 2>/dev/null || xdg-open "{installer_path}"
-elif [[ "{installer_path}" == *.appimage ]]; then
-    # AppImage
-    "{installer_path}"
-else
-    # Try to run directly or open with default application
-    "{installer_path}" 2>/dev/null || xdg-open "{installer_path}"
-fi
-
-# Remove this script
-rm "$0"
-"""
-    
-    import tempfile
-    import time
-
-    # Write script to temp file
-    temp_dir = tempfile.gettempdir()
-    script_path = os.path.join(temp_dir, f"mycelian_updater_{int(time.time())}.sh")
-    
-    with open(script_path, 'w') as f:
-        f.write(script_content)
-    
-    # Make script executable
-    os.chmod(script_path, 0o755)
-    
-    return _popen_unix_installer_helper(script_path)
 
 def _force_application_exit():
     """
@@ -678,157 +287,6 @@ def _format_speed(bytes_per_second: float) -> str:
         return f"{value:.2f} {units[index]}"
     except Exception:
         return "N/A"
-
-
-def is_valid_installer_url(url: str) -> bool:
-    """
-    Check if the URL appears to point to a valid installer file before downloading.
-    Uses OS-specific validation for better accuracy.
-    """
-    try:
-        if not url:
-            return False
-
-        # Reject GitHub tag/release page URLs (not asset downloads)
-        if "github.com" in url and "/releases/tag/" in url:
-            return False
-
-        current_os = sys.platform.lower()
-        if current_os == "win32":
-            valid_extensions = [".exe", ".msi", ".zip"]
-        elif current_os == "darwin":
-            valid_extensions = [".dmg", ".pkg", ".zip"]
-        else:
-            valid_extensions = [".deb", ".rpm", ".appimage", ".tar.gz", ".zip"]
-
-        url_lower = url.lower()
-        if any(url_lower.endswith(ext) for ext in valid_extensions):
-            return True
-
-        return False
-    except Exception as e:
-        logger.error(f"Error validating installer URL: {e}")
-        return False
-
-
-def cleanup_temp_files(temp_file_paths: list) -> None:
-    try:
-        import shutil
-
-        for file_path in temp_file_paths:
-            if not file_path:
-                continue
-            try:
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-                    logger.debug(f"Cleaned up temp file: {file_path}")
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path, ignore_errors=True)
-                    logger.debug(f"Cleaned up temp directory: {file_path}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up temp file {file_path}: {e}")
-    except Exception as e:
-        logger.error(f"Error during temp file cleanup: {e}")
-
-
-def validate_installer_file(installer_path: str) -> bool:
-    try:
-        if not installer_path or not os.path.exists(installer_path):
-            return False
-        installer_lower = installer_path.lower()
-        current_os = sys.platform.lower()
-        if current_os == "win32":
-            valid_extensions = (".exe", ".msi")
-        elif current_os == "darwin":
-            valid_extensions = (".dmg", ".pkg")
-        else:
-            valid_extensions = (".appimage", ".deb")
-        if not installer_lower.endswith(valid_extensions):
-            try:
-                with open(installer_path, "r", encoding="utf-8") as f:
-                    content = f.read(100)
-                    if any(tag in content.lower() for tag in ["<html", "<!doctype", "<title"]):
-                        return False
-            except Exception:
-                pass
-            return False
-        return True
-    except Exception as e:
-        logger.error(f"Error validating installer file: {e}")
-        return False
-
-
-async def download_update_with_metrics(
-    download_url: str,
-    progress_callback: Optional[Callable[[float, float], None]] = None,
-    cancel_event: Optional[threading.Event] = None,
-) -> Optional[str]:
-    """
-    Download the update and report progress fraction (0..1) and instantaneous speed (bytes/sec).
-    Returns the downloaded file path or None.
-    """
-    try:
-        logger.info(f"Starting download (metrics) from: {download_url}")
-        temp_dir = tempfile.mkdtemp(prefix="mycelian_update_")
-        filename = download_url.split("/")[-1]
-        if not filename or "." not in filename:
-            current_os = sys.platform.lower()
-            if current_os == "win32":
-                filename = "mycelian_update.exe"
-            elif current_os == "darwin":
-                filename = "mycelian_update.dmg"
-            else:
-                filename = "mycelian_update.deb"
-        file_path = os.path.join(temp_dir, filename)
-        timeout = aiohttp.ClientTimeout(connect=30, sock_read=60)
-
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(download_url) as response:
-                if response.status != 200:
-                    logger.error(f"Download failed with status {response.status}")
-                    return None
-
-                total_size = int(response.headers.get("content-length", 0))
-                downloaded_size = 0
-                download_start = time.perf_counter()
-                window_start = download_start
-                window_bytes = 0
-
-                with open(file_path, "wb") as file:
-                    async for chunk in response.content.iter_chunked(8192):
-                        if cancel_event is not None and cancel_event.is_set():
-                            logger.info("Update download cancelled")
-                            return None
-                        file.write(chunk)
-                        chunk_len = len(chunk)
-                        downloaded_size += chunk_len
-                        window_bytes += chunk_len
-
-                        if progress_callback and total_size > 0:
-                            now = time.perf_counter()
-                            window_elapsed = now - window_start
-                            speed = 0.0
-                            
-                            # Calculate instantaneous speed over a reasonable window
-                            if window_elapsed >= 0.5:  # update speed every 500ms for more stable readings
-                                speed = window_bytes / window_elapsed
-                                window_start = now
-                                window_bytes = 0
-                            elif downloaded_size > 0:
-                                # For the first few chunks, use overall average speed
-                                total_elapsed = now - download_start
-                                if total_elapsed > 0:
-                                    speed = downloaded_size / total_elapsed
-                            
-                            fraction = downloaded_size / total_size
-                            # Always call with (fraction, speed)
-                            progress_callback(fraction, speed)
-
-        logger.info(f"Download (metrics) completed: {file_path}")
-        return file_path
-    except Exception as e:
-        logger.error(f"Error downloading update with metrics: {e}", exc_info=True)
-        return None
 
 
 # -----------------------------
@@ -1117,7 +575,7 @@ class UpdateManager:
         from .system_notify import notify_async
 
         notify_async(
-            f"Mycelian {version} is available. Open Mycelian to install it.",
+            f"Mycelian {version} is available. Open Mycelian to update.",
             title="Update available",
         )
         try:
@@ -1180,7 +638,9 @@ class UpdateManager:
                 return
 
             version = update_info.get("latest_version", "?")
-            download_url = update_info.get("download_url", "")
+            tag_name = str(update_info.get("tag_name") or "").strip()
+            if not tag_name and version and version != "?":
+                tag_name = version if str(version).startswith("v") else f"v{version}"
             release_notes = update_info.get("release_notes", "")
             release_url = update_info.get("release_url", "")
 
@@ -1207,7 +667,7 @@ class UpdateManager:
 
                     progress_area = ui.column().classes("w-full gap-3").style("display: none;")
                     with progress_area:
-                        progress_label = ui.label("Preparing download...").classes("text-sm").style("color: #e2e8f0;")
+                        progress_label = ui.label("Preparing update...").classes("text-sm").style("color: #e2e8f0;")
                         progress_bar = ui.linear_progress(value=0, show_value=False).classes("w-full").style("height: 8px;")
                         speed_label = ui.label("").classes("text-xs").style("color: #94a3b8;")
 
@@ -1223,13 +683,19 @@ class UpdateManager:
                             self._dialog_open = False
                             update_dialog.close()
 
+                    def on_close():
+                        self._dialog_open = False
+                        update_dialog.close()
+
                     def on_accept():
                         try:
-                            # Validate URL first
-                            if not is_valid_installer_url(download_url):
-                                notify("No valid installer asset found for this release yet.", type="warning")
+                            if not update_sync.can_apply_updates():
+                                notify(
+                                    "This checkout is running from source. "
+                                    "Install a packaged build to apply updates.",
+                                    type="warning",
+                                )
                                 return
-                            # Switch UI to progress mode
                             content_area.style("display: none;")
                             progress_area.style("display: block;")
                             try:
@@ -1239,17 +705,18 @@ class UpdateManager:
                             except Exception:
                                 pass
 
-                            self._start_download_flow(
-                                download_url,
+                            self._start_sync_flow(
+                                tag_name,
                                 title_label,
                                 progress_label,
                                 progress_bar,
                                 speed_label,
-                                update_dialog,
+                                cancel_btn,
+                                close_btn,
                                 cancel_event=cancel_event,
                             )
                         except Exception as e:
-                            logger.error(f"Error starting download flow: {e}", exc_info=True)
+                            logger.error(f"Error starting update: {e}", exc_info=True)
 
                     with button_row:
                         decline_btn = ui.button("Decline", on_click=on_decline).props("flat").classes("secondary-text").style("border: 1px solid rgba(255,255,255,0.2);")
@@ -1258,8 +725,14 @@ class UpdateManager:
                             "Cancel",
                             on_click=lambda: (
                                 cancel_event.set(),
-                                progress_label.set_text("Cancelling download..."),
+                                progress_label.set_text("Cancelling update..."),
                             ),
+                        ).props("flat").classes("secondary-text").style(
+                            "border: 1px solid rgba(255,255,255,0.2); display: none;"
+                        )
+                        close_btn = ui.button(
+                            "Close",
+                            on_click=on_close,
                         ).props("flat").classes("secondary-text").style(
                             "border: 1px solid rgba(255,255,255,0.2); display: none;"
                         )
@@ -1269,62 +742,53 @@ class UpdateManager:
             self._dialog_open = False
             logger.error(f"UpdateManager._show_update_modal error: {e}", exc_info=True)
 
-    def _start_download_flow(
+    def _start_sync_flow(
         self,
-        download_url: str,
+        tag_name: str,
         title_label,
         progress_label,
         progress_bar,
         speed_label,
-        dialog,
+        cancel_btn,
+        close_btn,
         cancel_event: Optional[threading.Event] = None,
     ) -> None:
         try:
-            import threading
-
-            from nicegui import ui
-
-            temp_files: list[str] = []
             download_state: Dict[str, Any] = {
-                "status": "downloading",
+                "status": "working",
+                "phase": "listing",
                 "progress": 0.0,
                 "speed_bps": 0.0,
-                "installer_path": None,
+                "label": "Reading the release file list...",
                 "error": None,
+                "helper_pid": None,
                 "done": False,
             }
 
-            async def _download():
-                def progress_cb(fraction: float, speed_bps: float) -> None:
-                    download_state["progress"] = max(0.0, min(1.0, float(fraction)))
-                    download_state["speed_bps"] = float(speed_bps or 0.0)
-
-                return await download_update_with_metrics(
-                    download_url, progress_cb, cancel_event=cancel_event
-                )
-
             def worker():
                 try:
-                    path = asyncio.run(_download())
-                    if path:
-                        temp_files.append(path)
-                        temp_dir = os.path.dirname(path)
-                        if temp_dir not in temp_files:
-                            temp_files.append(temp_dir)
-                        if validate_installer_file(path):
-                            download_state["installer_path"] = path
-                            download_state["status"] = "valid"
-                        else:
-                            download_state["status"] = "failed"
-                            download_state["error"] = f"Downloaded file '{os.path.basename(path)}' is not a valid installer"
+                    helper_pid = asyncio.run(
+                        update_sync.sync_release(
+                            tag=tag_name,
+                            owner=GITHUB_OWNER,
+                            repo=GITHUB_REPO,
+                            state=download_state,
+                            cancel_event=cancel_event,
+                        )
+                    )
+                    if helper_pid:
+                        download_state["helper_pid"] = helper_pid
+                        download_state["status"] = "ready"
                     elif cancel_event is not None and cancel_event.is_set():
                         download_state["status"] = "cancelled"
-                        download_state["error"] = "Download cancelled"
+                        download_state["error"] = "Update cancelled."
                     else:
-                        download_state["status"] = "failed"
-                        download_state["error"] = "Download failed"
+                        download_state["status"] = "current"
+                except update_sync.UpdateCancelled as exc:
+                    download_state["status"] = "cancelled"
+                    download_state["error"] = str(exc)
                 except Exception as e:
-                    logger.error(f"UpdateManager download worker error: {e}", exc_info=True)
+                    logger.error(f"UpdateManager sync worker error: {e}", exc_info=True)
                     download_state["status"] = "failed"
                     download_state["error"] = str(e)
                 finally:
@@ -1349,6 +813,13 @@ class UpdateManager:
             def _widget_gone(el) -> bool:
                 return el is None or getattr(el, "is_deleted", False)
 
+            def _show_close() -> None:
+                try:
+                    cancel_btn.style("display: none;")
+                    close_btn.style("display: inline-flex;")
+                except Exception:
+                    pass
+
             def poll_update():
                 try:
                     widgets_dead = (
@@ -1356,63 +827,79 @@ class UpdateManager:
                         or _widget_gone(progress_label)
                         or _widget_gone(title_label)
                     )
-                    if download_state["status"] == "downloading":
+                    if not download_state["done"]:
                         if _connected_client() is None or widgets_dead:
                             return
-                        progress_value = max(0.0, min(1.0, download_state["progress"]))
-                        progress_bar.set_value(progress_value)
-                        percent = progress_value * 100.0
-                        progress_label.set_text(f"Downloading... {percent:.1f}%")
-                        speed_bps = download_state.get("speed_bps", 0.0)
-                        if speed_bps > 0:
+                        progress_bar.set_value(float(download_state.get("progress") or 0.0))
+                        progress_label.set_text(
+                            download_state.get("label") or "Updating..."
+                        )
+                        speed_bps = float(download_state.get("speed_bps") or 0.0)
+                        if download_state.get("phase") == "downloading" and speed_bps > 0:
                             speed_label.set_text(f"Speed: {_format_speed(speed_bps)}")
                         else:
-                            speed_label.set_text("Calculating speed...")
+                            speed_label.set_text("")
                         return
-                    if download_state["status"] in ("failed", "cancelled"):
-                        cleanup_temp_files(temp_files)
+
+                    status = download_state["status"]
+                    if status in ("failed", "cancelled", "current"):
                         if not widgets_dead:
                             try:
-                                title_label.set_text(
-                                    "Download cancelled"
-                                    if download_state["status"] == "cancelled"
-                                    else "❌ Update Failed"
-                                )
+                                if status == "cancelled":
+                                    title_label.set_text("Update cancelled")
+                                elif status == "current":
+                                    title_label.set_text("Already up to date")
+                                else:
+                                    title_label.set_text("Update failed")
                                 progress_label.set_text(
-                                    download_state.get("error") or "Unknown error"
+                                    download_state.get("error")
+                                    or download_state.get("label")
+                                    or "Unknown error"
                                 )
+                                speed_label.set_text("")
+                                progress_bar.set_value(0.0 if status != "current" else 1.0)
                             except Exception:
                                 pass
-                        self._dialog_open = False
+                            _show_close()
+                        else:
+                            self._dialog_open = False
                         _stop_poll()
                         return
-                    if download_state["status"] == "valid":
+
+                    if status == "ready":
                         if not widgets_dead:
                             try:
-                                title_label.set_text("🚀 Launching Installer")
+                                title_label.set_text("Restarting Mycelian")
                                 progress_label.set_text(
-                                    "Starting installer and closing Mycelian..."
+                                    "Closing Mycelian to finish the update..."
                                 )
+                                speed_label.set_text("")
+                                progress_bar.set_value(1.0)
+                                cancel_btn.style("display: none;")
                             except Exception:
                                 pass
 
                         def launch():
                             try:
+                                finish_update_and_exit(download_state.get("helper_pid"))
                                 self._dialog_open = False
-                                run_installer_and_exit(download_state["installer_path"])  # type: ignore[arg-type]
                             except Exception as e:
-                                logger.error(f"Error launching installer: {e}", exc_info=True)
-                                cleanup_temp_files(temp_files)
-                                self._dialog_open = False
+                                logger.error(f"Error restarting after update: {e}", exc_info=True)
+                                try:
+                                    title_label.set_text("Update failed")
+                                    progress_label.set_text(str(e))
+                                    _show_close()
+                                except Exception:
+                                    self._dialog_open = False
 
-                        app_schedule(2.0, launch, once=True)
+                        app_schedule(0.6, launch, once=True)
                         _stop_poll()
                         return
-                    if download_state.get("done"):
-                        _stop_poll()
+
+                    _stop_poll()
                 except Exception as e:
                     logger.error(f"UpdateManager.poll_update error: {e}")
-                    if download_state["status"] == "downloading":
+                    if not download_state["done"]:
                         return
                     _stop_poll()
 
@@ -1420,7 +907,7 @@ class UpdateManager:
             t.start()
             poll_holder["timer"] = app_schedule(0.2, poll_update)
         except Exception as e:
-            logger.error(f"UpdateManager._start_download_flow error: {e}", exc_info=True)
+            logger.error(f"UpdateManager._start_sync_flow error: {e}", exc_info=True)
 
     def _cancel_periodic(self) -> None:
         if self._periodic_timer:

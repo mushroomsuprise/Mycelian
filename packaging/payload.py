@@ -13,7 +13,7 @@ the project path would shadow the third-party ``packaging`` dependency.
 """
 
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 # Stems of the HTML templates and matching template JSON shipped by Mycelian.iss.
@@ -54,6 +54,72 @@ ONLY_IF_MISSING = (
     "assets/pausedalerts",
     "assets/bitboss",
 )
+
+
+_SKIP_NAMES = {".DS_Store"}
+
+
+def iter_payload_files(project_root: Path):
+    """Yield ``(relative_path, action)`` for every file the updater may install.
+
+    ``relative_path`` is posix-style and is both the repo path and the path
+    relative to the install folder. Template JSON is ``merge`` so user values
+    survive. ``if-missing`` files are installed only when the destination does
+    not already exist.
+
+    The separate ``merge_template_configs`` executable is not part of this list.
+    """
+    root = Path(project_root)
+    yield from _one_file(root / "README.md", "README.md", "replace")
+
+    for relative in ALWAYS_DIRS:
+        yield from _tree(root / relative, relative, "replace")
+
+    for stem in TEMPLATE_STEMS:
+        yield from _one_file(
+            root / "templates" / f"{stem}.html",
+            f"templates/{stem}.html",
+            "replace",
+        )
+        yield from _one_file(
+            root / "templates" / "template_configs" / f"{stem}.json",
+            f"templates/template_configs/{stem}.json",
+            "merge",
+        )
+
+    yield from _tree(
+        root / "templates" / "_boilerplates",
+        "templates/_boilerplates",
+        "replace",
+    )
+    yield from _one_file(
+        root / "templates" / "_spore" / "bitcounter.spore.json",
+        "templates/_spore/bitcounter.spore.json",
+        "replace",
+    )
+
+    for relative in ONLY_IF_MISSING:
+        yield from _tree(root / relative, relative, "if-missing")
+
+
+def _one_file(src: Path, relative: str, action: str):
+    if not src.is_file():
+        raise FileNotFoundError(f"Installer payload file missing: {src}")
+    if src.name in _SKIP_NAMES or "__pycache__" in src.parts:
+        return
+    yield relative.replace("\\", "/"), action
+
+
+def _tree(src_dir: Path, prefix: str, action: str):
+    if not src_dir.is_dir():
+        raise FileNotFoundError(f"Installer payload file missing: {src_dir}")
+    prefix_path = PurePosixPath(prefix)
+    for path in sorted(p for p in src_dir.rglob("*") if p.is_file()):
+        if path.name in _SKIP_NAMES or "__pycache__" in path.parts:
+            continue
+        rel = path.relative_to(src_dir).as_posix()
+        install = prefix_path.as_posix() if not rel else f"{prefix_path.as_posix()}/{rel}"
+        yield install, action
 
 
 def stage_install_payload(dest: Path, project_root: Path) -> None:

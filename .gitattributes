@@ -1,0 +1,4 @@
+packaged/windows/* binary
+packaged/linux/* binary
+packaged/macos/** binary
+packaged/manifest.json text eol=lf

@@ -431,8 +431,9 @@ def _taskkill_process_tree(pid: int) -> None:
 def protect_child_process_trees(pids: Iterable[int]) -> None:
     """Keep these PIDs (and their descendants) alive across reap_child_process_trees.
 
-    The auto-updater helper must outlive Mycelian so it can launch the installer
-    after this process exits. Normal quit still reaps every other child.
+    The auto-updater helper must outlive Mycelian so it can replace installed
+    files and relaunch the app after this process exits. Normal quit still
+    reaps every other child.
     """
     added: list[int] = []
     with _protect_lock:
@@ -508,7 +509,7 @@ def reap_child_process_trees() -> None:
     a console in the windowed exe. Hidden ``taskkill /T /F`` is the fallback.
 
     PIDs registered with ``protect_child_process_trees`` (and their descendants)
-    are left running so the updater helper can launch the installer after exit.
+    are left running so the updater helper can apply files and relaunch after exit.
     """
     import multiprocessing
 

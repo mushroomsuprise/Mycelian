@@ -10,6 +10,8 @@ builds the installer for the OS it is running on.
 """
 
 import argparse
+import hashlib
+import json
 import os
 import platform
 import shutil
@@ -771,6 +773,8 @@ def get_hidden_imports(current_os):
             "modules.api_credentials_manager",
             "modules.status_manager",
             "modules.updater",
+            "modules.update_sync",
+            "merge_template_configs",
             "modules.uiwindows.activity_feed",
             "modules.uiwindows.alertsettings",
             "modules.uiwindows.customsources",
@@ -1565,6 +1569,139 @@ def copy_binaries_to_project_root(project_root: Path, dist_dir: Path):
     return app_dest, helper_dest
 
 
+# GitHub rejects blobs at or above 100 MB.
+GITHUB_MAX_FILE_BYTES = 100 * 1024 * 1024
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _manifest_entry(
+    src: Path,
+    repo_path: str,
+    install_path: str,
+    action: str,
+    *,
+    os_name: str | None = None,
+    bundle: bool = False,
+) -> dict:
+    size = src.stat().st_size
+    if size >= GITHUB_MAX_FILE_BYTES:
+        raise RuntimeError(
+            f"{src} is {size / (1024 * 1024):.1f} MB. "
+            "GitHub rejects files over 100 MB, so this build cannot be "
+            "published for the file updater."
+        )
+    entry = {
+        "path": repo_path.replace("\\", "/"),
+        "install": install_path.replace("\\", "/"),
+        "sha256": _sha256_file(src),
+        "size": size,
+        "action": action,
+    }
+    if os_name:
+        entry["os"] = os_name
+    if bundle:
+        entry["bundle"] = True
+    return entry
+
+
+def _binary_manifest_entries(project_root: Path) -> list:
+    """Hash the compiled app just copied under ``packaged/<os>/``."""
+    os_dir = project_root / "packaged" / CURRENT_OS
+    if CURRENT_OS == "macos":
+        base = os_dir / "Mycelian.app"
+        repo_prefix = "packaged/macos/Mycelian.app"
+        bundle = True
+    else:
+        base = os_dir
+        repo_prefix = f"packaged/{CURRENT_OS}"
+        bundle = False
+    if not base.exists():
+        raise FileNotFoundError(f"Packaged binary missing: {base}")
+
+    entries = []
+    files = [base] if base.is_file() else sorted(p for p in base.rglob("*") if p.is_file())
+    for path in files:
+        if path.name == ".DS_Store" or "__pycache__" in path.parts:
+            continue
+        rel = path.name if base.is_file() else path.relative_to(base).as_posix()
+        repo_path = f"{repo_prefix}/{rel}"
+        entries.append(
+            _manifest_entry(
+                path,
+                repo_path,
+                rel,
+                "replace",
+                os_name=CURRENT_OS,
+                bundle=bundle,
+            )
+        )
+    if not entries:
+        raise FileNotFoundError(f"Packaged binary directory is empty: {base}")
+    return entries
+
+
+def _load_manifest_files(manifest_path: Path) -> list:
+    if not manifest_path.is_file():
+        return []
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    files = data.get("files") if isinstance(data, dict) else None
+    return files if isinstance(files, list) else []
+
+
+def write_update_manifest(project_root: Path) -> Path:
+    """Rewrite ``packaged/manifest.json`` for this OS without dropping other platforms."""
+    payload = _load_payload_module()
+    entries = []
+    for relative, action in payload.iter_payload_files(project_root):
+        src = project_root / Path(relative)
+        entries.append(_manifest_entry(src, relative, relative, action))
+    entries.extend(_binary_manifest_entries(project_root))
+
+    manifest_path = project_root / "packaged" / "manifest.json"
+    kept = []
+    for entry in _load_manifest_files(manifest_path):
+        if not isinstance(entry, dict):
+            continue
+        entry_os = entry.get("os")
+        if entry_os and entry_os != CURRENT_OS:
+            kept.append(entry)
+    files = entries + kept
+    files.sort(key=lambda item: (str(item.get("os") or ""), str(item.get("path") or "")))
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps({"version": VERSION, "files": files}, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return manifest_path
+
+
+def publish_packaged_release(project_root: Path, app_path: Path) -> Path:
+    """Copy this OS binary into ``packaged/`` and refresh the updater manifest."""
+    os_dir = project_root / "packaged" / CURRENT_OS
+    if os_dir.exists():
+        shutil.rmtree(os_dir)
+    os_dir.mkdir(parents=True, exist_ok=True)
+    if CURRENT_OS == "macos":
+        dest = os_dir / "Mycelian.app"
+    else:
+        dest = os_dir / app_binary_name()
+    _copy_build_artifact(app_path, dest)
+    manifest_path = write_update_manifest(project_root)
+    progress.update(f"Updater manifest: {manifest_path}")
+    return manifest_path
+
+
 def build_merge_helper(project_root: Path, dist_dir: Path) -> bool:
     """Build the template config merge tool as a one-file executable."""
     work = project_root / "build" / "merge_template_configs"
@@ -1974,6 +2111,8 @@ def main():
         app_path, helper_path = copy_binaries_to_project_root(project_root, dist_dir)
         progress.update(f"App: {app_path}")
         progress.update(f"Merge helper: {helper_path}")
+        progress.update("Publishing packaged binary for the updater")
+        publish_packaged_release(project_root, app_path)
         post_build_tasks(dist_dir)
         progress.success()
 
