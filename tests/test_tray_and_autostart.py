@@ -298,6 +298,58 @@ def test_close_request_quits_when_minimize_fails(monkeypatch):
     assert calls == ["window_close"]
 
 
+# ----- tray process -----
+
+
+def test_tray_click_restores_and_right_click_does_not():
+    """Left click restores. Right click only opens the menu."""
+    from types import SimpleNamespace
+
+    from modules import tray_process
+
+    for name in ("Trigger", "DoubleClick", "MiddleClick"):
+        assert tray_process.activation_restores(SimpleNamespace(name=name)) is True
+
+    for name in ("Context", "Unknown"):
+        assert tray_process.activation_restores(SimpleNamespace(name=name)) is False
+
+    assert tray_process.activation_restores("Trigger") is False
+    assert tray_process.activation_restores(None) is False
+
+
+def test_linux_tray_uses_qt_backend(monkeypatch):
+    """KDE Wayland never shows an AppIndicator menu, so Linux must not use pystray."""
+    from modules import tray_process
+
+    calls = []
+    monkeypatch.setattr(tray_process.sys, "platform", "linux")
+    monkeypatch.setattr(
+        tray_process, "_run_qt_tray", lambda *args: calls.append(("qt", args))
+    )
+    monkeypatch.setattr(
+        tray_process, "_run_pystray", lambda *args: calls.append(("pystray", args))
+    )
+
+    tray_process.run_tray("conn", "icon.png", False)
+    assert calls == [("qt", ("conn", "icon.png", False))]
+
+
+def test_other_platforms_keep_pystray(monkeypatch):
+    from modules import tray_process
+
+    calls = []
+    monkeypatch.setattr(tray_process.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        tray_process, "_run_qt_tray", lambda *args: calls.append(("qt", args))
+    )
+    monkeypatch.setattr(
+        tray_process, "_run_pystray", lambda *args: calls.append(("pystray", args))
+    )
+
+    tray_process.run_tray("conn", "icon.png", True)
+    assert calls == [("pystray", ("conn", "icon.png", True))]
+
+
 # ----- autostart -----
 
 
