@@ -1635,8 +1635,8 @@
     {
       "path": "packaged/windows/Mycelian.exe",
       "install": "Mycelian.exe",
-      "sha256": "86b0997669cc6948582158a0990dc514e9b0b46bbe042d82727cd17f4804714c",
-      "size": 75108637,
+      "sha256": "ce20a3ba7502f9c9bf4155af47f4b89f85e9389f8a03283cad30d33245939353",
+      "size": 75108799,
       "action": "replace",
       "os": "windows"
     }
