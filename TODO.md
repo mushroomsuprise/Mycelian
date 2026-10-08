@@ -1,5 +1,5 @@
 Legacy Templates:
-    [] - Recreate the "memecalc" and "ttimers" in Spore Studio as a trial. Change them to a default "bitcounter" and "subcounter"
+    [x] - Recreate the "memecalc" and "ttimers" in Spore Studio as a trial. Change them to a default "bitcounter" and "subcounter"
 
 Twitch:
     [x] - Fix new sub filter logic. it appears all new subs are still not being played

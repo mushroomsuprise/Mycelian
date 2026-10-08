@@ -3864,10 +3864,50 @@
         }
     }
 
+    var lastPropertiesElementId = null;
+
+    function snapshotPropertiesPanel(host) {
+        var open = {};
+        if (!host) {
+            return { open: open, scrollTop: 0, scrollEl: null };
+        }
+        $$("details.ss-collapse", host).forEach(function (details) {
+            if (!details.open) { return; }
+            var summary = details.querySelector(":scope > .ss-collapse__summary");
+            if (summary) {
+                open[(summary.textContent || "").trim()] = true;
+            }
+        });
+        var pane = host.closest(".ss-tab-pane");
+        return {
+            open: open,
+            scrollTop: pane ? pane.scrollTop : 0,
+            scrollEl: pane
+        };
+    }
+
+    function restorePropertiesPanel(host, snap) {
+        if (!host || !snap) { return; }
+        $$("details.ss-collapse", host).forEach(function (details) {
+            var summary = details.querySelector(":scope > .ss-collapse__summary");
+            var title = summary ? (summary.textContent || "").trim() : "";
+            if (title && snap.open[title]) {
+                details.open = true;
+            }
+        });
+        if (snap.scrollEl) {
+            snap.scrollEl.scrollTop = snap.scrollTop;
+        }
+    }
+
     function renderProperties() {
         var host = $("#ss-properties-host");
+        var snap = snapshotPropertiesPanel(host);
+        var prevId = lastPropertiesElementId;
         host.innerHTML = "";
         var el = selectedElement();
+        lastPropertiesElementId = el ? el.id : null;
+        var sameElement = !!(prevId && prevId === lastPropertiesElementId);
         if (!el) {
             host.innerHTML = '<div class="ss-empty">Select an element on the canvas or in the outline.</div>';
             return;
@@ -4108,6 +4148,9 @@
             modelTouch();
         });
         host.appendChild(deleteBtn);
+        if (sameElement) {
+            restorePropertiesPanel(host, snap);
+        }
     }
 
     function inputEl(type, value, onChange) {
