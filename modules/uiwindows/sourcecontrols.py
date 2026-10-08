@@ -82,6 +82,8 @@ def _estimate_card_height(config: dict) -> float:
             button_count += 1
         elif etype == "counter_control":
             height += 1.15 if element.get("target_counter_id") else 0.95
+        elif etype == "banner_control":
+            height += 2.6
         elif etype in ("text_input", "number_input"):
             height += 1.15
         elif etype in ("slider", "toggle"):
@@ -370,6 +372,8 @@ def group_controls_by_type(elements):
             group_name = "Adjustments"
         elif element_type == "spin_control":
             group_name = "Special Controls"
+        elif element_type == "banner_control":
+            group_name = "Banner"
         else:
             group_name = "Other"
 
@@ -392,6 +396,7 @@ def create_control_element(template_name, element, grid_columns: int):
     compact_types = ("button", "counter_control", "spin_control")
     span_all = (
         element_type == "counter_control"
+        or element_type == "banner_control"
         or element_type in _INPUT_CONTROL_TYPES
         or grid_columns <= 1
     )
@@ -420,6 +425,8 @@ def create_control_element(template_name, element, grid_columns: int):
                 create_text_input_control(template_name, element, description or label)
             elif element_type == "number_input":
                 create_number_input_control(template_name, element, description or label)
+            elif element_type == "banner_control":
+                create_banner_control(template_name, element, description or label)
             else:
                 ui.label(f"Unknown control type: {element_type}").classes(
                     "text-red-400 text-xs"
@@ -597,6 +604,65 @@ def create_spin_control(template_name, element, description: str = ""):
     tip = description or element.get("label") or ""
     if tip:
         spin_btn.tooltip(tip).classes("bg-theme-surface")
+
+
+def create_banner_control(template_name, element, tooltip: str = ""):
+    """Message, duration, and permanent toggle that show or clear one banner."""
+    from ..chat_banner import emit_chat_banner
+
+    placeholder = element.get("placeholder", "Banner message")
+    try:
+        default_duration = float(element.get("duration", 10))
+    except (TypeError, ValueError):
+        default_duration = 10.0
+    min_val = element.get("min", 0)
+    max_val = element.get("max", 3600)
+
+    message_input = form_input(
+        tooltip=tooltip or "Message shown on the chat banner",
+        placeholder=placeholder,
+        classes="sc-stretch-field w-full text-xs",
+    )
+    duration_input = form_number(
+        tooltip="Seconds to show the banner. Ignored when Permanent is on.",
+        value=default_duration,
+        min=min_val,
+        max=max_val,
+        classes="sc-stretch-field w-full text-xs",
+    )
+    permanent_switch = ui.switch("Permanent", value=False).props("dense")
+
+    def current_duration():
+        try:
+            return float(duration_input.value)
+        except (TypeError, ValueError):
+            return default_duration
+
+    def show_banner():
+        text = "" if message_input.value is None else str(message_input.value)
+        emit_chat_banner(
+            text,
+            duration=current_duration(),
+            permanent=bool(permanent_switch.value),
+            source="manual",
+        )
+
+    def clear_banner():
+        emit_chat_banner(action="clear", source="manual")
+
+    with ui.row().classes("w-full gap-1"):
+        themed_control_button(
+            "Show",
+            show_banner,
+            extra_classes="btn-primary grow text-xs py-1",
+            dense=True,
+        )
+        themed_control_button(
+            "Clear",
+            clear_banner,
+            extra_classes="btn-cancel grow text-xs py-1",
+            dense=True,
+        )
 
 
 def create_text_input_control(template_name, element, tooltip: str = ""):

@@ -28,6 +28,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "exclude_vips": False,
     "blocked_usernames": [],
     "winning_message_template": "Congratulations {winners}!",
+    "announce_winners_as_banner": False,
 }
 
 
@@ -94,6 +95,9 @@ class GiveawayManager:
         cfg["blocked_usernames"] = [str(x).strip().lower() for x in blocked if str(x).strip()]
         cfg["winning_message_template"] = str(
             cfg.get("winning_message_template") or DEFAULT_CONFIG["winning_message_template"]
+        )
+        cfg["announce_winners_as_banner"] = bool(
+            cfg.get("announce_winners_as_banner", False)
         )
 
     def _save_config(self) -> None:
@@ -338,6 +342,16 @@ class GiveawayManager:
                 pass
             with self._lock:
                 self._last_error = str(e)
+
+        if bool(self._config.get("announce_winners_as_banner")):
+            try:
+                from .chat_banner import emit_chat_banner
+
+                emit_chat_banner(text, source="giveaway")
+            except Exception as banner_err:
+                logger.error(
+                    "Giveaway winner banner failed: %s", banner_err, exc_info=True
+                )
 
         try:
             from .statistics_manager import get_statistics_manager

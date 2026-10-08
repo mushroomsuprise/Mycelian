@@ -132,6 +132,7 @@ class ActionType(Enum):
     # Chat Actions
     SEND_CHAT_MESSAGE = "send_chat_message"
     SEND_ANNOUNCEMENT = "send_announcement"
+    DISPLAY_BANNER = "display_banner"
     SEND_DISCORD_MESSAGE = "send_discord_message"
 
     # Greeting Actions

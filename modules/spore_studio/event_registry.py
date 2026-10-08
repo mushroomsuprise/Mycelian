@@ -155,6 +155,27 @@ _EVENTS: List[Dict[str, Any]] = [
         ],
     },
     {
+        "event": "chat_display_banner",
+        "label": "Chat banner",
+        "alert_system": "either",
+        "description": (
+            "Overlay banner on the chat template. Twitch announcements, "
+            "connectors, chatbot, giveaways, Source Controls, and other "
+            "templates all use this payload. Style fields override Banner Options."
+        ),
+        "payload": [
+            {"key": "message", "label": "Message", "type": "string"},
+            {"key": "duration", "label": "Duration (seconds, 0 = permanent)", "type": "number"},
+            {"key": "permanent", "label": "Permanent", "type": "boolean"},
+            {"key": "source", "label": "Source", "type": "string"},
+            {"key": "style.background", "label": "Background override", "type": "string"},
+            {"key": "style.font", "label": "Font file override", "type": "string"},
+            {"key": "style.font_size", "label": "Font size override", "type": "number"},
+            {"key": "style.color", "label": "Text color override", "type": "string"},
+            {"key": "style.animation", "label": "Animation override", "type": "string"},
+        ],
+    },
+    {
         "event": "chat_add_message",
         "label": "Chat message (connector)",
         "alert_system": "either",

@@ -420,6 +420,106 @@
         },
         {
             "type": "separator",
+            "label": "Banner Options"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableBanners",
+            "label": "Enable Banners",
+            "value": true,
+            "description": "Master switch for overlay banners. When off, Twitch announcements, connectors, chatbot, giveaways, and other templates do not show a banner."
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowTwitchAnnouncements",
+            "label": "Show Twitch Announcements",
+            "value": true,
+            "description": "Display Twitch /announce messages as banners. Other banner sources stay off until they are enabled in their own settings."
+        },
+        {
+            "type": "select",
+            "id": "BannerPosition",
+            "label": "Banner Position",
+            "value": "top",
+            "options": [
+                "top",
+                "bottom"
+            ],
+            "description": "Top sits above the messages. Bottom sits under them and shrinks the message area so it does not cover chat."
+        },
+        {
+            "type": "color",
+            "id": "BannerBG",
+            "label": "Banner Background",
+            "value": "#1e293b",
+            "description": "Background color of the banner strip"
+        },
+        {
+            "type": "select",
+            "id": "BannerFontName",
+            "label": "Banner Font",
+            "value": "Renogare.ttf",
+            "options_from": "fonts",
+            "options": [],
+            "description": "Font file for banners (from /assets/default_assets/fonts/)"
+        },
+        {
+            "type": "number",
+            "id": "BannerFontSize",
+            "label": "Banner Font Size",
+            "value": 22,
+            "min": 10,
+            "max": 72,
+            "description": "Banner text size in pixels"
+        },
+        {
+            "type": "color",
+            "id": "BannerFontColor",
+            "label": "Banner Text Color",
+            "value": "#ffffff",
+            "description": "Text color of the banner"
+        },
+        {
+            "type": "select",
+            "id": "BannerAnimation",
+            "label": "Banner Animation",
+            "value": "slideIn",
+            "options": [
+                "none",
+                "fadeIn",
+                "slideIn",
+                "slideInLeft",
+                "slideInRight",
+                "slideInTop",
+                "slideInBottom",
+                "bounceIn",
+                "scaleIn",
+                "flipInX",
+                "elasticIn"
+            ],
+            "description": "Enter animation for a new banner"
+        },
+        {
+            "type": "number",
+            "id": "BannerAnimationDuration",
+            "label": "Banner Animation Duration",
+            "value": 0.3,
+            "min": 0.1,
+            "max": 2,
+            "step": 0.1,
+            "description": "Duration of the banner enter animation in seconds"
+        },
+        {
+            "type": "number",
+            "id": "BannerDefaultDuration",
+            "label": "Default Banner Duration",
+            "value": 10,
+            "min": 0,
+            "max": 3600,
+            "description": "Seconds to show banners that do not set their own duration, including Twitch announcements. 0 keeps the banner up until it is replaced or cleared."
+        },
+        {
+            "type": "separator",
             "label": "Event Message Settings"
         },
         {
@@ -1756,7 +1856,27 @@
             ]
         }
     },
+    "dynamic_controls": {
+        "elements": [
+            {
+                "type": "banner_control",
+                "id": "manual_banner",
+                "label": "Manual Banner",
+                "description": "Show a message on the chat banner, or clear the current one",
+                "action": "display_banner",
+                "placeholder": "Banner message",
+                "duration": 10,
+                "min": 0,
+                "max": 3600
+            }
+        ]
+    },
     "preview_mocks": [
+        {
+            "event": "chat_display_banner",
+            "label": "Banner",
+            "tooltip": "Sample announcement banner using Banner Options"
+        },
         {
             "event": "new-message",
             "label": "Chat (Twitch)"

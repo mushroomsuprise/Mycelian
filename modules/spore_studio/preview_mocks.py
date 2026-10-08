@@ -404,6 +404,15 @@ _BUILDERS: Dict[str, Tuple[str, Any]] = {
         "chat_add_message",
         lambda pools: _connector_chat_payload(pools),
     ),
+    "chat_display_banner": (
+        "chat_display_banner",
+        lambda pools: {
+            "message": "Stream starting soon — grab a drink and say hello.",
+            "duration": 10,
+            "permanent": False,
+            "source": "preview",
+        },
+    ),
     "message_moderation": (
         "message_moderation",
         lambda pools: _moderation_payload(),

@@ -926,6 +926,13 @@
         resultSoundVolume: {{ ResultSoundVolume | tojson }},
         enableGlow: {{ EnableGlow | tojson }},
         enableResultOverlay: {{ EnableResultOverlay | tojson }},
+        showResultAsChatBanner: {{ ShowResultAsChatBanner | default(false) | tojson }},
+        chatBannerMessageTemplate: {{ ChatBannerMessageTemplate | default('{result}') | tojson }},
+        chatBannerBG: {{ ChatBannerBG | default('#7c3aed') | tojson }},
+        chatBannerFontColor: {{ ChatBannerFontColor | default('#ffffff') | tojson }},
+        chatBannerFontSize: {{ ChatBannerFontSize | default(28) | tojson }},
+        chatBannerAnimation: {{ ChatBannerAnimation | default('bounceIn') | tojson }},
+        chatBannerDuration: {{ ChatBannerDuration | default(8) | tojson }},
         autoHideResult: {{ AutoHideResult | tojson }},
         resultDisplayDuration: {{ ResultDisplayDuration | tojson }} * 1000,
         resultAnimationDuration: {{ ResultAnimationDuration | tojson }} * 1000,
@@ -2612,7 +2619,30 @@
         }
 
         // Enhanced result display with special animations
+        function requestRouletteChatBanner(result) {
+            if (!settings.showResultAsChatBanner || result == null || result === '') {
+                return;
+            }
+            var template = settings.chatBannerMessageTemplate || '{result}';
+            var message = String(template).split('{result}').join(String(result));
+            if (!window.MycelianOverlay || typeof MycelianOverlay.requestChatBanner !== 'function') {
+                return;
+            }
+            MycelianOverlay.requestChatBanner(socket, {
+                message: message,
+                duration: Number(settings.chatBannerDuration),
+                source: 'roulette',
+                style: {
+                    background: settings.chatBannerBG,
+                    color: settings.chatBannerFontColor,
+                    font_size: Number(settings.chatBannerFontSize),
+                    animation: settings.chatBannerAnimation
+                }
+            });
+        }
+
         function showResult(result) {
+            requestRouletteChatBanner(result);
             if (settings.autoHideWheel && settings.enableResultOverlay && result) {
                 scheduleWheelAutoHide();
             }
@@ -2818,6 +2848,13 @@
             if (config.ResultSoundVolume !== undefined) { settings.resultSoundVolume = Number(config.ResultSoundVolume); }
             if (config.EnableGlow !== undefined) { settings.enableGlow = !!config.EnableGlow; }
             if (config.EnableResultOverlay !== undefined) { settings.enableResultOverlay = !!config.EnableResultOverlay; }
+            if (config.ShowResultAsChatBanner !== undefined) { settings.showResultAsChatBanner = !!config.ShowResultAsChatBanner; }
+            if (config.ChatBannerMessageTemplate !== undefined) { settings.chatBannerMessageTemplate = config.ChatBannerMessageTemplate; }
+            if (config.ChatBannerBG !== undefined) { settings.chatBannerBG = config.ChatBannerBG; }
+            if (config.ChatBannerFontColor !== undefined) { settings.chatBannerFontColor = config.ChatBannerFontColor; }
+            if (config.ChatBannerFontSize !== undefined) { settings.chatBannerFontSize = Number(config.ChatBannerFontSize); }
+            if (config.ChatBannerAnimation !== undefined) { settings.chatBannerAnimation = config.ChatBannerAnimation; }
+            if (config.ChatBannerDuration !== undefined) { settings.chatBannerDuration = Number(config.ChatBannerDuration); }
             if (config.AutoHideResult !== undefined) { settings.autoHideResult = !!config.AutoHideResult; }
             if (config.ResultDisplayDuration !== undefined) {
                 settings.resultDisplayDuration = Number(config.ResultDisplayDuration) * 1000;

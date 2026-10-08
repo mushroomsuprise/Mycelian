@@ -33,7 +33,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 import aiohttp
 from twitchAPI.eventsub.websocket import EventSubWebsocket
@@ -290,6 +290,49 @@ def _send_chat_event_line(
             web_engine.web_engine_instance.new_message(payload)
     except Exception as e:
         logger.error("Error sending chat event line: %s", e, exc_info=True)
+
+
+_ANNOUNCEMENT_NOTICE_TYPES = frozenset(
+    {"announcement", "shared_chat_announcement"}
+)
+
+
+def is_chat_announcement_notice(notice_type: Any) -> bool:
+    """True for Twitch /announce notices that should become overlay banners."""
+    return _normalize_chat_notice_type(notice_type) in _ANNOUNCEMENT_NOTICE_TYPES
+
+
+def announcement_banner_fields(ev: Any) -> Dict[str, Any]:
+    """Message text and serializable fragments from a chat notification."""
+    text = _chat_notification_message_text(ev) or ""
+    if not text:
+        system_message = getattr(ev, "system_message", None) or ""
+        text = str(system_message) if system_message else ""
+    fragments = None
+    msg_obj = getattr(ev, "message", None)
+    raw_frags = getattr(msg_obj, "fragments", None) if msg_obj is not None else None
+    if raw_frags:
+        try:
+            fragments, _gif_url = serialize_chat_message_fragments(raw_frags)
+        except Exception as exc:
+            logger.debug("Announcement fragment serialize failed: %s", exc)
+            fragments = None
+    return {"message": text, "fragments": fragments}
+
+
+def emit_announcement_banner_from_notice(ev: Any) -> bool:
+    """Show a Twitch announcement on the chat overlay banner."""
+    fields = announcement_banner_fields(ev)
+    if not fields.get("message") and not fields.get("fragments"):
+        logger.debug("Announcement notice had no message text")
+        return False
+    from .chat_banner import emit_chat_banner
+
+    return emit_chat_banner(
+        fields.get("message") or "",
+        source="twitch_announcement",
+        fragments=fields.get("fragments"),
+    )
 
 
 def _chat_notification_message_text(ev: Any) -> Optional[str]:
@@ -2118,6 +2161,7 @@ class Twitch_API:
 
             if chatbot_response:
                 discord_channels = None
+                output_mode = "chat"
                 if len(chatbot_response) >= 4:
                     (
                         response_message,
@@ -2130,6 +2174,8 @@ class Twitch_API:
                         chatbot_response[2],
                         chatbot_response[3],
                     )
+                    if len(chatbot_response) >= 5:
+                        output_mode = chatbot_response[4]
                 elif len(chatbot_response) >= 3:
                     response_message, command_name, reply_targets = (
                         chatbot_response[0],
@@ -2147,12 +2193,13 @@ class Twitch_API:
 
                 # Send chatbot response back to chat targets
                 try:
-                    from .chatbot import dispatch_chatbot_response
+                    from .chatbot import deliver_chatbot_output
 
-                    dispatch_chatbot_response(
+                    deliver_chatbot_output(
                         response_message,
                         reply_targets,
                         discord_channels=discord_channels,
+                        output_mode=output_mode,
                     )
                     logger.debug(
                         f"Chatbot responded to command '{command_name}': {response_message}"
@@ -2308,6 +2355,17 @@ class Twitch_API:
 
         if notice_type_str == "modiversary":
             self._emit_modiversary_notice(ev)
+            return
+
+        if is_chat_announcement_notice(notice_type_str):
+            try:
+                emit_announcement_banner_from_notice(ev)
+            except Exception as announce_err:
+                logger.error(
+                    "Failed to emit announcement banner: %s",
+                    announce_err,
+                    exc_info=True,
+                )
             return
 
         if not _is_watch_streak_notice(notice_type_str):

@@ -516,6 +516,76 @@
             "description": "Whether to show the result display below the wheel"
         },
         {
+            "type": "separator",
+            "label": "Chat Banner"
+        },
+        {
+            "type": "checkbox",
+            "id": "ShowResultAsChatBanner",
+            "label": "Show result as chat banner",
+            "value": false,
+            "description": "Send the spin result to the chat overlay as a banner. Off by default."
+        },
+        {
+            "type": "text",
+            "id": "ChatBannerMessageTemplate",
+            "label": "Banner message",
+            "value": "{result}",
+            "description": "Banner text. {result} is replaced with the winning option."
+        },
+        {
+            "type": "color",
+            "id": "ChatBannerBG",
+            "label": "Banner background",
+            "value": "#7c3aed",
+            "description": "Background used only for this roulette banner"
+        },
+        {
+            "type": "color",
+            "id": "ChatBannerFontColor",
+            "label": "Banner text color",
+            "value": "#ffffff",
+            "description": "Text color used only for this roulette banner"
+        },
+        {
+            "type": "number",
+            "id": "ChatBannerFontSize",
+            "label": "Banner font size",
+            "value": 28,
+            "min": 10,
+            "max": 72,
+            "description": "Font size in pixels for the roulette banner"
+        },
+        {
+            "type": "select",
+            "id": "ChatBannerAnimation",
+            "label": "Banner animation",
+            "value": "bounceIn",
+            "options": [
+                "none",
+                "fadeIn",
+                "slideIn",
+                "slideInLeft",
+                "slideInRight",
+                "slideInTop",
+                "slideInBottom",
+                "bounceIn",
+                "scaleIn",
+                "flipInX",
+                "elasticIn"
+            ],
+            "description": "Enter animation for the roulette banner"
+        },
+        {
+            "type": "number",
+            "id": "ChatBannerDuration",
+            "label": "Banner duration",
+            "value": 8,
+            "min": 0,
+            "max": 3600,
+            "description": "Seconds to show the roulette banner. 0 keeps it up until the next banner or a clear."
+        },
+        {
             "type": "text",
             "id": "DefaultResultText",
             "label": "Default Result Text",

@@ -41,15 +41,55 @@
         body {
             margin: 0;
             padding: 0;
+            height: 100%;
             font-family: chat-font, Arial, sans-serif;
             overflow: hidden;
             background: transparent;
         }
 
-        #chat {
-            background-color: {{ BGColorWithOpacity }};
+        @font-face {
+            font-family: banner-font;
+            src: url("/assets/default_assets/fonts/{{ BannerFontName | default('Renogare.ttf') }}");
+        }
+
+        #chat-layout {
+            display: flex;
+            flex-direction: column;
             width: 100vw;
             height: 100vh;
+            overflow: hidden;
+        }
+
+        #chat-banner {
+            display: none;
+            flex: 0 0 auto;
+            box-sizing: border-box;
+            width: 100%;
+            background-color: {{ BannerBG | default('#1e293b') }};
+            color: {{ BannerFontColor | default('#ffffff') }};
+            font-family: banner-font, Arial, sans-serif;
+            font-size: {{ BannerFontSize | default(22) }}px;
+            padding: 10px 14px;
+            text-align: center;
+            word-wrap: break-word;
+            overflow-wrap: anywhere;
+            line-height: 1.3;
+        }
+
+        #chat-banner.visible {
+            display: block;
+        }
+
+        #chat-banner .chat-banner-text {
+            width: 100%;
+        }
+
+        #chat {
+            background-color: {{ BGColorWithOpacity }};
+            width: 100%;
+            flex: 1 1 auto;
+            min-height: 0;
+            height: auto;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
@@ -643,7 +683,10 @@
 </head>
 
 <body>
-    <div id="chat"></div>
+    <div id="chat-layout">
+        <div id="chat-banner" class="chat-banner" aria-live="polite"></div>
+        <div id="chat"></div>
+    </div>
 
     <script>
         // Global variables
@@ -685,6 +728,13 @@
         var showModiversary = {{ ShowModiversary | default(true) | tojson }};
         var eventFontSize = {{ EventFontSize | tojson }};
         var alertMediaScale = {{ AlertMediaScale | tojson }};
+        var enableBanners = {{ EnableBanners | default(true) | tojson }};
+        var showTwitchAnnouncements = {{ ShowTwitchAnnouncements | default(true) | tojson }};
+        var bannerPosition = {{ BannerPosition | default('top') | tojson }};
+        var bannerDefaultDuration = {{ BannerDefaultDuration | default(10) | tojson }};
+        var bannerAnimation = {{ BannerAnimation | default('slideIn') | tojson }};
+        var bannerAnimationDuration = {{ BannerAnimationDuration | default(0.3) | tojson }};
+        var bannerHideTimer = null;
         var streamerID = null;
         var emoteFetchInProgress = false;
         var badgeFetchInProgress = false;
@@ -1133,6 +1183,126 @@
         socket.on('activity_feed_alert', function (alertData) {
             chatLog('Received activity_feed_alert event:', alertData);
             handleActivityFeedAlert(alertData);
+        });
+
+        function applyBannerPosition() {
+            var layout = document.getElementById('chat-layout');
+            var banner = document.getElementById('chat-banner');
+            var chat = document.getElementById('chat');
+            if (!layout || !banner || !chat) {
+                return;
+            }
+            if (bannerPosition === 'bottom') {
+                layout.appendChild(banner);
+            } else {
+                layout.insertBefore(banner, chat);
+            }
+        }
+
+        function applyBannerFontOverride(fontFile) {
+            var styleId = 'chat-banner-font-override';
+            var styleEl = document.getElementById(styleId);
+            if (!fontFile) {
+                if (styleEl) {
+                    styleEl.textContent = '';
+                }
+                return;
+            }
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = styleId;
+                document.head.appendChild(styleEl);
+            }
+            styleEl.textContent = '@font-face { font-family: banner-payload-font; src: url("/assets/default_assets/fonts/' + fontFile + '"); }';
+        }
+
+        function hideChatBanner() {
+            if (bannerHideTimer) {
+                clearTimeout(bannerHideTimer);
+                bannerHideTimer = null;
+            }
+            var banner = document.getElementById('chat-banner');
+            if (!banner) {
+                return;
+            }
+            banner.classList.remove('visible');
+            banner.innerHTML = '';
+            banner.style.animation = '';
+        }
+
+        function showChatBanner(data) {
+            data = data || {};
+            if (data.action === 'clear') {
+                hideChatBanner();
+                return;
+            }
+            if (!enableBanners) {
+                return;
+            }
+            var source = data.source || '';
+            if (source === 'twitch_announcement' && !showTwitchAnnouncements) {
+                return;
+            }
+            var message = data.message || data.text || '';
+            var fragments = normalizeFragmentsList(data.fragments);
+            if (!message && !fragments) {
+                return;
+            }
+
+            var banner = document.getElementById('chat-banner');
+            if (!banner) {
+                return;
+            }
+            var style = data.style || {};
+            banner.style.backgroundColor = style.background || '';
+            banner.style.color = style.color || '';
+            banner.style.fontSize = (style.font_size != null && style.font_size !== '')
+                ? (Number(style.font_size) + 'px')
+                : '';
+            applyBannerFontOverride(style.font || '');
+            banner.style.fontFamily = style.font
+                ? 'banner-payload-font, banner-font, Arial, sans-serif'
+                : '';
+
+            var html = fragments
+                ? parseBitsFragmentsMessage(message, fragments)
+                : processTextForEmotes(String(message));
+            banner.innerHTML = '<div class="chat-banner-text">' + html + '</div>';
+
+            var animName = style.animation || bannerAnimation || 'none';
+            var animDur = (style.animation_duration != null && style.animation_duration !== '')
+                ? Number(style.animation_duration)
+                : Number(bannerAnimationDuration);
+            if (isNaN(animDur) || animDur <= 0) {
+                animDur = 0.3;
+            }
+            banner.style.animation = 'none';
+            void banner.offsetWidth;
+            banner.style.animation = (animName === 'none')
+                ? 'none'
+                : (animName + ' ' + animDur + 's ease-out');
+            banner.classList.add('visible');
+            applyBannerPosition();
+
+            if (bannerHideTimer) {
+                clearTimeout(bannerHideTimer);
+                bannerHideTimer = null;
+            }
+            var seconds = Number(data.duration);
+            if (isNaN(seconds)) {
+                seconds = Number(bannerDefaultDuration);
+            }
+            var permanent = !!data.permanent || seconds === 0;
+            if (!permanent && seconds > 0) {
+                bannerHideTimer = setTimeout(hideChatBanner, seconds * 1000);
+            }
+        }
+
+        applyBannerPosition();
+
+        socket.on('chat_display_banner', function (data) {
+            chatLog('Chat banner', data);
+            showChatBanner(data);
         });
 
         // Connector action event listeners
@@ -3860,13 +4030,21 @@
             var animRule = (messageAnimation === 'none')
                 ? 'animation: none;'
                 : ('animation: ' + messageAnimation + ' ' + animationDuration + 's ' + animationEasing + ';');
+            var bannerFontName = _chatCfg(config, 'BannerFontName', 'Renogare.ttf');
+            var bannerBG = _chatCfg(config, 'BannerBG', '#1e293b');
+            var bannerFontColor = _chatCfg(config, 'BannerFontColor', '#ffffff');
+            var bannerFontSize = _chatCfg(config, 'BannerFontSize', 22);
 
             return (
                 '@font-face { font-family: chat-font; src: url("/assets/default_assets/fonts/' + fontName + '"); }' +
                 '@font-face { font-family: event-font; src: url("/assets/default_assets/fonts/' + eventFontName + '"); }' +
                 '@font-face { font-family: alert-event-font; src: url("/assets/default_assets/fonts/' + alertEventFontName + '"); }' +
+                '@font-face { font-family: banner-font; src: url("/assets/default_assets/fonts/' + bannerFontName + '"); }' +
                 'html, body { font-family: chat-font, Arial, sans-serif; }' +
-                '#chat { background-color: ' + bgColor + '; padding: ' + chatPadding + 'px; }' +
+                '#chat-layout { display: flex; flex-direction: column; width: 100vw; height: 100vh; overflow: hidden; }' +
+                '#chat { background-color: ' + bgColor + '; padding: ' + chatPadding + 'px; flex: 1 1 auto; min-height: 0; height: auto; width: 100%; }' +
+                '#chat-banner { background-color: ' + bannerBG + '; color: ' + bannerFontColor + '; font-size: ' + bannerFontSize + 'px; ' +
+                'font-family: banner-font, Arial, sans-serif; }' +
                 '.chat-message { background-color: ' + messageBG + '; padding: ' + messagePadding + 'px; margin: ' + messageMargin + 'px 0; ' +
                 'font-size: ' + fontSize + 'px; color: ' + fontColor + '; border-radius: ' + messageRadius + 'px; ' +
                 'border: ' + messageBorder + 'px solid ' + messageBorderColor + '; ' + animRule +
@@ -3964,6 +4142,28 @@
             }
             if (config.AlertMediaScale !== undefined) {
                 alertMediaScale = Number(config.AlertMediaScale);
+            }
+            if (config.EnableBanners !== undefined) {
+                enableBanners = !!config.EnableBanners;
+                if (!enableBanners) {
+                    hideChatBanner();
+                }
+            }
+            if (config.ShowTwitchAnnouncements !== undefined) {
+                showTwitchAnnouncements = !!config.ShowTwitchAnnouncements;
+            }
+            if (config.BannerPosition !== undefined) {
+                bannerPosition = config.BannerPosition === 'bottom' ? 'bottom' : 'top';
+                applyBannerPosition();
+            }
+            if (config.BannerDefaultDuration !== undefined) {
+                bannerDefaultDuration = Number(config.BannerDefaultDuration);
+            }
+            if (config.BannerAnimation !== undefined) {
+                bannerAnimation = config.BannerAnimation;
+            }
+            if (config.BannerAnimationDuration !== undefined) {
+                bannerAnimationDuration = Number(config.BannerAnimationDuration);
             }
             if (config.EnableMessageFontRandomization !== undefined) {
                 enableMessageFontRandomization = !!config.EnableMessageFontRandomization;

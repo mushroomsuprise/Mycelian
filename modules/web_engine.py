@@ -7869,6 +7869,18 @@ class WebEngine:
         self.register_standalone_template_relay_handlers()
 
         # Chat-specific handlers
+        @self.socketio.on("chat_banner_request")
+        def handle_chat_banner_request(data=None):
+            """Relay a template banner request to every chat overlay."""
+            from .chat_banner import emit_chat_banner
+
+            if not isinstance(data, dict):
+                data = {}
+            if not data.get("source"):
+                data = dict(data)
+                data["source"] = "template"
+            emit_chat_banner(payload=data)
+
         @self.socketio.on("get-streamer-info")
         def handle_get_streamer_info():
             """
@@ -8933,6 +8945,7 @@ class WebEngine:
                 "text_input",
                 "number_input",
                 "slider",
+                "banner_control",
             ]:
                 # Single action controls
                 action = element.get("action", "")

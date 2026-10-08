@@ -125,9 +125,17 @@
         return socket;
     }
 
+    function requestChatBanner(socket, payload) {
+        if (!socket || typeof socket.emit !== 'function') {
+            return;
+        }
+        socket.emit('chat_banner_request', payload || {});
+    }
+
     global.MycelianOverlay = {
         connect: connect,
         installHandlers: installHandlers,
-        runSporeRecovery: runSporeRecovery
+        runSporeRecovery: runSporeRecovery,
+        requestChatBanner: requestChatBanner
     };
 })(typeof window !== 'undefined' ? window : this);

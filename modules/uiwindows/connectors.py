@@ -1408,6 +1408,10 @@ def get_action_display_name(action) -> str:
         elif action_type == "send_announcement":
             color = getattr(action, "color", "primary") or "primary"
             return f"Send Announcement ({color})"
+        elif action_type == "display_banner":
+            if getattr(action, "permanent", False):
+                return "Display Banner (permanent)"
+            return "Display Banner"
         elif action_type == "send_discord_message":
             channels = getattr(action, "channels", None) or []
             n = len(channels) if isinstance(channels, list) else 0
@@ -2791,6 +2795,7 @@ def get_available_actions() -> Dict[str, str]:
         "trigger_alert": "Trigger Alert",
         "send_chat_message": "Send Chat Message",
         "send_announcement": "Send Announcement",
+        "display_banner": "Display Banner",
         "send_discord_message": "Send Discord Message",
         "add_greeting": "Add Greeting",
         "update_greeting": "Update Greeting",
@@ -2846,6 +2851,8 @@ def handle_action_type_change_with_data(
             create_chat_message_config(action_index, form_data, initial_config)
         elif action_type == "send_announcement":
             create_send_announcement_config(action_index, form_data, initial_config)
+        elif action_type == "display_banner":
+            create_display_banner_config(action_index, form_data, initial_config)
         elif action_type == "send_discord_message":
             create_discord_message_config(action_index, form_data, initial_config)
         elif action_type == "add_greeting":
@@ -4924,6 +4931,57 @@ def create_websocket_emit_config(
             action_index, "event_data", e.value, form_data
         ),
     ).classes("w-full action-input")
+
+
+def create_display_banner_config(
+    action_index: int, form_data: dict, initial_config: dict = None
+):
+    """Create configuration for a chat overlay banner."""
+    if initial_config is None:
+        initial_config = {}
+
+    message = initial_config.get("message", "")
+    try:
+        duration = float(initial_config.get("duration", 10) or 0)
+    except (TypeError, ValueError):
+        duration = 10.0
+    permanent = bool(initial_config.get("permanent", False))
+    update_action_config(action_index, "message", message, form_data)
+    update_action_config(action_index, "duration", duration, form_data)
+    update_action_config(action_index, "permanent", permanent, form_data)
+
+    ui.textarea(
+        label="Banner message",
+        placeholder="Thanks {username}!",
+        value=message,
+        on_change=lambda e: update_action_config(
+            action_index, "message", e.value, form_data
+        ),
+    ).classes("w-full action-input mb-2")
+
+    form_number(
+        tooltip="How long the banner stays up. Ignored when Permanent is on. 0 stays up until replaced or cleared.",
+        label="Duration (seconds)",
+        value=duration,
+        min=0,
+        max=3600,
+        on_change=lambda e: update_action_config(
+            action_index, "duration", e.value, form_data
+        ),
+    ).classes("w-full mb-2")
+
+    ui.switch(
+        text="Permanent",
+        value=permanent,
+        on_change=lambda e: update_action_config(
+            action_index, "permanent", bool(e.value), form_data
+        ),
+    ).classes("w-full")
+
+    ui.label(
+        "Variables use the connector set, such as {username} and {message.word.1}. "
+        "Permanent ignores the duration and stays up until the next banner or a clear."
+    ).classes("text-xs muted-text")
 
 
 def create_send_announcement_config(

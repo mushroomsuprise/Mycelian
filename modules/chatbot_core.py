@@ -389,6 +389,12 @@ def _normalize_reply_targets(
     return out if out else list(default)
 
 
+def _normalize_output_mode(raw) -> str:
+    """``banner`` sends the response to the chat overlay instead of chat."""
+    mode = str(raw or "chat").strip().lower()
+    return "banner" if mode == "banner" else "chat"
+
+
 class TriggerCondition:
     """Condition for triggering a command or event"""
 
@@ -498,6 +504,8 @@ class ChatCommand:
         self.reply_targets = _normalize_reply_targets(
             kwargs.get("reply_targets"), default=["twitch"]
         )
+        # "chat" posts to reply targets; "banner" shows the chat overlay banner.
+        self.output_mode = _normalize_output_mode(kwargs.get("output_mode", "chat"))
         # Discord channel targets (independent of reply_targets):
         # [{guild_id, channel_id, guild_name?, channel_name?}, ...]
         raw_discord = kwargs.get("discord_channels") or []
@@ -1279,6 +1287,7 @@ class ChatCommand:
             "argument_mappings": sanitize_value(self.argument_mappings),
             "reply_targets": sanitize_value(list(self.reply_targets)),
             "discord_channels": sanitize_value(list(self.discord_channels or [])),
+            "output_mode": sanitize_value(self.output_mode),
         }
 
     @classmethod
@@ -1359,6 +1368,7 @@ class ChatEvent:
         self.reply_targets = _normalize_reply_targets(
             kwargs.get("reply_targets"), default=["twitch"]
         )
+        self.output_mode = _normalize_output_mode(kwargs.get("output_mode", "chat"))
         raw_discord = kwargs.get("discord_channels") or []
         self.discord_channels = (
             list(raw_discord) if isinstance(raw_discord, list) else []
@@ -1789,6 +1799,7 @@ class ChatEvent:
             "argument_mappings": self.argument_mappings,
             "reply_targets": list(self.reply_targets),
             "discord_channels": list(self.discord_channels or []),
+            "output_mode": self.output_mode,
         }
 
     @classmethod

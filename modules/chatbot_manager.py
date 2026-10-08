@@ -898,7 +898,14 @@ class ChatbotManager:
                     discord_channels = list(
                         getattr(command, "discord_channels", None) or []
                     )
-                    return response, command_name, targets, discord_channels
+                    output_mode = getattr(command, "output_mode", "chat") or "chat"
+                    return (
+                        response,
+                        command_name,
+                        targets,
+                        discord_channels,
+                        output_mode,
+                    )
 
             return None
 
@@ -1095,7 +1102,10 @@ class ChatbotManager:
                         discord_channels = list(
                             getattr(event, "discord_channels", None) or []
                         )
-                        matches.append((response, targets, discord_channels))
+                        output_mode = getattr(event, "output_mode", "chat") or "chat"
+                        matches.append(
+                            (response, targets, discord_channels, output_mode)
+                        )
 
                 if matches:
                     self._save_data()
@@ -1227,13 +1237,16 @@ class ChatbotManager:
                             if can_use:
                                 response = command.use_command(event_data)
                                 try:
-                                    from .chatbot import dispatch_chatbot_response
+                                    from .chatbot import deliver_chatbot_output
 
-                                    dispatch_chatbot_response(
+                                    deliver_chatbot_output(
                                         response,
                                         getattr(command, "reply_targets", None),
                                         discord_channels=getattr(
                                             command, "discord_channels", None
+                                        ),
+                                        output_mode=getattr(
+                                            command, "output_mode", "chat"
                                         ),
                                     )
                                 except Exception as send_err:
@@ -1400,11 +1413,12 @@ class ChatbotManager:
                             try:
                                 from .chatbot import (
                                     is_chatbot_connected,
-                                    dispatch_chatbot_response,
+                                    deliver_chatbot_output,
                                 )
 
+                                output_mode = getattr(event, "output_mode", "chat")
                                 # Check if chatbot is ready before attempting to send
-                                if not is_chatbot_connected():
+                                if output_mode != "banner" and not is_chatbot_connected():
                                     logger.warning(
                                         f"Skipping repeating event {event.name} - chatbot not connected"
                                     )
@@ -1414,12 +1428,13 @@ class ChatbotManager:
                                     logger.info(
                                         f"Sending message for event {event.name} in loop"
                                     )
-                                    success = dispatch_chatbot_response(
+                                    success = deliver_chatbot_output(
                                         response,
                                         getattr(event, "reply_targets", None),
                                         discord_channels=getattr(
                                             event, "discord_channels", None
                                         ),
+                                        output_mode=output_mode,
                                     )
                                     if success:
                                         logger.info(
@@ -1554,14 +1569,15 @@ class ChatbotManager:
                             continue
                         response = event.trigger_event(event_data)
                         try:
-                            from .chatbot import dispatch_chatbot_response
+                            from .chatbot import deliver_chatbot_output
 
-                            success = dispatch_chatbot_response(
+                            success = deliver_chatbot_output(
                                 response,
                                 getattr(event, "reply_targets", None),
                                 discord_channels=getattr(
                                     event, "discord_channels", None
                                 ),
+                                output_mode=getattr(event, "output_mode", "chat"),
                             )
                             if success:
                                 logger.info(
@@ -1710,12 +1726,13 @@ class ChatbotManager:
 
             # Send the response to configured reply targets
             try:
-                from .chatbot import dispatch_chatbot_response
+                from .chatbot import deliver_chatbot_output
 
-                success = dispatch_chatbot_response(
+                success = deliver_chatbot_output(
                     response,
                     getattr(command, "reply_targets", None),
                     discord_channels=getattr(command, "discord_channels", None),
+                    output_mode=getattr(command, "output_mode", "chat"),
                 )
                 if success:
                     logger.info(
@@ -1768,12 +1785,13 @@ class ChatbotManager:
 
             # Send the response to configured reply targets
             try:
-                from .chatbot import dispatch_chatbot_response
+                from .chatbot import deliver_chatbot_output
 
-                success = dispatch_chatbot_response(
+                success = deliver_chatbot_output(
                     response,
                     getattr(event, "reply_targets", None),
                     discord_channels=getattr(event, "discord_channels", None),
+                    output_mode=getattr(event, "output_mode", "chat"),
                 )
                 if success:
                     logger.info(f"Test event '{event.name}' sent message: {response}")

@@ -1748,8 +1748,30 @@ def _send_chatbot_message_blocking(
         return future.result(timeout=10)
 
 
+def deliver_chatbot_output(
+    message: str,
+    reply_targets=None,
+    reply_to_message_id: Optional[str] = None,
+    discord_channels=None,
+    output_mode: str = "chat",
+) -> bool:
+    """Send a command/event response to chat, or to the overlay banner instead."""
+    from .chatbot_core import _normalize_output_mode
+
+    if _normalize_output_mode(output_mode) == "banner":
+        from .chat_banner import emit_chat_banner
+
+        return emit_chat_banner(message, source="chatbot")
+    return dispatch_chatbot_response(
+        message,
+        reply_targets,
+        reply_to_message_id=reply_to_message_id,
+        discord_channels=discord_channels,
+    )
+
+
 def dispatch_process_event_result(result, default_targets=None) -> None:
-    """Send one or more process_event results through dispatch_chatbot_response."""
+    """Send one or more process_event results through deliver_chatbot_output."""
     if not result:
         return
     if isinstance(result, list):
@@ -1757,14 +1779,20 @@ def dispatch_process_event_result(result, default_targets=None) -> None:
             dispatch_process_event_result(item, default_targets=default_targets)
         return
     fallback = list(default_targets) if default_targets else ["twitch"]
+    output_mode = "chat"
     if isinstance(result, tuple):
         response = result[0]
         targets = result[1] if len(result) > 1 else fallback
         discord_channels = result[2] if len(result) > 2 else None
+        if len(result) > 3:
+            output_mode = result[3]
     else:
         response, targets, discord_channels = result, fallback, None
-    dispatch_chatbot_response(
-        response, targets, discord_channels=discord_channels
+    deliver_chatbot_output(
+        response,
+        targets,
+        discord_channels=discord_channels,
+        output_mode=output_mode,
     )
 
 

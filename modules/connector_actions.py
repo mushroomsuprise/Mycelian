@@ -297,6 +297,53 @@ class SendChatMessageAction(BaseAction):
 
 
 @dataclass
+class DisplayBannerAction(BaseAction):
+    """Show a message on the chat overlay banner."""
+
+    message: str = ""
+    duration: float = 10.0
+    permanent: bool = False
+
+    def __post_init__(self):
+        self.action_type = ActionType.DISPLAY_BANNER
+        try:
+            self.duration = float(self.duration)
+        except (TypeError, ValueError):
+            self.duration = 10.0
+        self.permanent = bool(self.permanent)
+
+    async def execute(
+        self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
+    ) -> bool:
+        """Substitute connector variables and emit a chat banner."""
+        try:
+            from .chat_banner import emit_chat_banner
+
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            message = substitute_connector_placeholders(self.message, ctx)
+            success = emit_chat_banner(
+                message,
+                duration=self.duration,
+                permanent=self.permanent,
+                source="connector",
+            )
+            if success:
+                logger.info("Displayed chat banner: %s", message)
+                return True
+            logger.error("Failed to display chat banner")
+            return False
+        except Exception as e:
+            logger.error(f"Error executing display banner action: {e}", exc_info=True)
+            return False
+
+    def validate_parameters(self) -> bool:
+        if not str(self.message or "").strip():
+            logger.error("Display banner action missing message")
+            return False
+        return True
+
+
+@dataclass
 class SendAnnouncementAction(BaseAction):
     """Action to send a Twitch chat announcement"""
 
@@ -2849,6 +2896,7 @@ def create_action(
         ActionType.TRIGGER_ALERT: TriggerAlertAction,
         ActionType.SEND_CHAT_MESSAGE: SendChatMessageAction,
         ActionType.SEND_ANNOUNCEMENT: SendAnnouncementAction,
+        ActionType.DISPLAY_BANNER: DisplayBannerAction,
         ActionType.SEND_DISCORD_MESSAGE: SendDiscordMessageAction,
         ActionType.ADD_GREETING: AddGreetingAction,
         ActionType.UPDATE_GREETING: UpdateGreetingAction,
