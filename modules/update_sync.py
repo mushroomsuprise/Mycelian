@@ -538,6 +538,19 @@ try {
     }
     if ($launchTarget) {
         $work = Split-Path -Parent $launchTarget
+        foreach ($name in @(
+            "_MEIPASS2",
+            "_PYI_APPLICATION_HOME_DIR",
+            "_PYI_ARCHIVE_FILE",
+            "_PYI_PARENT_PROCESS_LEVEL",
+            "_PYI_SPLASH_IPC",
+            "_PYI_BOOTSTRAP",
+            "PYTHONHOME",
+            "PYTHONPATH"
+        )) {
+            Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
+        }
+        $env:PYINSTALLER_RESET_ENVIRONMENT = "1"
         Start-Process -FilePath $launchTarget -WorkingDirectory $work
     }
     $success = $true
@@ -614,6 +627,10 @@ while IFS=$'\\t' read -r op a b || [[ -n "${op:-}" ]]; do
 done < "$PLAN"
 
 if [[ -n "$launch_target" ]]; then
+    unset _MEIPASS2 _PYI_APPLICATION_HOME_DIR _PYI_ARCHIVE_FILE \
+        _PYI_PARENT_PROCESS_LEVEL _PYI_SPLASH_IPC _PYI_BOOTSTRAP \
+        _PYI_LINUX_PROCESS_NAME PYTHONHOME PYTHONPATH
+    export PYINSTALLER_RESET_ENVIRONMENT=1
     if [[ "$launch_kind" == "macos" ]]; then
         open "$launch_target"
     else
@@ -628,10 +645,32 @@ fi
 """
 
 
+_PYINSTALLER_ENV_VARS = (
+    "_MEIPASS2",
+    "_PYI_APPLICATION_HOME_DIR",
+    "_PYI_ARCHIVE_FILE",
+    "_PYI_PARENT_PROCESS_LEVEL",
+    "_PYI_SPLASH_IPC",
+    "_PYI_BOOTSTRAP",
+    "_PYI_LINUX_PROCESS_NAME",
+    "PYTHONHOME",
+    "PYTHONPATH",
+)
+
+
 def _sanitized_env() -> dict:
+    """Environment for the helper and the restarted app.
+
+    A frozen build publishes ``_PYI_ARCHIVE_FILE`` and
+    ``_PYI_APPLICATION_HOME_DIR``. A new process with the same exe path
+    inherits that temporary folder. The folder is deleted when the old
+    process exits, so the restart then fails to load python314.dll.
+    ``PYINSTALLER_RESET_ENVIRONMENT`` makes the bootloader start clean.
+    """
     env = os.environ.copy()
-    for name in ("_MEIPASS2", "PYTHONHOME", "PYTHONPATH", "_PYI_BOOTSTRAP"):
+    for name in _PYINSTALLER_ENV_VARS:
         env.pop(name, None)
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     return env
 
 

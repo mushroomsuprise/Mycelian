@@ -125,8 +125,9 @@ class UpdaterInstallerTests(unittest.TestCase):
         self.assertTrue(flags & update_sync._CREATE_BREAKAWAY_FROM_JOB)
         self.assertEqual(captured["args"][0][0], "powershell.exe")
         env = captured["kwargs"]["env"]
-        for var in ("_MEIPASS2", "PYTHONHOME", "PYTHONPATH", "_PYI_BOOTSTRAP"):
+        for var in update_sync._PYINSTALLER_ENV_VARS:
             self.assertNotIn(var, env)
+        self.assertEqual(env.get("PYINSTALLER_RESET_ENVIRONMENT"), "1")
 
     def test_windows_helper_retries_without_breakaway(self) -> None:
         flags_seen: list[int] = []
