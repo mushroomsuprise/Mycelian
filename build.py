@@ -217,6 +217,110 @@ def update_streamdeck_plugin_manifest_version(project_root: Path) -> bool:
     return True
 
 
+def rollup_native_package_name() -> str | None:
+    """
+    Optional ``@rollup/rollup-*`` package that matches this OS, CPU, and libc.
+
+    Rollup 4 loads its native parser from a platform optional dependency. A
+    ``node_modules`` tree installed on another OS will not contain it.
+    """
+    machine = platform.machine().lower()
+    arch_by_machine = {
+        "x86_64": "x64",
+        "amd64": "x64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+        "armv7l": "arm",
+        "armv6l": "arm",
+        "ppc64le": "ppc64",
+        "s390x": "s390x",
+        "riscv64": "riscv64",
+        "loongarch64": "loong64",
+        "i686": "ia32",
+        "i386": "ia32",
+        "x86": "ia32",
+    }
+    arch = arch_by_machine.get(machine)
+    if arch is None:
+        return None
+
+    if CURRENT_OS == "macos":
+        if arch in ("arm64", "x64"):
+            return f"@rollup/rollup-darwin-{arch}"
+        return None
+
+    if CURRENT_OS == "windows":
+        if arch not in ("x64", "arm64", "ia32"):
+            return None
+        return f"@rollup/rollup-win32-{arch}-msvc"
+
+    if CURRENT_OS != "linux":
+        return None
+
+    libc_name, _libc_version = platform.libc_ver()
+    musl = "musl" in libc_name.lower()
+    if arch == "arm":
+        abi = "musleabihf" if musl else "gnueabihf"
+        return f"@rollup/rollup-linux-arm-{abi}"
+    # These Rollup builds are published for glibc only.
+    if arch in ("ppc64", "s390x", "loong64"):
+        return f"@rollup/rollup-linux-{arch}-gnu"
+    libc = "musl" if musl else "gnu"
+    return f"@rollup/rollup-linux-{arch}-{libc}"
+
+
+def ensure_rollup_native_package(plugin_dir: Path, npm_cmd: str) -> bool:
+    """
+    Install Rollup's platform package when a vendored ``node_modules`` lacks it.
+
+    Uses ``--no-save`` and ``--no-package-lock`` so package.json and the lockfile
+    stay unchanged. The version matches the already installed ``rollup`` package.
+    """
+    package_name = rollup_native_package_name()
+    if package_name is None:
+        progress.update(
+            "Could not determine Rollup native package for this platform; continuing"
+        )
+        return True
+
+    native_dir = plugin_dir / "node_modules" / "@rollup" / package_name.split("/")[-1]
+    if native_dir.is_dir():
+        return True
+
+    rollup_pkg = plugin_dir / "node_modules" / "rollup" / "package.json"
+    if not rollup_pkg.is_file():
+        progress.error("Rollup is not installed; cannot add the native package")
+        return False
+
+    try:
+        with open(rollup_pkg, "r", encoding="utf-8") as f:
+            rollup_meta = json.load(f)
+        version = str(rollup_meta.get("version") or "").strip()
+    except (OSError, json.JSONDecodeError, TypeError) as e:
+        progress.error(f"Could not read Rollup version: {e}")
+        return False
+
+    if not version:
+        progress.error("Installed Rollup package has no version")
+        return False
+
+    spec = f"{package_name}@{version}"
+    progress.update(f"Installing Rollup native package {spec}...")
+    install = subprocess.run(
+        [npm_cmd, "install", "--no-save", "--no-package-lock", spec],
+        cwd=plugin_dir,
+        capture_output=True,
+        text=True,
+    )
+    if install.returncode != 0 or not native_dir.is_dir():
+        progress.error(f"Failed to install {spec}")
+        detail = (install.stderr or install.stdout or "").strip()
+        if detail:
+            progress.update(detail)
+        return False
+    return True
+
+
 def build_streamdeck_plugin(project_root: Path) -> bool:
     """
     Build the Stream Deck plugin and stage it under ``sd_plugin/`` for the
@@ -268,6 +372,9 @@ def build_streamdeck_plugin(project_root: Path) -> bool:
                 if install.stderr:
                     progress.update(install.stderr.strip())
                 return False
+
+    if not ensure_rollup_native_package(plugin_dir, npm_cmd):
+        return False
 
     deploy_script = (
         "build:deploy:win" if CURRENT_OS == "windows" else "build:deploy"
