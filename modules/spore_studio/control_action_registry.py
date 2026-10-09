@@ -127,6 +127,7 @@ _CONTROL_TYPES: List[Dict[str, Any]] = [
     {"type": "slider", "label": "Slider"},
     {"type": "select", "label": "Select"},
     {"type": "counter_control", "label": "Counter control"},
+    {"type": "timer_control", "label": "Timer control"},
 ]
 
 

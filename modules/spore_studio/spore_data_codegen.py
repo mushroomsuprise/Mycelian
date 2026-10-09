@@ -89,6 +89,79 @@ def progress_bar_max_kind_config_id(element_id: str) -> str:
     return f"{_slugify_id(element_id)}_max_kind"
 
 
+def timer_config_ids(element_id: str) -> Dict[str, str]:
+    """Public JSON / Jinja ids and socket suffixes for one timer element."""
+    slug = _slugify_id(element_id)
+    return {
+        "mode": f"{slug}_mode",
+        "start_seconds": f"{slug}_start_seconds",
+        "limit_seconds": f"{slug}_limit_seconds",
+        "auto_start": f"{slug}_auto_start",
+        "format": counter_format_config_id(slug),
+    }
+
+
+def timer_control_event(element_id: str, operation: str) -> str:
+    """Socket suffix for a timer start, pause, or reset event."""
+    op = str(operation or "start").strip().lower()
+    if op not in ("start", "pause", "reset"):
+        op = "start"
+    return f"{_slugify_id(element_id)}_{op}"
+
+
+def _nonneg_int(value: Any, default: int) -> int:
+    try:
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def timer_mode(props: Dict[str, Any] | None) -> str:
+    mode = str((props or {}).get("mode") or "count_down").strip().lower()
+    if mode not in ("count_up", "count_down"):
+        return "count_down"
+    return mode
+
+
+def timer_start_seconds(props: Dict[str, Any] | None) -> int:
+    """Countdown start. Older models store this as ``duration_seconds``."""
+    props = props or {}
+    if props.get("start_seconds") is not None:
+        return _nonneg_int(props.get("start_seconds"), 300)
+    return _nonneg_int(props.get("duration_seconds", 300), 300)
+
+
+def timer_limit_seconds(props: Dict[str, Any] | None) -> int:
+    """Count-up stop point. ``0`` means the timer does not stop."""
+    props = props or {}
+    if props.get("limit_seconds") is None:
+        return 0
+    return _nonneg_int(props.get("limit_seconds"), 0)
+
+
+def timer_format(props: Dict[str, Any] | None) -> str:
+    fmt = str((props or {}).get("format") or "{mm}:{ss}").strip()
+    return fmt or "{mm}:{ss}"
+
+
+def build_timer_connector_actions(
+    elements: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Connector Template Control entries for each timer: start, pause, reset."""
+    actions: Dict[str, Any] = {}
+    for el in _collect_timers(elements):
+        raw = str(el.get("id") or "timer")
+        label = raw or "timer"
+        for op, title in (("start", "Start"), ("pause", "Pause"), ("reset", "Reset")):
+            aid = timer_control_event(raw, op)
+            actions[aid] = {
+                "action_name": f"{title} {label}",
+                "trigger": aid,
+                "elements": [],
+            }
+    return actions
+
+
 def _jinja_tojson_default(var_name: str, default: Any) -> str:
     """Jinja expression embedded in generated JS (resolved at HTML render)."""
     return f"{{{{ {var_name}|default({json.dumps(default)})|tojson }}}}"
@@ -500,6 +573,8 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
             action = str(ctrl.get("action") or "").strip()
             if not action:
                 continue
+            if str(ctrl.get("type") or "") == "timer_control":
+                continue
             handler_action = action
             if ctrl.get("type") == "counter_control":
                 handler_action = "counter_adjust"
@@ -570,27 +645,47 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
     if timers:
         lines.append("window.__sporeTimers = window.__sporeTimers || {};")
         for el in timers:
-            eid_slug = _slugify_id(str(el.get("id") or ""))
             eid = str(el.get("id") or "")
             props = el.get("props") if isinstance(el.get("props"), dict) else {}
-            mode = str(props.get("mode") or "count_down").strip().lower()
-            if mode not in ("count_up", "count_down"):
-                mode = "count_down"
-            try:
-                dur = max(0, int(float(props.get("duration_seconds", 300))))
-            except (TypeError, ValueError):
-                dur = 300
-            fmt_default = str(props.get("format") or "{mm}:{ss}")
-            fmt_var = counter_format_config_id(eid_slug)
+            mode = timer_mode(props)
+            start = timer_start_seconds(props)
+            limit = timer_limit_seconds(props)
+            fmt_default = timer_format(props)
+            ids = timer_config_ids(eid)
+            auto = bool(props.get("auto_start", True))
             lines.append(
                 f"window.__sporeTimers[{_js_string(eid)}] = {{"
                 f'"elementId": {_js_string(eid)}, '
-                f'"mode": {_js_string(mode)}, '
-                f'"duration_seconds": {dur}, '
-                f'"auto_start": {json.dumps(bool(props.get("auto_start", True)))}, '
-                f'"format": {_jinja_tojson_default(fmt_var, fmt_default)}, '
+                f'"mode": {_jinja_tojson_default(ids["mode"], mode)}, '
+                f'"start_seconds": {_jinja_tojson_default(ids["start_seconds"], start)}, '
+                f'"limit_seconds": {_jinja_tojson_default(ids["limit_seconds"], limit)}, '
+                f'"duration_seconds": {_jinja_tojson_default(ids["start_seconds"], start)}, '
+                f'"auto_start": {_jinja_tojson_default(ids["auto_start"], auto)}, '
+                f'"format": {_jinja_tojson_default(ids["format"], fmt_default)}, '
                 f'"running": false, "elapsed": 0, "started_at": null'
                 "};"
+            )
+            slug_start = f"{template_name}_{timer_control_event(eid, 'start')}"
+            slug_pause = f"{template_name}_{timer_control_event(eid, 'pause')}"
+            slug_reset = f"{template_name}_{timer_control_event(eid, 'reset')}"
+            lines.append(
+                "(function () {\n"
+                f"    var __id = {_js_string(eid)};\n"
+                "    function __bind(ev, fn) {\n"
+                "        if (typeof socket !== 'undefined' && socket && socket.on) {\n"
+                "            socket.on(ev, fn);\n"
+                "        }\n"
+                "    }\n"
+                f"    __bind({_js_string(slug_start)}, function () {{\n"
+                "        if (typeof sporeTimerStart === 'function') { sporeTimerStart(__id); }\n"
+                "    });\n"
+                f"    __bind({_js_string(slug_pause)}, function () {{\n"
+                "        if (typeof sporeTimerPause === 'function') { sporeTimerPause(__id); }\n"
+                "    });\n"
+                f"    __bind({_js_string(slug_reset)}, function () {{\n"
+                "        if (typeof sporeTimerReset === 'function') { sporeTimerReset(__id); }\n"
+                "    });\n"
+                "})();"
             )
 
     if clocks:

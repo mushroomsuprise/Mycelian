@@ -29,6 +29,7 @@ from nicegui import ui
 
 from .. import template_config_parser, web_engine
 from ..notification_engine import notify
+from ..spore_studio.spore_data_codegen import timer_control_event
 from ..ui_buttons import apply_flat_btn_props, outline_button, themed_control_button
 from ..ui_form_controls import form_input, form_number
 from ..ui_timer import layout_schedule
@@ -82,6 +83,8 @@ def _estimate_card_height(config: dict) -> float:
             button_count += 1
         elif etype == "counter_control":
             height += 1.15 if element.get("target_counter_id") else 0.95
+        elif etype == "timer_control":
+            height += 1.15
         elif etype == "banner_control":
             height += 2.6
         elif etype in ("text_input", "number_input"):
@@ -366,6 +369,8 @@ def group_controls_by_type(elements):
             group_name = "Actions"
         elif element_type in ["counter_control", "number_input"]:
             group_name = "Counters & Numbers"
+        elif element_type == "timer_control":
+            group_name = "Timers"
         elif element_type in ["text_input"]:
             group_name = "Text Input"
         elif element_type in ["slider", "toggle"]:
@@ -393,9 +398,10 @@ def create_control_element(template_name, element, grid_columns: int):
     label = element.get("label", element_id)
     description = element.get("description", "")
 
-    compact_types = ("button", "counter_control", "spin_control")
+    compact_types = ("button", "counter_control", "timer_control", "spin_control")
     span_all = (
         element_type == "counter_control"
+        or element_type == "timer_control"
         or element_type == "banner_control"
         or element_type in _INPUT_CONTROL_TYPES
         or grid_columns <= 1
@@ -410,6 +416,8 @@ def create_control_element(template_name, element, grid_columns: int):
                 create_button_control(template_name, element, description)
             elif element_type == "counter_control":
                 create_counter_control(template_name, element, label, description)
+            elif element_type == "timer_control":
+                create_timer_control(template_name, element, label, description)
             elif element_type == "spin_control":
                 create_spin_control(template_name, element, description)
         return
@@ -582,6 +590,46 @@ def _create_spore_counter_control(template_name, element, tooltip_text: str):
         )
         themed_control_button(
             "+", increment, extra_classes="btn-success grow text-xs py-1", dense=True
+        )
+        themed_control_button(
+            "Reset", reset, extra_classes="btn-cancel grow text-xs py-1", dense=True
+        )
+
+
+def create_timer_control(template_name, element, label: str = "", description: str = ""):
+    """Start, stop, and reset buttons for one Spore Studio timer."""
+    target = str(element.get("target_timer_id") or "")
+    tooltip_text = description or label or "Start, stop, or reset this timer"
+
+    def start():
+        send_websocket_event(
+            template_name,
+            timer_control_event(target, "start"),
+            {"element_id": target},
+        )
+
+    def stop():
+        send_websocket_event(
+            template_name,
+            timer_control_event(target, "pause"),
+            {"element_id": target},
+        )
+
+    def reset():
+        send_websocket_event(
+            template_name,
+            timer_control_event(target, "reset"),
+            {"element_id": target},
+        )
+
+    timer_row = ui.element("div").classes("sc-counter-row")
+    timer_row.tooltip(tooltip_text).classes("bg-theme-surface")
+    with timer_row:
+        themed_control_button(
+            "Start", start, extra_classes="btn-success grow text-xs py-1", dense=True
+        )
+        themed_control_button(
+            "Stop", stop, extra_classes="btn-warning grow text-xs py-1", dense=True
         )
         themed_control_button(
             "Reset", reset, extra_classes="btn-cancel grow text-xs py-1", dense=True

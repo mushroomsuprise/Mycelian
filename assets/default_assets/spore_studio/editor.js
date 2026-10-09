@@ -109,6 +109,8 @@
         },
         timer: {
             mode: "count_down",
+            start_seconds: 300,
+            limit_seconds: 0,
             duration_seconds: 300,
             auto_start: true,
             format: "{mm}:{ss}",
@@ -264,16 +266,9 @@
         ].concat(TEXT_STYLE_SCHEMA.filter(function (e) {
             return e.key !== "background_color";
         })),
-        timer: [
-            { key: "mode", label: "Mode", type: "select",
-              options: ["count_up", "count_down"] },
-            { key: "duration_seconds", label: "Duration (s)", type: "number", min: 0 },
-            { key: "auto_start", label: "Auto start", type: "checkbox" },
-            { key: "format", label: "Format", type: "text",
-              tooltip: "{time}, {mm}, {ss}, {hh}" }
-        ].concat(TEXT_STYLE_SCHEMA.filter(function (e) {
+        timer: TEXT_STYLE_SCHEMA.filter(function (e) {
             return e.key !== "background_color";
-        }))
+        })
     };
 
     var TEXT_LIKE_TYPES = { text: true, marquee: true };
@@ -815,6 +810,47 @@
         state.model.elements = state.model.elements.filter(function (e) {
             return !sub[e.id];
         });
+        removeTimerDynamicControls(sub);
+    }
+
+    function timerControlIdFor(elementId) {
+        return slugifyCounterId(elementId) + "_timer_controls";
+    }
+
+    function listTimersInModel() {
+        return (state.model.elements || []).filter(function (e) {
+            return e && e.type === "timer";
+        }).map(function (e) {
+            return { id: e.id, label: e.id };
+        });
+    }
+
+    function ensureTimerDynamicControl(el) {
+        if (!el || el.type !== "timer" || !state.model) { return; }
+        ensureDynamicControls(state.model);
+        var dc = state.model.dynamic_controls.elements;
+        var exists = dc.some(function (c) {
+            return c && c.type === "timer_control" &&
+                String(c.target_timer_id) === String(el.id);
+        });
+        if (exists) { return; }
+        dc.push({
+            type: "timer_control",
+            id: timerControlIdFor(el.id),
+            label: "Timer " + el.id,
+            action: "timer_control",
+            target_timer_id: el.id
+        });
+    }
+
+    function removeTimerDynamicControls(removedIds) {
+        if (!state.model || !state.model.dynamic_controls) { return; }
+        var elements = state.model.dynamic_controls.elements;
+        if (!Array.isArray(elements)) { return; }
+        state.model.dynamic_controls.elements = elements.filter(function (c) {
+            if (!c || c.type !== "timer_control") { return true; }
+            return !removedIds[c.target_timer_id];
+        });
     }
 
     function pointInsideClientRect(px, py, rect) {
@@ -967,6 +1003,9 @@
         if (elType === "progress_bar") {
             keys.push("max", "max_kind");
         }
+        if (elType === "timer") {
+            keys.push("mode", "start_seconds", "limit_seconds", "format", "auto_start");
+        }
         return keys;
     }
 
@@ -1113,17 +1152,42 @@
         });
     }
 
+    var TIMER_FORMAT_PRESETS = [
+        { value: "{mm}:{ss}", label: "MM:SS" },
+        { value: "{hh}:{mm}:{ss}", label: "HH:MM:SS" },
+        { value: "{m}:{ss}", label: "M:SS" },
+        { value: "{total}", label: "Total seconds" }
+    ];
+
     function ensureTimerDefaults(el) {
         if (!el || el.type !== "timer") { return; }
         el.props = el.props || {};
         var p = el.props;
-        if (!p.mode) { p.mode = "count_down"; }
-        if (p.duration_seconds == null) { p.duration_seconds = 300; }
+        if (p.mode !== "count_up" && p.mode !== "count_down") {
+            p.mode = "count_down";
+        }
+        if (p.start_seconds == null) {
+            p.start_seconds = p.duration_seconds != null ? p.duration_seconds : 300;
+        }
+        p.start_seconds = Math.max(0, parseInt(p.start_seconds, 10) || 0);
+        if (p.limit_seconds == null) { p.limit_seconds = 0; }
+        p.limit_seconds = Math.max(0, parseInt(p.limit_seconds, 10) || 0);
+        p.duration_seconds = p.start_seconds;
         if (p.auto_start === undefined) { p.auto_start = true; }
         if (!p.format) { p.format = "{mm}:{ss}"; }
         if (!el.timer || typeof el.timer !== "object") {
             el.timer = { running: !!p.auto_start, elapsed: 0 };
         }
+    }
+
+    function timerFormatPresetValue(fmt) {
+        var i;
+        for (i = 0; i < TIMER_FORMAT_PRESETS.length; i++) {
+            if (TIMER_FORMAT_PRESETS[i].value === fmt) {
+                return TIMER_FORMAT_PRESETS[i].value;
+            }
+        }
+        return "custom";
     }
 
     function ensureClockDefaults(el) {
@@ -1251,16 +1315,27 @@
         var fmt = p.format || "{mm}:{ss}";
         var total = Math.max(0, Math.floor(elapsedSec));
         var mode = p.mode || "count_down";
-        var dur = Math.max(0, parseInt(p.duration_seconds, 10) || 0);
-        var remain = mode === "count_down" ? Math.max(0, dur - total) : total;
-        var hh = Math.floor(remain / 3600);
-        var mm = Math.floor((remain % 3600) / 60);
-        var ss = remain % 60;
-        return fmt
-            .split("{time}").join(pad2(hh) + ":" + pad2(mm) + ":" + pad2(ss))
-            .split("{hh}").join(pad2(hh))
-            .split("{mm}").join(pad2(mm))
-            .split("{ss}").join(pad2(ss));
+        var start = Math.max(0, parseInt(p.start_seconds, 10) || 0);
+        var shown = mode === "count_down" ? Math.max(0, start - total) : total;
+        var hh = Math.floor(shown / 3600);
+        var mm = Math.floor((shown % 3600) / 60);
+        var ss = shown % 60;
+        var tokens = [
+            ["{time}", pad2(hh) + ":" + pad2(mm) + ":" + pad2(ss)],
+            ["{hh}", pad2(hh)],
+            ["{h}", String(hh)],
+            ["{mm}", pad2(mm)],
+            ["{m}", String(mm)],
+            ["{total}", String(shown)],
+            ["{ss}", pad2(ss)],
+            ["{s}", String(ss)]
+        ];
+        var out = fmt;
+        var ti;
+        for (ti = 0; ti < tokens.length; ti++) {
+            out = out.split(tokens[ti][0]).join(tokens[ti][1]);
+        }
+        return out;
     }
 
     function clearStagePreviewIntervals() {
@@ -1294,19 +1369,28 @@
                     ".ss-element[data-spore-id=\"" + cssEscapeSs(el.id) + "\"]"
                 );
                 if (!tnode) { return; }
-                if (!el.timer.running && !el.props.auto_start) {
-                    tnode.textContent = formatTimerDisplay(el, 0);
+                if (!el.timer.running) {
+                    tnode.textContent = formatTimerDisplay(el, el.timer.elapsed || 0);
                     return;
                 }
-                if (!el.timer.running) { el.timer.running = true; }
                 var t0 = Date.now() - (el.timer.elapsed || 0) * 1000;
                 var ttick = function () {
+                    if (!el.timer.running) { return; }
                     var elapsed = (Date.now() - t0) / 1000;
                     el.timer.elapsed = elapsed;
                     var mode = (el.props && el.props.mode) || "count_down";
-                    var dur = parseInt((el.props && el.props.duration_seconds) || 0, 10) || 0;
-                    if (mode === "count_down" && elapsed >= dur) {
-                        tnode.textContent = formatTimerDisplay(el, dur);
+                    var start = parseInt((el.props && el.props.start_seconds) || 0, 10) || 0;
+                    var limit = parseInt((el.props && el.props.limit_seconds) || 0, 10) || 0;
+                    if (mode === "count_down" && elapsed >= start) {
+                        el.timer.elapsed = start;
+                        el.timer.running = false;
+                        tnode.textContent = formatTimerDisplay(el, start);
+                        return;
+                    }
+                    if (mode === "count_up" && limit > 0 && elapsed >= limit) {
+                        el.timer.elapsed = limit;
+                        el.timer.running = false;
+                        tnode.textContent = formatTimerDisplay(el, limit);
                         return;
                     }
                     tnode.textContent = formatTimerDisplay(el, elapsed);
@@ -1385,11 +1469,121 @@
     function renderTimerControlSection(host, el) {
         if (el.type !== "timer") { return; }
         ensureTimerDefaults(el);
+        var p = el.props;
+
+        var modeSel = document.createElement("select");
+        [
+            { value: "count_down", label: "Count down" },
+            { value: "count_up", label: "Count up" }
+        ].forEach(function (opt) {
+            var op = document.createElement("option");
+            op.value = opt.value;
+            op.textContent = opt.label;
+            if (p.mode === opt.value) { op.selected = true; }
+            modeSel.appendChild(op);
+        });
+        modeSel.addEventListener("change", function () {
+            p.mode = modeSel.value;
+            pushHistory();
+            renderProperties();
+            renderStage();
+            modelTouch();
+        });
+        host.appendChild(formRowPropWithExpose(
+            el, "mode", "Mode", modeSel, "Count down from a start value, or count up toward a limit"
+        ));
+
+        if (p.mode === "count_up") {
+            host.appendChild(formRowPropWithExpose(
+                el,
+                "limit_seconds",
+                "Limit (seconds)",
+                numberEl(p.limit_seconds, function (v) {
+                    p.limit_seconds = Math.max(0, parseInt(v, 10) || 0);
+                    pushHistoryDebounced();
+                    renderStage();
+                    modelTouch();
+                }),
+                "Stop counting up at this many seconds. 0 means no limit."
+            ));
+        } else {
+            host.appendChild(formRowPropWithExpose(
+                el,
+                "start_seconds",
+                "Start (seconds)",
+                numberEl(p.start_seconds, function (v) {
+                    p.start_seconds = Math.max(0, parseInt(v, 10) || 0);
+                    p.duration_seconds = p.start_seconds;
+                    pushHistoryDebounced();
+                    renderStage();
+                    modelTouch();
+                }),
+                "Seconds the countdown starts from"
+            ));
+        }
+
+        var preset = timerFormatPresetValue(p.format);
+        var presetSel = document.createElement("select");
+        TIMER_FORMAT_PRESETS.forEach(function (opt) {
+            var op = document.createElement("option");
+            op.value = opt.value;
+            op.textContent = opt.label;
+            if (preset === opt.value) { op.selected = true; }
+            presetSel.appendChild(op);
+        });
+        var customOp = document.createElement("option");
+        customOp.value = "custom";
+        customOp.textContent = "Custom";
+        if (preset === "custom") { customOp.selected = true; }
+        presetSel.appendChild(customOp);
+        presetSel.addEventListener("change", function () {
+            if (presetSel.value !== "custom") {
+                p.format = presetSel.value;
+            }
+            pushHistory();
+            renderProperties();
+            renderStage();
+            modelTouch();
+        });
+        host.appendChild(formRow(
+            "Format",
+            presetSel,
+            "How the elapsed or remaining time is written"
+        ));
+        if (preset === "custom") {
+            host.appendChild(formRowPropWithExpose(
+                el,
+                "format",
+                "Custom format",
+                inputEl("text", p.format || "{mm}:{ss}", function (v) {
+                    p.format = v || "{mm}:{ss}";
+                    pushHistoryDebounced();
+                    renderStage();
+                    modelTouch();
+                }),
+                "Tokens: {hh} {h} {mm} {m} {ss} {s} {time} {total}"
+            ));
+        } else {
+            ensureElementExposeDefaults(el);
+            if (el.source_settings_expose.format === undefined) {
+                el.source_settings_expose.format = true;
+            }
+        }
+
+        var autoToggle = buildToggle(!!p.auto_start, function (checked) {
+            p.auto_start = checked;
+            pushHistoryDebounced();
+            modelTouch();
+        });
+        host.appendChild(formRowPropWithExpose(
+            el, "auto_start", "Auto start", autoToggle.wrap, "Start when the overlay loads"
+        ));
+
         var sect = document.createElement("div");
         sect.className = "ss-form-section";
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
-        title.textContent = "Timer controls";
+        title.textContent = "Preview";
         sect.appendChild(title);
         var row = document.createElement("div");
         row.className = "ss-btn-row";
@@ -2578,6 +2772,17 @@
                     delete ctrl.button_text;
                     delete ctrl.delta;
                 }
+                if (ctrl.type === "timer_control") {
+                    ctrl.action = "timer_control";
+                    if (!ctrl.target_timer_id) {
+                        var timers = listTimersInModel();
+                        if (timers.length) { ctrl.target_timer_id = timers[0].id; }
+                    }
+                    delete ctrl.operation;
+                    delete ctrl.button_text;
+                    delete ctrl.delta;
+                    delete ctrl.step;
+                }
                 renderSourceControlsPanel();
                 modelTouch();
             });
@@ -2591,7 +2796,10 @@
                 ctrl.action = "counter_adjust";
                 if (ctrl.step == null || ctrl.step < 1) { ctrl.step = 1; }
             }
-            if (ctrl.type !== "counter_control") {
+            if (ctrl.type === "timer_control") {
+                ctrl.action = "timer_control";
+            }
+            if (ctrl.type !== "counter_control" && ctrl.type !== "timer_control") {
                 var actSel = document.createElement("select");
                 actions.forEach(function (a) {
                     var op = document.createElement("option");
@@ -2640,6 +2848,26 @@
                     pushHistoryDebounced();
                     modelTouch();
                 })));
+            } else if (ctrl.type === "timer_control") {
+                var timers = listTimersInModel();
+                var tidSel = document.createElement("select");
+                var tblank = document.createElement("option");
+                tblank.value = "";
+                tblank.textContent = timers.length ? "(select timer)" : "(no timers in template)";
+                tidSel.appendChild(tblank);
+                timers.forEach(function (t) {
+                    var op = document.createElement("option");
+                    op.value = t.id;
+                    op.textContent = t.label;
+                    if (String(ctrl.target_timer_id || "") === String(t.id)) { op.selected = true; }
+                    tidSel.appendChild(op);
+                });
+                tidSel.addEventListener("change", function () {
+                    ctrl.target_timer_id = tidSel.value;
+                    pushHistoryDebounced();
+                    modelTouch();
+                });
+                card.appendChild(formRow("Timer", tidSel));
             } else if (ctrl.action === "counter_adjust") {
                 card.appendChild(formRow("Counter id", inputEl("text", ctrl.target_counter_id || "", function (v) {
                     ctrl.target_counter_id = v;
@@ -4065,7 +4293,7 @@
         }
 
         if (el.type === "timer" && !isLegacyModel()) {
-            host.appendChild(buildCollapsibleSection("Timer", "Playback controls for editor preview", function (body) {
+            host.appendChild(buildCollapsibleSection("Timer", "Count direction, bounds, format, and preview controls", function (body) {
                 renderTimerControlSection(body, el);
             }));
         }
@@ -5295,7 +5523,10 @@
             if (type === "gradient") { ensureGradientDefaults(el); }
             if (type === "marquee") { ensureMarqueeDefaults(el); }
             if (type === "clock") { ensureClockDefaults(el); }
-            if (type === "timer") { ensureTimerDefaults(el); }
+            if (type === "timer") {
+                ensureTimerDefaults(el);
+                ensureTimerDynamicControl(el);
+            }
             if (pid) { ensurePlacementDefaults(el); }
             state.model.elements = state.model.elements || [];
             state.model.elements.push(el);
@@ -6734,6 +6965,7 @@
         copy.position.y = (parseInt(copy.position.y, 10) || 0) + 16;
         state.model.elements = state.model.elements || [];
         state.model.elements.push(copy);
+        if (copy.type === "timer") { ensureTimerDynamicControl(copy); }
         state.selectedId = copy.id;
         pushHistory();
         renderAll();

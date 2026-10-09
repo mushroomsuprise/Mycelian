@@ -42,6 +42,7 @@ from .fonts_registry import (
 from .overlay_recovery_inject import inject_overlay_recovery
 from .spore_data_codegen import (
     DESIGN_CANVAS_MIN_PX,
+    build_timer_connector_actions,
     compile_spore_data_features,
     counter_format_config_id,
     counter_image_default_src_id,
@@ -51,6 +52,11 @@ from .spore_data_codegen import (
     progress_bar_max_config_id,
     progress_bar_max_kind_config_id,
     inject_data_runtime_block,
+    timer_config_ids,
+    timer_format,
+    timer_limit_seconds,
+    timer_mode,
+    timer_start_seconds,
 )
 from .timing import effective_duration_seconds
 
@@ -101,6 +107,18 @@ def _slugify_id(value: str) -> str:
     """Reduce a string to characters legal in HTML ids (and JS variable names)."""
     value = re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or ""))
     return value.strip("_") or "el"
+
+
+def _html_jinja_default(var_name: str, default: Any) -> str:
+    """Jinja ``default`` expression safe to embed in a double-quoted HTML attribute."""
+    if isinstance(default, bool):
+        literal = "true" if default else "false"
+    elif isinstance(default, (int, float)) and not isinstance(default, bool):
+        literal = str(default)
+    else:
+        escaped = str(default).replace("\\", "\\\\").replace("'", "\\'")
+        literal = f"'{escaped}'"
+    return "{{ " + var_name + "|default(" + literal + ") }}"
 
 
 def _apply_counter_format_tokens(
@@ -159,6 +177,8 @@ _NON_STYLE_PROP_KEYS = frozenset(
         "timezone_offset_minutes",
         "mode",
         "duration_seconds",
+        "start_seconds",
+        "limit_seconds",
         "auto_start",
     }
 )
@@ -927,25 +947,28 @@ def _render_element(
         )
 
     if etype == "timer":
-        mode = str(props.get("mode") or "count_down").strip().lower()
-        if mode not in ("count_up", "count_down"):
-            mode = "count_down"
-        try:
-            dur = max(0, int(float(props.get("duration_seconds", 300))))
-        except (TypeError, ValueError):
-            dur = 300
-        auto = "true" if props.get("auto_start", True) else "false"
-        fmt_default = str(props.get("format") or "{mm}:{ss}")
-        fmt_var = counter_format_config_id(eid)
+        mode = timer_mode(props)
+        start = timer_start_seconds(props)
+        limit = timer_limit_seconds(props)
+        auto = bool(props.get("auto_start", True))
+        fmt_default = timer_format(props)
+        ids = timer_config_ids(eid)
+        mode_j = html.escape(_html_jinja_default(ids["mode"], mode), quote=False)
+        start_j = html.escape(_html_jinja_default(ids["start_seconds"], start), quote=False)
+        limit_j = html.escape(_html_jinja_default(ids["limit_seconds"], limit), quote=False)
+        auto_j = html.escape(_html_jinja_default(ids["auto_start"], auto), quote=False)
+        fmt_j = html.escape(_html_jinja_default(ids["format"], fmt_default), quote=False)
         return (
             f'<div id="{html.escape(eid)}" class="{classes} spore-timer" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f"{anim_attrs} "
             f'data-spore-type="timer" '
-            f'data-spore-timer-mode="{html.escape(mode, quote=True)}" '
-            f'data-spore-timer-duration="{dur}" '
-            f'data-spore-timer-autostart="{auto}" '
-            f'data-spore-timer-format="{{{{ {fmt_var}|default({json.dumps(fmt_default)}) }}}}">'
+            f'data-spore-timer-mode="{mode_j}" '
+            f'data-spore-timer-start="{start_j}" '
+            f'data-spore-timer-limit="{limit_j}" '
+            f'data-spore-timer-duration="{start_j}" '
+            f'data-spore-timer-autostart="{auto_j}" '
+            f'data-spore-timer-format="{fmt_j}">'
             f"00:00</div>"
         )
 
@@ -1628,6 +1651,76 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                         }
                     )
 
+            if etype == "timer":
+                t_ids = timer_config_ids(eid)
+                t_label = element.get("id", eid)
+                if _expose_field(element, "mode"):
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": t_ids["mode"],
+                            "label": f"{t_label} mode",
+                            "value": timer_mode(props),
+                            "description": (
+                                f"Timer mode for '{t_label}': count_down or count_up."
+                            ),
+                        }
+                    )
+                if _expose_field(element, "start_seconds"):
+                    elements_out.append(
+                        {
+                            "type": "number",
+                            "id": t_ids["start_seconds"],
+                            "label": f"{t_label} start (seconds)",
+                            "value": timer_start_seconds(props),
+                            "min": 0,
+                            "max": 8640000,
+                            "description": (
+                                f"Seconds the countdown '{t_label}' starts from."
+                            ),
+                        }
+                    )
+                if _expose_field(element, "limit_seconds"):
+                    elements_out.append(
+                        {
+                            "type": "number",
+                            "id": t_ids["limit_seconds"],
+                            "label": f"{t_label} limit (seconds)",
+                            "value": timer_limit_seconds(props),
+                            "min": 0,
+                            "max": 8640000,
+                            "description": (
+                                f"Seconds at which count-up '{t_label}' stops. "
+                                "0 means no limit."
+                            ),
+                        }
+                    )
+                if _expose_field(element, "format"):
+                    elements_out.append(
+                        {
+                            "type": "text",
+                            "id": t_ids["format"],
+                            "label": f"{t_label} format",
+                            "value": timer_format(props),
+                            "description": (
+                                f"Display format for '{t_label}'. "
+                                "Tokens: {hh}, {h}, {mm}, {m}, {ss}, {s}, {time}, {total}."
+                            ),
+                        }
+                    )
+                if _expose_field(element, "auto_start"):
+                    elements_out.append(
+                        {
+                            "type": "checkbox",
+                            "id": t_ids["auto_start"],
+                            "label": f"{t_label} auto start",
+                            "value": bool(props.get("auto_start", True)),
+                            "description": (
+                                f"Start '{t_label}' when the overlay loads."
+                            ),
+                        }
+                    )
+
             for key in (
                 "color",
                 "background_color",
@@ -1750,6 +1843,9 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
     dc = model.get("dynamic_controls")
     if isinstance(dc, dict) and isinstance(dc.get("elements"), list) and dc["elements"]:
         base["dynamic_controls"] = _clone_dynamic_controls(dc)
+    connector_actions = build_timer_connector_actions(model.get("elements") or [])
+    if connector_actions:
+        base["connector_actions"] = connector_actions
     return base
 
 
@@ -1772,6 +1868,11 @@ def _clone_dynamic_controls(dc: Dict[str, Any]) -> Dict[str, Any]:
                 step = 1
             cleaned["step"] = max(1, step)
             for obsolete in ("operation", "button_text", "delta"):
+                cleaned.pop(obsolete, None)
+        elif ctype == "timer_control":
+            cleaned["action"] = "timer_control"
+            cleaned["target_timer_id"] = str(cleaned.get("target_timer_id") or "")
+            for obsolete in ("operation", "button_text", "delta", "step"):
                 cleaned.pop(obsolete, None)
         elif not cleaned.get("action"):
             cleaned["action"] = _slugify_id(str(cleaned.get("id")))

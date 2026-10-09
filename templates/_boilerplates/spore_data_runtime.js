@@ -834,6 +834,17 @@
             }
             return;
         }
+        if (a === 'timer_start' || a === 'timer_pause' || a === 'timer_reset') {
+            var tid = data.element_id || data.target_timer_id;
+            if (tid && a === 'timer_start' && typeof sporeTimerStart === 'function') {
+                sporeTimerStart(tid);
+            } else if (tid && a === 'timer_pause' && typeof sporeTimerPause === 'function') {
+                sporeTimerPause(tid);
+            } else if (tid && a === 'timer_reset' && typeof sporeTimerReset === 'function') {
+                sporeTimerReset(tid);
+            }
+            return;
+        }
         if (a === 'element_show' && data.element_id) {
             if (typeof sporeShow === 'function') { sporeShow(data.element_id, null); }
             return;
@@ -966,20 +977,57 @@
         }
     }
 
+    function sporeTimerStartBound(spec) {
+        if (spec && spec.start_seconds != null && spec.start_seconds !== '') {
+            return sporeCoerceNumber(spec.start_seconds, 0);
+        }
+        return sporeCoerceNumber(spec && spec.duration_seconds, 0);
+    }
+
+    function sporeTimerShownSeconds(spec, elapsed) {
+        var mode = (spec && spec.mode) || 'count_down';
+        var total = Math.max(0, Math.floor(sporeCoerceNumber(elapsed, 0)));
+        if (mode === 'count_up') { return total; }
+        return Math.max(0, sporeTimerStartBound(spec) - total);
+    }
+
     function sporeFormatTimerElapsed(spec, elapsed) {
         var fmt = (spec && spec.format) || '{mm}:{ss}';
-        var mode = (spec && spec.mode) || 'count_down';
-        var dur = sporeCoerceNumber(spec && spec.duration_seconds, 0);
-        var total = Math.max(0, Math.floor(elapsed));
-        var remain = mode === 'count_down' ? Math.max(0, dur - total) : total;
-        var hh = Math.floor(remain / 3600);
-        var mm = Math.floor((remain % 3600) / 60);
-        var ss = remain % 60;
-        return fmt
-            .split('{time}').join(sporePad2(hh) + ':' + sporePad2(mm) + ':' + sporePad2(ss))
-            .split('{hh}').join(sporePad2(hh))
-            .split('{mm}').join(sporePad2(mm))
-            .split('{ss}').join(sporePad2(ss));
+        var shown = sporeTimerShownSeconds(spec, elapsed);
+        var hh = Math.floor(shown / 3600);
+        var mm = Math.floor((shown % 3600) / 60);
+        var ss = shown % 60;
+        var tokens = [
+            ['{time}', sporePad2(hh) + ':' + sporePad2(mm) + ':' + sporePad2(ss)],
+            ['{hh}', sporePad2(hh)],
+            ['{h}', String(hh)],
+            ['{mm}', sporePad2(mm)],
+            ['{m}', String(mm)],
+            ['{total}', String(shown)],
+            ['{ss}', sporePad2(ss)],
+            ['{s}', String(ss)]
+        ];
+        var out = fmt;
+        for (var ti = 0; ti < tokens.length; ti++) {
+            out = out.split(tokens[ti][0]).join(tokens[ti][1]);
+        }
+        return out;
+    }
+
+    function sporeTimerClearInterval(id) {
+        if (window.__sporeTimerIntervals[id]) {
+            clearInterval(window.__sporeTimerIntervals[id]);
+            delete window.__sporeTimerIntervals[id];
+        }
+    }
+
+    function sporeTimerStopAt(id, spec, elapsed) {
+        spec.elapsed = elapsed;
+        spec.elapsed_base = elapsed;
+        spec.running = false;
+        spec.started_at = null;
+        sporeTimerClearInterval(id);
+        sporeTimerRender(id);
     }
 
     function sporeTimerRender(id) {
@@ -998,12 +1046,16 @@
         if (spec.started_at == null) { spec.started_at = base; }
         var elapsed = (Date.now() - base) / 1000 + (spec.elapsed_base || 0);
         spec.elapsed = elapsed;
-        if (spec.mode === 'count_down') {
-            var dur = sporeCoerceNumber(spec.duration_seconds, 0);
-            if (elapsed >= dur) {
-                spec.elapsed = dur;
-                spec.running = false;
-                sporeTimerRender(id);
+        if (spec.mode === 'count_up') {
+            var limit = sporeCoerceNumber(spec.limit_seconds, 0);
+            if (limit > 0 && elapsed >= limit) {
+                sporeTimerStopAt(id, spec, limit);
+                return;
+            }
+        } else {
+            var startBound = sporeTimerStartBound(spec);
+            if (elapsed >= startBound) {
+                sporeTimerStopAt(id, spec, startBound);
                 return;
             }
         }
@@ -1035,6 +1087,7 @@
         }
         spec.running = false;
         spec.started_at = null;
+        sporeTimerClearInterval(id);
     }
 
     function sporeTimerReset(id) {
@@ -1044,6 +1097,7 @@
         spec.elapsed_base = 0;
         spec.started_at = null;
         spec.running = !!spec.auto_start;
+        sporeTimerClearInterval(id);
         sporeTimerRender(id);
         if (spec.running) { sporeTimerStart(id); }
     }
