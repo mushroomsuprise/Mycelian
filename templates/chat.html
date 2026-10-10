@@ -77,11 +77,34 @@
         }
 
         #chat-banner.visible {
-            display: block;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        #chat-banner .chat-banner-media {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+        }
+
+        #chat-banner .chat-banner-media img,
+        #chat-banner .chat-banner-media video {
+            height: 2.6em;
+            width: auto;
+            object-fit: contain;
         }
 
         #chat-banner .chat-banner-text {
-            width: 100%;
+            flex: 1 1 auto;
+            min-width: 0;
+            width: auto;
+            text-align: center;
+        }
+
+        #chat-banner .chat-banner-user {
+            margin-top: 0.15em;
         }
 
         #chat {
@@ -730,11 +753,27 @@
         var alertMediaScale = {{ AlertMediaScale | tojson }};
         var enableBanners = {{ EnableBanners | default(true) | tojson }};
         var showTwitchAnnouncements = {{ ShowTwitchAnnouncements | default(true) | tojson }};
+        var enableAlertBanners = {{ EnableAlertBanners | default(false) | tojson }};
+        var alertBannerToggles = {
+            follow: {{ BannerFollowAlerts | default(false) | tojson }},
+            sub: {{ BannerSubAlerts | default(false) | tojson }},
+            resub: {{ BannerResubAlerts | default(false) | tojson }},
+            giftsub: {{ BannerGiftsubAlerts | default(false) | tojson }},
+            streak: {{ BannerStreakAlerts | default(false) | tojson }},
+            bit: {{ BannerBitAlerts | default(false) | tojson }},
+            raid: {{ BannerRaidAlerts | default(false) | tojson }},
+            point: {{ BannerPointAlerts | default(false) | tojson }},
+            donation: {{ BannerDonationAlerts | default(false) | tojson }},
+            hype_train: {{ BannerHypeTrainAlerts | default(false) | tojson }}
+        };
         var bannerPosition = {{ BannerPosition | default('top') | tojson }};
         var bannerDefaultDuration = {{ BannerDefaultDuration | default(10) | tojson }};
         var bannerAnimation = {{ BannerAnimation | default('slideIn') | tojson }};
         var bannerAnimationDuration = {{ BannerAnimationDuration | default(0.3) | tojson }};
         var bannerHideTimer = null;
+        var bannerQueue = [];
+        var parkedPermanentBanner = null;
+        var bannerOnScreen = 'none';
         var streamerID = null;
         var emoteFetchInProgress = false;
         var badgeFetchInProgress = false;
@@ -1216,11 +1255,16 @@
             styleEl.textContent = '@font-face { font-family: banner-payload-font; src: url("/assets/default_assets/fonts/' + fontFile + '"); }';
         }
 
-        function hideChatBanner() {
+        function clearBannerTimer() {
             if (bannerHideTimer) {
                 clearTimeout(bannerHideTimer);
                 bannerHideTimer = null;
             }
+        }
+
+        function clearBannerDisplay() {
+            clearBannerTimer();
+            bannerOnScreen = 'none';
             var banner = document.getElementById('chat-banner');
             if (!banner) {
                 return;
@@ -1230,25 +1274,39 @@
             banner.style.animation = '';
         }
 
-        function showChatBanner(data) {
+        function resetBannerQueue() {
+            bannerQueue = [];
+            parkedPermanentBanner = null;
+            clearBannerDisplay();
+        }
+
+        function bannerDurationSeconds(data) {
+            var seconds = Number(data && data.duration);
+            if (isNaN(seconds)) {
+                seconds = Number(bannerDefaultDuration);
+            }
+            if (isNaN(seconds) || seconds < 0) {
+                seconds = 10;
+            }
+            return seconds;
+        }
+
+        function bannerIsPermanent(data) {
+            if (data && data.permanent) {
+                return true;
+            }
+            return bannerDurationSeconds(data) === 0;
+        }
+
+        function bannerHasContent(data) {
             data = data || {};
-            if (data.action === 'clear') {
-                hideChatBanner();
-                return;
-            }
-            if (!enableBanners) {
-                return;
-            }
-            var source = data.source || '';
-            if (source === 'twitch_announcement' && !showTwitchAnnouncements) {
-                return;
-            }
             var message = data.message || data.text || '';
             var fragments = normalizeFragmentsList(data.fragments);
-            if (!message && !fragments) {
-                return;
-            }
+            return !!(message || fragments || data.html || data.image);
+        }
 
+        function paintChatBanner(data) {
+            clearBannerTimer();
             var banner = document.getElementById('chat-banner');
             if (!banner) {
                 return;
@@ -1264,10 +1322,17 @@
                 ? 'banner-payload-font, banner-font, Arial, sans-serif'
                 : '';
 
-            var html = fragments
-                ? parseBitsFragmentsMessage(message, fragments)
-                : processTextForEmotes(String(message));
-            banner.innerHTML = '<div class="chat-banner-text">' + html + '</div>';
+            var message = data.message || data.text || '';
+            var fragments = normalizeFragmentsList(data.fragments);
+            var textHtml = data.html
+                ? data.html
+                : (fragments
+                    ? parseBitsFragmentsMessage(message, fragments)
+                    : (message ? processTextForEmotes(String(message)) : ''));
+            var mediaHtml = data.image
+                ? '<div class="chat-banner-media">' + buildAlertEventMediaHtml(data.image) + '</div>'
+                : '';
+            banner.innerHTML = mediaHtml + (textHtml ? '<div class="chat-banner-text">' + textHtml + '</div>' : '');
 
             var animName = style.animation || bannerAnimation || 'none';
             var animDur = (style.animation_duration != null && style.animation_duration !== '')
@@ -1283,19 +1348,66 @@
                 : (animName + ' ' + animDur + 's ease-out');
             banner.classList.add('visible');
             applyBannerPosition();
+        }
 
-            if (bannerHideTimer) {
-                clearTimeout(bannerHideTimer);
-                bannerHideTimer = null;
+        function showPermanentBanner(data) {
+            paintChatBanner(data);
+            bannerOnScreen = 'permanent';
+        }
+
+        function showTimedBanner(data) {
+            paintChatBanner(data);
+            bannerOnScreen = 'timed';
+            var seconds = bannerDurationSeconds(data);
+            if (seconds > 0) {
+                bannerHideTimer = setTimeout(advanceBannerQueue, seconds * 1000);
             }
-            var seconds = Number(data.duration);
-            if (isNaN(seconds)) {
-                seconds = Number(bannerDefaultDuration);
+        }
+
+        function advanceBannerQueue() {
+            clearBannerTimer();
+            if (bannerQueue.length) {
+                showTimedBanner(bannerQueue.shift());
+                return;
             }
-            var permanent = !!data.permanent || seconds === 0;
-            if (!permanent && seconds > 0) {
-                bannerHideTimer = setTimeout(hideChatBanner, seconds * 1000);
+            if (parkedPermanentBanner) {
+                showPermanentBanner(parkedPermanentBanner);
+                return;
             }
+            clearBannerDisplay();
+        }
+
+        function showChatBanner(data) {
+            data = data || {};
+            if (data.action === 'clear') {
+                resetBannerQueue();
+                return;
+            }
+            if (!enableBanners) {
+                return;
+            }
+            var source = data.source || '';
+            if (source === 'twitch_announcement' && !showTwitchAnnouncements) {
+                return;
+            }
+            if (!bannerHasContent(data)) {
+                return;
+            }
+
+            if (bannerIsPermanent(data)) {
+                parkedPermanentBanner = data;
+                if (bannerOnScreen === 'timed') {
+                    return;
+                }
+                showPermanentBanner(data);
+                return;
+            }
+
+            if (bannerOnScreen === 'timed') {
+                bannerQueue.push(data);
+                return;
+            }
+            showTimedBanner(data);
         }
 
         applyBannerPosition();
@@ -2009,10 +2121,92 @@
             return t === 'modiversary' || rawType === 'modiversary';
         }
 
+        function alertBannerKind(alertData) {
+            var t = normalizeChatAlertType(alertData);
+            if (t === 'follow' || t === 'follows' || t === 'follower') {
+                return 'follow';
+            }
+            if (t === 'resub' || t === 'resubs' || t === 'resubscription') {
+                return 'resub';
+            }
+            if (t === 'sub' || t === 'subs' || t === 'subscription' || t === 'subscriptions') {
+                return 'sub';
+            }
+            if (t === 'giftsub' || t === 'giftsubs' || t === 'gift_sub' || t === 'gift_subs') {
+                return 'giftsub';
+            }
+            if (isWatchStreakAlertTypeName(t)) {
+                return 'streak';
+            }
+            if (t === 'bit' || t === 'bits' || t === 'cheer' || t === 'cheers') {
+                return 'bit';
+            }
+            if (t === 'raid' || t === 'raids') {
+                return 'raid';
+            }
+            if (t === 'point' || t === 'points' || t === 'channelpoints' || t === 'channel_points') {
+                return 'point';
+            }
+            if (t === 'donation' || t === 'donations' || t === 'donate' || t === 'tip' || t === 'tips') {
+                return 'donation';
+            }
+            if (t === 'hypetrain' || t === 'hype_train' || t.indexOf('hypetrain') === 0 || t.indexOf('hype_train') === 0) {
+                return 'hype_train';
+            }
+            return '';
+        }
+
+        function alertBannerDurationSeconds(alertData) {
+            var stored = alertData && alertData.stored_alert_data;
+            var raw;
+            if (stored && typeof stored === 'object') {
+                raw = stored.duration;
+            }
+            if (raw == null || raw === '') {
+                raw = alertData ? alertData.duration : undefined;
+            }
+            var seconds = Number(raw);
+            if (!isFinite(seconds) || seconds <= 0) {
+                return 5;
+            }
+            return seconds;
+        }
+
+        function maybeEnqueueAlertBanner(alertData) {
+            if (!alertData || !enableBanners || !enableAlertBanners) {
+                return;
+            }
+            var kind = alertBannerKind(alertData);
+            if (!kind || !alertBannerToggles[kind]) {
+                return;
+            }
+            var header = String(generateAlertMessage(alertData) || '').trim();
+            var userMessage = String(alertData.user_message || '').trim();
+            var mediaUrl = resolveAlertMediaSource(alertData) || '';
+            if (!header && !userMessage && !mediaUrl) {
+                return;
+            }
+            var textHtml = '';
+            if (header) {
+                textHtml += '<div class="chat-banner-header">' + escapeHtml(header) + '</div>';
+            }
+            if (userMessage) {
+                textHtml += '<div class="chat-banner-user">' + parseAlertUserMessageHtml(alertData, userMessage) + '</div>';
+            }
+            showChatBanner({
+                source: 'alerts',
+                duration: alertBannerDurationSeconds(alertData),
+                permanent: false,
+                image: mediaUrl,
+                html: textHtml
+            });
+        }
+
         function handleActivityFeedAlert(alertData) {
             if (!alertData) {
                 return;
             }
+            maybeEnqueueAlertBanner(alertData);
 
             // Modiversaries are text-only and follow their own display toggle.
             if (isModiversaryNotice(alertData)) {
@@ -4146,12 +4340,25 @@
             if (config.EnableBanners !== undefined) {
                 enableBanners = !!config.EnableBanners;
                 if (!enableBanners) {
-                    hideChatBanner();
+                    resetBannerQueue();
                 }
             }
             if (config.ShowTwitchAnnouncements !== undefined) {
                 showTwitchAnnouncements = !!config.ShowTwitchAnnouncements;
             }
+            if (config.EnableAlertBanners !== undefined) {
+                enableAlertBanners = !!config.EnableAlertBanners;
+            }
+            if (config.BannerFollowAlerts !== undefined) { alertBannerToggles.follow = !!config.BannerFollowAlerts; }
+            if (config.BannerSubAlerts !== undefined) { alertBannerToggles.sub = !!config.BannerSubAlerts; }
+            if (config.BannerResubAlerts !== undefined) { alertBannerToggles.resub = !!config.BannerResubAlerts; }
+            if (config.BannerGiftsubAlerts !== undefined) { alertBannerToggles.giftsub = !!config.BannerGiftsubAlerts; }
+            if (config.BannerStreakAlerts !== undefined) { alertBannerToggles.streak = !!config.BannerStreakAlerts; }
+            if (config.BannerBitAlerts !== undefined) { alertBannerToggles.bit = !!config.BannerBitAlerts; }
+            if (config.BannerRaidAlerts !== undefined) { alertBannerToggles.raid = !!config.BannerRaidAlerts; }
+            if (config.BannerPointAlerts !== undefined) { alertBannerToggles.point = !!config.BannerPointAlerts; }
+            if (config.BannerDonationAlerts !== undefined) { alertBannerToggles.donation = !!config.BannerDonationAlerts; }
+            if (config.BannerHypeTrainAlerts !== undefined) { alertBannerToggles.hype_train = !!config.BannerHypeTrainAlerts; }
             if (config.BannerPosition !== undefined) {
                 bannerPosition = config.BannerPosition === 'bottom' ? 'bottom' : 'top';
                 applyBannerPosition();

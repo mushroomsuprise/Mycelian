@@ -427,7 +427,7 @@
             "id": "EnableBanners",
             "label": "Enable Banners",
             "value": true,
-            "description": "Master switch for overlay banners. When off, Twitch announcements, connectors, chatbot, giveaways, and other templates do not show a banner."
+            "description": "Master switch for overlay banners. When off, Twitch announcements, alert banners, connectors, chatbot, giveaways, and other templates do not show a banner."
         },
         {
             "type": "checkbox",
@@ -517,6 +517,87 @@
             "min": 0,
             "max": 3600,
             "description": "Seconds to show banners that do not set their own duration, including Twitch announcements. 0 keeps the banner up until it is replaced or cleared."
+        },
+        {
+            "type": "separator",
+            "label": "Alert Banners"
+        },
+        {
+            "type": "checkbox",
+            "id": "EnableAlertBanners",
+            "label": "Enable Alert Banners",
+            "value": false,
+            "description": "Show activity-feed alerts on the banner. The alert GIF and message are shown with no audio, including while the alert queue is paused. Each kind below must also be enabled."
+        },
+        {
+            "type": "checkbox",
+            "id": "BannerFollowAlerts",
+            "label": "Banner for Follows",
+            "value": false,
+            "description": "Show a banner for follow alerts"
+        },
+        {
+            "type": "checkbox",
+            "id": "BannerSubAlerts",
+            "label": "Banner for Subscriptions",
+            "value": false,
+            "description": "Show a banner for new subscription alerts"
+        },
+        {
+            "type": "checkbox",
+            "id": "BannerResubAlerts",
+            "label": "Banner for Resubscriptions",
+            "value": false,
+            "description": "Show a banner for resubscription alerts"
+        },
+        {
+            "type": "checkbox",
+            "id": "BannerGiftsubAlerts",
+            "label": "Banner for Gift Subs",
+            "value": false,
+            "description": "Show a banner for gift subscription alerts"
+        },
+        {
+            "type": "checkbox",
+            "id": "BannerStreakAlerts",
+            "label": "Banner for Watch Streaks",
+            "value": false,
+            "description": "Show a banner for watch streak alerts"
+        },
+        {
+            "type": "checkbox",
+            "id": "BannerBitAlerts",
+            "label": "Banner for Bits",
+            "value": false,
+            "description": "Show a banner for bit alerts"
+        },
+        {
+            "type": "checkbox",
+            "id": "BannerRaidAlerts",
+            "label": "Banner for Raids",
+            "value": false,
+            "description": "Show a banner for raid alerts"
+        },
+        {
+            "type": "checkbox",
+            "id": "BannerPointAlerts",
+            "label": "Banner for Channel Points",
+            "value": false,
+            "description": "Show a banner for channel point alerts"
+        },
+        {
+            "type": "checkbox",
+            "id": "BannerDonationAlerts",
+            "label": "Banner for Donations",
+            "value": false,
+            "description": "Show a banner for donation alerts"
+        },
+        {
+            "type": "checkbox",
+            "id": "BannerHypeTrainAlerts",
+            "label": "Banner for Hype Trains",
+            "value": false,
+            "description": "Show a banner for hype train start, progress, and end alerts"
         },
         {
             "type": "separator",
