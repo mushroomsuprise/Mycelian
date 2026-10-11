@@ -53,6 +53,7 @@
         }
 
         #chat-layout {
+            position: relative;
             display: flex;
             flex-direction: column;
             width: 100vw;
@@ -81,6 +82,14 @@
             align-items: center;
             justify-content: center;
             gap: 12px;
+        }
+
+        #chat-banner.banner-top {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 2;
         }
 
         #chat-banner .chat-banner-media {
@@ -640,6 +649,116 @@
             }
         }
 
+        @keyframes fadeOut {
+            0% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideOutLeft {
+            0% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideOutRight {
+            0% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideOutTop {
+            0% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideOutBottom {
+            0% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes bounceOut {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(0.3);
+                opacity: 0;
+            }
+        }
+
+        @keyframes scaleOut {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(0);
+                opacity: 0;
+            }
+        }
+
+        @keyframes flipOutX {
+            0% {
+                transform: perspective(420px) rotateX(0deg);
+                opacity: 1;
+            }
+
+            100% {
+                transform: perspective(420px) rotateX(88deg);
+                opacity: 0;
+            }
+        }
+
+        @keyframes elasticOut {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            30% {
+                transform: scale(1.08);
+            }
+
+            100% {
+                transform: scale(0.25);
+                opacity: 0;
+            }
+        }
+
         @keyframes alertEventShimmer {
             0% {
                 transform: translateX(-150%);
@@ -774,6 +893,9 @@
         var bannerQueue = [];
         var parkedPermanentBanner = null;
         var bannerOnScreen = 'none';
+        var bannerExitInFlight = false;
+        var bannerExitToken = 0;
+        var bannerAfterExit = null;
         var streamerID = null;
         var emoteFetchInProgress = false;
         var badgeFetchInProgress = false;
@@ -1231,10 +1353,12 @@
             if (!layout || !banner || !chat) {
                 return;
             }
-            if (bannerPosition === 'bottom') {
-                layout.appendChild(banner);
-            } else {
-                layout.insertBefore(banner, chat);
+            var wasTop = banner.classList.contains('banner-top');
+            var nowTop = bannerPosition !== 'bottom';
+            banner.classList.toggle('banner-top', nowTop);
+            layout.appendChild(banner);
+            if (banner.classList.contains('visible') && (!nowTop || wasTop !== nowTop)) {
+                scheduleScrollToBottom();
             }
         }
 
@@ -1269,15 +1393,109 @@
             if (!banner) {
                 return;
             }
+            var wasVisible = banner.classList.contains('visible');
+            var pinnedBottom = bannerPosition === 'bottom';
             banner.classList.remove('visible');
             banner.innerHTML = '';
             banner.style.animation = '';
+            delete banner.dataset.bannerEnter;
+            delete banner.dataset.bannerAnimDur;
+            if (wasVisible && pinnedBottom) {
+                scheduleScrollToBottom();
+            }
+        }
+
+        function bannerExitName(enterName) {
+            var map = {
+                fadeIn: 'fadeOut',
+                slideIn: 'slideOutLeft',
+                slideInLeft: 'slideOutLeft',
+                slideInRight: 'slideOutRight',
+                slideInTop: 'slideOutTop',
+                slideInBottom: 'slideOutBottom',
+                bounceIn: 'bounceOut',
+                scaleIn: 'scaleOut',
+                flipInX: 'flipOutX',
+                elasticIn: 'elasticOut'
+            };
+            if (!enterName || enterName === 'none') {
+                return 'none';
+            }
+            return map[enterName] || 'fadeOut';
+        }
+
+        function playBannerExit(done) {
+            var banner = document.getElementById('chat-banner');
+            if (!banner || !banner.classList.contains('visible')) {
+                if (done) {
+                    done();
+                }
+                return;
+            }
+            if (bannerExitInFlight) {
+                bannerAfterExit = done;
+                return;
+            }
+            var exitName = bannerExitName(banner.dataset.bannerEnter || 'none');
+            if (exitName === 'none') {
+                if (done) {
+                    done();
+                }
+                return;
+            }
+            var animDur = Number(banner.dataset.bannerAnimDur);
+            if (isNaN(animDur) || animDur <= 0) {
+                animDur = Number(bannerAnimationDuration);
+            }
+            if (isNaN(animDur) || animDur <= 0) {
+                animDur = 0.3;
+            }
+            bannerExitInFlight = true;
+            bannerAfterExit = done;
+            var token = ++bannerExitToken;
+            function finish() {
+                if (token !== bannerExitToken) {
+                    return;
+                }
+                bannerExitToken += 1;
+                banner.removeEventListener('animationend', onEnd);
+                bannerExitInFlight = false;
+                var next = bannerAfterExit;
+                bannerAfterExit = null;
+                if (next) {
+                    next();
+                }
+            }
+            function onEnd(e) {
+                if (e.target !== banner || e.animationName !== exitName) {
+                    return;
+                }
+                finish();
+            }
+            banner.addEventListener('animationend', onEnd);
+            banner.style.animation = 'none';
+            void banner.offsetWidth;
+            banner.style.animation = exitName + ' ' + animDur + 's ease-in forwards';
+            setTimeout(finish, Math.ceil(animDur * 1000) + 80);
+        }
+
+        function settleBannerAfterExit() {
+            if (bannerQueue.length) {
+                commitTimedBanner(bannerQueue.shift());
+                return;
+            }
+            if (parkedPermanentBanner) {
+                commitPermanentBanner(parkedPermanentBanner);
+                return;
+            }
+            clearBannerDisplay();
         }
 
         function resetBannerQueue() {
             bannerQueue = [];
             parkedPermanentBanner = null;
-            clearBannerDisplay();
+            clearBannerTimer();
+            playBannerExit(settleBannerAfterExit);
         }
 
         function bannerDurationSeconds(data) {
@@ -1341,6 +1559,8 @@
             if (isNaN(animDur) || animDur <= 0) {
                 animDur = 0.3;
             }
+            banner.dataset.bannerEnter = animName;
+            banner.dataset.bannerAnimDur = String(animDur);
             banner.style.animation = 'none';
             void banner.offsetWidth;
             banner.style.animation = (animName === 'none')
@@ -1350,12 +1570,12 @@
             applyBannerPosition();
         }
 
-        function showPermanentBanner(data) {
+        function commitPermanentBanner(data) {
             paintChatBanner(data);
             bannerOnScreen = 'permanent';
         }
 
-        function showTimedBanner(data) {
+        function commitTimedBanner(data) {
             paintChatBanner(data);
             bannerOnScreen = 'timed';
             var seconds = bannerDurationSeconds(data);
@@ -1364,17 +1584,31 @@
             }
         }
 
+        function showPermanentBanner(data) {
+            var banner = document.getElementById('chat-banner');
+            if (banner && banner.classList.contains('visible')) {
+                playBannerExit(function () {
+                    commitPermanentBanner(data);
+                });
+                return;
+            }
+            commitPermanentBanner(data);
+        }
+
+        function showTimedBanner(data) {
+            var banner = document.getElementById('chat-banner');
+            if (banner && banner.classList.contains('visible')) {
+                playBannerExit(function () {
+                    commitTimedBanner(data);
+                });
+                return;
+            }
+            commitTimedBanner(data);
+        }
+
         function advanceBannerQueue() {
             clearBannerTimer();
-            if (bannerQueue.length) {
-                showTimedBanner(bannerQueue.shift());
-                return;
-            }
-            if (parkedPermanentBanner) {
-                showPermanentBanner(parkedPermanentBanner);
-                return;
-            }
-            clearBannerDisplay();
+            playBannerExit(settleBannerAfterExit);
         }
 
         function showChatBanner(data) {
@@ -4235,7 +4469,7 @@
                 '@font-face { font-family: alert-event-font; src: url("/assets/default_assets/fonts/' + alertEventFontName + '"); }' +
                 '@font-face { font-family: banner-font; src: url("/assets/default_assets/fonts/' + bannerFontName + '"); }' +
                 'html, body { font-family: chat-font, Arial, sans-serif; }' +
-                '#chat-layout { display: flex; flex-direction: column; width: 100vw; height: 100vh; overflow: hidden; }' +
+                '#chat-layout { position: relative; display: flex; flex-direction: column; width: 100vw; height: 100vh; overflow: hidden; }' +
                 '#chat { background-color: ' + bgColor + '; padding: ' + chatPadding + 'px; flex: 1 1 auto; min-height: 0; height: auto; width: 100%; }' +
                 '#chat-banner { background-color: ' + bannerBG + '; color: ' + bannerFontColor + '; font-size: ' + bannerFontSize + 'px; ' +
                 'font-family: banner-font, Arial, sans-serif; }' +
