@@ -445,7 +445,7 @@
                 "top",
                 "bottom"
             ],
-            "description": "Top sits above the messages. Bottom sits under them and shrinks the message area so it does not cover chat."
+            "description": "Top overlays the messages. Bottom sits under them and shrinks the message area so messages move up."
         },
         {
             "type": "color",
