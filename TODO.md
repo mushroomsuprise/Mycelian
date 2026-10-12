@@ -49,9 +49,6 @@ General:
 YouTube Integration:
     [] - Add secondary credentials system for YouTube to have a "chatbot", similar to the Twitch system
 
-StreamLabs & StreamElements:
-    [] - Add in an easy "Migrate to Mycelian" option to both integrations. This will import alerts and such directly into Mycelian from the different services.
-
 Kik Integration:
     [] - Add in Kik integration service
     [] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file. Default to being off.
