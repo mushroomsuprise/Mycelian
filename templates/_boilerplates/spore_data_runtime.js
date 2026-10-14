@@ -70,7 +70,13 @@
                 {
                     kind: 'data_source',
                     source: spec.source,
+                    source_id: spec.source_id,
+                    runtime_path: spec.runtime_path,
+                    runtime_key: spec.runtime_key,
+                    twitch_binding: spec.twitch_binding,
+                    twitch_path: spec.twitch_path,
                     tier_filter: spec.tier_filter,
+                    alert_type_filter: spec.alert_type_filter,
                     fallback: spec.fallback
                 },
                 window.__sporeLastPayload.event || {},
@@ -149,6 +155,47 @@
         return fb;
     }
 
+    function sporeEffectiveSourceId(spec) {
+        spec = spec || {};
+        var sourceId = spec.source || '';
+        if (sourceId === 'counter' || sourceId === 'counter.{id}') {
+            return spec.source_id ? ('counter.' + spec.source_id) : '';
+        }
+        if (sourceId === 'config' || sourceId === 'config.{id}') {
+            return spec.source_id ? ('config.' + spec.source_id) : '';
+        }
+        if (sourceId === 'runtime' || sourceId === 'runtime.{path}.{key}') {
+            if (spec.runtime_path && spec.runtime_key) {
+                return 'runtime.' + spec.runtime_path + '.' + spec.runtime_key;
+            }
+            return '';
+        }
+        if (sourceId === 'twitch' || sourceId === 'twitch.{binding_id}.{path}') {
+            if (spec.twitch_binding && spec.twitch_path) {
+                return 'twitch.' + spec.twitch_binding + '.' + spec.twitch_path;
+            }
+            return '';
+        }
+        if (sourceId === 'stats') {
+            return spec.source_id ? ('stats.' + spec.source_id) : '';
+        }
+        return sourceId;
+    }
+
+    function sporeSpecPassesAlertFilters(spec, payload) {
+        spec = spec || {};
+        var atf = spec.alert_type_filter;
+        if (atf && String(atf).toLowerCase() !== 'any') {
+            if (sporeAlertType(payload) !== String(atf).toLowerCase()) { return false; }
+        }
+        var tf = spec.tier_filter;
+        if (tf && String(tf) !== 'any') {
+            var tier = payload && payload.tier;
+            if (!sporeTierMatches(tf, tier)) { return false; }
+        }
+        return true;
+    }
+
     function sporeResolveSource(spec, payload, ctx) {
         spec = spec || {};
         var kind = spec.kind || 'data_source';
@@ -158,8 +205,13 @@
         if (kind === 'random_int' || kind === 'random_float') {
             return sporeRandomDelta(spec);
         }
-        var sourceId = spec.source || '';
+        var sourceId = sporeEffectiveSourceId(spec);
         if (!sourceId && kind === 'data_source') { return spec.fallback; }
+
+        var alertish = sourceId.indexOf('alert.') === 0 || sourceId.indexOf('sub.') === 0;
+        if (alertish && !sporeSpecPassesAlertFilters(spec, payload)) {
+            return spec.fallback != null ? spec.fallback : 0;
+        }
 
         if (sourceId === 'sub.new_sub' || sourceId === 'sub.resub' ||
             sourceId === 'sub.gift_sub') {
@@ -784,6 +836,7 @@
         for (var i = 0; i < window.__sporeDataDisplays.length; i++) {
             sporeRefreshDataDisplay(i);
         }
+        if (typeof sporeRefreshStatCards === 'function') { sporeRefreshStatCards(); }
     }
 
     function sporeLoadStatsCache() {
@@ -903,6 +956,8 @@
     window.sporeRefreshAllDataDisplays = sporeRefreshAllDataDisplays;
     window.sporeLoadStatsCache = sporeLoadStatsCache;
     window.sporeDispatchControlAction = sporeDispatchControlAction;
+    window.sporeDbGet = sporeDbGet;
+    window.sporeDbSet = sporeDbSet;
 
     window.__sporeClocks = window.__sporeClocks || [];
     window.__sporeTimers = window.__sporeTimers || {};
@@ -1111,6 +1166,450 @@
             if (spec && spec.auto_start) { sporeTimerStart(id); }
         }
     }
+
+    function sporeAttr(el, name, fallback) {
+        if (!el) { return fallback; }
+        var v = el.getAttribute(name);
+        return (v == null || v === '') ? fallback : v;
+    }
+
+    function sporeFormatTokens(template, item) {
+        var out = String(template == null ? '' : template);
+        var data = item || {};
+        Object.keys(data).forEach(function (k) {
+            var val = data[k] == null ? '' : String(data[k]);
+            out = out.split('{' + k + '}').join(val);
+        });
+        return out;
+    }
+
+    function sporeListRows(el) {
+        return el ? el.querySelector('.spore-list-rows') : null;
+    }
+
+    function sporeListPush(el, text) {
+        var rows = sporeListRows(el);
+        if (!rows) { return; }
+        var max = parseInt(sporeAttr(el, 'data-spore-list-max', '8'), 10) || 8;
+        var newest = sporeAttr(el, 'data-spore-list-newest', 'top');
+        var gap = parseInt(sporeAttr(el, 'data-spore-list-gap', '4'), 10) || 0;
+        var addAnim = sporeAttr(el, 'data-spore-list-add', 'fade');
+        var row = document.createElement('div');
+        row.className = 'spore-list-row';
+        if (addAnim === 'slide') { row.classList.add('spore-list-in-slide'); }
+        else if (addAnim !== 'none') { row.classList.add('spore-list-in-fade'); }
+        row.style.marginBottom = gap + 'px';
+        var rowBg = sporeAttr(el, 'data-spore-list-row-bg', '');
+        var rowPad = parseFloat(sporeAttr(el, 'data-spore-list-row-pad', '0')) || 0;
+        var rowRadius = parseFloat(sporeAttr(el, 'data-spore-list-row-radius', '0')) || 0;
+        if (rowBg) { row.style.background = rowBg; }
+        if (rowPad > 0) { row.style.padding = rowPad + 'px'; }
+        if (rowRadius > 0) { row.style.borderRadius = rowRadius + 'px'; }
+        row.textContent = text;
+        if (newest === 'bottom') { rows.appendChild(row); }
+        else { rows.insertBefore(row, rows.firstChild); }
+        var live = Array.prototype.filter.call(rows.children, function (r) {
+            return !r.classList.contains('spore-list-leaving');
+        });
+        while (live.length > max) {
+            var victim = newest === 'bottom' ? live.shift() : live.pop();
+            if (victim) { sporeListDrop(el, victim); }
+        }
+        var lifetime = parseFloat(sporeAttr(el, 'data-spore-list-lifetime', '0')) || 0;
+        if (lifetime > 0) {
+            setTimeout(function () {
+                if (row.parentNode) { sporeListDrop(el, row); }
+            }, lifetime * 1000);
+        }
+    }
+
+    function sporeListDrop(el, row) {
+        if (!row || !row.parentNode) { return; }
+        var anim = sporeAttr(el, 'data-spore-list-remove', 'fade');
+        if (anim === 'none') {
+            row.parentNode.removeChild(row);
+            return;
+        }
+        row.classList.add('spore-list-leaving', 'spore-list-out-fade');
+        setTimeout(function () {
+            if (row.parentNode) { row.parentNode.removeChild(row); }
+        }, 320);
+    }
+
+    function sporeListItem(el, payload, literal) {
+        payload = payload || {};
+        var textKey = sporeAttr(el, 'data-spore-list-text', 'username');
+        var valueKey = sporeAttr(el, 'data-spore-list-value', 'value');
+        var item = {
+            username: payload[textKey] != null ? payload[textKey] : (payload.username || payload.message || literal || ''),
+            value: payload[valueKey] != null ? payload[valueKey] : (
+                payload.amount != null ? payload.amount :
+                (payload.amt_cheered != null ? payload.amt_cheered :
+                (payload.gift_qty != null ? payload.gift_qty : ''))
+            )
+        };
+        Object.keys(payload).forEach(function (k) {
+            if (item[k] == null) { item[k] = payload[k]; }
+        });
+        if (literal && !item.username) { item.username = literal; }
+        var tmpl = sporeAttr(el, 'data-spore-list-template', '{username}');
+        return sporeFormatTokens(tmpl, item);
+    }
+
+    function sporeListAdd(id, payload, literal) {
+        var el = document.getElementById(id);
+        if (!el) { return; }
+        sporeListPush(el, sporeListItem(el, payload, literal));
+    }
+
+    function sporeListClear(id) {
+        var el = document.getElementById(id);
+        var rows = sporeListRows(el);
+        if (rows) { rows.innerHTML = ''; }
+    }
+
+    function sporeWheelSegments(el) {
+        try {
+            var parsed = JSON.parse(el.getAttribute('data-spore-wheel-segments') || '[]');
+            if (Array.isArray(parsed) && parsed.length) { return parsed; }
+        } catch (e) {}
+        return [
+            { label: 'One', color: '#a855f7' },
+            { label: 'Two', color: '#22c55e' }
+        ];
+    }
+
+    function sporeWheelTextColor(color) {
+        var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(color || '').trim());
+        if (!m) { return '#ffffff'; }
+        var h = m[1];
+        if (h.length === 3) { h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2]; }
+        var lum = (0.299 * parseInt(h.substr(0, 2), 16) + 0.587 * parseInt(h.substr(2, 2), 16) +
+            0.114 * parseInt(h.substr(4, 2), 16)) / 255;
+        return lum > 0.6 ? '#111111' : '#ffffff';
+    }
+
+    function sporeWheelSvg(segments) {
+        var n = segments.length;
+        var esc = function (v) {
+            return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        };
+        var pt = function (deg, r) {
+            var rad = deg * Math.PI / 180;
+            return (r * Math.sin(rad)).toFixed(3) + ' ' + (-r * Math.cos(rad)).toFixed(3);
+        };
+        var fontSize = Math.max(6, Math.min(16, (2 * Math.PI * 55 / n) * 0.5));
+        var out = '<svg viewBox="-100 -100 200 200" width="100%" height="100%" style="display:block">';
+        for (var i = 0; i < n; i++) {
+            var seg = segments[i] || {};
+            var color = seg.color || '#a855f7';
+            var a0 = (i / n) * 360;
+            var a1 = ((i + 1) / n) * 360;
+            if (n === 1) {
+                out += '<circle r="100" fill="' + esc(color) + '"/>';
+            } else {
+                out += '<path d="M0 0 L' + pt(a0, 100) + ' A100 100 0 ' + ((a1 - a0) > 180 ? 1 : 0) +
+                    ' 1 ' + pt(a1, 100) + ' Z" fill="' + esc(color) + '"/>';
+            }
+            var label = String(seg.label == null ? '' : seg.label);
+            if (label.length > 16) { label = label.slice(0, 15) + '\u2026'; }
+            if (label) {
+                var mid = (a0 + a1) / 2;
+                out += '<text transform="rotate(' + mid.toFixed(3) + ') translate(0,-88) rotate(-90)" ' +
+                    'text-anchor="end" dominant-baseline="central" font-size="' + fontSize.toFixed(2) +
+                    '" font-weight="600" fill="' + sporeWheelTextColor(color) + '">' + esc(label) + '</text>';
+            }
+        }
+        return out + '</svg>';
+    }
+
+    function sporePaintWheel(el) {
+        var rotor = el.querySelector('.spore-wheel-rotor');
+        if (!rotor) { return; }
+        var segments = sporeWheelSegments(el);
+        rotor.style.background = 'none';
+        rotor.innerHTML = sporeWheelSvg(segments);
+        var pointer = el.querySelector('.spore-wheel-pointer');
+        if (pointer) {
+            var pos = sporeAttr(el, 'data-spore-wheel-pointer', 'top');
+            pointer.style.top = 'auto';
+            pointer.style.bottom = 'auto';
+            pointer.style.left = '50%';
+            pointer.style.right = 'auto';
+            pointer.style.transform = '';
+            if (pos === 'bottom') {
+                pointer.style.bottom = '4px';
+                pointer.style.transform = 'translateX(-8px) rotate(180deg)';
+            } else if (pos === 'left') {
+                pointer.style.top = '50%';
+                pointer.style.left = '4px';
+                pointer.style.transform = 'rotate(-90deg)';
+            } else if (pos === 'right') {
+                pointer.style.top = '50%';
+                pointer.style.left = 'auto';
+                pointer.style.right = '4px';
+                pointer.style.transform = 'rotate(90deg)';
+            } else {
+                pointer.style.top = '4px';
+            }
+        }
+    }
+
+    function sporeWheelSpin(id, payload) {
+        var el = document.getElementById(id);
+        if (!el) { return; }
+        var segments = sporeWheelSegments(el);
+        var idx = Math.floor(Math.random() * segments.length);
+        if (payload && payload.label) {
+            for (var i = 0; i < segments.length; i++) {
+                if (String(segments[i].label) === String(payload.label)) { idx = i; break; }
+            }
+        }
+        sporePaintWheel(el);
+        var rotor = el.querySelector('.spore-wheel-rotor');
+        var slice = 360 / segments.length;
+        var center = idx * slice + slice / 2;
+        var current = parseFloat(el.getAttribute('data-spore-wheel-rot') || '0') || 0;
+        var landing = (360 - center);
+        var next = current + 360 * 5 + ((landing - (current % 360) + 360) % 360);
+        if (next <= current) { next += 360; }
+        var ms = parseInt(sporeAttr(el, 'data-spore-wheel-ms', '4000'), 10) || 4000;
+        if (rotor) {
+            rotor.style.transition = 'transform ' + ms + 'ms cubic-bezier(.15,.7,.2,1)';
+            rotor.style.transform = 'rotate(' + next + 'deg)';
+        }
+        el.setAttribute('data-spore-wheel-rot', String(next));
+        setTimeout(function () {
+            var winner = segments[idx] || {};
+            window.__sporeLastPayload.wheel = {
+                elementId: id,
+                index: idx,
+                label: winner.label || ''
+            };
+            var label = el.querySelector('.spore-wheel-label');
+            if (label) { label.textContent = winner.label || ''; }
+            if (typeof socket !== 'undefined' && socket && socket.emit) {
+                socket.emit('wheel_result', window.__sporeLastPayload.wheel);
+            }
+        }, ms);
+    }
+
+    function sporePaintNowPlaying(el, data) {
+        data = data || {};
+        var show = function (attr) {
+            var v = String(sporeAttr(el, attr, 'true')).toLowerCase();
+            return v !== 'false' && v !== '0' && v !== 'no';
+        };
+        var art = el.querySelector('.spore-np-art');
+        var title = el.querySelector('.spore-np-title');
+        var artist = el.querySelector('.spore-np-artist');
+        var bar = el.querySelector('.spore-np-bar');
+        var fill = el.querySelector('.spore-np-fill');
+        if (art) {
+            art.style.display = show('data-spore-np-art') ? '' : 'none';
+            if (data.album_image_url) { art.src = data.album_image_url; }
+        }
+        if (title) {
+            title.style.display = show('data-spore-np-title') ? '' : 'none';
+            title.style.color = sporeAttr(el, 'data-spore-np-title-color', '#ffffff');
+            title.textContent = data.track_name || 'Not playing';
+        }
+        if (artist) {
+            artist.style.display = show('data-spore-np-artist') ? '' : 'none';
+            artist.style.color = sporeAttr(el, 'data-spore-np-artist-color', '#94a3b8');
+            artist.textContent = data.artist_name || '';
+        }
+        if (bar) { bar.style.display = show('data-spore-np-progress') ? '' : 'none'; }
+        if (fill) {
+            fill.style.width = (Number(data.progress_percentage) || 0) + '%';
+            fill.style.background = sporeAttr(el, 'data-spore-np-bar', '#1db954');
+        }
+        if (sporeAttr(el, 'data-spore-np-layout', 'row') === 'stack') {
+            el.style.flexDirection = 'column';
+            el.style.alignItems = 'stretch';
+        }
+    }
+
+    function sporePaintQr(el) {
+        var host = el.querySelector('.spore-qr-host');
+        if (!host) { return; }
+        var text = sporeAttr(el, 'data-spore-qr-text', '');
+        if (typeof qrcode !== 'function') {
+            host.textContent = text;
+            return;
+        }
+        try {
+            var qr = qrcode(0, 'M');
+            qr.addData(text || ' ');
+            qr.make();
+            var svg = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+            var fg = sporeAttr(el, 'data-spore-qr-fg', '#000000');
+            var bg = sporeAttr(el, 'data-spore-qr-bg', '#ffffff');
+            svg = svg.replace('fill="white"', 'fill="' + bg.replace(/"/g, '') + '"')
+                .replace('fill="black"', 'fill="' + fg.replace(/"/g, '') + '"');
+            host.innerHTML = svg;
+            var node = host.querySelector('svg');
+            if (node) { node.style.width = '100%'; node.style.height = '100%'; }
+        } catch (err) {
+            host.textContent = text;
+        }
+    }
+
+    function sporePaintEmbed(el) {
+        var frame = el.querySelector('.spore-embed-frame');
+        if (!frame) { return; }
+        var url = sporeAttr(el, 'data-spore-embed-url', '');
+        var scale = parseFloat(sporeAttr(el, 'data-spore-embed-scale', '1')) || 1;
+        if (scale <= 0) { scale = 1; }
+        frame.style.transformOrigin = 'top left';
+        frame.style.transform = 'scale(' + scale + ')';
+        frame.style.width = (100 / scale) + '%';
+        frame.style.height = (100 / scale) + '%';
+        if (url && frame.getAttribute('src') !== url) { frame.setAttribute('src', url); }
+        var refresh = parseInt(sporeAttr(el, 'data-spore-embed-refresh', '0'), 10) || 0;
+        if (refresh > 0 && !el.getAttribute('data-spore-embed-timer')) {
+            el.setAttribute('data-spore-embed-timer', '1');
+            setInterval(function () {
+                var next = sporeAttr(el, 'data-spore-embed-url', '');
+                if (!next) { return; }
+                var bust = next + (next.indexOf('?') >= 0 ? '&' : '?') + '_spore=' + Date.now();
+                frame.setAttribute('src', bust);
+            }, refresh * 1000);
+        }
+    }
+
+    function sporeRefreshStatCards() {
+        var cards = window.__sporeStatCards || [];
+        for (var i = 0; i < cards.length; i++) {
+            var spec = cards[i];
+            var el = document.getElementById(spec.elementId);
+            if (!el) { continue; }
+            var value = sporeResolveSource(
+                spec.source || {},
+                window.__sporeLastPayload.event || {},
+                window.__sporeLastPayload.ctx || {}
+            );
+            var fmt = sporeAttr(el, 'data-spore-stat-format', '{value}');
+            var label = sporeAttr(el, 'data-spore-stat-label', '');
+            var icon = sporeAttr(el, 'data-spore-stat-icon', '');
+            var labelEl = el.querySelector('.spore-stat-label');
+            var valueEl = el.querySelector('.spore-stat-value');
+            var iconEl = el.querySelector('.spore-stat-icon');
+            if (labelEl) {
+                labelEl.textContent = label;
+                labelEl.style.color = sporeAttr(el, 'data-spore-stat-label-color', '#94a3b8');
+            }
+            if (valueEl) {
+                valueEl.textContent = (value == null || value === '')
+                    ? '\u2014'
+                    : sporeFormatDisplay(value, fmt);
+                valueEl.style.color = sporeAttr(el, 'data-spore-stat-value-color', '#ffffff');
+            }
+            if (iconEl) { iconEl.textContent = icon; }
+        }
+    }
+
+    function sporeBindList(el) {
+        if (!el || el.getAttribute('data-spore-list-bound') === '1') { return; }
+        el.setAttribute('data-spore-list-bound', '1');
+        var source = sporeAttr(el, 'data-spore-list-source', 'alerts');
+        var events = [];
+        if (source === 'alerts') { events = ['instant_alert', 'next_alert']; }
+        else if (source === 'giveaway') { events = ['giveaway_entry', 'giveaway_winner']; }
+        else if (source === 'payload') {
+            var named = sporeAttr(el, 'data-spore-list-event', '');
+            if (named) { events = [named]; }
+        }
+        events.forEach(function (evName) {
+            if (typeof socket === 'undefined' || !socket || !socket.on) { return; }
+            socket.on(evName, function (data) {
+                data = data || {};
+                if (source === 'alerts') {
+                    var want = String(sporeAttr(el, 'data-spore-list-alert-type', 'any')).toLowerCase();
+                    if (want && want !== 'any' && sporeAlertType(data) !== want) { return; }
+                }
+                if (evName === 'giveaway_winner' && Array.isArray(data.winners)) {
+                    /* One row per winner; the payload itself has no single username. */
+                    data.winners.forEach(function (name) {
+                        var row = Object.assign({}, data, { username: String(name) });
+                        sporeListAdd(el.id, row, '');
+                    });
+                    return;
+                }
+                sporeListAdd(el.id, data, '');
+            });
+        });
+    }
+
+    function sporeInitWidgets() {
+        var lists = document.querySelectorAll('[data-spore-type="list"]');
+        for (var i = 0; i < lists.length; i++) { sporeBindList(lists[i]); }
+        var wheels = document.querySelectorAll('[data-spore-type="wheel"]');
+        for (var w = 0; w < wheels.length; w++) {
+            sporePaintWheel(wheels[w]);
+            if (sporeAttr(wheels[w], 'data-spore-wheel-source', 'static') === 'giveaway' &&
+                    typeof socket !== 'undefined' && socket && socket.on) {
+                (function (wheel) {
+                    socket.on('giveaway_winner', function (data) {
+                        var entries = (data && (data.pool_entries || data.winners)) || [];
+                        if (entries.length) {
+                            var segs = entries.map(function (name, n) {
+                                var colors = ['#a855f7', '#22c55e', '#f59e0b', '#38bdf8', '#f43f5e', '#eab308'];
+                                return { label: String(name), color: colors[n % colors.length] };
+                            });
+                            wheel.setAttribute('data-spore-wheel-segments', JSON.stringify(segs));
+                        }
+                        var winner = data && data.winners && data.winners[0];
+                        sporeWheelSpin(wheel.id, winner ? { label: winner } : data);
+                    });
+                })(wheels[w]);
+            }
+        }
+        var playing = document.querySelectorAll('[data-spore-type="now_playing"]');
+        if (playing.length && typeof socket !== 'undefined' && socket && socket.on) {
+            socket.on('spotify_data_update', function (data) {
+                for (var n = 0; n < playing.length; n++) { sporePaintNowPlaying(playing[n], data); }
+            });
+        }
+        for (var p = 0; p < playing.length; p++) { sporePaintNowPlaying(playing[p], {}); }
+        var qrs = document.querySelectorAll('[data-spore-type="qr"]');
+        for (var q = 0; q < qrs.length; q++) { sporePaintQr(qrs[q]); }
+        var embeds = document.querySelectorAll('[data-spore-type="embed"]');
+        for (var e = 0; e < embeds.length; e++) { sporePaintEmbed(embeds[e]); }
+        sporeRefreshStatCards();
+        sporeKeepStatCardsFresh();
+    }
+
+    /* Stat cards re-read their source on alerts and on a timer so values stay current. */
+    function sporeKeepStatCardsFresh() {
+        var cards = window.__sporeStatCards || [];
+        if (!cards.length || window.__sporeStatCardsLive) { return; }
+        window.__sporeStatCardsLive = true;
+        var usesStats = cards.some(function (c) {
+            var s = String((c.source && c.source.source) || '');
+            return s === 'stats' || s.indexOf('stats.') === 0;
+        });
+        if (usesStats && typeof sporeLoadStatsCache === 'function') { sporeLoadStatsCache(); }
+        if (typeof socket !== 'undefined' && socket && socket.on) {
+            ['instant_alert', 'next_alert'].forEach(function (evName) {
+                socket.on(evName, function (data) {
+                    window.__sporeLastPayload.event = data || {};
+                    sporeRefreshStatCards();
+                    if (usesStats) { setTimeout(sporeLoadStatsCache, 1500); }
+                });
+            });
+        }
+        setInterval(sporeRefreshStatCards, 1000);
+        if (usesStats) { setInterval(sporeLoadStatsCache, 15000); }
+    }
+
+    window.sporeListAdd = sporeListAdd;
+    window.sporeListClear = sporeListClear;
+    window.sporeWheelSpin = sporeWheelSpin;
+    window.sporeRefreshStatCards = sporeRefreshStatCards;
+    window.sporeInitWidgets = sporeInitWidgets;
+    window.sporePaintQr = sporePaintQr;
 
     window.sporePatchSetText = sporePatchSetText;
     window.sporeInitClocks = sporeInitClocks;

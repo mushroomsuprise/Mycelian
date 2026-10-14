@@ -17,6 +17,7 @@ class HelpCategory(Enum):
     GETTING_STARTED = "getting_started"
     ALERTS = "alerts"
     TEMPLATES = "templates"
+    SPORE_STUDIO = "spore_studio"
     CHATBOT = "chatbot"
     CONNECTORS = "connectors"
     INTEGRATIONS = "integrations"
@@ -2995,7 +2996,7 @@ counter shortcuts, pause alerts), use Spore Studio's **Source Controls** inspect
     "spore_studio_overview": HelpTopic(
         id="spore_studio_overview",
         title="Spore Studio Overview",
-        category=HelpCategory.TEMPLATES,
+        category=HelpCategory.SPORE_STUDIO,
         summary="Visual editor for custom overlay templates and their JSON configurations",
         content="""
 # Spore Studio Overview
@@ -3052,6 +3053,7 @@ When you click **Save** on a Spore template, Mycelian writes:
 
 | Button | What it does |
 |--------|----------------|
+| **Tour** | Spotlight walkthrough of the editor. Also offered once the first time you open Spore Studio |
 | **Reload editor** | Cache-busts and reloads the iframe (use after server restarts) |
 | **Open externally** | Opens `/_spore_studio_editor` in your default browser |
 
@@ -3169,12 +3171,14 @@ Quick walkthrough from blank canvas to OBS:
 | Goal | Read |
 |------|------|
 | Blocks, properties, assets | [Designing Templates in Spore Studio](help:spore_studio_design) |
+| Every widget and its settings | [Widget reference](help:spore_studio_widgets) |
 | Counters and counter rules | [Counters in Spore Studio](help:spore_studio_counters) |
 | Data displays and live values | [Data Sources & Data Displays](help:spore_studio_data_sources) |
 | Websocket triggers and actions | [Event Bindings & Actions](help:spore_studio_bindings) |
 | Stream Deck button mapping | [Stream Deck Actions in Spore Studio](help:spore_studio_streamdeck) |
 | Live stream control buttons | [Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls) |
 | Preview, Advanced JS, legacy | [Advanced JS, Preview & Legacy Templates](help:spore_studio_advanced) |
+| Custom JavaScript | [Advanced JS reference](help:spore_studio_advanced_js) |
 | Combine templates on one URL | [Overlay Containers](help:spore_studio_containers) |
 | Step-by-step builds | [Spore Studio Examples & Recipes](help:spore_studio_examples) |
         """,
@@ -3207,7 +3211,7 @@ Quick walkthrough from blank canvas to OBS:
     "spore_studio_containers": HelpTopic(
         id="spore_studio_containers",
         title="Overlay Containers",
-        category=HelpCategory.TEMPLATES,
+        category=HelpCategory.SPORE_STUDIO,
         summary="Combine several templates on one browser-source URL",
         content="""
 # Overlay Containers
@@ -3290,7 +3294,7 @@ Templates that are built to fill their whole frame keep the full size you set.
     "spore_studio_design": HelpTopic(
         id="spore_studio_design",
         title="Designing Templates in Spore Studio",
-        category=HelpCategory.TEMPLATES,
+        category=HelpCategory.SPORE_STUDIO,
         summary="Blocks, canvas, assets, element properties, and Source Settings exposure",
         content="""
 # Designing Templates in Spore Studio
@@ -3301,15 +3305,7 @@ This guide covers everything you draw and configure on the canvas before wiring
 
 ## Block Types
 
-Drag blocks from the **Blocks** panel onto the canvas:
-
-| Block | Label | Typical use |
-|-------|-------|-------------|
-| T | **Text** | Labels, usernames, messages |
-| camera icon | **Image** | Alert art, avatars, static graphics |
-| film icon | **Video** | MP4/WebM loops; can bundle separate audio |
-| speaker icon | **Audio** | Sound effects, voice lines |
-| square icon | **Container** | Group and clip child elements |
+Drag a block from the **Blocks** panel onto the canvas. Category headers collapse, and that choice is remembered. Every block, its properties, and how to configure them is listed by category in [Widget reference](help:spore_studio_widgets).
 
 Dropping a block opens the **Element category** dialog.
 
@@ -3428,63 +3424,7 @@ Elements with non-`none` animations show a small **anim** badge on the canvas.
 
 ## Properties by Element Type
 
-### Text
-
-| Property | Notes |
-|----------|-------|
-| **Text** | Default label content |
-| **Font size (px)** | Numeric |
-| **Color** | Color picker |
-| **Font** | Dropdown of files in `assets/default_assets/fonts/`, or custom name |
-| **Font weight** | `normal`, `bold`, or `100`–`900` |
-| **Text align** | `left`, `center`, `right` |
-| **Vertical align** | `top`, `center`, `bottom` — positions text within the element height |
-| **Background** | Color picker (supports `#hex`, `rgba(...)`, or transparent) |
-
-### Image
-
-| Property | Notes |
-|----------|-------|
-| **Image source mode** | **Static URL** or **From counter (ranges)** |
-| **Source URL** | Dropdown of images in `assets/{template_name}/`, or **(custom URL…)** for manual paths |
-| **Counter / ranges / default src** | When using counter mode: pick a counter, assign an image per min–max range from the same asset dropdown |
-| **Border radius (px)** | Corner rounding |
-| **Opacity** | 0–1 |
-
-### Video
-
-| Property | Notes |
-|----------|-------|
-| **Visual source URL** | Video or image URL for the visual layer |
-| **Visual kind** | `video` or `image` (GIF-as-image swaps) |
-| **Optional audio URL** | Separate audio track |
-| **Audio volume (0–1)** | Default playback level |
-| **Audio fade-in (ms)** | 0–120000 |
-| **Audio fade-out (ms)** | 0–120000 |
-| **Autoplay** | Start when shown |
-| **Loop** | Repeat visual |
-| **Muted** | Mute bundled audio |
-| **Border radius (px)** | Corner rounding |
-
-### Audio
-
-| Property | Notes |
-|----------|-------|
-| **Source URL** | Audio file path |
-| **Volume (0–1)** | Default level |
-| **Fade-in (ms)** | 0–120000 |
-| **Fade-out (ms)** | 0–120000 |
-
-### Container
-
-| Property | Notes |
-|----------|-------|
-| **Background** | Fill behind children |
-| **Border radius (px)** | Outer corners |
-| **Border width (px)** | Outline thickness |
-| **Border color** | CSS color |
-
-Containers clip visually; child positions are relative to the container's top-left.
+Each block's properties, defaults, and how to set them are in [Widget reference](help:spore_studio_widgets), grouped as Data, Layout, Media, Text, and Widgets. Shared position, animation, and Source Settings exposure are covered there too.
 
 ## Expose in Source Settings (JSON)
 
@@ -3559,14 +3499,329 @@ After layout and styling, open the **Bindings** tab — covered in
             "spore_studio_data_sources",
             "spore_studio_dynamic_controls",
             "spore_studio_bindings",
+            "spore_studio_widgets",
             "template_configuration",
             "source_controls",
+        ],
+    ),
+    "spore_studio_widgets": HelpTopic(
+        id="spore_studio_widgets",
+        title="Widget Reference",
+        category=HelpCategory.SPORE_STUDIO,
+        summary="Every Spore Studio block, grouped by category, with each setting explained",
+        content="""
+# Widget Reference
+
+Blocks live in the **Blocks** panel, grouped into categories. Click a category header to collapse it. Drag a block onto the canvas, then set it up in **Properties**.
+
+Most property rows have an **Expose in Source Settings** checkbox. When it is on, the value is written to `template_configs/{name}.json` and can be changed later without reopening Spore Studio. When it is off, the value is baked into the HTML.
+
+## Shared settings
+
+These apply to every element.
+
+| Setting | What it does | How to set it |
+|---------|----------------|---------------|
+| **ID** | Unique name used by bindings and generated HTML | Type a new id. Renames update bindings. |
+| **Category** | Groups the element in the Outline and in Source Settings | Pick an existing name or type a new one when you drop the block |
+| **Parent** | Container this element is nested in, or canvas root | Drag into a container, or use **Move to canvas** |
+| **X, Y, W, H** | Position and size in pixels | Drag and resize on the canvas, or type numbers |
+| **Placement in container** | 3×3 anchor plus offset, when nested | Pick an anchor. Dragging updates the offset. |
+| **Start hidden until shown** | Element begins hidden until a Show action | Checkbox. Suggested automatically when a Show binding exists. |
+| **Entrance / Exit** | `none`, `fade`, `slideIn`, `slideOut`, `scaleIn`, `scaleOut` | Animations section. Runs on show and hide. |
+| **Entrance / Exit duration (ms)** | How long that animation plays | Number. Default 300 when the type is not `none`. |
+| **Delay before entrance (ms)** | Wait after show before the entrance starts | Number, 0–120000 |
+| **Easing** | `ease`, `ease-in`, `ease-out`, `ease-in-out`, `linear` | Select |
+
+## Text
+
+### Text
+
+Labels, usernames, counters, and data displays.
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Text mode** | Static text | **Static text** is fixed copy. **Counter** is a number with rules. **Data display** reads a live value. |
+| **Text** | Hello | Shown only in static mode |
+| **Size** | 32 | Font size in pixels |
+| **Color** | `#ffffff` | Text color |
+| **Font** | Arial | A file from `assets/default_assets/fonts/` or a family name |
+| **Bold / Italic** | off | Weight and style |
+| **Underline / Strikethrough** | off | Extra decoration |
+| **Kerning** | empty | Letter spacing in pixels |
+| **Leading** | empty | Line height in pixels |
+| **Align** | left | `left`, `center`, `right` |
+| **V-align** | top | `top`, `center`, `bottom` inside the box |
+| **Background** | empty | Fill behind the text |
+
+Counter mode adds counter id, initial value, min, max, format (`{value}`, `{min}`, `{max}`), persist, database path and key, and **Counter rules**. See [Counters](help:spore_studio_counters). Data display mode adds a data source, format, default text, and refresh events. See [Data sources](help:spore_studio_data_sources).
+
+Both live modes can animate the value (`tick_up`, fade-in, slide-in, bounce) separately from show/hide animations.
+
+## Media
+
+### Image
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Image source mode** | Static URL | Or **From counter (ranges)** to swap art by a counter's value |
+| **Source URL** | empty | File in `assets/{template}/` or a custom URL |
+| **Border radius (px)** | empty | Corner rounding |
+| **Opacity** | 1 | 0–1 |
+
+Counter mode asks for the counter, a default image, and min/max/image rows. Range changes can animate (slide, fade, crossfade, bounce, roll).
+
+### Video
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Visual source URL** | empty | Video or image file |
+| **Visual kind** | video | `video` or `image` (GIF or still) |
+| **Optional audio URL** | empty | Separate soundtrack |
+| **Audio volume** | 1 | 0–1 |
+| **Audio fade-in / fade-out (ms)** | 0 | 0–120000. 0 is instant. |
+| **Autoplay** | on | Start when shown |
+| **Loop** | off | Repeat the visual |
+| **Muted** | on | Mute the video's own audio |
+| **Border radius (px)** | empty | Corner rounding |
+
+### Audio
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Source URL** | empty | Audio file |
+| **Volume** | 1 | 0–1 |
+| **Fade-in / Fade-out (ms)** | 0 | Ramps volume. 0 is instant. |
+
+Play it from a binding with **Play audio element**, or from Advanced JS with `sporePlayMediaAudio`.
+
+### QR code
+
+Draws a QR code from text or a URL. No extra library is required at edit time; the saved overlay loads the bundled generator.
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Text or URL** | `https://` | The value encoded in the code |
+| **Foreground** | `#000000` | Dark module color |
+| **Background** | `#ffffff` | Light module color |
+
+Expose **Text or URL** if you want to change the link from Source Settings.
+
+### Embed
+
+Loads a page in a sandboxed iframe.
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **URL** | `https://` | Page to show. Must be a URL the overlay is allowed to load. |
+| **Scale** | 1 | Shrinks or enlarges the page inside the frame. 0.1–4. |
+| **Refresh (seconds)** | 0 | 0 leaves the page loaded. Any other number reloads it on that interval. |
+
+## Layout
+
+### Container
+
+Groups children and clips them. Child positions are relative to the container's top-left. Drop other blocks onto a container to nest them. Hold Alt while dropping to stay on the canvas root.
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Background** | faint purple | Fill behind children |
+| **Border radius (px)** | empty | Outer corners |
+| **Border width (px)** | empty | Outline thickness |
+| **Border color** | empty | Outline color |
+
+### Shape
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Shape** | rectangle | `rectangle` or `ellipse` |
+| **Fill** | `#a855f7` | Background color |
+| **Border width / color** | 0 / black | Outline |
+| **Corner radius (px)** | 8 | Ignored for ellipse (always a circle or oval) |
+| **Opacity** | 1 | 0–1 |
+
+### Divider
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Orientation** | horizontal | `horizontal` or `vertical` |
+| **Color** | `#64748b` | Line color |
+| **Thickness (px)** | 2 | 1–64 |
+| **Opacity** | 1 | 0–1 |
+
+### Gradient
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Kind** | linear | `linear` or `radial` |
+| **Angle (deg)** | 90 | Direction of a linear gradient |
+| **Color stops** | purple to slate | Each stop is a color and a 0–100 position. Add or remove stops in Properties. |
+| **Corner radius / border / opacity** | 0 | Same idea as Shape |
+
+## Data
+
+### Marquee
+
+Scrolling text. Supports the same text modes as Text (static, counter, data display) plus:
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Speed (s)** | 8 | Seconds for one full cycle. 1–120. |
+| **Direction** | left | `left` or `right` |
+| **Gap (px)** | 48 | Space between the repeated copies |
+
+### Clock
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Format** | `HH:mm:ss` | `HH`, `mm`, and `ss` tokens |
+| **Timezone** | local | `local`, `utc`, or `offset` |
+| **Offset (min)** | 0 | Minutes from UTC when timezone is `offset` |
+
+Text style settings match Text, except there is no background field on the clock schema.
+
+### Timer
+
+Counts up or down. Saving a timer also adds start, pause, and reset controls.
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Mode** | count down | `count_down` or `count_up` |
+| **Start (seconds)** | 300 | Where a countdown begins |
+| **Limit (seconds)** | 0 | Count-up stops here. 0 means it does not stop. |
+| **Auto start** | on | Start when the overlay loads |
+| **Format** | `{mm}:{ss}` | Tokens: `{hh}`, `{h}`, `{mm}`, `{m}`, `{ss}`, `{s}`, `{time}`, `{total}` |
+
+Bindings and Source Controls can call **Start timer**, **Pause timer**, and **Reset timer**. From Advanced JS: `sporeTimerStart(id)`, `sporeTimerPause(id)`, `sporeTimerReset(id)`.
+
+### Now playing
+
+A card for the current Spotify track. It updates when Mycelian emits `spotify_data_update`.
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Layout** | row | `row` puts art beside the text. `stack` puts art above the text. |
+| **Show art / title / artist / progress** | on | Hide any part you do not want |
+| **Title color** | `#ffffff` | Track name |
+| **Artist color** | `#94a3b8` | Artist line |
+| **Progress color** | `#1db954` | Fill of the progress bar |
+| **Title size** | 18 | Font size of the title. The artist line is 80% of this. |
+| **Font / Bold / Italic** | Arial / off / off | Typeface for the title and artist |
+| **Kerning** | none | Letter spacing in pixels |
+| **Align** | left | Alignment of the title and artist |
+| **Background** | dark translucent | Card fill |
+
+## Widgets
+
+### Progress bar
+
+Fills from a counter toward a goal.
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Counter** | empty | Which counter drives the fill |
+| **Max kind** | fixed | `fixed` uses the max number. `counter` uses another counter as the goal. |
+| **Max** | 100 | Goal when max kind is fixed |
+| **Track color / Fill color** | slate / purple | Empty and filled colors |
+| **Border radius / width / color** | 8 / 0 / black | Frame around the bar |
+| **Fill animation (ms)** | 500 | How long the width eases to the new value |
+| **Fill animation easing** | ease-out | CSS easing |
+| **Near-goal threshold (%)** | 90 | When the effect starts |
+| **Near-goal effect** | none | `none`, `pulse`, `shimmer`, or `scroll` |
+
+### List
+
+A feed of rows. Select a list and open **List feed** on the Properties tab. It is a three-step setup: choose where rows come from, choose which event fields fill the `{username}` and `{value}` slots, then write the row template. Every choice is a dropdown.
+
+**List feed** (rows and content)
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **1. Rows come from** | Alerts | Alerts (queued and instant), giveaway entries and winners, any other event you pick, or manual (only Bindings add rows) |
+| **Listen to event** | none | Appears for "Another event". A row is added each time that event fires. |
+| **Only this alert type** | Any alert type | Appears for Alerts. Show only follows, only bits, only raids, and so on. |
+| **2. Fills {username}** | username | Event field shown in the `{username}` slot. Choices come from the event's payload. |
+| **Fills {value}** | amount or quantity | Event field shown in the `{value}` slot |
+| **3. Row template** | `{username}` | Row text. The **Insert a field** dropdown adds any `{field}` from the event. |
+| **Max rows** | 8 | Oldest row is removed after this many |
+| **New rows go** | To the top | Top or bottom |
+| **Remove rows after (seconds)** | 0 | Rows disappear on their own after this long. 0 keeps a row until newer rows push it out. |
+
+Giveaway winners add one row per winner, with the winner's name in `{username}`.
+
+**Appearance** (look and feel)
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Font, size, color, bold, italic, and so on** | Arial, 18, white | Text style for every row |
+| **Row spacing (px)** | 4 | Gap under each row |
+| **Row background / padding / corner radius** | none / 0 / 0 | Give each row its own pill or card look |
+| **Add animation** | fade | `none`, `fade`, or `slide` |
+| **Remove animation** | fade | `none` or `fade`. Used when a row is pushed out or expires. |
+
+Bindings on the list: **Add list row** (optional literal text) and **Clear list**. From Advanced JS: `sporeListAdd(id, payload, "literal")` and `sporeListClear(id)`.
+
+### Wheel
+
+A spinning wheel. Static segments are edited under **Wheel segments** (label and color). **Segments from: giveaway** replaces those slices with the giveaway pool when a winner is drawn, then spins to that winner.
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Spin duration (ms)** | 4000 | How long the spin lasts |
+| **Easing** | ease-out | Feel of the spin |
+| **Pointer** | top | `top`, `right`, `bottom`, or `left` |
+| **Segments from** | static | `static` uses the segment list. `giveaway` follows giveaway winners. |
+
+Trigger a spin with the **Spin wheel** binding action, or `sporeWheelSpin(id, payload)`. If `payload.label` matches a segment, that slice wins. When the spin ends, `window.__sporeLastPayload.wheel` is `{ elementId, index, label }` and the overlay emits `wheel_result` with the same object.
+
+### Stat card
+
+Icon, label, and a value from a data source.
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Icon** | ★ | Short text or emoji |
+| **Label** | Stat | Caption |
+| **Value format** | `{value}` | `{value}` is replaced with the resolved source |
+| **Value color / Label color** | white / slate | Text colors |
+| **Value size** | 28 | Font size of the value. The label is half this size. |
+| **Font / Bold / Italic** | Arial / off / off | Typeface for the label and value |
+| **Background / border** | dark card | Fill, border width, color, and corner radius |
+| **Data source** | session bits | Same picker as data displays, including the extra fields for counters, config, stats, runtime, and Twitch |
+
+The editor preview shows a sample value so you can judge the layout. In the live overlay the card reads its data source on load, on every alert, and again every second. Session statistics are re-fetched every 15 seconds.
+
+## See also
+
+- [Designing Templates](help:spore_studio_design)
+- [Counters](help:spore_studio_counters)
+- [Data sources](help:spore_studio_data_sources)
+- [Event bindings](help:spore_studio_bindings)
+        """,
+        keywords=[
+            "widget",
+            "blocks",
+            "list",
+            "wheel",
+            "qr",
+            "embed",
+            "now playing",
+            "stat card",
+            "progress bar",
+            "spore studio",
+        ],
+        related_topics=[
+            "spore_studio_design",
+            "spore_studio_counters",
+            "spore_studio_data_sources",
+            "spore_studio_bindings",
+            "spore_studio_advanced_js",
         ],
     ),
     "spore_studio_bindings": HelpTopic(
         id="spore_studio_bindings",
         title="Event Bindings & Actions",
-        category=HelpCategory.TEMPLATES,
+        category=HelpCategory.SPORE_STUDIO,
         summary="Websocket events, payload filters, actions, chained steps, and Twitch API bindings",
         content="""
 # Event Bindings & Actions
@@ -3798,7 +4053,7 @@ Enable **Start hidden until shown** on the element (Properties tab) when using *
     "spore_studio_advanced": HelpTopic(
         id="spore_studio_advanced",
         title="Advanced JS, Preview & Legacy Templates",
-        category=HelpCategory.TEMPLATES,
+        category=HelpCategory.SPORE_STUDIO,
         summary="Live preview mocks, user JavaScript, queue handshake, Stream Deck config, and legacy modes",
         content="""
 # Advanced JS, Preview & Legacy Templates
@@ -3842,65 +4097,9 @@ uses your last saved preview size or the design canvas.
 
 ## Advanced JS Tab
 
-Hand-written JavaScript is stored between markers in the saved HTML:
+Custom JavaScript is saved between the `SPORE_STUDIO:user-begin` and `user-end` markers. The small box on this tab is enough for a few lines. **Expand editor** opens a larger editor with line numbers, indent, syntax coloring, and find/replace.
 
-```javascript
-// SPORE_STUDIO:user-begin
-// your code here
-// SPORE_STUDIO:user-end
-```
-
-**Do not edit** the generated block between `// SPORE_STUDIO:auto-begin` and `auto-end` — it is
-rebuilt from your bindings on every **Save**.
-
-### Runtime helpers
-
-| Function | Purpose |
-|----------|---------|
-| `sporeShow(id)` | Show element (clears hidden state) |
-| `sporeHide(id)` | Hide element |
-| `sporeSetText(id, value)` | Set text element content |
-| `sporePlayMediaAudio(id, { volume?, fade_in_ms? })` | Play audio on audio/video bundle |
-
-You may also use `socket.on(...)` for events not covered by the binding picker.
-
-### Queue alert handshake
-
-For templates with **Alert system: Queue**, when your overlay finishes displaying a queued alert
-and you are the completion source, emit:
-
-```javascript
-socket.on('next_alert', function (data) {
-    // ... your show/hide logic ...
-    socket.emit('alert_complete', { queue_seq: data.queue_seq });
-});
-```
-
-If the main `alerts.html` overlay handles timing, subsidiary overlays may only need to echo
-`queue_seq` when they are the sole completion source. Otherwise the [alert queue](help:alerts_overview) stalls.
-
-> **Warning:** Missing or mismatched `queue_seq` is the most common cause of "stuck" alerts on
-> custom queue templates.
-
-### Twitch API from user script
-
-Same pattern as built-in templates:
-
-```javascript
-socket.emit('twitch-api-request', {
-    endpoint: 'https://api.twitch.tv/helix/users',
-    method: 'GET',
-    requestId: 'my-follower-check',
-    params: { login: 'someuser' }
-});
-
-socket.on('twitch-api-response', function (data) {
-    if (data.requestId !== 'my-follower-check') return;
-    // handle data
-});
-```
-
-Prefer **Twitch API bindings** in the inspector when you only need request/response tied to an element.
+The full helper list, queue handshake, and examples are in [Advanced JS reference](help:spore_studio_advanced_js). Do not edit the generated block between `auto-begin` and `auto-end`. It is rebuilt on every Save.
 
 ## Stream Deck Tab
 
@@ -3967,6 +4166,7 @@ Legacy templates **cannot** receive new blocks from the palette — toast: *Lega
             "mock",
         ],
         related_topics=[
+            "spore_studio_advanced_js",
             "spore_studio_bindings",
             "spore_studio_streamdeck",
             "spore_studio_examples",
@@ -3974,10 +4174,177 @@ Legacy templates **cannot** receive new blocks from the palette — toast: *Lega
             "alerts_overview",
         ],
     ),
+    "spore_studio_advanced_js": HelpTopic(
+        id="spore_studio_advanced_js",
+        title="Advanced JS Reference",
+        category=HelpCategory.SPORE_STUDIO,
+        summary="How custom JavaScript is saved, which helpers you can call, and how to hook into live events",
+        content="""
+# Advanced JS Reference
+
+Use the **Advanced JS** tab when a binding cannot express the behavior. Short scripts fit in the box on the right. **Expand editor** opens a larger editor for longer scripts: line numbers, Tab indent, matching brackets, syntax coloring, find and replace (Ctrl+F or Cmd+F), and a **Reference** list that inserts helper snippets.
+
+Both editors edit the same script. Closing the large editor, or pausing while you type, records an undo step.
+
+## Where the script goes
+
+On Save, Mycelian writes three regions into the overlay script:
+
+| Markers | What happens on Save |
+|---------|----------------------|
+| `SPORE_STUDIO:user-begin` … `user-end` | Your script. Kept as you wrote it. |
+| `SPORE_STUDIO:auto-begin` … `auto-end` | Rebuilt from bindings, counters, and widgets. Do not edit this. |
+| `SPORE_STUDIO:data-runtime-begin` … `data-runtime-end` | Shared helper library. Replaced from the boilerplate. |
+
+Your script runs in the same page script as `sporeShow` and `socket`. It runs after the helper library, so those functions exist.
+
+## Helpers you can call
+
+These are defined in the overlay page (not inside a private function), so Advanced JS can call them directly.
+
+| Function | What it does |
+|----------|----------------|
+| `sporeShow(id)` | Show the element and play its entrance animation |
+| `sporeHide(id)` | Play the exit animation, then hide it |
+| `sporeSetText(id, value)` | Set text. Marquee copies are updated too. |
+| `sporePlayMediaAudio(id, opts)` | Play the element's audio. `opts` may set `volume` (0–1) and `fade_in_ms`. |
+| `sporeCounterAdjust(counterId, operation, delta, payload)` | `operation` is `increment`, `decrement`, `set`, or `reset`. `delta` is `{ kind: "fixed", value: 1 }` or `{ kind: "data_source", source: "alert.amt_cheered", fallback: 0 }`. |
+| `sporeTimerStart(id)` / `sporeTimerPause(id)` / `sporeTimerReset(id)` | Control a timer element |
+| `sporeListAdd(id, payload, literal)` | Append a row to a List widget |
+| `sporeListClear(id)` | Remove every row |
+| `sporeWheelSpin(id, payload)` | Spin a Wheel. If `payload.label` matches a segment, that segment wins. |
+| `sporeDbGet(path, callback)` | Read a database document. `callback(data)` runs when it arrives. |
+| `sporeDbSet(path, data)` | Write a database document |
+| `sporeLoadStatsCache()` | Reload session statistics, then refresh data displays and stat cards |
+| `sporeRefreshAllDataDisplays()` | Re-read every data display and stat card |
+| `sporeResolveSource(spec, payload, ctx)` | Resolve one data-source spec the same way counters do |
+
+`socket` is the overlay Socket.IO client. `window.__sporeLastPayload.event` is the last event payload. `window.__sporeLastPayload.wheel` is set when a wheel stops: `{ elementId, index, label }`. The overlay also emits `wheel_result` with that object.
+
+## Hooking into events
+
+Listen beside the generated bindings. Do not replace the generated `socket.on` handlers.
+
+```javascript
+socket.on('instant_alert', function (data) {
+    if (!data || data.alert_type !== 'bit') return;
+    sporeShow('thank_you');
+    sporeSetText('who', data.username || '');
+    sporeCounterAdjust('bits', 'increment', {
+        kind: 'data_source',
+        source: 'alert.amt_cheered',
+        alert_type_filter: 'bit',
+        fallback: 0
+    }, data);
+});
+```
+
+Data displays and stat cards read `window.__sporeLastPayload.event`. If you handle an event yourself and want them to update, set that field and call `sporeRefreshAllDataDisplays()`.
+
+### Queue handshake
+
+A template whose alert system is **Queue** must release the alert when it is the overlay allowed to finish it. Read `queue_seq` from the payload and send it back. A missing or mismatched id stalls the queue.
+
+```javascript
+socket.on('next_alert', function (data) {
+    sporeShow('alert_root');
+    sporeSetText('who', data.username || '');
+    setTimeout(function () {
+        sporeHide('alert_root');
+        socket.emit('alert_complete', { queue_seq: data.queue_seq });
+    }, (data.duration || 5) * 1000);
+});
+```
+
+If `alerts.html` already completes the queue, a side overlay should not emit `alert_complete`.
+
+### Counters and lists
+
+Prefer Counter rules in Properties when the math is "add this field on this alert." Use `sporeCounterAdjust` when the rule depends on something the rule editor cannot see (a calculation, a timer, a Twitch response).
+
+Lists that use **Rows come from: Manual** stay empty until something calls `sporeListAdd`. Alerts, giveaways, and a named payload event fill themselves.
+
+### Source Controls
+
+A control with action `my_action` on template `my_overlay` emits `my_overlay_my_action`. Listen for that name:
+
+```javascript
+socket.on('my_overlay_my_action', function (data) {
+    sporeSetText('banner', (data && data.value) || 'clicked');
+});
+```
+
+### Twitch API
+
+Prefer a Twitch API binding when the request belongs to one element. From script, the same socket events work:
+
+```javascript
+socket.emit('twitch-api-request', {
+    endpoint: 'https://api.twitch.tv/helix/users',
+    method: 'GET',
+    requestId: 'my-follower-check',
+    params: { login: 'someuser' }
+});
+
+socket.on('twitch-api-response', function (data) {
+    if (!data || data.requestId !== 'my-follower-check') return;
+    window.__sporeTwitchCache['my-follower-check'] = data;
+    sporeRefreshAllDataDisplays();
+});
+```
+
+A data source of type **Twitch API response field** reads that cache. The binding id Spore Studio generates looks like `spore_tw_elementId_0`.
+
+### Database
+
+```javascript
+sporeDbGet('my_overlay/counters', function (doc) {
+    doc = doc || {};
+    sporeSetText('note', String(doc.note || ''));
+});
+
+sporeDbSet('my_overlay/counters', { note: 'saved from the overlay' });
+```
+
+## Pitfalls
+
+| Problem | What to do |
+|---------|------------|
+| Edits inside `auto-begin` disappear | Move them between `user-begin` and `user-end` |
+| Alerts stuck in the queue | Emit `alert_complete` with the same `queue_seq` you received, and only if this overlay is supposed to finish the alert |
+| Counter jumps on unrelated alerts | Set the data-source fallback to 0 and set an alert type filter |
+| `sporeShow` does nothing | The id must match the element id on the canvas, including spelling |
+| Script runs before `socket` exists | The boilerplate creates `socket` above your block. If you still see an error, wrap the listen in `if (typeof socket !== 'undefined')` |
+
+## See also
+
+- [Advanced JS, preview, and legacy templates](help:spore_studio_advanced)
+- [Event bindings](help:spore_studio_bindings)
+- [Widget reference](help:spore_studio_widgets)
+- [Websocket events](help:template_websocket)
+        """,
+        keywords=[
+            "advanced js",
+            "sporeShow",
+            "sporeCounterAdjust",
+            "alert_complete",
+            "user-begin",
+            "custom javascript",
+            "spore studio",
+        ],
+        related_topics=[
+            "spore_studio_advanced",
+            "spore_studio_bindings",
+            "spore_studio_widgets",
+            "spore_studio_counters",
+            "template_websocket",
+            "alerts_overview",
+        ],
+    ),
     "spore_studio_examples": HelpTopic(
         id="spore_studio_examples",
         title="Spore Studio Examples & Recipes",
-        category=HelpCategory.TEMPLATES,
+        category=HelpCategory.SPORE_STUDIO,
         summary="Step-by-step overlay builds with bindings, filters, and testing",
         content="""
 # Spore Studio Examples & Recipes
@@ -4174,7 +4541,7 @@ See [Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls)
     "spore_studio_counters": HelpTopic(
         id="spore_studio_counters",
         title="Counters in Spore Studio",
-        category=HelpCategory.TEMPLATES,
+        category=HelpCategory.SPORE_STUDIO,
         summary="Set up numeric counters, rules, persistence, image ranges, and binding adjustments",
         content="""
 # Counters in Spore Studio
@@ -4341,7 +4708,7 @@ or a one-off adjustment from a different event than your main rules.
     "spore_studio_data_sources": HelpTopic(
         id="spore_studio_data_sources",
         title="Data Sources & Data Displays",
-        category=HelpCategory.TEMPLATES,
+        category=HelpCategory.SPORE_STUDIO,
         summary="Read-only live values from alerts, chat, stats, config, and runtime database",
         content="""
 # Data Sources & Data Displays
@@ -4376,34 +4743,52 @@ Value types follow the source: numbers, strings, or booleans (`alerts.paused`).
 
 | Flag | Meaning |
 |------|---------|
-| **Delta-only** (`fixed`, `random_int`, `random_float`) | For counter rule deltas only — not shown in data display picker |
-| **Display sources** | All other registry entries — usable in data displays and as `data_source` counter deltas |
+| **Delta kind** (`fixed`, `random_int`, `random_float`, `data_source`) | Chosen in the counter rule **Delta kind** dropdown. These are not data sources. |
+| **Delta-only** (`sub.new_sub`, `sub.resub`, `sub.gift_sub`) | Counter deltas only — hidden from the data display picker |
+| **Display-only** | Text and other non-numeric values (username, message, alert type). Hidden from counter deltas. |
+| **Both** | Numeric payload fields, session stats, and other counters |
+
+## Source fields
+
+Picking a source can reveal more fields:
+
+| Source | Extra fields |
+|--------|----------------|
+| Alert payload and subscriptions | **Alert type** (follow, sub, resub, giftsub, bit, donation, raid, hype train, channel points, streak) and, for subs, a **Tier filter** |
+| `stats` | **Statistic** — a key from the session snapshot |
+| `counter` | **Counter** — another counter in this template |
+| `config` | **Config field** — an exposed Source Settings id |
+| `runtime` | **Database path** and **Database key** |
+| `twitch` | **Binding** (request id) and **Response path** |
+
+Counter rules also have **Filter** rows for the selected event. Leave a filter blank to match any value. A filled filter must equal that payload field or the rule does not run. Use **Alert type** on the source when you still want the rule to run but add `0` (the fallback) for other alert types.
 
 ## Source Catalog
 
-### Delta (counter deltas only)
-
-| Id | Label | Notes |
-|----|-------|-------|
-| `fixed` | Fixed value | Use delta value field |
-| `random_int` | Random integer | Inclusive min/max |
-| `random_float` | Random float | Inclusive min/max, optional decimals |
-
 ### Alert payload
 
-| Id | Label | Type |
-|----|-------|------|
-| `alert.amount` | Alert amount | number |
-| `alert.quantity` | Alert quantity | number |
-| `alert.tier` | Sub tier | string |
-| `alert.amt_cheered` | Bits cheered | number |
-| `alert.cumulative_months` | Cumulative months | number |
-| `alert.raider_count` | Raider count | number |
-| `alert.username` | Username | string |
-| `alert.message` | Message | string |
-| `alert.alert_type` | Alert type | string |
-| `alert.currency` | Currency | string |
-| `alert.queue_seq` | Queue sequence | number |
+| Id | Label | Type | Counter delta |
+|----|-------|------|----------------|
+| `alert.amount` | Donation amount | number | yes |
+| `alert.quantity` | Alert quantity | number | yes |
+| `alert.gift_qty` | Gift sub quantity | number | yes |
+| `alert.amt_cheered` | Bits cheered | number | yes |
+| `alert.cumulative_months` | Cumulative months | number | yes |
+| `alert.raider_count` | Raider count | number | yes |
+| `alert.streak_count` | Watch streak | number | yes |
+| `alert.channel_points_awarded` | Channel points awarded | number | yes |
+| `alert.level` | Hype train level | number | yes |
+| `alert.total` | Hype train total | number | yes |
+| `alert.duration` | Alert duration (seconds) | number | yes |
+| `alert.timestamp` | Alert timestamp | number | yes |
+| `alert.queue_seq` | Queue sequence | number | yes |
+| `alert.tier` | Sub tier | string | display only |
+| `alert.username` | Username | string | display only |
+| `alert.message` | Message | string | display only |
+| `alert.alert_type` | Alert type | string | display only |
+| `alert.alert_name` | Point reward name | string | display only |
+| `alert.recipient` | Gift recipient | string | display only |
+| `alert.currency` | Currency | string | display only |
 
 ### Chat
 
@@ -4415,51 +4800,47 @@ Value types follow the source: numbers, strings, or booleans (`alerts.paused`).
 | `chat.userid` | Chat user ID | string |
 | `chat.badges` | Chat badges | string |
 | `chat.color` | Chat color | string |
-| `chat.message_text` | Connector message text | string |
+| `chat.message_text` | Connector message text (`chat_add_message`) | string |
 
 ### Alert system
 
 | Id | Label | Type |
 |----|-------|------|
-| `alerts.paused` | Alerts paused | boolean |
+| `alerts.paused` | Alerts paused | boolean (display only) |
 
 ### Session stats
 
-| Id | Label |
-|----|-------|
-| `stats.total_gift_subs` | Total gift subs (session) |
-| `stats.total_bits` | Total bits (session) |
-| `stats.follows` | Follows (session) |
-| `stats.subs` | Subs (session) |
-| `stats.raids` | Raids (session) |
-| `stats.cheers` | Cheers (session) |
+Pick source `stats`, then a statistic:
 
-### Chatbot
+| Key | Label |
+|-----|-------|
+| `total_gift_subs` | Total gift subs |
+| `total_bits` | Total bits |
+| `follows` | Follows |
+| `subs` | Subs |
+| `raids` | Raids |
+| `cheers` | Cheers |
 
-| Id | Label |
-|----|-------|
-| `chatbot.gift_sub_quantity` | Gift sub quantity |
-| `chatbot.gift_sub_tier` | Gift sub tier |
-| `chatbot.raid_viewer_count` | Raid viewer count |
+Older templates that stored `stats.total_bits` directly still resolve.
 
 ### Template
 
-| Id | Label | Usage |
-|----|-------|-------|
-| `counter.{id}` | Another counter in this template | Use `counter.bit_count` etc. |
-| `config.{id}` | Source Settings field | Reads exposed config by field id |
+| Id | Label | Extra field |
+|----|-------|-------------|
+| `counter` | Another counter in this template | Counter id |
+| `config` | Source Settings field | Field id |
 
 ### Runtime database
 
-| Id | Label | Usage |
-|----|-------|-------|
-| `runtime.{path}.{key}` | Runtime database field | User-defined path and key |
+| Id | Label | Extra fields |
+|----|-------|--------------|
+| `runtime` | Runtime database field | Path and key |
 
 ### Twitch API
 
-| Id | Label | Usage |
-|----|-------|-------|
-| `twitch.{binding_id}.{path}` | Twitch API response field | Dot path into last `twitch-api-response` for a binding id |
+| Id | Label | Extra fields |
+|----|-------|--------------|
+| `twitch` | Twitch API response field | Binding request id and dot path |
 
 Configure the binding id and Helix call in [Event Bindings & Actions](help:spore_studio_bindings)
 under **Twitch API Bindings**, then reference response fields here.
@@ -4483,7 +4864,7 @@ under **Twitch API Bindings**, then reference response fields here.
 
 **Session bits total (read-only)**
 
-- Data display → `stats.total_bits`
+- Data display → `stats` with statistic `total_bits`
 - Refresh on: `instant_alert`, `refresh-alerts`
 
 **Live config value**
@@ -4517,7 +4898,7 @@ under **Twitch API Bindings**, then reference response fields here.
     "spore_studio_streamdeck": HelpTopic(
         id="spore_studio_streamdeck",
         title="Stream Deck Actions in Spore Studio",
-        category=HelpCategory.TEMPLATES,
+        category=HelpCategory.SPORE_STUDIO,
         summary="Define template actions, wire bindings, and map physical Stream Deck buttons",
         content="""
 # Stream Deck Actions in Spore Studio
@@ -4634,7 +5015,7 @@ fire the same socket event and merged payload as production — no physical Stre
     "spore_studio_dynamic_controls": HelpTopic(
         id="spore_studio_dynamic_controls",
         title="Dynamic Controls (Source Controls Tab)",
-        category=HelpCategory.TEMPLATES,
+        category=HelpCategory.SPORE_STUDIO,
         summary="Author live stream controls that appear in Mycelian's Source Controls overlay",
         content="""
 # Dynamic Controls (Source Controls Tab)

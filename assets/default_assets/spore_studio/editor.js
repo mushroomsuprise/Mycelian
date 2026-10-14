@@ -119,6 +119,72 @@
             font_family: "Arial",
             text_align: "center",
             vertical_align: "center"
+        },
+        list: {
+            max_items: 8,
+            newest: "top",
+            row_template: "{username}",
+            row_gap: 4,
+            source: "alerts",
+            source_event: "instant_alert",
+            text_field: "username",
+            value_field: "value",
+            add_animation: "fade",
+            remove_animation: "fade",
+            alert_type: "any",
+            row_lifetime_s: 0,
+            row_background: "",
+            row_padding: 0,
+            row_radius: 0,
+            font_size: 18,
+            color: "#ffffff",
+            font_family: "Arial"
+        },
+        wheel: {
+            spin_ms: 4000,
+            easing: "ease-out",
+            pointer: "top",
+            source: "static",
+            background_color: "#0f172a"
+        },
+        now_playing: {
+            layout: "row",
+            show_art: true,
+            show_title: true,
+            show_artist: true,
+            show_progress: true,
+            title_color: "#ffffff",
+            artist_color: "#94a3b8",
+            bar_color: "#1db954",
+            font_size: 18,
+            font_family: "Arial",
+            color: "#ffffff",
+            background_color: "rgba(15,23,42,0.85)"
+        },
+        qr: {
+            text: "https://",
+            foreground: "#000000",
+            background_color: "#ffffff"
+        },
+        embed: {
+            url: "https://",
+            scale: 1,
+            refresh_seconds: 0,
+            background_color: "rgba(0,0,0,0.2)"
+        },
+        stat_card: {
+            label: "Stat",
+            format: "{value}",
+            icon: "★",
+            value_color: "#ffffff",
+            label_color: "#94a3b8",
+            font_size: 28,
+            font_family: "Arial",
+            color: "#ffffff",
+            background_color: "rgba(15,23,42,0.85)",
+            border_width: 0,
+            border_color: "#000000",
+            border_radius: 8
         }
     };
 
@@ -134,7 +200,13 @@
         gradient: { w: 240, h: 120 },
         marquee: { w: 400, h: 40 },
         clock: { w: 200, h: 48 },
-        timer: { w: 160, h: 48 }
+        timer: { w: 160, h: 48 },
+        list: { w: 280, h: 180 },
+        wheel: { w: 220, h: 220 },
+        now_playing: { w: 360, h: 84 },
+        qr: { w: 160, h: 160 },
+        embed: { w: 480, h: 270 },
+        stat_card: { w: 220, h: 72 }
     };
 
     var TEXT_STYLE_SCHEMA = [
@@ -268,10 +340,92 @@
         })),
         timer: TEXT_STYLE_SCHEMA.filter(function (e) {
             return e.key !== "background_color";
-        })
+        }),
+        /* Where rows come from and what they say lives in the "List feed" section. */
+        list: TEXT_STYLE_SCHEMA.concat([
+            { key: "row_gap", label: "Row spacing (px)", type: "number", min: 0, max: 64 },
+            { key: "row_background", label: "Row background", type: "color",
+              tooltip: "Fill behind each row. Leave empty for none." },
+            { key: "row_padding", label: "Row padding (px)", type: "number", min: 0, max: 64 },
+            { key: "row_radius", label: "Row corner radius (px)", type: "number", min: 0, max: 64 },
+            { key: "add_animation", label: "Add animation", type: "select",
+              options: ["none", "fade", "slide"] },
+            { key: "remove_animation", label: "Remove animation", type: "select",
+              options: ["none", "fade"] }
+        ]),
+        wheel: [
+            { key: "spin_ms", label: "Spin duration (ms)", type: "number", min: 200, max: 20000 },
+            { key: "easing", label: "Easing", type: "select",
+              options: ["ease", "ease-in", "ease-out", "ease-in-out", "linear"] },
+            { key: "pointer", label: "Pointer", type: "select",
+              options: ["top", "right", "bottom", "left"] },
+            { key: "source", label: "Segments from", type: "select",
+              options: ["static", "giveaway"],
+              tooltip: "Giveaway replaces segments with the entry pool when a winner is drawn" },
+            { key: "background_color", label: "Background", type: "color" }
+        ],
+        now_playing: [
+            { key: "layout", label: "Layout", type: "select", options: ["row", "stack"] },
+            { key: "show_art", label: "Show art", type: "checkbox" },
+            { key: "show_title", label: "Show title", type: "checkbox" },
+            { key: "show_artist", label: "Show artist", type: "checkbox" },
+            { key: "show_progress", label: "Show progress", type: "checkbox" },
+            { key: "title_color", label: "Title color", type: "color" },
+            { key: "artist_color", label: "Artist color", type: "color" },
+            { key: "bar_color", label: "Progress color", type: "color" },
+            { key: "font_size", label: "Title size", type: "number",
+              tooltip: "Title font size in pixels. The artist line is 80% of this." },
+            { key: "font_family", label: "Font", type: "font",
+              tooltip: "Font for the title and artist" },
+            { key: "font_weight", label: "Bold", type: "bold", tooltip: "Bold text" },
+            { key: "font_style", label: "Italic", type: "italic", tooltip: "Italic text" },
+            { key: "letter_spacing", label: "Kerning", type: "number",
+              tooltip: "Letter spacing in pixels" },
+            { key: "text_align", label: "Align", type: "select",
+              tooltip: "Horizontal alignment of the title and artist",
+              options: ["left", "center", "right"] },
+            { key: "background_color", label: "Background", type: "color" }
+        ],
+        qr: [
+            { key: "text", label: "Text or URL", type: "textarea",
+              tooltip: "Encoded into the QR code. Exposed fields can change this from Source Settings." },
+            { key: "foreground", label: "Foreground", type: "color" },
+            { key: "background_color", label: "Background", type: "color" }
+        ],
+        embed: [
+            { key: "url", label: "URL", type: "text" },
+            { key: "scale", label: "Scale", type: "number", step: 0.05, min: 0.1, max: 4,
+              tooltip: "Shrink or enlarge the page inside the frame" },
+            { key: "refresh_seconds", label: "Refresh (seconds)", type: "number", min: 0, max: 86400,
+              tooltip: "0 keeps the page loaded. Any other value reloads on that interval." }
+        ],
+        stat_card: [
+            { key: "icon", label: "Icon", type: "text",
+              tooltip: "Short text or emoji shown beside the value" },
+            { key: "label", label: "Label", type: "text" },
+            { key: "format", label: "Value format", type: "text",
+              tooltip: "Use {value} for the resolved data source" },
+            { key: "value_color", label: "Value color", type: "color" },
+            { key: "label_color", label: "Label color", type: "color" },
+            { key: "font_size", label: "Value size", type: "number",
+              tooltip: "Value font size in pixels. The label is half this size." },
+            { key: "font_family", label: "Font", type: "font",
+              tooltip: "Font for the label and value" },
+            { key: "font_weight", label: "Bold", type: "bold", tooltip: "Bold text" },
+            { key: "font_style", label: "Italic", type: "italic", tooltip: "Italic text" },
+            { key: "background_color", label: "Background", type: "color" },
+            { key: "border_width", label: "Border width (px)", type: "number" },
+            { key: "border_color", label: "Border color", type: "color" },
+            { key: "border_radius", label: "Corner radius (px)", type: "number" }
+        ]
     };
 
     var TEXT_LIKE_TYPES = { text: true, marquee: true };
+    /* List props edited in the "List feed" section rather than under Appearance. */
+    var LIST_FEED_KEYS = [
+        "source", "source_event", "alert_type", "text_field", "value_field",
+        "row_template", "max_items", "newest", "row_lifetime_s"
+    ];
     var BLOCK_LABELS = {
         audio: "Audio",
         clock: "Clock",
@@ -282,16 +436,22 @@
         marquee: "Marquee",
         progress_bar: "Progress bar",
         shape: "Shape",
+        embed: "Embed",
+        list: "List",
+        now_playing: "Now playing",
+        qr: "QR code",
+        stat_card: "Stat card",
         text: "Text",
         timer: "Timer",
-        video: "Video"
+        video: "Video",
+        wheel: "Wheel"
     };
     var BLOCK_PALETTE = [
-        { group: "Data", types: ["clock", "marquee", "timer"] },
+        { group: "Data", types: ["clock", "marquee", "now_playing", "timer"] },
         { group: "Layout", types: ["container", "divider", "gradient", "shape"] },
-        { group: "Media", types: ["audio", "image", "video"] },
+        { group: "Media", types: ["audio", "embed", "image", "qr", "video"] },
         { group: "Text", types: ["text"] },
-        { group: "Widgets", types: ["progress_bar"] }
+        { group: "Widgets", types: ["list", "progress_bar", "stat_card", "wheel"] }
     ];
     var stagePreviewIntervals = [];
 
@@ -1006,6 +1166,9 @@
         if (elType === "timer") {
             keys.push("mode", "start_seconds", "limit_seconds", "format", "auto_start");
         }
+        if (elType === "list") {
+            keys = keys.concat(LIST_FEED_KEYS);
+        }
         return keys;
     }
 
@@ -1059,12 +1222,12 @@
         return ps.max != null ? ps.max : 100;
     }
 
-    function dataSourcesForPicker(deltaOnly, displayOnly) {
+    function dataSourcesForPicker(deltaOnly, displayOnly, hideDisplayOnly) {
         var list = (state.dataSources && state.dataSources.sources) || [];
         return list.filter(function (s) {
             if (deltaOnly && !s.delta_only && s.category !== "Delta") { return false; }
             if (displayOnly && s.delta_only) { return false; }
-            if (deltaOnly && s.display_only) { return false; }
+            if ((deltaOnly || hideDisplayOnly) && s.display_only) { return false; }
             return true;
         });
     }
@@ -1624,7 +1787,13 @@
             gradient: "\u25D0",
             marquee: "\u21C4",
             clock: "\u23F0",
-            timer: "\u23F1"
+            timer: "\u23F1",
+            list: "\u2630",
+            wheel: "\u25D4",
+            now_playing: "\u266B",
+            qr: "\u25A6",
+            embed: "\u25A3",
+            stat_card: "#"
         };
         return '<span class="ss-block__icon">' + (icons[type] || "?") + "</span>";
     }
@@ -1636,15 +1805,36 @@
         var groups = BLOCK_PALETTE.slice().sort(function (a, b) {
             return a.group.localeCompare(b.group);
         });
+        var collapsed = {};
+        try {
+            collapsed = JSON.parse(localStorage.getItem("mycelian-spore-blocks-collapsed") || "{}") || {};
+        } catch (err) { collapsed = {}; }
         groups.forEach(function (grp) {
             var types = grp.types.slice().sort(function (a, b) {
                 return (BLOCK_LABELS[a] || a).localeCompare(BLOCK_LABELS[b] || b);
             });
             var gEl = document.createElement("div");
             gEl.className = "ss-block-group";
-            var gTitle = document.createElement("div");
+            if (collapsed[grp.group]) { gEl.classList.add("is-collapsed"); }
+            var gTitle = document.createElement("button");
+            gTitle.type = "button";
             gTitle.className = "ss-block-group__title";
-            gTitle.textContent = grp.group;
+            gTitle.setAttribute("aria-expanded", collapsed[grp.group] ? "false" : "true");
+            var chev = document.createElement("span");
+            chev.className = "ss-block-group__chevron";
+            chev.setAttribute("aria-hidden", "true");
+            var label = document.createElement("span");
+            label.textContent = grp.group;
+            gTitle.appendChild(chev);
+            gTitle.appendChild(label);
+            gTitle.addEventListener("click", function () {
+                var now = gEl.classList.toggle("is-collapsed");
+                gTitle.setAttribute("aria-expanded", now ? "false" : "true");
+                collapsed[grp.group] = now;
+                try {
+                    localStorage.setItem("mycelian-spore-blocks-collapsed", JSON.stringify(collapsed));
+                } catch (err2) {}
+            });
             gEl.appendChild(gTitle);
             types.forEach(function (type) {
                 if (!ELEMENT_PROP_SCHEMA[type]) { return; }
@@ -1691,7 +1881,8 @@
         return { hex: "#ffffff", raw: s };
     }
 
-    function buildColorPicker(current, onChange) {
+    function buildColorPicker(current, onChange, opts) {
+        opts = opts || {};
         var wrap = document.createElement("div");
         wrap.style.display = "flex";
         wrap.style.flexDirection = "column";
@@ -1748,8 +1939,8 @@
             modelTouch();
         });
         row.appendChild(colorInput);
-        row.appendChild(textInput);
-        row.appendChild(transBtn);
+        if (!opts.noText) { row.appendChild(textInput); }
+        if (!opts.noClear) { row.appendChild(transBtn); }
         wrap.appendChild(row);
         return wrap;
     }
@@ -2338,8 +2529,9 @@
         blank.value = "";
         blank.textContent = "(select source)";
         sel.appendChild(blank);
-        var sources = dataSourcesForPicker(opts.deltaOnly, opts.displayOnly);
+        var sources = dataSourcesForPicker(opts.deltaOnly, opts.displayOnly, opts.hideDisplayOnly);
         var cats = {};
+        var found = !currentId;
         sources.forEach(function (s) {
             var cat = s.category || "Other";
             if (!cats[cat]) { cats[cat] = []; }
@@ -2352,15 +2544,348 @@
                 var op = document.createElement("option");
                 op.value = s.id;
                 op.textContent = s.label || s.id;
-                if (String(s.id) === String(currentId)) { op.selected = true; }
+                if (String(s.id) === String(currentId)) {
+                    op.selected = true;
+                    found = true;
+                }
                 og.appendChild(op);
             });
             sel.appendChild(og);
         });
+        if (currentId && !found) {
+            var extra = document.createElement("option");
+            extra.value = currentId;
+            extra.textContent = currentId;
+            extra.selected = true;
+            sel.appendChild(extra);
+        }
         sel.addEventListener("change", function () {
             if (onChange) { onChange(sel.value); }
         });
         return sel;
+    }
+
+    function alertTypeChoices() {
+        var rows = (state.dataSources && state.dataSources.alert_types) || [];
+        if (!rows.length) {
+            rows = [
+                { id: "follow", label: "Follow" },
+                { id: "sub", label: "New sub" },
+                { id: "resub", label: "Resub" },
+                { id: "giftsub", label: "Gift sub" },
+                { id: "bit", label: "Bits" },
+                { id: "donation", label: "Donation" },
+                { id: "raid", label: "Raid" },
+                { id: "hype_train", label: "Hype train" },
+                { id: "point", label: "Channel points" },
+                { id: "streak", label: "Streak" }
+            ];
+        }
+        return [{ id: "any", label: "Any alert type" }].concat(rows);
+    }
+
+    function sessionStatChoices() {
+        var rows = (state.dataSources && state.dataSources.session_stat_keys) || [];
+        if (!rows.length) {
+            return [
+                { id: "total_gift_subs", label: "Total gift subs" },
+                { id: "total_bits", label: "Total bits" },
+                { id: "follows", label: "Follows" },
+                { id: "subs", label: "Subs" },
+                { id: "raids", label: "Raids" },
+                { id: "cheers", label: "Cheers" }
+            ];
+        }
+        return rows;
+    }
+
+    function sourceDetailKind(sourceId) {
+        var s = String(sourceId || "");
+        if (s === "counter" || s === "counter.{id}" || s.indexOf("counter.") === 0) { return "counter"; }
+        if (s === "config" || s === "config.{id}" || s.indexOf("config.") === 0) { return "config"; }
+        if (s === "runtime" || s.indexOf("runtime.") === 0) { return "runtime"; }
+        if (s === "twitch" || s.indexOf("twitch.") === 0) { return "twitch"; }
+        if (s === "stats" || s.indexOf("stats.") === 0) { return "stats"; }
+        if (s.indexOf("alert.") === 0) { return "alert"; }
+        if (s.indexOf("sub.") === 0) { return "sub"; }
+        return "";
+    }
+
+    function hydrateSourceSpec(spec) {
+        if (!spec || !spec.source) { return; }
+        var s = String(spec.source);
+        var m;
+        if (s === "counter.{id}") { spec.source = "counter"; return; }
+        m = /^counter\.(.+)$/.exec(s);
+        if (m) {
+            if (!spec.source_id) { spec.source_id = m[1]; }
+            spec.source = "counter";
+            return;
+        }
+        if (s === "config.{id}") { spec.source = "config"; return; }
+        m = /^config\.(.+)$/.exec(s);
+        if (m) {
+            if (!spec.source_id) { spec.source_id = m[1]; }
+            spec.source = "config";
+            return;
+        }
+        if (s === "runtime.{path}.{key}") { spec.source = "runtime"; return; }
+        m = /^runtime\.([^.]+)\.(.+)$/.exec(s);
+        if (m) {
+            if (!spec.runtime_path) { spec.runtime_path = m[1]; }
+            if (!spec.runtime_key) { spec.runtime_key = m[2]; }
+            spec.source = "runtime";
+            return;
+        }
+        if (s === "twitch.{binding_id}.{path}") { spec.source = "twitch"; return; }
+        m = /^twitch\.([^.]+)\.(.+)$/.exec(s);
+        if (m) {
+            if (!spec.twitch_binding) { spec.twitch_binding = m[1]; }
+            if (!spec.twitch_path) { spec.twitch_path = m[2]; }
+            spec.source = "twitch";
+            return;
+        }
+        m = /^stats\.(.+)$/.exec(s);
+        if (m) {
+            if (!spec.source_id) { spec.source_id = m[1]; }
+            spec.source = "stats";
+        }
+    }
+
+    function clearSourceDetails(spec) {
+        delete spec.source_id;
+        delete spec.runtime_path;
+        delete spec.runtime_key;
+        delete spec.twitch_binding;
+        delete spec.twitch_path;
+        delete spec.alert_type_filter;
+        delete spec.tier_filter;
+    }
+
+    function listTwitchBindingIds() {
+        var out = [];
+        (state.model && state.model.elements || []).forEach(function (el) {
+            (el.bindings || []).forEach(function (b, idx) {
+                if (!b || b.event !== "twitch-api-response") { return; }
+                var token = String(el.id || "el").replace(/[^a-zA-Z0-9_]/g, "_") || "el";
+                var id = "spore_tw_" + token + "_" + idx;
+                var ep = (b.twitch_api && b.twitch_api.endpoint) || "";
+                out.push({ id: id, label: ep ? (id + " — " + ep) : id });
+            });
+        });
+        return out;
+    }
+
+    function listConfigFieldIds() {
+        var out = [
+            { id: "DesignWidth", label: "Design width" },
+            { id: "DesignHeight", label: "Design height" },
+            { id: "TemplateTitle", label: "Title" },
+            { id: "Duration", label: "Duration" },
+            { id: "Queued", label: "Queued" }
+        ];
+        (state.model && state.model.elements || []).forEach(function (el) {
+            if (!el) { return; }
+            var slug = slugifyElementIdForFont(el.id);
+            var expose = el.source_settings_expose || {};
+            var labelBase = el.id || slug;
+            function add(key, id, label) {
+                if (expose[key] === false) { return; }
+                out.push({ id: id, label: labelBase + " " + label });
+            }
+            var mode = el.text_mode || "static";
+            if (TEXT_LIKE_TYPES[el.type]) {
+                if (mode === "static") { add("text", slug + "Text", "text"); }
+                else { add("text", slug + "_format", "format"); }
+            }
+            if (el.type === "image" || el.type === "video" || el.type === "audio") {
+                add("src", el.src_var || (slug + "Src"), "source");
+            }
+            if (el.type === "timer") {
+                add("mode", slug + "_mode", "mode");
+                add("start_seconds", slug + "_start_seconds", "start seconds");
+                add("limit_seconds", slug + "_limit_seconds", "limit seconds");
+                add("format", slug + "_format", "format");
+                add("auto_start", slug + "_auto_start", "auto start");
+            }
+            if (el.type === "progress_bar") {
+                add("max", slug + "_max", "max");
+                add("max_kind", slug + "_max_kind", "max kind");
+            }
+            (ELEMENT_PROP_SCHEMA[el.type] || []).forEach(function (entry) {
+                if (!entry || entry.key === "text" || entry.key === "src") { return; }
+                add(entry.key, slug + "_" + entry.key, entry.label || entry.key);
+            });
+        });
+        var seen = {};
+        return out.filter(function (row) {
+            if (!row.id || seen[row.id]) { return false; }
+            seen[row.id] = true;
+            return true;
+        });
+    }
+
+    function buildIdSelect(current, rows, onChange, emptyLabel) {
+        var sel = document.createElement("select");
+        var blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = emptyLabel || "(select)";
+        sel.appendChild(blank);
+        var found = !current;
+        rows.forEach(function (row) {
+            var op = document.createElement("option");
+            op.value = row.id;
+            op.textContent = row.label || row.id;
+            if (String(current || "") === String(row.id)) {
+                op.selected = true;
+                found = true;
+            }
+            sel.appendChild(op);
+        });
+        if (current && !found) {
+            var extra = document.createElement("option");
+            extra.value = current;
+            extra.textContent = current;
+            extra.selected = true;
+            sel.appendChild(extra);
+        }
+        sel.addEventListener("change", function () { onChange(sel.value); });
+        return sel;
+    }
+
+    var SUB_ALERT_TYPES = { sub: true, resub: true, giftsub: true };
+
+    function findDataSourceRow(sourceId) {
+        var list = (state.dataSources && state.dataSources.sources) || [];
+        for (var i = 0; i < list.length; i += 1) {
+            if (list[i].id === sourceId) { return list[i]; }
+        }
+        return null;
+    }
+
+    /* Alert types that carry this source's field (empty means every alert type). */
+    function alertTypesForSource(spec) {
+        var row = findDataSourceRow(String((spec && spec.source) || ""));
+        return (row && Array.isArray(row.alert_types)) ? row.alert_types : [];
+    }
+
+    /* The tier filter only makes sense for subscription-type data. */
+    function wantsTierFilter(spec) {
+        var src = String((spec && spec.source) || "");
+        if (isSubDeltaSource(src)) { return true; }
+        if (sourceDetailKind(src) !== "alert") { return false; }
+        var types = alertTypesForSource(spec);
+        var at = String((spec && spec.alert_type_filter) || "any");
+        if (at !== "any") { return !!SUB_ALERT_TYPES[at]; }
+        if (!types.length) { return false; }
+        return types.every(function (t) { return !!SUB_ALERT_TYPES[t]; });
+    }
+
+    function appendDataSourceDetailFields(parent, spec, onChange, redraw) {
+        hydrateSourceSpec(spec);
+        var kind = sourceDetailKind(spec.source);
+        if (kind === "counter") {
+            parent.appendChild(formRow(
+                "Counter",
+                buildIdSelect(spec.source_id || "", listCountersInModel(), function (v) {
+                    spec.source_id = v;
+                    onChange();
+                    if (redraw) { redraw(); }
+                }, "(select counter)"),
+                "Which counter in this template to read"
+            ));
+        } else if (kind === "config") {
+            parent.appendChild(formRow(
+                "Config field",
+                buildIdSelect(spec.source_id || "", listConfigFieldIds(), function (v) {
+                    spec.source_id = v;
+                    onChange();
+                    if (redraw) { redraw(); }
+                }, "(select field)"),
+                "Exposed Source Settings field id"
+            ));
+            parent.appendChild(formRow("Field id", inputEl("text", spec.source_id || "", function (v) {
+                spec.source_id = String(v || "").trim();
+                onChange();
+            }), "Type a field id if it is not in the list"));
+        } else if (kind === "runtime") {
+            parent.appendChild(formRow("Database path", inputEl("text", spec.runtime_path || "", function (v) {
+                spec.runtime_path = String(v || "").trim();
+                onChange();
+            })));
+            parent.appendChild(formRow("Database key", inputEl("text", spec.runtime_key || "", function (v) {
+                spec.runtime_key = String(v || "").trim();
+                onChange();
+            })));
+        } else if (kind === "twitch") {
+            parent.appendChild(formRow(
+                "Binding",
+                buildIdSelect(spec.twitch_binding || "", listTwitchBindingIds(), function (v) {
+                    spec.twitch_binding = v;
+                    onChange();
+                    if (redraw) { redraw(); }
+                }, "(select binding)"),
+                "Twitch API binding on this template (request id)"
+            ));
+            parent.appendChild(formRow("Response path", inputEl("text", spec.twitch_path || "", function (v) {
+                spec.twitch_path = String(v || "").trim();
+                onChange();
+            }), "Dot path into the response, e.g. data.0.login"));
+        } else if (kind === "stats") {
+            parent.appendChild(formRow(
+                "Statistic",
+                buildIdSelect(spec.source_id || "", sessionStatChoices(), function (v) {
+                    spec.source_id = v;
+                    onChange();
+                    if (redraw) { redraw(); }
+                }, "(select statistic)"),
+                "Key from the session statistics snapshot"
+            ));
+        }
+        if (kind === "alert") {
+            var types = alertTypesForSource(spec);
+            var allowed = alertTypeChoices().filter(function (row) {
+                return row.id !== "any" && (!types.length || types.indexOf(row.id) >= 0);
+            });
+            if (spec.alert_type_filter && spec.alert_type_filter !== "any" &&
+                !allowed.some(function (row) { return row.id === spec.alert_type_filter; })) {
+                spec.alert_type_filter = "any";
+            }
+            if (types.length === 1) {
+                /* Only one alert type carries this field, so there is nothing to choose. */
+                spec.alert_type_filter = "any";
+            } else if (allowed.length > 1) {
+                if (!spec.alert_type_filter) { spec.alert_type_filter = "any"; }
+                parent.appendChild(formRow(
+                    "Alert type",
+                    buildIdSelect(
+                        spec.alert_type_filter,
+                        [{ id: "any", label: "Any alert type" }].concat(allowed),
+                        function (v) {
+                            spec.alert_type_filter = v || "any";
+                            if (spec.alert_type_filter !== "any" && spec.fallback == null) {
+                                spec.fallback = 0;
+                            }
+                            onChange();
+                            if (redraw) { redraw(); }
+                        },
+                        "(any alert type)"
+                    ),
+                    "Only use this source when the alert type matches. Other alerts use the fallback."
+                ));
+            }
+        }
+        if ((kind === "alert" || kind === "sub") && wantsTierFilter(spec)) {
+            if (spec.tier_filter == null) { spec.tier_filter = "any"; }
+            parent.appendChild(formRow(
+                "Tier filter",
+                buildTierFilterSelect(spec.tier_filter, function (v) {
+                    spec.tier_filter = v;
+                    onChange();
+                }),
+                "Only count this tier. Any tier leaves the value unchanged by tier."
+            ));
+        }
     }
 
     function isSubDeltaSource(sourceId) {
@@ -2425,39 +2950,33 @@
                     })));
                 }
             } else if (k === "data_source") {
+                hydrateSourceSpec(delta);
                 fields.appendChild(formRow("Source", buildDataSourceSelect(delta.source, function (sid) {
+                    clearSourceDetails(delta);
                     delta.source = sid;
-                    if (isSubDeltaSource(sid)) {
-                        if (delta.tier_filter == null) { delta.tier_filter = "any"; }
+                    if (isSubDeltaSource(sid) || sourceDetailKind(sid) === "alert") {
                         if (delta.fallback == null) { delta.fallback = 0; }
                     }
                     onChange(delta);
                     redraw();
-                }, { deltaOnly: false })));
-                if (isSubDeltaSource(delta.source)) {
-                    if (delta.tier_filter == null) { delta.tier_filter = "any"; }
-                    var subSourceTip = delta.source === "sub.gift_sub"
-                        ? "Adds the gifted quantity when a giftsub alert matches the tier. Use fallback 0 so other alerts do not change the counter."
-                        : "Adds 1 when the matching sub type and tier are received. Use fallback 0 so other alerts do not change the counter.";
-                    fields.appendChild(formRow(
-                        "Tier filter",
-                        buildTierFilterSelect(delta.tier_filter, function (v) {
-                            delta.tier_filter = v;
-                            onChange(delta);
-                        }),
-                        subSourceTip
-                    ));
-                }
+                }, { hideDisplayOnly: true })));
+                appendDataSourceDetailFields(fields, delta, function () {
+                    onChange(delta);
+                }, function () {
+                    onChange(delta);
+                    redraw();
+                });
                 fields.appendChild(formRow("Fallback", numberEl(
                     delta.fallback != null ? delta.fallback :
-                        (isSubDeltaSource(delta.source) ? 0 : 1),
+                        (isSubDeltaSource(delta.source) ||
+                            sourceDetailKind(delta.source) === "alert" ? 0 : 1),
                     function (v) {
                         delta.fallback = Number(v); onChange(delta);
-                    },
-                    isSubDeltaSource(delta.source)
-                        ? "Value used when no matching alert is received (0 avoids changing the counter on unrelated alerts)"
-                        : "Value used when the data source has no value"
-                )));
+                    }
+                ), isSubDeltaSource(delta.source) || sourceDetailKind(delta.source) === "alert"
+                    ? "Value used when the alert does not match (0 leaves the counter unchanged)"
+                    : "Value used when the data source has no value"
+                ));
             }
             onChange(delta);
         }
@@ -2466,6 +2985,133 @@
         wrap.appendChild(fields);
         redraw();
         return wrap;
+    }
+
+    function appendRuleFilterFields(card, rule) {
+        var ev = registryEvent(rule.event);
+        if (!ev || !ev.payload || !ev.payload.length) { return; }
+        var fieldsByKey = {};
+        ev.payload.forEach(function (field) { fieldsByKey[field.key] = field; });
+
+        var filterHost = document.createElement("div");
+        filterHost.className = "ss-section ss-binding-row__filters";
+        filterHost.style.padding = "0";
+        filterHost.style.borderBottom = "none";
+
+        function setFilter(key, v) {
+            rule.filter = rule.filter || {};
+            if (v === "" || v == null) { delete rule.filter[key]; }
+            else { rule.filter[key] = v; }
+            pushHistoryDebounced();
+            modelTouch();
+        }
+
+        function buildControl(field) {
+            var current = (rule.filter || {})[field.key];
+            var examples = field.examples || [];
+            if (examples.length) {
+                var rows = examples.map(function (ex) {
+                    return { id: String(ex), label: String(ex) };
+                });
+                return buildIdSelect(
+                    current == null ? "" : String(current),
+                    rows,
+                    function (v) {
+                        setFilter(field.key, v);
+                        if (field.key === "alert_type") { render(); }
+                    },
+                    "(any)"
+                );
+            }
+            var control = inputEl(
+                "text",
+                current == null ? "" : String(current),
+                function (v) { setFilter(field.key, v); }
+            );
+            control.placeholder = field.type ? "(any " + field.type + ")" : "(any)";
+            return control;
+        }
+
+        /* Fields offered by "Add filter": hide ones that cannot occur for the chosen alert type. */
+        function addableFields() {
+            var filter = rule.filter || {};
+            var chosenType = filter.alert_type ? String(filter.alert_type) : "";
+            return ev.payload.filter(function (field) {
+                if (Object.prototype.hasOwnProperty.call(filter, field.key)) { return false; }
+                if (chosenType && field.alert_types && field.alert_types.indexOf(chosenType) < 0) {
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        function render() {
+            filterHost.innerHTML = "";
+            var help = document.createElement("div");
+            help.className = "ss-binding-row__hint";
+            help.textContent = (
+                "Optional filters. The rule runs only when every filter below matches the event payload."
+            );
+            filterHost.appendChild(help);
+
+            Object.keys(rule.filter || {}).forEach(function (key) {
+                var field = fieldsByKey[key] || { key: key, label: key };
+                var holder = document.createElement("div");
+                holder.style.display = "flex";
+                holder.style.gap = "6px";
+                holder.style.alignItems = "center";
+                var control = buildControl(field);
+                control.style.flex = "1";
+                var rm = document.createElement("button");
+                rm.type = "button";
+                rm.className = "ss-btn ss-btn--sm";
+                rm.textContent = "Remove";
+                rm.title = "Remove this filter";
+                rm.addEventListener("click", function () {
+                    setFilter(key, "");
+                    render();
+                });
+                holder.appendChild(control);
+                holder.appendChild(rm);
+                filterHost.appendChild(formRow(
+                    "Filter: " + (field.label || field.key),
+                    holder,
+                    "Payload key: " + field.key
+                ));
+            });
+
+            var addable = addableFields();
+            if (addable.length) {
+                var addSel = document.createElement("select");
+                var first = document.createElement("option");
+                first.value = "";
+                first.textContent = (rule.filter && Object.keys(rule.filter).length)
+                    ? "+ Add another filter..." : "+ Add filter...";
+                addSel.appendChild(first);
+                addable.forEach(function (field) {
+                    var op = document.createElement("option");
+                    op.value = field.key;
+                    op.textContent = field.label || field.key;
+                    addSel.appendChild(op);
+                });
+                addSel.addEventListener("change", function () {
+                    var key = addSel.value;
+                    if (!key) { return; }
+                    var field = fieldsByKey[key];
+                    var examples = (field && field.examples) || [];
+                    rule.filter = rule.filter || {};
+                    /* Seed a value so the filter row exists; blank text filters stay as "". */
+                    rule.filter[key] = examples.length ? String(examples[0]) : "";
+                    pushHistoryDebounced();
+                    modelTouch();
+                    render();
+                });
+                filterHost.appendChild(addSel);
+            }
+        }
+
+        render();
+        card.appendChild(filterHost);
     }
 
     function renderTextModeSection(host, el) {
@@ -2582,10 +3228,13 @@
                     });
                     evSel.addEventListener("change", function () {
                         rule.event = evSel.value;
-                        pushHistoryDebounced();
+                        rule.filter = {};
+                        pushHistory();
+                        renderProperties();
                         modelTouch();
                     });
                     card.appendChild(formRow("Event", evSel));
+                    appendRuleFilterFields(card, rule);
                 } else {
                     card.appendChild(formRow("Stream Deck action id", inputEl("text", rule.streamdeck_action || "", function (v) {
                         rule.streamdeck_action = v;
@@ -2646,12 +3295,28 @@
 
         if (el.text_mode === "data_display") {
             var d = el.data_display;
-            var srcId = (d.source && d.source.source) || "";
-            host.appendChild(formRow("Data source", buildDataSourceSelect(srcId, function (sid) {
-                d.source = { kind: "data_source", source: sid };
-                pushHistoryDebounced();
+            d.source = d.source && typeof d.source === "object"
+                ? d.source
+                : { kind: "data_source", source: "" };
+            hydrateSourceSpec(d.source);
+            host.appendChild(formRow("Data source", buildDataSourceSelect(d.source.source || "", function (sid) {
+                clearSourceDetails(d.source);
+                d.source.kind = "data_source";
+                d.source.source = sid;
+                pushHistory();
+                renderProperties();
                 modelTouch();
             }, { displayOnly: true })));
+            var detailHost = document.createElement("div");
+            appendDataSourceDetailFields(detailHost, d.source, function () {
+                pushHistoryDebounced();
+                modelTouch();
+            }, function () {
+                pushHistoryDebounced();
+                renderProperties();
+                modelTouch();
+            });
+            host.appendChild(detailHost);
             var displayFormatInput = inputEl("text", d.format || "{value}", function (v) {
                 d.format = v;
                 renderStage();
@@ -3115,6 +3780,594 @@
         });
     }
 
+    function ensureWheelDefaults(el) {
+        if (!el || el.type !== "wheel") { return; }
+        if (!Array.isArray(el.wheel_segments) || !el.wheel_segments.length) {
+            el.wheel_segments = [
+                { label: "One", color: "#a855f7" },
+                { label: "Two", color: "#22c55e" },
+                { label: "Three", color: "#f59e0b" },
+                { label: "Four", color: "#38bdf8" }
+            ];
+        }
+    }
+
+    function ensureStatCardDefaults(el) {
+        if (!el || el.type !== "stat_card") { return; }
+        if (!el.stat_source || typeof el.stat_source !== "object") {
+            el.stat_source = { kind: "data_source", source: "stats", source_id: "total_bits" };
+        }
+    }
+
+    function wheelTextColor(color) {
+        var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(color || "").trim());
+        if (!m) { return "#ffffff"; }
+        var h = m[1];
+        if (h.length === 3) { h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2]; }
+        var lum = (0.299 * parseInt(h.substr(0, 2), 16) + 0.587 * parseInt(h.substr(2, 2), 16) +
+            0.114 * parseInt(h.substr(4, 2), 16)) / 255;
+        return lum > 0.6 ? "#111111" : "#ffffff";
+    }
+
+    /* Keep in sync with sporeWheelSvg in templates/_boilerplates/spore_data_runtime.js */
+    function wheelPreviewSvg(segments) {
+        var n = segments.length;
+        var esc = function (v) {
+            return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        };
+        var pt = function (deg, r) {
+            var rad = deg * Math.PI / 180;
+            return (r * Math.sin(rad)).toFixed(3) + " " + (-r * Math.cos(rad)).toFixed(3);
+        };
+        var fontSize = Math.max(6, Math.min(16, (2 * Math.PI * 55 / n) * 0.5));
+        var out = '<svg viewBox="-100 -100 200 200" width="100%" height="100%" style="display:block">';
+        for (var i = 0; i < n; i += 1) {
+            var seg = segments[i] || {};
+            var color = seg.color || "#a855f7";
+            var a0 = (i / n) * 360;
+            var a1 = ((i + 1) / n) * 360;
+            if (n === 1) {
+                out += '<circle r="100" fill="' + esc(color) + '"/>';
+            } else {
+                out += '<path d="M0 0 L' + pt(a0, 100) + " A100 100 0 " + ((a1 - a0) > 180 ? 1 : 0) +
+                    " 1 " + pt(a1, 100) + ' Z" fill="' + esc(color) + '"/>';
+            }
+            var label = String(seg.label == null ? "" : seg.label);
+            if (label.length > 16) { label = label.slice(0, 15) + "\u2026"; }
+            if (label) {
+                var mid = (a0 + a1) / 2;
+                out += '<text transform="rotate(' + mid.toFixed(3) + ') translate(0,-88) rotate(-90)" ' +
+                    'text-anchor="end" dominant-baseline="central" font-size="' + fontSize.toFixed(2) +
+                    '" font-weight="600" fill="' + wheelTextColor(color) + '">' + esc(label) + "</text>";
+            }
+        }
+        return out + "</svg>";
+    }
+
+    var PREVIEW_SAMPLE_TOKENS = {
+        username: "viewer_one", value: "100", amount: "5.00", amt_cheered: "100",
+        message: "Hello chat!", tier: "1000", gift_qty: "5", quantity: "1",
+        cumulative_months: "6", raider_count: "42", alert_type: "follow",
+        recipient: "viewer_two", currency: "USD", pool_size: "12", streak_count: "5",
+        alert_name: "Hydrate", level: "3", total: "1200"
+    };
+
+    function previewFillTokens(template, overrides) {
+        return String(template).replace(/\{([\w.]+)\}/g, function (all, key) {
+            if (overrides && overrides[key] != null) { return String(overrides[key]); }
+            return PREVIEW_SAMPLE_TOKENS[key] != null ? PREVIEW_SAMPLE_TOKENS[key] : key;
+        });
+    }
+
+    function paintListPreview(node, el) {
+        var props = el.props || {};
+        node.style.display = "flex";
+        node.style.flexDirection = "column";
+        var samples = [
+            { username: "viewer_one", value: "100" },
+            { username: "viewer_two", value: "250" },
+            { username: "viewer_three", value: "50" },
+            { username: "viewer_four", value: "75" }
+        ];
+        var count = Math.max(1, Math.min(Number(props.max_items) || 8, samples.length));
+        var data = samples.slice(0, count);
+        if (props.newest === "bottom") { data.reverse(); }
+        var gap = props.row_gap != null && props.row_gap !== "" ? (Number(props.row_gap) || 0) : 4;
+        var tmpl = props.row_template || "{username}";
+        data.forEach(function (sample) {
+            var row = document.createElement("div");
+            row.textContent = previewFillTokens(tmpl, sample);
+            row.style.whiteSpace = "nowrap";
+            row.style.overflow = "hidden";
+            row.style.textOverflow = "ellipsis";
+            row.style.marginBottom = gap + "px";
+            if (props.row_background) { row.style.background = props.row_background; }
+            if (Number(props.row_padding) > 0) { row.style.padding = props.row_padding + "px"; }
+            if (Number(props.row_radius) > 0) { row.style.borderRadius = props.row_radius + "px"; }
+            node.appendChild(row);
+        });
+        node.title = "Preview shows sample rows. Live rows appear in your overlay.";
+    }
+
+    function paintNowPlayingPreview(node, el) {
+        var props = el.props || {};
+        var on = function (key) { return props[key] !== false; };
+        var stacked = props.layout === "stack";
+        node.style.display = "flex";
+        node.style.flexDirection = stacked ? "column" : "row";
+        node.style.alignItems = stacked ? "stretch" : "center";
+        node.style.gap = "10px";
+        node.style.padding = "6px";
+        if (on("show_art")) {
+            var h = (el.size && el.size.h) || 84;
+            var side = stacked ? 40 : Math.max(24, Math.min(96, h - 20));
+            var art = document.createElement("div");
+            art.textContent = "\u266B";
+            art.style.cssText = "flex:0 0 auto;display:flex;align-items:center;justify-content:center;" +
+                "background:#334155;color:#94a3b8;border-radius:4px;" +
+                "width:" + side + "px;height:" + side + "px;";
+            node.appendChild(art);
+        }
+        var meta = document.createElement("div");
+        meta.style.cssText = "flex:1;min-width:0;";
+        if (on("show_title")) {
+            var title = document.createElement("div");
+            title.textContent = "Song title";
+            title.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+            title.style.color = props.title_color || "#ffffff";
+            meta.appendChild(title);
+        }
+        if (on("show_artist")) {
+            var artist = document.createElement("div");
+            artist.textContent = "Artist name";
+            artist.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0.8em;";
+            artist.style.color = props.artist_color || "#94a3b8";
+            meta.appendChild(artist);
+        }
+        if (on("show_progress")) {
+            var bar = document.createElement("div");
+            bar.style.cssText = "height:4px;background:rgba(255,255,255,.2);border-radius:2px;margin-top:6px;";
+            var fill = document.createElement("div");
+            fill.style.cssText = "height:100%;width:40%;border-radius:2px;";
+            fill.style.background = props.bar_color || "#1db954";
+            bar.appendChild(fill);
+            meta.appendChild(bar);
+        }
+        node.appendChild(meta);
+        node.title = "Preview shows sample track info. The live track appears in your overlay.";
+    }
+
+    var editorStats = { doc: null, fetchedAt: 0, inFlight: false };
+
+    function hasStatCards() {
+        return !!(state.model && (state.model.elements || []).some(function (e) {
+            return e.type === "stat_card";
+        }));
+    }
+
+    /* Read the live session statistics through the editor's socket (best effort). */
+    function refreshEditorStats() {
+        var sock = state.socket;
+        if (!sock || !sock.emit || editorStats.inFlight) { return; }
+        if (Date.now() - editorStats.fetchedAt < 10000) { return; }
+        editorStats.inFlight = true;
+        editorStats.fetchedAt = Date.now();
+        var reqId = "ss_stats_" + Date.now();
+        var done = false;
+        function finish(doc) {
+            if (done) { return; }
+            done = true;
+            editorStats.inFlight = false;
+            try { sock.off("get_data", onResp); } catch (err) {}
+            if (doc && typeof doc === "object") {
+                var changed = JSON.stringify(doc) !== JSON.stringify(editorStats.doc);
+                editorStats.doc = doc;
+                if (changed && hasStatCards()) { renderStage(); }
+            }
+        }
+        function onResp(res) {
+            if (!res || res.request_id !== reqId) { return; }
+            finish(res.error ? null : (res.data != null ? res.data : res));
+        }
+        sock.on("get_data", onResp);
+        sock.emit("get_data", { path: "statistics/session", request_id: reqId });
+        setTimeout(function () { finish(null); }, 6000);
+    }
+
+    function formatPreviewNumber(v) {
+        var n = Number(v);
+        return isNaN(n) ? String(v) : n.toLocaleString();
+    }
+
+    /* The value the card would show: live session stats when available, else a sample. */
+    function statCardPreviewValue(el) {
+        ensureStatCardDefaults(el);
+        var spec = el.stat_source;
+        hydrateSourceSpec(spec);
+        var kind = sourceDetailKind(spec.source);
+        if (kind === "counter") {
+            return spec.source_id ? String(counterInitialValueById(spec.source_id)) : "(pick a counter)";
+        }
+        if (kind === "stats") {
+            if (!spec.source_id) { return "(pick a statistic)"; }
+            refreshEditorStats();
+            var doc = editorStats.doc;
+            if (doc && doc[spec.source_id] != null) { return formatPreviewNumber(doc[spec.source_id]); }
+            if (doc) { return "\u2014"; }
+            var sample = {
+                total_gift_subs: "12", total_bits: "1,500", follows: "48",
+                subs: "21", raids: "3", cheers: "36"
+            };
+            return sample[spec.source_id] || "123";
+        }
+        if (kind === "config" || kind === "runtime" || kind === "twitch") {
+            return "(live value)";
+        }
+        var row = findDataSourceRow(String(spec.source || ""));
+        if (row && row.value_type === "string") {
+            return row.label || "Sample";
+        }
+        return "123";
+    }
+
+    function paintStatCardPreview(node, el) {
+        var props = el.props || {};
+        node.style.display = "flex";
+        node.style.alignItems = "center";
+        node.style.gap = "10px";
+        node.style.padding = "4px 10px";
+        if (props.icon) {
+            var icon = document.createElement("div");
+            icon.textContent = props.icon;
+            icon.style.cssText = "font-size:0.9em;line-height:1;flex:0 0 auto;";
+            node.appendChild(icon);
+        }
+        var copy = document.createElement("div");
+        copy.style.minWidth = "0";
+        var label = document.createElement("div");
+        label.textContent = props.label || "";
+        label.style.cssText = "font-size:0.5em;line-height:1.2;white-space:nowrap;overflow:hidden;" +
+            "text-overflow:ellipsis;";
+        label.style.color = props.label_color || "#94a3b8";
+        var value = document.createElement("div");
+        var fmt = props.format || "{value}";
+        value.textContent = fmt.split("{value}").join(statCardPreviewValue(el));
+        value.style.cssText = "line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+        value.style.color = props.value_color || "#ffffff";
+        copy.appendChild(label);
+        copy.appendChild(value);
+        node.appendChild(copy);
+        node.title = "Preview shows a sample value. The live value appears in your overlay.";
+    }
+
+    function paintWidgetPreview(node, el) {
+        node.textContent = "";
+        node.style.overflow = "hidden";
+        var props = el.props || {};
+        if (el.type === "list") {
+            paintListPreview(node, el);
+            return;
+        }
+        if (el.type === "wheel") {
+            ensureWheelDefaults(el);
+            var segs = el.wheel_segments || [];
+            var rotor = document.createElement("div");
+            rotor.style.width = "100%";
+            rotor.style.height = "100%";
+            rotor.innerHTML = wheelPreviewSvg(segs);
+            node.appendChild(rotor);
+            return;
+        }
+        if (el.type === "now_playing") {
+            paintNowPlayingPreview(node, el);
+            return;
+        }
+        if (el.type === "qr") {
+            var host = document.createElement("div");
+            host.style.width = "100%";
+            host.style.height = "100%";
+            if (typeof qrcode === "function") {
+                try {
+                    var qr = qrcode(0, "M");
+                    qr.addData(props.text || " ");
+                    qr.make();
+                    var svg = qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true });
+                    var fg = String(props.foreground || "#000000").replace(/"/g, "");
+                    var bg = String(props.background_color || "#ffffff").replace(/"/g, "");
+                    host.innerHTML = svg.replace('fill="white"', 'fill="' + bg + '"')
+                        .replace('fill="black"', 'fill="' + fg + '"');
+                } catch (err) {
+                    host.textContent = props.text || "QR";
+                }
+            } else {
+                host.textContent = props.text || "QR";
+            }
+            node.appendChild(host);
+            return;
+        }
+        if (el.type === "embed") {
+            node.textContent = props.url || "(embed)";
+            return;
+        }
+        if (el.type === "stat_card") {
+            paintStatCardPreview(node, el);
+        }
+    }
+
+    var LIST_SOURCE_CHOICES = [
+        { id: "alerts", label: "Alerts (follows, subs, bits, raids...)" },
+        { id: "giveaway", label: "Giveaway entries and winners" },
+        { id: "payload", label: "Another event (choose below)" },
+        { id: "manual", label: "Manual (rows come from Bindings only)" }
+    ];
+
+    var LIST_SOURCE_HELP = {
+        alerts: "A row is added for every alert. Narrow it to one alert type below.",
+        giveaway: "A row is added for each entry and for each drawn winner.",
+        payload: "A row is added each time the chosen event fires.",
+        manual: "Nothing is added automatically. Use the Add list row binding action to push rows."
+    };
+
+    function buildChoiceSelect(current, rows, onChange) {
+        var sel = document.createElement("select");
+        var found = false;
+        rows.forEach(function (row) {
+            var op = document.createElement("option");
+            op.value = row.id;
+            op.textContent = row.label || row.id;
+            if (String(current) === String(row.id)) { op.selected = true; found = true; }
+            sel.appendChild(op);
+        });
+        if (!found && current != null && current !== "") {
+            var extra = document.createElement("option");
+            extra.value = current;
+            extra.textContent = current;
+            extra.selected = true;
+            sel.appendChild(extra);
+        }
+        sel.addEventListener("change", function () { onChange(sel.value); });
+        return sel;
+    }
+
+    /* Events whose payload feeds this list, based on its feed source. */
+    function listFeedEventNames(props) {
+        var source = props.source || "alerts";
+        if (source === "alerts") { return ["instant_alert", "next_alert"]; }
+        if (source === "giveaway") { return ["giveaway_entry", "giveaway_winner"]; }
+        if (source === "payload" && props.source_event) { return [String(props.source_event)]; }
+        return [];
+    }
+
+    /* Payload fields usable as {username}/{value}/tokens for the list's feed. */
+    function listFeedFields(props) {
+        var out = [];
+        var seen = {};
+        listFeedEventNames(props).forEach(function (name) {
+            var ev = registryEvent(name);
+            ((ev && ev.payload) || []).forEach(function (f) {
+                if (seen[f.key] || f.type === "array" || f.type === "object") { return; }
+                seen[f.key] = true;
+                out.push(f);
+            });
+        });
+        if (props.source === "giveaway" && !seen.username) {
+            out.unshift({ key: "username", label: "Winner or entrant name", type: "string" });
+        }
+        return out;
+    }
+
+    function renderListFeedSection(host, el) {
+        el.props = el.props || {};
+        var props = el.props;
+        var source = props.source || "alerts";
+
+        function change(key, value, redraw) {
+            el.props = el.props || {};
+            el.props[key] = value;
+            if (redraw) {
+                pushHistory();
+                renderProperties();
+            } else {
+                pushHistoryDebounced();
+            }
+            renderStage();
+            modelTouch();
+        }
+
+        function addRow(key, label, ctrl, tip) {
+            host.appendChild(formRowPropWithExpose(el, key, label, ctrl, tip));
+        }
+
+        var guide = document.createElement("div");
+        guide.className = "ss-binding-row__hint";
+        guide.textContent = (
+            "Set up in three steps: pick where rows come from, choose which fields fill the " +
+            "{username} and {value} slots, then write the row template."
+        );
+        host.appendChild(guide);
+
+        addRow("source", "1. Rows come from", buildChoiceSelect(source, LIST_SOURCE_CHOICES, function (v) {
+            change("source", v, true);
+        }), "What adds rows to the list");
+        var sourceHelp = document.createElement("div");
+        sourceHelp.className = "ss-binding-row__hint ss-binding-row__hint--inline";
+        sourceHelp.textContent = LIST_SOURCE_HELP[source] || "";
+        host.appendChild(sourceHelp);
+
+        if (source === "payload") {
+            var evRows = (state.registry.events || []).map(function (ev) {
+                return { id: ev.event, label: (ev.label || ev.event) + " (" + ev.event + ")" };
+            });
+            addRow("source_event", "Listen to event", buildIdSelect(
+                props.source_event || "", evRows, function (v) { change("source_event", v, true); },
+                "(choose an event)"
+            ), "A row is added every time this event fires");
+        }
+
+        if (source === "alerts") {
+            var typeRows = alertTypeChoices().filter(function (r) { return r.id !== "any"; });
+            addRow("alert_type", "Only this alert type", buildIdSelect(
+                props.alert_type && props.alert_type !== "any" ? props.alert_type : "",
+                typeRows,
+                function (v) { change("alert_type", v || "any", false); },
+                "Any alert type"
+            ), "Leave on Any alert type to list every alert");
+        }
+
+        if (source !== "manual") {
+            var fields = listFeedFields(props);
+            var fieldRows = fields.map(function (f) {
+                return { id: f.key, label: (f.label || f.key) + " (" + f.key + ")" };
+            });
+            addRow("text_field", "2. Fills {username}", buildIdSelect(
+                props.text_field || "", fieldRows,
+                function (v) { change("text_field", v, false); }, "(default: username)"
+            ), "Event field shown in the {username} slot");
+            var numericRows = fields.filter(function (f) { return f.type === "number"; })
+                .concat(fields.filter(function (f) { return f.type !== "number"; }))
+                .map(function (f) {
+                    return { id: f.key, label: (f.label || f.key) + " (" + f.key + ")" };
+                });
+            addRow("value_field", "Fills {value}", buildIdSelect(
+                props.value_field || "", numericRows,
+                function (v) { change("value_field", v, false); }, "(default: amount or quantity)"
+            ), "Event field shown in the {value} slot");
+        }
+
+        var tmplWrap = document.createElement("div");
+        tmplWrap.style.display = "flex";
+        tmplWrap.style.flexDirection = "column";
+        tmplWrap.style.gap = "6px";
+        var tmplInput = inputEl("text", props.row_template || "{username}", function (v) {
+            change("row_template", v, false);
+        });
+        tmplWrap.appendChild(tmplInput);
+        var tokenRows = [{ id: "username", label: "{username}" }, { id: "value", label: "{value}" }];
+        listFeedFields(props).forEach(function (f) {
+            if (f.key !== "username" && f.key !== "value") {
+                tokenRows.push({ id: f.key, label: "{" + f.key + "} - " + (f.label || f.key) });
+            }
+        });
+        var tokenSel = document.createElement("select");
+        var tokenBlank = document.createElement("option");
+        tokenBlank.value = "";
+        tokenBlank.textContent = "Insert a field...";
+        tokenSel.appendChild(tokenBlank);
+        tokenRows.forEach(function (row) {
+            var op = document.createElement("option");
+            op.value = row.id;
+            op.textContent = row.label;
+            tokenSel.appendChild(op);
+        });
+        tokenSel.addEventListener("change", function () {
+            if (!tokenSel.value) { return; }
+            var next = String(tmplInput.value || "") + "{" + tokenSel.value + "}";
+            tmplInput.value = next;
+            tokenSel.value = "";
+            change("row_template", next, false);
+        });
+        tmplWrap.appendChild(tokenSel);
+        addRow("row_template", "3. Row template", tmplWrap,
+            "Text for each row. Insert fields with the dropdown, for example {username} - {value}");
+
+        addRow("max_items", "Max rows", numberEl(props.max_items != null ? props.max_items : 8, function (v) {
+            change("max_items", Math.max(1, Math.min(100, parseInt(v, 10) || 1)), false);
+        }), "Oldest rows drop off after this many");
+        addRow("newest", "New rows go", buildChoiceSelect(props.newest || "top", [
+            { id: "top", label: "To the top" },
+            { id: "bottom", label: "To the bottom" }
+        ], function (v) { change("newest", v, false); }), "Where a new row is inserted");
+        addRow("row_lifetime_s", "Remove rows after (seconds)", numberEl(
+            props.row_lifetime_s != null ? props.row_lifetime_s : 0,
+            function (v) { change("row_lifetime_s", Math.max(0, Number(v) || 0), false); }
+        ), "0 keeps a row until newer rows push it out");
+
+        var tail = document.createElement("div");
+        tail.className = "ss-binding-row__hint";
+        tail.textContent = (
+            "Bindings can also add or clear rows on any event: choose the Add list row or " +
+            "Clear list action and target this list."
+        );
+        host.appendChild(tail);
+    }
+
+    function renderWheelSection(host, el) {
+        ensureWheelDefaults(el);
+        var wrap = document.createElement("div");
+        el.wheel_segments.forEach(function (seg, idx) {
+            var row = document.createElement("div");
+            row.className = "ss-row";
+            var label = inputEl("text", seg.label || "", function (v) {
+                seg.label = v;
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            });
+            var color = buildColorPicker(seg.color || "#a855f7", function (v) {
+                seg.color = v;
+                renderStage();
+                pushHistoryDebounced();
+                modelTouch();
+            }, { noText: true, noClear: true });
+            var rm = document.createElement("button");
+            rm.type = "button";
+            rm.className = "ss-btn";
+            rm.textContent = "Remove";
+            rm.addEventListener("click", function () {
+                el.wheel_segments.splice(idx, 1);
+                if (!el.wheel_segments.length) { ensureWheelDefaults(el); }
+                pushHistory();
+                renderProperties();
+                renderStage();
+                modelTouch();
+            });
+            row.appendChild(label);
+            row.appendChild(color);
+            row.appendChild(rm);
+            wrap.appendChild(row);
+        });
+        var add = document.createElement("button");
+        add.type = "button";
+        add.className = "ss-btn";
+        add.textContent = "+ Segment";
+        add.addEventListener("click", function () {
+            el.wheel_segments.push({ label: "New", color: "#64748b" });
+            pushHistory();
+            renderProperties();
+            renderStage();
+            modelTouch();
+        });
+        wrap.appendChild(add);
+        host.appendChild(formRow("Segments", wrap, "Each slice is a label and a color"));
+    }
+
+    function renderStatCardSection(host, el) {
+        ensureStatCardDefaults(el);
+        hydrateSourceSpec(el.stat_source);
+        host.appendChild(formRow("Data source", buildDataSourceSelect(el.stat_source.source || "", function (sid) {
+            clearSourceDetails(el.stat_source);
+            el.stat_source.kind = "data_source";
+            el.stat_source.source = sid;
+            pushHistory();
+            renderProperties();
+            renderStage();
+            modelTouch();
+        }, { displayOnly: true })));
+        var detail = document.createElement("div");
+        appendDataSourceDetailFields(detail, el.stat_source, function () {
+            renderStage();
+            pushHistoryDebounced();
+            modelTouch();
+        }, function () {
+            pushHistory();
+            renderProperties();
+            renderStage();
+            modelTouch();
+        });
+        host.appendChild(detail);
+    }
+
     function renderStage() {
         clearStagePreviewIntervals();
         var stage = $("#ss-stage");
@@ -3260,6 +4513,9 @@
                 fill.style.width = pct + "%";
                 track.appendChild(fill);
                 node.appendChild(track);
+            } else if (el.type === "list" || el.type === "wheel" || el.type === "now_playing" ||
+                    el.type === "qr" || el.type === "embed" || el.type === "stat_card") {
+                paintWidgetPreview(node, el);
             }
 
             var handle = document.createElement("div");
@@ -4311,6 +5567,28 @@
         if (el.type === "progress_bar" && !isLegacyModel()) {
             host.appendChild(buildCollapsibleSection("Progress bar", "Counter binding and goal effects", function (body) {
                 renderProgressBarSection(body, el);
+            }));
+        }
+
+        if (el.type === "wheel" && !isLegacyModel()) {
+            host.appendChild(buildCollapsibleSection("Wheel segments", "Labels and colors for each slice", function (body) {
+                renderWheelSection(body, el);
+            }));
+        }
+
+        if (el.type === "list" && !isLegacyModel()) {
+            var feedSection = buildCollapsibleSection(
+                "List feed", "Where rows come from and what each row says",
+                function (body) { renderListFeedSection(body, el); }
+            );
+            /* Open the first time so the setup is visible; later renders keep the user's choice. */
+            feedSection.open = !sameElement;
+            host.appendChild(feedSection);
+        }
+
+        if (el.type === "stat_card" && !isLegacyModel()) {
+            host.appendChild(buildCollapsibleSection("Stat value", "Data source shown in the card", function (body) {
+                renderStatCardSection(body, el);
             }));
         }
 
@@ -5527,6 +6805,8 @@
                 ensureTimerDefaults(el);
                 ensureTimerDynamicControl(el);
             }
+            if (type === "wheel") { ensureWheelDefaults(el); }
+            if (type === "stat_card") { ensureStatCardDefaults(el); }
             if (pid) { ensurePlacementDefaults(el); }
             state.model.elements = state.model.elements || [];
             state.model.elements.push(el);
@@ -5855,6 +7135,8 @@
                     ensureTimerDefaults(el);
                     normalizeElementFontFamily(el);
                 }
+                if (el.type === "wheel") { ensureWheelDefaults(el); }
+                if (el.type === "stat_card") { ensureStatCardDefaults(el); }
                 if (pidNorm(el.parent_id)) {
                     ensurePlacementDefaults(el);
                 }
@@ -6565,6 +7847,9 @@
         $("#ss-alert-system").value = state.model.alert_system;
         $("#ss-template-title").value = state.model.title || "";
         $("#ss-advanced-js").value = state.model.advanced_js || "";
+        if (window.SporeJsEditor && window.SporeJsEditor.isOpen()) {
+            window.SporeJsEditor.setValue(state.model.advanced_js || "");
+        }
         refreshDurationCanvasUi();
     }
 
@@ -6663,9 +7948,27 @@
         $("#ss-advanced-js").addEventListener("input", function (ev) {
             if (!state.model) { return; }
             state.model.advanced_js = ev.target.value;
+            if (window.SporeJsEditor && window.SporeJsEditor.isOpen()) {
+                window.SporeJsEditor.setValue(ev.target.value);
+            }
             modelTouch();
         });
         $("#ss-advanced-js").addEventListener("blur", function () { pushHistory(); });
+        if (window.SporeJsEditor) {
+            window.SporeJsEditor.bind({
+                getText: function () {
+                    return state.model ? (state.model.advanced_js || "") : "";
+                },
+                setText: function (text) {
+                    if (!state.model) { return; }
+                    state.model.advanced_js = text;
+                    var box = $("#ss-advanced-js");
+                    if (box && box.value !== text) { box.value = text; }
+                    modelTouch();
+                },
+                commit: function () { pushHistory(); }
+            });
+        }
     }
 
     function updateTabsScrollArrows() {

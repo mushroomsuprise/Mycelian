@@ -48,6 +48,8 @@
             <span class="ss-spacer"></span>
             <span id="ss-dirty-indicator" class="ss-dirty-indicator ss-template-only"></span>
             <span id="mc-dirty" class="ss-dirty-indicator ss-container-only"></span>
+            <button class="ss-btn ss-btn--ghost" id="ss-btn-tour"
+                    title="Walk through the editor">Tour</button>
             <button class="ss-btn ss-btn--ghost" id="ss-btn-reload"
                     title="Reload the editor">Reload editor</button>
             <button class="ss-btn ss-btn--ghost" id="ss-btn-open-external"
@@ -146,6 +148,10 @@
                         <code>SPORE_STUDIO:user-end</code> markers in the saved
                         HTML. Persists across saves.
                     </p>
+                    <div class="ss-row" style="justify-content:flex-end;margin:0 0 8px;">
+                        <button type="button" class="ss-btn ss-btn--ghost" id="ss-btn-js-expand"
+                                title="Open a larger editor for this script">Expand editor</button>
+                    </div>
                     <textarea id="ss-advanced-js" rows="20"
                               style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--ss-bg-input);color:var(--ss-text);border:1px solid var(--ss-border);border-radius:var(--ss-radius);padding:8px;"
                               placeholder="// Place advanced custom JavaScript here.\n// You can call sporeShow(id), sporeHide(id), sporeSetText(id, value),\n// sporePlayMediaAudio(id, { volume?, fade_in_ms? }),\n// or attach additional socket.on(...) handlers."></textarea>
@@ -224,6 +230,47 @@
     </div>
 
     <div id="ss-toast" class="ss-toast" role="status" aria-live="polite"></div>
+
+    <div id="ss-js-dialog" class="ss-js-dialog" hidden>
+        <div class="ss-js-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="ss-js-dialog-title">
+            <div class="ss-js-dialog__bar">
+                <span id="ss-js-dialog-title" class="ss-js-dialog__title">Advanced JS</span>
+                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-find-toggle">Find</button>
+                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-ref-toggle">Reference</button>
+                <span class="ss-spacer"></span>
+                <button type="button" class="ss-btn ss-btn--primary" id="ss-js-done">Done</button>
+            </div>
+            <div id="ss-js-findbar" class="ss-js-findbar" hidden>
+                <input type="text" id="ss-js-find" placeholder="Find" aria-label="Find" spellcheck="false">
+                <input type="text" id="ss-js-replace" placeholder="Replace" aria-label="Replace" spellcheck="false">
+                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-find-prev">Prev</button>
+                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-find-next">Next</button>
+                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-replace-one">Replace</button>
+                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-replace-all">All</button>
+            </div>
+            <div class="ss-js-dialog__body">
+                <div class="ss-js-editor">
+                    <pre class="ss-js-gutter" id="ss-js-gutter" aria-hidden="true">1</pre>
+                    <div class="ss-js-scroller" id="ss-js-scroller">
+                        <div class="ss-js-code" id="ss-js-code">
+                            <div class="ss-js-linehl" id="ss-js-linehl"></div>
+                            <pre class="ss-js-highlight" id="ss-js-highlight" aria-hidden="true"></pre>
+                            <textarea id="ss-js-input" class="ss-js-input" spellcheck="false" autocomplete="off"
+                                      aria-label="Advanced JavaScript"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <aside id="ss-js-ref" class="ss-js-ref" hidden>
+                    <div class="ss-js-ref__title">Insert helper</div>
+                    <div id="ss-js-ref-list"></div>
+                </aside>
+            </div>
+            <div class="ss-js-status">
+                <span id="ss-js-pos">Ln 1, Col 1</span>
+                <span id="ss-js-count">0 chars</span>
+            </div>
+        </div>
+    </div>
 
     <div id="ss-preview-dialog" class="ss-preview-dialog" hidden>
         <div class="ss-preview-dialog__head" data-drag-handle>
@@ -333,8 +380,11 @@
         </div>
     </template>
 
+    <script src="/assets/default_assets/spore_studio/qrcode.js"></script>
     <script src="/assets/default_assets/spore_studio/container_layout.js"></script>
+    <script src="/assets/default_assets/spore_studio/advanced_js_editor.js"></script>
     <script src="/assets/default_assets/spore_studio/editor.js"></script>
     <script src="/assets/default_assets/spore_studio/container_editor.js"></script>
+    <script src="/assets/default_assets/spore_studio/walkthrough.js"></script>
 </body>
 </html>

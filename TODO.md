@@ -5,10 +5,14 @@ Twitch:
     [x] - Fix new sub filter logic. it appears all new subs are still not being played
 
 Spore Studio:
-    [] - Add additional widgets to make creating custom templates easier (primarily fill gaps from current custom templates that can't easily be done in Spore Studio)
-    [] - Add more instructions to the integrated help system. Define each widget into a category, inside the category, it should break down what every property and setting the widget has, what they do, and how to configure them.
-    [] - Cleanup the "Source" field of the Text widget's "Counter Rules" panel. There are a lot of duplicates. Ex: there is a chatbot segment that has duplicate values. There are also missing fields from the Alerts payload that could be added.
-    [] - Add missing additional fields from the same Counter Rules panel. Ex: setting Alert Type for the source does not give a field to pick the alert type from. It appears only the "Subscriptions" segment has the proper additional fields.
+    [x] - Add additional widgets to make creating custom templates easier (primarily fill gaps from current custom templates that can't easily be done in Spore Studio)
+    [x] - Add more instructions to the integrated help system. Define each widget into a category, inside the category, it should break down what every property and setting the widget has, what they do, and how to configure them.
+    [x] - Add a more detailed break-out of the Advanced JS tab to the help system. Explain more what can be done, how to hook in custom logic, and more.
+    [x] - Add in an editor dialog for the Advanced JS text. This will be in addition to the small box already present in the right panel. This will be for users that have a lot of custom code. This dialog should appear like a simple IDE editor.
+    [x] - Cleanup the "Source" field of the Text widget's "Counter Rules" panel. There are a lot of duplicates. Ex: there is a chatbot segment that has duplicate values. There are also missing fields from the Alerts payload that could be added.
+    [x] - Add missing additional fields from the same Counter Rules panel. Ex: setting Alert Type for the source does not give a field to pick the alert type from. It appears only the "Subscriptions" segment has the proper additional fields.
+    [x] - Make widget block categories collapsable so they can take up less UI space
+    [x] - Add in an interactive walkthrough. This will basically be a brief walkthrough where the app will disable most of the UI, point to areas of importance and explain what they do, and the user clicks a next button to proceed through. This should be triggerable from a button next to the "RELOAD EDITOR" button.
 
 Chat Template:
     [x] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.

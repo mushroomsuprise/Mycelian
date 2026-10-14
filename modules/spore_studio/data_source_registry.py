@@ -34,44 +34,148 @@ def _src(
     }
 
 
+# Alert types the counter-rule editor offers when a source reads an alert payload.
+ALERT_TYPES: List[Dict[str, str]] = [
+    {"id": "follow", "label": "Follow"},
+    {"id": "sub", "label": "New sub"},
+    {"id": "resub", "label": "Resub"},
+    {"id": "giftsub", "label": "Gift sub"},
+    {"id": "bit", "label": "Bits"},
+    {"id": "donation", "label": "Donation"},
+    {"id": "raid", "label": "Raid"},
+    {"id": "hype_train", "label": "Hype train"},
+    {"id": "point", "label": "Channel points"},
+    {"id": "streak", "label": "Streak"},
+]
+
+# Which alert types actually carry each alert payload key. Keys that are absent
+# are present on every alert type. The editor uses this so only relevant
+# filters are offered for a given source or event.
+ALERT_FIELD_TYPES: Dict[str, List[str]] = {
+    "tier": ["sub", "resub", "giftsub"],
+    "cumulative_months": ["resub"],
+    "gift_qty": ["giftsub"],
+    "recipient": ["giftsub"],
+    "raider_count": ["raid"],
+    "amt_cheered": ["bit"],
+    "amount": ["donation"],
+    "currency": ["donation"],
+    "alert_name": ["point"],
+    "streak_count": ["streak"],
+    "channel_points_awarded": ["streak"],
+    "level": ["hype_train"],
+    "total": ["hype_train"],
+}
+
+# Keys returned by the statistics/session get_data snapshot.
+SESSION_STAT_KEYS: List[Dict[str, str]] = [
+    {"id": "total_gift_subs", "label": "Total gift subs"},
+    {"id": "total_bits", "label": "Total bits"},
+    {"id": "follows", "label": "Follows"},
+    {"id": "subs", "label": "Subs"},
+    {"id": "raids", "label": "Raids"},
+    {"id": "cheers", "label": "Cheers"},
+]
+
+
 _DATA_SOURCES: List[Dict[str, Any]] = [
-    # Delta-only
-    _src("fixed", "Fixed value", category="Delta", value_type="number", delta_only=True),
+    # Alert payload. String fields are display-only so they are not offered as
+    # counter deltas (a username cannot be added to a number).
     _src(
-        "random_int",
-        "Random integer",
-        category="Delta",
-        value_type="number",
-        delta_only=True,
-        description="Inclusive min/max.",
+        "alert.amount",
+        "Donation amount",
+        category="Alert payload",
+        description="Numeric amount on donation alerts.",
     ),
     _src(
-        "random_float",
-        "Random float",
-        category="Delta",
-        value_type="number",
-        delta_only=True,
-        description="Inclusive min/max with optional decimal places.",
+        "alert.quantity",
+        "Alert quantity",
+        category="Alert payload",
+        description="Generic quantity. Gift subs also expose alert.gift_qty.",
     ),
-    # Alert payload
-    _src("alert.amount", "Alert amount", category="Alert payload"),
-    _src("alert.quantity", "Alert quantity", category="Alert payload"),
-    _src("alert.tier", "Sub tier", category="Alert payload", value_type="string"),
-    _src("alert.amt_cheered", "Bits cheered", category="Alert payload"),
-    _src("alert.cumulative_months", "Cumulative months", category="Alert payload"),
-    _src("alert.raider_count", "Raider count", category="Alert payload"),
-    _src("alert.username", "Username", category="Alert payload", value_type="string"),
-    _src("alert.message", "Message", category="Alert payload", value_type="string"),
-    _src("alert.alert_type", "Alert type", category="Alert payload", value_type="string"),
-    _src("alert.currency", "Currency", category="Alert payload", value_type="string"),
-    _src("alert.queue_seq", "Queue sequence", category="Alert payload"),
     _src(
         "alert.gift_qty",
         "Gift sub quantity",
         category="Alert payload",
         description="Number of subs gifted (giftsub alerts).",
     ),
-    # Subscriptions (counter deltas — tier filter configured in delta editor)
+    _src("alert.amt_cheered", "Bits cheered", category="Alert payload"),
+    _src("alert.cumulative_months", "Cumulative months", category="Alert payload"),
+    _src("alert.raider_count", "Raider count", category="Alert payload"),
+    _src("alert.streak_count", "Watch streak", category="Alert payload"),
+    _src(
+        "alert.channel_points_awarded",
+        "Channel points awarded",
+        category="Alert payload",
+        description="Points granted with a watch-streak alert.",
+    ),
+    _src(
+        "alert.level",
+        "Hype train level",
+        category="Alert payload",
+        description="Current hype train level.",
+    ),
+    _src(
+        "alert.total",
+        "Hype train total",
+        category="Alert payload",
+        description="Hype train progress total.",
+    ),
+    _src("alert.duration", "Alert duration (seconds)", category="Alert payload"),
+    _src("alert.timestamp", "Alert timestamp", category="Alert payload"),
+    _src("alert.queue_seq", "Queue sequence", category="Alert payload"),
+    _src(
+        "alert.tier",
+        "Sub tier",
+        category="Alert payload",
+        value_type="string",
+        display_only=True,
+    ),
+    _src(
+        "alert.username",
+        "Username",
+        category="Alert payload",
+        value_type="string",
+        display_only=True,
+    ),
+    _src(
+        "alert.message",
+        "Message",
+        category="Alert payload",
+        value_type="string",
+        display_only=True,
+    ),
+    _src(
+        "alert.alert_type",
+        "Alert type",
+        category="Alert payload",
+        value_type="string",
+        display_only=True,
+        description="follow, sub, resub, giftsub, bit, donation, raid, and so on.",
+    ),
+    _src(
+        "alert.alert_name",
+        "Point reward name",
+        category="Alert payload",
+        value_type="string",
+        display_only=True,
+        description="Channel point reward title.",
+    ),
+    _src(
+        "alert.recipient",
+        "Gift recipient",
+        category="Alert payload",
+        value_type="string",
+        display_only=True,
+    ),
+    _src(
+        "alert.currency",
+        "Currency",
+        category="Alert payload",
+        value_type="string",
+        display_only=True,
+    ),
+    # Subscriptions (counter deltas — tier and alert-type filters in the editor)
     _src(
         "sub.new_sub",
         "New sub (+1)",
@@ -80,7 +184,7 @@ _DATA_SOURCES: List[Dict[str, Any]] = [
         delta_only=True,
         description=(
             "Returns 1 for a new subscription alert, else the fallback (usually 0). "
-            "Optionally restrict to a sub tier in the delta editor."
+            "Optionally restrict to a sub tier and alert type."
         ),
     ),
     _src(
@@ -91,7 +195,7 @@ _DATA_SOURCES: List[Dict[str, Any]] = [
         delta_only=True,
         description=(
             "Returns 1 for a resubscription alert, else the fallback (usually 0). "
-            "Optionally restrict to a sub tier in the delta editor."
+            "Optionally restrict to a sub tier and alert type."
         ),
     ),
     _src(
@@ -102,62 +206,100 @@ _DATA_SOURCES: List[Dict[str, Any]] = [
         delta_only=True,
         description=(
             "Returns the gifted sub quantity for a giftsub alert, else the fallback "
-            "(usually 0). Optionally restrict to a sub tier in the delta editor."
+            "(usually 0). Optionally restrict to a sub tier and alert type."
         ),
     ),
-    # Chat
-    _src("chat.username", "Chat username", category="Chat", value_type="string"),
-    _src("chat.message", "Chat message", category="Chat", value_type="string"),
+    # Chat (Twitch new-message). Connector text is a separate event, not a duplicate.
+    _src(
+        "chat.username",
+        "Chat username",
+        category="Chat",
+        value_type="string",
+        display_only=True,
+    ),
+    _src(
+        "chat.message",
+        "Chat message",
+        category="Chat",
+        value_type="string",
+        display_only=True,
+    ),
     _src("chat.message_length", "Chat message length", category="Chat"),
-    _src("chat.userid", "Chat user ID", category="Chat", value_type="string"),
-    _src("chat.badges", "Chat badges", category="Chat", value_type="string"),
-    _src("chat.color", "Chat color", category="Chat", value_type="string"),
-    _src("chat.message_text", "Connector message text", category="Chat", value_type="string"),
+    _src(
+        "chat.userid",
+        "Chat user ID",
+        category="Chat",
+        value_type="string",
+        display_only=True,
+    ),
+    _src(
+        "chat.badges",
+        "Chat badges",
+        category="Chat",
+        value_type="string",
+        display_only=True,
+    ),
+    _src(
+        "chat.color",
+        "Chat color",
+        category="Chat",
+        value_type="string",
+        display_only=True,
+    ),
+    _src(
+        "chat.message_text",
+        "Connector message text",
+        category="Connector chat",
+        value_type="string",
+        display_only=True,
+        description="message_text on chat_add_message (connector), not Twitch chat.",
+    ),
     # Alert system
     _src(
         "alerts.paused",
         "Alerts paused",
         category="Alert system",
         value_type="boolean",
+        display_only=True,
     ),
-    # Session / stats (via get_data statistics/session)
-    _src("stats.total_gift_subs", "Total gift subs (session)", category="Session stats"),
-    _src("stats.total_bits", "Total bits (session)", category="Session stats"),
-    _src("stats.follows", "Follows (session)", category="Session stats"),
-    _src("stats.subs", "Subs (session)", category="Session stats"),
-    _src("stats.raids", "Raids (session)", category="Session stats"),
-    _src("stats.cheers", "Cheers (session)", category="Session stats"),
-    # Chatbot config mirrors
-    _src("chatbot.gift_sub_quantity", "Gift sub quantity", category="Chatbot"),
-    _src("chatbot.gift_sub_tier", "Gift sub tier", category="Chatbot"),
-    _src("chatbot.raid_viewer_count", "Raid viewer count", category="Chatbot"),
-    # Template / config (resolved at runtime)
+    # One session-stat source; the editor asks which key (statistics/session).
     _src(
-        "counter.{id}",
+        "stats",
+        "Session statistic",
+        category="Session stats",
+        description=(
+            "A key from the statistics/session snapshot. Pick the key in the "
+            "field under this source."
+        ),
+    ),
+    # Template / config. The editor collects the id, path, or binding — these
+    # ids are not literal braces.
+    _src(
+        "counter",
         "Another counter in this template",
         category="Template",
-        description="Use counter.{counter_id} in the model.",
+        description="Value of another counter. Pick the counter in the next field.",
     ),
     _src(
-        "config.{id}",
+        "config",
         "Source Settings field",
         category="Template",
         value_type="string",
-        description="Reads exposed config value by field id.",
+        description="Reads an exposed config value. Pick the field id in the next field.",
     ),
     _src(
-        "runtime.{path}.{key}",
+        "runtime",
         "Runtime database field",
         category="Runtime database",
         value_type="string",
-        description="User-defined path and key under database_manager.",
+        description="User-defined database path and key.",
     ),
     _src(
-        "twitch.{binding_id}.{path}",
+        "twitch",
         "Twitch API response field",
         category="Twitch API",
         value_type="string",
-        description="Dot path into last twitch-api-response for a binding id.",
+        description="Dot path into the last twitch-api-response for a binding.",
     ),
 ]
 
@@ -175,6 +317,14 @@ ALERT_PAYLOAD_KEYS: Dict[str, str] = {
     "alert.currency": "currency",
     "alert.queue_seq": "queue_seq",
     "alert.gift_qty": "gift_qty",
+    "alert.recipient": "recipient",
+    "alert.alert_name": "alert_name",
+    "alert.streak_count": "streak_count",
+    "alert.channel_points_awarded": "channel_points_awarded",
+    "alert.level": "level",
+    "alert.total": "total",
+    "alert.duration": "duration",
+    "alert.timestamp": "timestamp",
 }
 
 CHAT_PAYLOAD_KEYS: Dict[str, str] = {
@@ -188,6 +338,17 @@ CHAT_PAYLOAD_KEYS: Dict[str, str] = {
 }
 
 
+def _annotated_sources() -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for src in _DATA_SOURCES:
+        row = dict(src)
+        key = ALERT_PAYLOAD_KEYS.get(str(row.get("id") or ""))
+        if key and key in ALERT_FIELD_TYPES:
+            row["alert_types"] = list(ALERT_FIELD_TYPES[key])
+        rows.append(row)
+    return rows
+
+
 def get_data_source_registry() -> Dict[str, Any]:
     """Return JSON-serializable registry for the Spore Studio editor."""
     categories: List[str] = []
@@ -196,10 +357,12 @@ def get_data_source_registry() -> Dict[str, Any]:
         if cat not in categories:
             categories.append(cat)
     return {
-        "sources": [dict(s) for s in _DATA_SOURCES],
+        "sources": _annotated_sources(),
         "categories": categories,
         "alert_payload_keys": dict(ALERT_PAYLOAD_KEYS),
         "chat_payload_keys": dict(CHAT_PAYLOAD_KEYS),
+        "alert_types": [dict(row) for row in ALERT_TYPES],
+        "session_stat_keys": [dict(row) for row in SESSION_STAT_KEYS],
     }
 
 

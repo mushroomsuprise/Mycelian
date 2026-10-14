@@ -330,6 +330,7 @@ def _compile_filter(filter_obj: Dict[str, Any]) -> str:
     deep-equality check on each key — sufficient for the alert payload
     shapes we expose in the event registry.
     """
+    filter_obj = {k: v for k, v in (filter_obj or {}).items() if v not in ("", None)}
     if not filter_obj:
         return "true"
     return "sporeMatchesFilter(payload, " + _js_value(filter_obj) + ")"
@@ -788,6 +789,22 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
             f"{_js_value(delta)}, payload);",
         ]
 
+    if action == "list_add":
+        literal = str(args.get("text") or "")
+        return [
+            "window.__sporeLastPayload.event = payload || {};",
+            f"if (typeof sporeListAdd === 'function') {{ sporeListAdd({eid}, payload, {_js_string(literal)}); }}",
+        ]
+    if action == "list_clear":
+        return [
+            f"if (typeof sporeListClear === 'function') {{ sporeListClear({eid}); }}",
+        ]
+    if action == "wheel_spin":
+        return [
+            "window.__sporeLastPayload.event = payload || {};",
+            f"if (typeof sporeWheelSpin === 'function') {{ sporeWheelSpin({eid}, payload); }}",
+        ]
+
     return [f"// Unknown action: {action}"]
 
 
@@ -912,6 +929,63 @@ def _elements_need_value_change_css(elements: List[Dict[str, Any]]) -> bool:
             continue
         va = element.get("value_animation")
         if isinstance(va, dict) and va.get("enabled"):
+            return True
+    return False
+
+
+WIDGET_CSS = """
+.spore-list { overflow: hidden; display: flex; flex-direction: column; }
+.spore-list-rows { display: flex; flex-direction: column; width: 100%; }
+.spore-list-row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spore-list-row.spore-list-in-fade { animation: sporeListIn 0.35s ease-out; }
+.spore-list-row.spore-list-in-slide { animation: sporeListSlide 0.35s ease-out; }
+.spore-list-row.spore-list-out-fade { animation: sporeListOut 0.3s ease-in forwards; }
+@keyframes sporeListOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sporeListIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sporeListSlide { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.spore-wheel { position: relative; overflow: hidden; }
+.spore-wheel-rotor { width: 100%; height: 100%; border-radius: 50%; }
+.spore-wheel-pointer {
+  position: absolute; left: 50%; top: 4px; width: 0; height: 0;
+  margin-left: -8px;
+  border-left: 8px solid transparent; border-right: 8px solid transparent;
+  border-top: 14px solid #fff;
+}
+.spore-wheel-label {
+  position: absolute; left: 0; right: 0; bottom: 6px; text-align: center;
+  font-size: 14px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6);
+}
+.spore-now_playing, .spore-now-playing {
+  display: flex; align-items: center; gap: 10px; overflow: hidden; box-sizing: border-box;
+}
+.spore-np-art { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; flex: 0 0 auto; }
+.spore-np-meta { flex: 1; min-width: 0; }
+.spore-np-title, .spore-np-artist { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spore-np-artist { font-size: 0.8em; }
+.spore-np-bar { height: 4px; background: rgba(255,255,255,.2); border-radius: 2px; margin-top: 6px; }
+.spore-np-fill { height: 100%; width: 0; background: #1db954; border-radius: 2px; }
+.spore-qr, .spore-embed { overflow: hidden; }
+.spore-qr-host, .spore-qr-host svg { width: 100%; height: 100%; display: block; }
+.spore-embed-frame { border: 0; width: 100%; height: 100%; background: transparent; }
+.spore-stat_card, .spore-stat-card {
+  display: flex; align-items: center; gap: 10px; box-sizing: border-box; overflow: hidden;
+}
+.spore-stat-icon { font-size: 0.9em; line-height: 1; }
+.spore-stat-copy { min-width: 0; }
+.spore-stat-label { font-size: 0.5em; line-height: 1.2; }
+.spore-stat-value { line-height: 1.1; }
+.spore-stat-label, .spore-stat-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+""".strip()
+
+
+_WIDGET_TYPES = frozenset({"list", "wheel", "now_playing", "qr", "embed", "stat_card"})
+
+
+def _elements_need_widget_css(elements: List[Dict[str, Any]]) -> bool:
+    for element in elements or []:
+        if not isinstance(element, dict):
+            continue
+        if str(element.get("type") or "").lower() in _WIDGET_TYPES:
             return True
     return False
 
@@ -1125,6 +1199,8 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
         css_parts.append(COUNTER_IMAGE_TRANSITION_CSS)
     if _elements_need_progress_bar_css(elements):
         css_parts.append(PROGRESS_BAR_CSS)
+    if _elements_need_widget_css(elements):
+        css_parts.append(WIDGET_CSS)
     if _elements_need_marquee_css(elements):
         css_parts.append(MARQUEE_CSS)
     css = "\n\n".join(css_parts)

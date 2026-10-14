@@ -472,6 +472,8 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
                 if not ev:
                     continue
                 filt = rule.get("filter") if isinstance(rule.get("filter"), dict) else {}
+                # Blank filter rows mean "any value" and must not be compiled.
+                filt = {k: v for k, v in filt.items() if v not in ("", None)}
                 lines.append(
                     f"(function () {{\n"
                     f"    var __ev = {_js_string(ev)};\n"
@@ -694,6 +696,23 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
         lines.append("if (typeof sporeInitTimers === 'function') { sporeInitTimers(); }")
 
     lines.append("if (typeof sporePatchSetText === 'function') { sporePatchSetText(); }")
+
+    stat_cards = [
+        el for el in elements
+        if isinstance(el, dict) and (el.get("type") or "").lower() == "stat_card"
+    ]
+    if stat_cards:
+        lines.append("window.__sporeStatCards = window.__sporeStatCards || [];")
+        for el in stat_cards:
+            eid = str(el.get("id") or "")
+            src = el.get("stat_source") if isinstance(el.get("stat_source"), dict) else {}
+            spec = {
+                "elementId": eid,
+                "source": src or {"kind": "data_source", "source": ""},
+            }
+            lines.append(f"window.__sporeStatCards.push({_js_value(spec)});")
+
+    lines.append("if (typeof sporeInitWidgets === 'function') { sporeInitWidgets(); }")
 
     return "\n".join(lines)
 

@@ -180,6 +180,40 @@ _NON_STYLE_PROP_KEYS = frozenset(
         "start_seconds",
         "limit_seconds",
         "auto_start",
+        "max_items",
+        "newest",
+        "row_template",
+        "row_gap",
+        "source",
+        "source_event",
+        "text_field",
+        "value_field",
+        "add_animation",
+        "remove_animation",
+        "spin_ms",
+        "easing",
+        "pointer",
+        "layout",
+        "show_art",
+        "show_title",
+        "show_artist",
+        "show_progress",
+        "title_color",
+        "artist_color",
+        "bar_color",
+        "foreground",
+        "url",
+        "scale",
+        "refresh_seconds",
+        "label",
+        "icon",
+        "value_color",
+        "label_color",
+        "alert_type",
+        "row_lifetime_s",
+        "row_background",
+        "row_padding",
+        "row_radius",
     }
 )
 
@@ -599,6 +633,168 @@ def _text_element_display(
     return jinja_var, text_default
 
 
+def _widget_jinja(eid: str, key: str, default: Any) -> str:
+    """Jinja expression for a Source Settings field, safe to place in an attribute."""
+    return "{{ " + f"{eid}_{key}|default({json.dumps(default, ensure_ascii=False)})" + " }}"
+
+
+def _num_or(value: Any, default: float) -> Any:
+    """Return ``value`` as a number, or ``default`` when it is blank or invalid."""
+    try:
+        if value in (None, ""):
+            return default
+        num = float(value)
+    except (TypeError, ValueError):
+        return default
+    return int(num) if num == int(num) else num
+
+
+def _render_widget_element(
+    element: Dict[str, Any],
+    *,
+    eid: str,
+    etype: str,
+    style: str,
+    classes: str,
+    hidden_attr: str,
+    anim_attrs: str,
+) -> Optional[str]:
+    """HTML for list, wheel, now playing, QR, embed, and stat card. None if not a widget."""
+    props = element.get("props") or {}
+    open_tag = (
+        f'<div id="{html.escape(eid)}" class="{classes} spore-widget spore-{html.escape(etype)}" '
+        f'style="{html.escape(style, quote=True)}"{hidden_attr} '
+        f"{anim_attrs} "
+    )
+
+    if etype == "list":
+        return (
+            open_tag
+            + 'data-spore-type="list" '
+            + f'data-spore-list-max="{_widget_jinja(eid, "max_items", int(props.get("max_items") or 8))}" '
+            + f'data-spore-list-newest="{_widget_jinja(eid, "newest", str(props.get("newest") or "top"))}" '
+            + f'data-spore-list-template="{_widget_jinja(eid, "row_template", str(props.get("row_template") or "{username}"))}" '
+            + f'data-spore-list-gap="{_widget_jinja(eid, "row_gap", int(props.get("row_gap") or 4))}" '
+            + f'data-spore-list-source="{_widget_jinja(eid, "source", str(props.get("source") or "alerts"))}" '
+            + f'data-spore-list-event="{_widget_jinja(eid, "source_event", str(props.get("source_event") or "instant_alert"))}" '
+            + f'data-spore-list-text="{_widget_jinja(eid, "text_field", str(props.get("text_field") or "username"))}" '
+            + f'data-spore-list-value="{_widget_jinja(eid, "value_field", str(props.get("value_field") or "value"))}" '
+            + f'data-spore-list-add="{_widget_jinja(eid, "add_animation", str(props.get("add_animation") or "fade"))}" '
+            + f'data-spore-list-remove="{_widget_jinja(eid, "remove_animation", str(props.get("remove_animation") or "fade"))}" '
+            + f'data-spore-list-alert-type="{_widget_jinja(eid, "alert_type", str(props.get("alert_type") or "any"))}" '
+            + f'data-spore-list-lifetime="{_widget_jinja(eid, "row_lifetime_s", _num_or(props.get("row_lifetime_s"), 0))}" '
+            + f'data-spore-list-row-bg="{_widget_jinja(eid, "row_background", str(props.get("row_background") or ""))}" '
+            + f'data-spore-list-row-pad="{_widget_jinja(eid, "row_padding", _num_or(props.get("row_padding"), 0))}" '
+            + f'data-spore-list-row-radius="{_widget_jinja(eid, "row_radius", _num_or(props.get("row_radius"), 0))}">'
+            + '<div class="spore-list-rows"></div></div>'
+        )
+
+    if etype == "wheel":
+        raw_segments = element.get("wheel_segments")
+        segments: List[Dict[str, Any]] = []
+        if isinstance(raw_segments, list):
+            for row in raw_segments:
+                if not isinstance(row, dict):
+                    continue
+                segments.append(
+                    {
+                        "label": str(row.get("label") or ""),
+                        "color": str(row.get("color") or "#a855f7"),
+                    }
+                )
+        if not segments:
+            segments = [
+                {"label": "One", "color": "#a855f7"},
+                {"label": "Two", "color": "#22c55e"},
+            ]
+        seg_attr = html.escape(json.dumps(segments), quote=True)
+        try:
+            spin_ms = int(float(props.get("spin_ms", 4000)))
+        except (TypeError, ValueError):
+            spin_ms = 4000
+        return (
+            open_tag
+            + 'data-spore-type="wheel" '
+            + f'data-spore-wheel-ms="{_widget_jinja(eid, "spin_ms", spin_ms)}" '
+            + f'data-spore-wheel-easing="{_widget_jinja(eid, "easing", str(props.get("easing") or "ease-out"))}" '
+            + f'data-spore-wheel-pointer="{_widget_jinja(eid, "pointer", str(props.get("pointer") or "top"))}" '
+            + f'data-spore-wheel-source="{_widget_jinja(eid, "source", str(props.get("source") or "static"))}" '
+            + f'data-spore-wheel-segments="{seg_attr}">'
+            + '<div class="spore-wheel-rotor"></div>'
+            + '<div class="spore-wheel-pointer"></div>'
+            + '<div class="spore-wheel-label"></div></div>'
+        )
+
+    if etype == "now_playing":
+        def _flag(key: str, default: bool = True) -> str:
+            raw = props.get(key, default)
+            return "true" if bool(raw) else "false"
+
+        return (
+            open_tag
+            + 'data-spore-type="now_playing" '
+            + f'data-spore-np-layout="{_widget_jinja(eid, "layout", str(props.get("layout") or "row"))}" '
+            + f'data-spore-np-art="{_widget_jinja(eid, "show_art", _flag("show_art"))}" '
+            + f'data-spore-np-title="{_widget_jinja(eid, "show_title", _flag("show_title"))}" '
+            + f'data-spore-np-artist="{_widget_jinja(eid, "show_artist", _flag("show_artist"))}" '
+            + f'data-spore-np-progress="{_widget_jinja(eid, "show_progress", _flag("show_progress"))}" '
+            + f'data-spore-np-title-color="{_widget_jinja(eid, "title_color", str(props.get("title_color") or "#ffffff"))}" '
+            + f'data-spore-np-artist-color="{_widget_jinja(eid, "artist_color", str(props.get("artist_color") or "#94a3b8"))}" '
+            + f'data-spore-np-bar="{_widget_jinja(eid, "bar_color", str(props.get("bar_color") or "#1db954"))}">'
+            + '<img class="spore-np-art" alt="">'
+            + '<div class="spore-np-meta">'
+            + '<div class="spore-np-title">Not playing</div>'
+            + '<div class="spore-np-artist"></div>'
+            + '<div class="spore-np-bar"><div class="spore-np-fill"></div></div>'
+            + "</div></div>"
+        )
+
+    if etype == "qr":
+        return (
+            open_tag
+            + 'data-spore-type="qr" '
+            + f'data-spore-qr-text="{_widget_jinja(eid, "text", str(props.get("text") or "https://"))}" '
+            + f'data-spore-qr-fg="{_widget_jinja(eid, "foreground", str(props.get("foreground") or "#000000"))}" '
+            + f'data-spore-qr-bg="{_widget_jinja(eid, "background_color", str(props.get("background_color") or "#ffffff"))}">'
+            + '<div class="spore-qr-host"></div></div>'
+        )
+
+    if etype == "embed":
+        try:
+            scale = float(props.get("scale", 1))
+        except (TypeError, ValueError):
+            scale = 1.0
+        try:
+            refresh = int(float(props.get("refresh_seconds", 0)))
+        except (TypeError, ValueError):
+            refresh = 0
+        return (
+            open_tag
+            + 'data-spore-type="embed" '
+            + f'data-spore-embed-url="{_widget_jinja(eid, "url", str(props.get("url") or ""))}" '
+            + f'data-spore-embed-scale="{_widget_jinja(eid, "scale", scale)}" '
+            + f'data-spore-embed-refresh="{_widget_jinja(eid, "refresh_seconds", refresh)}">'
+            + '<iframe class="spore-embed-frame" sandbox="allow-scripts allow-same-origin allow-popups" '
+            + 'referrerpolicy="no-referrer"></iframe></div>'
+        )
+
+    if etype == "stat_card":
+        return (
+            open_tag
+            + 'data-spore-type="stat_card" '
+            + f'data-spore-stat-label="{_widget_jinja(eid, "label", str(props.get("label") or "Stat"))}" '
+            + f'data-spore-stat-format="{_widget_jinja(eid, "format", str(props.get("format") or "{value}"))}" '
+            + f'data-spore-stat-icon="{_widget_jinja(eid, "icon", str(props.get("icon") or ""))}" '
+            + f'data-spore-stat-value-color="{_widget_jinja(eid, "value_color", str(props.get("value_color") or "#ffffff"))}" '
+            + f'data-spore-stat-label-color="{_widget_jinja(eid, "label_color", str(props.get("label_color") or "#94a3b8"))}">'
+            + '<div class="spore-stat-icon"></div>'
+            + '<div class="spore-stat-copy"><div class="spore-stat-label"></div>'
+            + '<div class="spore-stat-value">—</div></div></div>'
+        )
+
+    return None
+
+
 def _render_element(
     element: Dict[str, Any],
     *,
@@ -971,6 +1167,18 @@ def _render_element(
             f'data-spore-timer-format="{fmt_j}">'
             f"00:00</div>"
         )
+
+    widget_html = _render_widget_element(
+        element,
+        eid=eid,
+        etype=etype,
+        style=style,
+        classes=classes,
+        hidden_attr=hidden_attr,
+        anim_attrs=anim_attrs,
+    )
+    if widget_html is not None:
+        return widget_html
 
     return (
         f'<div id="{html.escape(eid)}" class="{classes}" '
@@ -1828,6 +2036,8 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 )
 
+            _append_widget_config_fields(elements_out, element, eid)
+
     sdo = _sanitize_streamdeck_options(model.get("streamdeck_options"))
     _merge_streamdeck_binding_args_into_actions(model.get("elements") or [], sdo)
     from .preview_mocks import derive_preview_mocks
@@ -1847,6 +2057,95 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
     if connector_actions:
         base["connector_actions"] = connector_actions
     return base
+
+
+_WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[str, str]]] = {
+    "list": [
+        ("max_items", "number"),
+        ("newest", "text"),
+        ("row_template", "text"),
+        ("row_gap", "number"),
+        ("source", "text"),
+        ("source_event", "text"),
+        ("text_field", "text"),
+        ("value_field", "text"),
+        ("add_animation", "text"),
+        ("remove_animation", "text"),
+        ("alert_type", "text"),
+        ("row_lifetime_s", "number"),
+        ("row_background", "color"),
+        ("row_padding", "number"),
+        ("row_radius", "number"),
+    ],
+    "wheel": [
+        ("spin_ms", "number"),
+        ("easing", "text"),
+        ("pointer", "text"),
+        ("source", "text"),
+    ],
+    "now_playing": [
+        ("layout", "text"),
+        ("show_art", "checkbox"),
+        ("show_title", "checkbox"),
+        ("show_artist", "checkbox"),
+        ("show_progress", "checkbox"),
+        ("title_color", "color"),
+        ("artist_color", "color"),
+        ("bar_color", "color"),
+    ],
+    "qr": [
+        ("text", "text"),
+        ("foreground", "color"),
+    ],
+    "embed": [
+        ("url", "text"),
+        ("scale", "number"),
+        ("refresh_seconds", "number"),
+    ],
+    "stat_card": [
+        ("label", "text"),
+        ("format", "text"),
+        ("icon", "text"),
+        ("value_color", "color"),
+        ("label_color", "color"),
+    ],
+}
+
+
+def _append_widget_config_fields(
+    elements_out: List[Dict[str, Any]],
+    element: Dict[str, Any],
+    eid: str,
+) -> None:
+    """Expose widget-specific props in Source Settings when the checkbox is on."""
+    etype = (element.get("type") or "").lower()
+    fields = _WIDGET_CONFIG_FIELDS.get(etype)
+    if not fields:
+        return
+    props = element.get("props") if isinstance(element.get("props"), dict) else {}
+    label_base = str(element.get("id") or eid)
+    for key, kind in fields:
+        if not _expose_field(element, key):
+            continue
+        value = props.get(key)
+        if kind == "checkbox":
+            stored: Any = bool(value)
+        elif kind == "number":
+            try:
+                stored = float(value) if value not in (None, "") else 0
+            except (TypeError, ValueError):
+                stored = 0
+        else:
+            stored = "" if value is None else str(value)
+        elements_out.append(
+            {
+                "type": kind,
+                "id": f"{eid}_{key}",
+                "label": f"{label_base} {key.replace('_', ' ')}",
+                "value": stored,
+                "description": f"{key.replace('_', ' ').title()} for '{label_base}'.",
+            }
+        )
 
 
 def _clone_dynamic_controls(dc: Dict[str, Any]) -> Dict[str, Any]:
@@ -1963,6 +2262,14 @@ def compile_model(
         out_html = _replace_block(out_html, _STYLES_BEGIN, _STYLES_END, styles)
     else:
         out_html = _replace_block(out_html, _STYLES_BEGIN, _STYLES_END, "")
+
+    if any(
+        isinstance(el, dict) and (el.get("type") or "").lower() == "qr"
+        for el in elements
+    ):
+        qr_tag = '<script src="/assets/default_assets/spore_studio/qrcode.js"></script>'
+        if qr_tag not in out_html:
+            out_html = out_html.replace("</head>", qr_tag + "\n</head>", 1)
 
     json_config = _derived_json_config(model)
     out_html = inject_overlay_recovery(out_html)

@@ -58,7 +58,7 @@ _EVENTS: List[Dict[str, Any]] = [
              "examples": ["alerts", "boo game"]},
             {"key": "alert_type", "label": "Alert type", "type": "string",
              "examples": ["follow", "sub", "resub", "giftsub", "bit",
-                          "donation", "raid", "hype_train", "point"]},
+                          "donation", "raid", "hype_train", "point", "streak"]},
             {"key": "username", "label": "Username", "type": "string"},
             {"key": "message", "label": "Message", "type": "string"},
             {"key": "amount", "label": "Amount", "type": "number"},
@@ -69,6 +69,16 @@ _EVENTS: List[Dict[str, Any]] = [
              "type": "number"},
             {"key": "raider_count", "label": "Raider count", "type": "number"},
             {"key": "amt_cheered", "label": "Bits cheered", "type": "number"},
+            {"key": "quantity", "label": "Quantity", "type": "number"},
+            {"key": "gift_qty", "label": "Gift sub quantity", "type": "number"},
+            {"key": "recipient", "label": "Gift recipient", "type": "string"},
+            {"key": "alert_name", "label": "Point reward name", "type": "string"},
+            {"key": "streak_count", "label": "Watch streak", "type": "number"},
+            {"key": "channel_points_awarded", "label": "Channel points awarded",
+             "type": "number"},
+            {"key": "level", "label": "Hype train level", "type": "number"},
+            {"key": "total", "label": "Hype train total", "type": "number"},
+            {"key": "timestamp", "label": "Timestamp", "type": "number"},
             {"key": "gif_dir", "label": "GIF directory", "type": "string"},
             {"key": "gif_name", "label": "GIF file name", "type": "string"},
             {"key": "hold_queue_only", "label": "Main overlay holds timing only",
@@ -87,13 +97,55 @@ _EVENTS: List[Dict[str, Any]] = [
             "counters, and anything that updates without holding the queue."
         ),
         "payload": [
-            {"key": "alert_type", "label": "Alert type", "type": "string"},
+            {"key": "alert_type", "label": "Alert type", "type": "string",
+             "examples": ["follow", "sub", "resub", "giftsub", "bit",
+                          "donation", "raid", "hype_train", "point", "streak"]},
             {"key": "username", "label": "Username", "type": "string"},
             {"key": "message", "label": "Message", "type": "string"},
-            {"key": "amount", "label": "Amount", "type": "number"},
-            {"key": "tier", "label": "Sub tier", "type": "string"},
+            {"key": "amount", "label": "Donation amount", "type": "number"},
+            {"key": "currency", "label": "Currency", "type": "string"},
+            {"key": "tier", "label": "Sub tier", "type": "string",
+             "examples": ["1000", "2000", "3000"]},
             {"key": "quantity", "label": "Quantity", "type": "number"},
             {"key": "gift_qty", "label": "Gift sub quantity", "type": "number"},
+            {"key": "cumulative_months", "label": "Cumulative months",
+             "type": "number"},
+            {"key": "raider_count", "label": "Raider count", "type": "number"},
+            {"key": "amt_cheered", "label": "Bits cheered", "type": "number"},
+            {"key": "recipient", "label": "Gift recipient", "type": "string"},
+            {"key": "alert_name", "label": "Point reward name", "type": "string"},
+            {"key": "streak_count", "label": "Watch streak", "type": "number"},
+            {"key": "channel_points_awarded", "label": "Channel points awarded",
+             "type": "number"},
+            {"key": "level", "label": "Hype train level", "type": "number"},
+            {"key": "total", "label": "Hype train total", "type": "number"},
+            {"key": "duration", "label": "Hold duration (seconds)",
+             "type": "number"},
+            {"key": "timestamp", "label": "Timestamp", "type": "number"},
+        ],
+    },
+    {
+        "event": "giveaway_entry",
+        "label": "Giveaway entry",
+        "alert_system": "either",
+        "description": "Fired when a chat user is added to the giveaway pool.",
+        "payload": [
+            {"key": "username", "label": "Username", "type": "string"},
+            {"key": "pool_size", "label": "Pool size", "type": "number"},
+        ],
+    },
+    {
+        "event": "giveaway_winner",
+        "label": "Giveaway winner",
+        "alert_system": "either",
+        "description": (
+            "Fired when winners are drawn. Winners is a list of names; "
+            "pool_entries is every name that was in the pool."
+        ),
+        "payload": [
+            {"key": "winners", "label": "Winners", "type": "array"},
+            {"key": "pool_size", "label": "Pool size", "type": "number"},
+            {"key": "pool_entries", "label": "Pool entries", "type": "array"},
         ],
     },
     {
@@ -418,7 +470,52 @@ _ACTIONS: List[Dict[str, Any]] = [
         "description": "Reset a timer element to zero and apply auto-start setting.",
         "args": [],
     },
+    {
+        "action": "list_add",
+        "label": "Add list row",
+        "description": (
+            "Append a row to this List widget. Uses the event payload, or the "
+            "literal text when the payload has no matching fields."
+        ),
+        "args": [
+            {"key": "text", "label": "Literal text", "type": "string",
+             "default": "", "description": "Used when the payload has no row text."},
+        ],
+    },
+    {
+        "action": "list_clear",
+        "label": "Clear list",
+        "description": "Remove every row from this List widget.",
+        "args": [],
+    },
+    {
+        "action": "wheel_spin",
+        "label": "Spin wheel",
+        "description": (
+            "Spin this Wheel widget. When it stops, the winning label is stored "
+            "on window.__sporeLastPayload.wheel and emitted as wheel_result."
+        ),
+        "args": [],
+    },
 ]
+
+
+def _annotate_alert_fields() -> None:
+    """Tag alert payload fields with the alert types that carry them."""
+    from .data_source_registry import ALERT_FIELD_TYPES
+
+    for ev in _EVENTS:
+        if ev.get("event") not in ("next_alert", "instant_alert"):
+            continue
+        for field in ev.get("payload", []):
+            types = ALERT_FIELD_TYPES.get(field.get("key"))
+            if types:
+                field["alert_types"] = list(types)
+
+
+_annotate_alert_fields()
+
+
 def get_event_registry() -> Dict[str, Any]:
     """
     Return the full event + action registry as a JSON-serializable dict.

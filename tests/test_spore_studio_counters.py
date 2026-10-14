@@ -26,7 +26,10 @@ class SporeStudioDataFeaturesTests(unittest.TestCase):
         ids = {s["id"] for s in reg["sources"]}
         self.assertIn("alert.quantity", ids)
         self.assertIn("alert.gift_qty", ids)
-        self.assertIn("fixed", ids)
+        self.assertIn("alert.amt_cheered", ids)
+        self.assertNotIn("fixed", ids)
+        self.assertNotIn("random_int", ids)
+        self.assertNotIn("random_float", ids)
 
     def test_data_source_registry_has_subscription_deltas(self):
         reg = data_source_registry.get_data_source_registry()
@@ -528,6 +531,106 @@ class SporeStudioDataFeaturesTests(unittest.TestCase):
         self.assertIn('"source": "sub.gift_sub"', js)
         self.assertIn('"tier_filter": "2"', js)
         self.assertIn("instant_alert", js)
+
+    def test_registry_dedupes_sources_and_adds_alert_fields(self):
+        reg = data_source_registry.get_data_source_registry()
+        ids = [s["id"] for s in reg["sources"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        for gone in (
+            "fixed",
+            "random_int",
+            "random_float",
+            "chatbot.gift_sub_quantity",
+            "chatbot.gift_sub_tier",
+            "chatbot.raid_viewer_count",
+            "counter.{id}",
+            "config.{id}",
+            "stats.total_bits",
+        ):
+            self.assertNotIn(gone, ids)
+        for kept in ("counter", "config", "runtime", "twitch", "stats", "sub.new_sub"):
+            self.assertIn(kept, ids)
+        username = data_source_registry.get_data_source("alert.username")
+        self.assertTrue(username.get("display_only"))
+        bits = data_source_registry.get_data_source("alert.amt_cheered")
+        self.assertFalse(bits.get("display_only"))
+        keys = reg["alert_payload_keys"]
+        for key in (
+            "recipient",
+            "alert_name",
+            "streak_count",
+            "channel_points_awarded",
+            "level",
+            "total",
+            "duration",
+            "timestamp",
+        ):
+            self.assertEqual(keys["alert." + key], key)
+        stat_ids = {row["id"] for row in reg["session_stat_keys"]}
+        self.assertIn("total_bits", stat_ids)
+        self.assertIn("follows", stat_ids)
+        type_ids = {row["id"] for row in reg["alert_types"]}
+        self.assertIn("giftsub", type_ids)
+        self.assertIn("streak", type_ids)
+
+    def test_counter_rule_compiles_structured_source_and_filter(self):
+        model = {
+            "template_name": "structured_src",
+            "alert_system": "instant",
+            "design": {"width": 400, "height": 80},
+            "elements": [
+                {
+                    "id": "bits",
+                    "type": "text",
+                    "category": "Elements",
+                    "text_mode": "counter",
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 120, "h": 40},
+                    "props": {"text": "0"},
+                    "bindings": [],
+                    "counter": {
+                        "counter_id": "bits",
+                        "initial_value": 0,
+                        "format": "{value}",
+                        "rules": [
+                            {
+                                "trigger": "event",
+                                "event": "instant_alert",
+                                "filter": {"alert_type": "bit"},
+                                "operation": "increment",
+                                "delta": {
+                                    "kind": "data_source",
+                                    "source": "alert.amt_cheered",
+                                    "alert_type_filter": "bit",
+                                    "fallback": 0,
+                                },
+                            },
+                            {
+                                "trigger": "event",
+                                "event": "instant_alert",
+                                "filter": {},
+                                "operation": "increment",
+                                "delta": {
+                                    "kind": "data_source",
+                                    "source": "counter",
+                                    "source_id": "bits",
+                                    "fallback": 0,
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+        js = spore_data_codegen.compile_spore_data_features(model)
+        self.assertIn('"alert_type_filter": "bit"', js)
+        self.assertIn('"source": "counter"', js)
+        self.assertIn('"source_id": "bits"', js)
+        self.assertIn("sporeMatchesFilter", js)
+        self.assertIn("alert.amt_cheered", js)
+        html, _cfg = template_codegen.compile_model(model)
+        self.assertIn("sporeEffectiveSourceId", html)
+        self.assertIn("sporeSpecPassesAlertFilters", html)
 
 
 if __name__ == "__main__":
