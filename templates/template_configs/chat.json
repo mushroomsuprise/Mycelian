@@ -455,6 +455,22 @@
             "description": "Background color of the banner strip"
         },
         {
+            "type": "text",
+            "id": "BannerBGImage",
+            "label": "Banner Background Image",
+            "value": "",
+            "description": "URL or path to a background image for the banner. Leave empty to use only the background color. A banner request can override this."
+        },
+        {
+            "type": "number",
+            "id": "BannerHeight",
+            "label": "Banner Height",
+            "value": 0,
+            "min": 0,
+            "max": 2000,
+            "description": "Fixed banner height in pixels. 0 autosizes to the text, including wrapped lines. A fixed height hides overflowing text and images."
+        },
+        {
             "type": "select",
             "id": "BannerFontName",
             "label": "Banner Font",
@@ -528,6 +544,13 @@
             "label": "Enable Alert Banners",
             "value": false,
             "description": "Show activity-feed alerts on the banner. The alert GIF and message are shown with no audio, including while the alert queue is paused. Each kind below must also be enabled."
+        },
+        {
+            "type": "text",
+            "id": "AlertBannerBGImage",
+            "label": "Alert Banner Background Image",
+            "value": "",
+            "description": "Background image used only for alert banners. Leave empty to use the Banner Background Image."
         },
         {
             "type": "checkbox",

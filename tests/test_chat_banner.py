@@ -70,6 +70,51 @@ class ChatBannerPayloadTests(unittest.TestCase):
         self.assertNotIn("font", style)
         self.assertNotIn("animation", style)
 
+    def test_style_keeps_background_image(self) -> None:
+        payload = normalize_chat_banner_payload(
+            {
+                "message": "Hi",
+                "style": {
+                    "background_image": "https://example.com/banner.png",
+                },
+            }
+        )
+        self.assertEqual(
+            payload["style"]["background_image"], "https://example.com/banner.png"
+        )
+
+        asset = normalize_chat_banner_payload(
+            {
+                "message": "Hi",
+                "style": {"background_image": "/assets/banners/strip.png"},
+            }
+        )
+        self.assertEqual(
+            asset["style"]["background_image"], "/assets/banners/strip.png"
+        )
+
+    def test_style_drops_unsafe_background_image(self) -> None:
+        payload = normalize_chat_banner_payload(
+            {
+                "message": "Hi",
+                "style": {"background_image": "javascript:alert(1)"},
+            }
+        )
+        self.assertNotIn("style", payload)
+
+        traversal = normalize_chat_banner_payload(
+            {
+                "message": "Hi",
+                "style": {"background_image": "/assets/../secret.png"},
+            }
+        )
+        self.assertNotIn("background_image", traversal.get("style", {}))
+
+        empty = normalize_chat_banner_payload(
+            {"message": "Hi", "style": {"background_image": ""}}
+        )
+        self.assertNotIn("style", empty)
+
     def test_clear_drops_message(self) -> None:
         payload = normalize_chat_banner_payload(
             {"action": "clear", "message": "gone", "source": "manual"}

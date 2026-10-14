@@ -110,6 +110,29 @@ def _clean_animation(value: Any) -> str:
     return ""
 
 
+def _clean_background_image(value: Any) -> str:
+    """Keep http(s) URLs and site paths. Drop scripts, data URLs, and CSS breaks."""
+    text = str(value or "").strip()
+    if not text or len(text) > 2048:
+        return ""
+    if any(ch.isspace() for ch in text):
+        return ""
+    if any(ch in text for ch in ('"', "'", "<", ">", "\\", "(", ")", "\n", "\r")):
+        return ""
+    if ".." in text:
+        return ""
+    lowered = text.lower()
+    if lowered.startswith(("javascript:", "data:", "vbscript:")):
+        return ""
+    if lowered.startswith(("http://", "https://")):
+        return text
+    if text.startswith("/") and not text.startswith("//"):
+        return text
+    if re.match(r"^[A-Za-z0-9_./-]+$", text):
+        return text
+    return ""
+
+
 def _normalize_style(raw: Any) -> Dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
@@ -117,6 +140,9 @@ def _normalize_style(raw: Any) -> Dict[str, Any]:
     background = _clean_color(raw.get("background"))
     if background:
         style["background"] = background
+    background_image = _clean_background_image(raw.get("background_image"))
+    if background_image:
+        style["background_image"] = background_image
     color = _clean_color(raw.get("color"))
     if color:
         style["color"] = color

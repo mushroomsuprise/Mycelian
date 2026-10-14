@@ -169,6 +169,7 @@ _EVENTS: List[Dict[str, Any]] = [
             {"key": "permanent", "label": "Permanent", "type": "boolean"},
             {"key": "source", "label": "Source", "type": "string"},
             {"key": "style.background", "label": "Background override", "type": "string"},
+            {"key": "style.background_image", "label": "Background image override", "type": "string"},
             {"key": "style.font", "label": "Font file override", "type": "string"},
             {"key": "style.font_size", "label": "Font size override", "type": "number"},
             {"key": "style.color", "label": "Text color override", "type": "string"},

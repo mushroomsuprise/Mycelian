@@ -4,6 +4,12 @@ Legacy Templates:
 Twitch:
     [x] - Fix new sub filter logic. it appears all new subs are still not being played
 
+Spore Studio:
+    [] - Add additional widgets to make creating custom templates easier (primarily fill gaps from current custom templates that can't easily be done in Spore Studio)
+    [] - Add more instructions to the integrated help system. Define each widget into a category, inside the category, it should break down what every property and setting the widget has, what they do, and how to configure them.
+    [] - Cleanup the "Source" field of the Text widget's "Counter Rules" panel. There are a lot of duplicates. Ex: there is a chatbot segment that has duplicate values. There are also missing fields from the Alerts payload that could be added.
+    [] - Add missing additional fields from the same Counter Rules panel. Ex: setting Alert Type for the source does not give a field to pick the alert type from. It appears only the "Subscriptions" segment has the proper additional fields.
+
 Chat Template:
     [x] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.
     [x] - Fix colorized usernames when a chatter does not have a specific global color picked out. It is currently making them all white.

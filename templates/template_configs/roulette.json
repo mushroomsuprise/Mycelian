@@ -541,6 +541,13 @@
             "description": "Background used only for this roulette banner"
         },
         {
+            "type": "text",
+            "id": "ChatBannerBGImage",
+            "label": "Banner background image",
+            "value": "",
+            "description": "Background image used only for this roulette banner. Leave empty to use the chat template's banner image."
+        },
+        {
             "type": "color",
             "id": "ChatBannerFontColor",
             "label": "Banner text color",

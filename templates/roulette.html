@@ -929,6 +929,7 @@
         showResultAsChatBanner: {{ ShowResultAsChatBanner | default(false) | tojson }},
         chatBannerMessageTemplate: {{ ChatBannerMessageTemplate | default('{result}') | tojson }},
         chatBannerBG: {{ ChatBannerBG | default('#7c3aed') | tojson }},
+        chatBannerBGImage: {{ ChatBannerBGImage | default('') | tojson }},
         chatBannerFontColor: {{ ChatBannerFontColor | default('#ffffff') | tojson }},
         chatBannerFontSize: {{ ChatBannerFontSize | default(28) | tojson }},
         chatBannerAnimation: {{ ChatBannerAnimation | default('bounceIn') | tojson }},
@@ -2628,16 +2629,20 @@
             if (!window.MycelianOverlay || typeof MycelianOverlay.requestChatBanner !== 'function') {
                 return;
             }
+            var style = {
+                background: settings.chatBannerBG,
+                color: settings.chatBannerFontColor,
+                font_size: Number(settings.chatBannerFontSize),
+                animation: settings.chatBannerAnimation
+            };
+            if (settings.chatBannerBGImage) {
+                style.background_image = settings.chatBannerBGImage;
+            }
             MycelianOverlay.requestChatBanner(socket, {
                 message: message,
                 duration: Number(settings.chatBannerDuration),
                 source: 'roulette',
-                style: {
-                    background: settings.chatBannerBG,
-                    color: settings.chatBannerFontColor,
-                    font_size: Number(settings.chatBannerFontSize),
-                    animation: settings.chatBannerAnimation
-                }
+                style: style
             });
         }
 
@@ -2851,6 +2856,7 @@
             if (config.ShowResultAsChatBanner !== undefined) { settings.showResultAsChatBanner = !!config.ShowResultAsChatBanner; }
             if (config.ChatBannerMessageTemplate !== undefined) { settings.chatBannerMessageTemplate = config.ChatBannerMessageTemplate; }
             if (config.ChatBannerBG !== undefined) { settings.chatBannerBG = config.ChatBannerBG; }
+            if (config.ChatBannerBGImage !== undefined) { settings.chatBannerBGImage = config.ChatBannerBGImage; }
             if (config.ChatBannerFontColor !== undefined) { settings.chatBannerFontColor = config.ChatBannerFontColor; }
             if (config.ChatBannerFontSize !== undefined) { settings.chatBannerFontSize = Number(config.ChatBannerFontSize); }
             if (config.ChatBannerAnimation !== undefined) { settings.chatBannerAnimation = config.ChatBannerAnimation; }
