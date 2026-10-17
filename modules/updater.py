@@ -30,6 +30,7 @@ import os
 import threading
 import time
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import quote
 
 import aiohttp
 
@@ -53,6 +54,47 @@ _github_release_cache: Optional[Tuple[float, Optional[Dict[str, Any]]]] = None
 
 # Ensure 'packaging' and 'aiohttp' libraries are installed: pip install packaging aiohttp
 
+def release_download_ref(commit_payload: Any) -> Optional[str]:
+    """Commit SHA to download, taken only from a GitHub commits API payload.
+
+    ``target_commitish`` on a release is the branch the tag was cut from, and
+    that branch keeps accepting commits after the release. It is never a
+    download ref.
+    """
+    if not isinstance(commit_payload, dict):
+        return None
+    return update_sync.normalize_commit_sha(commit_payload.get("sha"))
+
+
+async def _fetch_release_commit_sha(
+    session: aiohttp.ClientSession,
+    tag_name: str,
+) -> Optional[str]:
+    """Resolve a published release tag to the commit it points at."""
+    safe_tag = quote(str(tag_name).strip(), safe="")
+    if not safe_tag:
+        return None
+    url = f"{GITHUB_API_BASE}/repos/{GITHUB_OWNER}/{GITHUB_REPO}/commits/{safe_tag}"
+    async with session.get(url) as response:
+        if response.status != 200:
+            logger.warning(
+                "Release tag %s did not resolve to a commit (%s)",
+                tag_name,
+                response.status,
+            )
+            await response.read()
+            return None
+        try:
+            payload = await response.json(content_type=None)
+        except (aiohttp.ContentTypeError, ValueError) as exc:
+            logger.warning("Release tag %s commit response was not JSON: %s", tag_name, exc)
+            return None
+    sha = release_download_ref(payload)
+    if sha is None:
+        logger.warning("Release tag %s did not resolve to a commit SHA", tag_name)
+    return sha
+
+
 def _compare_versions(current_v_str: str, new_v_str: str) -> bool:
     """
     Compares two version strings using packaging.version.
@@ -71,8 +113,11 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
     Fetches the latest update information from GitHub releases API asynchronously.
     
     Returns:
-        dict: A dictionary with 'latest_version', 'tag_name', 'release_notes',
-              and 'release_url', or None if data is not found, invalid, or an error occurs.
+        dict: A dictionary with 'latest_version', 'tag_name', 'commit_sha',
+              'release_notes', and 'release_url', or None if data is not found,
+              the release tag does not resolve to a commit, or an error occurs.
+              ``commit_sha`` is the snapshot file sync downloads. The release
+              ``target_commitish`` branch is ignored.
     """
     global _github_release_cache
 
@@ -100,6 +145,7 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
         # Set a reasonable timeout to prevent hanging
         timeout = aiohttp.ClientTimeout(total=15.0)
         async with aiohttp.ClientSession(timeout=timeout) as session:
+            pending: Optional[Dict[str, Any]] = None
             async with session.get(api_url) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -110,21 +156,38 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
                     release_notes = data.get("body", "")
                     release_page_url = data.get("html_url", "")
 
-                    if latest_version:
-                        logger.info(f"Successfully fetched update info from GitHub: version {latest_version}")
-                        result = {
+                    if latest_version and tag_name:
+                        pending = {
                             "latest_version": latest_version,
                             "tag_name": tag_name,
                             "release_notes": release_notes,
                             "release_url": release_page_url,
                         }
                     else:
+                        pending = None
                         logger.warning(f"No valid version found in GitHub release data. Tag name: {tag_name}")
                         
                 elif response.status == 404:
                     logger.warning(f"GitHub repository '{GITHUB_OWNER}/{GITHUB_REPO}' not found or has no releases")
                 else:
                     logger.error(f"GitHub API request failed with status {response.status}: {await response.text()}")
+
+            if pending is not None:
+                commit_sha = await _fetch_release_commit_sha(session, pending["tag_name"])
+                if commit_sha:
+                    pending["commit_sha"] = commit_sha
+                    logger.info(
+                        "Successfully fetched update info from GitHub: version %s at %s",
+                        pending["latest_version"],
+                        commit_sha,
+                    )
+                    result = pending
+                else:
+                    logger.warning(
+                        "Not offering update %s because tag %s did not resolve to a commit",
+                        pending["latest_version"],
+                        pending["tag_name"],
+                    )
                     
     except (asyncio.TimeoutError, aiohttp.ServerTimeoutError) as e:
         logger.warning(
@@ -161,12 +224,15 @@ async def check_for_updates(current_app_version: str, *, force_refresh: bool = F
 
     Returns:
         dict: Release info when a newer version is available, otherwise None.
-              File sync uses ``tag_name`` and does not download an installer.
+              File sync downloads ``commit_sha`` and does not download an installer.
     """
     logger.info(f"Checking for updates on GitHub. Current application version: {current_app_version}")
     update_info = await fetch_latest_update_info_from_github(force_refresh=force_refresh)
 
     if update_info:
+        if update_sync.normalize_commit_sha(update_info.get("commit_sha")) is None:
+            logger.warning("Latest release has no commit snapshot; not offering an update")
+            return None
         latest_version = update_info.get("latest_version")
         # Ensure latest_version is not None or empty before comparison
         if latest_version and _compare_versions(current_app_version, latest_version):
@@ -638,9 +704,7 @@ class UpdateManager:
                 return
 
             version = update_info.get("latest_version", "?")
-            tag_name = str(update_info.get("tag_name") or "").strip()
-            if not tag_name and version and version != "?":
-                tag_name = version if str(version).startswith("v") else f"v{version}"
+            commit_sha = update_sync.normalize_commit_sha(update_info.get("commit_sha")) or ""
             release_notes = update_info.get("release_notes", "")
             release_url = update_info.get("release_url", "")
 
@@ -696,6 +760,12 @@ class UpdateManager:
                                     type="warning",
                                 )
                                 return
+                            if not commit_sha:
+                                notify(
+                                    "This release has no commit snapshot, so it cannot be installed.",
+                                    type="warning",
+                                )
+                                return
                             content_area.style("display: none;")
                             progress_area.style("display: block;")
                             try:
@@ -706,7 +776,7 @@ class UpdateManager:
                                 pass
 
                             self._start_sync_flow(
-                                tag_name,
+                                commit_sha,
                                 title_label,
                                 progress_label,
                                 progress_bar,
@@ -744,7 +814,7 @@ class UpdateManager:
 
     def _start_sync_flow(
         self,
-        tag_name: str,
+        commit_sha: str,
         title_label,
         progress_label,
         progress_bar,
@@ -769,7 +839,7 @@ class UpdateManager:
                 try:
                     helper_pid = asyncio.run(
                         update_sync.sync_release(
-                            tag=tag_name,
+                            commit_sha=commit_sha,
                             owner=GITHUB_OWNER,
                             repo=GITHUB_REPO,
                             state=download_state,

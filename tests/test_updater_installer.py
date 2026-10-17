@@ -331,5 +331,52 @@ class UpdaterInstallerTests(unittest.TestCase):
             _stop(parent)
 
 
+class ReleaseSnapshotTests(unittest.TestCase):
+    """File updates download the release tag's commit, not a moving branch."""
+
+    SHA = "d04504e39802519b6da55d052c3792210d3475e6"
+
+    def test_release_file_url_uses_commit_sha(self) -> None:
+        url = update_sync.release_file_url(
+            "mushroomsuprise",
+            "mycelian",
+            self.SHA,
+            "packaged/manifest.json",
+        )
+        self.assertEqual(
+            url,
+            "https://raw.githubusercontent.com/mushroomsuprise/mycelian/"
+            f"{self.SHA}/packaged/manifest.json",
+        )
+        self.assertNotIn("/main/", url)
+        self.assertNotIn("/v1.13.3/", url)
+
+    def test_release_file_url_rejects_branch_and_empty_ref(self) -> None:
+        for ref in ("", "main", "v1.13.3", self.SHA[:12]):
+            with self.assertRaises(update_sync.UpdateSyncError):
+                update_sync.release_file_url("owner", "repo", ref, "packaged/manifest.json")
+
+    def test_missing_or_non_sha_lookup_has_no_download_ref(self) -> None:
+        self.assertIsNone(updater.release_download_ref(None))
+        self.assertIsNone(updater.release_download_ref({}))
+        self.assertIsNone(updater.release_download_ref({"sha": "main"}))
+        self.assertIsNone(updater.release_download_ref({"sha": ""}))
+        self.assertIsNone(updater.release_download_ref({"sha": self.SHA[:12]}))
+        # A branch name on the release record is not a snapshot, even if it
+        # sits next to a real commit field that is not the commits API sha.
+        self.assertIsNone(
+            updater.release_download_ref({"target_commitish": "main", "sha": "main"})
+        )
+        self.assertIsNone(updater.release_download_ref({"target_commitish": self.SHA}))
+        self.assertEqual(
+            updater.release_download_ref({"sha": self.SHA, "target_commitish": "main"}),
+            self.SHA,
+        )
+        self.assertEqual(
+            updater.release_download_ref({"sha": self.SHA.upper()}),
+            self.SHA,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

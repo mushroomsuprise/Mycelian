@@ -251,10 +251,30 @@ def plan_changes(
     return {"downloads": downloads, "deletes": deletes, "files": record}
 
 
-def release_file_url(owner: str, repo: str, tag: str, path: str) -> str:
-    safe_tag = quote(tag, safe="")
+_COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def normalize_commit_sha(value: Any) -> Optional[str]:
+    """Return a full commit SHA, or None when ``value`` is not one.
+
+    Branch names such as ``main`` are rejected. Release downloads must use the
+    commit the published tag points at, not a branch that keeps moving.
+    """
+    if not isinstance(value, str):
+        return None
+    sha = value.strip().lower()
+    if _COMMIT_SHA_RE.fullmatch(sha) is None:
+        return None
+    return sha
+
+
+def release_file_url(owner: str, repo: str, commit_sha: str, path: str) -> str:
+    """Raw URL for one file at a release commit. Refuses branch names and tags."""
+    sha = normalize_commit_sha(commit_sha)
+    if sha is None:
+        raise UpdateSyncError("The release commit is not a commit SHA.")
     safe_path = quote(path.replace("\\", "/"), safe="/")
-    return f"https://raw.githubusercontent.com/{owner}/{repo}/{safe_tag}/{safe_path}"
+    return f"https://raw.githubusercontent.com/{owner}/{repo}/{sha}/{safe_path}"
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -424,9 +444,9 @@ async def _fetch_manifest(
     session: aiohttp.ClientSession,
     owner: str,
     repo: str,
-    tag: str,
+    commit_sha: str,
 ) -> Dict[str, Any]:
-    url = release_file_url(owner, repo, tag, MANIFEST_REPO_PATH)
+    url = release_file_url(owner, repo, commit_sha, MANIFEST_REPO_PATH)
     async with session.get(url) as response:
         if response.status != 200:
             raise UpdateSyncError(
@@ -837,13 +857,16 @@ def launch_apply_helper(staging: Path, *, elevate: bool) -> int:
 
 async def sync_release(
     *,
-    tag: str,
+    commit_sha: str,
     owner: str,
     repo: str,
     state: Dict[str, Any],
     cancel_event: Optional[threading.Event] = None,
 ) -> Optional[int]:
-    """Download a release into a staging folder and start the apply helper.
+    """Download a release commit into a staging folder and start the apply helper.
+
+    ``commit_sha`` is the commit the latest published release tag points at.
+    Files are read from that snapshot, not from the default branch.
 
     Returns the helper pid when Mycelian should exit so the helper can replace
     files and relaunch. Returns ``None`` when the installed files already match
@@ -853,8 +876,9 @@ async def sync_release(
         raise UpdateSyncError(
             "This checkout is running from source. Install a packaged build to apply updates."
         )
-    if not tag:
-        raise UpdateSyncError("The release tag is missing.")
+    commit_sha = normalize_commit_sha(commit_sha) or ""
+    if not commit_sha:
+        raise UpdateSyncError("The release commit is missing.")
 
     data_root, bundle_root = install_layout()
     writable = _directory_writable(data_root) and (
@@ -875,7 +899,7 @@ async def sync_release(
 
     timeout = aiohttp.ClientTimeout(connect=30, sock_read=120)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        manifest = await _fetch_manifest(session, owner, repo, tag)
+        manifest = await _fetch_manifest(session, owner, repo, commit_sha)
         entries = entries_for_platform(manifest, current_platform())
         local = load_local_manifest(local_manifest_path())
 
@@ -931,7 +955,7 @@ async def sync_release(
                 try:
                     await _download_file(
                         session,
-                        release_file_url(owner, repo, tag, str(entry["path"])),
+                        release_file_url(owner, repo, commit_sha, str(entry["path"])),
                         dest,
                         str(entry["sha256"]),
                         on_chunk,
