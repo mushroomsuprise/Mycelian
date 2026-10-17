@@ -134,6 +134,74 @@ class SporeStudioWidgetTests(unittest.TestCase):
         self.assertIn("sporeListClear", out["js"])
         self.assertIn("hello", out["js"])
 
+    def test_wheel_result_click_and_variance_stay_out_of_inline_style(self):
+        import re
+
+        model = {
+            "template_name": "t_wheel",
+            "design": {"width": 400, "height": 400},
+            "elements": [
+                _el(
+                    "spin",
+                    "wheel",
+                    props={
+                        "spin_ms": 3000,
+                        "variance": True,
+                        "click_sound": True,
+                        "click_volume": 0.2,
+                        "click_file": "click.mp3",
+                        "show_result": True,
+                        "result_place": "below",
+                        "result_font_size": 22,
+                        "result_color": "#ffee00",
+                        "result_bold": False,
+                        "result_format": "Winner: {label}",
+                        "result_hold_s": 4,
+                        "background_color": "#111111",
+                    },
+                    wheel_segments=[
+                        {"label": "A", "color": "#a855f7"},
+                        {"label": "B", "color": "#22c55e"},
+                    ],
+                )
+            ],
+        }
+        html, _cfg = compile_model(model)
+        for marker in (
+            "data-spore-wheel-variance=",
+            "data-spore-wheel-click=",
+            "data-spore-wheel-click-volume=",
+            "data-spore-wheel-click-file=",
+            "data-spore-wheel-result=",
+            "data-spore-wheel-result-place=",
+            "data-spore-wheel-result-size=",
+            "data-spore-wheel-result-hold=",
+            "below",
+            "Winner: {label}",
+            "spore-wheel-pointer",
+        ):
+            self.assertIn(marker, html, marker)
+        tag = re.search(r'<div id="spin"[^>]*>', html)
+        self.assertIsNotNone(tag)
+        style = re.search(r'style="([^"]*)"', tag.group(0)).group(1)
+        for leaked in (
+            "variance",
+            "click-sound",
+            "click-volume",
+            "click-file",
+            "show-result",
+            "result-place",
+            "result-font",
+            "result-color",
+            "result-bold",
+            "result-format",
+            "result-hold",
+        ):
+            self.assertNotIn(leaked, style, leaked)
+        bindings = compile_bindings(model["elements"])
+        self.assertIn("z-index: 3", bindings["css"])
+        self.assertNotIn("border-top: 14px", bindings["css"])
+
 
 class SporeStudioFilterRelevanceTests(unittest.TestCase):
 

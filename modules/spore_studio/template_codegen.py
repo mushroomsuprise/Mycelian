@@ -214,6 +214,18 @@ _NON_STYLE_PROP_KEYS = frozenset(
         "row_background",
         "row_padding",
         "row_radius",
+        "variance",
+        "click_sound",
+        "click_volume",
+        "click_file",
+        "show_result",
+        "result_place",
+        "result_font_size",
+        "result_font_family",
+        "result_color",
+        "result_bold",
+        "result_format",
+        "result_hold_s",
     }
 )
 
@@ -227,6 +239,40 @@ def _register_font_lookup(lookup: Dict[str, str], raw: str, family: str) -> None
         stem = os.path.splitext(resolved)[0]
         if stem:
             lookup[stem] = family
+
+
+def _emit_result_font_face(
+    lines: List[str],
+    seen_static: Dict[str, str],
+    el: Dict[str, Any],
+    props: Dict[str, Any],
+) -> None:
+    """Register the wheel result font so the label can use a real family name."""
+    raw = str(props.get("result_font_family") or "").strip()
+    if not raw:
+        return
+    filename = resolve_font_filename(raw)
+    if not filename:
+        return
+    eid = _slugify_id(el.get("id"))
+    if _expose_field(el, "result_font_family"):
+        fam = f"spore-el-{eid}-result"
+        jvar = f"{eid}_result_font_family"
+        jinja_src = "{{ " + jvar + "|default(" + json.dumps(filename) + ") }}"
+        lines.append(
+            f'@font-face {{ font-family: "{fam}"; '
+            f'src: url("/assets/default_assets/fonts/{jinja_src}"); }}'
+        )
+        return
+    if filename in seen_static:
+        return
+    fam = font_css_family_name(filename)
+    seen_static[filename] = fam
+    esc_name = html.escape(filename, quote=True)
+    lines.append(
+        f'@font-face {{ font-family: "{fam}"; '
+        f'src: url("/assets/default_assets/fonts/{esc_name}"); }}'
+    )
 
 
 def _compile_spore_font_css(
@@ -245,6 +291,7 @@ def _compile_spore_font_css(
         if not isinstance(el, dict):
             continue
         props = el.get("props") or {}
+        _emit_result_font_face(lines, seen_static, el, props)
         raw = str(props.get("font_family") or "").strip()
         if not raw:
             continue
@@ -638,6 +685,25 @@ def _widget_jinja(eid: str, key: str, default: Any) -> str:
     return "{{ " + f"{eid}_{key}|default({json.dumps(default, ensure_ascii=False)})" + " }}"
 
 
+def _on_attr(props: Dict[str, Any], key: str, default: bool = True) -> str:
+    """Serialize a widget boolean the way the overlay runtime reads it."""
+    raw = props.get(key, default)
+    if isinstance(raw, str):
+        return "false" if raw.strip().lower() in ("false", "0", "no", "off") else "true"
+    return "true" if bool(raw) else "false"
+
+
+def _result_font_css_family(element: Dict[str, Any], props: Dict[str, Any]) -> str:
+    """CSS font-family for the wheel result label, matching emitted @font-face names."""
+    raw = str(props.get("result_font_family") or "Arial").strip() or "Arial"
+    filename = resolve_font_filename(raw)
+    if not filename:
+        return raw
+    if _expose_field(element, "result_font_family"):
+        return f"spore-el-{_slugify_id(element.get('id'))}-result"
+    return font_css_family_name(filename)
+
+
 def _num_or(value: Any, default: float) -> Any:
     """Return ``value`` as a number, or ``default`` when it is blank or invalid."""
     try:
@@ -712,6 +778,7 @@ def _render_widget_element(
             spin_ms = int(float(props.get("spin_ms", 4000)))
         except (TypeError, ValueError):
             spin_ms = 4000
+        result_font = html.escape(_result_font_css_family(element, props), quote=True)
         return (
             open_tag
             + 'data-spore-type="wheel" '
@@ -719,6 +786,18 @@ def _render_widget_element(
             + f'data-spore-wheel-easing="{_widget_jinja(eid, "easing", str(props.get("easing") or "ease-out"))}" '
             + f'data-spore-wheel-pointer="{_widget_jinja(eid, "pointer", str(props.get("pointer") or "top"))}" '
             + f'data-spore-wheel-source="{_widget_jinja(eid, "source", str(props.get("source") or "static"))}" '
+            + f'data-spore-wheel-variance="{_widget_jinja(eid, "variance", _on_attr(props, "variance", True))}" '
+            + f'data-spore-wheel-click="{_widget_jinja(eid, "click_sound", _on_attr(props, "click_sound", True))}" '
+            + f'data-spore-wheel-click-volume="{_widget_jinja(eid, "click_volume", _num_or(props.get("click_volume", 0.2), 0.2))}" '
+            + f'data-spore-wheel-click-file="{_widget_jinja(eid, "click_file", str(props.get("click_file") or "click.mp3"))}" '
+            + f'data-spore-wheel-result="{_widget_jinja(eid, "show_result", _on_attr(props, "show_result", True))}" '
+            + f'data-spore-wheel-result-place="{_widget_jinja(eid, "result_place", str(props.get("result_place") or "bottom"))}" '
+            + f'data-spore-wheel-result-size="{_widget_jinja(eid, "result_font_size", _num_or(props.get("result_font_size", 14), 14))}" '
+            + f'data-spore-wheel-result-font="{result_font}" '
+            + f'data-spore-wheel-result-color="{_widget_jinja(eid, "result_color", str(props.get("result_color") or "#ffffff"))}" '
+            + f'data-spore-wheel-result-bold="{_widget_jinja(eid, "result_bold", _on_attr(props, "result_bold", False))}" '
+            + f'data-spore-wheel-result-format="{_widget_jinja(eid, "result_format", str(props.get("result_format") or "{label}"))}" '
+            + f'data-spore-wheel-result-hold="{_widget_jinja(eid, "result_hold_s", _num_or(props.get("result_hold_s", 0), 0))}" '
             + f'data-spore-wheel-segments="{seg_attr}">'
             + '<div class="spore-wheel-rotor"></div>'
             + '<div class="spore-wheel-pointer"></div>'
@@ -2082,6 +2161,18 @@ _WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[str, str]]] = {
         ("easing", "text"),
         ("pointer", "text"),
         ("source", "text"),
+        ("variance", "checkbox"),
+        ("click_sound", "checkbox"),
+        ("click_volume", "number"),
+        ("click_file", "text"),
+        ("show_result", "checkbox"),
+        ("result_place", "text"),
+        ("result_font_size", "number"),
+        ("result_font_family", "text"),
+        ("result_color", "color"),
+        ("result_bold", "checkbox"),
+        ("result_format", "text"),
+        ("result_hold_s", "number"),
     ],
     "now_playing": [
         ("layout", "text"),

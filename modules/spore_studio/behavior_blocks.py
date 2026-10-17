@@ -943,17 +943,21 @@ WIDGET_CSS = """
 @keyframes sporeListOut { from { opacity: 1; } to { opacity: 0; } }
 @keyframes sporeListIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sporeListSlide { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
-.spore-wheel { position: relative; overflow: hidden; }
-.spore-wheel-rotor { width: 100%; height: 100%; border-radius: 50%; }
-.spore-wheel-pointer {
-  position: absolute; left: 50%; top: 4px; width: 0; height: 0;
-  margin-left: -8px;
-  border-left: 8px solid transparent; border-right: 8px solid transparent;
-  border-top: 14px solid #fff;
+.spore-wheel { position: relative; overflow: visible; }
+.spore-wheel-rotor {
+  position: relative; z-index: 1; width: 100%; height: 100%;
+  border-radius: 50%; overflow: hidden;
 }
+.spore-wheel-pointer {
+  position: absolute; z-index: 3; width: 22px; height: 26px;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.45));
+}
+.spore-wheel-pointer svg { display: block; width: 100%; height: 100%; }
 .spore-wheel-label {
-  position: absolute; left: 0; right: 0; bottom: 6px; text-align: center;
-  font-size: 14px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6);
+  position: absolute; z-index: 4; left: 0; right: 0; text-align: center;
+  line-height: 1.2; pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0,0,0,.65);
 }
 .spore-now_playing, .spore-now-playing {
   display: flex; align-items: center; gap: 10px; overflow: hidden; box-sizing: border-box;

@@ -1901,6 +1901,22 @@ class WebEngine:
                 logger.error("Spore Studio model endpoint error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
 
+        @self.app.route("/api/spore-studio/ui-prefs", methods=["GET", "POST"])
+        def spore_studio_ui_prefs():
+            """Persisted editor UI flags (the desktop window drops localStorage)."""
+            try:
+                from .spore_studio import ui_prefs as _up
+
+                if request.method == "POST":
+                    payload = request.get_json(silent=True) or {}
+                    prefs = _up.update_prefs(payload)
+                else:
+                    prefs = _up.load_prefs()
+                return (prefs, 200, {"Content-Type": "application/json"})
+            except Exception as e:
+                logger.error("Spore Studio ui-prefs endpoint error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
         @self.app.route("/api/spore-studio/fonts")
         def serve_spore_studio_fonts():
             """Return fonts from assets/default_assets/fonts for the editor picker."""

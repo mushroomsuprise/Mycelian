@@ -337,6 +337,54 @@ html, body {
 .ss-divider-line { display: block; margin: auto; }
 
 .ss-form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.ss-form-row__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.ss-form-row__head > label { flex: 1 1 auto; min-width: 0; }
+.ss-tip {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--ss-border);
+    background: var(--ss-bg-input);
+    color: var(--ss-text-muted);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 12px;
+    text-align: center;
+    cursor: help;
+    font-family: inherit;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.ss-tip:hover,
+.ss-tip:focus-visible {
+    color: var(--ss-text);
+    border-color: var(--ss-accent);
+    outline: none;
+}
+.ss-collapse__summary .ss-tip { margin-left: auto; }
+.ss-tip-bubble {
+    position: fixed;
+    z-index: 8000;
+    max-width: 260px;
+    padding: 6px 8px;
+    border-radius: var(--ss-radius, 6px);
+    background: var(--ss-bg-elevated, #1e293b);
+    color: var(--ss-text, #fff);
+    border: 1px solid var(--ss-border);
+    box-shadow: 0 6px 20px rgba(0,0,0,.45);
+    font-size: 11px;
+    line-height: 1.35;
+    letter-spacing: normal;
+    text-transform: none;
+    pointer-events: none;
+}
 .ss-form-row--inline {
     flex-direction: row;
     align-items: center;
@@ -644,6 +692,9 @@ html, body {
     margin-bottom: 8px;
 }
 .ss-form-section__title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;

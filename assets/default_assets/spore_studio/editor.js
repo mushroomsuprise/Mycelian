@@ -145,7 +145,19 @@
             easing: "ease-out",
             pointer: "top",
             source: "static",
-            background_color: "#0f172a"
+            background_color: "#0f172a",
+            variance: true,
+            click_sound: true,
+            click_volume: 0.2,
+            click_file: "click.mp3",
+            show_result: true,
+            result_place: "bottom",
+            result_font_size: 14,
+            result_font_family: "Arial",
+            result_color: "#ffffff",
+            result_bold: false,
+            result_format: "{label}",
+            result_hold_s: 0
         },
         now_playing: {
             layout: "row",
@@ -244,80 +256,126 @@
               tooltip: "Static text content (static mode only)" }
         ].concat(TEXT_STYLE_SCHEMA),
         image: [
-            { key: "src", label: "Source URL", type: "text" },
-            { key: "border_radius", label: "Border radius (px)", type: "number" },
-            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1 }
+            { key: "src", label: "Source URL", type: "text",
+              tooltip: "Image file or URL. Pick from this template's assets, or paste a custom URL." },
+            { key: "border_radius", label: "Border radius (px)", type: "number",
+              tooltip: "Rounds the image corners. Use half the size for a circle." },
+            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1,
+              tooltip: "0 is invisible, 1 is fully opaque" }
         ],
         video: [
-            { key: "src", label: "Visual source URL", type: "text" },
+            { key: "src", label: "Visual source URL", type: "text",
+              tooltip: "Video or image file played as the visual" },
             { key: "visual_kind", label: "Visual kind", type: "select",
+              tooltip: "Video plays a video file. Image shows a still or GIF.",
               options: ["video", "image"] },
-            { key: "audio_src", label: "Optional audio URL", type: "text" },
+            { key: "audio_src", label: "Optional audio URL", type: "text",
+              tooltip: "Separate audio track. Leave empty to use the visual's own audio." },
             { key: "audio_volume", label: "Audio volume (0–1)", type: "number",
+              tooltip: "Volume of the optional audio track",
               step: 0.05, min: 0, max: 1 },
             { key: "audio_fade_in_ms", label: "Audio fade-in (ms)", type: "number",
+              tooltip: "Milliseconds to fade the audio in from silence",
               min: 0, max: 120000 },
             { key: "audio_fade_out_ms", label: "Audio fade-out (ms)", type: "number",
+              tooltip: "Milliseconds to fade the audio out when it stops",
               min: 0, max: 120000 },
-            { key: "autoplay", label: "Autoplay", type: "checkbox" },
-            { key: "loop", label: "Loop", type: "checkbox" },
-            { key: "muted", label: "Muted", type: "checkbox" },
-            { key: "border_radius", label: "Border radius (px)", type: "number" }
+            { key: "autoplay", label: "Autoplay", type: "checkbox",
+              tooltip: "Start playback when the element is shown" },
+            { key: "loop", label: "Loop", type: "checkbox",
+              tooltip: "Restart the visual when it reaches the end" },
+            { key: "muted", label: "Muted", type: "checkbox",
+              tooltip: "Silence the visual's own audio" },
+            { key: "border_radius", label: "Border radius (px)", type: "number",
+              tooltip: "Rounds the visual corners" }
         ],
         audio: [
-            { key: "src", label: "Source URL", type: "text" },
+            { key: "src", label: "Source URL", type: "text",
+              tooltip: "Audio file URL" },
             { key: "volume", label: "Volume (0–1)", type: "number",
+              tooltip: "0 is silent, 1 is full volume",
               step: 0.05, min: 0, max: 1 },
             { key: "fade_in_ms", label: "Fade-in (ms)", type: "number",
+              tooltip: "Milliseconds to fade in from silence",
               min: 0, max: 120000 },
             { key: "fade_out_ms", label: "Fade-out (ms)", type: "number",
+              tooltip: "Milliseconds to fade out when playback stops",
               min: 0, max: 120000 }
         ],
         container: [
-            { key: "background_color", label: "Background", type: "color" },
-            { key: "border_radius", label: "Border radius (px)", type: "number" },
-            { key: "border_width", label: "Border width (px)", type: "number" },
-            { key: "border_color", label: "Border color", type: "color" }
+            { key: "background_color", label: "Background", type: "color",
+              tooltip: "Fill behind nested elements" },
+            { key: "border_radius", label: "Border radius (px)", type: "number",
+              tooltip: "Rounds the container corners" },
+            { key: "border_width", label: "Border width (px)", type: "number",
+              tooltip: "Thickness of the container border. 0 hides it." },
+            { key: "border_color", label: "Border color", type: "color",
+              tooltip: "Color of the container border" }
         ],
         progress_bar: [
-            { key: "track_color", label: "Track color", type: "color" },
-            { key: "fill_color", label: "Fill color", type: "color" },
-            { key: "border_radius", label: "Border radius (px)", type: "number" },
-            { key: "border_width", label: "Border width (px)", type: "number" },
-            { key: "border_color", label: "Border color", type: "color" },
+            { key: "track_color", label: "Track color", type: "color",
+              tooltip: "Color of the empty part of the bar" },
+            { key: "fill_color", label: "Fill color", type: "color",
+              tooltip: "Color of the filled part of the bar" },
+            { key: "border_radius", label: "Border radius (px)", type: "number",
+              tooltip: "Rounds the bar ends" },
+            { key: "border_width", label: "Border width (px)", type: "number",
+              tooltip: "Thickness of the outline. 0 hides it." },
+            { key: "border_color", label: "Border color", type: "color",
+              tooltip: "Color of the outline" },
             { key: "fill_animation_duration_ms", label: "Fill animation (ms)", type: "number",
+              tooltip: "How long the fill takes to catch up to a new value",
               min: 0, max: 120000 },
             { key: "fill_animation_easing", label: "Fill animation easing", type: "select",
+              tooltip: "How the fill motion speeds up and slows down",
               options: ["ease", "ease-in", "ease-out", "ease-in-out", "linear"] },
             { key: "near_goal_threshold", label: "Near-goal threshold (%)", type: "number",
+              tooltip: "Start the near-goal effect when the bar reaches this percent",
               min: 0, max: 100 },
             { key: "near_goal_effect", label: "Near-goal effect", type: "select",
+              tooltip: "Visual effect used once the bar is near its goal",
               options: ["none", "pulse", "shimmer", "scroll"] }
         ],
         shape: [
             { key: "shape_kind", label: "Shape", type: "select",
+              tooltip: "Rectangle or ellipse",
               options: ["rectangle", "ellipse"] },
-            { key: "background_color", label: "Fill", type: "color" },
-            { key: "border_width", label: "Border width (px)", type: "number" },
-            { key: "border_color", label: "Border color", type: "color" },
-            { key: "border_radius", label: "Corner radius (px)", type: "number" },
-            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1 }
+            { key: "background_color", label: "Fill", type: "color",
+              tooltip: "Interior color" },
+            { key: "border_width", label: "Border width (px)", type: "number",
+              tooltip: "Thickness of the outline. 0 hides it." },
+            { key: "border_color", label: "Border color", type: "color",
+              tooltip: "Color of the outline" },
+            { key: "border_radius", label: "Corner radius (px)", type: "number",
+              tooltip: "Rounds rectangle corners. Ignored for ellipses." },
+            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1,
+              tooltip: "0 is invisible, 1 is fully opaque" }
         ],
         divider: [
             { key: "orientation", label: "Orientation", type: "select",
+              tooltip: "Horizontal or vertical line",
               options: ["horizontal", "vertical"] },
-            { key: "color", label: "Color", type: "color" },
-            { key: "thickness", label: "Thickness (px)", type: "number", min: 1, max: 64 },
-            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1 }
+            { key: "color", label: "Color", type: "color",
+              tooltip: "Line color" },
+            { key: "thickness", label: "Thickness (px)", type: "number", min: 1, max: 64,
+              tooltip: "Line thickness in pixels" },
+            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1,
+              tooltip: "0 is invisible, 1 is fully opaque" }
         ],
         gradient: [
             { key: "gradient_kind", label: "Kind", type: "select",
+              tooltip: "Linear runs along an angle. Radial spreads from the center.",
               options: ["linear", "radial"] },
-            { key: "angle", label: "Angle (deg)", type: "number", min: 0, max: 360 },
-            { key: "border_radius", label: "Corner radius (px)", type: "number" },
-            { key: "border_width", label: "Border width (px)", type: "number" },
-            { key: "border_color", label: "Border color", type: "color" },
-            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1 }
+            { key: "angle", label: "Angle (deg)", type: "number", min: 0, max: 360,
+              tooltip: "Direction of a linear gradient, in degrees" },
+            { key: "border_radius", label: "Corner radius (px)", type: "number",
+              tooltip: "Rounds the gradient box" },
+            { key: "border_width", label: "Border width (px)", type: "number",
+              tooltip: "Thickness of the outline. 0 hides it." },
+            { key: "border_color", label: "Border color", type: "color",
+              tooltip: "Color of the outline" },
+            { key: "opacity", label: "Opacity", type: "number", step: 0.05, min: 0, max: 1,
+              tooltip: "0 is invisible, 1 is fully opaque" }
         ],
         marquee: [
             { key: "text", label: "Text", type: "textarea",
@@ -325,13 +383,16 @@
             { key: "speed", label: "Speed (s)", type: "number", min: 1, max: 120,
               tooltip: "Seconds for one full scroll cycle" },
             { key: "direction", label: "Direction", type: "select",
+              tooltip: "Which way the text scrolls",
               options: ["left", "right"] },
-            { key: "gap", label: "Gap (px)", type: "number", min: 0, max: 500 }
+            { key: "gap", label: "Gap (px)", type: "number", min: 0, max: 500,
+              tooltip: "Space between the repeated copies of the text" }
         ].concat(TEXT_STYLE_SCHEMA),
         clock: [
             { key: "format", label: "Format", type: "text",
               tooltip: "HH, mm, ss tokens (e.g. HH:mm:ss)" },
             { key: "timezone", label: "Timezone", type: "select",
+              tooltip: "Local uses the viewer clock. UTC is universal. Offset adds the minutes below.",
               options: ["local", "utc", "offset"] },
             { key: "timezone_offset_minutes", label: "Offset (min)", type: "number",
               tooltip: "Minutes from UTC when timezone is offset" }
@@ -343,36 +404,62 @@
         }),
         /* Where rows come from and what they say lives in the "List feed" section. */
         list: TEXT_STYLE_SCHEMA.concat([
-            { key: "row_gap", label: "Row spacing (px)", type: "number", min: 0, max: 64 },
+            { key: "row_gap", label: "Row spacing (px)", type: "number", min: 0, max: 64,
+              tooltip: "Space between rows, in pixels" },
             { key: "row_background", label: "Row background", type: "color",
               tooltip: "Fill behind each row. Leave empty for none." },
-            { key: "row_padding", label: "Row padding (px)", type: "number", min: 0, max: 64 },
-            { key: "row_radius", label: "Row corner radius (px)", type: "number", min: 0, max: 64 },
+            { key: "row_padding", label: "Row padding (px)", type: "number", min: 0, max: 64,
+              tooltip: "Space inside each row, around the text" },
+            { key: "row_radius", label: "Row corner radius (px)", type: "number", min: 0, max: 64,
+              tooltip: "Rounds each row's background" },
             { key: "add_animation", label: "Add animation", type: "select",
+              tooltip: "How a new row appears",
               options: ["none", "fade", "slide"] },
             { key: "remove_animation", label: "Remove animation", type: "select",
+              tooltip: "How a row leaves when it expires or is pushed out",
               options: ["none", "fade"] }
         ]),
         wheel: [
-            { key: "spin_ms", label: "Spin duration (ms)", type: "number", min: 200, max: 20000 },
+            { key: "spin_ms", label: "Spin duration (ms)", type: "number", min: 200, max: 20000,
+              tooltip: "How long the wheel takes to stop, in milliseconds" },
             { key: "easing", label: "Easing", type: "select",
+              tooltip: "How the spin slows down",
               options: ["ease", "ease-in", "ease-out", "ease-in-out", "linear"] },
             { key: "pointer", label: "Pointer", type: "select",
+              tooltip: "Which edge the pointer sits on. The winning slice stops under it.",
               options: ["top", "right", "bottom", "left"] },
             { key: "source", label: "Segments from", type: "select",
               options: ["static", "giveaway"],
               tooltip: "Giveaway replaces segments with the entry pool when a winner is drawn" },
-            { key: "background_color", label: "Background", type: "color" }
+            { key: "variance", label: "Spin variance", type: "checkbox",
+              tooltip: "Skip the last random winner and change how far the wheel travels on each spin" },
+            { key: "click_sound", label: "Click sound", type: "checkbox",
+              tooltip: "Play a click each time the pointer crosses a slice. Uses the roulette click sound." },
+            { key: "click_volume", label: "Click volume", type: "number", step: 0.05, min: 0, max: 1,
+              tooltip: "Volume of the slice click. 0 is silent, 1 is full volume." },
+            { key: "click_file", label: "Click sound file", type: "text",
+              tooltip: "Filename in the roulette assets folder. The default is click.mp3." },
+            { key: "background_color", label: "Background", type: "color",
+              tooltip: "Fill behind the wheel" }
         ],
         now_playing: [
-            { key: "layout", label: "Layout", type: "select", options: ["row", "stack"] },
-            { key: "show_art", label: "Show art", type: "checkbox" },
-            { key: "show_title", label: "Show title", type: "checkbox" },
-            { key: "show_artist", label: "Show artist", type: "checkbox" },
-            { key: "show_progress", label: "Show progress", type: "checkbox" },
-            { key: "title_color", label: "Title color", type: "color" },
-            { key: "artist_color", label: "Artist color", type: "color" },
-            { key: "bar_color", label: "Progress color", type: "color" },
+            { key: "layout", label: "Layout", type: "select",
+              tooltip: "Row places the art beside the text. Stack places it above.",
+              options: ["row", "stack"] },
+            { key: "show_art", label: "Show art", type: "checkbox",
+              tooltip: "Show the album image" },
+            { key: "show_title", label: "Show title", type: "checkbox",
+              tooltip: "Show the track name" },
+            { key: "show_artist", label: "Show artist", type: "checkbox",
+              tooltip: "Show the artist name" },
+            { key: "show_progress", label: "Show progress", type: "checkbox",
+              tooltip: "Show a bar for the current playback position" },
+            { key: "title_color", label: "Title color", type: "color",
+              tooltip: "Color of the track name" },
+            { key: "artist_color", label: "Artist color", type: "color",
+              tooltip: "Color of the artist name" },
+            { key: "bar_color", label: "Progress color", type: "color",
+              tooltip: "Color of the playback bar" },
             { key: "font_size", label: "Title size", type: "number",
               tooltip: "Title font size in pixels. The artist line is 80% of this." },
             { key: "font_family", label: "Font", type: "font",
@@ -384,16 +471,20 @@
             { key: "text_align", label: "Align", type: "select",
               tooltip: "Horizontal alignment of the title and artist",
               options: ["left", "center", "right"] },
-            { key: "background_color", label: "Background", type: "color" }
+            { key: "background_color", label: "Background", type: "color",
+              tooltip: "Fill behind the now-playing card" }
         ],
         qr: [
             { key: "text", label: "Text or URL", type: "textarea",
               tooltip: "Encoded into the QR code. Exposed fields can change this from Source Settings." },
-            { key: "foreground", label: "Foreground", type: "color" },
-            { key: "background_color", label: "Background", type: "color" }
+            { key: "foreground", label: "Foreground", type: "color",
+              tooltip: "Color of the QR modules" },
+            { key: "background_color", label: "Background", type: "color",
+              tooltip: "Color behind the QR modules" }
         ],
         embed: [
-            { key: "url", label: "URL", type: "text" },
+            { key: "url", label: "URL", type: "text",
+              tooltip: "Page loaded inside the frame" },
             { key: "scale", label: "Scale", type: "number", step: 0.05, min: 0.1, max: 4,
               tooltip: "Shrink or enlarge the page inside the frame" },
             { key: "refresh_seconds", label: "Refresh (seconds)", type: "number", min: 0, max: 86400,
@@ -402,21 +493,28 @@
         stat_card: [
             { key: "icon", label: "Icon", type: "text",
               tooltip: "Short text or emoji shown beside the value" },
-            { key: "label", label: "Label", type: "text" },
+            { key: "label", label: "Label", type: "text",
+              tooltip: "Caption shown above the value" },
             { key: "format", label: "Value format", type: "text",
               tooltip: "Use {value} for the resolved data source" },
-            { key: "value_color", label: "Value color", type: "color" },
-            { key: "label_color", label: "Label color", type: "color" },
+            { key: "value_color", label: "Value color", type: "color",
+              tooltip: "Color of the number or text" },
+            { key: "label_color", label: "Label color", type: "color",
+              tooltip: "Color of the caption" },
             { key: "font_size", label: "Value size", type: "number",
               tooltip: "Value font size in pixels. The label is half this size." },
             { key: "font_family", label: "Font", type: "font",
               tooltip: "Font for the label and value" },
             { key: "font_weight", label: "Bold", type: "bold", tooltip: "Bold text" },
             { key: "font_style", label: "Italic", type: "italic", tooltip: "Italic text" },
-            { key: "background_color", label: "Background", type: "color" },
-            { key: "border_width", label: "Border width (px)", type: "number" },
-            { key: "border_color", label: "Border color", type: "color" },
-            { key: "border_radius", label: "Corner radius (px)", type: "number" }
+            { key: "background_color", label: "Background", type: "color",
+              tooltip: "Fill behind the card" },
+            { key: "border_width", label: "Border width (px)", type: "number",
+              tooltip: "Thickness of the outline. 0 hides it." },
+            { key: "border_color", label: "Border color", type: "color",
+              tooltip: "Color of the outline" },
+            { key: "border_radius", label: "Corner radius (px)", type: "number",
+              tooltip: "Rounds the card corners" }
         ]
     };
 
@@ -466,16 +564,22 @@
 
     var ANIMATION_SCHEMA = [
         { key: "anim_in", label: "Entrance", type: "select",
+          tooltip: "Animation played when a Show binding reveals this element",
           options: ["none", "fade", "slideIn", "slideOut", "scaleIn", "scaleOut"] },
         { key: "anim_out", label: "Exit", type: "select",
+          tooltip: "Animation played when a Hide binding removes this element",
           options: ["none", "fade", "slideIn", "slideOut", "scaleIn", "scaleOut"] },
         { key: "anim_in_ms", label: "Entrance duration (ms)", type: "number",
+          tooltip: "How long the entrance animation lasts",
           min: 0, max: 120000 },
         { key: "anim_out_ms", label: "Exit duration (ms)", type: "number",
+          tooltip: "How long the exit animation lasts",
           min: 0, max: 120000 },
         { key: "anim_delay_ms", label: "Delay before entrance (ms)", type: "number",
+          tooltip: "Wait this long after Show before the entrance starts",
           min: 0, max: 120000 },
         { key: "anim_easing", label: "Easing", type: "select",
+          tooltip: "How the entrance and exit speed up and slow down",
           options: ["ease", "ease-in", "ease-out", "ease-in-out", "linear"] }
     ];
 
@@ -609,13 +713,100 @@
         }
     }
 
+    var tipBubble = null;
+    var tipHideTimer = null;
+
+    function ensureTipBubble() {
+        if (tipBubble && tipBubble.isConnected) { return tipBubble; }
+        tipBubble = document.createElement("div");
+        tipBubble.className = "ss-tip-bubble";
+        tipBubble.setAttribute("role", "tooltip");
+        tipBubble.hidden = true;
+        document.body.appendChild(tipBubble);
+        return tipBubble;
+    }
+
+    function showTip(anchor, text) {
+        if (!anchor || !text) { return; }
+        var bubble = ensureTipBubble();
+        bubble.textContent = text;
+        bubble.hidden = false;
+        bubble.style.left = "0px";
+        bubble.style.top = "0px";
+        var rect = anchor.getBoundingClientRect();
+        var left = rect.left;
+        var top = rect.bottom + 6;
+        var bw = bubble.offsetWidth;
+        var bh = bubble.offsetHeight;
+        if (left + bw > window.innerWidth - 8) {
+            left = Math.max(8, window.innerWidth - bw - 8);
+        }
+        if (top + bh > window.innerHeight - 8) {
+            top = Math.max(8, rect.top - bh - 6);
+        }
+        bubble.style.left = left + "px";
+        bubble.style.top = top + "px";
+    }
+
+    function hideTipSoon() {
+        clearTimeout(tipHideTimer);
+        tipHideTimer = setTimeout(function () {
+            if (tipBubble) { tipBubble.hidden = true; }
+        }, 60);
+    }
+
+    function bindTip(anchor, text) {
+        if (!anchor || !text) { return; }
+        anchor.setAttribute("data-ss-tip", text);
+        anchor.addEventListener("mouseenter", function () {
+            clearTimeout(tipHideTimer);
+            showTip(anchor, text);
+        });
+        anchor.addEventListener("mouseleave", hideTipSoon);
+        anchor.addEventListener("focus", function () {
+            clearTimeout(tipHideTimer);
+            showTip(anchor, text);
+        });
+        anchor.addEventListener("blur", hideTipSoon);
+    }
+
+    function infoMark(text) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "ss-tip";
+        btn.textContent = "?";
+        btn.setAttribute("aria-label", text);
+        btn.addEventListener("click", function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+        });
+        btn.addEventListener("mousedown", function (ev) {
+            ev.stopPropagation();
+        });
+        bindTip(btn, text);
+        return btn;
+    }
+
+    /* Native title popups do not show reliably in the embedded editor. */
+    function upgradeNativeTitles(root) {
+        if (!root || !root.querySelectorAll) { return; }
+        root.querySelectorAll("[title]").forEach(function (node) {
+            if (node.getAttribute("data-ss-tip")) { return; }
+            var text = node.getAttribute("title");
+            if (!text) { return; }
+            node.removeAttribute("title");
+            bindTip(node, text);
+        });
+    }
+
     function buildCollapsibleSection(title, tooltip, buildContent) {
         var details = document.createElement("details");
         details.className = "ss-collapse";
         var summary = document.createElement("summary");
         summary.className = "ss-collapse__summary";
+        summary.dataset.section = title;
         summary.textContent = title;
-        if (tooltip) { summary.title = tooltip; }
+        if (tooltip) { summary.appendChild(infoMark(tooltip)); }
         details.appendChild(summary);
         var body = document.createElement("div");
         body.className = "ss-collapse__body";
@@ -627,10 +818,13 @@
     function formRow(label, controlNode, tooltip) {
         var row = document.createElement("div");
         row.className = "ss-form-row";
+        var head = document.createElement("div");
+        head.className = "ss-form-row__head";
         var lbl = document.createElement("label");
         lbl.textContent = label;
-        if (tooltip) { lbl.title = tooltip; }
-        row.appendChild(lbl);
+        head.appendChild(lbl);
+        if (tooltip) { head.appendChild(infoMark(tooltip)); }
+        row.appendChild(head);
         if (controlNode) { row.appendChild(controlNode); }
         return row;
     }
@@ -641,8 +835,8 @@
         if (controlNode) { row.appendChild(controlNode); }
         var lbl = document.createElement("label");
         lbl.textContent = label;
-        if (tooltip) { lbl.title = tooltip; }
         row.appendChild(lbl);
+        if (tooltip) { row.appendChild(infoMark(tooltip)); }
         return row;
     }
 
@@ -666,7 +860,6 @@
 
     function formRowCheckbox(label, checked, onChange, tooltip) {
         var toggle = buildToggle(checked, onChange);
-        if (tooltip) { toggle.wrap.title = tooltip; }
         return formRowInline(label, toggle.wrap, tooltip);
     }
 
@@ -1169,6 +1362,12 @@
         if (elType === "list") {
             keys = keys.concat(LIST_FEED_KEYS);
         }
+        if (elType === "wheel") {
+            keys = keys.concat([
+                "show_result", "result_place", "result_font_size", "result_font_family",
+                "result_color", "result_bold", "result_format", "result_hold_s"
+            ]);
+        }
         return keys;
     }
 
@@ -1572,6 +1771,9 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Color stops";
+        title.appendChild(infoMark(
+            "Each stop is a color and a position from 0 (start) to 100 (end)."
+        ));
         sect.appendChild(title);
         var list = document.createElement("div");
         list.className = "ss-gradient-stops";
@@ -1583,6 +1785,7 @@
                 var colorIn = document.createElement("input");
                 colorIn.type = "color";
                 colorIn.value = stop.color || "#000000";
+                colorIn.title = "Color at this stop";
                 colorIn.addEventListener("change", function () {
                     stop.color = colorIn.value;
                     pushHistoryDebounced();
@@ -1597,9 +1800,11 @@
                 });
                 stopIn.min = 0;
                 stopIn.max = 100;
+                stopIn.title = "Position along the gradient, from 0 at the start to 100 at the end";
                 var del = document.createElement("button");
                 del.className = "ss-btn ss-btn--ghost";
                 del.textContent = "×";
+                del.title = "Remove this color stop";
                 del.addEventListener("click", function () {
                     el.props.color_stops.splice(idx, 1);
                     pushHistory();
@@ -1747,6 +1952,9 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Preview";
+        title.appendChild(infoMark(
+            "Play this timer on the canvas. It does not start the live overlay."
+        ));
         sect.appendChild(title);
         var row = document.createElement("div");
         row.className = "ss-btn-row";
@@ -1754,6 +1962,11 @@
             var btn = document.createElement("button");
             btn.className = "ss-btn";
             btn.textContent = label;
+            btn.title = label === "Start"
+                ? "Start the canvas preview of this timer"
+                : (label === "Pause"
+                    ? "Pause the canvas preview"
+                    : "Reset the canvas preview to the start");
             btn.addEventListener("click", function () {
                 if (label === "Start") { el.timer.running = true; }
                 else if (label === "Pause") { el.timer.running = false; }
@@ -1813,13 +2026,14 @@
             var types = grp.types.slice().sort(function (a, b) {
                 return (BLOCK_LABELS[a] || a).localeCompare(BLOCK_LABELS[b] || b);
             });
+            var closed = blockGroupIsCollapsed(collapsed, grp.group);
             var gEl = document.createElement("div");
             gEl.className = "ss-block-group";
-            if (collapsed[grp.group]) { gEl.classList.add("is-collapsed"); }
+            if (closed) { gEl.classList.add("is-collapsed"); }
             var gTitle = document.createElement("button");
             gTitle.type = "button";
             gTitle.className = "ss-block-group__title";
-            gTitle.setAttribute("aria-expanded", collapsed[grp.group] ? "false" : "true");
+            gTitle.setAttribute("aria-expanded", closed ? "false" : "true");
             var chev = document.createElement("span");
             chev.className = "ss-block-group__chevron";
             chev.setAttribute("aria-hidden", "true");
@@ -1851,6 +2065,15 @@
             });
             host.appendChild(gEl);
         });
+        upgradeNativeTitles(host);
+    }
+
+    /* Missing keys stay collapsed. An explicit false means the user opened that group. */
+    function blockGroupIsCollapsed(collapsed, group) {
+        if (!collapsed || !Object.prototype.hasOwnProperty.call(collapsed, group)) {
+            return true;
+        }
+        return !!collapsed[group];
     }
 
     function componentToHex(c) {
@@ -2199,6 +2422,9 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Range change transition";
+        title.appendChild(infoMark(
+            "Animate between images when the counter moves from one range into another."
+        ));
         sect.appendChild(title);
         sect.appendChild(formRowCheckbox("Animate when image changes", !!tr.enabled, function (checked) {
             tr.enabled = checked;
@@ -2224,7 +2450,10 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        sect.appendChild(formRow("Transition type", typeSel));
+        sect.appendChild(formRow(
+            "Transition type", typeSel,
+            "How the outgoing image leaves and the incoming image arrives"
+        ));
         sect.appendChild(formRow("Duration (ms)", numberEl(
             tr.duration_ms != null ? tr.duration_ms : 400,
             function (v) {
@@ -2232,7 +2461,7 @@
                 pushHistoryDebounced();
                 modelTouch();
             }
-        )));
+        ), "Length of the range-change animation"));
         var easeSel = document.createElement("select");
         ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].forEach(function (e) {
             var op = document.createElement("option");
@@ -2246,7 +2475,10 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        sect.appendChild(formRow("Easing", easeSel));
+        sect.appendChild(formRow(
+            "Easing", easeSel,
+            "How the range-change animation speeds up and slows down"
+        ));
         host.appendChild(sect);
     }
 
@@ -2272,7 +2504,10 @@
             renderStage();
             modelTouch();
         });
-        host.appendChild(formRow("Image source mode", modeSel));
+        host.appendChild(formRow(
+            "Image source mode", modeSel,
+            "Static uses one image. From counter swaps the image when the counter enters a range."
+        ));
 
         if ((el.src_mode || "static") !== "from_counter") { return; }
 
@@ -2295,7 +2530,10 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        host.appendChild(formRow("Counter", cidSel));
+        host.appendChild(formRow(
+            "Counter", cidSel,
+            "Counter whose value picks the image range"
+        ));
 
         host.appendChild(formRow("Default src (fallback)", buildImageSrcPicker(
             cs.default_src || "", function (v) {
@@ -2303,7 +2541,7 @@
                 pushHistoryDebounced();
                 modelTouch();
             }
-        )));
+        ), "Image used when the counter matches no range"));
 
         var rangesHead = document.createElement("h4");
         rangesHead.className = "ss-section-sub";
@@ -2318,18 +2556,18 @@
                 row.min = parseInt(v, 10) || 0;
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            }), "Lowest counter value that uses this image, inclusive"));
             card.appendChild(formRow("Max", numberEl(row.max != null ? row.max : 0, function (v) {
                 row.max = parseInt(v, 10) || 0;
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            }), "Highest counter value that uses this image, inclusive"));
             card.appendChild(formRow("Image", buildImageSrcPicker(row.src || "", function (v) {
                 row.src = v;
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            }), "Image shown while the counter is inside this range"));
             var rm = document.createElement("button");
             rm.type = "button";
             rm.className = "ss-btn";
@@ -2367,6 +2605,9 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Progress source";
+        title.appendChild(infoMark(
+            "The bar fills from the value counter toward a fixed max or a second counter."
+        ));
         sect.appendChild(title);
 
         var counters = listCountersInModel();
@@ -2413,7 +2654,10 @@
             modelTouch();
         });
         sect.appendChild(
-            formRowPropWithExpose(el, "max_kind", "Max kind", maxKindSel)
+            formRowPropWithExpose(
+                el, "max_kind", "Max kind", maxKindSel,
+                "Fixed max uses a number. Goal counter uses another counter as 100%."
+            )
         );
 
         if ((ps.max_kind || "fixed") === "fixed") {
@@ -2424,7 +2668,7 @@
                     renderStage();
                     modelTouch();
                 }
-            )));
+            ), "Counter value that fills the bar to 100%"));
         } else {
             var goalSel = document.createElement("select");
             var gblank = document.createElement("option");
@@ -2444,7 +2688,10 @@
                 renderStage();
                 modelTouch();
             });
-            sect.appendChild(formRow("Goal counter", goalSel));
+            sect.appendChild(formRow(
+                "Goal counter", goalSel,
+                "This counter's value is treated as 100% full"
+            ));
         }
 
         host.appendChild(sect);
@@ -2461,8 +2708,9 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Value change animation";
-        title.title =
-            "Tick up animates from the previous value. Other types play a visual effect on the text.";
+        title.appendChild(infoMark(
+            "Tick up animates from the previous value. Other types play a visual effect on the text."
+        ));
         sect.appendChild(title);
         sect.appendChild(formRowCheckbox("Enable on value update", !!va.enabled, function (checked) {
             va.enabled = checked;
@@ -2495,7 +2743,7 @@
                 pushHistoryDebounced();
                 modelTouch();
             }
-        )));
+        ), "How long the value-change animation lasts"));
         var easeSel = document.createElement("select");
         ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].forEach(function (e) {
             var op = document.createElement("option");
@@ -2509,7 +2757,10 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        sect.appendChild(formRow("Easing", easeSel));
+        sect.appendChild(formRow(
+            "Easing", easeSel,
+            "How the value-change animation speeds up and slows down"
+        ));
         sect.appendChild(formRowCheckbox("Continuous pulse", !!va.pulse, function (checked) {
             va.pulse = checked;
             pushHistoryDebounced();
@@ -2812,11 +3063,11 @@
             parent.appendChild(formRow("Database path", inputEl("text", spec.runtime_path || "", function (v) {
                 spec.runtime_path = String(v || "").trim();
                 onChange();
-            })));
+            }), "Path of the runtime database document"));
             parent.appendChild(formRow("Database key", inputEl("text", spec.runtime_key || "", function (v) {
                 spec.runtime_key = String(v || "").trim();
                 onChange();
-            })));
+            }), "Key inside that document"));
         } else if (kind === "twitch") {
             parent.appendChild(formRow(
                 "Binding",
@@ -2936,18 +3187,18 @@
                 fields.appendChild(formRow("Value", numberEl(delta.value != null ? delta.value : 1, function (v) {
                     delta.value = Number(v) || 0;
                     onChange(delta);
-                })));
+                }), "Amount added, subtracted, or set"));
             } else if (k === "random_int" || k === "random_float") {
                 fields.appendChild(formRow("Min", numberEl(delta.min != null ? delta.min : 1, function (v) {
                     delta.min = Number(v); onChange(delta);
-                })));
+                }), "Lowest random amount, inclusive"));
                 fields.appendChild(formRow("Max", numberEl(delta.max != null ? delta.max : 5, function (v) {
                     delta.max = Number(v); onChange(delta);
-                })));
+                }), "Highest random amount, inclusive"));
                 if (k === "random_float") {
                     fields.appendChild(formRow("Decimals", numberEl(delta.decimals != null ? delta.decimals : 0, function (v) {
                         delta.decimals = Number(v); onChange(delta);
-                    })));
+                    }), "Digits after the decimal point"));
                 }
             } else if (k === "data_source") {
                 hydrateSourceSpec(delta);
@@ -2959,7 +3210,7 @@
                     }
                     onChange(delta);
                     redraw();
-                }, { hideDisplayOnly: true })));
+                }, { hideDisplayOnly: true }), "Data source whose value is the delta"));
                 appendDataSourceDetailFields(fields, delta, function () {
                     onChange(delta);
                 }, function () {
@@ -2981,7 +3232,10 @@
             onChange(delta);
         }
         kindSel.addEventListener("change", redraw);
-        wrap.appendChild(formRow("Delta kind", kindSel));
+        wrap.appendChild(formRow(
+            "Delta kind", kindSel,
+            "Fixed uses one number. Random picks between min and max. Data source reads a live value."
+        ));
         wrap.appendChild(fields);
         redraw();
         return wrap;
@@ -3133,7 +3387,10 @@
             renderStage();
             modelTouch();
         });
-        host.appendChild(formRow("Text mode", modeSel));
+        host.appendChild(formRow(
+            "Text mode", modeSel,
+            "Static shows the text you type. Counter and data display fill it from live values."
+        ));
 
         if (el.text_mode === "counter") {
             var c = el.counter;
@@ -3142,25 +3399,25 @@
                 c.database_key = c.counter_id;
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            }), "Id other elements use when they read or change this counter"));
             host.appendChild(formRow("Initial value", numberEl(c.initial_value, function (v) {
                 c.initial_value = Number(v) || 0;
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            }), "Value used the first time this counter is created"));
             host.appendChild(formRow("Min", numberEl(c.min != null ? c.min : "", function (v) {
                 c.min = v === "" ? null : Number(v);
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            }), "Lowest allowed value. Leave empty for no minimum. Available as {min}."));
             host.appendChild(formRow("Max", numberEl(c.max != null ? c.max : "", function (v) {
                 c.max = v === "" ? null : Number(v);
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            }), "Highest allowed value. Leave empty for no maximum. Available as {max}."));
             var formatInput = inputEl("text", c.format || "{value}", function (v) {
                 c.format = v;
                 el.props = el.props || {};
@@ -3174,7 +3431,8 @@
                     el,
                     "text",
                     "Format ({value}, {min}, {max})",
-                    formatInput
+                    formatInput,
+                    "Text shown for the counter. {value}, {min}, and {max} are replaced."
                 )
             );
             host.appendChild(formRowCheckbox("Persist (database)", !!c.persist, function (checked) {
@@ -3188,12 +3446,12 @@
                     c.database_path = v.trim();
                     pushHistoryDebounced();
                     modelTouch();
-                })));
+                }), "Database document that stores this counter"));
                 host.appendChild(formRow("DB key", inputEl("text", c.database_key || "", function (v) {
                     c.database_key = v.trim();
                     pushHistoryDebounced();
                     modelTouch();
-                })));
+                }), "Key inside that document. Defaults to the counter id."));
             }
             var rulesHead = document.createElement("h4");
             rulesHead.className = "ss-section-sub";
@@ -3216,7 +3474,10 @@
                     renderProperties();
                     modelTouch();
                 });
-                card.appendChild(formRow("Trigger", trigSel));
+                card.appendChild(formRow(
+                    "Trigger", trigSel,
+                    "Event listens to Mycelian. Stream Deck listens for an action id."
+                ));
                 if ((rule.trigger || "event") === "event") {
                     var evSel = document.createElement("select");
                     (state.registry.events || []).forEach(function (ev) {
@@ -3233,14 +3494,17 @@
                         renderProperties();
                         modelTouch();
                     });
-                    card.appendChild(formRow("Event", evSel));
+                    card.appendChild(formRow(
+                        "Event", evSel,
+                        "The counter rule runs when this event fires"
+                    ));
                     appendRuleFilterFields(card, rule);
                 } else {
                     card.appendChild(formRow("Stream Deck action id", inputEl("text", rule.streamdeck_action || "", function (v) {
                         rule.streamdeck_action = v;
                         pushHistoryDebounced();
                         modelTouch();
-                    })));
+                    }), "Action id from the Stream Deck tab that runs this rule"));
                 }
                 var opSel = document.createElement("select");
                 ["increment", "decrement", "set", "reset"].forEach(function (o) {
@@ -3255,7 +3519,10 @@
                     pushHistoryDebounced();
                     modelTouch();
                 });
-                card.appendChild(formRow("Operation", opSel));
+                card.appendChild(formRow(
+                    "Operation", opSel,
+                    "Increment adds the delta, decrement subtracts it, set replaces the value, reset returns to the initial value"
+                ));
                 card.appendChild(buildDeltaEditor(rule.delta, function (d) {
                     rule.delta = d;
                     pushHistoryDebounced();
@@ -3265,6 +3532,7 @@
                 rm.type = "button";
                 rm.className = "ss-btn";
                 rm.textContent = "Remove rule";
+                rm.title = "Remove this counter rule";
                 rm.addEventListener("click", function () {
                     c.rules.splice(ridx, 1);
                     pushHistory();
@@ -3306,7 +3574,7 @@
                 pushHistory();
                 renderProperties();
                 modelTouch();
-            }, { displayOnly: true })));
+            }, { displayOnly: true }), "Live value shown in this text"));
             var detailHost = document.createElement("div");
             appendDataSourceDetailFields(detailHost, d.source, function () {
                 pushHistoryDebounced();
@@ -3328,7 +3596,8 @@
                     el,
                     "text",
                     "Format (use {value})",
-                    displayFormatInput
+                    displayFormatInput,
+                    "Shown text. {value} is replaced with the data source."
                 )
             );
             host.appendChild(formRow("Default text", inputEl("text", d.default_text, function (v) {
@@ -3336,7 +3605,7 @@
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            }), "Text shown before the first value arrives"));
             var refreshWrap = document.createElement("div");
             refreshWrap.style.display = "flex";
             refreshWrap.style.flexDirection = "column";
@@ -3359,9 +3628,13 @@
                 var lbl = document.createElement("label");
                 lbl.textContent = ev.label || en;
                 row.appendChild(lbl);
+                if (ev.description) { row.appendChild(infoMark(ev.description)); }
                 refreshWrap.appendChild(row);
             });
-            host.appendChild(formRow("Refresh on events", refreshWrap));
+            host.appendChild(formRow(
+                "Refresh on events", refreshWrap,
+                "Re-read the data source when any checked event fires"
+            ));
         }
 
         if (el.text_mode === "counter" || el.text_mode === "data_display") {
@@ -3384,6 +3657,7 @@
         host.innerHTML = "";
         if (!state.model || state.model.legacy) {
             host.innerHTML = '<div class="ss-empty">Source Controls are available for Spore Studio templates.</div>';
+            upgradeNativeTitles(host);
             return;
         }
         ensureDynamicControls(state.model);
@@ -3415,7 +3689,7 @@
                 ctrl.id = v.trim();
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            }), "Unique id for this control in the Source Controls overlay"));
             var typeSel = document.createElement("select");
             types.forEach(function (t) {
                 var op = document.createElement("option");
@@ -3451,12 +3725,15 @@
                 renderSourceControlsPanel();
                 modelTouch();
             });
-            card.appendChild(formRow("Type", typeSel));
+            card.appendChild(formRow(
+                "Type", typeSel,
+                "Button runs an action. Counter and timer controls adjust an element in this template."
+            ));
             card.appendChild(formRow("Label", inputEl("text", ctrl.label || "", function (v) {
                 ctrl.label = v;
                 pushHistoryDebounced();
                 modelTouch();
-            })));
+            }), "Heading shown above this control"));
             if (ctrl.type === "counter_control") {
                 ctrl.action = "counter_adjust";
                 if (ctrl.step == null || ctrl.step < 1) { ctrl.step = 1; }
@@ -3478,14 +3755,17 @@
                     pushHistoryDebounced();
                     modelTouch();
                 });
-                card.appendChild(formRow("Action", actSel));
+                card.appendChild(formRow(
+                    "Action", actSel,
+                    "What the overlay does when this control is used"
+                ));
             }
             if (ctrl.type === "button") {
                 card.appendChild(formRow("Button text", inputEl("text", ctrl.button_text || "Run", function (v) {
                     ctrl.button_text = v;
                     pushHistoryDebounced();
                     modelTouch();
-                })));
+                }), "Label on the button in Source Controls"));
             }
             if (ctrl.type === "counter_control") {
                 var counters = listCountersInModel();
@@ -3506,13 +3786,16 @@
                     pushHistoryDebounced();
                     modelTouch();
                 });
-                card.appendChild(formRow("Counter", cidSel));
+                card.appendChild(formRow(
+                    "Counter", cidSel,
+                    "Counter this control increments or decrements"
+                ));
                 card.appendChild(formRow("Default step", numberEl(ctrl.step != null ? ctrl.step : 1, function (v) {
                     var n = parseInt(String(v), 10);
                     ctrl.step = isNaN(n) || n < 1 ? 1 : n;
                     pushHistoryDebounced();
                     modelTouch();
-                })));
+                }), "How much each click changes the counter"));
             } else if (ctrl.type === "timer_control") {
                 var timers = listTimersInModel();
                 var tidSel = document.createElement("select");
@@ -3532,13 +3815,16 @@
                     pushHistoryDebounced();
                     modelTouch();
                 });
-                card.appendChild(formRow("Timer", tidSel));
+                card.appendChild(formRow(
+                    "Timer", tidSel,
+                    "Timer this control starts, pauses, or resets"
+                ));
             } else if (ctrl.action === "counter_adjust") {
                 card.appendChild(formRow("Counter id", inputEl("text", ctrl.target_counter_id || "", function (v) {
                     ctrl.target_counter_id = v;
                     pushHistoryDebounced();
                     modelTouch();
-                })));
+                }), "Id of the counter to adjust"));
                 var opSel = document.createElement("select");
                 ["increment", "decrement", "set", "reset"].forEach(function (o) {
                     var op = document.createElement("option");
@@ -3552,7 +3838,10 @@
                     pushHistoryDebounced();
                     modelTouch();
                 });
-                card.appendChild(formRow("Operation", opSel));
+                card.appendChild(formRow(
+                    "Operation", opSel,
+                    "Increment adds, decrement subtracts, set replaces the value, reset returns to the initial value"
+                ));
                 card.appendChild(buildDeltaEditor(ctrl.delta, function (d) {
                     ctrl.delta = d;
                     pushHistoryDebounced();
@@ -3564,12 +3853,13 @@
                     ctrl.element_id = v;
                     pushHistoryDebounced();
                     modelTouch();
-                })));
+                }), "Id of the element to show, hide, or toggle"));
             }
             var rm = document.createElement("button");
             rm.type = "button";
             rm.className = "ss-btn";
             rm.textContent = "Remove";
+            rm.title = "Remove this source control";
             rm.addEventListener("click", function () {
                 dc.elements.splice(idx, 1);
                 pushHistory();
@@ -3579,6 +3869,7 @@
             card.appendChild(rm);
             host.appendChild(card);
         });
+        upgradeNativeTitles(host);
     }
 
     function ensureElementAnimations(el) {
@@ -3745,9 +4036,11 @@
 
         var exLbl = document.createElement("label");
         exLbl.className = "ss-form-prop__expose";
-        exLbl.title =
-            "Expose in Source Settings (JSON). When off, value is inlined in HTML only.";
-        exLbl.setAttribute("aria-label", "Expose in Source Settings (JSON)");
+        exLbl.setAttribute("aria-label", "Expose in Source Settings");
+        bindTip(
+            exLbl,
+            "Expose in Source Settings. When off, the value is written into the HTML only."
+        );
         var cb = document.createElement("input");
         cb.type = "checkbox";
         cb.checked = !!el.source_settings_expose[exportKey];
@@ -3763,9 +4056,9 @@
         var lbl = document.createElement("div");
         lbl.className = "ss-form-prop__label";
         lbl.textContent = labelText;
-        if (tooltip) { lbl.title = tooltip; }
         labelRow.appendChild(exLbl);
         labelRow.appendChild(lbl);
+        if (tooltip) { labelRow.appendChild(infoMark(tooltip)); }
         wrap.appendChild(labelRow);
         wrap.appendChild(controlNode);
         return wrap;
@@ -3782,6 +4075,11 @@
 
     function ensureWheelDefaults(el) {
         if (!el || el.type !== "wheel") { return; }
+        el.props = el.props || {};
+        var defs = DEFAULT_PROPS.wheel || {};
+        Object.keys(defs).forEach(function (k) {
+            if (el.props[k] === undefined) { el.props[k] = defs[k]; }
+        });
         if (!Array.isArray(el.wheel_segments) || !el.wheel_segments.length) {
             el.wheel_segments = [
                 { label: "One", color: "#a855f7" },
@@ -3843,6 +4141,78 @@
             }
         }
         return out + "</svg>";
+    }
+
+    /* Keep the marker in sync with sporePaintWheel in spore_data_runtime.js */
+    function wheelPointerMarkup() {
+        return '<svg viewBox="0 0 24 28" width="22" height="26" aria-hidden="true">' +
+            '<path d="M12 26 L2 4 H22 Z" fill="#ffffff" stroke="#111111" stroke-width="2" ' +
+            'stroke-linejoin="round"/></svg>';
+    }
+
+    function placeWheelPointer(node, pos) {
+        node.style.position = "absolute";
+        node.style.zIndex = "3";
+        node.style.width = "22px";
+        node.style.height = "26px";
+        node.style.pointerEvents = "none";
+        node.style.top = "auto";
+        node.style.bottom = "auto";
+        node.style.left = "auto";
+        node.style.right = "auto";
+        node.style.margin = "0";
+        node.style.transform = "";
+        if (pos === "bottom") {
+            node.style.left = "50%";
+            node.style.bottom = "6px";
+            node.style.transform = "translateX(-50%) rotate(180deg)";
+        } else if (pos === "left") {
+            node.style.top = "50%";
+            node.style.left = "6px";
+            node.style.transform = "translateY(-50%) rotate(-90deg)";
+        } else if (pos === "right") {
+            node.style.top = "50%";
+            node.style.right = "6px";
+            node.style.transform = "translateY(-50%) rotate(90deg)";
+        } else {
+            node.style.left = "50%";
+            node.style.top = "6px";
+            node.style.transform = "translateX(-50%)";
+        }
+    }
+
+    function placeWheelResultLabel(node, props) {
+        var place = props.result_place || "bottom";
+        node.style.position = "absolute";
+        node.style.zIndex = "4";
+        node.style.left = "0";
+        node.style.right = "0";
+        node.style.top = "auto";
+        node.style.bottom = "auto";
+        node.style.margin = "0";
+        node.style.transform = "";
+        node.style.textAlign = "center";
+        node.style.pointerEvents = "none";
+        node.style.lineHeight = "1.2";
+        node.style.color = props.result_color || "#ffffff";
+        node.style.fontSize = (props.result_font_size != null ? props.result_font_size : 14) + "px";
+        node.style.fontWeight = props.result_bold ? "700" : "400";
+        node.style.fontFamily = editorFontFamilyForPreview(props.result_font_family, null) || "Arial";
+        node.style.textShadow = "0 1px 2px rgba(0,0,0,.65)";
+        if (place === "center") {
+            node.style.top = "50%";
+            node.style.transform = "translateY(-50%)";
+        } else if (place === "top") {
+            node.style.top = "28%";
+        } else if (place === "above") {
+            node.style.bottom = "100%";
+            node.style.marginBottom = "6px";
+        } else if (place === "below") {
+            node.style.top = "100%";
+            node.style.marginTop = "6px";
+        } else {
+            node.style.bottom = "8px";
+        }
     }
 
     var PREVIEW_SAMPLE_TOKENS = {
@@ -4051,12 +4421,29 @@
         }
         if (el.type === "wheel") {
             ensureWheelDefaults(el);
+            node.style.overflow = "visible";
             var segs = el.wheel_segments || [];
             var rotor = document.createElement("div");
             rotor.style.width = "100%";
             rotor.style.height = "100%";
+            rotor.style.borderRadius = "50%";
+            rotor.style.overflow = "hidden";
+            rotor.style.position = "relative";
+            rotor.style.zIndex = "1";
             rotor.innerHTML = wheelPreviewSvg(segs);
             node.appendChild(rotor);
+            var pointer = document.createElement("div");
+            pointer.innerHTML = wheelPointerMarkup();
+            placeWheelPointer(pointer, props.pointer || "top");
+            node.appendChild(pointer);
+            if (props.show_result !== false) {
+                var label = document.createElement("div");
+                var sample = (segs[0] && segs[0].label) || "Winner";
+                var fmt = props.result_format || "{label}";
+                label.textContent = String(fmt).split("{label}").join(sample);
+                placeWheelResultLabel(label, props);
+                node.appendChild(label);
+            }
             return;
         }
         if (el.type === "now_playing") {
@@ -4314,6 +4701,7 @@
             rm.type = "button";
             rm.className = "ss-btn";
             rm.textContent = "Remove";
+            rm.title = "Remove this slice";
             rm.addEventListener("click", function () {
                 el.wheel_segments.splice(idx, 1);
                 if (!el.wheel_segments.length) { ensureWheelDefaults(el); }
@@ -4342,6 +4730,104 @@
         host.appendChild(formRow("Segments", wrap, "Each slice is a label and a color"));
     }
 
+    function renderWheelResultSection(host, el) {
+        ensureWheelDefaults(el);
+        var p = el.props;
+
+        function commit(redrawProps) {
+            renderStage();
+            if (redrawProps) {
+                pushHistory();
+                renderProperties();
+            } else {
+                pushHistoryDebounced();
+            }
+            modelTouch();
+        }
+
+        var show = buildToggle(p.show_result !== false, function (checked) {
+            p.show_result = checked;
+            commit(true);
+        });
+        host.appendChild(formRowPropWithExpose(
+            el, "show_result", "Show result", show.wrap,
+            "Show the winning label when the wheel stops"
+        ));
+        if (p.show_result === false) { return; }
+
+        var placeSel = document.createElement("select");
+        [
+            { v: "center", label: "Center" },
+            { v: "top", label: "Top" },
+            { v: "bottom", label: "Bottom" },
+            { v: "above", label: "Above the wheel" },
+            { v: "below", label: "Below the wheel" }
+        ].forEach(function (opt) {
+            var op = document.createElement("option");
+            op.value = opt.v;
+            op.textContent = opt.label;
+            if ((p.result_place || "bottom") === opt.v) { op.selected = true; }
+            placeSel.appendChild(op);
+        });
+        placeSel.addEventListener("change", function () {
+            p.result_place = placeSel.value;
+            commit(false);
+        });
+        host.appendChild(formRowPropWithExpose(
+            el, "result_place", "Location", placeSel,
+            "Where the winning label sits. Above and below sit outside the disc."
+        ));
+
+        host.appendChild(formRowPropWithExpose(
+            el, "result_font_size", "Font size",
+            numberEl(p.result_font_size != null ? p.result_font_size : 14, function (v) {
+                p.result_font_size = Math.max(8, parseInt(v, 10) || 14);
+                commit(false);
+            }),
+            "Size of the winning label, in pixels"
+        ));
+        host.appendChild(formRowPropWithExpose(
+            el, "result_font_family", "Font",
+            buildFontFamilySelect(p.result_font_family || "Arial", function (v) {
+                p.result_font_family = v;
+                commit(false);
+            }),
+            "Font used for the winning label"
+        ));
+        host.appendChild(formRowPropWithExpose(
+            el, "result_color", "Color",
+            buildColorPicker(p.result_color || "#ffffff", function (v) {
+                p.result_color = v;
+                commit(false);
+            }),
+            "Color of the winning label"
+        ));
+        var bold = buildToggle(!!p.result_bold, function (checked) {
+            p.result_bold = checked;
+            commit(false);
+        });
+        host.appendChild(formRowPropWithExpose(
+            el, "result_bold", "Bold", bold.wrap,
+            "Draw the winning label in bold"
+        ));
+        host.appendChild(formRowPropWithExpose(
+            el, "result_format", "Format",
+            inputEl("text", p.result_format || "{label}", function (v) {
+                p.result_format = v || "{label}";
+                commit(false);
+            }),
+            "Text to show. {label} is replaced with the winning slice."
+        ));
+        host.appendChild(formRowPropWithExpose(
+            el, "result_hold_s", "Hold (seconds)",
+            numberEl(p.result_hold_s != null ? p.result_hold_s : 0, function (v) {
+                p.result_hold_s = Math.max(0, Number(v) || 0);
+                commit(false);
+            }),
+            "How long the label stays up. 0 keeps it until the next spin."
+        ));
+    }
+
     function renderStatCardSection(host, el) {
         ensureStatCardDefaults(el);
         hydrateSourceSpec(el.stat_source);
@@ -4353,7 +4839,7 @@
             renderProperties();
             renderStage();
             modelTouch();
-        }, { displayOnly: true })));
+        }, { displayOnly: true }), "Value shown on the card"));
         var detail = document.createElement("div");
         appendDataSourceDetailFields(detail, el.stat_source, function () {
             renderStage();
@@ -4907,18 +5393,18 @@
             span.style.fontSize = "12px";
             span.textContent = el.id;
             return span;
-        })()));
+        })(), "Config field id from the legacy template"));
         host.appendChild(formRow("Category", (function () {
             var span = document.createElement("div");
             span.textContent = el.category || "Settings";
             return span;
-        })()));
+        })(), "Section this field belongs to in Source Settings"));
         if (field.label) {
             host.appendChild(formRow("Label", (function () {
                 var span = document.createElement("div");
                 span.textContent = String(field.label);
                 return span;
-            })()));
+            })(), "Name shown for this field in Source Settings"));
         }
 
         // Build the value editor matching the underlying JSON config field
@@ -4931,7 +5417,10 @@
                 pushHistoryDebounced();
                 modelTouch();
             });
-            host.appendChild(formRow("Value", legacyToggle.wrap));
+            host.appendChild(formRow(
+                "Value", legacyToggle.wrap,
+                field.description || "Saved value for this legacy config field"
+            ));
             if (field.description) {
                 var desc = document.createElement("p");
                 desc.textContent = String(field.description);
@@ -4987,7 +5476,10 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        host.appendChild(formRow("Value", ctrl));
+        host.appendChild(formRow(
+            "Value", ctrl,
+            field.description || "Saved value for this legacy config field"
+        ));
 
         if (field.description) {
             var desc = document.createElement("p");
@@ -5017,13 +5509,16 @@
             span.style.fontSize = "12px";
             span.textContent = el.id;
             return span;
-        })()));
-        host.appendChild(formRow("Type", document.createTextNode(el.type)));
+        })(), "Element id recovered from the legacy HTML"));
+        host.appendChild(formRow(
+            "Type", document.createTextNode(el.type),
+            "Best-guess block type from the legacy HTML"
+        ));
         host.appendChild(formRow("Category", (function () {
             var span = document.createElement("div");
             span.textContent = el.category || "Layout";
             return span;
-        })()));
+        })(), "Grouping used when this value is written back to the JSON config"));
 
         function bindingTooltip(modelPath) {
             var fieldId = bindings[modelPath];
@@ -5155,8 +5650,9 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Placement in container";
-        title.title =
-            "Presets anchor inside the parent; offsets fine-tune. Dragging updates offset while keeping the anchor.";
+        title.appendChild(infoMark(
+            "Presets anchor inside the parent. Offsets fine-tune. Dragging updates the offset and keeps the anchor."
+        ));
         sect.appendChild(title);
 
         var grid = document.createElement("div");
@@ -5209,7 +5705,7 @@
                 pushHistoryDebounced();
                 modelTouch();
             }
-        )));
+        ), "Extra pixels to the right of the anchor"));
         offRow.appendChild(formRow("Offset Y", numberEl(
             el.placement.offset_y || 0, function (v) {
                 el.placement.offset_y = parseInt(v, 10) || 0;
@@ -5218,7 +5714,7 @@
                 pushHistoryDebounced();
                 modelTouch();
             }
-        )));
+        ), "Extra pixels below the anchor"));
         sect.appendChild(offRow);
         host.appendChild(sect);
     }
@@ -5359,7 +5855,8 @@
             if (!details.open) { return; }
             var summary = details.querySelector(":scope > .ss-collapse__summary");
             if (summary) {
-                open[(summary.textContent || "").trim()] = true;
+                var sectionName = summary.dataset.section || (summary.textContent || "").trim();
+                if (sectionName) { open[sectionName] = true; }
             }
         });
         var pane = host.closest(".ss-tab-pane");
@@ -5374,7 +5871,9 @@
         if (!host || !snap) { return; }
         $$("details.ss-collapse", host).forEach(function (details) {
             var summary = details.querySelector(":scope > .ss-collapse__summary");
-            var title = summary ? (summary.textContent || "").trim() : "";
+            var title = summary
+                ? (summary.dataset.section || (summary.textContent || "").trim())
+                : "";
             if (title && snap.open[title]) {
                 details.open = true;
             }
@@ -5394,16 +5893,19 @@
         var sameElement = !!(prevId && prevId === lastPropertiesElementId);
         if (!el) {
             host.innerHTML = '<div class="ss-empty">Select an element on the canvas or in the outline.</div>';
+            upgradeNativeTitles(host);
             return;
         }
 
         if (isLegacyElement(el)) {
             renderLegacyProperties(host, el);
+            upgradeNativeTitles(host);
             return;
         }
 
         if (isReadOnlyLegacyElement(el)) {
             renderReverseParsedLegacyProperties(host, el);
+            upgradeNativeTitles(host);
             return;
         }
 
@@ -5438,7 +5940,10 @@
                 pushHistoryDebounced();
                 modelTouch();
             }), "Groups elements in the saved JSON config"));
-            body.appendChild(formRow("Type", document.createTextNode(el.type)));
+            body.appendChild(formRow(
+                "Type", document.createTextNode(el.type),
+                "Block type. Create a new element to use a different type."
+            ));
 
             if (!isLegacyModel()) {
                 var pnorm = pidNorm(el.parent_id);
@@ -5574,6 +6079,11 @@
             host.appendChild(buildCollapsibleSection("Wheel segments", "Labels and colors for each slice", function (body) {
                 renderWheelSection(body, el);
             }));
+            host.appendChild(buildCollapsibleSection(
+                "Result",
+                "Winning label shown after the wheel stops",
+                function (body) { renderWheelResultSection(body, el); }
+            ));
         }
 
         if (el.type === "list" && !isLegacyModel()) {
@@ -5636,7 +6146,7 @@
                     pushHistory();
                     modelTouch();
                 });
-                body.appendChild(formRow(entry.label, ctrl));
+                body.appendChild(formRow(entry.label, ctrl, entry.tooltip || ""));
             });
         }));
 
@@ -5645,6 +6155,7 @@
         deleteBtn.style.marginTop = "8px";
         deleteBtn.style.color = "var(--ss-error)";
         deleteBtn.textContent = "Delete element";
+        deleteBtn.title = "Remove this element and anything nested inside it";
         deleteBtn.addEventListener("click", function () {
             removeElementAndDescendants(el.id);
             normalizeParentLinksAndReorderLive();
@@ -5657,6 +6168,7 @@
         if (sameElement) {
             restorePropertiesPanel(host, snap);
         }
+        upgradeNativeTitles(host);
     }
 
     function inputEl(type, value, onChange) {
@@ -5734,7 +6246,10 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        card.appendChild(formRow("Endpoint", ep));
+        card.appendChild(formRow(
+            "Endpoint", ep,
+            "Twitch Helix URL. It must start with https://api.twitch.tv/."
+        ));
 
         var methodSel = document.createElement("select");
         ["GET", "POST", "PUT", "PATCH", "DELETE"].forEach(function (m) {
@@ -5749,7 +6264,10 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        card.appendChild(formRow("Method", methodSel));
+        card.appendChild(formRow(
+            "Method", methodSel,
+            "HTTP method sent with the Twitch API request"
+        ));
 
         var paramsTa = document.createElement("textarea");
         paramsTa.rows = 3;
@@ -5761,7 +6279,10 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        card.appendChild(formRow("JSON parameters (query)", paramsTa));
+        card.appendChild(formRow(
+            "JSON parameters (query)", paramsTa,
+            "Optional JSON object added to the request URL as query parameters"
+        ));
 
         var bodyTa = document.createElement("textarea");
         bodyTa.rows = 4;
@@ -5773,7 +6294,10 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        card.appendChild(formRow("JSON body", bodyTa));
+        card.appendChild(formRow(
+            "JSON body", bodyTa,
+            "Optional JSON body for POST, PUT, and PATCH requests"
+        ));
     }
 
     function renderTwitchDynamicFilters(binding, card) {
@@ -5808,6 +6332,7 @@
             keyIn.type = "text";
             keyIn.className = "ss-twitch-filter__key input-grow";
             keyIn.placeholder = "Payload field";
+            keyIn.title = "Response field name to match";
             keyIn.value = row.key == null ? "" : String(row.key);
             keyIn.addEventListener("change", function () {
                 row.key = keyIn.value;
@@ -5819,6 +6344,7 @@
             valIn.type = "text";
             valIn.className = "ss-twitch-filter__val input-grow";
             valIn.placeholder = "Value (optional; JSON)";
+            valIn.title = "Exact value that field must have. Leave empty to match any value.";
             valIn.value = row.value == null ? "" : String(row.value);
             valIn.addEventListener("change", function () {
                 row.value = valIn.value;
@@ -5852,6 +6378,7 @@
         addBtn.className = "ss-btn ss-btn--primary";
         addBtn.style.marginTop = "6px";
         addBtn.textContent = "+ Add filter";
+        addBtn.title = "Match another field on the Twitch API response";
         addBtn.addEventListener("click", function () {
             binding.twitch_filters.push({ key: "", value: "" });
             pushHistory();
@@ -6052,10 +6579,6 @@
             host.appendChild(dupWarn);
         }
 
-        var descRow = document.createElement("div");
-        descRow.className = "ss-form-row";
-        var descLbl = document.createElement("label");
-        descLbl.textContent = "Template description";
         var descTa = document.createElement("textarea");
         descTa.rows = 2;
         descTa.style.width = "100%";
@@ -6065,9 +6588,10 @@
             pushHistoryDebounced();
             modelTouch();
         });
-        descRow.appendChild(descLbl);
-        descRow.appendChild(descTa);
-        host.appendChild(descRow);
+        host.appendChild(formRow(
+            "Template description", descTa,
+            "Shown with this template's Stream Deck actions"
+        ));
 
         var sortedIds = Object.keys(sd.actions || {}).sort();
         var listHost = document.createElement("div");
@@ -6117,8 +6641,10 @@
                 var idIn = document.createElement("input");
                 idIn.type = "text";
                 idIn.value = aid;
-                idIn.title = "Unique key stored in template JSON";
-                card.appendChild(formRow("Action id", idIn));
+                card.appendChild(formRow(
+                    "Action id", idIn,
+                    "Unique key stored in the template JSON. The Stream Deck plugin sends this as actionName."
+                ));
 
                 var prevId = aid;
                 idIn.addEventListener("change", function () {
@@ -6153,7 +6679,10 @@
                 }
                 nameIn.addEventListener("input", syncStreamdeckDisplayName);
                 nameIn.addEventListener("change", syncStreamdeckDisplayName);
-                card.appendChild(formRow("Display name", nameIn));
+                card.appendChild(formRow(
+                    "Display name", nameIn,
+                    "Name shown in Spore Studio and on the Stream Deck key"
+                ));
 
                 var infoIn = document.createElement("input");
                 infoIn.type = "text";
@@ -6163,7 +6692,10 @@
                     pushHistoryDebounced();
                     modelTouch();
                 });
-                card.appendChild(formRow("Description", infoIn));
+                card.appendChild(formRow(
+                    "Description", infoIn,
+                    "Short note about what this Stream Deck action does"
+                ));
 
                 var evIn = document.createElement("input");
                 evIn.type = "text";
@@ -6177,7 +6709,10 @@
                     renderPreviewMockToolbar();
                     modelTouch();
                 });
-                card.appendChild(formRow("Socket event", evIn));
+                card.appendChild(formRow(
+                    "Socket event", evIn,
+                    "Event name the overlay listens for. Bindings with this event run when the key is pressed."
+                ));
 
                 var ddTa = document.createElement("textarea");
                 ddTa.rows = 4;
@@ -6206,7 +6741,10 @@
                     renderPreviewMockToolbar();
                     modelTouch();
                 });
-                card.appendChild(formRow("default_data (JSON)", ddTa));
+                card.appendChild(formRow(
+                    "default_data (JSON)", ddTa,
+                    "JSON object merged into the socket payload when this key is pressed"
+                ));
 
                 listHost.appendChild(card);
             });
@@ -6218,6 +6756,7 @@
         addBtn.type = "button";
         addBtn.className = "ss-btn sds-btn--primary".replace("sds", "ss");
         addBtn.textContent = "+ Add Stream Deck action";
+        addBtn.title = "Create an action the Stream Deck plugin can trigger";
         addBtn.addEventListener("click", function () {
             var n = 1;
             var nid = "action_1";
@@ -6234,6 +6773,7 @@
             modelTouch();
         });
         host.appendChild(addBtn);
+        upgradeNativeTitles(host);
     }
 
     function renderBindings() {
@@ -6282,9 +6822,6 @@
                             ctrl.placeholder = "e.g. error, success, requestId";
                         }
                     }
-                    if (arg.description) {
-                        ctrl.title = arg.description;
-                    }
                     ctrl.addEventListener("change", function () {
                         if (arg.type === "number") {
                             argsObj[arg.key] = ctrl.value === "" ? null : Number(ctrl.value);
@@ -6295,7 +6832,10 @@
                         pushHistoryDebounced();
                         modelTouch();
                     });
-                    card.appendChild(formRow(arg.label || arg.key, ctrl));
+                    card.appendChild(formRow(
+                        arg.label || arg.key, ctrl,
+                        arg.description || ("Argument passed to " + (actName || "this action"))
+                    ));
                     if (arg.description) {
                         var argHint = document.createElement("div");
                         argHint.className = "ss-binding-row__hint ss-binding-row__hint--inline";
@@ -6342,6 +6882,7 @@
         var addBtn = document.createElement("button");
         addBtn.className = "ss-btn ss-btn--primary";
         addBtn.textContent = "+ Add binding";
+        addBtn.title = "Run an action when an event or Stream Deck key fires";
         addBtn.style.marginBottom = "10px";
         addBtn.addEventListener("click", function () {
             el.bindings = el.bindings || [];
@@ -6412,7 +6953,10 @@
                 renderProperties();
                 modelTouch();
             });
-            card.appendChild(formRow("Trigger", trigSel));
+            card.appendChild(formRow(
+                "Trigger", trigSel,
+                "Registry event listens to Mycelian. Stream Deck action listens to a hardware key."
+            ));
 
             var ev = null;
             if (bindingTrigger(binding) === "streamdeck") {
@@ -6447,7 +6991,10 @@
                         renderProperties();
                         modelTouch();
                     });
-                    card.appendChild(formRow("Stream Deck action", sdSel));
+                    card.appendChild(formRow(
+                        "Stream Deck action", sdSel,
+                        "Which Stream Deck action runs this binding. Add actions on the Stream Deck tab."
+                    ));
                     var evName = document.createElement("div");
                     evName.className = "ss-binding-row__hint";
                     evName.textContent = "Socket event: " + (binding.event || "(configure in Stream Deck tab)");
@@ -6475,11 +7022,13 @@
                     renderBindings();
                     modelTouch();
                 });
-                card.appendChild(formRow("Event", eventSelect));
+                ev = registryEvent(binding.event);
+                card.appendChild(formRow(
+                    "Event", eventSelect,
+                    (ev && ev.description) || "Mycelian event that runs this binding"
+                ));
 
                 ensureTwitchBindingDefaults(binding);
-
-                ev = registryEvent(binding.event);
                 if (ev && ev.description) {
                     var evDesc = document.createElement("div");
                     evDesc.className = "ss-binding-row__hint";
@@ -6518,8 +7067,6 @@
                         } else {
                             input.placeholder = "(any)";
                         }
-                        input.title = "Payload key: " + field.key +
-                            (field.type ? "  (" + field.type + ")" : "");
                         input.addEventListener("change", function () {
                             binding.filter = binding.filter || {};
                             if (input.value === "") {
@@ -6531,7 +7078,13 @@
                             modelTouch();
                         });
                         filterHost.appendChild(formRow(
-                            "Filter: " + (field.label || field.key), input));
+                            "Filter: " + (field.label || field.key),
+                            input,
+                            field.description || (
+                                "Only fire when " + (field.label || field.key) +
+                                " matches. Leave blank to match any value."
+                            )
+                        ));
                     });
                     card.appendChild(filterHost);
                 }
@@ -6555,7 +7108,12 @@
                 renderProperties();
                 modelTouch();
             });
-            card.appendChild(formRow("Action", actionSelect));
+            var chosenAction = registryAction(binding.action);
+            card.appendChild(formRow(
+                "Action", actionSelect,
+                (chosenAction && chosenAction.description) ||
+                    "What this element does when the trigger fires"
+            ));
 
             binding.args = binding.args || {};
             appendActionArgFields(card, ev, binding.action, binding.args, el, binding);
@@ -6626,7 +7184,10 @@
                     pushHistoryDebounced();
                     modelTouch();
                 });
-                stepWrap.appendChild(formRow("Delay before this step (ms)", delayInp));
+                stepWrap.appendChild(formRow(
+                    "Delay before this step (ms)", delayInp,
+                    "Wait this long after the previous step before this one runs"
+                ));
 
                 var stepActSel = document.createElement("select");
                 (state.registry.actions || []).forEach(function (act) {
@@ -6645,7 +7206,11 @@
                     renderProperties();
                     modelTouch();
                 });
-                stepWrap.appendChild(formRow("Action", stepActSel));
+                var stepAct = registryAction(step.action);
+                stepWrap.appendChild(formRow(
+                    "Action", stepActSel,
+                    (stepAct && stepAct.description) || "Action this chain step runs"
+                ));
 
                 appendActionArgFields(stepWrap, ev, step.action, step.args, el, binding);
                 card.appendChild(stepWrap);
@@ -6656,6 +7221,7 @@
             addChainBtn.className = "ss-btn ss-btn--primary";
             addChainBtn.style.marginTop = "8px";
             addChainBtn.textContent = "+ Add chained step";
+            addChainBtn.title = "Run another action after this one, with an optional delay";
             addChainBtn.disabled = binding.chain.length >= CHAIN_MAX_STEPS;
             addChainBtn.addEventListener("click", function () {
                 if (binding.chain.length >= CHAIN_MAX_STEPS) { return; }
@@ -6671,6 +7237,7 @@
 
             host.appendChild(card);
         });
+        upgradeNativeTitles(host);
     }
 
     function registryEvent(name) {
@@ -8354,9 +8921,46 @@
         });
     }
 
+    function setupCanvasTips() {
+        function mark(id, text) {
+            var input = document.getElementById(id);
+            if (!input) { return; }
+            var row = input.closest(".ss-form-row");
+            if (!row || row.querySelector(".ss-tip")) { return; }
+            var label = row.querySelector("label");
+            if (!label) { return; }
+            if (row.classList.contains("ss-form-row--inline")) {
+                row.appendChild(infoMark(text));
+                return;
+            }
+            var head = document.createElement("div");
+            head.className = "ss-form-row__head";
+            label.parentNode.insertBefore(head, label);
+            head.appendChild(label);
+            head.appendChild(infoMark(text));
+        }
+        mark("ss-canvas-w", "Design width of the overlay, in pixels");
+        mark("ss-canvas-h", "Design height of the overlay, in pixels");
+        mark("ss-alert-system", "Queue waits for the alert to finish. Instant shows each alert as it arrives.");
+        mark("ss-template-title", "Name stored with this template");
+        mark("ss-duration-seconds", "How long a queued alert holds the queue, in seconds");
+        mark("ss-queued", "Hold the main alert queue when a channel point reward title matches this template name");
+        var queuedToggle = document.querySelector("label.ss-toggle[title], #ss-queued");
+        var queuedLabel = document.querySelector('label.ss-toggle');
+        if (queuedLabel && queuedLabel.getAttribute("title")) {
+            queuedLabel.removeAttribute("title");
+        }
+        if (queuedToggle && queuedToggle.id === "ss-queued") {
+            var wrap = queuedToggle.closest("label.ss-toggle");
+            if (wrap) { wrap.removeAttribute("title"); }
+        }
+    }
+
     function init() {
         restoreInspectorWidth();
         setupTabs();
+        setupCanvasTips();
+        upgradeNativeTitles(document);
         setupToolbar();
         setupInspectorResize();
         setupCanvasPanel();

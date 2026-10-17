@@ -3,6 +3,32 @@
     "use strict";
 
     var SEEN_KEY = "mycelian-spore-tour-seen";
+    var PREFS_URL = "/api/spore-studio/ui-prefs";
+
+    /* The desktop window does not keep localStorage across launches, so the
+       "already offered" flag is also stored on the server. */
+    function markSeen() {
+        try { localStorage.setItem(SEEN_KEY, "1"); } catch (err) {}
+        try {
+            var body = {};
+            body[SEEN_KEY] = true;
+            fetch(PREFS_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            }).catch(function () {});
+        } catch (err) {}
+    }
+
+    function checkSeen() {
+        var local = "";
+        try { local = localStorage.getItem(SEEN_KEY) || ""; } catch (err) {}
+        if (local) { return Promise.resolve(true); }
+        return fetch(PREFS_URL)
+            .then(function (r) { return r.ok ? r.json() : {}; })
+            .then(function (prefs) { return !!(prefs && prefs[SEEN_KEY]); })
+            .catch(function () { return false; });
+    }
     var STEPS = [
         {
             mode: "templates",
@@ -323,7 +349,7 @@
 
     function startTour() {
         dismissPrompt();
-        try { localStorage.setItem(SEEN_KEY, "1"); } catch (err) {}
+        markSeen();
         if (running) { return; }
         ensureNodes();
         startMode = currentMode();
@@ -357,9 +383,13 @@
     }
 
     function offerFirstRun() {
-        var seen = "";
-        try { seen = localStorage.getItem(SEEN_KEY) || ""; } catch (err) {}
-        if (seen) { return; }
+        checkSeen().then(function (seen) {
+            if (seen || document.getElementById("ss-tour-prompt")) { return; }
+            showPrompt();
+        });
+    }
+
+    function showPrompt() {
         var box = document.createElement("div");
         box.id = "ss-tour-prompt";
         box.className = "ss-tour-prompt";
@@ -370,11 +400,13 @@
             '<button type="button" class="ss-btn ss-btn--primary" data-act="start">Start tour</button>' +
             "</div>";
         box.querySelector("[data-act=later]").addEventListener("click", function () {
-            try { localStorage.setItem(SEEN_KEY, "1"); } catch (err) {}
+            markSeen();
             dismissPrompt();
         });
         box.querySelector("[data-act=start]").addEventListener("click", startTour);
         document.body.appendChild(box);
+        /* Showing it once is enough; don't nag if it is simply ignored. */
+        markSeen();
     }
 
     function init() {

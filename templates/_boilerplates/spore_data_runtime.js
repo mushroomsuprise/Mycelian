@@ -1324,35 +1324,380 @@
         return out + '</svg>';
     }
 
+    var SPORE_CLICK_LOOKAHEAD_MS = 64;
+    var SPORE_CLICK_LATENCY_SEC = 0.028;
+    var SPORE_CLICK_LATENCY_MAX = 0.08;
+    var SPORE_POINTER_SVG = '<svg viewBox="0 0 24 28" width="22" height="26" aria-hidden="true">' +
+        '<path d="M12 26 L2 4 H22 Z" fill="#ffffff" stroke="#111111" stroke-width="2" ' +
+        'stroke-linejoin="round"/></svg>';
+    var sporeClickCtx = null;
+    var sporeClickGain = null;
+    var sporeClickBuffer = null;
+    var sporeClickBufferUrl = '';
+    var sporeClickBufferOffset = 0;
+    var sporeClickAudio = null;
+    var sporePendingClicks = [];
+    var sporeWheelJobs = {};
+
+    function sporeOn(el, attr, fallback) {
+        var raw = String(sporeAttr(el, attr, fallback ? 'true' : 'false')).toLowerCase();
+        return raw !== 'false' && raw !== '0' && raw !== 'no' && raw !== 'off';
+    }
+
+    function sporeMod(deg) {
+        return ((deg % 360) + 360) % 360;
+    }
+
+    function sporeCubic(x1, y1, x2, y2, t) {
+        function sample(u, a, b) {
+            var c = 3 * a;
+            var d = 3 * (b - a) - c;
+            var e = 1 - c - d;
+            return ((e * u + d) * u + c) * u;
+        }
+        function slope(u, a, b) {
+            var c = 3 * a;
+            var d = 3 * (b - a) - c;
+            var e = 1 - c - d;
+            return (3 * e * u + 2 * d) * u + c;
+        }
+        var u = t;
+        var i;
+        for (i = 0; i < 8; i++) {
+            var x = sample(u, x1, x2) - t;
+            var dx = slope(u, x1, x2);
+            if (Math.abs(dx) < 1e-6) { break; }
+            u -= x / dx;
+        }
+        if (u < 0) { u = 0; }
+        if (u > 1) { u = 1; }
+        return sample(u, y1, y2);
+    }
+
+    function sporeEaseUnit(name, t) {
+        if (t <= 0) { return 0; }
+        if (t >= 1) { return 1; }
+        if (name === 'linear') { return t; }
+        if (name === 'ease-in') { return sporeCubic(0.42, 0, 1, 1, t); }
+        if (name === 'ease-in-out') { return sporeCubic(0.42, 0, 0.58, 1, t); }
+        if (name === 'ease') { return sporeCubic(0.25, 0.1, 0.25, 1, t); }
+        return sporeCubic(0, 0, 0.58, 1, t);
+    }
+
+    function sporePlacePointer(pointer, pos) {
+        pointer.innerHTML = SPORE_POINTER_SVG;
+        pointer.style.top = 'auto';
+        pointer.style.bottom = 'auto';
+        pointer.style.left = 'auto';
+        pointer.style.right = 'auto';
+        pointer.style.margin = '0';
+        pointer.style.transform = '';
+        if (pos === 'bottom') {
+            pointer.style.left = '50%';
+            pointer.style.bottom = '6px';
+            pointer.style.transform = 'translateX(-50%) rotate(180deg)';
+        } else if (pos === 'left') {
+            pointer.style.top = '50%';
+            pointer.style.left = '6px';
+            pointer.style.transform = 'translateY(-50%) rotate(-90deg)';
+        } else if (pos === 'right') {
+            pointer.style.top = '50%';
+            pointer.style.right = '6px';
+            pointer.style.transform = 'translateY(-50%) rotate(90deg)';
+        } else {
+            pointer.style.left = '50%';
+            pointer.style.top = '6px';
+            pointer.style.transform = 'translateX(-50%)';
+        }
+    }
+
+    function sporeStyleWheelLabel(el, text, visible) {
+        var label = el.querySelector('.spore-wheel-label');
+        if (!label) { return; }
+        if (!sporeOn(el, 'data-spore-wheel-result', true)) {
+            label.style.display = 'none';
+            label.textContent = '';
+            return;
+        }
+        var place = sporeAttr(el, 'data-spore-wheel-result-place', 'bottom');
+        label.style.display = visible ? 'block' : 'none';
+        if (text != null) { label.textContent = text; }
+        label.style.top = 'auto';
+        label.style.bottom = 'auto';
+        label.style.left = '0';
+        label.style.right = '0';
+        label.style.margin = '0';
+        label.style.transform = '';
+        label.style.color = sporeAttr(el, 'data-spore-wheel-result-color', '#ffffff');
+        label.style.fontSize = (parseFloat(sporeAttr(el, 'data-spore-wheel-result-size', '14')) || 14) + 'px';
+        label.style.fontFamily = sporeAttr(el, 'data-spore-wheel-result-font', 'Arial');
+        label.style.fontWeight = sporeOn(el, 'data-spore-wheel-result-bold', false) ? '700' : '400';
+        if (place === 'center') {
+            label.style.top = '50%';
+            label.style.transform = 'translateY(-50%)';
+        } else if (place === 'top') {
+            label.style.top = '28%';
+        } else if (place === 'above') {
+            label.style.bottom = '100%';
+            label.style.marginBottom = '6px';
+        } else if (place === 'below') {
+            label.style.top = '100%';
+            label.style.marginTop = '6px';
+        } else {
+            label.style.bottom = '8px';
+        }
+    }
+
+    function sporeClearResultTimer(el) {
+        if (el && el._sporeResultTimer) {
+            clearTimeout(el._sporeResultTimer);
+            el._sporeResultTimer = null;
+        }
+    }
+
+    function sporeClickUrl(el) {
+        var file = String(sporeAttr(el, 'data-spore-wheel-click-file', 'click.mp3'));
+        file = file.replace(/^.*[\\/]/, '') || 'click.mp3';
+        return '/assets/roulette/' + encodeURIComponent(file);
+    }
+
+    function sporeClickLatencySec() {
+        var ctx = sporeClickCtx;
+        var latency = 0;
+        if (!ctx) { return SPORE_CLICK_LATENCY_SEC; }
+        if (typeof ctx.outputLatency === 'number' && ctx.outputLatency > 0) { latency += ctx.outputLatency; }
+        if (typeof ctx.baseLatency === 'number' && ctx.baseLatency > 0) { latency += ctx.baseLatency; }
+        if (latency <= 0 || latency > SPORE_CLICK_LATENCY_MAX) { return SPORE_CLICK_LATENCY_SEC; }
+        return latency;
+    }
+
+    function sporeEnsureClickGraph(volume) {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) { return null; }
+        try {
+            if (!sporeClickCtx) {
+                sporeClickCtx = new Ctx();
+                sporeClickGain = sporeClickCtx.createGain();
+                sporeClickGain.connect(sporeClickCtx.destination);
+            }
+            if (sporeClickGain) { sporeClickGain.gain.value = volume; }
+            if (sporeClickCtx.state === 'suspended') {
+                sporeClickCtx.resume();
+            }
+        } catch (e) {
+            return null;
+        }
+        return sporeClickCtx;
+    }
+
+    function sporeDecodeClick(ctx, arrayBuffer) {
+        try {
+            var result = ctx.decodeAudioData(arrayBuffer);
+            if (result && typeof result.then === 'function') { return result; }
+        } catch (e) { /* older webkit is callback-only */ }
+        return new Promise(function (resolve, reject) {
+            ctx.decodeAudioData(arrayBuffer, resolve, reject);
+        });
+    }
+
+    function sporeTrimClickOffset(buffer) {
+        sporeClickBufferOffset = 0;
+        if (!buffer || !buffer.length) { return; }
+        try {
+            var data = buffer.getChannelData(0);
+            var i = 0;
+            while (i < data.length && Math.abs(data[i]) < 0.02) { i++; }
+            var offset = i / buffer.sampleRate;
+            if (offset > 0 && offset < 0.03) { sporeClickBufferOffset = offset; }
+        } catch (e) {
+            sporeClickBufferOffset = 0;
+        }
+    }
+
+    function sporeLoadClickBuffer(url) {
+        var ctx = sporeClickCtx;
+        if (!ctx) { return; }
+        fetch(url).then(function (response) {
+            if (!response.ok) { throw new Error('click sound fetch failed'); }
+            return response.arrayBuffer();
+        }).then(function (buf) {
+            return sporeDecodeClick(ctx, buf);
+        }).then(function (decoded) {
+            if (decoded && sporeClickBufferUrl === url) {
+                sporeClickBuffer = decoded;
+                sporeTrimClickOffset(decoded);
+            }
+        }).catch(function () { /* fall back to HTML audio */ });
+    }
+
+    function sporePrepareClick(el, volume) {
+        var url = sporeClickUrl(el);
+        sporeEnsureClickGraph(volume);
+        if (!sporeClickAudio || sporeClickBufferUrl !== url) {
+            sporeClickAudio = new Audio(url);
+        }
+        sporeClickAudio.volume = volume;
+        if (sporeClickBufferUrl !== url) {
+            sporeClickBufferUrl = url;
+            sporeClickBuffer = null;
+            sporeLoadClickBuffer(url);
+        }
+    }
+
+    function sporeCancelFutureClicks(ownerId) {
+        var now = sporeClickCtx ? sporeClickCtx.currentTime : 0;
+        sporePendingClicks = sporePendingClicks.filter(function (item) {
+            if (ownerId && item.owner !== ownerId) { return true; }
+            if (item.src && item.when > now + 0.001) {
+                try { item.src.stop(); } catch (e) {}
+                return false;
+            }
+            return true;
+        });
+    }
+
+    function sporePlayClickFallback(volume) {
+        if (!sporeClickAudio) { return; }
+        try {
+            var node = sporeClickAudio.cloneNode(true);
+            node.volume = volume;
+            node.play().catch(function () {});
+        } catch (e) {}
+    }
+
+    function sporeScheduleClick(delayMs, volume, ownerId) {
+        try {
+            var ctx = sporeEnsureClickGraph(volume);
+            if (ctx && sporeClickBuffer && sporeClickGain) {
+                var src = ctx.createBufferSource();
+                src.buffer = sporeClickBuffer;
+                src.connect(sporeClickGain);
+                var when = ctx.currentTime + (delayMs / 1000) - sporeClickLatencySec();
+                if (when < ctx.currentTime) { when = ctx.currentTime; }
+                src.start(when, sporeClickBufferOffset);
+                var item = { src: src, when: when, owner: ownerId };
+                sporePendingClicks.push(item);
+                src.onended = function () {
+                    sporePendingClicks = sporePendingClicks.filter(function (row) {
+                        return row.src !== src;
+                    });
+                };
+                return;
+            }
+        } catch (e) {}
+        var fallbackDelay = Math.max(0, delayMs - SPORE_CLICK_LATENCY_SEC * 1000);
+        if (fallbackDelay < 16) { sporePlayClickFallback(volume); }
+        else { setTimeout(function () { sporePlayClickFallback(volume); }, fallbackDelay); }
+    }
+
+    function sporeBorderHits(r0, r1, n) {
+        var hits = [];
+        if (!(n > 0) || !(r1 > r0)) { return hits; }
+        var slice = 360 / n;
+        var i;
+        for (i = 0; i < n; i++) {
+            var target = sporeMod(-i * slice);
+            var k0 = Math.floor((r0 - target) / 360) + 1;
+            var k1 = Math.floor((r1 - target) / 360);
+            var k;
+            for (k = k0; k <= k1; k++) {
+                var rCross = target + 360 * k;
+                if (rCross <= r0 || rCross > r1) { continue; }
+                hits.push({ r: rCross, key: k + ':' + i });
+            }
+        }
+        hits.sort(function (a, b) { return a.r - b.r; });
+        return hits;
+    }
+
+    function sporeRotAt(job, tMs) {
+        var u = tMs <= 0 ? 0 : (tMs >= job.ms ? 1 : sporeEaseUnit(job.easing, tMs / job.ms));
+        return job.from + (job.to - job.from) * u;
+    }
+
+    function sporeScheduleWheelClicks(job, elapsed, frameDt) {
+        var armBy = sporeClickLatencySec() * 1000 + Math.max(frameDt, 16);
+        var sim = elapsed;
+        var prev = sporeRotAt(job, sim);
+        var walked = 0;
+        var step = Math.max(8, frameDt);
+        while (walked < SPORE_CLICK_LOOKAHEAD_MS) {
+            var nextT = Math.min(job.ms, sim + step);
+            if (nextT <= sim) { break; }
+            var next = sporeRotAt(job, nextT);
+            var paintAt = nextT - elapsed;
+            if (paintAt <= armBy) {
+                var hits = sporeBorderHits(prev, next, job.n);
+                if (hits.length) {
+                    var span = next - prev;
+                    var fracs = [];
+                    var i;
+                    for (i = 0; i < hits.length; i++) {
+                        var frac = span > 0 ? (hits[i].r - prev) / span : 0;
+                        if (frac < 0) { frac = 0; }
+                        if (frac > 1) { frac = 1; }
+                        fracs.push(frac);
+                    }
+                    var lastFrac = fracs[fracs.length - 1];
+                    var dur = nextT - sim;
+                    for (i = 0; i < hits.length; i++) {
+                        if (job.keys[hits[i].key]) { continue; }
+                        var delay = paintAt - (lastFrac - fracs[i]) * dur;
+                        if (delay < 0) { delay = 0; }
+                        if (delay > armBy) { continue; }
+                        job.keys[hits[i].key] = true;
+                        sporeScheduleClick(delay, job.volume, job.id);
+                    }
+                }
+            }
+            if (nextT >= job.ms) { break; }
+            prev = next;
+            sim = nextT;
+            walked += step;
+        }
+    }
+
+    function sporeCancelWheel(id) {
+        var job = sporeWheelJobs[id];
+        if (job && job.raf) { cancelAnimationFrame(job.raf); }
+        delete sporeWheelJobs[id];
+        sporeCancelFutureClicks(id);
+    }
+
+    function sporeShowWheelResult(el, labelText, gen) {
+        if (!sporeOn(el, 'data-spore-wheel-result', true)) {
+            sporeStyleWheelLabel(el, '', false);
+            return;
+        }
+        var fmt = sporeAttr(el, 'data-spore-wheel-result-format', '{label}');
+        var text = String(fmt).split('{label}').join(labelText || '');
+        sporeStyleWheelLabel(el, text, true);
+        var hold = parseFloat(sporeAttr(el, 'data-spore-wheel-result-hold', '0')) || 0;
+        if (hold > 0) {
+            el._sporeResultTimer = setTimeout(function () {
+                if (el._sporeSpinGen !== gen) { return; }
+                sporeStyleWheelLabel(el, '', false);
+            }, hold * 1000);
+        }
+    }
+
     function sporePaintWheel(el) {
         var rotor = el.querySelector('.spore-wheel-rotor');
         if (!rotor) { return; }
         var segments = sporeWheelSegments(el);
         rotor.style.background = 'none';
+        rotor.style.transition = 'none';
         rotor.innerHTML = sporeWheelSvg(segments);
+        var rot = parseFloat(el.getAttribute('data-spore-wheel-rot') || '0') || 0;
+        rotor.style.transform = 'rotate(' + rot + 'deg)';
         var pointer = el.querySelector('.spore-wheel-pointer');
         if (pointer) {
-            var pos = sporeAttr(el, 'data-spore-wheel-pointer', 'top');
-            pointer.style.top = 'auto';
-            pointer.style.bottom = 'auto';
-            pointer.style.left = '50%';
-            pointer.style.right = 'auto';
-            pointer.style.transform = '';
-            if (pos === 'bottom') {
-                pointer.style.bottom = '4px';
-                pointer.style.transform = 'translateX(-8px) rotate(180deg)';
-            } else if (pos === 'left') {
-                pointer.style.top = '50%';
-                pointer.style.left = '4px';
-                pointer.style.transform = 'rotate(-90deg)';
-            } else if (pos === 'right') {
-                pointer.style.top = '50%';
-                pointer.style.left = 'auto';
-                pointer.style.right = '4px';
-                pointer.style.transform = 'rotate(90deg)';
-            } else {
-                pointer.style.top = '4px';
-            }
+            sporePlacePointer(pointer, sporeAttr(el, 'data-spore-wheel-pointer', 'top'));
+        }
+        if (sporeOn(el, 'data-spore-wheel-click', true)) {
+            var volume = parseFloat(sporeAttr(el, 'data-spore-wheel-click-volume', '0.2'));
+            if (isNaN(volume)) { volume = 0.2; }
+            sporePrepareClick(el, Math.max(0, Math.min(1, volume)));
         }
     }
 
@@ -1360,39 +1705,98 @@
         var el = document.getElementById(id);
         if (!el) { return; }
         var segments = sporeWheelSegments(el);
-        var idx = Math.floor(Math.random() * segments.length);
-        if (payload && payload.label) {
-            for (var i = 0; i < segments.length; i++) {
-                if (String(segments[i].label) === String(payload.label)) { idx = i; break; }
-            }
-        }
+        var n = segments.length || 1;
+        sporeCancelWheel(id);
+        sporeClearResultTimer(el);
         sporePaintWheel(el);
-        var rotor = el.querySelector('.spore-wheel-rotor');
-        var slice = 360 / segments.length;
-        var center = idx * slice + slice / 2;
-        var current = parseFloat(el.getAttribute('data-spore-wheel-rot') || '0') || 0;
-        var landing = (360 - center);
-        var next = current + 360 * 5 + ((landing - (current % 360) + 360) % 360);
-        if (next <= current) { next += 360; }
-        var ms = parseInt(sporeAttr(el, 'data-spore-wheel-ms', '4000'), 10) || 4000;
-        if (rotor) {
-            rotor.style.transition = 'transform ' + ms + 'ms cubic-bezier(.15,.7,.2,1)';
-            rotor.style.transform = 'rotate(' + next + 'deg)';
-        }
-        el.setAttribute('data-spore-wheel-rot', String(next));
-        setTimeout(function () {
-            var winner = segments[idx] || {};
-            window.__sporeLastPayload.wheel = {
-                elementId: id,
-                index: idx,
-                label: winner.label || ''
-            };
-            var label = el.querySelector('.spore-wheel-label');
-            if (label) { label.textContent = winner.label || ''; }
-            if (typeof socket !== 'undefined' && socket && socket.emit) {
-                socket.emit('wheel_result', window.__sporeLastPayload.wheel);
+        sporeStyleWheelLabel(el, '', false);
+
+        var forcedIdx = -1;
+        if (payload && payload.label != null && String(payload.label) !== '') {
+            var i;
+            for (i = 0; i < n; i++) {
+                if (String(segments[i].label) === String(payload.label)) { forcedIdx = i; break; }
             }
-        }, ms);
+        }
+        var idx = forcedIdx >= 0 ? forcedIdx : Math.floor(Math.random() * n);
+        var variance = sporeOn(el, 'data-spore-wheel-variance', true);
+        var last = parseInt(el.getAttribute('data-spore-wheel-last') || '-1', 10);
+        if (forcedIdx < 0 && variance && n > 1 && idx === last) {
+            idx = (idx + 1 + Math.floor(Math.random() * (n - 1))) % n;
+        }
+        var slice = 360 / n;
+        var jitter = 0;
+        if (variance && n > 1) {
+            jitter = (Math.random() * 2 - 1) * slice * 0.35;
+        }
+        var landing = sporeMod(360 - (idx * slice + slice / 2 + jitter));
+        var current = parseFloat(el.getAttribute('data-spore-wheel-rot') || '0') || 0;
+        var delta = sporeMod(landing - sporeMod(current));
+        if (delta === 0) { delta = 360; }
+        var turns = variance ? (4 + Math.floor(Math.random() * 4)) : 5;
+        var target = current + turns * 360 + delta;
+        var ms = parseInt(sporeAttr(el, 'data-spore-wheel-ms', '4000'), 10) || 4000;
+        if (ms < 200) { ms = 200; }
+        var easing = sporeAttr(el, 'data-spore-wheel-easing', 'ease-out');
+        var sound = sporeOn(el, 'data-spore-wheel-click', true);
+        var volume = parseFloat(sporeAttr(el, 'data-spore-wheel-click-volume', '0.2'));
+        if (isNaN(volume)) { volume = 0.2; }
+        volume = Math.max(0, Math.min(1, volume));
+        var gen = (el._sporeSpinGen || 0) + 1;
+        el._sporeSpinGen = gen;
+        if (sound) { sporePrepareClick(el, volume); }
+
+        var rotor = el.querySelector('.spore-wheel-rotor');
+        if (rotor) {
+            rotor.style.transition = 'none';
+            rotor.style.transform = 'rotate(' + current + 'deg)';
+        }
+        var job = {
+            id: id,
+            from: current,
+            to: target,
+            ms: ms,
+            easing: easing,
+            n: n,
+            volume: volume,
+            keys: {},
+            start: 0,
+            lastTs: 0,
+            raf: 0
+        };
+        sporeWheelJobs[id] = job;
+
+        function frame(ts) {
+            if (el._sporeSpinGen !== gen) { return; }
+            if (!job.start) { job.start = ts; }
+            var elapsed = ts - job.start;
+            var frameDt = job.lastTs ? (ts - job.lastTs) : 16.67;
+            job.lastTs = ts;
+            if (frameDt < 0) { frameDt = 0; }
+            if (frameDt > 50) { frameDt = 50; }
+            if (elapsed >= ms) {
+                if (rotor) { rotor.style.transform = 'rotate(' + target + 'deg)'; }
+                el.setAttribute('data-spore-wheel-rot', String(target));
+                el.setAttribute('data-spore-wheel-last', String(idx));
+                delete sporeWheelJobs[id];
+                var winner = segments[idx] || {};
+                window.__sporeLastPayload.wheel = {
+                    elementId: id,
+                    index: idx,
+                    label: winner.label || ''
+                };
+                sporeShowWheelResult(el, winner.label || '', gen);
+                if (typeof socket !== 'undefined' && socket && socket.emit) {
+                    socket.emit('wheel_result', window.__sporeLastPayload.wheel);
+                }
+                return;
+            }
+            var rot = sporeRotAt(job, elapsed);
+            if (rotor) { rotor.style.transform = 'rotate(' + rot + 'deg)'; }
+            if (sound) { sporeScheduleWheelClicks(job, elapsed, frameDt); }
+            job.raf = requestAnimationFrame(frame);
+        }
+        job.raf = requestAnimationFrame(frame);
     }
 
     function sporePaintNowPlaying(el, data) {
