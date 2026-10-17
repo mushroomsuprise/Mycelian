@@ -190,13 +190,6 @@
         },
         {
             "type": "checkbox",
-            "id": "poll1_store_data",
-            "label": "poll1 store data",
-            "value": true,
-            "description": "Store Data for 'poll1'."
-        },
-        {
-            "type": "checkbox",
             "id": "poll1_send_winner_banner",
             "label": "poll1 send winner banner",
             "value": false,

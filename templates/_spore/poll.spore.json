@@ -47,7 +47,6 @@
         "show_percent": true,
         "show_timer": true,
         "show_timer_bar": true,
-        "store_data": true,
         "track_color": "rgba(255,255,255,0.15)",
         "winner_color": "#facc15",
         "winner_mode": "highlight"
@@ -77,7 +76,6 @@
         "show_percent": true,
         "show_timer": true,
         "show_timer_bar": true,
-        "store_data": true,
         "track_color": true,
         "winner_color": true,
         "winner_mode": true

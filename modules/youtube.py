@@ -1890,17 +1890,21 @@ class YouTubeClient:
                 "source": "youtube",
             },
         )
+        author = item.get("authorDetails") or {}
+        poll_msg = {
+            "username": username,
+            "userid": user_id,
+            "message": message,
+            "platform": "youtube",
+            "is_moderator": bool(author.get("isChatModerator")),
+            "is_chat_owner": bool(author.get("isChatOwner")),
+        }
         try:
             from .poll_manager import get_poll_manager
 
-            get_poll_manager().try_register_vote(
-                {
-                    "username": username,
-                    "userid": user_id,
-                    "message": message,
-                    "platform": "youtube",
-                }
-            )
+            poll_manager = get_poll_manager()
+            poll_manager.try_moderator_start(poll_msg)
+            poll_manager.try_register_vote(poll_msg)
         except Exception as poll_error:
             logger.error("YouTube poll vote failed: %s", poll_error, exc_info=True)
 

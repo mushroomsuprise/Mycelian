@@ -1343,13 +1343,17 @@ Twitch and YouTube chat both count. A running poll on more than one template can
 
 ## Ending and restarts
 
-**Stop** closes the poll and picks the option with the most votes. Every option tied for that count wins. A poll with no votes ends without a winner and without a banner.
+**Stop** closes the poll and picks the option with the most votes. Every option tied for that count wins. A poll with no votes ends without a winner and without a banner or chat message.
 
-**Store poll data** is on by default. An open timed poll comes back after a restart when time is still left. A permanent poll (duration 0) comes back until you press Stop. A poll whose end time passed while the app was closed is dropped. It is not announced later. Category names, keywords, and banner settings are always saved.
+Open polls are always saved. An open timed poll comes back after a restart when time is still left. A permanent poll (duration 0) comes back until you press Stop. A poll whose end time passed while the app was closed is dropped. It is not announced later. Category names, keywords, and banner settings are always saved.
+
+## Moderator start
+
+Turn on **Mods can start** and set a command that begins with `!`. A Twitch moderator or broadcaster, or a YouTube chat moderator or owner, starts the poll when their message begins with that command. `!startpoll` and `!startpoll now` count. `please !startpoll` does not.
 
 ## Winner banner
 
-Turn on **Send winner as a chat banner** to post the result on the chat overlay. The message can use `{option}`, `{options}`, `{keyword}`, and `{votes}`. Tied winners fill `{options}`. Banner duration `0` stays up until another banner replaces it. A Poll widget can also request this banner with **Send winner as chat banner**. The message and duration still come from this tab.
+Turn on **Send winner as a chat banner** to post the result on the chat overlay. **Send winner in chat** posts that same message in Twitch and YouTube chat. The message can use `{option}`, `{options}`, `{keyword}`, and `{votes}`. Tied winners fill `{options}`. Banner duration `0` stays up until another banner replaces it. A Poll widget can also request this banner with **Send winner as chat banner**. The message and duration still come from this tab.
 
 ## Overlay
 
@@ -3858,7 +3862,6 @@ A live view of the poll configured in **Chatbot → Polls** for this template. T
 | **Show counts / Show percent** | on / on | Vote total and share of the vote on each row |
 | **After a winner** | highlight | `highlight` marks winners in the full list. `winner_only` clears the list down to the tied winners. |
 | **Autohide after winner (seconds)** | 0 | Hide the widget after a winner. 0 leaves the result up. A reconnect after that delay stays hidden. |
-| **Store poll data** | on | Starting default for a new poll on this template. After that, the Polls tab switch is what a restart uses. |
 | **Send winner as chat banner** | off | Ask for the winner banner. Message and duration come from Chatbot → Polls. |
 | **Size / Color / Font / Bold** | 22 / white / Arial / off | Text style |
 | **Row spacing** | 8 | Gap between options, in pixels |

@@ -13,7 +13,10 @@ from modules.poll_manager import (
     PollManager,
     earliest_category,
     keyword_match_span,
+    message_starts_with_command,
+    normalize_command,
     normalize_keyword,
+    sender_can_start_poll,
 )
 from modules.statistics_manager import StatisticsData, StatisticsManager
 
@@ -140,6 +143,37 @@ class PollVoteTests(unittest.TestCase):
         self.assertEqual(tied, "Yes, No")
 
 
+class PollModeratorStartTests(unittest.TestCase):
+    def test_command_must_start_the_message_and_include_bang(self):
+        self.assertTrue(message_starts_with_command("!startpoll", "!startpoll"))
+        self.assertTrue(message_starts_with_command("  !StartPoll now", "startpoll"))
+        self.assertEqual(normalize_command("startpoll"), "!startpoll")
+        self.assertFalse(message_starts_with_command("startpoll", "!startpoll"))
+        self.assertFalse(message_starts_with_command("please !startpoll", "!startpoll"))
+        self.assertFalse(message_starts_with_command("!startpolls", "!startpoll"))
+
+    def test_only_moderators_can_start_and_open_polls_are_left_alone(self):
+        self.assertTrue(sender_can_start_poll({"badges": "moderator/1"}))
+        self.assertTrue(sender_can_start_poll({"badges": "broadcaster/1"}))
+        self.assertTrue(sender_can_start_poll({"is_chat_owner": True, "platform": "youtube"}))
+        self.assertFalse(sender_can_start_poll({"badges": "vip/1", "username": "ada"}))
+
+        manager = PollManager(persist=False)
+        manager.ensure_template("poll")
+        manager.add_category("poll", "Yes")
+        manager.add_category("poll", "No")
+        manager.update_config("poll", {"mods_can_start": True, "start_command": "!startpoll"})
+        viewer = {"username": "Ada", "userid": "1", "message": "!startpoll", "badges": ""}
+        self.assertFalse(manager.try_moderator_start(viewer))
+        self.assertEqual(manager.get_overlay_state("poll")["status"], "idle")
+
+        mod = {"username": "Mod", "userid": "2", "message": "!startpoll now", "badges": "moderator/1"}
+        self.assertTrue(manager.try_moderator_start(mod))
+        self.assertEqual(manager.get_overlay_state("poll")["status"], "open")
+        self.assertFalse(manager.try_moderator_start(mod))
+        self.assertEqual(manager.get_overlay_state("poll")["status"], "open")
+
+
 class PollStatisticsTests(unittest.TestCase):
     def test_lifetime_most_votes_and_wins(self):
         stats = StatisticsManager.__new__(StatisticsManager)
@@ -241,14 +275,15 @@ class PollReloadTests(unittest.TestCase):
         self.assertIsNone(snapshot["remaining_seconds"])
         self.assertEqual(snapshot["total_votes"], 6)
 
-    def test_store_data_off_drops_runtime(self):
+    def test_old_store_flag_off_still_reloads(self):
         manager = PollManager(persist=False)
         now, raw = self._stored(
             store_data=False, duration=0, ends_at=None, votes={"a": 4, "b": 0}
         )
         manager._apply_stored(raw, now, schedule=False)
-        self.assertEqual(manager.get_overlay_state("poll")["status"], "idle")
-        self.assertTrue(manager.get_config("poll")["categories"])
+        snapshot = manager.get_overlay_state("poll")
+        self.assertEqual(snapshot["status"], "open")
+        self.assertEqual(snapshot["total_votes"], 4)
 
 
 if __name__ == "__main__":

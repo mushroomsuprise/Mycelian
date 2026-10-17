@@ -2232,7 +2232,13 @@ class Twitch_API:
             try:
                 from .poll_manager import get_poll_manager
 
-                if get_poll_manager().try_register_vote(msg_dict):
+                poll_manager = get_poll_manager()
+                if poll_manager.try_moderator_start(msg_dict):
+                    logger.debug(
+                        "Poll started from chat by %s",
+                        msg_dict.get("username", "?"),
+                    )
+                if poll_manager.try_register_vote(msg_dict):
                     logger.debug(
                         "Poll vote from %s",
                         msg_dict.get("username", "?"),

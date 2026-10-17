@@ -8,7 +8,12 @@ from __future__ import annotations
 from nicegui import ui
 
 from ..notification_engine import notify
-from ..poll_manager import get_poll_manager, list_poll_template_names, normalize_keyword
+from ..poll_manager import (
+    get_poll_manager,
+    list_poll_template_names,
+    normalize_command,
+    normalize_keyword,
+)
 from ..ui_buttons import themed_control_button
 from ..ui_form_controls import form_input, form_number, form_select
 from ..ui_timer import layout_schedule
@@ -44,6 +49,22 @@ def _status_text(snapshot: dict) -> str:
         names = ", ".join(str(item.get("name") or "") for item in winners)
         return f"Ended · {names} · {total} votes"
     return "Not running"
+
+
+def _status_color(status: str) -> str:
+    if status == "open":
+        return "text-green-400"
+    if status == "ended":
+        return "text-amber-400"
+    return "secondary-text"
+
+
+def _apply_status(label, snapshot: dict) -> None:
+    label.set_text(_status_text(snapshot))
+    label.classes(
+        remove="text-green-400 text-amber-400 secondary-text",
+        add=_status_color(str(snapshot.get("status") or "idle")),
+    )
 
 
 def render_polls_tab(container_el) -> None:
@@ -208,13 +229,38 @@ def render_polls_tab(container_el) -> None:
                     False,
                 )
                 _switch(
-                    "Store poll data",
-                    "Save an open poll so it comes back after a restart. Timed polls that already ended while the app was closed are not restored. Permanent polls stay until you press Stop.",
-                    "store_data",
-                    True,
+                    "Mods can start",
+                    "A Twitch moderator or broadcaster, or a YouTube chat moderator or owner, can start this poll by sending the command at the beginning of a message.",
+                    "mods_can_start",
+                    False,
                 )
+                command_in = form_input(
+                    tooltip="Chat command that starts this poll. It always starts with !. The message must begin with this command.",
+                    label="Start command",
+                    value=config.get("start_command") or "!startpoll",
+                    classes="w-40 shrink-0",
+                )
+                command_sync = {"on": False}
 
-            status_label = ui.label(_status_text(snapshot)).classes("text-xs secondary-text")
+                def on_command_type(_=None):
+                    if command_sync["on"]:
+                        return
+                    normalized = normalize_command(command_in.value or "")
+                    if not normalized:
+                        normalized = "!"
+                    if normalized != (command_in.value or ""):
+                        command_sync["on"] = True
+                        command_in.value = normalized
+                        command_sync["on"] = False
+
+                def save_command(_=None):
+                    command = normalize_command(command_in.value or "") or "!startpoll"
+                    command_in.value = command
+                    get_poll_manager().update_config(template, {"start_command": command})
+
+                command_in.on_value_change(on_command_type)
+                command_in.on("blur", save_command)
+
             err = manager.get_last_error(template)
             if err:
                 ui.label(f"Last issue: {err}").classes("text-sm text-amber-600")
@@ -224,6 +270,12 @@ def render_polls_tab(container_el) -> None:
                     "Send winner as a chat banner",
                     "Show the winning option on the chat overlay. A Poll widget can also request this banner. Use {option}, {options}, {keyword}, and {votes}.",
                     "announce_winners_as_banner",
+                    False,
+                )
+                _switch(
+                    "Send winner in chat",
+                    "Post the same winner message in Twitch and YouTube chat.",
+                    "announce_winners_in_chat",
                     False,
                 )
                 banner_msg = form_input(
@@ -282,7 +334,7 @@ def render_polls_tab(container_el) -> None:
             }
             categories = config.get("categories") or []
             vote_inputs = {}
-            total_badge = None
+            status_label = None
 
             with ui.column().classes(
                 "w-full flex-1 min-h-0 gap-0 rounded-lg border "
@@ -293,12 +345,11 @@ def render_polls_tab(container_el) -> None:
                     "bg-[var(--color-bg-elevated)] rounded-t-lg border-b "
                     "border-[var(--color-border-default)]"
                 ):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.label("Categories").classes("text-lg font-medium")
-                        total_badge = ui.badge(
-                            str(int(snapshot.get("total_votes") or 0)),
-                            color="primary" if snapshot.get("total_votes") else "grey",
-                        ).props("rounded")
+                    with ui.row().classes("items-center gap-3 min-w-0"):
+                        ui.label("Categories").classes("text-lg font-medium shrink-0")
+                        status_label = ui.label(_status_text(snapshot)).classes(
+                            "text-sm font-medium " + _status_color(str(snapshot.get("status") or "idle"))
+                        )
                     add_button = themed_control_button(
                         "Add category",
                         add_category,
@@ -452,9 +503,6 @@ def render_polls_tab(container_el) -> None:
                                         notify(msg, type="negative")
                                         return
                                     box.value = max(0, count)
-                                    if total_badge is not None:
-                                        state = get_poll_manager().get_overlay_state(template)
-                                        total_badge.set_text(str(int(state.get("total_votes") or 0)))
 
                                 if not running:
                                     name_in.on_value_change(on_name_type)
@@ -472,10 +520,11 @@ def render_polls_tab(container_el) -> None:
                 except Exception:
                     return
                 current = get_poll_manager().get_overlay_state(template)
-                try:
-                    status_label.set_text(_status_text(current))
-                except Exception:
-                    return
+                if status_label is not None:
+                    try:
+                        _apply_status(status_label, current)
+                    except Exception:
+                        return
                 if current.get("status") != seen_status["value"]:
                     seen_status["value"] = current.get("status")
                     reload_polls()
@@ -494,10 +543,5 @@ def render_polls_tab(container_el) -> None:
                         shown = -1
                     if shown != live:
                         box.value = live
-                if total_badge is not None:
-                    try:
-                        total_badge.set_text(str(int(current.get("total_votes") or 0)))
-                    except Exception:
-                        pass
 
             _poll_votes_timer = layout_schedule(1.0, callback=_refresh_live)

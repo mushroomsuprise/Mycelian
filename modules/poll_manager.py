@@ -25,8 +25,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "duration_seconds": 0,
     "one_entry_per_user": True,
     "allow_vote_switch": False,
-    "store_data": True,
+    "mods_can_start": False,
+    "start_command": "!startpoll",
     "announce_winners_as_banner": False,
+    "announce_winners_in_chat": False,
     "banner_message": DEFAULT_BANNER_MESSAGE,
     "banner_duration": 10,
 }
@@ -43,6 +45,49 @@ def normalize_keyword(raw: Any, fallback_name: str = "") -> str:
     if not text:
         return ""
     return "#" + text
+
+
+def normalize_command(raw: Any) -> str:
+    """Force a leading ``!`` and drop spaces so the command is one chat token."""
+    text = str(raw or "").strip()
+    if text.startswith("!"):
+        text = text[1:]
+    text = _KEYWORD_BODY.sub("", text)
+    if not text:
+        return ""
+    return "!" + text
+
+
+def message_starts_with_command(message: str, command: str) -> bool:
+    """True when ``message`` begins with ``command``, including its ``!``.
+
+    ``!startpoll`` and ``!startpoll now`` match. ``startpoll``, ``please !startpoll``,
+    and ``!startpolls`` do not. Comparison is case-insensitive.
+    """
+    text = str(message or "").strip().casefold()
+    cmd = normalize_command(command).casefold()
+    if not text or not cmd.startswith("!"):
+        return False
+    if not text.startswith(cmd):
+        return False
+    rest = text[len(cmd):]
+    return rest == "" or rest[:1].isspace()
+
+
+def sender_can_start_poll(msg_dict: Dict[str, Any]) -> bool:
+    """Twitch moderator/broadcaster badges, or YouTube chat mod/owner flags."""
+    if not isinstance(msg_dict, dict):
+        return False
+    if (
+        msg_dict.get("is_moderator")
+        or msg_dict.get("is_broadcaster")
+        or msg_dict.get("is_chat_owner")
+    ):
+        return True
+    badges = msg_dict.get("badges")
+    if isinstance(badges, str):
+        return "moderator/" in badges or "broadcaster/" in badges
+    return False
 
 
 def keyword_match_span(message: str, keyword: str) -> Optional[Tuple[int, int]]:
@@ -179,21 +224,6 @@ def template_wants_winner_banner(template: str) -> bool:
     return False
 
 
-def widget_store_data_default(template: str) -> bool:
-    """Seed value from the first Poll widget. Missing widgets default to on."""
-    try:
-        from .spore_studio.template_parser_back import load_sidecar
-    except Exception:
-        return True
-    elements = _poll_elements(load_sidecar(template))
-    if not elements:
-        return True
-    props = elements[0].get("props") if isinstance(elements[0].get("props"), dict) else {}
-    if "store_data" not in props:
-        return True
-    return bool(props.get("store_data"))
-
-
 _poll_manager: Optional["PollManager"] = None
 _poll_lock = threading.Lock()
 
@@ -247,7 +277,7 @@ class PollManager:
             config = self._normalize_config(entry.get("config"))
             runtime = _idle_runtime()
             stored_runtime = entry.get("runtime")
-            if config.get("store_data") and isinstance(stored_runtime, dict):
+            if isinstance(stored_runtime, dict):
                 runtime = self._normalize_runtime(stored_runtime, config)
                 if runtime.get("status") == "open":
                     if self._is_expired(config, runtime, now):
@@ -284,8 +314,11 @@ class PollManager:
         cfg["duration_seconds"] = max(0, min(86400 * 7, duration))
         cfg["one_entry_per_user"] = bool(cfg.get("one_entry_per_user", True))
         cfg["allow_vote_switch"] = bool(cfg.get("allow_vote_switch", False))
-        cfg["store_data"] = bool(cfg.get("store_data", True))
+        cfg.pop("store_data", None)
+        cfg["mods_can_start"] = bool(cfg.get("mods_can_start", False))
+        cfg["start_command"] = normalize_command(cfg.get("start_command")) or "!startpoll"
         cfg["announce_winners_as_banner"] = bool(cfg.get("announce_winners_as_banner", False))
+        cfg["announce_winners_in_chat"] = bool(cfg.get("announce_winners_in_chat", False))
         message = str(cfg.get("banner_message") or "").strip()
         cfg["banner_message"] = message or DEFAULT_BANNER_MESSAGE
         try:
@@ -366,7 +399,7 @@ class PollManager:
             config = self._normalize_config(entry.get("config"))
             stored: Dict[str, Any] = {"config": config}
             runtime = entry.get("runtime") or _idle_runtime()
-            if config.get("store_data") and runtime.get("status") == "open":
+            if runtime.get("status") == "open":
                 stored["runtime"] = {
                     "status": "open",
                     "started_at": runtime.get("started_at"),
@@ -414,7 +447,6 @@ class PollManager:
             entry = self._templates.get(name)
             if entry is None:
                 config = self._normalize_config({})
-                config["store_data"] = widget_store_data_default(name)
                 self._templates[name] = {"config": config, "runtime": _idle_runtime()}
                 self._persist()
             return copy.deepcopy(self._templates[name]["config"])
@@ -693,6 +725,31 @@ class PollManager:
             self._emit("poll_state", snapshot)
         return accepted
 
+    def try_moderator_start(self, msg_dict: Dict[str, Any]) -> bool:
+        """Start polls whose command is at the beginning of a moderator message."""
+        if not sender_can_start_poll(msg_dict):
+            return False
+        message = str((msg_dict or {}).get("message") or "")
+        if not message.strip().startswith("!"):
+            return False
+        targets: List[str] = []
+        with self._lock:
+            for template, entry in self._templates.items():
+                config = entry.get("config") or {}
+                if not config.get("mods_can_start"):
+                    continue
+                if not message_starts_with_command(message, config.get("start_command") or ""):
+                    continue
+                runtime = entry.get("runtime") or {}
+                if runtime.get("status") == "open":
+                    continue
+                targets.append(template)
+        started = False
+        for template in targets:
+            ok, _message = self.start_poll(template)
+            started = started or ok
+        return started
+
     def _apply_vote_locked(
         self,
         config: Dict[str, Any],
@@ -818,21 +875,31 @@ class PollManager:
             widget_wants = template_wants_winner_banner(template)
         except Exception as exc:
             logger.debug("poll banner widget check failed: %s", exc)
-        if not config.get("announce_winners_as_banner") and not widget_wants:
+        if not config.get("announce_winners_as_banner") and not widget_wants and not config.get(
+            "announce_winners_in_chat"
+        ):
             return
         message = self._banner_text(config.get("banner_message") or "", winners)
         if not message:
             return
-        try:
-            duration = float(config.get("banner_duration") or 0)
-        except (TypeError, ValueError):
-            duration = 10
-        try:
-            from .chat_banner import emit_chat_banner
+        if config.get("announce_winners_as_banner") or widget_wants:
+            try:
+                duration = float(config.get("banner_duration") or 0)
+            except (TypeError, ValueError):
+                duration = 10
+            try:
+                from .chat_banner import emit_chat_banner
 
-            emit_chat_banner(message, duration=duration, source="poll")
-        except Exception as exc:
-            logger.error("Poll winner banner failed: %s", exc, exc_info=True)
+                emit_chat_banner(message, duration=duration, source="poll")
+            except Exception as exc:
+                logger.error("Poll winner banner failed: %s", exc, exc_info=True)
+        if config.get("announce_winners_in_chat"):
+            try:
+                from .chatbot import dispatch_chatbot_response
+
+                dispatch_chatbot_response(message, ["twitch", "youtube"])
+            except Exception as exc:
+                logger.error("Poll winner chat failed: %s", exc, exc_info=True)
 
     def _banner_text(self, template_text: str, winners: List[Dict[str, Any]]) -> str:
         names = ", ".join(str(item.get("name") or "") for item in winners)
