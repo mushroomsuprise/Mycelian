@@ -758,33 +758,14 @@
     function bindTip(anchor, text) {
         if (!anchor || !text) { return; }
         anchor.setAttribute("data-ss-tip", text);
-        anchor.addEventListener("mouseenter", function () {
+        function enter() {
             clearTimeout(tipHideTimer);
-            showTip(anchor, text);
-        });
+            showTip(anchor, anchor.getAttribute("data-ss-tip") || text);
+        }
+        anchor.addEventListener("mouseenter", enter);
         anchor.addEventListener("mouseleave", hideTipSoon);
-        anchor.addEventListener("focus", function () {
-            clearTimeout(tipHideTimer);
-            showTip(anchor, text);
-        });
-        anchor.addEventListener("blur", hideTipSoon);
-    }
-
-    function infoMark(text) {
-        var btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "ss-tip";
-        btn.textContent = "?";
-        btn.setAttribute("aria-label", text);
-        btn.addEventListener("click", function (ev) {
-            ev.preventDefault();
-            ev.stopPropagation();
-        });
-        btn.addEventListener("mousedown", function (ev) {
-            ev.stopPropagation();
-        });
-        bindTip(btn, text);
-        return btn;
+        anchor.addEventListener("focusin", enter);
+        anchor.addEventListener("focusout", hideTipSoon);
     }
 
     /* Native title popups do not show reliably in the embedded editor. */
@@ -806,7 +787,7 @@
         summary.className = "ss-collapse__summary";
         summary.dataset.section = title;
         summary.textContent = title;
-        if (tooltip) { summary.appendChild(infoMark(tooltip)); }
+        if (tooltip) { bindTip(summary, tooltip); }
         details.appendChild(summary);
         var body = document.createElement("div");
         body.className = "ss-collapse__body";
@@ -823,9 +804,9 @@
         var lbl = document.createElement("label");
         lbl.textContent = label;
         head.appendChild(lbl);
-        if (tooltip) { head.appendChild(infoMark(tooltip)); }
         row.appendChild(head);
         if (controlNode) { row.appendChild(controlNode); }
+        if (tooltip) { bindTip(row, tooltip); }
         return row;
     }
 
@@ -836,7 +817,7 @@
         var lbl = document.createElement("label");
         lbl.textContent = label;
         row.appendChild(lbl);
-        if (tooltip) { row.appendChild(infoMark(tooltip)); }
+        if (tooltip) { bindTip(row, tooltip); }
         return row;
     }
 
@@ -1771,9 +1752,7 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Color stops";
-        title.appendChild(infoMark(
-            "Each stop is a color and a position from 0 (start) to 100 (end)."
-        ));
+        bindTip(title, "Each stop is a color and a position from 0 (start) to 100 (end).");
         sect.appendChild(title);
         var list = document.createElement("div");
         list.className = "ss-gradient-stops";
@@ -1952,9 +1931,7 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Preview";
-        title.appendChild(infoMark(
-            "Play this timer on the canvas. It does not start the live overlay."
-        ));
+        bindTip(title, "Play this timer on the canvas. It does not start the live overlay.");
         sect.appendChild(title);
         var row = document.createElement("div");
         row.className = "ss-btn-row";
@@ -2422,9 +2399,7 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Range change transition";
-        title.appendChild(infoMark(
-            "Animate between images when the counter moves from one range into another."
-        ));
+        bindTip(title, "Animate between images when the counter moves from one range into another.");
         sect.appendChild(title);
         sect.appendChild(formRowCheckbox("Animate when image changes", !!tr.enabled, function (checked) {
             tr.enabled = checked;
@@ -2605,9 +2580,7 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Progress source";
-        title.appendChild(infoMark(
-            "The bar fills from the value counter toward a fixed max or a second counter."
-        ));
+        bindTip(title, "The bar fills from the value counter toward a fixed max or a second counter.");
         sect.appendChild(title);
 
         var counters = listCountersInModel();
@@ -2708,9 +2681,7 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Value change animation";
-        title.appendChild(infoMark(
-            "Tick up animates from the previous value. Other types play a visual effect on the text."
-        ));
+        bindTip(title, "Tick up animates from the previous value. Other types play a visual effect on the text.");
         sect.appendChild(title);
         sect.appendChild(formRowCheckbox("Enable on value update", !!va.enabled, function (checked) {
             va.enabled = checked;
@@ -3628,7 +3599,7 @@
                 var lbl = document.createElement("label");
                 lbl.textContent = ev.label || en;
                 row.appendChild(lbl);
-                if (ev.description) { row.appendChild(infoMark(ev.description)); }
+                if (ev.description) { bindTip(row, ev.description); }
                 refreshWrap.appendChild(row);
             });
             host.appendChild(formRow(
@@ -4058,9 +4029,12 @@
         lbl.textContent = labelText;
         labelRow.appendChild(exLbl);
         labelRow.appendChild(lbl);
-        if (tooltip) { labelRow.appendChild(infoMark(tooltip)); }
         wrap.appendChild(labelRow);
         wrap.appendChild(controlNode);
+        if (tooltip) {
+            bindTip(lbl, tooltip);
+            if (controlNode) { bindTip(controlNode, tooltip); }
+        }
         return wrap;
     }
 
@@ -5650,9 +5624,7 @@
         var title = document.createElement("div");
         title.className = "ss-form-section__title";
         title.textContent = "Placement in container";
-        title.appendChild(infoMark(
-            "Presets anchor inside the parent. Offsets fine-tune. Dragging updates the offset and keeps the anchor."
-        ));
+        bindTip(title, "Presets anchor inside the parent. Offsets fine-tune. Dragging updates the offset and keeps the anchor.");
         sect.appendChild(title);
 
         var grid = document.createElement("div");
@@ -8926,18 +8898,8 @@
             var input = document.getElementById(id);
             if (!input) { return; }
             var row = input.closest(".ss-form-row");
-            if (!row || row.querySelector(".ss-tip")) { return; }
-            var label = row.querySelector("label");
-            if (!label) { return; }
-            if (row.classList.contains("ss-form-row--inline")) {
-                row.appendChild(infoMark(text));
-                return;
-            }
-            var head = document.createElement("div");
-            head.className = "ss-form-row__head";
-            label.parentNode.insertBefore(head, label);
-            head.appendChild(label);
-            head.appendChild(infoMark(text));
+            if (!row || row.getAttribute("data-ss-tip")) { return; }
+            bindTip(row, text);
         }
         mark("ss-canvas-w", "Design width of the overlay, in pixels");
         mark("ss-canvas-h", "Design height of the overlay, in pixels");
