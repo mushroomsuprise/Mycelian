@@ -845,6 +845,7 @@ Response: 🎱 {random:Yes!,No way,Ask again,Maybe,Definitely}
             "chatbot_quotes",
             "chatbot_greetings",
             "chatbot_giveaways",
+            "chatbot_polls",
             "chatbot_variables",
         ],
     ),
@@ -1312,6 +1313,55 @@ as well.
             "chatbot_commands",
             "chatbot_variables",
             "integrations_twitch",
+        ],
+    ),
+    "chatbot_polls": HelpTopic(
+        id="chatbot_polls",
+        title="Chatbot Polls",
+        category=HelpCategory.CHATBOT,
+        summary="Category polls driven by #keywords in Twitch and YouTube chat",
+        content="""
+# Chatbot Polls
+
+Run a poll from **Chatbot → Polls**. Each poll belongs to one overlay template that contains a Spore Studio **Poll** widget. Viewers vote by typing that category's `#keyword` anywhere in chat.
+
+## Setup
+
+1. Add a Poll block in Spore Studio, or start from the built-in `poll` template, and save.
+2. Open **Chatbot → Polls** and pick that template.
+3. Add at least two categories. The keyword defaults to the category name with spaces removed and a `#` in front (`Pizza Time` becomes `#PizzaTime`). You can edit it. It always keeps the `#`.
+4. Set the duration in seconds. **0** stays open until you press **Stop**.
+5. Press **Start**.
+
+## How a vote counts
+
+Matching is case-insensitive, and the keyword has to be its own word. `I vote #yes` counts. `#yesterday` does not. If one message contains several keywords for the same poll, the earliest one wins.
+
+**1 entry per user** is on by default, so the first vote sticks. **Allow vote switching** is off by default. Turn it on to let a later keyword move that person's vote. With 1 entry per user off, every matching message adds another vote.
+
+Twitch and YouTube chat both count. A running poll on more than one template can each receive the same message when their keywords match.
+
+## Ending and restarts
+
+**Stop** closes the poll and picks the option with the most votes. Every option tied for that count wins. A poll with no votes ends without a winner and without a banner.
+
+**Store poll data** is on by default. An open timed poll comes back after a restart when time is still left. A permanent poll (duration 0) comes back until you press Stop. A poll whose end time passed while the app was closed is dropped. It is not announced later. Category names, keywords, and banner settings are always saved.
+
+## Winner banner
+
+Turn on **Send winner as a chat banner** to post the result on the chat overlay. The message can use `{option}`, `{options}`, `{keyword}`, and `{votes}`. Tied winners fill `{options}`. Banner duration `0` stays up until another banner replaces it. A Poll widget can also request this banner with **Send winner as chat banner**. The message and duration still come from this tab.
+
+## Overlay
+
+The Poll widget draws the live results: font, horizontal or vertical list, bars or text, timer text and timer bar, colors, winner highlight or winner-only, autohide, and a rotator for extra options. Options are always ordered by votes, highest first. With the rotator off, only the top items are shown. With it on, the widget pages through that same order.
+
+The stock `poll` template is a Spore Studio template, so you can rearrange it like any other.
+        """,
+        keywords=["poll", "polls", "vote", "votes", "keyword", "chatbot", "banner"],
+        related_topics=[
+            "chatbot_giveaways",
+            "chatbot_commands",
+            "spore_studio_widgets",
         ],
     ),
     "chatbot_variables": HelpTopic(
@@ -3791,6 +3841,29 @@ Icon, label, and a value from a data source.
 
 The editor preview shows a sample value so you can judge the layout. In the live overlay the card reads its data source on load, on every alert, and again every second. Session statistics are re-fetched every 15 seconds.
 
+### Poll
+
+A live view of the poll configured in **Chatbot → Polls** for this template. The widget does not collect votes. Options arrive already sorted by votes, highest first.
+
+| Setting | Default | What it does |
+|---------|---------|----------------|
+| **Layout** | vertical | `vertical` stacks options. `horizontal` places them side by side. |
+| **Display** | bars | `bars` draws a fill relative to the leading option. `text` lists names and counts only. |
+| **Items to show** | 6 | How many options to show. The widget never shows more than fully fit in its height. 0 uses that maximum. A smaller number shows fewer. |
+| **Rotator** | off | Page through options that do not fit, in the same highest-first order. |
+| **Rotator seconds** | 5 | How long each page stays up |
+| **Rotator animation** | slide horizontal | `slide horizontal`, `slide vertical`, `fade`, or `none` |
+| **Rotator animation (ms)** | 400 | How long that animation plays |
+| **Show timer / Show timer bar** | on / on | Remaining time. Both stay hidden on a permanent poll. |
+| **Show counts / Show percent** | on / on | Vote total and share of the vote on each row |
+| **After a winner** | highlight | `highlight` marks winners in the full list. `winner_only` clears the list down to the tied winners. |
+| **Autohide after winner (seconds)** | 0 | Hide the widget after a winner. 0 leaves the result up. A reconnect after that delay stays hidden. |
+| **Store poll data** | on | Starting default for a new poll on this template. After that, the Polls tab switch is what a restart uses. |
+| **Send winner as chat banner** | off | Ask for the winner banner. Message and duration come from Chatbot → Polls. |
+| **Size / Color / Font / Bold** | 22 / white / Arial / off | Text style |
+| **Row spacing** | 8 | Gap between options, in pixels |
+| **Background / Bar / Track / Winner color** | dark card, purple, faint track, gold | Fills and the winner mark |
+
 ## See also
 
 - [Designing Templates](help:spore_studio_design)
@@ -3807,6 +3880,7 @@ The editor preview shows a sample value so you can judge the layout. In the live
             "embed",
             "now playing",
             "stat card",
+            "poll",
             "progress bar",
             "spore studio",
         ],

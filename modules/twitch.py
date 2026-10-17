@@ -2229,6 +2229,19 @@ class Twitch_API:
                         "Giveaway entry handling failed: %s", ge, exc_info=True
                     )
 
+            try:
+                from .poll_manager import get_poll_manager
+
+                if get_poll_manager().try_register_vote(msg_dict):
+                    logger.debug(
+                        "Poll vote from %s",
+                        msg_dict.get("username", "?"),
+                    )
+            except Exception as poll_error:
+                logger.error(
+                    "Poll vote handling failed: %s", poll_error, exc_info=True
+                )
+
             # Process chat message events (after commands)
             try:
                 from .chatbot_core import EventType

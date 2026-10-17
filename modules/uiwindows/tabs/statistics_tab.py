@@ -77,6 +77,11 @@ class StatisticsTab:
         self._giveaways_completed_label = None
         self._giveaways_entries_label = None
         self._giveaways_avg_label = None
+        self._polls_ran_label = None
+        self._polls_votes_label = None
+        self._polls_avg_label = None
+        self._polls_most_votes_label = None
+        self._polls_most_wins_label = None
 
         # Quote statistic labels
         self._quotes_created_label = None
@@ -235,6 +240,11 @@ class StatisticsTab:
         self._giveaways_completed_label = None
         self._giveaways_entries_label = None
         self._giveaways_avg_label = None
+        self._polls_ran_label = None
+        self._polls_votes_label = None
+        self._polls_avg_label = None
+        self._polls_most_votes_label = None
+        self._polls_most_wins_label = None
 
         # Quote statistic labels
         self._quotes_created_label = None
@@ -300,6 +310,11 @@ class StatisticsTab:
         self._giveaways_completed_label = None
         self._giveaways_entries_label = None
         self._giveaways_avg_label = None
+        self._polls_ran_label = None
+        self._polls_votes_label = None
+        self._polls_avg_label = None
+        self._polls_most_votes_label = None
+        self._polls_most_wins_label = None
 
         # Quote statistic labels
         self._quotes_created_label = None
@@ -786,6 +801,28 @@ class StatisticsTab:
                 if hasattr(self, "_giveaways_avg_label") and self._giveaways_avg_label:
                     avg_gw = float(gw.get("average_entries_per_giveaway", 0) or 0)
                     self._giveaways_avg_label.set_text(f"{avg_gw:.2f}")
+                polls = stats_data.get("polls", {}) or {}
+                if hasattr(self, "_polls_ran_label") and self._polls_ran_label:
+                    self._polls_ran_label.set_text(
+                        f"{int(polls.get('polls_completed', 0) or 0):,}"
+                    )
+                if hasattr(self, "_polls_votes_label") and self._polls_votes_label:
+                    self._polls_votes_label.set_text(
+                        f"{int(polls.get('total_votes', 0) or 0):,}"
+                    )
+                if hasattr(self, "_polls_avg_label") and self._polls_avg_label:
+                    avg_polls = float(polls.get("average_votes_per_poll", 0) or 0)
+                    self._polls_avg_label.set_text(f"{avg_polls:.2f}")
+                most_votes = polls.get("most_votes") or {}
+                most_wins = polls.get("most_wins") or {}
+                if hasattr(self, "_polls_most_votes_label") and self._polls_most_votes_label:
+                    self._polls_most_votes_label.set_text(
+                        f"{most_votes.get('name') or '—'} ({int(most_votes.get('count') or 0):,})"
+                    )
+                if hasattr(self, "_polls_most_wins_label") and self._polls_most_wins_label:
+                    self._polls_most_wins_label.set_text(
+                        f"{most_wins.get('name') or '—'} ({int(most_wins.get('count') or 0):,})"
+                    )
             except Exception as e:
                 print(f"Could not update giveaway statistics: {e}")
 
@@ -1143,6 +1180,45 @@ class StatisticsTab:
                             "text-fuchsia-400",
                         )
 
+                polls = stats_data.get("polls", {}) or {}
+                ui.label("📊 Polls").classes("text-sm font-semibold mb-1 mt-2")
+                most_votes = polls.get("most_votes") or {}
+                most_wins = polls.get("most_wins") or {}
+                votes_name = most_votes.get("name") or "—"
+                wins_name = most_wins.get("name") or "—"
+                with ui.grid(columns=3).classes("w-full gap-2"):
+                    with self._stat_card("Polls ran"):
+                        self._polls_ran_label = self._stat_value(
+                            f"{int(polls.get('polls_completed', 0) or 0):,}",
+                            "Finished polls",
+                            "text-violet-400",
+                        )
+                    with self._stat_card("Total votes"):
+                        self._polls_votes_label = self._stat_value(
+                            f"{int(polls.get('total_votes', 0) or 0):,}",
+                            "All categories",
+                            "text-purple-400",
+                        )
+                    avg_polls = float(polls.get("average_votes_per_poll", 0) or 0)
+                    with self._stat_card("Avg / poll"):
+                        self._polls_avg_label = self._stat_value(
+                            f"{avg_polls:.2f}",
+                            "Votes per poll",
+                            "text-indigo-300",
+                        )
+                    with self._stat_card("Most votes"):
+                        self._polls_most_votes_label = self._stat_value(
+                            f"{votes_name} ({int(most_votes.get('count', 0) or 0):,})",
+                            "Lifetime votes",
+                            "text-violet-300",
+                        )
+                    with self._stat_card("Most wins"):
+                        self._polls_most_wins_label = self._stat_value(
+                            f"{wins_name} ({int(most_wins.get('count', 0) or 0):,})",
+                            "Times won",
+                            "text-fuchsia-300",
+                        )
+
             # Template Statistics Section (if any templates have stats)
             if stats_data["templates"]:
                 with ui.card().classes("content-section statistics-section w-full"):
@@ -1393,6 +1469,8 @@ class StatisticsTab:
                     ("chat_message", "📨 Chat messages", "text-indigo-400", "messages"),
                     ("giveaway_entry", "🎁 Giveaway entries", "text-rose-400", "entries"),
                     ("giveaway_win", "🏆 Giveaway wins", "text-fuchsia-400", "wins"),
+                    ("poll_complete", "✅ Polls finished", "text-violet-400", "polls"),
+                    ("poll_win", "🏆 Poll wins", "text-purple-300", "wins"),
                 ]
                 # Show zero-count placeholders only for core alert types (legacy UI behavior).
                 show_if_zero = ("bit", "sub", "giftsub", "donation", "point_redeem")
@@ -1567,6 +1645,8 @@ class StatisticsTab:
                             "giveaway_entry": "🎁",
                             "giveaway_win": "🏆",
                             "giveaway_draw_complete": "✅",
+                            "poll_complete": "📊",
+                            "poll_win": "🏆",
                         }
                         icon = type_icons.get(ev_type, "📌")
                         ts_str = datetime.fromtimestamp(ev_ts).strftime(

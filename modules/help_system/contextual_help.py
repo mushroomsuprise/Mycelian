@@ -208,6 +208,7 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
             "Quotes": "chatbot_quotes",
             "Greetings": "chatbot_greetings",
             "Giveaways": "chatbot_giveaways",
+            "Polls": "chatbot_polls",
         }
         return chatbot_sub_tab_mapping.get(sub_tab, "chatbot_commands")
 

@@ -1884,6 +1884,18 @@ class WebEngine:
                 logger.error("Container duplicate error: %s", e, exc_info=True)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
 
+        @self.app.route("/api/spore-studio/poll-state/<template_name>")
+        def serve_spore_studio_poll_state(template_name):
+            """Live poll snapshot for the Spore Studio canvas preview."""
+            try:
+                from .poll_manager import get_poll_manager
+
+                snapshot = get_poll_manager().get_overlay_state(template_name)
+                return snapshot, 200, {"Content-Type": "application/json"}
+            except Exception as e:
+                logger.error("Spore Studio poll state error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
         @self.app.route("/api/spore-studio/model/<template_name>")
         def serve_spore_studio_model(template_name):
             """Return the editor model (sidecar or legacy fallback) for a template."""
@@ -7152,6 +7164,23 @@ class WebEngine:
                 return snapshot
             except Exception as e:
                 logger.debug("giveaway_request_state failed: %s", e)
+                return {}
+
+        @self.socketio.on("poll_request_state")
+        def handle_poll_request_state(data=None):
+            """Replay the poll snapshot for the overlay's template."""
+            client_sid = request.sid
+            template = ""
+            if isinstance(data, dict):
+                template = str(data.get("template") or "").strip()
+            try:
+                from .poll_manager import get_poll_manager
+
+                snapshot = get_poll_manager().get_overlay_state(template)
+                self.safe_emit("poll_sync", snapshot, to=client_sid)
+                return snapshot
+            except Exception as e:
+                logger.debug("poll_request_state failed: %s", e)
                 return {}
 
         @self.socketio.on("set_pause_status")

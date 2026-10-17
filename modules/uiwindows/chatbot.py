@@ -56,6 +56,7 @@ from ..chatbot_core import (
 from ..chatbot_manager import get_manager as get_chatbot_manager
 from ..database_manager import get_data, set_data
 from ..giveaway_manager import get_giveaway_manager
+from .polls_panel import render_polls_tab
 from ..statistics_manager import get_statistics_manager
 from ..twitch import get_twitch_api
 from ..twitch_api_reference import TwitchAPIReference
@@ -750,6 +751,7 @@ events_container = None
 quotes_container = None
 greetings_container = None
 giveaways_container = None
+polls_container = None
 
 # Global search term (shared across tabs)
 search_terms = {
@@ -1283,7 +1285,7 @@ CUSTOM_CSS = """
 def create_chatbot_tab():
     """Create the Chatbot tab UI"""
     global commands_container, events_container, quotes_container, greetings_container
-    global giveaways_container
+    global giveaways_container, polls_container
 
     # Add custom CSS to the page
     ui.add_head_html(
@@ -1303,6 +1305,7 @@ def create_chatbot_tab():
                 quotes_tab = ui.tab("Quotes")
                 greetings_tab = ui.tab("Greetings")
                 giveaways_tab = ui.tab("Giveaways")
+                polls_tab = ui.tab("Polls")
 
             set_chatbot_ui_references(chatbot_tabs)
 
@@ -1535,6 +1538,14 @@ def create_chatbot_tab():
                 ):
                     with ui.scroll_area().classes("w-full grow"):
                         giveaways_container = ui.element("div").classes("w-full p-4")
+
+                # Polls Tab
+                with ui.tab_panel(polls_tab).classes(
+                    "transition-all duration-300 w-full h-full flex flex-col min-h-0"
+                ):
+                    polls_container = ui.element("div").classes(
+                        "w-full h-full min-h-0 flex flex-col"
+                    )
 
             # Load and display chatbot items for all tabs
             load_chatbot_items()
@@ -1901,6 +1912,16 @@ def refresh_tab_content(tab_type: str):
                 ui.label(f"Error loading giveaways: {e}").classes("text-red-400")
         return
 
+    if tab_type == "polls":
+        container.clear()
+        try:
+            render_polls_tab(container)
+        except Exception as e:
+            logger.error("Polls tab error: %s", e, exc_info=True)
+            with container:
+                ui.label(f"Error loading polls: {e}").classes("text-red-400")
+        return
+
     # Clear existing content
     container.clear()
 
@@ -2029,7 +2050,7 @@ def refresh_tab_content(tab_type: str):
 def get_container_for_tab(tab_type: str):
     """Get the container element for a specific tab"""
     global commands_container, events_container, quotes_container, greetings_container
-    global giveaways_container
+    global giveaways_container, polls_container
 
     if tab_type == "commands":
         return commands_container
@@ -2041,6 +2062,8 @@ def get_container_for_tab(tab_type: str):
         return greetings_container
     elif tab_type == "giveaways":
         return giveaways_container
+    elif tab_type == "polls":
+        return polls_container
     else:
         return None
 
@@ -2224,6 +2247,16 @@ def load_chatbot_items():
             logger.error("Error loading giveaways: %s", e, exc_info=True)
             with container:
                 ui.label(f"Error loading giveaways: {e}").classes("text-red-400")
+
+    container = get_container_for_tab("polls")
+    if container:
+        container.clear()
+        try:
+            render_polls_tab(container)
+        except Exception as e:
+            logger.error("Error loading polls: %s", e, exc_info=True)
+            with container:
+                ui.label(f"Error loading polls: {e}").classes("text-red-400")
 
 
 def create_command_card(command_id: str, command: ChatCommand):
@@ -7800,6 +7833,7 @@ def refresh_chatbot_items():
     refresh_tab_content("quotes")
     refresh_tab_content("greetings")
     refresh_tab_content("giveaways")
+    refresh_tab_content("polls")
 
 
 # Greeting-specific functions

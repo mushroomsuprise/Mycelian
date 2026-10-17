@@ -1890,6 +1890,19 @@ class YouTubeClient:
                 "source": "youtube",
             },
         )
+        try:
+            from .poll_manager import get_poll_manager
+
+            get_poll_manager().try_register_vote(
+                {
+                    "username": username,
+                    "userid": user_id,
+                    "message": message,
+                    "platform": "youtube",
+                }
+            )
+        except Exception as poll_error:
+            logger.error("YouTube poll vote failed: %s", poll_error, exc_info=True)
 
         if not _is_youtube_chat_overlay_enabled():
             return

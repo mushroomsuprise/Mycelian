@@ -149,6 +149,40 @@ _EVENTS: List[Dict[str, Any]] = [
         ],
     },
     {
+        "event": "poll_state",
+        "label": "Poll update",
+        "alert_system": "either",
+        "description": (
+            "Fired when a chat poll starts, receives a vote, or changes. "
+            "Options are ordered by votes, highest first."
+        ),
+        "payload": [
+            {"key": "template", "label": "Template", "type": "string"},
+            {"key": "status", "label": "Status", "type": "string",
+             "examples": ["idle", "open", "ended"]},
+            {"key": "total_votes", "label": "Total votes", "type": "number"},
+            {"key": "options", "label": "Options", "type": "array"},
+            {"key": "winners", "label": "Winners", "type": "array"},
+            {"key": "remaining_seconds", "label": "Seconds remaining", "type": "number"},
+        ],
+    },
+    {
+        "event": "poll_ended",
+        "label": "Poll ended",
+        "alert_system": "either",
+        "description": (
+            "Fired when a poll is stopped or its timer runs out. "
+            "Winners lists every option tied for the most votes."
+        ),
+        "payload": [
+            {"key": "template", "label": "Template", "type": "string"},
+            {"key": "status", "label": "Status", "type": "string"},
+            {"key": "total_votes", "label": "Total votes", "type": "number"},
+            {"key": "options", "label": "Options", "type": "array"},
+            {"key": "winners", "label": "Winners", "type": "array"},
+        ],
+    },
+    {
         "event": "refresh-alerts",
         "label": "Refresh alerts",
         "alert_system": "either",

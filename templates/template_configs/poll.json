@@ -1,0 +1,329 @@
+{
+    "template_name": "poll",
+    "spore_studio": true,
+    "alert_system": "instant",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Canvas"
+        },
+        {
+            "type": "number",
+            "id": "DesignWidth",
+            "label": "Design Width",
+            "value": 300,
+            "min": 50,
+            "max": 7680,
+            "description": "Logical canvas width in pixels."
+        },
+        {
+            "type": "number",
+            "id": "DesignHeight",
+            "label": "Design Height",
+            "value": 300,
+            "min": 50,
+            "max": 4320,
+            "description": "Logical canvas height in pixels."
+        },
+        {
+            "type": "text",
+            "id": "TemplateTitle",
+            "label": "Title",
+            "value": "poll",
+            "description": "Browser title for this overlay."
+        },
+        {
+            "type": "number",
+            "id": "Duration",
+            "label": "Duration",
+            "value": 5.0,
+            "min": 0.1,
+            "max": 600,
+            "step": 0.1,
+            "description": "Display/hold duration in seconds for alert queue integration (point-reward templates matching this name)."
+        },
+        {
+            "type": "checkbox",
+            "id": "Queued",
+            "label": "Queued",
+            "value": false,
+            "description": "When enabled, point redemptions whose reward title matches this template name can hold the main alert queue."
+        },
+        {
+            "type": "separator",
+            "label": "Poll"
+        },
+        {
+            "type": "color",
+            "id": "poll1_color",
+            "label": "poll1 color",
+            "value": "#ffffff",
+            "description": "Color for 'poll1'."
+        },
+        {
+            "type": "color",
+            "id": "poll1_background_color",
+            "label": "poll1 background color",
+            "value": "rgba(15,23,42,0.85)",
+            "description": "Background Color for 'poll1'."
+        },
+        {
+            "type": "text",
+            "id": "poll1_font_family",
+            "label": "poll1 font family",
+            "value": "Roboto-Regular.ttf",
+            "description": "Font Family for 'poll1'."
+        },
+        {
+            "type": "color",
+            "id": "poll1_track_color",
+            "label": "poll1 track color",
+            "value": "rgba(255,255,255,0.15)",
+            "description": "Track Color for 'poll1'."
+        },
+        {
+            "type": "text",
+            "id": "poll1_font_weight",
+            "label": "poll1 font weight",
+            "value": "normal",
+            "description": "Font Weight for 'poll1'."
+        },
+        {
+            "type": "number",
+            "id": "poll1_font_size",
+            "label": "poll1 font size",
+            "value": 22,
+            "min": 0,
+            "max": 4096,
+            "description": "Font Size for 'poll1' (pixels)."
+        },
+        {
+            "type": "text",
+            "id": "poll1_layout",
+            "label": "poll1 layout",
+            "value": "vertical",
+            "description": "Layout for 'poll1'."
+        },
+        {
+            "type": "text",
+            "id": "poll1_display_mode",
+            "label": "poll1 display mode",
+            "value": "bars",
+            "description": "Display Mode for 'poll1'."
+        },
+        {
+            "type": "number",
+            "id": "poll1_max_items",
+            "label": "poll1 max items",
+            "value": 6.0,
+            "description": "Max Items for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_rotator_enabled",
+            "label": "poll1 rotator enabled",
+            "value": true,
+            "description": "Rotator Enabled for 'poll1'."
+        },
+        {
+            "type": "number",
+            "id": "poll1_rotator_seconds",
+            "label": "poll1 rotator seconds",
+            "value": 15.0,
+            "description": "Rotator Seconds for 'poll1'."
+        },
+        {
+            "type": "text",
+            "id": "poll1_rotator_animation",
+            "label": "poll1 rotator animation",
+            "value": "slide horizontal",
+            "description": "Rotator Animation for 'poll1'."
+        },
+        {
+            "type": "number",
+            "id": "poll1_rotator_animation_ms",
+            "label": "poll1 rotator animation ms",
+            "value": 800.0,
+            "description": "Rotator Animation Ms for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_show_timer",
+            "label": "poll1 show timer",
+            "value": true,
+            "description": "Show Timer for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_show_timer_bar",
+            "label": "poll1 show timer bar",
+            "value": true,
+            "description": "Show Timer Bar for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_show_counts",
+            "label": "poll1 show counts",
+            "value": true,
+            "description": "Show Counts for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_show_percent",
+            "label": "poll1 show percent",
+            "value": true,
+            "description": "Show Percent for 'poll1'."
+        },
+        {
+            "type": "text",
+            "id": "poll1_winner_mode",
+            "label": "poll1 winner mode",
+            "value": "highlight",
+            "description": "Winner Mode for 'poll1'."
+        },
+        {
+            "type": "number",
+            "id": "poll1_autohide_seconds",
+            "label": "poll1 autohide seconds",
+            "value": 0.0,
+            "description": "Autohide Seconds for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_store_data",
+            "label": "poll1 store data",
+            "value": true,
+            "description": "Store Data for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_send_winner_banner",
+            "label": "poll1 send winner banner",
+            "value": false,
+            "description": "Send Winner Banner for 'poll1'."
+        },
+        {
+            "type": "number",
+            "id": "poll1_font_size",
+            "label": "poll1 font size",
+            "value": 22.0,
+            "description": "Font Size for 'poll1'."
+        },
+        {
+            "type": "color",
+            "id": "poll1_color",
+            "label": "poll1 color",
+            "value": "#ffffff",
+            "description": "Color for 'poll1'."
+        },
+        {
+            "type": "text",
+            "id": "poll1_font_family",
+            "label": "poll1 font family",
+            "value": "Roboto-Regular.ttf",
+            "description": "Font Family for 'poll1'."
+        },
+        {
+            "type": "text",
+            "id": "poll1_font_weight",
+            "label": "poll1 font weight",
+            "value": "normal",
+            "description": "Font Weight for 'poll1'."
+        },
+        {
+            "type": "number",
+            "id": "poll1_row_gap",
+            "label": "poll1 row gap",
+            "value": 8.0,
+            "description": "Row Gap for 'poll1'."
+        },
+        {
+            "type": "color",
+            "id": "poll1_background_color",
+            "label": "poll1 background color",
+            "value": "rgba(15,23,42,0.85)",
+            "description": "Background Color for 'poll1'."
+        },
+        {
+            "type": "color",
+            "id": "poll1_bar_color",
+            "label": "poll1 bar color",
+            "value": "#a855f7",
+            "description": "Bar Color for 'poll1'."
+        },
+        {
+            "type": "color",
+            "id": "poll1_track_color",
+            "label": "poll1 track color",
+            "value": "rgba(255,255,255,0.15)",
+            "description": "Track Color for 'poll1'."
+        },
+        {
+            "type": "color",
+            "id": "poll1_winner_color",
+            "label": "poll1 winner color",
+            "value": "#facc15",
+            "description": "Winner Color for 'poll1'."
+        }
+    ],
+    "streamdeck_options": {
+        "description": "",
+        "actions": {}
+    },
+    "preview_mocks": [
+        {
+            "event": "instant_alert",
+            "label": "Random instant alert"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Follow",
+            "alert_type": "follow"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Sub",
+            "alert_type": "sub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Resub",
+            "alert_type": "resub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Gift sub",
+            "alert_type": "giftsub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Bits",
+            "alert_type": "bit"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Raid",
+            "alert_type": "raid"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Donation",
+            "alert_type": "donation"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Points",
+            "alert_type": "point"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Streak",
+            "alert_type": "streak"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Hype train",
+            "alert_type": "hype_train"
+        }
+    ]
+}

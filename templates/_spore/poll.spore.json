@@ -1,0 +1,151 @@
+{
+  "advanced_js": "",
+  "alert_system": "instant",
+  "design": {
+    "height": 300,
+    "width": 300
+  },
+  "duration_seconds": 5.0,
+  "dynamic_controls": {
+    "elements": []
+  },
+  "elements": [
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Poll",
+      "id": "poll1",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "props": {
+        "autohide_seconds": 0,
+        "background_color": "rgba(15,23,42,0.85)",
+        "bar_color": "#a855f7",
+        "color": "#ffffff",
+        "display_mode": "bars",
+        "font_family": "Roboto-Regular.ttf",
+        "font_size": 22,
+        "font_weight": "normal",
+        "layout": "vertical",
+        "max_items": 6,
+        "rotator_animation": "slide horizontal",
+        "rotator_animation_ms": 800,
+        "rotator_enabled": true,
+        "rotator_seconds": 15,
+        "row_gap": 8,
+        "send_winner_banner": false,
+        "show_counts": true,
+        "show_percent": true,
+        "show_timer": true,
+        "show_timer_bar": true,
+        "store_data": true,
+        "track_color": "rgba(255,255,255,0.15)",
+        "winner_color": "#facc15",
+        "winner_mode": "highlight"
+      },
+      "size": {
+        "h": 300,
+        "w": 300
+      },
+      "source_settings_expose": {
+        "autohide_seconds": true,
+        "background_color": true,
+        "bar_color": true,
+        "color": true,
+        "display_mode": true,
+        "font_family": true,
+        "font_size": true,
+        "font_weight": true,
+        "layout": true,
+        "max_items": true,
+        "rotator_animation": true,
+        "rotator_animation_ms": true,
+        "rotator_enabled": true,
+        "rotator_seconds": true,
+        "row_gap": true,
+        "send_winner_banner": true,
+        "show_counts": true,
+        "show_percent": true,
+        "show_timer": true,
+        "show_timer_bar": true,
+        "store_data": true,
+        "track_color": true,
+        "winner_color": true,
+        "winner_mode": true
+      },
+      "start_hidden": false,
+      "type": "poll"
+    }
+  ],
+  "preview_mocks": [
+    {
+      "event": "instant_alert",
+      "label": "Random instant alert"
+    },
+    {
+      "alert_type": "follow",
+      "event": "instant_alert",
+      "label": "Follow"
+    },
+    {
+      "alert_type": "sub",
+      "event": "instant_alert",
+      "label": "Sub"
+    },
+    {
+      "alert_type": "resub",
+      "event": "instant_alert",
+      "label": "Resub"
+    },
+    {
+      "alert_type": "giftsub",
+      "event": "instant_alert",
+      "label": "Gift sub"
+    },
+    {
+      "alert_type": "bit",
+      "event": "instant_alert",
+      "label": "Bits"
+    },
+    {
+      "alert_type": "raid",
+      "event": "instant_alert",
+      "label": "Raid"
+    },
+    {
+      "alert_type": "donation",
+      "event": "instant_alert",
+      "label": "Donation"
+    },
+    {
+      "alert_type": "point",
+      "event": "instant_alert",
+      "label": "Points"
+    },
+    {
+      "alert_type": "streak",
+      "event": "instant_alert",
+      "label": "Streak"
+    },
+    {
+      "alert_type": "hype_train",
+      "event": "instant_alert",
+      "label": "Hype train"
+    }
+  ],
+  "queued": false,
+  "streamdeck_options": {
+    "actions": {},
+    "description": ""
+  },
+  "template_name": "poll"
+}

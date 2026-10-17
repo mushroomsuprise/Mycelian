@@ -197,6 +197,32 @@
             border_width: 0,
             border_color: "#000000",
             border_radius: 8
+        },
+        poll: {
+            font_size: 22,
+            color: "#ffffff",
+            font_family: "Arial",
+            font_weight: "normal",
+            layout: "vertical",
+            display_mode: "bars",
+            show_timer: true,
+            show_timer_bar: true,
+            background_color: "rgba(15,23,42,0.85)",
+            bar_color: "#a855f7",
+            track_color: "rgba(255,255,255,0.15)",
+            winner_color: "#facc15",
+            row_gap: 8,
+            winner_mode: "highlight",
+            autohide_seconds: 0,
+            store_data: true,
+            send_winner_banner: false,
+            max_items: 6,
+            rotator_enabled: false,
+            rotator_seconds: 5,
+            rotator_animation: "slide horizontal",
+            rotator_animation_ms: 400,
+            show_counts: true,
+            show_percent: true
         }
     };
 
@@ -218,7 +244,8 @@
         now_playing: { w: 360, h: 84 },
         qr: { w: 160, h: 160 },
         embed: { w: 480, h: 270 },
-        stat_card: { w: 220, h: 72 }
+        stat_card: { w: 220, h: 72 },
+        poll: { w: 480, h: 640 }
     };
 
     var TEXT_STYLE_SCHEMA = [
@@ -515,6 +542,60 @@
               tooltip: "Color of the outline" },
             { key: "border_radius", label: "Corner radius (px)", type: "number",
               tooltip: "Rounds the card corners" }
+        ],
+        poll: [
+            { key: "layout", label: "Layout", type: "select",
+              tooltip: "Stack options in a column, or place them side by side",
+              options: ["vertical", "horizontal"] },
+            { key: "display_mode", label: "Display", type: "select",
+              tooltip: "Bars show a fill behind each option. Text only lists the names and counts.",
+              options: ["bars", "text"] },
+            { key: "max_items", label: "Items to show", type: "number", min: 0, max: 100,
+              tooltip: "How many options to show. The widget never shows more than fully fit in its height. 0 uses that maximum. A smaller number shows fewer." },
+            { key: "rotator_enabled", label: "Rotator", type: "checkbox",
+              tooltip: "Page through options that do not fit. Order stays highest votes first." },
+            { key: "rotator_seconds", label: "Rotator seconds", type: "number", min: 1, max: 3600,
+              tooltip: "How long each page stays up when the rotator is on" },
+            { key: "rotator_animation", label: "Rotator animation", type: "select",
+              tooltip: "How the next page of options enters. Default is a horizontal slide.",
+              options: ["slide horizontal", "slide vertical", "fade", "none"] },
+            { key: "rotator_animation_ms", label: "Rotator animation (ms)", type: "number", min: 0, max: 5000,
+              tooltip: "How long the rotator animation plays" },
+            { key: "show_timer", label: "Show timer", type: "checkbox",
+              tooltip: "Show the time left. Hidden while the poll is permanent." },
+            { key: "show_timer_bar", label: "Show timer bar", type: "checkbox",
+              tooltip: "Show a bar that shrinks as the poll runs. Hidden while the poll is permanent." },
+            { key: "show_counts", label: "Show counts", type: "checkbox",
+              tooltip: "Show the vote total on each option" },
+            { key: "show_percent", label: "Show percent", type: "checkbox",
+              tooltip: "Show each option's share of the votes" },
+            { key: "winner_mode", label: "After a winner", type: "select",
+              tooltip: "Highlight winners in the list, or clear the list so only the winners remain",
+              options: ["highlight", "winner_only"] },
+            { key: "autohide_seconds", label: "Autohide after winner (seconds)", type: "number", min: 0, max: 86400,
+              tooltip: "Hide the widget this long after a winner is chosen. 0 leaves the result up." },
+            { key: "store_data", label: "Store poll data", type: "checkbox",
+              tooltip: "Default for a new poll on this template. The Polls tab switch is what a restart uses after that." },
+            { key: "send_winner_banner", label: "Send winner as chat banner", type: "checkbox",
+              tooltip: "When this poll ends, send the winner banner using the message and duration from the Polls tab." },
+            { key: "font_size", label: "Size", type: "number",
+              tooltip: "Font size in pixels" },
+            { key: "color", label: "Color", type: "color",
+              tooltip: "Text color" },
+            { key: "font_family", label: "Font", type: "font",
+              tooltip: "Font family file or name" },
+            { key: "font_weight", label: "Bold", type: "bold",
+              tooltip: "Bold text" },
+            { key: "row_gap", label: "Row spacing (px)", type: "number",
+              tooltip: "Gap between options" },
+            { key: "background_color", label: "Background", type: "color",
+              tooltip: "Fill behind the poll" },
+            { key: "bar_color", label: "Bar color", type: "color",
+              tooltip: "Fill color of each vote bar" },
+            { key: "track_color", label: "Track color", type: "color",
+              tooltip: "Color behind the unfilled part of a bar" },
+            { key: "winner_color", label: "Winner color", type: "color",
+              tooltip: "Color used to mark the winning option" }
         ]
     };
 
@@ -539,6 +620,7 @@
         now_playing: "Now playing",
         qr: "QR code",
         stat_card: "Stat card",
+        poll: "Poll",
         text: "Text",
         timer: "Timer",
         video: "Video",
@@ -549,7 +631,7 @@
         { group: "Layout", types: ["container", "divider", "gradient", "shape"] },
         { group: "Media", types: ["audio", "embed", "image", "qr", "video"] },
         { group: "Text", types: ["text"] },
-        { group: "Widgets", types: ["list", "progress_bar", "stat_card", "wheel"] }
+        { group: "Widgets", types: ["list", "poll", "progress_bar", "stat_card", "wheel"] }
     ];
     var stagePreviewIntervals = [];
 
@@ -1740,6 +1822,49 @@
                 };
                 ttick();
                 stagePreviewIntervals.push(setInterval(ttick, 250));
+            } else if (el.type === "poll") {
+                var pnode = document.querySelector(
+                    ".ss-element[data-spore-id=\"" + cssEscapeSs(el.id) + "\"]"
+                );
+                if (!pnode || !state.model) { return; }
+                var templateName = state.model.template_name;
+                var bucket = pollPreviewBucket(el.id);
+                paintPollPreview(pnode, el, bucket, false);
+                var applyPoll = function (data) {
+                    if (!pnode.isConnected) { return; }
+                    bucket.data = data || { status: "idle", options: [] };
+                    if (data && data.server_now) {
+                        bucket.skew = Number(data.server_now) - Date.now() / 1000;
+                    }
+                    var sig = JSON.stringify({
+                        status: bucket.data.status,
+                        options: bucket.data.options,
+                        winners: bucket.data.winners
+                    });
+                    if (sig !== bucket.signature) {
+                        bucket.signature = sig;
+                        paintPollPreview(pnode, el, bucket, false);
+                    }
+                };
+                fetch("/api/spore-studio/poll-state/" + encodeURIComponent(templateName))
+                    .then(function (r) { return r.json(); })
+                    .then(applyPoll)
+                    .catch(function () {});
+                stagePreviewIntervals.push(setInterval(function () {
+                    tickPollPreviewClock(pnode, el, bucket);
+                }, 250));
+                stagePreviewIntervals.push(setInterval(function () {
+                    fetch("/api/spore-studio/poll-state/" + encodeURIComponent(templateName))
+                        .then(function (r) { return r.json(); })
+                        .then(applyPoll)
+                        .catch(function () {});
+                }, 1000));
+                stagePreviewIntervals.push(setInterval(function () {
+                    var props = el.props || {};
+                    if (!props.rotator_enabled || !bucket.pageCount || bucket.pageCount < 2) { return; }
+                    bucket.page = ((bucket.page || 0) + 1) % bucket.pageCount;
+                    paintPollPreview(pnode, el, bucket, true);
+                }, Math.max(1, Number((el.props || {}).rotator_seconds) || 5) * 1000));
             }
         });
     }
@@ -1983,7 +2108,8 @@
             now_playing: "\u266B",
             qr: "\u25A6",
             embed: "\u25A3",
-            stat_card: "#"
+            stat_card: "#",
+            poll: "\u2713"
         };
         return '<span class="ss-block__icon">' + (icons[type] || "?") + "</span>";
     }
@@ -4453,6 +4579,225 @@
         }
         if (el.type === "stat_card") {
             paintStatCardPreview(node, el);
+            return;
+        }
+        if (el.type === "poll") {
+            paintPollPreview(node, el, pollPreviewBucket(el.id));
+        }
+    }
+
+    var pollPreviewBuckets = {};
+
+    function pollPreviewBucket(id) {
+        if (!pollPreviewBuckets[id]) {
+            pollPreviewBuckets[id] = { data: null, skew: 0, page: 0, signature: "" };
+        }
+        return pollPreviewBuckets[id];
+    }
+
+    function pollPreviewRemaining(bucket) {
+        var data = bucket && bucket.data;
+        if (!data || data.status !== "open" || data.permanent || !data.ends_at) { return null; }
+        return Math.max(0, Number(data.ends_at) - (Date.now() / 1000 + (bucket.skew || 0)));
+    }
+
+    function pollPreviewClockText(seconds) {
+        var total = Math.max(0, Math.ceil(seconds));
+        var minutes = Math.floor(total / 60);
+        var secs = total % 60;
+        var hours = Math.floor(minutes / 60);
+        minutes = minutes % 60;
+        function pad(n) { return (n < 10 ? "0" : "") + n; }
+        if (hours) { return hours + ":" + pad(minutes) + ":" + pad(secs); }
+        return pad(minutes) + ":" + pad(secs);
+    }
+
+    function paintPollPreview(node, el, bucket, animate) {
+        var props = el.props || {};
+        bucket = bucket || pollPreviewBucket(el.id);
+        var data = bucket.data || { status: "idle", options: [], permanent: true };
+        var handle = node.querySelector(".ss-element__handle");
+        var oldPage = null;
+        if (animate) {
+            oldPage = node.querySelector(".ss-poll-page");
+            if (oldPage) { oldPage.remove(); }
+        }
+        node.style.display = "flex";
+        node.style.flexDirection = "column";
+        node.style.gap = "6px";
+        node.style.padding = "8px";
+        node.style.boxSizing = "border-box";
+        node.style.overflow = "hidden";
+        node.style.color = props.color || "#ffffff";
+        node.style.fontSize = (props.font_size || 22) + "px";
+        node.style.fontFamily = props.font_family || "Arial";
+        node.style.fontWeight = props.font_weight || "normal";
+        node.style.background = props.background_color || "rgba(15,23,42,0.85)";
+        node.textContent = "";
+        if (handle) { node.appendChild(handle); }
+        var options = Array.isArray(data.options) ? data.options.slice() : [];
+        if (data.status === "ended" && props.winner_mode === "winner_only") {
+            options = options.filter(function (row) { return row && row.winner; });
+        }
+        var remain = pollPreviewRemaining(bucket);
+        var showTimer = props.show_timer !== false && data.status === "open" && !data.permanent && remain != null;
+        var showBar = props.show_timer_bar !== false && showTimer;
+        var timerEl = null;
+        if (showTimer || showBar) {
+            timerEl = document.createElement("div");
+            timerEl.className = "ss-poll-timer";
+            timerEl.style.fontSize = "0.7em";
+            if (showTimer) {
+                var text = document.createElement("div");
+                text.className = "ss-poll-timer-text";
+                text.textContent = pollPreviewClockText(remain);
+                timerEl.appendChild(text);
+            }
+            if (showBar) {
+                var track = document.createElement("div");
+                track.style.height = "6px";
+                track.style.marginTop = "4px";
+                track.style.borderRadius = "3px";
+                track.style.background = props.track_color || "rgba(255,255,255,0.15)";
+                track.style.overflow = "hidden";
+                var fill = document.createElement("div");
+                fill.className = "ss-poll-timer-fill";
+                var duration = Number(data.duration_seconds || 0);
+                var pct = duration > 0 ? Math.max(0, Math.min(100, (remain / duration) * 100)) : 0;
+                fill.style.height = "100%";
+                fill.style.width = pct + "%";
+                fill.style.background = props.bar_color || "#a855f7";
+                track.appendChild(fill);
+                timerEl.appendChild(track);
+            }
+            node.appendChild(timerEl);
+        }
+        var stage = document.createElement("div");
+        stage.className = "ss-poll-stage";
+        stage.style.position = "relative";
+        stage.style.flex = "1";
+        stage.style.minHeight = "0";
+        stage.style.width = "100%";
+        stage.style.overflow = "hidden";
+        stage.style.transform = "translateZ(0)";
+        node.appendChild(stage);
+        var list = document.createElement("div");
+        list.className = "ss-poll-page";
+        list.style.position = "relative";
+        list.style.display = "flex";
+        list.style.flexDirection = props.layout === "horizontal" ? "row" : "column";
+        list.style.gap = (props.row_gap != null ? props.row_gap : 8) + "px";
+        list.style.width = "100%";
+        list.style.minHeight = "0";
+        list.style.overflow = "hidden";
+        list.style.flex = "1";
+        if (!options.length) {
+            var empty = document.createElement("div");
+            empty.textContent = "No poll categories yet";
+            empty.style.opacity = "0.7";
+            empty.style.fontSize = "0.75em";
+            list.appendChild(empty);
+            stage.appendChild(list);
+            node.title = "Live poll for this template. Add categories in Chatbot → Polls.";
+            return;
+        }
+        stage.appendChild(list);
+        var gap = props.row_gap != null ? Number(props.row_gap) : 8;
+        var horizontal = props.layout === "horizontal";
+        var leader = 0;
+        options.forEach(function (row) {
+            var count = Number(row && row.votes || 0);
+            if (count > leader) { leader = count; }
+        });
+        function makeRow(sample) {
+            var row = document.createElement("div");
+            row.style.flex = horizontal ? "0 0 auto" : "0 0 auto";
+            row.style.minWidth = "0";
+            row.style.width = horizontal ? "auto" : "100%";
+            var label = document.createElement("div");
+            var meta = [];
+            if (props.show_counts !== false) { meta.push(String(Number(sample.votes || 0))); }
+            if (props.show_percent !== false) { meta.push(String(sample.percent != null ? sample.percent : 0) + "%"); }
+            label.textContent = (sample.name || "") + (meta.length ? "  " + meta.join(" · ") : "");
+            label.style.whiteSpace = "nowrap";
+            label.style.overflow = "hidden";
+            label.style.textOverflow = "ellipsis";
+            if (sample.winner) { label.style.color = props.winner_color || "#facc15"; }
+            row.appendChild(label);
+            if (props.display_mode !== "text") {
+                var bar = document.createElement("div");
+                bar.style.height = "8px";
+                bar.style.marginTop = "4px";
+                bar.style.borderRadius = "4px";
+                bar.style.background = props.track_color || "rgba(255,255,255,0.15)";
+                bar.style.overflow = "hidden";
+                var fillBar = document.createElement("div");
+                fillBar.style.height = "100%";
+                var votes = Number(sample.votes || 0);
+                fillBar.style.width = (leader > 0 ? (votes / leader) * 100 : 0) + "%";
+                fillBar.style.background = props.bar_color || "#a855f7";
+                bar.appendChild(fillBar);
+                row.appendChild(bar);
+            }
+            return row;
+        }
+        var probe = makeRow(options[0]);
+        probe.style.visibility = "hidden";
+        list.appendChild(probe);
+        var rowH = probe.offsetHeight || 1;
+        var rowW = probe.offsetWidth || 1;
+        list.removeChild(probe);
+        var timerH = timerEl ? timerEl.offsetHeight + 6 : 0;
+        var availH = Math.max(0, node.clientHeight - 16 - timerH);
+        var availW = Math.max(0, node.clientWidth - 16);
+        var fit = horizontal
+            ? Math.floor((availW + gap) / (rowW + gap))
+            : Math.floor((availH + gap) / (rowH + gap));
+        if (!isFinite(fit) || fit < 1) { fit = 1; }
+        var requested = parseInt(props.max_items, 10);
+        if (!isFinite(requested) || requested < 0) { requested = 0; }
+        var pageSize = requested > 0 ? Math.min(requested, fit) : fit;
+        if (pageSize < 1) { pageSize = 1; }
+        var pageCount = Math.max(1, Math.ceil(options.length / pageSize));
+        if (bucket.page >= pageCount) { bucket.page = 0; }
+        var rotator = !!props.rotator_enabled && options.length > pageSize;
+        var page = rotator ? bucket.page : 0;
+        bucket.pageCount = pageCount;
+        bucket.pageSize = pageSize;
+        var slice = options.slice(page * pageSize, page * pageSize + pageSize);
+        slice.forEach(function (sample) { list.appendChild(makeRow(sample)); });
+        if (animate && oldPage && props.rotator_animation !== "none") {
+            var anim = props.rotator_animation || "slide horizontal";
+            var ms = Number(props.rotator_animation_ms);
+            if (!isFinite(ms) || ms < 0) { ms = 400; }
+            var motion = anim === "fade" ? "Fade" : (anim === "slide vertical" ? "SlideY" : "SlideX");
+            oldPage.style.position = "absolute";
+            oldPage.style.left = "0";
+            oldPage.style.right = "0";
+            oldPage.style.top = "0";
+            oldPage.style.width = "100%";
+            oldPage.style.margin = "0";
+            oldPage.style.pointerEvents = "none";
+            oldPage.style.animation = "ssPoll" + motion + "Out " + (ms / 1000) + "s ease both";
+            stage.appendChild(oldPage);
+            list.style.animation = "ssPoll" + motion + "In " + (ms / 1000) + "s ease both";
+            setTimeout(function () {
+                if (oldPage.parentNode) { oldPage.parentNode.removeChild(oldPage); }
+            }, ms + 50);
+        }
+        node.title = "Live poll for this template.";
+    }
+
+    function tickPollPreviewClock(node, el, bucket) {
+        if (!node || !bucket || !bucket.data) { return; }
+        var remain = pollPreviewRemaining(bucket);
+        var text = node.querySelector(".ss-poll-timer-text");
+        if (text && remain != null) { text.textContent = pollPreviewClockText(remain); }
+        var fill = node.querySelector(".ss-poll-timer-fill");
+        if (fill && remain != null) {
+            var duration = Number(bucket.data.duration_seconds || 0);
+            var pct = duration > 0 ? Math.max(0, Math.min(100, (remain / duration) * 100)) : 0;
+            fill.style.width = pct + "%";
         }
     }
 
@@ -4837,10 +5182,8 @@
         stage.style.width = design.width + "px";
         stage.style.height = design.height + "px";
 
-        var dims = document.createElement("div");
-        dims.className = "ss-stage-dims";
-        dims.textContent = design.width + " \u00d7 " + design.height;
-        stage.appendChild(dims);
+        var dims = $("#ss-stage-dims");
+        if (dims) { dims.textContent = design.width + " \u00d7 " + design.height; }
 
         var elems = state.model.elements || [];
         var byId = {};
@@ -4974,7 +5317,8 @@
                 track.appendChild(fill);
                 node.appendChild(track);
             } else if (el.type === "list" || el.type === "wheel" || el.type === "now_playing" ||
-                    el.type === "qr" || el.type === "embed" || el.type === "stat_card") {
+                    el.type === "qr" || el.type === "embed" || el.type === "stat_card" ||
+                    el.type === "poll") {
                 paintWidgetPreview(node, el);
             }
 

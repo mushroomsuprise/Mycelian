@@ -1946,6 +1946,333 @@
         });
     }
 
+    function sporePollTemplateName() {
+        if (window.__sporeTemplateName) { return String(window.__sporeTemplateName); }
+        var root = document.getElementById('sporeRoot');
+        return root ? String(root.getAttribute('data-mycelian-template') || '') : '';
+    }
+
+    function sporeNotePollClock(el, data) {
+        if (!el || !data || !data.server_now) { return; }
+        var stamp = Number(data.server_now);
+        if (!stamp || el._sporePollServerNow === stamp) { return; }
+        el._sporePollServerNow = stamp;
+        el._sporePollSkew = stamp - (Date.now() / 1000);
+    }
+
+    function sporePollRemaining(el, data) {
+        if (!data || data.status !== 'open' || data.permanent || !data.ends_at) { return null; }
+        sporeNotePollClock(el, data);
+        var skew = el._sporePollSkew || 0;
+        return Math.max(0, Number(data.ends_at) - ((Date.now() / 1000) + skew));
+    }
+
+    function sporeFormatPollClock(seconds) {
+        var total = Math.max(0, Math.ceil(seconds));
+        var minutes = Math.floor(total / 60);
+        var secs = total % 60;
+        var hours = Math.floor(minutes / 60);
+        minutes = minutes % 60;
+        function pad(n) { return (n < 10 ? '0' : '') + n; }
+        if (hours) { return hours + ':' + pad(minutes) + ':' + pad(secs); }
+        return pad(minutes) + ':' + pad(secs);
+    }
+
+    function sporeUpdatePollClock(el) {
+        var data = el._sporePollLast || {};
+        var timer = el.querySelector('.spore-poll-timer');
+        if (!timer) { return; }
+        var showText = sporeOn(el, 'data-spore-poll-timer', true);
+        var showBar = sporeOn(el, 'data-spore-poll-timer-bar', true);
+        var remain = sporePollRemaining(el, data);
+        var visible = data.status === 'open' && !data.permanent && remain != null && (showText || showBar);
+        if (!visible) {
+            timer.hidden = true;
+            return;
+        }
+        timer.hidden = false;
+        var text = timer.querySelector('.spore-poll-timer-text');
+        var track = timer.querySelector('.spore-poll-timer-track');
+        var fill = timer.querySelector('.spore-poll-timer-fill');
+        if (text) {
+            text.style.display = showText ? '' : 'none';
+            if (showText) { text.textContent = sporeFormatPollClock(remain); }
+        }
+        if (track) {
+            track.style.display = showBar ? '' : 'none';
+            track.style.background = sporeAttr(el, 'data-spore-poll-track', 'rgba(255,255,255,0.15)');
+        }
+        if (fill && showBar) {
+            var duration = Number(data.duration_seconds || 0);
+            var pct = duration > 0 ? Math.max(0, Math.min(100, (remain / duration) * 100)) : 0;
+            fill.style.width = pct + '%';
+            fill.style.background = sporeAttr(el, 'data-spore-poll-bar', '#a855f7');
+        }
+    }
+
+    function sporeArmPollClock(el, data) {
+        var want = !!(data && data.status === 'open' && !data.permanent && data.ends_at &&
+            (sporeOn(el, 'data-spore-poll-timer', true) || sporeOn(el, 'data-spore-poll-timer-bar', true)));
+        if (!want) {
+            if (el._sporePollClock) {
+                clearInterval(el._sporePollClock);
+                el._sporePollClock = null;
+            }
+            return;
+        }
+        if (el._sporePollClock) { return; }
+        el._sporePollClock = setInterval(function () { sporeUpdatePollClock(el); }, 250);
+    }
+
+    function sporeArmPollRotator(el, pageCount, seconds, enabled) {
+        var key = enabled ? (String(pageCount) + ':' + String(seconds)) : '';
+        if (el._sporePollRotKey === key) { return; }
+        if (el._sporePollRotTimer) {
+            clearInterval(el._sporePollRotTimer);
+            el._sporePollRotTimer = null;
+        }
+        el._sporePollRotKey = key;
+        if (!enabled) {
+            el._sporePollPage = 0;
+            return;
+        }
+        el._sporePollRotTimer = setInterval(function () {
+            el._sporePollPage = ((el._sporePollPage || 0) + 1) % pageCount;
+            if (el._sporePollLast) { sporePaintPoll(el, el._sporePollLast, true); }
+        }, seconds * 1000);
+    }
+
+    function sporePollAnimClass(raw) {
+        var name = String(raw || 'slide_horizontal').toLowerCase().replace(/\s+/g, '_');
+        if (name === 'slide_vertical' || name === 'vertical') { return 'slide_vertical'; }
+        if (name === 'fade') { return 'fade'; }
+        if (name === 'none') { return 'none'; }
+        return 'slide_horizontal';
+    }
+
+    function sporePollMakeOption(row, showBars, showCounts, showPercent, barColor, trackColor, winnerColor, leader) {
+        var option = document.createElement('div');
+        option.className = 'spore-poll-option';
+        if (row && row.winner) { option.classList.add('is-winner'); }
+        var heading = document.createElement('div');
+        var name = document.createElement('span');
+        name.className = 'spore-poll-name';
+        name.textContent = row && row.name ? String(row.name) : '';
+        if (row && row.winner) { name.style.color = winnerColor; }
+        heading.appendChild(name);
+        var metaBits = [];
+        if (showCounts) { metaBits.push(String(Number(row && row.votes || 0))); }
+        if (showPercent) {
+            metaBits.push(String(row && row.percent != null ? row.percent : 0) + '%');
+        }
+        if (metaBits.length) {
+            var meta = document.createElement('span');
+            meta.className = 'spore-poll-meta';
+            meta.textContent = metaBits.join(' · ');
+            heading.appendChild(meta);
+        }
+        option.appendChild(heading);
+        if (showBars) {
+            var track = document.createElement('div');
+            track.className = 'spore-poll-bar';
+            track.style.background = trackColor;
+            var fill = document.createElement('div');
+            fill.className = 'spore-poll-bar-fill';
+            fill.style.background = barColor;
+            var votes = Number(row && row.votes || 0);
+            fill.style.width = (leader > 0 ? (votes / leader) * 100 : 0) + '%';
+            track.appendChild(fill);
+            option.appendChild(track);
+        }
+        return option;
+    }
+
+    function sporePollFitCount(el, host, probe, gap, horizontal) {
+        probe.style.visibility = 'hidden';
+        probe.style.flex = '0 0 auto';
+        probe.style.width = horizontal ? 'auto' : '100%';
+        host.appendChild(probe);
+        var rowH = probe.offsetHeight || 1;
+        var rowW = probe.offsetWidth || 1;
+        host.removeChild(probe);
+        var style = window.getComputedStyle(el);
+        var padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+        var padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+        var outerGap = parseFloat(style.rowGap || style.gap) || 0;
+        var timer = el.querySelector('.spore-poll-timer');
+        var timerH = 0;
+        if (timer && !timer.hidden) { timerH = timer.offsetHeight + outerGap; }
+        var availH = Math.max(0, el.clientHeight - padY - timerH);
+        var availW = Math.max(0, el.clientWidth - padX);
+        var fitH = Math.floor((availH + gap) / (rowH + gap));
+        var fitW = Math.floor((availW + gap) / (rowW + gap));
+        var fit = horizontal ? fitW : fitH;
+        if (!isFinite(fit) || fit < 1) { fit = availH >= rowH || availW >= rowW ? 1 : 1; }
+        return fit;
+    }
+
+    function sporePaintPoll(el, data, fromRotator) {
+        if (!el) { return; }
+        data = data || {};
+        el._sporePollLast = data;
+        var status = String(data.status || 'idle');
+        if (el._sporePollHide) {
+            clearTimeout(el._sporePollHide);
+            el._sporePollHide = null;
+        }
+        if (status === 'idle') {
+            el.style.display = 'none';
+            sporeArmPollRotator(el, 1, 5, false);
+            sporeArmPollClock(el, data);
+            return;
+        }
+        var autohide = parseFloat(sporeAttr(el, 'data-spore-poll-autohide', '0'));
+        if (!isFinite(autohide) || autohide < 0) { autohide = 0; }
+        if (status === 'ended' && autohide > 0) {
+            var endedAt = Number(data.ended_at || 0);
+            var serverNow = Number(data.server_now || (Date.now() / 1000));
+            var age = endedAt ? (serverNow - endedAt) : autohide;
+            if (age >= autohide) {
+                el.style.display = 'none';
+                sporeArmPollRotator(el, 1, 5, false);
+                sporeArmPollClock(el, data);
+                return;
+            }
+            el.style.display = '';
+            el._sporePollHide = setTimeout(function () {
+                el.style.display = 'none';
+            }, Math.max(0, autohide - age) * 1000);
+        } else {
+            el.style.display = '';
+        }
+
+        var size = sporeAttr(el, 'data-spore-poll-font-size', '');
+        if (size) { el.style.fontSize = parseFloat(size) + 'px'; }
+        var color = sporeAttr(el, 'data-spore-poll-color', '');
+        if (color) { el.style.color = color; }
+        var weight = sporeAttr(el, 'data-spore-poll-weight', '');
+        if (weight) { el.style.fontWeight = weight; }
+        var bg = sporeAttr(el, 'data-spore-poll-bg', '');
+        if (bg) { el.style.background = bg; }
+
+        var options = Array.isArray(data.options) ? data.options.slice() : [];
+        var winnerMode = sporeAttr(el, 'data-spore-poll-winner-mode', 'highlight');
+        if (status === 'ended' && winnerMode === 'winner_only') {
+            options = options.filter(function (row) { return row && row.winner; });
+        }
+        var host = el.querySelector('.spore-poll-options');
+        if (!host) { return; }
+        sporeUpdatePollClock(el);
+        sporeArmPollClock(el, data);
+        var horizontal = sporeAttr(el, 'data-spore-poll-layout', 'vertical') === 'horizontal';
+        var gap = parseFloat(sporeAttr(el, 'data-spore-poll-gap', '8'));
+        if (!isFinite(gap) || gap < 0) { gap = 0; }
+        var showBars = sporeAttr(el, 'data-spore-poll-display', 'bars') !== 'text';
+        var showCounts = sporeOn(el, 'data-spore-poll-counts', true);
+        var showPercent = sporeOn(el, 'data-spore-poll-percent', true);
+        var barColor = sporeAttr(el, 'data-spore-poll-bar', '#a855f7');
+        var trackColor = sporeAttr(el, 'data-spore-poll-track', 'rgba(255,255,255,0.15)');
+        var winnerColor = sporeAttr(el, 'data-spore-poll-winner', '#facc15');
+        var leader = 0;
+        options.forEach(function (row) {
+            var count = Number(row && row.votes || 0);
+            if (count > leader) { leader = count; }
+        });
+        var heldPage = null;
+        if (fromRotator) {
+            heldPage = host.querySelector('.spore-poll-page:not(.is-exiting)');
+            if (heldPage) { heldPage.remove(); }
+        }
+        host.textContent = '';
+        host.style.position = 'relative';
+        host.style.overflow = 'hidden';
+        host.style.transform = 'translateZ(0)';
+        var style = window.getComputedStyle(el);
+        var padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+        var outerGap = parseFloat(style.rowGap || style.gap) || 0;
+        var timer = el.querySelector('.spore-poll-timer');
+        var timerH = timer && !timer.hidden ? timer.offsetHeight + outerGap : 0;
+        var availH = Math.max(0, el.clientHeight - padY - timerH);
+        host.style.height = availH + 'px';
+        var probe = sporePollMakeOption(
+            options[0] || { name: 'Option', votes: 0, percent: 0 },
+            showBars, showCounts, showPercent, barColor, trackColor, winnerColor, leader
+        );
+        var fit = options.length
+            ? sporePollFitCount(el, host, probe, gap, horizontal)
+            : 1;
+        var maxItems = parseInt(sporeAttr(el, 'data-spore-poll-max', '6'), 10);
+        if (!isFinite(maxItems) || maxItems < 0) { maxItems = 0; }
+        var pageSize = maxItems > 0 ? Math.min(maxItems, fit) : fit;
+        if (pageSize < 1) { pageSize = 1; }
+        var pageCount = Math.max(1, Math.ceil((options.length || 1) / pageSize));
+        if ((el._sporePollPage || 0) >= pageCount) { el._sporePollPage = 0; }
+        var rotatorOn = sporeOn(el, 'data-spore-poll-rotator', false) && options.length > pageSize;
+        var rotSeconds = parseFloat(sporeAttr(el, 'data-spore-poll-rotator-seconds', '5'));
+        if (!isFinite(rotSeconds) || rotSeconds <= 0) { rotSeconds = 5; }
+        sporeArmPollRotator(el, pageCount, rotSeconds, rotatorOn);
+        var page = rotatorOn ? (el._sporePollPage || 0) : 0;
+        var slice = options.slice(page * pageSize, (page * pageSize) + pageSize);
+        var pageEl = document.createElement('div');
+        pageEl.className = 'spore-poll-page' + (horizontal ? ' is-horizontal' : '');
+        pageEl.style.gap = gap + 'px';
+        var anim = 'none';
+        var animMs = 400;
+        if (fromRotator) {
+            anim = sporePollAnimClass(sporeAttr(el, 'data-spore-poll-rotator-anim', 'slide_horizontal'));
+            animMs = parseFloat(sporeAttr(el, 'data-spore-poll-rotator-anim-ms', '400'));
+            if (!isFinite(animMs) || animMs < 0) { animMs = 400; }
+        }
+        slice.forEach(function (row) {
+            pageEl.appendChild(sporePollMakeOption(
+                row, showBars, showCounts, showPercent, barColor, trackColor, winnerColor, leader
+            ));
+        });
+        var previous = heldPage;
+        if (previous && anim !== 'none') {
+            previous.classList.add('is-exiting', 'is-exit-' + anim);
+            previous.style.position = 'absolute';
+            previous.style.left = '0';
+            previous.style.right = '0';
+            previous.style.top = '0';
+            previous.style.width = '100%';
+            previous.style.margin = '0';
+            previous.style.animationDuration = (animMs / 1000) + 's';
+            host.appendChild(previous);
+            var removePrevious = function () {
+                if (previous.parentNode === host) { host.removeChild(previous); }
+            };
+            previous.addEventListener('animationend', removePrevious);
+            setTimeout(removePrevious, animMs + 50);
+        }
+        if (fromRotator && anim !== 'none') {
+            pageEl.classList.add('is-' + anim);
+            pageEl.style.animationDuration = (animMs / 1000) + 's';
+        }
+        host.appendChild(pageEl);
+    }
+
+    function sporeBindPoll(el) {
+        if (!el || el.getAttribute('data-spore-poll-bound') === '1') { return; }
+        el.setAttribute('data-spore-poll-bound', '1');
+        function onPayload(payload) {
+            payload = payload || {};
+            var mine = sporePollTemplateName();
+            if (!payload.template || !mine || String(payload.template) !== mine) { return; }
+            sporePaintPoll(el, payload);
+        }
+        if (typeof socket !== 'undefined' && socket && socket.on) {
+            socket.on('poll_state', onPayload);
+            socket.on('poll_ended', onPayload);
+            socket.on('poll_sync', onPayload);
+            if (!window.__sporePollRequested && socket.emit) {
+                window.__sporePollRequested = true;
+                socket.emit('poll_request_state', { template: sporePollTemplateName() });
+            }
+        }
+        sporePaintPoll(el, { status: 'idle', options: [] });
+    }
+
     function sporeInitWidgets() {
         var lists = document.querySelectorAll('[data-spore-type="list"]');
         for (var i = 0; i < lists.length; i++) { sporeBindList(lists[i]); }
@@ -1979,6 +2306,8 @@
         for (var p = 0; p < playing.length; p++) { sporePaintNowPlaying(playing[p], {}); }
         var qrs = document.querySelectorAll('[data-spore-type="qr"]');
         for (var q = 0; q < qrs.length; q++) { sporePaintQr(qrs[q]); }
+        var polls = document.querySelectorAll('[data-spore-type="poll"]');
+        for (var pollIndex = 0; pollIndex < polls.length; pollIndex++) { sporeBindPoll(polls[pollIndex]); }
         var embeds = document.querySelectorAll('[data-spore-type="embed"]');
         for (var e = 0; e < embeds.length; e++) { sporePaintEmbed(embeds[e]); }
         sporeRefreshStatCards();

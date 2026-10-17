@@ -271,6 +271,15 @@ class GiveawayStatistics:
 
 
 @dataclass
+class PollStatistics:
+    """Lifetime totals for chatbot polls, keyed by category keyword."""
+
+    polls_completed: int = 0
+    total_votes: int = 0
+    options: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
 class UserChatStatistics:
     """Per-user statistics for chat messages"""
 
@@ -320,6 +329,7 @@ class StatisticsData:
     chatbot: ChatbotStatistics = field(default_factory=ChatbotStatistics)
     quotes: QuoteStatistics = field(default_factory=QuoteStatistics)
     giveaways: GiveawayStatistics = field(default_factory=GiveawayStatistics)
+    polls: PollStatistics = field(default_factory=PollStatistics)
     chat: ChatStatistics = field(default_factory=ChatStatistics)
     templates: Dict[str, TemplateStatistics] = field(
         default_factory=dict
@@ -848,7 +858,8 @@ class StatisticsManager:
             username: The username associated with the event.
             event_type: Type of event (bit, sub, resub, giftsub, donation, point_redeem, follow,
                 raid, watch_streak, connector, chatbot_command, chatbot_event, quote_redeem,
-                chat_message, giveaway_entry, giveaway_win, giveaway_draw_complete).
+                chat_message, giveaway_entry, giveaway_win, giveaway_draw_complete,
+                poll_complete, poll_win).
             amount: Numeric amount (bits, gift quantity, points, etc.).
             alert_name: Name of the alert that was triggered.
         """
@@ -2519,6 +2530,26 @@ class StatisticsManager:
                         )
                     self.data.giveaways.user_wins = {}
 
+                if "polls" in data_dict and isinstance(data_dict["polls"], dict):
+                    pdict = data_dict["polls"]
+                    self.data.polls.polls_completed = int(pdict.get("polls_completed", 0) or 0)
+                    self.data.polls.total_votes = int(pdict.get("total_votes", 0) or 0)
+                    options_raw = pdict.get("options") or {}
+                    options: Dict[str, Dict[str, Any]] = {}
+                    if isinstance(options_raw, dict):
+                        for key, row in options_raw.items():
+                            if not isinstance(row, dict):
+                                continue
+                            keyword = str(key or "").strip()
+                            if not keyword:
+                                continue
+                            options[keyword] = {
+                                "name": str(row.get("name") or keyword),
+                                "votes": int(row.get("votes") or 0),
+                                "wins": int(row.get("wins") or 0),
+                            }
+                    self.data.polls.options = options
+
                 if "chat" in data_dict:
                     chat_dict = data_dict["chat"]
                     self._take_user_map(chat_dict, "user_stats", "chat.user_stats")
@@ -2712,6 +2743,19 @@ class StatisticsManager:
                         "giveaways_completed": self.data.giveaways.giveaways_completed,
                         "total_entry_events": self.data.giveaways.total_entry_events,
                         "user_wins": dict(self.data.giveaways.user_wins),
+                    },
+                    "polls": {
+                        "polls_completed": self.data.polls.polls_completed,
+                        "total_votes": self.data.polls.total_votes,
+                        "options": {
+                            keyword: {
+                                "name": str((row or {}).get("name") or keyword),
+                                "votes": int((row or {}).get("votes") or 0),
+                                "wins": int((row or {}).get("wins") or 0),
+                            }
+                            for keyword, row in (self.data.polls.options or {}).items()
+                            if isinstance(row, dict)
+                        },
                     },
                     "chat": {
                         "twitch_messages_received": self.data.chat.twitch_messages_received,
@@ -3437,6 +3481,77 @@ class StatisticsManager:
             self.data.giveaways.giveaways_completed,
         )
 
+    def _top_poll_option(self, field: str) -> Dict[str, Any]:
+        best_name = ""
+        best_keyword = ""
+        best_count = 0
+        for keyword, row in (self.data.polls.options or {}).items():
+            if not isinstance(row, dict):
+                continue
+            count = int(row.get(field) or 0)
+            if count > best_count:
+                best_count = count
+                best_keyword = str(keyword)
+                best_name = str(row.get("name") or keyword)
+        return {"name": best_name, "keyword": best_keyword, "count": best_count}
+
+    @_stats_data_locked
+    def record_poll_finished(
+        self,
+        options: Optional[List[Dict[str, Any]]] = None,
+        winners: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """Count one finished poll. Votes and wins are stored by keyword, not per voter."""
+        self.data.polls.polls_completed += 1
+        winner_keys = set()
+        for winner in winners or []:
+            if not isinstance(winner, dict):
+                continue
+            keyword = str(winner.get("keyword") or "").strip().casefold()
+            if keyword:
+                winner_keys.add(keyword)
+        vote_sum = 0
+        for option in options or []:
+            if not isinstance(option, dict):
+                continue
+            keyword = str(option.get("keyword") or "").strip()
+            if not keyword:
+                continue
+            key = keyword.casefold()
+            try:
+                votes = int(option.get("votes") or 0)
+            except (TypeError, ValueError):
+                votes = 0
+            if votes <= 0 and key not in winner_keys:
+                continue
+            vote_sum += max(0, votes)
+            slot = self.data.polls.options.get(key)
+            if not isinstance(slot, dict):
+                slot = {"name": str(option.get("name") or keyword), "votes": 0, "wins": 0}
+                self.data.polls.options[key] = slot
+            if option.get("name"):
+                slot["name"] = str(option.get("name"))
+            slot["votes"] = int(slot.get("votes") or 0) + max(0, votes)
+        self.data.polls.total_votes += vote_sum
+        for key in winner_keys:
+            slot = self.data.polls.options.get(key)
+            if not isinstance(slot, dict):
+                slot = {"name": key, "votes": 0, "wins": 0}
+                self.data.polls.options[key] = slot
+            slot["wins"] = int(slot.get("wins") or 0) + 1
+            self._record_event(
+                self._STATS_SYSTEM_USERNAME,
+                "poll_win",
+                1.0,
+                str(slot.get("name") or key),
+            )
+        self._record_event(
+            self._STATS_SYSTEM_USERNAME,
+            "poll_complete",
+            float(vote_sum),
+            "",
+        )
+
     @_stats_data_locked
     def _track_user_chat(self, username: str):
         """Helper method to track per-user chat statistics"""
@@ -3748,6 +3863,22 @@ class StatisticsManager:
                     else 0.0
                 ),
                 "user_wins": dict(self.data.giveaways.user_wins),
+            },
+            "polls": {
+                "polls_completed": self.data.polls.polls_completed,
+                "total_votes": self.data.polls.total_votes,
+                "average_votes_per_poll": (
+                    self.data.polls.total_votes / self.data.polls.polls_completed
+                    if self.data.polls.polls_completed
+                    else 0.0
+                ),
+                "most_votes": self._top_poll_option("votes"),
+                "most_wins": self._top_poll_option("wins"),
+                "options": {
+                    keyword: dict(row)
+                    for keyword, row in (self.data.polls.options or {}).items()
+                    if isinstance(row, dict)
+                },
             },
             "chat": {
                 "twitch_messages_received": self.data.chat.twitch_messages_received,

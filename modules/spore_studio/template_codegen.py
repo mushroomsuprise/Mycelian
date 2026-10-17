@@ -226,6 +226,20 @@ _NON_STYLE_PROP_KEYS = frozenset(
         "result_bold",
         "result_format",
         "result_hold_s",
+        "display_mode",
+        "show_timer",
+        "show_timer_bar",
+        "winner_color",
+        "winner_mode",
+        "autohide_seconds",
+        "store_data",
+        "send_winner_banner",
+        "rotator_enabled",
+        "rotator_seconds",
+        "rotator_animation",
+        "rotator_animation_ms",
+        "show_counts",
+        "show_percent",
     }
 )
 
@@ -298,8 +312,10 @@ def _compile_spore_font_css(
         eid = _slugify_id(el.get("id"))
 
         if _expose_field(el, "font_family"):
+            default_fn = resolve_font_filename(raw)
+            if not default_fn:
+                continue
             fam = exposed_element_font_family(eid)
-            default_fn = resolve_font_filename(raw) or raw
             jvar = f"{eid}_font_family"
             jinja_src = "{{ " + jvar + "|default(" + json.dumps(default_fn) + ") }}"
             lines.append(
@@ -869,6 +885,47 @@ def _render_widget_element(
             + '<div class="spore-stat-icon"></div>'
             + '<div class="spore-stat-copy"><div class="spore-stat-label"></div>'
             + '<div class="spore-stat-value">—</div></div></div>'
+        )
+
+    if etype == "poll":
+        def _flag(key: str, default: bool) -> str:
+            raw = props.get(key, default)
+            if isinstance(raw, str):
+                return "false" if raw.strip().lower() in ("false", "0", "no", "off") else "true"
+            return "true" if bool(raw) else "false"
+
+        return (
+            open_tag
+            + 'data-spore-type="poll" '
+            + f'data-spore-poll-layout="{_widget_jinja(eid, "layout", str(props.get("layout") or "vertical"))}" '
+            + f'data-spore-poll-display="{_widget_jinja(eid, "display_mode", str(props.get("display_mode") or "bars"))}" '
+            + f'data-spore-poll-max="{_widget_jinja(eid, "max_items", _num_or(props.get("max_items"), 6))}" '
+            + f'data-spore-poll-rotator="{_widget_jinja(eid, "rotator_enabled", _flag("rotator_enabled", False))}" '
+            + f'data-spore-poll-rotator-seconds="{_widget_jinja(eid, "rotator_seconds", _num_or(props.get("rotator_seconds"), 5))}" '
+            + f'data-spore-poll-rotator-anim="{_widget_jinja(eid, "rotator_animation", str(props.get("rotator_animation") or "slide horizontal"))}" '
+            + f'data-spore-poll-rotator-anim-ms="{_widget_jinja(eid, "rotator_animation_ms", _num_or(props.get("rotator_animation_ms"), 400))}" '
+            + f'data-spore-poll-timer="{_widget_jinja(eid, "show_timer", _flag("show_timer", True))}" '
+            + f'data-spore-poll-timer-bar="{_widget_jinja(eid, "show_timer_bar", _flag("show_timer_bar", True))}" '
+            + f'data-spore-poll-counts="{_widget_jinja(eid, "show_counts", _flag("show_counts", True))}" '
+            + f'data-spore-poll-percent="{_widget_jinja(eid, "show_percent", _flag("show_percent", True))}" '
+            + f'data-spore-poll-winner-mode="{_widget_jinja(eid, "winner_mode", str(props.get("winner_mode") or "highlight"))}" '
+            + f'data-spore-poll-autohide="{_widget_jinja(eid, "autohide_seconds", _num_or(props.get("autohide_seconds"), 0))}" '
+            + f'data-spore-poll-store="{_widget_jinja(eid, "store_data", _flag("store_data", True))}" '
+            + f'data-spore-poll-banner="{_widget_jinja(eid, "send_winner_banner", _flag("send_winner_banner", False))}" '
+            + f'data-spore-poll-font-size="{_widget_jinja(eid, "font_size", _num_or(props.get("font_size"), 22))}" '
+            + f'data-spore-poll-color="{_widget_jinja(eid, "color", str(props.get("color") or "#ffffff"))}" '
+            + f'data-spore-poll-font="{_widget_jinja(eid, "font_family", str(props.get("font_family") or "Arial"))}" '
+            + f'data-spore-poll-weight="{_widget_jinja(eid, "font_weight", str(props.get("font_weight") or "normal"))}" '
+            + f'data-spore-poll-gap="{_widget_jinja(eid, "row_gap", _num_or(props.get("row_gap"), 8))}" '
+            + f'data-spore-poll-bg="{_widget_jinja(eid, "background_color", str(props.get("background_color") or "rgba(15,23,42,0.85)"))}" '
+            + f'data-spore-poll-bar="{_widget_jinja(eid, "bar_color", str(props.get("bar_color") or "#a855f7"))}" '
+            + f'data-spore-poll-track="{_widget_jinja(eid, "track_color", str(props.get("track_color") or "rgba(255,255,255,0.15)"))}" '
+            + f'data-spore-poll-winner="{_widget_jinja(eid, "winner_color", str(props.get("winner_color") or "#facc15"))}">'
+            + '<div class="spore-poll-timer" hidden>'
+            + '<div class="spore-poll-timer-text"></div>'
+            + '<div class="spore-poll-timer-track"><div class="spore-poll-timer-fill"></div></div>'
+            + "</div>"
+            + '<div class="spore-poll-options"></div></div>'
         )
 
     return None
@@ -2199,6 +2256,32 @@ _WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[str, str]]] = {
         ("icon", "text"),
         ("value_color", "color"),
         ("label_color", "color"),
+    ],
+    "poll": [
+        ("layout", "text"),
+        ("display_mode", "text"),
+        ("max_items", "number"),
+        ("rotator_enabled", "checkbox"),
+        ("rotator_seconds", "number"),
+        ("rotator_animation", "text"),
+        ("rotator_animation_ms", "number"),
+        ("show_timer", "checkbox"),
+        ("show_timer_bar", "checkbox"),
+        ("show_counts", "checkbox"),
+        ("show_percent", "checkbox"),
+        ("winner_mode", "text"),
+        ("autohide_seconds", "number"),
+        ("store_data", "checkbox"),
+        ("send_winner_banner", "checkbox"),
+        ("font_size", "number"),
+        ("color", "color"),
+        ("font_family", "text"),
+        ("font_weight", "text"),
+        ("row_gap", "number"),
+        ("background_color", "color"),
+        ("bar_color", "color"),
+        ("track_color", "color"),
+        ("winner_color", "color"),
     ],
 }
 

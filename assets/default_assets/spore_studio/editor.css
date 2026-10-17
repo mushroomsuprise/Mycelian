@@ -565,10 +565,16 @@ html, body {
     padding: 32px;
 }
 
+.ss-canvas-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin: auto;
+}
+
 .ss-stage-dims {
-    position: absolute;
-    top: 4px;
-    left: 6px;
+    position: static;
+    margin: 0 0 6px 0;
     z-index: 20;
     font-size: 10px;
     line-height: 1.2;
@@ -580,6 +586,13 @@ html, body {
     pointer-events: none;
     user-select: none;
 }
+
+@keyframes ssPollSlideXIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes ssPollSlideXOut { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@keyframes ssPollSlideYIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes ssPollSlideYOut { from { transform: translateY(0); } to { transform: translateY(-100%); } }
+@keyframes ssPollFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ssPollFadeOut { from { opacity: 1; } to { opacity: 0; } }
 
 .ss-stage {
     /*

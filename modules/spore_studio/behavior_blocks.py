@@ -979,10 +979,43 @@ WIDGET_CSS = """
 .spore-stat-label { font-size: 0.5em; line-height: 1.2; }
 .spore-stat-value { line-height: 1.1; }
 .spore-stat-label, .spore-stat-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spore-poll {
+  display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
+  padding: 8px; gap: 6px;
+}
+.spore-poll-timer { display: flex; flex-direction: column; gap: 4px; font-size: 0.75em; line-height: 1.2; }
+.spore-poll-timer[hidden] { display: none !important; }
+.spore-poll-timer-track { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.15); overflow: hidden; }
+.spore-poll-timer-fill { height: 100%; width: 0; border-radius: 3px; }
+.spore-poll-options { position: relative; overflow: hidden; min-height: 0; }
+.spore-poll-page { display: flex; flex-direction: column; width: 100%; }
+.spore-poll-page.is-horizontal { flex-direction: row; align-items: stretch; }
+.spore-poll-page.is-exiting {
+  position: absolute; left: 0; right: 0; top: 0; pointer-events: none;
+}
+.spore-poll-page.is-slide_horizontal { animation: sporePollSlideXIn ease both; }
+.spore-poll-page.is-slide_vertical { animation: sporePollSlideYIn ease both; }
+.spore-poll-page.is-fade { animation: sporePollFadeIn ease both; }
+.spore-poll-page.is-exit-slide_horizontal { animation: sporePollSlideXOut ease both; }
+.spore-poll-page.is-exit-slide_vertical { animation: sporePollSlideYOut ease both; }
+.spore-poll-page.is-exit-fade { animation: sporePollFadeOut ease both; }
+@keyframes sporePollSlideXIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes sporePollSlideXOut { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@keyframes sporePollSlideYIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes sporePollSlideYOut { from { transform: translateY(0); } to { transform: translateY(-100%); } }
+@keyframes sporePollFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sporePollFadeOut { from { opacity: 1; } to { opacity: 0; } }
+.spore-poll-option { min-width: 0; flex: 0 0 auto; }
+.spore-poll-page.is-horizontal .spore-poll-option { flex: 1 1 0; }
+.spore-poll-name, .spore-poll-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spore-poll-meta { opacity: 0.85; margin-left: 0.4em; font-size: 0.85em; }
+.spore-poll-bar { height: 8px; margin-top: 4px; border-radius: 4px; overflow: hidden; }
+.spore-poll-bar-fill { height: 100%; width: 0; border-radius: 4px; }
+.spore-poll-option.is-winner .spore-poll-name { font-weight: 700; }
 """.strip()
 
 
-_WIDGET_TYPES = frozenset({"list", "wheel", "now_playing", "qr", "embed", "stat_card"})
+_WIDGET_TYPES = frozenset({"list", "wheel", "now_playing", "qr", "embed", "stat_card", "poll"})
 
 
 def _elements_need_widget_css(elements: List[Dict[str, Any]]) -> bool:

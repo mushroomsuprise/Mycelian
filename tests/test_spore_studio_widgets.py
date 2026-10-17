@@ -264,6 +264,49 @@ class SporeStudioWidgetFollowUpTests(unittest.TestCase):
 
         self.assertIn("username", [f["key"] for f in get_event("giveaway_entry")["payload"]])
         self.assertIn("winners", [f["key"] for f in get_event("giveaway_winner")["payload"]])
+        self.assertIn("options", [f["key"] for f in get_event("poll_state")["payload"]])
+        self.assertIn("winners", [f["key"] for f in get_event("poll_ended")["payload"]])
+
+    def test_poll_widget_compiles(self):
+        import re
+
+        model = {
+            "template_name": "poll_lab",
+            "alert_system": "instant",
+            "design": {"width": 480, "height": 640},
+            "elements": [
+                _el(
+                    "poll1",
+                    "poll",
+                    props={
+                        "layout": "vertical",
+                        "display_mode": "bars",
+                        "max_items": 4,
+                        "rotator_enabled": True,
+                        "show_timer": True,
+                        "winner_mode": "highlight",
+                        "font_size": 22,
+                        "color": "#ffffff",
+                        "bar_color": "#a855f7",
+                    },
+                )
+            ],
+        }
+        html, cfg = compile_model(model)
+        self.assertIn('data-spore-type="poll"', html)
+        self.assertIn("spore-poll-options", html)
+        self.assertIn(".spore-poll", html)
+        ids = {
+            el["id"]
+            for el in cfg.get("elements", [])
+            if isinstance(el, dict) and el.get("id")
+        }
+        self.assertIn("poll1_max_items", ids)
+        self.assertIn("poll1_rotator_enabled", ids)
+        tag = re.search(r'<div id="poll1"[^>]*>', html).group(0)
+        style = re.search(r'style="([^"]*)"', tag).group(1)
+        for leaked in ("display-mode", "rotator-enabled", "winner-mode", "max-items"):
+            self.assertNotIn(leaked, style)
 
 
 if __name__ == "__main__":
