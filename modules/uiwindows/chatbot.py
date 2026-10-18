@@ -1534,10 +1534,11 @@ def create_chatbot_tab():
 
                 # Giveaways Tab
                 with ui.tab_panel(giveaways_tab).classes(
-                    "transition-all duration-300 w-full h-full flex flex-col"
+                    "transition-all duration-300 w-full h-full flex flex-col min-h-0"
                 ):
-                    with ui.scroll_area().classes("w-full grow"):
-                        giveaways_container = ui.element("div").classes("w-full p-4")
+                    giveaways_container = ui.element("div").classes(
+                        "w-full h-full min-h-0 flex flex-col"
+                    )
 
                 # Polls Tab
                 with ui.tab_panel(polls_tab).classes(
@@ -1621,9 +1622,9 @@ def render_giveaways_tab(container_el) -> None:
             tip.props["target"] = f"#{option_row.html_id}"
 
     with container_el:
-        with ui.column().classes("w-full gap-3 p-4"):
+        with ui.column().classes("w-full h-full min-h-0 gap-3 p-4 overflow-hidden"):
             active = gm.is_giveaway_active()
-            with ui.row().classes("items-center gap-4 flex-wrap"):
+            with ui.row().classes("items-center gap-4 flex-wrap shrink-0"):
                 ui.label(
                     "Active giveaway: Yes (chat entries on)"
                     if active
@@ -1638,11 +1639,13 @@ def render_giveaways_tab(container_el) -> None:
 
             err = gm.get_last_error()
             if err:
-                ui.label(f"Last issue: {err}").classes("text-sm text-amber-600")
+                ui.label(f"Last issue: {err}").classes(
+                    "text-sm text-amber-600 shrink-0"
+                )
 
-            with ui.row().classes("w-full gap-3 items-start"):
-                with ui.column().classes("flex-1 min-w-0 gap-3"):
-                    with ui.row().classes("w-full gap-3 items-start"):
+            with ui.row().classes("w-full flex-1 min-h-0 gap-3 items-stretch"):
+                with ui.column().classes("flex-1 min-w-0 min-h-0 gap-3 h-full"):
+                    with ui.row().classes("w-full gap-3 items-start shrink-0"):
                         keyword_in = form_input(
                             tooltip="Exact chat message viewers must send to enter (case-insensitive)",
                             label="Entry keyword",
@@ -1697,10 +1700,11 @@ def render_giveaways_tab(container_el) -> None:
                         win_msg.on("blur", save_template)
 
                     with ui.column().classes(
-                        "w-full gap-0 rounded-lg border border-[var(--color-border-default)]"
+                        "w-full flex-1 min-h-0 gap-0 rounded-lg border "
+                        "border-[var(--color-border-default)] flex flex-col"
                     ):
                         with ui.row().classes(
-                            "w-full items-center justify-between px-4 py-2 "
+                            "w-full shrink-0 items-center justify-between px-4 py-2 "
                             "bg-[var(--color-bg-elevated)] rounded-t-lg border-b "
                             "border-[var(--color-border-default)]"
                         ):
@@ -1737,9 +1741,9 @@ def render_giveaways_tab(container_el) -> None:
                             with entrants_container:
                                 with (
                                     ui.scroll_area()
-                                    .classes("w-full")
+                                    .classes("w-full flex-1 min-h-0")
                                     .style(
-                                        "min-height: 200px; "
+                                        "min-height: 0; flex: 1 1 auto; height: 100%; "
                                         "background: var(--color-bg-sunken, #0d1117); "
                                         "border-bottom-left-radius: 0.5rem; "
                                         "border-bottom-right-radius: 0.5rem;"
@@ -1766,7 +1770,9 @@ def render_giveaways_tab(container_el) -> None:
                             2.5, callback=_build_entrants_list
                         )
 
-                with ui.column().classes("w-52 shrink-0 gap-1 min-w-[12rem]"):
+                with ui.column().classes(
+                    "w-52 shrink-0 gap-1 min-w-[12rem] self-start"
+                ):
                     blocked_input = form_input(
                         tooltip="Add a username to block from entering",
                         label="Blocked usernames",
@@ -1853,7 +1859,7 @@ def render_giveaways_tab(container_el) -> None:
                 notify("Giveaway cleared (pool and keyword).", type="info")
                 reload_giveaways()
 
-            with ui.row().classes("flex-wrap gap-2"):
+            with ui.row().classes("flex-wrap gap-2 shrink-0"):
                 themed_control_button(
                     "Start giveaway",
                     do_start,
