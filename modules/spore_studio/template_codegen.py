@@ -232,7 +232,6 @@ _NON_STYLE_PROP_KEYS = frozenset(
         "winner_color",
         "winner_mode",
         "autohide_seconds",
-        "send_winner_banner",
         "rotator_enabled",
         "rotator_seconds",
         "rotator_animation",
@@ -909,7 +908,6 @@ def _render_widget_element(
             + f'data-spore-poll-percent="{_widget_jinja(eid, "show_percent", _flag("show_percent", True))}" '
             + f'data-spore-poll-winner-mode="{_widget_jinja(eid, "winner_mode", str(props.get("winner_mode") or "highlight"))}" '
             + f'data-spore-poll-autohide="{_widget_jinja(eid, "autohide_seconds", _num_or(props.get("autohide_seconds"), 0))}" '
-            + f'data-spore-poll-banner="{_widget_jinja(eid, "send_winner_banner", _flag("send_winner_banner", False))}" '
             + f'data-spore-poll-font-size="{_widget_jinja(eid, "font_size", _num_or(props.get("font_size"), 22))}" '
             + f'data-spore-poll-color="{_widget_jinja(eid, "color", str(props.get("color") or "#ffffff"))}" '
             + f'data-spore-poll-font="{_widget_jinja(eid, "font_family", str(props.get("font_family") or "Arial"))}" '
@@ -2269,7 +2267,6 @@ _WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[str, str]]] = {
         ("show_percent", "checkbox"),
         ("winner_mode", "text"),
         ("autohide_seconds", "number"),
-        ("send_winner_banner", "checkbox"),
         ("font_size", "number"),
         ("color", "color"),
         ("font_family", "text"),

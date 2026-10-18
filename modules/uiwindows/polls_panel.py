@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import html
+
 from nicegui import ui
 
 from ..notification_engine import notify
@@ -34,6 +36,9 @@ def _format_remaining(seconds) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
+_STATUS_COLORS = ("text-theme-success", "text-theme-warning", "secondary-text")
+
+
 def _status_text(snapshot: dict) -> str:
     status = snapshot.get("status") or "idle"
     total = int(snapshot.get("total_votes") or 0)
@@ -43,28 +48,89 @@ def _status_text(snapshot: dict) -> str:
         clock = _format_remaining(snapshot.get("remaining_seconds"))
         return f"Open · {total} votes · {clock} left"
     if status == "ended":
-        winners = snapshot.get("winners") or []
-        if not winners:
-            return f"Ended · no votes · {total} votes"
-        names = ", ".join(str(item.get("name") or "") for item in winners)
-        return f"Ended · {names} · {total} votes"
+        if total <= 0:
+            return "Ended · no votes"
+        return f"Ended · {total} votes"
     return "Not running"
 
 
 def _status_color(status: str) -> str:
     if status == "open":
-        return "text-green-400"
+        return "text-theme-success"
     if status == "ended":
-        return "text-amber-400"
+        return "text-theme-warning"
     return "secondary-text"
 
 
-def _apply_status(label, snapshot: dict) -> None:
-    label.set_text(_status_text(snapshot))
-    label.classes(
-        remove="text-green-400 text-amber-400 secondary-text",
-        add=_status_color(str(snapshot.get("status") or "idle")),
-    )
+def _apply_status(label, snapshot: dict, seen: dict) -> None:
+    text = _status_text(snapshot)
+    color = _status_color(str(snapshot.get("status") or "idle"))
+    if seen.get("text") != text:
+        label.set_text(text)
+        seen["text"] = text
+    if seen.get("color") != color:
+        label.classes(remove=" ".join(_STATUS_COLORS), add=color)
+        seen["color"] = color
+
+
+def _winner_line(winners) -> str:
+    parts = []
+    for item in winners or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            votes = max(0, int(item.get("votes") or 0))
+        except (TypeError, ValueError):
+            votes = 0
+        parts.append(f"{name} ({votes})")
+    return ", ".join(parts)
+
+
+def _live_feed_html(snapshot: dict) -> str:
+    """Bars, counts, and percents in the same order as the overlay."""
+    options = list(snapshot.get("options") or [])
+    if not options:
+        return '<div class="text-sm secondary-text italic py-4 text-center">No categories yet</div>'
+    leader = 0
+    for row in options:
+        try:
+            count = int(row.get("votes") or 0)
+        except (TypeError, ValueError):
+            count = 0
+        if count > leader:
+            leader = count
+    blocks = []
+    for row in options:
+        name = html.escape(str(row.get("name") or ""))
+        keyword = html.escape(str(row.get("keyword") or ""))
+        try:
+            votes = int(row.get("votes") or 0)
+        except (TypeError, ValueError):
+            votes = 0
+        try:
+            percent = float(row.get("percent") or 0)
+        except (TypeError, ValueError):
+            percent = 0
+        width = 0 if leader <= 0 else max(0, min(100, (votes / leader) * 100))
+        blocks.append(
+            "<div>"
+            '<div style="display:flex; justify-content:space-between; gap:12px; align-items:baseline;">'
+            '<div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">'
+            f'<span style="font-weight:600;">{name}</span>'
+            f'<span class="secondary-text" style="margin-left:8px;">{keyword}</span>'
+            "</div>"
+            f'<span style="flex:none;">{votes} · {percent:g}%</span>'
+            "</div>"
+            '<div style="height:8px; margin-top:6px; border-radius:4px; overflow:hidden; '
+            'background: var(--color-border-default);">'
+            f'<div style="height:100%; width:{width:.4f}%; border-radius:4px; '
+            'background: var(--color-primary);"></div>'
+            "</div></div>"
+        )
+    return '<div style="display:flex; flex-direction:column; gap:12px;">' + "".join(blocks) + "</div>"
 
 
 def render_polls_tab(container_el) -> None:
@@ -235,9 +301,10 @@ def render_polls_tab(container_el) -> None:
                     False,
                 )
                 command_in = form_input(
-                    tooltip="Chat command that starts this poll. It always starts with !. The message must begin with this command.",
+                    tooltip="Chat command that starts only this poll. It always starts with !. The message must begin with this command. Another poll starts from the same message only when it uses this same command.",
                     label="Start command",
-                    value=config.get("start_command") or "!startpoll",
+                    value=config.get("start_command") or "",
+                    placeholder="!startpoll",
                     classes="w-40 shrink-0",
                 )
                 command_sync = {"on": False}
@@ -245,17 +312,20 @@ def render_polls_tab(container_el) -> None:
                 def on_command_type(_=None):
                     if command_sync["on"]:
                         return
-                    normalized = normalize_command(command_in.value or "")
-                    if not normalized:
-                        normalized = "!"
-                    if normalized != (command_in.value or ""):
+                    raw = command_in.value or ""
+                    if not str(raw).strip():
+                        return
+                    normalized = normalize_command(raw)
+                    if normalized and normalized != raw:
                         command_sync["on"] = True
                         command_in.value = normalized
                         command_sync["on"] = False
 
                 def save_command(_=None):
-                    command = normalize_command(command_in.value or "") or "!startpoll"
+                    command = normalize_command(command_in.value or "")
+                    command_sync["on"] = True
                     command_in.value = command
+                    command_sync["on"] = False
                     get_poll_manager().update_config(template, {"start_command": command})
 
                 command_in.on_value_change(on_command_type)
@@ -268,7 +338,7 @@ def render_polls_tab(container_el) -> None:
             with ui.row().classes("w-full items-center gap-2 flex-wrap"):
                 _switch(
                     "Send winner as a chat banner",
-                    "Show the winning option on the chat overlay. A Poll widget can also request this banner. Use {option}, {options}, {keyword}, and {votes}.",
+                    "Show the winning option on the chat overlay. Use {option}, {options}, {keyword}, and {votes}.",
                     "announce_winners_as_banner",
                     False,
                 )
@@ -333,31 +403,50 @@ def render_polls_tab(container_el) -> None:
                 for row in snapshot.get("options") or []
             }
             categories = config.get("categories") or []
-            vote_inputs = {}
-            status_label = None
+            status_color = _status_color(str(snapshot.get("status") or "idle"))
+            status_seen = {"text": _status_text(snapshot), "color": status_color}
+            winner_text = _winner_line(config.get("last_winners"))
+            live_view = None
+            live_markup = {"value": ""}
+
+            def show_winner(text: str) -> None:
+                winner_label.set_text(text)
+                tip = html.escape(text, quote=True)
+                winner_label.props(f'title="{tip}"' if tip else "title=")
 
             with ui.column().classes(
                 "w-full flex-1 min-h-0 gap-0 rounded-lg border "
                 "border-[var(--color-border-default)] flex flex-col"
             ):
-                with ui.row().classes(
-                    "w-full flex-none items-center justify-between px-4 py-2 gap-2 "
+                with ui.element("div").classes(
+                    "w-full flex-none px-4 py-2 gap-3 "
                     "bg-[var(--color-bg-elevated)] rounded-t-lg border-b "
                     "border-[var(--color-border-default)]"
+                ).style(
+                    "display:grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); "
+                    "align-items:center; column-gap:12px;"
                 ):
                     with ui.row().classes("items-center gap-3 min-w-0"):
                         ui.label("Categories").classes("text-lg font-medium shrink-0")
-                        status_label = ui.label(_status_text(snapshot)).classes(
-                            "text-sm font-medium " + _status_color(str(snapshot.get("status") or "idle"))
+                        status_label = ui.label(status_seen["text"]).classes(
+                            "text-sm font-medium truncate " + status_color
                         )
-                    add_button = themed_control_button(
-                        "Add category",
-                        add_category,
-                        icon="add",
-                        extra_classes="btn-primary px-3 py-2",
+                    winner_label = ui.label(winner_text).classes(
+                        "text-sm font-semibold text-center"
+                    ).style(
+                        "justify-self:center; max-width:min(46vw, 28rem); overflow:hidden; "
+                        "text-overflow:ellipsis; white-space:nowrap;"
                     )
-                    if running:
-                        add_button.disable()
+                    show_winner(winner_text)
+                    with ui.row().classes("justify-end"):
+                        add_button = themed_control_button(
+                            "Add category",
+                            add_category,
+                            icon="add",
+                            extra_classes="btn-primary px-3 py-2",
+                        )
+                        if running:
+                            add_button.disable()
 
                 with (
                     ui.scroll_area()
@@ -369,142 +458,145 @@ def render_polls_tab(container_el) -> None:
                         "border-bottom-right-radius: 0.5rem;"
                     )
                 ):
-                    with ui.column().classes("w-full gap-2 p-3"):
-                        if not categories:
-                            ui.label("No categories yet").classes(
-                                "text-sm muted-text italic py-4 self-center"
-                            )
-                        for index, cat in enumerate(categories):
-                            cat_id = cat["id"]
-                            votes = int(vote_by_id.get(cat_id, cat.get("votes") or 0))
-                            with ui.row().classes("w-full gap-2 items-end flex-nowrap"):
-                                name_in = form_input(
-                                    tooltip="Name shown on the poll overlay. The keyword follows this name until you edit the keyword yourself.",
-                                    label="Name",
-                                    value=cat.get("name") or "",
-                                    classes="flex-1 min-w-[8rem]",
+                    if running:
+                        live_markup["value"] = _live_feed_html(snapshot)
+                        live_view = ui.html(live_markup["value"], sanitize=False).classes(
+                            "w-full p-3"
+                        )
+                    else:
+                        with ui.column().classes("w-full gap-2 p-3"):
+                            if not categories:
+                                ui.label("No categories yet").classes(
+                                    "text-sm muted-text italic py-4 self-center"
                                 )
-                                name_in.props("debounce=0")
-                                keyword_in = form_input(
-                                    tooltip="Chat token this category listens for. It always starts with #. It follows the name until you change it.",
-                                    label="Keyword",
-                                    value=cat.get("keyword") or "",
-                                    classes="w-36 shrink-0",
-                                )
-                                votes_in = form_number(
-                                    tooltip="Votes for this category. Starting a poll clears the counts. The field is locked while a poll is running.",
-                                    label="Votes",
-                                    value=votes,
-                                    min=0,
-                                    max=1000000,
-                                    step=1,
-                                    classes="w-24 shrink-0",
-                                )
-                                vote_inputs[cat_id] = votes_in
-                                up_button = themed_control_button(
-                                    "",
-                                    lambda cid=cat_id: move_category(cid, -1),
-                                    icon="arrow_upward",
-                                    extra_classes="btn-secondary px-2 py-2",
-                                )
-                                down_button = themed_control_button(
-                                    "",
-                                    lambda cid=cat_id: move_category(cid, 1),
-                                    icon="arrow_downward",
-                                    extra_classes="btn-secondary px-2 py-2",
-                                )
-                                delete_button = themed_control_button(
-                                    "",
-                                    lambda cid=cat_id: remove_category(cid),
-                                    icon="delete",
-                                    extra_classes="btn-danger px-2 py-2",
-                                )
-                                if running or index == 0:
-                                    up_button.disable()
-                                if running or index == len(categories) - 1:
-                                    down_button.disable()
-                                if running:
-                                    name_in.disable()
-                                    keyword_in.disable()
-                                    votes_in.disable()
-                                    delete_button.disable()
-
-                                follow_keyword = {
-                                    "on": (cat.get("keyword") or "")
-                                    == normalize_keyword(cat.get("name") or ""),
-                                    "syncing": False,
-                                }
-
-                                def on_name_type(
-                                    _=None,
-                                    name_box=name_in,
-                                    keyword_box=keyword_in,
-                                    follow=follow_keyword,
-                                ):
-                                    if running or not follow["on"] or follow["syncing"]:
-                                        return
-                                    follow["syncing"] = True
-                                    keyword_box.value = normalize_keyword(name_box.value or "")
-                                    follow["syncing"] = False
-
-                                def on_keyword_type(
-                                    _=None,
-                                    name_box=name_in,
-                                    keyword_box=keyword_in,
-                                    follow=follow_keyword,
-                                ):
-                                    if follow["syncing"]:
-                                        return
-                                    follow["on"] = (keyword_box.value or "") == normalize_keyword(
-                                        name_box.value or ""
+                            for index, cat in enumerate(categories):
+                                cat_id = cat["id"]
+                                votes = int(vote_by_id.get(cat_id, cat.get("votes") or 0))
+                                with ui.row().classes("w-full gap-2 items-end flex-nowrap"):
+                                    name_in = form_input(
+                                        tooltip="Name shown on the poll overlay. The keyword follows this name until you edit the keyword yourself.",
+                                        label="Name",
+                                        value=cat.get("name") or "",
+                                        classes="flex-1 min-w-[8rem]",
                                     )
-
-                                def save_category(
-                                    _=None,
-                                    cid=cat_id,
-                                    name_box=name_in,
-                                    keyword_box=keyword_in,
-                                ):
-                                    if running:
-                                        return
-                                    ok, msg = get_poll_manager().update_category(
-                                        template,
-                                        cid,
-                                        name=name_box.value,
-                                        keyword=keyword_box.value,
+                                    name_in.props("debounce=0")
+                                    keyword_in = form_input(
+                                        tooltip="Chat token this category listens for. It always starts with #. It follows the name until you change it.",
+                                        label="Keyword",
+                                        value=cat.get("keyword") or "",
+                                        classes="w-36 shrink-0",
                                     )
-                                    if not ok:
-                                        notify(msg, type="negative")
-                                        return
-                                    updated = get_poll_manager().get_config(template)
-                                    match = next(
-                                        (
-                                            row
-                                            for row in updated.get("categories") or []
-                                            if row["id"] == cid
-                                        ),
-                                        None,
+                                    votes_in = form_number(
+                                        tooltip="Votes for this category. Starting a poll clears the counts.",
+                                        label="Votes",
+                                        value=votes,
+                                        min=0,
+                                        max=1000000,
+                                        step=1,
+                                        classes="w-24 shrink-0",
                                     )
-                                    if match:
-                                        name_box.value = match["name"]
-                                        keyword_box.value = match["keyword"]
-
-                                def save_votes(_=None, cid=cat_id, box=votes_in):
-                                    if running:
-                                        return
-                                    try:
-                                        count = int(box.value)
-                                    except (TypeError, ValueError):
-                                        count = 0
-                                    ok, msg = get_poll_manager().set_category_votes(
-                                        template, cid, count
+                                    up_button = themed_control_button(
+                                        "",
+                                        lambda cid=cat_id: move_category(cid, -1),
+                                        icon="arrow_upward",
+                                        extra_classes="btn-secondary px-2 py-2",
                                     )
-                                    if not ok:
-                                        notify(msg, type="negative")
-                                        return
-                                    box.value = max(0, count)
+                                    down_button = themed_control_button(
+                                        "",
+                                        lambda cid=cat_id: move_category(cid, 1),
+                                        icon="arrow_downward",
+                                        extra_classes="btn-secondary px-2 py-2",
+                                    )
+                                    themed_control_button(
+                                        "",
+                                        lambda cid=cat_id: remove_category(cid),
+                                        icon="delete",
+                                        extra_classes="btn-danger px-2 py-2",
+                                    )
+                                    if index == 0:
+                                        up_button.disable()
+                                    if index == len(categories) - 1:
+                                        down_button.disable()
 
-                                if not running:
+                                    follow_keyword = {
+                                        "on": (cat.get("keyword") or "")
+                                        == normalize_keyword(cat.get("name") or ""),
+                                        "syncing": False,
+                                    }
+
+                                    def on_name_type(
+                                        _=None,
+                                        name_box=name_in,
+                                        keyword_box=keyword_in,
+                                        follow=follow_keyword,
+                                    ):
+                                        if not follow["on"] or follow["syncing"]:
+                                            return
+                                        follow["syncing"] = True
+                                        keyword_box.value = normalize_keyword(name_box.value or "")
+                                        follow["syncing"] = False
+
+                                    def on_keyword_type(
+                                        _=None,
+                                        name_box=name_in,
+                                        keyword_box=keyword_in,
+                                        follow=follow_keyword,
+                                    ):
+                                        if follow["syncing"]:
+                                            return
+                                        follow["on"] = (keyword_box.value or "") == normalize_keyword(
+                                            name_box.value or ""
+                                        )
+
+                                    def save_category(
+                                        _=None,
+                                        cid=cat_id,
+                                        name_box=name_in,
+                                        keyword_box=keyword_in,
+                                    ):
+                                        ok, msg = get_poll_manager().update_category(
+                                            template,
+                                            cid,
+                                            name=name_box.value,
+                                            keyword=keyword_box.value,
+                                        )
+                                        if not ok:
+                                            notify(msg, type="negative")
+                                            return
+                                        updated = get_poll_manager().get_config(template)
+                                        match = next(
+                                            (
+                                                row
+                                                for row in updated.get("categories") or []
+                                                if row["id"] == cid
+                                            ),
+                                            None,
+                                        )
+                                        if match:
+                                            name_box.value = match["name"]
+                                            keyword_box.value = match["keyword"]
+
+                                    def save_votes(_=None, cid=cat_id, box=votes_in):
+                                        try:
+                                            count = int(box.value)
+                                        except (TypeError, ValueError):
+                                            count = 0
+                                        before = _winner_line(
+                                            get_poll_manager().get_config(template).get("last_winners")
+                                        )
+                                        ok, msg = get_poll_manager().set_category_votes(
+                                            template, cid, count
+                                        )
+                                        if not ok:
+                                            notify(msg, type="negative")
+                                            return
+                                        box.value = max(0, count)
+                                        after = _winner_line(
+                                            get_poll_manager().get_config(template).get("last_winners")
+                                        )
+                                        if after != before:
+                                            show_winner(after)
+
                                     name_in.on_value_change(on_name_type)
                                     keyword_in.on_value_change(on_keyword_type)
                                     name_in.on("blur", save_category)
@@ -513,6 +605,15 @@ def render_polls_tab(container_el) -> None:
 
             seen_status = {"value": snapshot.get("status")}
 
+            def _set_live_markup(markup: str) -> None:
+                if live_view is None or markup == live_markup["value"]:
+                    return
+                if hasattr(live_view, "set_content"):
+                    live_view.set_content(markup)
+                else:
+                    live_view.content = markup
+                live_markup["value"] = markup
+
             def _refresh_live():
                 try:
                     if status_label.is_deleted:
@@ -520,28 +621,16 @@ def render_polls_tab(container_el) -> None:
                 except Exception:
                     return
                 current = get_poll_manager().get_overlay_state(template)
-                if status_label is not None:
-                    try:
-                        _apply_status(status_label, current)
-                    except Exception:
-                        return
+                try:
+                    _apply_status(status_label, current, status_seen)
+                except Exception:
+                    return
                 if current.get("status") != seen_status["value"]:
                     seen_status["value"] = current.get("status")
                     reload_polls()
                     return
                 if current.get("status") != "open":
                     return
-                by_id = {row.get("id"): row for row in current.get("options") or []}
-                for cid, box in vote_inputs.items():
-                    row = by_id.get(cid)
-                    if not row:
-                        continue
-                    live = int(row.get("votes") or 0)
-                    try:
-                        shown = int(box.value or 0)
-                    except (TypeError, ValueError):
-                        shown = -1
-                    if shown != live:
-                        box.value = live
+                _set_live_markup(_live_feed_html(current))
 
             _poll_votes_timer = layout_schedule(1.0, callback=_refresh_live)

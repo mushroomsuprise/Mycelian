@@ -142,6 +142,46 @@ class PollVoteTests(unittest.TestCase):
         )
         self.assertEqual(tied, "Yes, No")
 
+    def test_last_winner_stays_until_the_next_result(self):
+        manager = _open_poll()
+        manager.try_register_vote(
+            {"username": "A", "userid": "1", "message": "#Yes", "platform": "twitch"}
+        )
+        manager.try_register_vote(
+            {"username": "B", "userid": "2", "message": "#Yes", "platform": "twitch"}
+        )
+        manager.stop_poll("poll")
+        stored = manager.get_config("poll")["last_winners"]
+        self.assertEqual([(row["name"], row["votes"]) for row in stored], [("Yes", 2)])
+
+        manager.start_poll("poll")
+        self.assertEqual(manager.get_config("poll")["last_winners"][0]["name"], "Yes")
+        manager.stop_poll("poll")
+        self.assertEqual(manager.get_config("poll")["last_winners"][0]["name"], "Yes")
+        manager.update_config("poll", {"duration_seconds": 30})
+        self.assertEqual(manager.get_config("poll")["last_winners"][0]["votes"], 2)
+
+        no_id = next(
+            cat["id"]
+            for cat in manager.get_config("poll")["categories"]
+            if cat["name"] == "No"
+        )
+        manager.start_poll("poll")
+        manager.try_register_vote(
+            {"username": "A", "userid": "1", "message": "#Yes", "platform": "twitch"}
+        )
+        manager.try_register_vote(
+            {"username": "B", "userid": "2", "message": "#No", "platform": "twitch"}
+        )
+        manager.stop_poll("poll")
+        names = [row["name"] for row in manager.get_config("poll")["last_winners"]]
+        self.assertEqual(names, ["Yes", "No"])
+        manager.set_category_votes("poll", no_id, 4)
+        self.assertEqual(
+            [row["name"] for row in manager.get_config("poll")["last_winners"]],
+            ["No"],
+        )
+
 
 class PollModeratorStartTests(unittest.TestCase):
     def test_command_must_start_the_message_and_include_bang(self):
@@ -172,6 +212,32 @@ class PollModeratorStartTests(unittest.TestCase):
         self.assertEqual(manager.get_overlay_state("poll")["status"], "open")
         self.assertFalse(manager.try_moderator_start(mod))
         self.assertEqual(manager.get_overlay_state("poll")["status"], "open")
+
+    def test_each_poll_keeps_its_own_start_command(self):
+        manager = PollManager(persist=False)
+        for name in ("yesno", "games"):
+            manager.ensure_template(name)
+            manager.add_category(name, "Yes")
+            manager.add_category(name, "No")
+        manager.update_config("yesno", {"mods_can_start": True, "start_command": "!startyes"})
+        manager.update_config("games", {"mods_can_start": True, "start_command": "!startgames"})
+        mod = {"username": "Mod", "userid": "2", "message": "!startyes", "badges": "moderator/1"}
+        self.assertTrue(manager.try_moderator_start(mod))
+        self.assertEqual(manager.get_overlay_state("yesno")["status"], "open")
+        self.assertEqual(manager.get_overlay_state("games")["status"], "idle")
+
+        manager.update_config("games", {"start_command": "!startyes"})
+        self.assertTrue(manager.try_moderator_start(mod))
+        self.assertEqual(manager.get_overlay_state("games")["status"], "open")
+
+    def test_blank_command_does_not_start_a_poll(self):
+        manager = PollManager(persist=False)
+        manager.ensure_template("poll")
+        manager.add_category("poll", "Yes")
+        manager.update_config("poll", {"mods_can_start": True, "start_command": ""})
+        mod = {"username": "Mod", "userid": "2", "message": "!startpoll", "badges": "moderator/1"}
+        self.assertFalse(manager.try_moderator_start(mod))
+        self.assertEqual(manager.get_config("poll")["start_command"], "")
 
 
 class PollStatisticsTests(unittest.TestCase):
@@ -245,6 +311,27 @@ class PollReloadTests(unittest.TestCase):
         self.assertEqual(snapshot["status"], "idle")
         self.assertEqual(snapshot["total_votes"], 0)
         self.assertEqual(len(manager.get_config("poll")["categories"]), 2)
+
+    def test_last_winners_reload_from_config(self):
+        manager = PollManager(persist=False)
+        raw = {
+            "templates": {
+                "poll": {
+                    "config": {
+                        "categories": [
+                            {"id": "a", "name": "Yes", "keyword": "#Yes"},
+                            {"id": "b", "name": "No", "keyword": "#No"},
+                        ],
+                        "last_winners": [
+                            {"id": "a", "name": "Yes", "keyword": "#Yes", "votes": 4}
+                        ],
+                    }
+                }
+            }
+        }
+        manager._apply_stored(raw, time.time(), schedule=False)
+        self.assertEqual(manager.get_overlay_state("poll")["status"], "idle")
+        self.assertEqual(manager.get_config("poll")["last_winners"][0]["votes"], 4)
 
     def test_time_remaining_reloads(self):
         manager = PollManager(persist=False)

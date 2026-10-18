@@ -1345,15 +1345,19 @@ Twitch and YouTube chat both count. A running poll on more than one template can
 
 **Stop** closes the poll and picks the option with the most votes. Every option tied for that count wins. A poll with no votes ends without a winner and without a banner or chat message.
 
-Open polls are always saved. An open timed poll comes back after a restart when time is still left. A permanent poll (duration 0) comes back until you press Stop. A poll whose end time passed while the app was closed is dropped. It is not announced later. Category names, keywords, and banner settings are always saved.
+The status beside **Categories** is green while the poll is open, amber after it ends, and muted when it is not running. While the poll is open, that box shows the live results: each option, its keyword, its votes, its share, and a bar measured against the leader. The name, keyword, and vote editors come back when the poll ends.
+
+The last winning result stays centered in that header, including while the next poll is running and after a restart. A later poll replaces it only when that poll has a winner. A poll that ends with no votes leaves the previous result in place.
+
+Open polls are always saved. An open timed poll comes back after a restart when time is still left. A permanent poll (duration 0) comes back until you press Stop. A poll whose end time passed while the app was closed is dropped. It is not announced later. Category names, keywords, banner settings, and the last winner are always saved.
 
 ## Moderator start
 
-Turn on **Mods can start** and set a command that begins with `!`. A Twitch moderator or broadcaster, or a YouTube chat moderator or owner, starts the poll when their message begins with that command. `!startpoll` and `!startpoll now` count. `please !startpoll` does not.
+Turn on **Mods can start** and set a command that begins with `!`. That command belongs to the poll you are editing. A Twitch moderator or broadcaster, or a YouTube chat moderator or owner, starts that poll when their message begins with its command. `!startpoll` and `!startpoll now` count. `please !startpoll` does not. Leave the command blank and this poll ignores moderator start. Give another poll the same command when you want one message to start both.
 
 ## Winner banner
 
-Turn on **Send winner as a chat banner** to post the result on the chat overlay. **Send winner in chat** posts that same message in Twitch and YouTube chat. The message can use `{option}`, `{options}`, `{keyword}`, and `{votes}`. Tied winners fill `{options}`. Banner duration `0` stays up until another banner replaces it. A Poll widget can also request this banner with **Send winner as chat banner**. The message and duration still come from this tab.
+Turn on **Send winner as a chat banner** to post the result on the chat overlay. **Send winner in chat** posts that same message in Twitch and YouTube chat. The message can use `{option}`, `{options}`, `{keyword}`, and `{votes}`. Tied winners fill `{options}`. Banner duration `0` stays up until another banner replaces it. The banner switch on this tab is the only switch for that overlay.
 
 ## Overlay
 
@@ -3861,8 +3865,7 @@ A live view of the poll configured in **Chatbot → Polls** for this template. T
 | **Show timer / Show timer bar** | on / on | Remaining time. Both stay hidden on a permanent poll. |
 | **Show counts / Show percent** | on / on | Vote total and share of the vote on each row |
 | **After a winner** | highlight | `highlight` marks winners in the full list. `winner_only` clears the list down to the tied winners. |
-| **Autohide after winner (seconds)** | 0 | Hide the widget after a winner. 0 leaves the result up. A reconnect after that delay stays hidden. |
-| **Send winner as chat banner** | off | Ask for the winner banner. Message and duration come from Chatbot → Polls. |
+| **Autohide after winner (seconds)** | 0 | Above 0 hides the widget whenever this poll is not running. After a winner, it stays up for that many seconds, then hides. 0 leaves the result up. |
 | **Size / Color / Font / Bold** | 22 / white / Arial / off | Text style |
 | **Row spacing** | 8 | Gap between options, in pixels |
 | **Background / Bar / Track / Winner color** | dark card, purple, faint track, gold | Fills and the winner mark |

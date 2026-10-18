@@ -26,11 +26,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "one_entry_per_user": True,
     "allow_vote_switch": False,
     "mods_can_start": False,
-    "start_command": "!startpoll",
+    "start_command": "",
     "announce_winners_as_banner": False,
     "announce_winners_in_chat": False,
     "banner_message": DEFAULT_BANNER_MESSAGE,
     "banner_duration": 10,
+    "last_winners": [],
 }
 
 
@@ -138,6 +139,32 @@ def voter_identity(msg_dict: Dict[str, Any]) -> str:
     return f"{platform}:{ident}"
 
 
+def _normalize_last_winners(raw: Any) -> List[Dict[str, Any]]:
+    """Keep the stored winning options from the last poll that had a winner."""
+    winners: List[Dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return winners
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            votes = max(0, int(item.get("votes") or 0))
+        except (TypeError, ValueError):
+            votes = 0
+        winners.append(
+            {
+                "id": str(item.get("id") or "").strip(),
+                "name": name,
+                "keyword": str(item.get("keyword") or "").strip(),
+                "votes": votes,
+            }
+        )
+    return winners
+
+
 def _idle_runtime() -> Dict[str, Any]:
     return {
         "status": "idle",
@@ -208,20 +235,6 @@ def list_poll_template_names() -> List[str]:
             names.append(stem)
     names.sort()
     return names
-
-
-def template_wants_winner_banner(template: str) -> bool:
-    """True when any Poll widget on the template asks to announce the winner."""
-    try:
-        from .spore_studio.template_parser_back import load_sidecar
-    except Exception:
-        return False
-    model = load_sidecar(template)
-    for el in _poll_elements(model):
-        props = el.get("props") if isinstance(el.get("props"), dict) else {}
-        if bool(props.get("send_winner_banner")):
-            return True
-    return False
 
 
 _poll_manager: Optional["PollManager"] = None
@@ -316,7 +329,7 @@ class PollManager:
         cfg["allow_vote_switch"] = bool(cfg.get("allow_vote_switch", False))
         cfg.pop("store_data", None)
         cfg["mods_can_start"] = bool(cfg.get("mods_can_start", False))
-        cfg["start_command"] = normalize_command(cfg.get("start_command")) or "!startpoll"
+        cfg["start_command"] = normalize_command(cfg.get("start_command") or "")
         cfg["announce_winners_as_banner"] = bool(cfg.get("announce_winners_as_banner", False))
         cfg["announce_winners_in_chat"] = bool(cfg.get("announce_winners_in_chat", False))
         message = str(cfg.get("banner_message") or "").strip()
@@ -326,6 +339,7 @@ class PollManager:
         except (TypeError, ValueError):
             banner_duration = 10
         cfg["banner_duration"] = max(0.0, min(86400.0, banner_duration))
+        cfg["last_winners"] = _normalize_last_winners(cfg.get("last_winners"))
         categories: List[Dict[str, Any]] = []
         seen_ids = set()
         for item in cfg.get("categories") or []:
@@ -605,6 +619,7 @@ class PollManager:
             if runtime.get("status") == "ended":
                 winners = self._pick_winners(config, runtime)
                 runtime["winners"] = [item["id"] for item in winners]
+                self._remember_winners(config, winners)
                 snapshot = self._snapshot_locked(template, self._now())
             self._persist()
         if snapshot:
@@ -664,6 +679,7 @@ class PollManager:
             runtime["status"] = "ended"
             runtime["ended_at"] = now
             runtime["winners"] = [item["id"] for item in winners]
+            self._remember_winners(config, winners)
             for cat in config.get("categories") or []:
                 cat["votes"] = int((runtime.get("votes") or {}).get(cat["id"]) or 0)
             snapshot = self._snapshot_locked(template, now)
@@ -699,6 +715,12 @@ class PollManager:
                     }
                 )
         return winners
+
+    def _remember_winners(self, config: Dict[str, Any], winners: List[Dict[str, Any]]) -> None:
+        """Keep the latest real result. A poll with no votes leaves the previous one."""
+        stored = _normalize_last_winners(winners)
+        if stored:
+            config["last_winners"] = stored
 
     def try_register_vote(self, msg_dict: Dict[str, Any]) -> bool:
         message = str((msg_dict or {}).get("message") or "")
@@ -738,7 +760,8 @@ class PollManager:
                 config = entry.get("config") or {}
                 if not config.get("mods_can_start"):
                     continue
-                if not message_starts_with_command(message, config.get("start_command") or ""):
+                command = str(config.get("start_command") or "").strip()
+                if not command or not message_starts_with_command(message, command):
                     continue
                 runtime = entry.get("runtime") or {}
                 if runtime.get("status") == "open":
@@ -870,19 +893,10 @@ class PollManager:
         if not winners:
             return
         config = self.get_config(template)
-        widget_wants = False
-        try:
-            widget_wants = template_wants_winner_banner(template)
-        except Exception as exc:
-            logger.debug("poll banner widget check failed: %s", exc)
-        if not config.get("announce_winners_as_banner") and not widget_wants and not config.get(
-            "announce_winners_in_chat"
-        ):
-            return
         message = self._banner_text(config.get("banner_message") or "", winners)
         if not message:
             return
-        if config.get("announce_winners_as_banner") or widget_wants:
+        if config.get("announce_winners_as_banner"):
             try:
                 duration = float(config.get("banner_duration") or 0)
             except (TypeError, ValueError):

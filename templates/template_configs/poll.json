@@ -185,15 +185,8 @@
             "type": "number",
             "id": "poll1_autohide_seconds",
             "label": "poll1 autohide seconds",
-            "value": 0.0,
+            "value": 60.0,
             "description": "Autohide Seconds for 'poll1'."
-        },
-        {
-            "type": "checkbox",
-            "id": "poll1_send_winner_banner",
-            "label": "poll1 send winner banner",
-            "value": false,
-            "description": "Send Winner Banner for 'poll1'."
         },
         {
             "type": "number",

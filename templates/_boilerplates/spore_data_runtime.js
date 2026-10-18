@@ -2116,9 +2116,10 @@
         data = data || {};
         el._sporePollLast = data;
         var status = String(data.status || 'idle');
-        if (el._sporePollHide) {
+        if (status === 'open' && el._sporePollHide) {
             clearTimeout(el._sporePollHide);
             el._sporePollHide = null;
+            el._sporePollHideEndsAt = null;
         }
         if (status === 'idle') {
             el.style.display = 'none';
@@ -2128,20 +2129,26 @@
         }
         var autohide = parseFloat(sporeAttr(el, 'data-spore-poll-autohide', '0'));
         if (!isFinite(autohide) || autohide < 0) { autohide = 0; }
-        if (status === 'ended' && autohide > 0) {
+        if (status !== 'open' && autohide > 0) {
             var endedAt = Number(data.ended_at || 0);
-            var serverNow = Number(data.server_now || (Date.now() / 1000));
-            var age = endedAt ? (serverNow - endedAt) : autohide;
-            if (age >= autohide) {
+            sporeNotePollClock(el, data);
+            var skew = el._sporePollSkew || 0;
+            var age = endedAt ? ((Date.now() / 1000) + skew) - endedAt : autohide;
+            var stillShowingWinner = status === 'ended' && endedAt && age < autohide;
+            if (!stillShowingWinner) {
                 el.style.display = 'none';
                 sporeArmPollRotator(el, 1, 5, false);
                 sporeArmPollClock(el, data);
                 return;
             }
             el.style.display = '';
-            el._sporePollHide = setTimeout(function () {
-                el.style.display = 'none';
-            }, Math.max(0, autohide - age) * 1000);
+            if (el._sporePollHideEndsAt !== endedAt) {
+                if (el._sporePollHide) { clearTimeout(el._sporePollHide); }
+                el._sporePollHideEndsAt = endedAt;
+                el._sporePollHide = setTimeout(function () {
+                    el.style.display = 'none';
+                }, Math.max(0, (autohide - age) * 1000));
+            }
         } else {
             el.style.display = '';
         }

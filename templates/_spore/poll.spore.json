@@ -27,7 +27,7 @@
         "y": 0
       },
       "props": {
-        "autohide_seconds": 0,
+        "autohide_seconds": 60,
         "background_color": "rgba(15,23,42,0.85)",
         "bar_color": "#a855f7",
         "color": "#ffffff",
@@ -42,7 +42,6 @@
         "rotator_enabled": true,
         "rotator_seconds": 15,
         "row_gap": 8,
-        "send_winner_banner": false,
         "show_counts": true,
         "show_percent": true,
         "show_timer": true,
@@ -71,7 +70,6 @@
         "rotator_enabled": true,
         "rotator_seconds": true,
         "row_gap": true,
-        "send_winner_banner": true,
         "show_counts": true,
         "show_percent": true,
         "show_timer": true,
