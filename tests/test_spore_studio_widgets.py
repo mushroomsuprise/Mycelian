@@ -309,6 +309,30 @@ class SporeStudioWidgetFollowUpTests(unittest.TestCase):
         for leaked in ("display-mode", "rotator-enabled", "winner-mode", "max-items"):
             self.assertNotIn(leaked, style)
 
+    def test_compile_inits_template_logger_with_real_name(self):
+        model = {
+            "template_name": "widget_lab",
+            "alert_system": "instant",
+            "design": {"width": 800, "height": 600},
+            "elements": [],
+        }
+        init = 'MycelianLog.init({ templateName: "widget_lab" })'
+        html, _cfg = compile_model(model)
+        self.assertIn("template_logger.js", html)
+        self.assertEqual(html.count("MycelianLog.init("), 1)
+        self.assertIn(init, html)
+        self.assertNotIn("__TEMPLATE_NAME__", html)
+
+        stale = html.replace(init, "MycelianLog.init({ templateName: 'instant_alert' })", 1)
+        again, _cfg = compile_model(model, existing_html=stale)
+        self.assertEqual(again.count("MycelianLog.init("), 1)
+        self.assertIn(init, again)
+        self.assertNotIn("templateName: 'instant_alert'", again)
+
+        third, _cfg = compile_model(model, existing_html=again)
+        self.assertEqual(third.count("MycelianLog.init("), 1)
+        self.assertEqual(third, again)
+
 
 if __name__ == "__main__":
     unittest.main()

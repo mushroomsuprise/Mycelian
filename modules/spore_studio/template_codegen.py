@@ -71,6 +71,14 @@ _DOM_BEGIN = "<!-- SPORE_STUDIO:dom-begin -->"
 _DOM_END = "<!-- SPORE_STUDIO:dom-end -->"
 _STYLES_BEGIN = "<!-- SPORE_STUDIO:styles-begin -->"
 _STYLES_END = "<!-- SPORE_STUDIO:styles-end -->"
+_TEMPLATE_LOGGER_SCRIPT = (
+    '<script src="/assets/default_assets/template_logger.js"></script>'
+)
+_MYCELIAN_LOG_INIT_RE = re.compile(
+    r"[ \t]*<script>\s*MycelianLog\.init\(\s*\{\s*templateName:\s*"
+    r"[^}]+\}\s*\)\s*;\s*</script>[ \t]*\n?",
+    re.IGNORECASE,
+)
 
 
 def _replace_block(source: str, begin: str, end: str, replacement: str) -> str:
@@ -2357,6 +2365,34 @@ def _normalize_model_font_families(model: Dict[str, Any]) -> None:
             props["font_family"] = resolved
 
 
+def ensure_spore_template_logger(html: str, template_name: str) -> str:
+    """Load template_logger.js and init it with the overlay's real name.
+
+    Recompiles replace a stale boilerplate name (``instant_alert`` /
+    ``queue_alert``) or a leftover ``__TEMPLATE_NAME__`` placeholder so
+    client errors land in mycelian.log under the saved template.
+    """
+    name = str(template_name or "untitled")
+    init = (
+        "<script>MycelianLog.init({ templateName: "
+        + json.dumps(name)
+        + " });</script>"
+    )
+    html = _MYCELIAN_LOG_INIT_RE.sub("", html)
+    if _TEMPLATE_LOGGER_SCRIPT not in html:
+        block = f"    {_TEMPLATE_LOGGER_SCRIPT}\n    {init}\n"
+        if "</head>" in html:
+            return html.replace("</head>", block + "</head>", 1)
+        if "</body>" in html:
+            return html.replace("</body>", block + "</body>", 1)
+        return html + "\n" + _TEMPLATE_LOGGER_SCRIPT + "\n" + init
+    return html.replace(
+        _TEMPLATE_LOGGER_SCRIPT,
+        _TEMPLATE_LOGGER_SCRIPT + "\n    " + init,
+        1,
+    )
+
+
 def compile_model(
     model: Dict[str, Any],
     *,
@@ -2446,6 +2482,7 @@ def compile_model(
 
     json_config = _derived_json_config(model)
     out_html = inject_overlay_recovery(out_html)
+    out_html = ensure_spore_template_logger(out_html, str(template_name))
     return out_html, json_config
 
 
