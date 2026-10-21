@@ -922,10 +922,11 @@ def _elements_need_value_change_css(elements: List[Dict[str, Any]]) -> bool:
     for element in elements or []:
         if not isinstance(element, dict):
             continue
-        if str(element.get("type") or "").lower() not in ("text", "marquee"):
-            continue
+        etype = str(element.get("type") or "").lower()
         mode = str(element.get("text_mode") or "static").strip().lower()
-        if mode not in ("counter", "data_display"):
+        if etype not in ("counter", "data_display") and not (
+            etype in ("text", "marquee") and mode in ("counter", "data_display")
+        ):
             continue
         va = element.get("value_animation")
         if isinstance(va, dict) and va.get("enabled"):

@@ -82,7 +82,8 @@ NOTIFICATION_LEAVE_PIN_SCRIPT = """
 
         var mainTab = el.getAttribute('data-mycelian-nav-main-tab');
         var settingsSubtab = el.getAttribute('data-mycelian-nav-settings-subtab');
-        if (!mainTab && !settingsSubtab) {
+        var sporeTemplate = el.getAttribute('data-mycelian-nav-spore-template');
+        if (!mainTab && !settingsSubtab && !sporeTemplate) {
             return;
         }
 
@@ -96,6 +97,7 @@ NOTIFICATION_LEAVE_PIN_SCRIPT = """
                 emitEvent('mycelian-toast-navigate', {
                     main_tab: mainTab || '',
                     settings_subtab: settingsSubtab || '',
+                    spore_template: sporeTemplate || '',
                     message: message,
                 });
             }
@@ -416,6 +418,13 @@ def run_action(
             from .help_system.contextual_help import navigate_to_main_tab
 
             navigate_to_main_tab(str(main_tab))
+        spore_template = action.get("spore_template")
+        if spore_template:
+            from .help_system.contextual_help import navigate_to_main_tab
+            from .uiwindows.spore_studio.editor_view import open_template
+
+            navigate_to_main_tab("Spore Studio")
+            open_template(str(spore_template))
 
 
 def _should_skip_dedupe(dedupe_key: Optional[str], cooldown: float) -> bool:
@@ -494,6 +503,9 @@ def _build_toast_opts(
             attrs["data-mycelian-nav-main-tab"] = str(main_tab)
         if settings_subtab:
             attrs["data-mycelian-nav-settings-subtab"] = str(settings_subtab)
+        spore_template = nav_action.get("spore_template")
+        if spore_template:
+            attrs["data-mycelian-nav-spore-template"] = str(spore_template)
         extra["attrs"] = attrs
 
     opts: Dict[str, Any] = {
@@ -1948,6 +1960,9 @@ def _on_toast_navigate_event(e: Any) -> None:
         action["main_tab"] = args["main_tab"]
     if args.get("settings_subtab"):
         action["settings_subtab"] = args["settings_subtab"]
+    if args.get("spore_template"):
+        action["spore_template"] = args["spore_template"]
+        action["main_tab"] = action.get("main_tab") or "Spore Studio"
     if not action.get("main_tab") and not action.get("settings_subtab"):
         return
     run_action(action, message=str(args.get("message") or ""))

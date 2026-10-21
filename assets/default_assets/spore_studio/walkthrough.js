@@ -77,7 +77,7 @@
             tab: "properties",
             sel: "#ss-pane-properties",
             title: "Properties",
-            body: "Position, size, text, colors, counters, and the checkbox that exposes a value in Source Settings all live on this tab."
+            body: "Position, size, text, colors, counters, and the checkbox that exposes a value in Source Settings all live on this tab. Every block also has a Data feed section for live events, values, and other templates' outputs."
         },
         {
             mode: "templates",

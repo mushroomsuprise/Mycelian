@@ -11,7 +11,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from modules.spore_studio.save_pipeline import _merge_config, save_template
+from modules.spore_studio.save_pipeline import (
+    _carry_handwritten_outputs,
+    _merge_config,
+    save_template,
+)
 
 
 class SporeStudioSaveMergeTests(unittest.TestCase):
@@ -200,6 +204,39 @@ class SporeStudioSaveMergeTests(unittest.TestCase):
             self.assertEqual(by_id["cnt_color"]["value"], "#ff00ff")
             self.assertEqual(by_id["cnt_font_size"]["value"], 48)
             self.assertEqual(by_id["cnt_format"]["value"], "{value}/{max}")
+
+    def test_save_keeps_handwritten_outputs_and_drops_stale_generated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lab.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "outputs": {
+                            "custom": {
+                                "event": "my_result",
+                                "label": "Custom",
+                            },
+                            "gone_result": {
+                                "event": "wheel_result",
+                                "generated": True,
+                            },
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            new_config = {
+                "outputs": {
+                    "spin_result": {
+                        "event": "wheel_result",
+                        "generated": True,
+                    }
+                }
+            }
+            _carry_handwritten_outputs(str(path), new_config)
+            self.assertEqual(new_config["outputs"]["custom"]["event"], "my_result")
+            self.assertIn("spin_result", new_config["outputs"])
+            self.assertNotIn("gone_result", new_config["outputs"])
 
 
 if __name__ == "__main__":

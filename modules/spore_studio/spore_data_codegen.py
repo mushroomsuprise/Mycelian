@@ -14,6 +14,11 @@ from typing import Any, Dict, List, Set, Tuple
 
 from .data_source_registry import ALERT_PAYLOAD_KEYS, CHAT_PAYLOAD_KEYS
 from .behavior_blocks import _js_string, _js_value
+from .data_feed_registry import (
+    effective_feeds,
+    normalize_filters,
+    runtime_output_table,
+)
 
 
 _DATA_RUNTIME_BEGIN = "// SPORE_STUDIO:data-runtime-begin"
@@ -167,19 +172,33 @@ def _jinja_tojson_default(var_name: str, default: Any) -> str:
     return f"{{{{ {var_name}|default({json.dumps(default)})|tojson }}}}"
 
 
-_COUNTER_ELEMENT_TYPES = frozenset({"text", "marquee"})
+def _is_counter_element(el: Dict[str, Any]) -> bool:
+    etype = str(el.get("type") or "").lower()
+    if etype == "counter":
+        return isinstance(el.get("counter"), dict)
+    if etype in ("text", "marquee") and (el.get("text_mode") or "static") == "counter":
+        return isinstance(el.get("counter"), dict)
+    return False
+
+
+def _is_display_element(el: Dict[str, Any]) -> bool:
+    etype = str(el.get("type") or "").lower()
+    if etype == "data_display":
+        return isinstance(el.get("data_display"), dict) or True
+    if etype in ("text", "marquee") and (el.get("text_mode") or "static") == "data_display":
+        return isinstance(el.get("data_display"), dict)
+    return False
 
 
 def _collect_counters(elements: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
     out: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
     for el in elements or []:
-        if not isinstance(el, dict) or (el.get("type") or "").lower() not in _COUNTER_ELEMENT_TYPES:
-            continue
-        if (el.get("text_mode") or "static") != "counter":
+        if not isinstance(el, dict) or not _is_counter_element(el):
             continue
         cfg = el.get("counter")
         if not isinstance(cfg, dict):
-            continue
+            cfg = {}
+            el["counter"] = cfg
         out.append((el, cfg))
     return out
 
@@ -235,13 +254,12 @@ def _collect_timers(elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def _collect_displays(elements: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
     out: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
     for el in elements or []:
-        if not isinstance(el, dict) or (el.get("type") or "").lower() not in _COUNTER_ELEMENT_TYPES:
-            continue
-        if (el.get("text_mode") or "static") != "data_display":
+        if not isinstance(el, dict) or not _is_display_element(el):
             continue
         cfg = el.get("data_display")
         if not isinstance(cfg, dict):
-            continue
+            cfg = {}
+            el["data_display"] = cfg
         out.append((el, cfg))
     return out
 
@@ -474,6 +492,12 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
                 filt = rule.get("filter") if isinstance(rule.get("filter"), dict) else {}
                 # Blank filter rows mean "any value" and must not be compiled.
                 filt = {k: v for k, v in filt.items() if v not in ("", None)}
+                shared = (
+                    normalize_filters(rule.get("filters"))
+                    if isinstance(rule.get("filters"), dict)
+                    else None
+                )
+                shared_js = _js_value(shared) if shared else "null"
                 lines.append(
                     f"(function () {{\n"
                     f"    var __ev = {_js_string(ev)};\n"
@@ -481,9 +505,13 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
                     f"    var __op = {_js_string(op)};\n"
                     f"    var __delta = {delta_js};\n"
                     f"    var __filter = {_js_value(filt)};\n"
+                    f"    var __shared = {shared_js};\n"
+                    f"    var __fstate = {{}};\n"
                     f"    if (typeof socket !== 'undefined' && socket && socket.on) {{\n"
                     f"        socket.on(__ev, function (data) {{\n"
                     f"            if (!sporeMatchesFilter(data || {{}}, __filter)) {{ return; }}\n"
+                    f"            if (__shared && typeof sporeFeedFilterPasses === 'function' && "
+                    f"!sporeFeedFilterPasses(__shared, data || {{}}, __fstate)) {{ return; }}\n"
                     f"            window.__sporeLastPayload.event = data || {{}};\n"
                     f"            sporeCounterAdjust(__cid, __op, __delta, data);\n"
                     f"        }});\n"
@@ -504,16 +532,32 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
                     f"}})();"
                 )
 
+    # Unified data feeds (every block). Computed first so data displays know
+    # whether a feed now drives them.
+    feeds_by_element: Dict[str, List[Dict[str, Any]]] = {}
+    for fel in elements:
+        if isinstance(fel, dict) and fel.get("id"):
+            feeds_by_element[str(fel["id"])] = effective_feeds(fel)
+
+    def _display_has_feed(element_id: str) -> bool:
+        return any(
+            f.get("enabled") and (f.get("target") or {}).get("id") == "set_text"
+            for f in feeds_by_element.get(element_id, [])
+        )
+
     # Data displays
     display_events: Set[str] = set()
     for idx, (el, cfg) in enumerate(_collect_displays(elements)):
         eid = str(el.get("id") or "")
         src = cfg.get("source") if isinstance(cfg.get("source"), dict) else {}
+        driven_by_feed = _display_has_feed(eid)
         spec = {
             "elementId": eid,
             "source": src,
             "default_text": str(cfg.get("default_text") if cfg.get("default_text") is not None else "—"),
         }
+        if driven_by_feed:
+            spec["feed"] = True
         va_disp = _value_animation_meta(el)
         if va_disp:
             spec["value_animation"] = va_disp
@@ -524,6 +568,8 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
             f"{_js_value(spec)}, "
             f'{{"format": {_jinja_tojson_default(fmt_var, fmt_default)}}}));'
         )
+        if driven_by_feed:
+            continue
         for ev in cfg.get("refresh_on") or []:
             if ev:
                 display_events.add(str(ev))
@@ -544,6 +590,8 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
 
     poll_ms = 0
     for _el, cfg in _collect_displays(elements):
+        if _display_has_feed(str(_el.get("id") or "")):
+            continue
         try:
             poll_ms = max(poll_ms, int(cfg.get("poll_interval_ms") or 0))
         except (TypeError, ValueError):
@@ -697,20 +745,56 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
 
     lines.append("if (typeof sporePatchSetText === 'function') { sporePatchSetText(); }")
 
-    stat_cards = [
-        el for el in elements
-        if isinstance(el, dict) and (el.get("type") or "").lower() == "stat_card"
-    ]
-    if stat_cards:
-        lines.append("window.__sporeStatCards = window.__sporeStatCards || [];")
-        for el in stat_cards:
-            eid = str(el.get("id") or "")
-            src = el.get("stat_source") if isinstance(el.get("stat_source"), dict) else {}
-            spec = {
+    feed_rows: List[Dict[str, Any]] = []
+    for el in elements:
+        if not isinstance(el, dict) or not el.get("id"):
+            continue
+        eid = str(el["id"])
+        etype = str(el.get("type") or "").lower()
+        for fidx, feed in enumerate(feeds_by_element.get(eid, [])):
+            if not feed.get("enabled"):
+                continue
+            row = {
                 "elementId": eid,
-                "source": src or {"kind": "data_source", "source": ""},
+                "elementType": etype,
+                "id": feed["id"],
+                "enabled": True,
+                "source": feed["source"],
+                "filters": feed["filters"],
+                "mapping": dict(feed["mapping"]),
+                "timing": feed["timing"],
+                "target": feed["target"],
             }
-            lines.append(f"window.__sporeStatCards.push({_js_value(spec)});")
+            # A list's row template stays editable from Source Settings.
+            if (
+                etype == "list"
+                and fidx == 0
+                and (feed["target"] or {}).get("id") == "list_add"
+                and row["mapping"].get("template")
+            ):
+                row["mapping"]["template"] = "__SPORE_ROW_TEMPLATE__"
+            feed_rows.append(row)
+    feeds_js = _js_value(feed_rows)
+    for row in feed_rows:
+        if row["mapping"].get("template") == "__SPORE_ROW_TEMPLATE__":
+            original = next(
+                f["mapping"]["template"]
+                for f in feeds_by_element[row["elementId"]]
+                if f["id"] == row["id"]
+            )
+            var = f"{_slugify_id(row['elementId'])}_row_template"
+            feeds_js = feeds_js.replace(
+                '"__SPORE_ROW_TEMPLATE__"',
+                _jinja_tojson_default(var, original),
+                1,
+            )
+    lines.append("window.__sporeFeedsCompiled = true;")
+    lines.append("window.__sporeFeeds = " + feeds_js + ";")
+    lines.append(
+        "window.__sporeOutputs = "
+        + _js_value(runtime_output_table(elements))
+        + ";"
+    )
 
     lines.append("if (typeof sporeInitWidgets === 'function') { sporeInitWidgets(); }")
 

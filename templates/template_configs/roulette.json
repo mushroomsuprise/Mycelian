@@ -1,5 +1,17 @@
 {
     "template_name": "roulette",
+    "outputs": {
+        "result": {
+            "event": "roulette_result",
+            "label": "Roulette result",
+            "description": "The option the roulette wheel landed on.",
+            "payload": [
+                {"key": "result", "label": "Winning option", "type": "string"},
+                {"key": "index", "label": "Option number (starts at 0)", "type": "number"},
+                {"key": "timestamp", "label": "Timestamp (ms)", "type": "number"}
+            ]
+        }
+    },
     "elements": [
         {
             "type": "separator",

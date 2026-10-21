@@ -625,7 +625,29 @@ def _fmt_anim_data_attrs(element: Dict[str, Any]) -> str:
     )
 
 
-_TEXT_LIKE_TYPES = frozenset({"text", "marquee"})
+_TEXT_LIKE_TYPES = frozenset({"text", "marquee", "counter", "data_display"})
+
+
+def _effective_text_mode(element: Dict[str, Any]) -> str:
+    """Counter and data display are their own types. Older text widgets still carry text_mode."""
+    etype = str((element or {}).get("type") or "").lower()
+    if etype == "counter":
+        return "counter"
+    if etype == "data_display":
+        return "data_display"
+    mode = str((element or {}).get("text_mode") or "static").strip().lower()
+    if mode not in ("static", "counter", "data_display"):
+        return "static"
+    return mode
+
+
+def _wants_scroll(element: Dict[str, Any]) -> bool:
+    etype = str((element or {}).get("type") or "").lower()
+    if etype == "marquee":
+        return True
+    if etype in ("counter", "data_display"):
+        return bool(((element or {}).get("props") or {}).get("scroll"))
+    return False
 
 
 def _gradient_css(props: Dict[str, Any]) -> str:
@@ -953,45 +975,17 @@ def _render_element(
     classes = "spore-element"
     hidden_attr = ' data-spore-hidden="true"' if _element_start_hidden(element) else ""
     anim_attrs = _fmt_anim_data_attrs(element)
-    text_mode = str(element.get("text_mode") or "static").strip().lower()
-    if text_mode not in ("static", "counter", "data_display"):
-        text_mode = "static"
+    text_mode = _effective_text_mode(element)
     mode_attr = f' data-spore-text-mode="{html.escape(text_mode, quote=True)}"'
+    scrolling = _wants_scroll(element)
 
-    if etype == "text":
-        text_var = element.get("text_var") or eid + "Text"
-        text_default = props.get("text", "")
-        jinja_var = text_var
-        if text_mode == "counter":
-            cfg = (
-                element.get("counter")
-                if isinstance(element.get("counter"), dict)
-                else {}
-            )
-            fmt = str(cfg.get("format") or "{value}")
-            try:
-                init = cfg.get("initial_value", 0)
-            except (TypeError, ValueError):
-                init = 0
-            text_default = _apply_counter_format_tokens(
-                fmt, init, cfg.get("min"), cfg.get("max")
-            )
-            jinja_var = counter_format_config_id(eid)
-        elif text_mode == "data_display":
-            cfg = (
-                element.get("data_display")
-                if isinstance(element.get("data_display"), dict)
-                else {}
-            )
-            text_default = str(
-                cfg.get("default_text") if cfg.get("default_text") is not None else "—"
-            )
-            jinja_var = counter_format_config_id(eid)
+    if etype in ("text", "counter", "data_display") and not scrolling:
+        jinja_var, text_default = _text_element_display(element, eid, text_mode, props)
         return (
             f'<div id="{html.escape(eid)}" class="{classes}" '
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f"{anim_attrs} "
-            f'data-spore-type="text"{mode_attr}>'
+            f'data-spore-type="{html.escape(etype, quote=True)}"{mode_attr}>'
             f"{{{{ {jinja_var}|default({json.dumps(text_default)})|safe }}}}"
             f"</div>"
         )
@@ -1221,10 +1215,11 @@ def _render_element(
             f'data-spore-type="gradient"></div>'
         )
 
-    if etype == "marquee":
+    if etype == "marquee" or scrolling:
         jinja_var, text_default = _text_element_display(
             element, eid, text_mode, props
         )
+        spore_type = etype if etype in ("counter", "data_display", "marquee") else "marquee"
         try:
             spd = max(1, int(float(props.get("speed", 8))))
         except (TypeError, ValueError):
@@ -1246,7 +1241,7 @@ def _render_element(
             f'<div id="{html.escape(eid)}" class="{classes} spore-marquee" '
             f'style="{html.escape(style + ";--spore-marquee-duration:" + str(spd) + "s", quote=True)}"{hidden_attr} '
             f"{anim_attrs} "
-            f'data-spore-type="marquee"{mode_attr} '
+            f'data-spore-type="{html.escape(spore_type, quote=True)}"{mode_attr} '
             f'data-spore-marquee-speed="{spd}" '
             f'data-spore-marquee-direction="{html.escape(direction, quote=True)}" '
             f'data-spore-marquee-gap="{gap}">'
@@ -1630,8 +1625,8 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
             etype = (element.get("type") or "container").lower()
             props = element.get("props") or {}
 
-            if etype == "text":
-                text_mode = str(element.get("text_mode") or "static").strip().lower()
+            if etype in ("text", "marquee", "counter", "data_display"):
+                text_mode = _effective_text_mode(element)
                 if text_mode == "counter" and _expose_field(element, "text"):
                     cfg = (
                         element.get("counter")
@@ -2188,6 +2183,11 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
     connector_actions = build_timer_connector_actions(model.get("elements") or [])
     if connector_actions:
         base["connector_actions"] = connector_actions
+    from .data_feed_registry import build_widget_outputs
+
+    outputs = build_widget_outputs(model.get("elements") or [], template_name)
+    if outputs:
+        base["outputs"] = outputs
     return base
 
 
@@ -2197,13 +2197,8 @@ _WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[str, str]]] = {
         ("newest", "text"),
         ("row_template", "text"),
         ("row_gap", "number"),
-        ("source", "text"),
-        ("source_event", "text"),
-        ("text_field", "text"),
-        ("value_field", "text"),
         ("add_animation", "text"),
         ("remove_animation", "text"),
-        ("alert_type", "text"),
         ("row_lifetime_s", "number"),
         ("row_background", "color"),
         ("row_padding", "number"),
@@ -2213,7 +2208,6 @@ _WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[str, str]]] = {
         ("spin_ms", "number"),
         ("easing", "text"),
         ("pointer", "text"),
-        ("source", "text"),
         ("variance", "checkbox"),
         ("click_sound", "checkbox"),
         ("click_volume", "number"),
@@ -2383,6 +2377,17 @@ def compile_model(
     Returns:
         Tuple of HTML string and JSON config dict, both ready to write.
     """
+    if isinstance(model, dict) and not model.get("legacy"):
+        from .data_feed_registry import (
+            migrate_counter_rules,
+            migrate_legacy_element_types,
+            migrate_model_feeds,
+        )
+
+        migrate_model_feeds(model)
+        migrate_legacy_element_types(model)
+        migrate_counter_rules(model)
+
     alert_system = str(model.get("alert_system") or "queue")
     base_html = existing_html if existing_html else _load_boilerplate(alert_system)
 

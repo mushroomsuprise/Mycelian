@@ -11,6 +11,6 @@ engine is offline, and an iframe pointing at the editor URL when the
 server is ready.
 """
 
-from .editor_view import create_spore_studio_tab
+from .editor_view import create_spore_studio_tab, open_template
 
-__all__ = ["create_spore_studio_tab"]
+__all__ = ["create_spore_studio_tab", "open_template"]

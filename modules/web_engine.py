@@ -1660,6 +1660,21 @@ class WebEngine:
                 logger.error("Spore Studio data-sources endpoint error: %s", e)
                 return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
 
+        @self.app.route("/api/spore-studio/data-catalog")
+        def serve_spore_studio_data_catalog():
+            """Unified Data feed catalog: sources, events, template outputs, targets."""
+            try:
+                from .spore_studio import data_feed_registry as _df
+
+                return (
+                    _df.get_data_catalog(),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                logger.error("Spore Studio data-catalog endpoint error: %s", e)
+                return ({"error": str(e)}, 500, {"Content-Type": "application/json"})
+
         @self.app.route("/api/spore-studio/control-actions")
         def serve_spore_studio_control_actions():
             """Return curated dynamic control actions for Source Controls."""
@@ -7913,6 +7928,9 @@ class WebEngine:
         # Standalone template relay handlers
         self.register_standalone_template_relay_handlers()
 
+        # Template output relay (roulette_result, wheel_result, ...)
+        self.register_template_output_relay()
+
         # Chat-specific handlers
         @self.socketio.on("chat_banner_request")
         def handle_chat_banner_request(data=None):
@@ -9908,6 +9926,54 @@ class WebEngine:
                 f"Error registering source controls relay handler: {str(e)}",
                 exc_info=True,
             )
+
+    def register_template_output_relay(self):
+        """
+        Re-broadcast events that templates publish as outputs.
+
+        Templates emit results such as ``roulette_result`` or ``wheel_result``
+        to the server, which previously dropped them. This catch-all handler
+        (it only fires for events with no dedicated handler) forwards any event
+        that template discovery lists as an output, so other overlays and
+        Spore Studio data feeds can react to it:
+
+        * ``template_output`` envelope ``{template, event, data}`` to everyone
+          (including the emitter, so a template can react to its own widgets);
+        * the raw event name to everyone else, for plain event bindings.
+        """
+        from .spore_studio import template_outputs as _to
+
+        try:
+
+            @self.socketio.on("*")
+            def handle_template_output(event, *args):
+                if not _to.is_relayable_event(event):
+                    return
+                if _reject_non_localhost_socket():
+                    return
+                try:
+                    known = _to.known_output_events()
+                    if event not in known:
+                        return
+                    payload = args[0] if args else {}
+                    if not isinstance(payload, dict):
+                        payload = {"value": payload}
+                    try:
+                        if len(json.dumps(payload, default=str)) > 65536:
+                            logger.warning("Dropped oversized template output %s", event)
+                            return
+                    except (TypeError, ValueError):
+                        return
+                    template = _to.resolve_emitter(event, payload)
+                    envelope = {"template": template, "event": event, "data": payload}
+                    self.socketio.emit("template_output", envelope)
+                    self.socketio.emit(event, payload, skip_sid=request.sid)
+                except Exception as e:
+                    logger.error("Template output relay error for %s: %s", event, e)
+
+            logger.debug("Registered template output relay")
+        except Exception as e:
+            logger.error("Error registering template output relay: %s", e, exc_info=True)
 
     def get_registered_dynamic_handlers(self):
         """Get a list of all registered dynamic control handlers"""

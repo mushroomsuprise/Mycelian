@@ -103,7 +103,24 @@ def _editor_url() -> str:
 
 
 def _state() -> Dict[str, Any]:
-    return {"iframe": None, "placeholder": None, "container": None}
+    return {"iframe": None, "placeholder": None, "container": None, "pending_template": ""}
+
+
+_live_state: Dict[str, Any] = {"current": None}
+
+
+def open_template(name: str) -> None:
+    """Switch to a template inside the Spore Studio iframe, once it exists."""
+    cleaned = str(name or "").strip()
+    if not cleaned:
+        return
+    state = _live_state.get("current")
+    if not isinstance(state, dict):
+        _live_state["pending_template"] = cleaned
+        return
+    state["pending_template"] = cleaned
+    if state.get("iframe") is not None:
+        _refresh_iframe(state)
 
 
 def create_spore_studio_tab() -> None:
@@ -116,6 +133,9 @@ def create_spore_studio_tab() -> None:
     """
     _inject_css()
     state = _state()
+    if _live_state.get("pending_template") and not state.get("pending_template"):
+        state["pending_template"] = _live_state.pop("pending_template")
+    _live_state["current"] = state
 
     with ui.element("div").classes(
         "spore-studio-host w-full h-full min-h-0 flex flex-col"
@@ -195,7 +215,13 @@ def _refresh_iframe(state: Dict[str, Any]) -> None:
     # Cache-bust so the iframe actually reloads when the URL is otherwise
     # unchanged — without this, calling props(src=...) with the same value
     # is a no-op and the "Reload editor" button silently does nothing.
-    cache_busted = f"{url}?_cb={int(time.time() * 1000)}"
+    from urllib.parse import quote
+
+    query = f"_cb={int(time.time() * 1000)}"
+    pending = str(state.pop("pending_template", "") or "").strip()
+    if pending:
+        query += "&template=" + quote(pending)
+    cache_busted = f"{url}?{query}"
     iframe.props(f'src="{cache_busted}"')
     placeholder.style("display:none")
 

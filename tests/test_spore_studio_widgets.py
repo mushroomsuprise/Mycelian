@@ -88,6 +88,7 @@ class SporeStudioWidgetTests(unittest.TestCase):
             "sporeInitWidgets",
             "qrcode.js",
             "__sporeStatCards",
+            "__sporeFeeds",
             "sporeWheelSpin",
         ):
             self.assertIn(marker, html, marker)

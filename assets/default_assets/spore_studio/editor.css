@@ -806,6 +806,76 @@ html, body {
     margin-top: 8px;
     margin-bottom: 2px;
 }
+
+.ss-feed {
+    background: var(--ss-bg-input);
+    border: 1px solid var(--ss-border);
+    border-radius: var(--ss-radius);
+    padding: 8px;
+    margin-bottom: 10px;
+}
+.ss-feed--off { opacity: 0.65; }
+.ss-feed__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.ss-feed__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 600;
+    font-size: 12px;
+}
+.ss-feed__summary {
+    font-size: 11px;
+    color: var(--ss-text-muted);
+    line-height: 1.4;
+    margin-bottom: 8px;
+}
+.ss-feed__part {
+    border-top: 1px solid var(--ss-border);
+    padding-top: 6px;
+    margin-top: 6px;
+}
+.ss-feed__part-body { padding-top: 4px; }
+.ss-feed__filters,
+.ss-feed__rules,
+.ss-feed__checks,
+.ss-feed__template { display: flex; flex-direction: column; gap: 6px; }
+.ss-feed__rule,
+.ss-feed__pair {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+}
+.ss-feed select,
+.ss-feed input,
+.ss-feed__rule select,
+.ss-feed__rule input,
+.ss-feed__filters select,
+.ss-feed__filters input {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+.ss-feed__rule > select,
+.ss-feed__rule > input {
+    flex: 1 1 90px;
+}
+.ss-feed__rule > button { flex: 0 0 auto; }
+.ss-feed__preview {
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 6px 8px;
+    border-radius: var(--ss-radius);
+    background: color-mix(in srgb, var(--ss-accent) 12%, var(--ss-bg-elevated));
+    border: 1px dashed var(--ss-border);
+    color: var(--ss-text);
+    word-break: break-word;
+}
 .ss-twitch-filter-row {
     display: flex;
     gap: 6px;

@@ -183,6 +183,18 @@ _EVENTS: List[Dict[str, Any]] = [
         ],
     },
     {
+        "event": "spotify_data_update",
+        "label": "Now playing (Spotify)",
+        "alert_system": "either",
+        "description": "Fired when the Spotify track or playback position changes.",
+        "payload": [
+            {"key": "track_name", "label": "Track name", "type": "string"},
+            {"key": "artist_name", "label": "Artist", "type": "string"},
+            {"key": "album_image_url", "label": "Album art URL", "type": "string"},
+            {"key": "progress_percentage", "label": "Progress (percent)", "type": "number"},
+        ],
+    },
+    {
         "event": "refresh-alerts",
         "label": "Refresh alerts",
         "alert_system": "either",
@@ -558,8 +570,15 @@ def get_event_registry() -> Dict[str, Any]:
         A dict with two top-level keys: ``events`` (list of event
         descriptors) and ``actions`` (list of action descriptors).
     """
+    events = [dict(event) for event in _EVENTS]
+    try:
+        from .template_outputs import merge_into_events
+
+        events = merge_into_events(events)
+    except Exception:  # pragma: no cover - discovery must never break the picker
+        pass
     return {
-        "events": [dict(event) for event in _EVENTS],
+        "events": events,
         "actions": [dict(action) for action in _ACTIONS],
     }
 

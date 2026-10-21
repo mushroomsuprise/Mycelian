@@ -28,11 +28,13 @@ from . import (
     assets_watcher,
     behavior_blocks,
     control_action_registry,
+    data_feed_registry,
     data_source_registry,
     event_registry,
     save_pipeline,
     spore_data_codegen,
     template_codegen,
+    template_outputs,
     template_parser_back,
 )
 
@@ -62,11 +64,13 @@ __all__ = [
     "assets_watcher",
     "behavior_blocks",
     "control_action_registry",
+    "data_feed_registry",
     "data_source_registry",
     "ensure_sidecar_migration",
     "event_registry",
     "save_pipeline",
     "spore_data_codegen",
     "template_codegen",
+    "template_outputs",
     "template_parser_back",
 ]

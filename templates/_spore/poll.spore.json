@@ -21,6 +21,60 @@
       },
       "bindings": [],
       "category": "Poll",
+      "data_feed": [
+        {
+          "enabled": true,
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "id": "feed1",
+          "label": "",
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "source": {
+            "events": [
+              "poll_state",
+              "poll_ended"
+            ],
+            "kind": "event",
+            "refresh_ms": 0,
+            "refresh_on": [],
+            "template_output": {
+              "event": "",
+              "match": {},
+              "template": ""
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            }
+          },
+          "target": {
+            "id": "repaint",
+            "options": {}
+          },
+          "timing": {
+            "delay_ms": 0
+          }
+        }
+      ],
       "id": "poll1",
       "position": {
         "x": 0,
@@ -79,7 +133,8 @@
         "winner_mode": true
       },
       "start_hidden": false,
-      "type": "poll"
+      "type": "poll",
+      "output_settings": {}
     }
   ],
   "preview_mocks": [
@@ -136,6 +191,14 @@
       "alert_type": "hype_train",
       "event": "instant_alert",
       "label": "Hype train"
+    },
+    {
+      "event": "poll_state",
+      "label": "Poll update"
+    },
+    {
+      "event": "poll_ended",
+      "label": "Poll ended"
     }
   ],
   "queued": false,

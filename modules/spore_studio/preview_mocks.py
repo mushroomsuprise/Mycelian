@@ -538,6 +538,9 @@ def build_mock_payload(
             return None
     spec = _BUILDERS.get(ev)
     if spec is None:
+        sample = _template_output_mock(ev)
+        if sample is not None:
+            return sample
         logger.debug("No mock builder registered for event %r", ev)
         return None
     socket_event, builder = spec
@@ -550,6 +553,21 @@ def build_mock_payload(
         )
         return None
     return socket_event, payload
+
+
+def _template_output_mock(event_name: str) -> Optional[Tuple[str, Any]]:
+    """
+    Mock for a template output (``roulette_result``, ``wheel_result``, ...).
+
+    Outputs reach data feeds inside a ``template_output`` envelope, so the
+    mock is emitted the same way a live relay would send it.
+    """
+    try:
+        from .template_outputs import sample_envelope
+
+        return sample_envelope(event_name)
+    except Exception:  # pragma: no cover - discovery must never break previews
+        return None
 
 
 def _collect_bound_events(model: Dict[str, Any]) -> List[str]:
@@ -581,6 +599,22 @@ def _collect_bound_events(model: Dict[str, Any]) -> List[str]:
         if isinstance(dd, dict):
             for ev in dd.get("refresh_on") or []:
                 add(ev)
+        feeds = element.get("data_feed")
+        for feed in feeds if isinstance(feeds, list) else []:
+            if not isinstance(feed, dict) or feed.get("enabled") is False:
+                continue
+            src = feed.get("source") if isinstance(feed.get("source"), dict) else {}
+            kind = src.get("kind")
+            if kind == "event":
+                for ev in src.get("events") or []:
+                    add(ev)
+            elif kind == "template_output":
+                tout = src.get("template_output")
+                if isinstance(tout, dict):
+                    add(tout.get("event"))
+            elif kind == "value":
+                for ev in src.get("refresh_on") or []:
+                    add(ev)
     return found
 
 

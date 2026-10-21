@@ -3232,6 +3232,7 @@ Quick walkthrough from blank canvas to OBS:
 | Every widget and its settings | [Widget reference](help:spore_studio_widgets) |
 | Counters and counter rules | [Counters in Spore Studio](help:spore_studio_counters) |
 | Data displays and live values | [Data Sources & Data Displays](help:spore_studio_data_sources) |
+| One feed for every block | [Data feeds](help:spore_studio_data_feed) |
 | Websocket triggers and actions | [Event Bindings & Actions](help:spore_studio_bindings) |
 | Stream Deck button mapping | [Stream Deck Actions in Spore Studio](help:spore_studio_streamdeck) |
 | Live stream control buttons | [Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls) |
@@ -3257,6 +3258,7 @@ Quick walkthrough from blank canvas to OBS:
             "templates_intro",
             "spore_studio_design",
             "spore_studio_counters",
+            "spore_studio_data_feed",
             "spore_studio_data_sources",
             "spore_studio_streamdeck",
             "spore_studio_dynamic_controls",
@@ -3508,7 +3510,7 @@ New elements default exposed keys to **on** for their type's schema fields.
 
 ## Text Modes (Counters & Data Displays)
 
-For **text** elements, **Text mode** in Properties selects one of:
+**Text** is static copy. A **Counter** block holds a number, and a **Data display** block holds a live value. Older templates that still use Text mode are converted the next time you save them:
 
 | Mode | Purpose |
 |------|---------|
@@ -3554,6 +3556,7 @@ After layout and styling, open the **Bindings** tab — covered in
         related_topics=[
             "spore_studio_overview",
             "spore_studio_counters",
+            "spore_studio_data_feed",
             "spore_studio_data_sources",
             "spore_studio_dynamic_controls",
             "spore_studio_bindings",
@@ -3595,12 +3598,11 @@ These apply to every element.
 
 ### Text
 
-Labels, usernames, counters, and data displays.
+Labels and other static copy. Counters and live values are their own blocks.
 
 | Setting | Default | What it does |
 |---------|---------|----------------|
-| **Text mode** | Static text | **Static text** is fixed copy. **Counter** is a number with rules. **Data display** reads a live value. |
-| **Text** | Hello | Shown only in static mode |
+| **Text** | Hello | The copy this block shows |
 | **Size** | 32 | Font size in pixels |
 | **Color** | `#ffffff` | Text color |
 | **Font** | Arial | A file from `assets/default_assets/fonts/` or a family name |
@@ -3612,7 +3614,7 @@ Labels, usernames, counters, and data displays.
 | **V-align** | top | `top`, `center`, `bottom` inside the box |
 | **Background** | empty | Fill behind the text |
 
-Counter mode adds counter id, initial value, min, max, format (`{value}`, `{min}`, `{max}`), persist, database path and key, and **Counter rules**. See [Counters](help:spore_studio_counters). Data display mode adds a data source, format, default text, and refresh events. See [Data sources](help:spore_studio_data_sources).
+Text is static copy only. Use the **Counter** block for a number (format, rules, optional scroll) and the **Data display** block for a live value. See [Counters](help:spore_studio_counters) and [Data feeds](help:spore_studio_data_feed).
 
 Both live modes can animate the value (`tick_up`, fade-in, slide-in, bounce) separately from show/hide animations.
 
@@ -3720,7 +3722,7 @@ Groups children and clips them. Child positions are relative to the container's 
 
 ### Marquee
 
-Scrolling text. Supports the same text modes as Text (static, counter, data display) plus:
+Scrolling text. For a scrolling number or live value, add a **Counter** or **Data display** and turn on **Scroll**. Marquee settings:
 
 | Setting | Default | What it does |
 |---------|---------|----------------|
@@ -3789,23 +3791,17 @@ Fills from a counter toward a goal.
 
 ### List
 
-A feed of rows. Select a list and open **List feed** on the Properties tab. It is a three-step setup: choose where rows come from, choose which event fields fill the `{username}` and `{value}` slots, then write the row template. Every choice is a dropdown.
+A feed of rows. Where rows come from, which payloads to keep, and what each row says is set under **Data feed** — the same setup every other block uses. See [Data feeds](help:spore_studio_data_feed). The **List** section holds only list-specific options.
 
-**List feed** (rows and content)
+**List** (placement and lifetime)
 
 | Setting | Default | What it does |
 |---------|---------|----------------|
-| **1. Rows come from** | Alerts | Alerts (queued and instant), giveaway entries and winners, any other event you pick, or manual (only Bindings add rows) |
-| **Listen to event** | none | Appears for "Another event". A row is added each time that event fires. |
-| **Only this alert type** | Any alert type | Appears for Alerts. Show only follows, only bits, only raids, and so on. |
-| **2. Fills {username}** | username | Event field shown in the `{username}` slot. Choices come from the event's payload. |
-| **Fills {value}** | amount or quantity | Event field shown in the `{value}` slot |
-| **3. Row template** | `{username}` | Row text. The **Insert a field** dropdown adds any `{field}` from the event. |
 | **Max rows** | 8 | Oldest row is removed after this many |
 | **New rows go** | To the top | Top or bottom |
 | **Remove rows after (seconds)** | 0 | Rows disappear on their own after this long. 0 keeps a row until newer rows push it out. |
 
-Giveaway winners add one row per winner, with the winner's name in `{username}`.
+Giveaway winners add one row per winner when the feed maps `{username}` (or splits the `winners` field). A list can also listen to another template's output, for example the roulette wheel's result.
 
 **Appearance** (look and feel)
 
@@ -3821,20 +3817,19 @@ Bindings on the list: **Add list row** (optional literal text) and **Clear list*
 
 ### Wheel
 
-A spinning wheel. Static segments are edited under **Wheel segments** (label and color). **Segments from: giveaway** replaces those slices with the giveaway pool when a winner is drawn, then spins to that winner.
+A spinning wheel. Static segments are edited under **Wheel segments** (label and color). Drive a spin, fill slices from a list, or land on a named slice from **Data feed**. A giveaway winner is just another feed: listen to `giveaway_winner`, fill slices from `pool_entries`, and land on `winners`.
 
 | Setting | Default | What it does |
 |---------|---------|----------------|
 | **Spin duration (ms)** | 4000 | How long the spin lasts |
 | **Easing** | ease-out | Feel of the spin |
 | **Pointer** | top | `top`, `right`, `bottom`, or `left` |
-| **Segments from** | static | `static` uses the segment list. `giveaway` follows giveaway winners. |
 
-Trigger a spin with the **Spin wheel** binding action, or `sporeWheelSpin(id, payload)`. If `payload.label` matches a segment, that slice wins. When the spin ends, `window.__sporeLastPayload.wheel` is `{ elementId, index, label }` and the overlay emits `wheel_result` with the same object.
+Trigger a spin with the **Spin wheel** binding action, a Data feed target, or `sporeWheelSpin(id, payload)`. If `payload.label` matches a segment, that slice wins. When the spin ends, `window.__sporeLastPayload.wheel` is `{ elementId, index, label }` and the overlay emits `wheel_result` with the same object so other templates can listen.
 
 ### Stat card
 
-Icon, label, and a value from a data source.
+Icon, label, and a value. The value comes from **Data feed** (a live value source or an event), using the same picker and filters as every other block.
 
 | Setting | Default | What it does |
 |---------|---------|----------------|
@@ -3845,9 +3840,8 @@ Icon, label, and a value from a data source.
 | **Value size** | 28 | Font size of the value. The label is half this size. |
 | **Font / Bold / Italic** | Arial / off / off | Typeface for the label and value |
 | **Background / border** | dark card | Fill, border width, color, and corner radius |
-| **Data source** | session bits | Same picker as data displays, including the extra fields for counters, config, stats, runtime, and Twitch |
 
-The editor preview shows a sample value so you can judge the layout. In the live overlay the card reads its data source on load, on every alert, and again every second. Session statistics are re-fetched every 15 seconds.
+The editor preview shows a sample value so you can judge the layout. In the live overlay the card follows the Data feed you set (typically a session statistic refreshed on alerts and on a timer).
 
 ### Poll
 
@@ -3874,6 +3868,7 @@ A live view of the poll configured in **Chatbot → Polls** for this template. T
 
 - [Designing Templates](help:spore_studio_design)
 - [Counters](help:spore_studio_counters)
+- [Data feeds](help:spore_studio_data_feed)
 - [Data sources](help:spore_studio_data_sources)
 - [Event bindings](help:spore_studio_bindings)
         """,
@@ -3893,6 +3888,7 @@ A live view of the poll configured in **Chatbot → Polls** for this template. T
         related_topics=[
             "spore_studio_design",
             "spore_studio_counters",
+            "spore_studio_data_feed",
             "spore_studio_data_sources",
             "spore_studio_bindings",
             "spore_studio_advanced_js",
@@ -4470,12 +4466,12 @@ socket.on('next_alert', function (data) {
 **Goal:** HUD that increments a sub total on every sub without blocking the alert queue.
 
 1. **+ New** → `sub_counter`, Alert system: **Instant**, 600×80.
-2. Add **Text** → category `Counter` → **Text mode**: **Counter**.
+2. Add a **Counter** block → category `Counter`.
 3. Set **Counter id**: `sub_count`, **Format**: `Subs: {value}`, **Initial value**: `0`.
-4. **+ Add counter rule**:
-   - Event: `instant_alert`
-   - Filter: `alert_type` = `sub`
-   - Operation: **increment**
+4. Open **Data feed** → **+ Add feed**:
+   - Events: `instant_alert`
+   - Alert type: `sub`
+   - **Update this block**: **Add to this counter**
    - Delta kind: **fixed** → `1`
 5. Optional: enable **tick_up** value change animation.
 6. **Save** — no `alert_complete` required. Test with **Preview** → sub mock.
@@ -4639,15 +4635,15 @@ For [data sources](help:spore_studio_data_sources) used in counter deltas, see t
 |----------|----------|
 | **Counter mode** | Running totals, increment/decrement on events, persistence, tick-up animation |
 | **Static text** + **set_text** binding | One-off labels that mirror a single payload field (e.g. username) |
-| **Data display** mode | Read-only values (session stats, last cheer amount) without arithmetic |
+| **Data display** block | Read-only values (session stats, last cheer amount) without arithmetic |
 
 Use **Instant** alert system on the [Canvas tab](help:spore_studio_design) for counter HUDs so
 `instant_alert` events do not block the [alert queue](help:alerts_overview).
 
 ## Step-by-Step Setup
 
-1. Drag a **Text** block onto the canvas and assign a category (e.g. `Counter`).
-2. In **Properties**, set **Text mode** to **Counter**.
+1. Drag a **Counter** block onto the canvas and assign a category (e.g. `Counter`).
+2. Turn on **Scroll** if the number should move like a marquee.
 3. Configure the counter fields:
 
 | Field | Purpose |
@@ -4656,7 +4652,7 @@ Use **Instant** alert system on the [Canvas tab](help:spore_studio_design) for c
 | **Format** | Display string; use `{value}` for the number (e.g. `Bits: {value}`) |
 | **Initial value** | Starting number when the overlay loads (often `0`) |
 
-4. Click **+ Add counter rule** for each event that should change the value.
+4. Open **Data feed** and add one feed for each event that should change the value. **Update this block** chooses add, subtract, set, or reset. **Delta kind** chooses a fixed number, a random range, or a live data source.
 5. **Save** and test with **Preview** → mock **instant_alert** (bits/sub).
 
 ## Counter Rules
@@ -4785,6 +4781,96 @@ or a one-off adjustment from a different event than your main rules.
             "spore_studio_examples",
         ],
     ),
+    "spore_studio_data_feed": HelpTopic(
+        id="spore_studio_data_feed",
+        title="Data Feeds",
+        category=HelpCategory.SPORE_STUDIO,
+        summary="The shared source, filter, format, and target setup every Spore Studio block uses",
+        content="""
+# Data Feeds
+
+Every block in Spore Studio has a **Data feed** category. The source picker, filters, field mapping, and formatting are the same on a list, a wheel, a stat card, a counter, or a timer. Only **Update this block** changes, because that is what the selected block does with each matching item.
+
+A new list starts listening to alerts. A new poll starts listening to poll updates. A new now-playing card starts listening to Spotify. Add more feeds with **+ Add feed**.
+
+See [Data Sources & Data Displays](help:spore_studio_data_sources) for the curated live values, and [Widget reference](help:spore_studio_widgets) for the options that stay unique to each block.
+
+## Anatomy of a feed
+
+1. **When it runs** — an event (alerts, chat, giveaway, poll, music), a live value (session stats, another counter, Source Settings, runtime database, Twitch API), or **the output of another template**.
+2. **Which ones to keep** — filters follow the events you turned on. Alert type and sub tier appear only for alerts. Other events add their own dropdowns. **+ Add filter** adds more. Username allow/block lists, cooldown, max per minute, dedupe, and skip first N are always available.
+3. **What it says** — **Main text field** and **Number field** list every field from the events that are on. A token template such as `{username} - {amount|number}`, prefix/suffix, decimals, and fallback text. **Split into rows** appears only when a selected event has a list. The preview line uses sample values from those fields.
+4. **Timing** — optional delay before this block updates. Value sources also have a refresh interval.
+5. **Update this block** — what this block does with each match. Examples: add a list row, spin the wheel, add to this counter, show this value, start a timer, show or hide the block. Nothing is sent to another block.
+
+Turn a feed off with its toggle. Duplicate or remove it from the feed card.
+
+## Filter operators
+
+Field rules can match **all** or **any** of the following:
+
+equals, does not equal, contains, does not contain, starts with, ends with, matches regex, greater than, at least, less than, at most, between (min,max), is one of (comma list), is not one of, is empty, is not empty.
+
+Counter rules reuse this same filter editor.
+
+## Token formatting
+
+Write `{field}` or `{field|modifier}`. Chain modifiers with `|`.
+
+| Modifier | Example | Result |
+|----------|---------|--------|
+| `number` | `{amount|number}` | 1,234 |
+| `compact` | `{total|compact}` | 1.2K |
+| `int` | `{amount|int}` | 12 |
+| `decimals:N` | `{amount|decimals:2}` | 12.00 |
+| `percent` | `{ratio|percent}` | 50% |
+| `duration` | `{duration|duration}` | 1:05 |
+| `ordinal` | `{index|ordinal}` | 1st |
+| `upper` / `lower` / `title` / `trim` | `{username|upper}` | CASEY |
+| `truncate:N` | `{message|truncate:40}` | First 39 characters… |
+| `default:text` | `{username|default:Anonymous}` | Anonymous when empty |
+
+## Template outputs
+
+Templates can publish results that other overlays listen to. Spore Studio writes these into the saved JSON automatically:
+
+| Block | Event | When |
+|-------|-------|------|
+| Wheel | `wheel_result` | The wheel stops |
+| Poll | `poll_result` | The poll ends |
+| Timer | `timer_finished` | The countdown or limit is reached (not on pause) |
+| Text / Marquee in counter mode | `counter_changed` | The counter value changes |
+| Progress bar | `goal_reached` | The value reaches the goal |
+| List | `list_row_added` / `list_cleared` | Optional; off by default |
+
+Hand-written templates such as roulette declare an `outputs` block too (`roulette_result`). The editor lists every discovered output under **The output of another template**. Each widget also has an **Outputs** section so you can turn a result off or rename it.
+
+The server relays those events to every overlay as `template_output` `{template, event, data}`. Preview has a mock button for each one.
+
+## See also
+
+- [Widget reference](help:spore_studio_widgets)
+- [Data Sources & Data Displays](help:spore_studio_data_sources)
+- [Counters](help:spore_studio_counters)
+- [Event bindings](help:spore_studio_bindings)
+        """,
+        keywords=[
+            "data feed",
+            "filter",
+            "template output",
+            "roulette result",
+            "wheel result",
+            "formatting",
+            "spore studio",
+        ],
+        related_topics=[
+            "spore_studio_widgets",
+            "spore_studio_data_sources",
+            "spore_studio_counters",
+            "spore_studio_bindings",
+        ],
+        ui_context="spore_studio",
+    ),
     "spore_studio_data_sources": HelpTopic(
         id="spore_studio_data_sources",
         title="Data Sources & Data Displays",
@@ -4794,18 +4880,18 @@ or a one-off adjustment from a different event than your main rules.
 # Data Sources & Data Displays
 
 Data sources are curated live values from alerts, chat, session stats, and more. Use them in
-**Data display** text elements (read-only) or as **counter deltas** (numeric adjustments).
+a block's **Data feed** (the shared setup on every widget), in **Data display** text elements,
+or as **counter deltas** (numeric adjustments).
 
+See [Data feeds](help:spore_studio_data_feed) for the shared source, filter, and format UI.
 See [Counters in Spore Studio](help:spore_studio_counters) for counter rules that consume data sources.
 
 ## Data Display Workflow
 
-1. Add a **Text** block → **Text mode**: **Data display**.
-2. Pick a **Data source** from the categorized dropdown.
+1. Add a **Data display** block.
+2. Under **Data feed**, pick the event or live value.
 3. Set **Format** — use `{value}` for the resolved value (e.g. `Cheered: {value} bits`).
-4. Under **Refresh on events**, select socket events that should re-read the source
-   (e.g. `instant_alert`, `new-message`, `pause_status_update`).
-5. **Save** and test in **Preview**.
+4. **Save** and test in **Preview**.
 
 Data displays are **read-only** — they do not increment counters or fire side effects.
 
@@ -4969,6 +5055,7 @@ under **Twitch API Bindings**, then reference response fields here.
             "spore studio",
         ],
         related_topics=[
+            "spore_studio_data_feed",
             "spore_studio_counters",
             "spore_studio_design",
             "spore_studio_bindings",

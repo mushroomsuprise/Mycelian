@@ -358,6 +358,20 @@ def parse_existing(template_name: str) -> Dict[str, Any]:
         _hydrate_canvas_timing_from_public_config(template_name, sidecar)
         _hydrate_dynamic_controls_from_public_config(template_name, sidecar)
         sidecar.setdefault("dynamic_controls", {"elements": []})
+        # Older models wire data per widget; give each block an explicit data_feed.
+        try:
+            from .data_feed_registry import (
+                migrate_counter_rules,
+                migrate_legacy_element_types,
+                migrate_model_feeds,
+            )
+
+            # Feeds first, while text_mode still says what the old widget was.
+            migrate_model_feeds(sidecar)
+            migrate_legacy_element_types(sidecar)
+            migrate_counter_rules(sidecar)
+        except Exception as e:  # pragma: no cover - migration must not block loading
+            logger.warning("Data feed migration failed for %s: %s", template_name, e)
         return sidecar
 
     html_path = get_template_path(f"{template_name}.html")

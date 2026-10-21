@@ -469,6 +469,33 @@ def _save_legacy_template(model: Dict[str, Any], template_name: str) -> Dict[str
     return model
 
 
+def _carry_handwritten_outputs(json_path: str, new_config: Dict[str, Any]) -> None:
+    """
+    Keep ``outputs`` entries a person wrote by hand when the config is regenerated.
+
+    Entries codegen produced carry ``generated: true`` and are rebuilt from the
+    model on every save, so a deleted or renamed widget drops its old output.
+    """
+    try:
+        with open(json_path, "r", encoding="utf-8") as fh:
+            old = json.load(fh)
+    except (OSError, ValueError):
+        return
+    old_outputs = old.get("outputs") if isinstance(old, dict) else None
+    if not isinstance(old_outputs, dict):
+        return
+    kept = {
+        key: _clone(row)
+        for key, row in old_outputs.items()
+        if isinstance(row, dict) and not row.get("generated")
+    }
+    if not kept:
+        return
+    merged = new_config.setdefault("outputs", {})
+    for key, row in kept.items():
+        merged.setdefault(key, row)
+
+
 def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     """
     Save an editor model to disk.
@@ -510,6 +537,16 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     if model.get("legacy"):
         return _save_legacy_template(model, template_name)
 
+    from .data_feed_registry import (
+        migrate_counter_rules,
+        migrate_legacy_element_types,
+        migrate_model_feeds,
+    )
+
+    migrate_model_feeds(model)
+    migrate_legacy_element_types(model)
+    migrate_counter_rules(model)
+
     existing_html = _load_existing_html(template_name)
     html_text, json_config = template_codegen.compile_model(
         model, existing_html=existing_html
@@ -517,12 +554,19 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
 
     parser = TemplateConfigParser()
     json_path = parser.get_config_path(template_name)
+    _carry_handwritten_outputs(json_path, json_config)
 
     html_path = get_template_path(f"{template_name}.html")
     _atomic_write(html_path, html_text)
     _atomic_write_json(json_path, json_config)
     template_parser_back.save_sidecar(template_name, model)
     ensure_template_assets_folder(template_name)
+    try:
+        from .template_outputs import invalidate_cache
+
+        invalidate_cache()
+    except Exception:
+        logger.debug("Could not refresh template output cache", exc_info=True)
 
     _refresh_web_engine_routes()
     return model

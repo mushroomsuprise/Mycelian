@@ -13,6 +13,8 @@ Spore Studio:
     [x] - Add missing additional fields from the same Counter Rules panel. Ex: setting Alert Type for the source does not give a field to pick the alert type from. It appears only the "Subscriptions" segment has the proper additional fields.
     [x] - Make widget block categories collapsable so they can take up less UI space
     [x] - Add in an interactive walkthrough. This will basically be a brief walkthrough where the app will disable most of the UI, point to areas of importance and explain what they do, and the user clicks a next button to proceed through. This should be triggerable from a button next to the "RELOAD EDITOR" button.
+    [x] - Unify how every block gets data. One Data feed category (source, filters, formatting, timing) for all widgets, plus dynamically discovered template outputs such as the roulette result. Widget-specific options stay in their own section. Codegen writes each widget's results into the template JSON outputs block.
+    [x] - Split Counter and Data Display out of the Text widget (optional scroll). Migrate old text modes on the next save, and notify when a template still needs that save. Data feed filters and field lists follow the events that are turned on.
 
 Chat Template:
     [x] - Add ability to display new Twitch GIFs. Create enable/disable toggle and have it disabled by default (keep current behavior when off), and add setting to scale the size.

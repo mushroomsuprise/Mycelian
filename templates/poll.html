@@ -406,6 +406,28 @@
         return (typeof n === 'number' && !isNaN(n)) ? n : (fallback == null ? 0 : fallback);
     }
 
+    /* Publish a widget result (wheel_result, timer_finished, ...) for other templates.
+     * window.__sporeOutputs (compiled per template) says which outputs are enabled. */
+    function sporeEmitOutput(event, elementId, data) {
+        var table = window.__sporeOutputs;
+        if (Array.isArray(table)) {
+            var enabled = false;
+            for (var i = 0; i < table.length; i++) {
+                if (table[i].event === event && table[i].element_id === elementId) {
+                    enabled = !!table[i].enabled;
+                    break;
+                }
+            }
+            if (!enabled) { return; }
+        }
+        if (typeof socket === 'undefined' || !socket || !socket.emit) { return; }
+        var payload = {};
+        Object.keys(data || {}).forEach(function (k) { payload[k] = data[k]; });
+        payload.template = window.__sporeTemplateName || '';
+        payload.elementId = elementId;
+        socket.emit(event, payload);
+    }
+
     function sporeRandomDelta(spec) {
         spec = spec || {};
         var kind = spec.kind || spec.type || 'fixed';
@@ -1061,6 +1083,7 @@
         if (!meta) { return; }
         window.__sporeLastPayload.event = payload || {};
         var val = sporeCoerceNumber(window.__sporeCounters[counterId], meta.initial_value || 0);
+        var before = val;
         var op = operation || 'increment';
         if (op === 'reset') {
             val = meta.initial_value || 0;
@@ -1076,6 +1099,11 @@
         window.__sporeCounters[counterId] = val;
         sporeCounterRender(counterId);
         sporeCounterPersist(counterId);
+        if (val !== before) {
+            sporeEmitOutput('counter_changed', meta.elementId, {
+                counterId: counterId, value: val, delta: val - before
+            });
+        }
     }
 
     function sporeResolveProgressMax(spec) {
@@ -1137,7 +1165,21 @@
                 current = cmeta ? (cmeta.initial_value || 0) : 0;
             }
             current = sporeCoerceNumber(current, 0);
-            var max = sporeResolveProgressMax(spec);
+            if (spec.override_value != null) { current = sporeCoerceNumber(spec.override_value, 0); }
+            var max = spec.override_max != null
+                ? sporeCoerceNumber(spec.override_max, 100)
+                : sporeResolveProgressMax(spec);
+            var reached = max > 0 && current >= max;
+            if (spec._goalReached === undefined) {
+                spec._goalReached = reached;
+            } else if (reached && !spec._goalReached) {
+                spec._goalReached = true;
+                sporeEmitOutput('goal_reached', spec.elementId, {
+                    counterId: spec.counter_id, value: current, max: max
+                });
+            } else if (!reached) {
+                spec._goalReached = false;
+            }
             var pct = max > 0 ? Math.min(100, (current / max) * 100) : 0;
             var fill = root.querySelector('.spore-progress-fill');
             if (fill) {
@@ -1160,11 +1202,20 @@
     function sporeRefreshDataDisplay(idx) {
         var spec = window.__sporeDataDisplays[idx];
         if (!spec) { return; }
+        if (spec.feed) { return; }  /* a Data feed drives this display instead */
         var payload = window.__sporeLastPayload.event || {};
         var ctx = window.__sporeLastPayload.ctx || {};
-        var raw = sporeResolveSource(spec.source, payload, ctx);
+        sporeApplyDataDisplay(idx, sporeResolveSource(spec.source, payload, ctx));
+    }
+
+    /* Paint a data display from an already-resolved value (shared with Data feeds). */
+    function sporeApplyDataDisplay(idx, raw, textOverride) {
+        var spec = window.__sporeDataDisplays[idx];
+        if (!spec) { return; }
         var text;
-        if (raw == null || raw === '') {
+        if (textOverride != null && textOverride !== '') {
+            text = String(textOverride);
+        } else if (raw == null || raw === '') {
             text = spec.default_text != null ? String(spec.default_text) : '';
         } else {
             text = sporeFormatDisplay(raw, spec.format || '{value}');
@@ -1209,6 +1260,7 @@
             if (doc && typeof doc === 'object') {
                 window.__sporeStatsCache = doc;
                 sporeRefreshAllDataDisplays();
+                if (typeof sporeFeedRefreshAllValues === 'function') { sporeFeedRefreshAllValues(); }
             }
         });
     }
@@ -1448,6 +1500,9 @@
         spec.started_at = null;
         sporeTimerClearInterval(id);
         sporeTimerRender(id);
+        sporeEmitOutput('timer_finished', spec.elementId || id, {
+            mode: spec.mode, elapsed: elapsed
+        });
     }
 
     function sporeTimerRender(id) {
@@ -1571,6 +1626,7 @@
         if (rowPad > 0) { row.style.padding = rowPad + 'px'; }
         if (rowRadius > 0) { row.style.borderRadius = rowRadius + 'px'; }
         row.textContent = text;
+        sporeEmitOutput('list_row_added', el.id, { text: String(text) });
         if (newest === 'bottom') { rows.appendChild(row); }
         else { rows.insertBefore(row, rows.firstChild); }
         var live = Array.prototype.filter.call(rows.children, function (r) {
@@ -1631,6 +1687,7 @@
         var el = document.getElementById(id);
         var rows = sporeListRows(el);
         if (rows) { rows.innerHTML = ''; }
+        sporeEmitOutput('list_cleared', id, {});
     }
 
     function sporeWheelSegments(el) {
@@ -2151,9 +2208,7 @@
                     label: winner.label || ''
                 };
                 sporeShowWheelResult(el, winner.label || '', gen);
-                if (typeof socket !== 'undefined' && socket && socket.emit) {
-                    socket.emit('wheel_result', window.__sporeLastPayload.wheel);
-                }
+                sporeEmitOutput('wheel_result', id, window.__sporeLastPayload.wheel);
                 return;
             }
             var rot = sporeRotAt(job, elapsed);
@@ -2259,24 +2314,33 @@
                 window.__sporeLastPayload.event || {},
                 window.__sporeLastPayload.ctx || {}
             );
-            var fmt = sporeAttr(el, 'data-spore-stat-format', '{value}');
-            var label = sporeAttr(el, 'data-spore-stat-label', '');
-            var icon = sporeAttr(el, 'data-spore-stat-icon', '');
-            var labelEl = el.querySelector('.spore-stat-label');
-            var valueEl = el.querySelector('.spore-stat-value');
-            var iconEl = el.querySelector('.spore-stat-icon');
-            if (labelEl) {
-                labelEl.textContent = label;
-                labelEl.style.color = sporeAttr(el, 'data-spore-stat-label-color', '#94a3b8');
-            }
-            if (valueEl) {
+            sporeApplyStatCard(el, value);
+        }
+    }
+
+    /* Paint a stat card from a resolved value (shared with Data feeds). */
+    function sporeApplyStatCard(el, value, textOverride) {
+        var fmt = sporeAttr(el, 'data-spore-stat-format', '{value}');
+        var label = sporeAttr(el, 'data-spore-stat-label', '');
+        var icon = sporeAttr(el, 'data-spore-stat-icon', '');
+        var labelEl = el.querySelector('.spore-stat-label');
+        var valueEl = el.querySelector('.spore-stat-value');
+        var iconEl = el.querySelector('.spore-stat-icon');
+        if (labelEl) {
+            labelEl.textContent = label;
+            labelEl.style.color = sporeAttr(el, 'data-spore-stat-label-color', '#94a3b8');
+        }
+        if (valueEl) {
+            if (textOverride != null && textOverride !== '') {
+                valueEl.textContent = String(textOverride);
+            } else {
                 valueEl.textContent = (value == null || value === '')
                     ? '\u2014'
                     : sporeFormatDisplay(value, fmt);
-                valueEl.style.color = sporeAttr(el, 'data-spore-stat-value-color', '#ffffff');
             }
-            if (iconEl) { iconEl.textContent = icon; }
+            valueEl.style.color = sporeAttr(el, 'data-spore-stat-value-color', '#ffffff');
         }
+        if (iconEl) { iconEl.textContent = icon; }
     }
 
     function sporeBindList(el) {
@@ -2635,7 +2699,18 @@
         }
         if (typeof socket !== 'undefined' && socket && socket.on) {
             socket.on('poll_state', onPayload);
-            socket.on('poll_ended', onPayload);
+            socket.on('poll_ended', function (payload) {
+                onPayload(payload);
+                payload = payload || {};
+                var mine = sporePollTemplateName();
+                if (payload.template && mine && String(payload.template) === mine) {
+                    sporeEmitOutput('poll_result', el.id, {
+                        winners: payload.winners || [],
+                        total_votes: payload.total_votes || 0,
+                        options: payload.options || []
+                    });
+                }
+            });
             socket.on('poll_sync', onPayload);
             if (!window.__sporePollRequested && socket.emit) {
                 window.__sporePollRequested = true;
@@ -2645,13 +2720,24 @@
         sporePaintPoll(el, { status: 'idle', options: [] });
     }
 
+    function sporeFeedDrives(elementId, targetId) {
+        return (window.__sporeFeeds || []).some(function (feed) {
+            return feed && feed.enabled && feed.elementId === elementId &&
+                feed.target && feed.target.id === targetId;
+        });
+    }
+
     function sporeInitWidgets() {
         var lists = document.querySelectorAll('[data-spore-type="list"]');
-        for (var i = 0; i < lists.length; i++) { sporeBindList(lists[i]); }
+        /* Generated templates drive lists through Data feeds; the legacy binder is for old HTML. */
+        for (var i = 0; i < lists.length; i++) {
+            if (!window.__sporeFeedsCompiled) { sporeBindList(lists[i]); }
+        }
         var wheels = document.querySelectorAll('[data-spore-type="wheel"]');
         for (var w = 0; w < wheels.length; w++) {
             sporePaintWheel(wheels[w]);
-            if (sporeAttr(wheels[w], 'data-spore-wheel-source', 'static') === 'giveaway' &&
+            if (!window.__sporeFeedsCompiled &&
+                    sporeAttr(wheels[w], 'data-spore-wheel-source', 'static') === 'giveaway' &&
                     typeof socket !== 'undefined' && socket && socket.on) {
                 (function (wheel) {
                     socket.on('giveaway_winner', function (data) {
@@ -2670,20 +2756,33 @@
             }
         }
         var playing = document.querySelectorAll('[data-spore-type="now_playing"]');
-        if (playing.length && typeof socket !== 'undefined' && socket && socket.on) {
+        var playingNeedsBuiltin = false;
+        for (var n = 0; n < playing.length; n++) {
+            if (!sporeFeedDrives(playing[n].id, 'repaint')) { playingNeedsBuiltin = true; }
+        }
+        if (playingNeedsBuiltin && playing.length && typeof socket !== 'undefined' && socket && socket.on) {
             socket.on('spotify_data_update', function (data) {
-                for (var n = 0; n < playing.length; n++) { sporePaintNowPlaying(playing[n], data); }
+                for (var p = 0; p < playing.length; p++) {
+                    if (!sporeFeedDrives(playing[p].id, 'repaint')) {
+                        sporePaintNowPlaying(playing[p], data);
+                    }
+                }
             });
         }
-        for (var p = 0; p < playing.length; p++) { sporePaintNowPlaying(playing[p], {}); }
+        for (var p2 = 0; p2 < playing.length; p2++) { sporePaintNowPlaying(playing[p2], {}); }
         var qrs = document.querySelectorAll('[data-spore-type="qr"]');
         for (var q = 0; q < qrs.length; q++) { sporePaintQr(qrs[q]); }
         var polls = document.querySelectorAll('[data-spore-type="poll"]');
-        for (var pollIndex = 0; pollIndex < polls.length; pollIndex++) { sporeBindPoll(polls[pollIndex]); }
+        for (var pollIndex = 0; pollIndex < polls.length; pollIndex++) {
+            if (!sporeFeedDrives(polls[pollIndex].id, 'repaint')) {
+                sporeBindPoll(polls[pollIndex]);
+            }
+        }
         var embeds = document.querySelectorAll('[data-spore-type="embed"]');
         for (var e = 0; e < embeds.length; e++) { sporePaintEmbed(embeds[e]); }
         sporeRefreshStatCards();
         sporeKeepStatCardsFresh();
+        sporeInitFeeds();
     }
 
     /* Stat cards re-read their source on alerts and on a timer so values stay current. */
@@ -2709,11 +2808,567 @@
         if (usesStats) { setInterval(sporeLoadStatsCache, 15000); }
     }
 
+    /* ====================================================================
+     * Unified data feeds
+     *
+     * Every block can carry data_feed rows. Each one is:
+     *   source -> filters -> mapping/formatting -> timing -> target
+     * compiled into window.__sporeFeeds by Spore Studio. The engine below is
+     * the single implementation for all blocks; only the targets differ.
+     * ==================================================================== */
+
+    window.__sporeFeeds = window.__sporeFeeds || [];
+    var sporeFeedStates = {};
+    var sporeFeedLastValue = {};
+
+    function sporeFeedGet(obj, path) {
+        if (obj == null || path == null || path === '') { return undefined; }
+        if (typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, path)) {
+            return obj[path];
+        }
+        var parts = String(path).split('.');
+        var cur = obj;
+        for (var i = 0; i < parts.length; i++) {
+            if (cur == null) { return undefined; }
+            cur = cur[parts[i]];
+        }
+        return cur;
+    }
+
+    function sporeFeedText(raw) {
+        if (raw == null) { return ''; }
+        if (typeof raw === 'object') {
+            try { return JSON.stringify(raw); } catch (e) { return String(raw); }
+        }
+        return String(raw);
+    }
+
+    function sporeFeedList(text) {
+        return String(text == null ? '' : text).split(/[\n,]+/).map(function (s) {
+            return s.trim().toLowerCase();
+        }).filter(function (s) { return s !== ''; });
+    }
+
+    function sporeFeedRule(rule, payload) {
+        var raw = sporeFeedGet(payload, rule.field);
+        var op = rule.op || 'eq';
+        var want = rule.value == null ? '' : String(rule.value);
+        var got = sporeFeedText(raw);
+        var gl = got.toLowerCase();
+        var wl = want.toLowerCase();
+        var gn = Number(raw);
+        var wn = Number(want);
+        var numeric = got !== '' && want !== '' && !isNaN(gn) && !isNaN(wn);
+        var isEmpty = raw == null || got === '' || (Array.isArray(raw) && raw.length === 0);
+        var parts;
+        switch (op) {
+            case 'eq': return numeric ? gn === wn : gl === wl;
+            case 'ne': return numeric ? gn !== wn : gl !== wl;
+            case 'contains':
+                if (Array.isArray(raw)) {
+                    return raw.some(function (x) { return sporeFeedText(x).toLowerCase() === wl; });
+                }
+                return gl.indexOf(wl) >= 0;
+            case 'not_contains':
+                if (Array.isArray(raw)) {
+                    return !raw.some(function (x) { return sporeFeedText(x).toLowerCase() === wl; });
+                }
+                return gl.indexOf(wl) < 0;
+            case 'starts_with': return gl.indexOf(wl) === 0;
+            case 'ends_with': return wl === '' || gl.slice(-wl.length) === wl;
+            case 'regex':
+                try { return new RegExp(want, 'i').test(got); } catch (e) { return false; }
+            case 'gt': return !isNaN(gn) && !isNaN(wn) && got !== '' && gn > wn;
+            case 'gte': return !isNaN(gn) && !isNaN(wn) && got !== '' && gn >= wn;
+            case 'lt': return !isNaN(gn) && !isNaN(wn) && got !== '' && gn < wn;
+            case 'lte': return !isNaN(gn) && !isNaN(wn) && got !== '' && gn <= wn;
+            case 'between':
+                parts = want.split(',');
+                if (parts.length < 2 || got === '' || isNaN(gn)) { return false; }
+                return gn >= Number(parts[0]) && gn <= Number(parts[1]);
+            case 'in_list': return sporeFeedList(want).indexOf(gl) >= 0;
+            case 'not_in_list': return sporeFeedList(want).indexOf(gl) < 0;
+            case 'empty': return isEmpty;
+            case 'not_empty': return !isEmpty;
+        }
+        return true;
+    }
+
+    /* Shared filter check. ``state`` carries rate-limit memory for one feed or rule. */
+    function sporeFeedFilterPasses(filters, payload, state) {
+        filters = filters || {};
+        payload = payload || {};
+        var at = filters.alert_type;
+        if (at && String(at).toLowerCase() !== 'any' &&
+            sporeAlertType(payload) !== String(at).toLowerCase()) { return false; }
+        var tier = filters.tier;
+        if (tier && String(tier) !== 'any' && !sporeTierMatches(tier, payload.tier)) { return false; }
+
+        var rules = filters.rules || [];
+        if (rules.length) {
+            var anyMode = filters.match === 'any';
+            var ok = anyMode ? false : true;
+            for (var i = 0; i < rules.length; i++) {
+                var hit = sporeFeedRule(rules[i], payload);
+                if (anyMode && hit) { ok = true; break; }
+                if (!anyMode && !hit) { ok = false; break; }
+            }
+            if (!ok) { return false; }
+        }
+
+        var who = String(payload.username != null ? payload.username : '').toLowerCase();
+        var allow = sporeFeedList(filters.users_allow);
+        if (allow.length && allow.indexOf(who) < 0) { return false; }
+        var block = sporeFeedList(filters.users_block);
+        if (block.length && block.indexOf(who) >= 0) { return false; }
+
+        if (!state) { return true; }
+        var now = Date.now();
+        if (filters.skip_first > 0 && (state.seen || 0) < filters.skip_first) {
+            state.seen = (state.seen || 0) + 1;
+            return false;
+        }
+        if (filters.cooldown_ms > 0 && state.last && now - state.last < filters.cooldown_ms) {
+            return false;
+        }
+        if (filters.max_per_minute > 0) {
+            state.stamps = (state.stamps || []).filter(function (t) { return now - t < 60000; });
+            if (state.stamps.length >= filters.max_per_minute) { return false; }
+        }
+        if (filters.dedupe_ms > 0) {
+            var key = sporeFeedText(payload);
+            state.recent = state.recent || {};
+            if (state.recent[key] && now - state.recent[key] < filters.dedupe_ms) { return false; }
+            state.recent[key] = now;
+        }
+        state.last = now;
+        if (filters.max_per_minute > 0) { state.stamps.push(now); }
+        return true;
+    }
+
+    function sporeFeedMod(value, mod) {
+        var cut = mod.indexOf(':');
+        var name = (cut >= 0 ? mod.slice(0, cut) : mod).trim().toLowerCase();
+        var arg = cut >= 0 ? mod.slice(cut + 1) : '';
+        var n = Number(value);
+        var isNum = value !== '' && value != null && !isNaN(n);
+        var s = value == null ? '' : String(value);
+        switch (name) {
+            case 'number': return isNum ? n.toLocaleString('en-US') : s;
+            case 'int': return isNum ? String(Math.round(n)) : s;
+            case 'decimals':
+                return isNum ? n.toFixed(Math.max(0, parseInt(arg, 10) || 0)) : s;
+            case 'percent': return isNum ? (Math.round(n * 1000) / 10) + '%' : s;
+            case 'compact':
+                if (!isNum) { return s; }
+                var abs = Math.abs(n);
+                if (abs >= 1e9) { return (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B'; }
+                if (abs >= 1e6) { return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M'; }
+                if (abs >= 1e3) { return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K'; }
+                return String(n);
+            case 'duration':
+                if (!isNum) { return s; }
+                var total = Math.max(0, Math.floor(n));
+                var m = Math.floor(total / 60);
+                var sec = total % 60;
+                return m + ':' + (sec < 10 ? '0' : '') + sec;
+            case 'ordinal':
+                if (!isNum) { return s; }
+                var k = Math.abs(Math.round(n)) % 100;
+                var d = k % 10;
+                var suf = (k >= 11 && k <= 13) ? 'th' : (d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th');
+                return Math.round(n) + suf;
+            case 'upper': return s.toUpperCase();
+            case 'lower': return s.toLowerCase();
+            case 'title':
+                return s.toLowerCase().replace(/(^|\s)(\S)/g, function (all, a, b) {
+                    return a + b.toUpperCase();
+                });
+            case 'trim': return s.trim();
+            case 'truncate':
+                var len = parseInt(arg, 10);
+                return (len > 0 && s.length > len) ? s.slice(0, Math.max(0, len - 1)) + '\u2026' : s;
+            case 'default': return s === '' ? arg : s;
+        }
+        return s;
+    }
+
+    function sporeFeedRender(template, data) {
+        return String(template == null ? '' : template).replace(
+            /\{([^{}|]+)((?:\|[^{}|]*)*)\}/g,
+            function (all, field, mods) {
+                var raw = sporeFeedGet(data, field.trim());
+                var value = raw == null ? '' : (typeof raw === 'object' ? sporeFeedText(raw) : raw);
+                if (mods) {
+                    mods.split('|').slice(1).forEach(function (mod) {
+                        if (mod !== '') { value = sporeFeedMod(value, mod); }
+                    });
+                }
+                return value == null ? '' : String(value);
+            }
+        );
+    }
+
+    function sporeFeedFirst(obj, keys) {
+        for (var i = 0; i < keys.length; i++) {
+            if (obj[keys[i]] != null && obj[keys[i]] !== '') { return obj[keys[i]]; }
+        }
+        return '';
+    }
+
+    /* Turn one payload into the mapped item every target receives. */
+    function sporeFeedItem(feed, payload, valueKind) {
+        payload = payload || {};
+        var m = feed.mapping || {};
+        var item = {};
+        Object.keys(payload).forEach(function (k) { item[k] = payload[k]; });
+
+        var who = m.text_field ? sporeFeedGet(payload, m.text_field)
+            : sporeFeedFirst(payload, ['username', 'message', 'label', 'result', 'text']);
+        var val = m.value_field ? sporeFeedGet(payload, m.value_field)
+            : sporeFeedFirst(payload, ['value', 'amount', 'amt_cheered', 'gift_qty', 'quantity', 'total', 'count']);
+        if (Array.isArray(who)) { who = who.join(', '); }
+        item.username = who == null ? '' : who;
+        item.value = val == null ? '' : val;
+
+        var dec = m.decimals;
+        if (dec !== '' && dec != null && item.value !== '' && !isNaN(Number(item.value))) {
+            item.value = Number(item.value).toFixed(Math.max(0, parseInt(dec, 10) || 0));
+        }
+
+        var text;
+        if (m.template) {
+            text = sporeFeedRender(m.template, item);
+        } else if (valueKind) {
+            text = item.value === '' ? '' : String(item.value);
+        } else {
+            text = item.username !== '' ? String(item.username) : (item.value === '' ? '' : String(item.value));
+        }
+        if (text === '' && m.fallback) { text = String(m.fallback); }
+        if (text !== '') { text = (m.prefix || '') + text + (m.suffix || ''); }
+        item.text = text;
+        return item;
+    }
+
+    function sporeFeedElement(feed) {
+        return document.getElementById(feed.elementId);
+    }
+
+    function sporeFeedSetMedia(el, url) {
+        if (!el || !url) { return; }
+        var s = String(url);
+        var tag = el.tagName;
+        if (tag === 'IMG') { el.setAttribute('src', s); return; }
+        if (tag === 'VIDEO' || tag === 'AUDIO') {
+            var own = el.querySelector('source');
+            if (own) { own.setAttribute('src', s); } else { el.setAttribute('src', s); }
+            try { el.load(); } catch (e) {}
+            return;
+        }
+        var img = el.querySelector('img');
+        if (img) { img.setAttribute('src', s); }
+        var media = el.querySelector('video, audio');
+        if (media) {
+            var srcNode = media.querySelector('source');
+            if (srcNode) { srcNode.setAttribute('src', s); } else { media.setAttribute('src', s); }
+            try { media.load(); } catch (e2) {}
+        }
+    }
+
+    function sporeFeedShow(el) {
+        if (typeof sporeShow === 'function') { sporeShow(el.id, null); return; }
+        el.removeAttribute('data-spore-hidden');
+        el.style.display = '';
+    }
+
+    function sporeFeedHide(el) {
+        if (typeof sporeHide === 'function') { sporeHide(el.id, null); return; }
+        el.setAttribute('data-spore-hidden', 'true');
+        el.style.display = 'none';
+    }
+
+    function sporeFeedProgressOverride(feed, key, value) {
+        var bars = window.__sporeProgressBars || [];
+        for (var i = 0; i < bars.length; i++) {
+            if (bars[i].elementId === feed.elementId) {
+                bars[i][key] = value;
+                if (typeof sporeUpdateProgressBars === 'function') { sporeUpdateProgressBars(null); }
+                return;
+            }
+        }
+        /* A bar with no counter binding: register one so the override has somewhere to live. */
+        var spec = { elementId: feed.elementId, counter_id: '', max_kind: 'fixed', max: 100,
+            near_goal_threshold: 90, near_goal_effect: 'none' };
+        spec[key] = value;
+        window.__sporeProgressBars = bars.concat([spec]);
+        if (typeof sporeUpdateProgressBars === 'function') { sporeUpdateProgressBars(null); }
+    }
+
+    var sporeFeedTargets = {
+        list_add: function (feed, el, item) {
+            if (item.text !== '') { sporeListPush(el, item.text); }
+        },
+        list_clear: function (feed, el) { sporeListClear(el.id); },
+        wheel_spin: function (feed, el, item, raw, opt) {
+            if (opt.segments_field) {
+                var names = sporeFeedGet(raw, opt.segments_field);
+                if (Array.isArray(names) && names.length) {
+                    var colors = ['#a855f7', '#22c55e', '#f59e0b', '#38bdf8', '#f43f5e', '#eab308'];
+                    var segs = names.map(function (name, n) {
+                        return { label: sporeFeedText(name), color: colors[n % colors.length] };
+                    });
+                    el.setAttribute('data-spore-wheel-segments', JSON.stringify(segs));
+                    sporePaintWheel(el);
+                }
+            }
+            var land = opt.land_field ? sporeFeedGet(raw, opt.land_field) : undefined;
+            if (Array.isArray(land)) { land = land[0]; }
+            sporeWheelSpin(el.id, land != null && land !== '' ? { label: sporeFeedText(land) } : {});
+        },
+        wheel_add_segment: function (feed, el, item, raw, opt) {
+            if (item.text === '') { return; }
+            var segs = sporeWheelSegments(el);
+            var fallback = ['#a855f7', '#22c55e', '#f59e0b', '#38bdf8', '#f43f5e', '#eab308'];
+            segs.push({
+                label: item.text,
+                color: opt.color || fallback[segs.length % fallback.length]
+            });
+            el.setAttribute('data-spore-wheel-segments', JSON.stringify(segs));
+            sporePaintWheel(el);
+        },
+        set_value: function (feed, el, item, raw) {
+            var type = el.getAttribute('data-spore-type');
+            if (type === 'stat_card') {
+                sporeApplyStatCard(el, item.value, feed.mapping && feed.mapping.template ? item.text : '');
+            } else {
+                sporeFeedProgressOverride(feed, 'override_value', sporeCoerceNumber(item.value, 0));
+            }
+        },
+        set_max: function (feed, el, item) {
+            sporeFeedProgressOverride(feed, 'override_max', sporeCoerceNumber(item.value, 100));
+        },
+        set_text: function (feed, el, item, raw) {
+            var displays = window.__sporeDataDisplays || [];
+            for (var i = 0; i < displays.length; i++) {
+                if (displays[i].elementId === el.id && displays[i].feed) {
+                    sporeApplyDataDisplay(i, item.value === '' ? null : item.value,
+                        feed.mapping && feed.mapping.template ? item.text : '');
+                    return;
+                }
+            }
+            if (typeof sporeSetText === 'function') { sporeSetText(el.id, item.text); }
+            else { el.textContent = item.text; }
+        },
+        timer_start: function (feed, el) { if (typeof sporeTimerStart === 'function') { sporeTimerStart(el.id); } },
+        timer_pause: function (feed, el) { if (typeof sporeTimerPause === 'function') { sporeTimerPause(el.id); } },
+        timer_reset: function (feed, el) { if (typeof sporeTimerReset === 'function') { sporeTimerReset(el.id); } },
+        timer_set: function (feed, el, item) {
+            var spec = window.__sporeTimers && window.__sporeTimers[el.id];
+            if (!spec) { return; }
+            var seconds = sporeCoerceNumber(item.value, 0);
+            spec.elapsed = seconds;
+            spec.elapsed_base = seconds;
+            spec.started_at = spec.running ? Date.now() : null;
+            sporeTimerRender(el.id);
+        },
+        set_src: function (feed, el, item) { sporeFeedSetMedia(el, item.text); },
+        play_media: function (feed, el, item, raw, opt) {
+            if (typeof sporePlayMediaAudio !== 'function') { return; }
+            var over = {};
+            if (opt.volume !== '' && opt.volume != null) { over.volume = opt.volume; }
+            sporePlayMediaAudio(el.id, over);
+        },
+        set_qr_text: function (feed, el, item) {
+            el.setAttribute('data-spore-qr-text', item.text);
+            sporePaintQr(el);
+        },
+        set_embed_url: function (feed, el, item) {
+            if (item.text === '') { return; }
+            el.setAttribute('data-spore-embed-url', item.text);
+            var frame = el.querySelector('.spore-embed-frame');
+            if (frame) { frame.removeAttribute('src'); }
+            sporePaintEmbed(el);
+        },
+        repaint: function (feed, el, item, raw) {
+            var type = el.getAttribute('data-spore-type');
+            if (type === 'poll') { sporePaintPoll(el, raw || {}); }
+            else if (type === 'now_playing') { sporePaintNowPlaying(el, raw || {}); }
+        },
+        show: function (feed, el) { sporeFeedShow(el); },
+        hide: function (feed, el) { sporeFeedHide(el); },
+        toggle: function (feed, el) {
+            if (el.hasAttribute('data-spore-hidden')) { sporeFeedShow(el); } else { sporeFeedHide(el); }
+        },
+        show_for: function (feed, el, item, raw, opt) {
+            sporeFeedShow(el);
+            var secs = sporeCoerceNumber(opt.seconds, 5);
+            if (el._sporeFeedHideTimer) { clearTimeout(el._sporeFeedHideTimer); }
+            el._sporeFeedHideTimer = setTimeout(function () { sporeFeedHide(el); }, Math.max(0, secs) * 1000);
+        },
+        flash_class: function (feed, el, item, raw, opt) {
+            var cls = String(opt.class_name || 'sporePop').replace(/[^A-Za-z0-9_-]/g, '');
+            if (!cls) { return; }
+            el.classList.remove(cls);
+            void el.offsetWidth;
+            el.classList.add(cls);
+            var hold = sporeCoerceNumber(opt.duration_ms, 420);
+            setTimeout(function () { el.classList.remove(cls); }, Math.max(0, hold));
+        },
+        set_style: function (feed, el, item, raw, opt) {
+            var v = (opt.fixed !== '' && opt.fixed != null) ? String(opt.fixed) : item.text;
+            if (v === '') { return; }
+            var prop = opt.property || 'background_color';
+            if (prop === 'background_color') { el.style.background = v; }
+            else if (prop === 'color') { el.style.color = v; }
+            else if (prop === 'border_color') { el.style.borderColor = v; }
+            else if (prop === 'opacity') { el.style.opacity = v; }
+            else if (prop === 'font_size') { el.style.fontSize = (isNaN(Number(v)) ? v : v + 'px'); }
+        }
+    };
+
+    function sporeFeedStateFor(feed) {
+        var key = feed.elementId + '::' + feed.id;
+        if (!sporeFeedStates[key]) { sporeFeedStates[key] = {}; }
+        return sporeFeedStates[key];
+    }
+
+    function sporeFeedApply(feed, payload, valueKind) {
+        var el = sporeFeedElement(feed);
+        if (!el) { return; }
+        var target = feed.target || {};
+        var handler = sporeFeedTargets[target.id];
+        if (!handler) { return; }
+        var item = sporeFeedItem(feed, payload, valueKind);
+        try {
+            handler(feed, el, item, payload, target.options || {});
+        } catch (err) {
+            if (typeof console !== 'undefined') { console.error('[spore-studio] feed target error', err); }
+        }
+    }
+
+    /* Run one incoming payload through filters, fan-out, timing, and the target. */
+    function sporeFeedFire(feed, payload, valueKind) {
+        if (!feed.enabled) { return; }
+        var filters = feed.filters || {};
+        var passes;
+        if (valueKind) {
+            passes = sporeFeedFilterPasses({ rules: filters.rules, match: filters.match },
+                (payload && typeof payload === 'object') ? payload : { value: payload }, null);
+        } else {
+            passes = sporeFeedFilterPasses(filters, payload, sporeFeedStateFor(feed));
+        }
+        if (!passes) { return; }
+
+        var rows = [payload];
+        var split = feed.mapping && feed.mapping.split_field;
+        if (split && !valueKind) {
+            var list = sporeFeedGet(payload, split);
+            if (Array.isArray(list)) {
+                rows = list.map(function (entry) {
+                    var base = Object.assign({}, payload);
+                    if (entry && typeof entry === 'object') { Object.assign(base, entry); }
+                    else { base.username = String(entry); base.item = entry; }
+                    return base;
+                });
+            }
+        }
+        var delay = sporeCoerceNumber(feed.timing && feed.timing.delay_ms, 0);
+        rows.forEach(function (row) {
+            var run = function () { sporeFeedApply(feed, row, valueKind); };
+            if (delay > 0) { setTimeout(run, delay); } else { run(); }
+        });
+    }
+
+    function sporeFeedRefreshValue(feed) {
+        var spec = (feed.source && feed.source.value) || {};
+        var last = window.__sporeLastPayload || {};
+        var value = sporeResolveSource(spec, last.event || {}, last.ctx || {});
+        var key = feed.elementId + '::' + feed.id;
+        var enc = sporeFeedText(value);
+        var target = feed.target && feed.target.id;
+        if (sporeFeedLastValue[key] === enc && target !== 'timer_start') { return; }
+        sporeFeedLastValue[key] = enc;
+        var payload = Object.assign({}, last.event || {}, { value: value });
+        sporeFeedFire(feed, payload, true);
+    }
+
+    function sporeFeedRefreshAllValues() {
+        (window.__sporeFeeds || []).forEach(function (feed) {
+            if (feed.source && feed.source.kind === 'value' && feed.enabled) {
+                sporeFeedRefreshValue(feed);
+            }
+        });
+    }
+
+    function sporeFeedBind(feed) {
+        var src = feed.source || {};
+        var hasSocket = typeof socket !== 'undefined' && socket && socket.on;
+        if (src.kind === 'event') {
+            if (!hasSocket) { return; }
+            (src.events || []).forEach(function (evName) {
+                socket.on(evName, function (data) {
+                    data = (data && typeof data === 'object') ? data : { value: data };
+                    window.__sporeLastPayload.event = data;
+                    sporeFeedFire(feed, data, false);
+                });
+            });
+        } else if (src.kind === 'template_output') {
+            if (!hasSocket) { return; }
+            var want = src.template_output || {};
+            socket.on('template_output', function (env) {
+                env = env || {};
+                if (want.event && env.event !== want.event) { return; }
+                if (want.template && env.template && env.template !== want.template) { return; }
+                var data = (env.data && typeof env.data === 'object') ? env.data : {};
+                var match = want.match || {};
+                var keys = Object.keys(match);
+                for (var i = 0; i < keys.length; i++) {
+                    if (String(data[keys[i]]) !== String(match[keys[i]])) { return; }
+                }
+                window.__sporeLastPayload.event = data;
+                sporeFeedFire(feed, data, false);
+            });
+        } else if (src.kind === 'value') {
+            if (hasSocket) {
+                (src.refresh_on || []).forEach(function (evName) {
+                    socket.on(evName, function (data) {
+                        window.__sporeLastPayload.event = data || {};
+                        sporeFeedRefreshValue(feed);
+                    });
+                });
+            }
+            var ms = sporeCoerceNumber(src.refresh_ms, 0);
+            if (ms > 0) { setInterval(function () { sporeFeedRefreshValue(feed); }, Math.max(100, ms)); }
+            sporeFeedRefreshValue(feed);
+        }
+    }
+
+    function sporeInitFeeds() {
+        if (window.__sporeFeedsBound) { return; }
+        window.__sporeFeedsBound = true;
+        var feeds = window.__sporeFeeds || [];
+        var usesStats = feeds.some(function (f) {
+            var s = String((f.source && f.source.value && f.source.value.source) || '');
+            return f.source && f.source.kind === 'value' && (s === 'stats' || s.indexOf('stats.') === 0);
+        });
+        if (usesStats && typeof sporeLoadStatsCache === 'function') {
+            sporeLoadStatsCache();
+            setInterval(sporeLoadStatsCache, 15000);
+        }
+        feeds.forEach(sporeFeedBind);
+    }
+
     window.sporeListAdd = sporeListAdd;
     window.sporeListClear = sporeListClear;
     window.sporeWheelSpin = sporeWheelSpin;
     window.sporeRefreshStatCards = sporeRefreshStatCards;
     window.sporeInitWidgets = sporeInitWidgets;
+    window.sporeInitFeeds = sporeInitFeeds;
+    window.sporeFeedFilterPasses = sporeFeedFilterPasses;
+    window.sporeFeedRender = sporeFeedRender;
+    window.sporeFeedItem = sporeFeedItem;
+    window.sporeFeedFire = sporeFeedFire;
+    window.sporeEmitOutput = sporeEmitOutput;
     window.sporePaintQr = sporePaintQr;
 
     window.sporePatchSetText = sporePatchSetText;
@@ -2747,6 +3402,9 @@ if (typeof socket !== 'undefined' && socket && socket.on) {
     });
 }
 if (typeof sporePatchSetText === 'function') { sporePatchSetText(); }
+window.__sporeFeedsCompiled = true;
+window.__sporeFeeds = [{"elementId": "poll1", "elementType": "poll", "id": "feed1", "enabled": true, "source": {"kind": "event", "events": ["poll_state", "poll_ended"], "template_output": {"template": "", "event": "", "match": {}}, "value": {"kind": "data_source", "source": ""}, "refresh_ms": 0, "refresh_on": []}, "filters": {"alert_type": "any", "tier": "any", "rules": [], "match": "all", "users_allow": "", "users_block": "", "cooldown_ms": 0, "max_per_minute": 0, "dedupe_ms": 0, "skip_first": 0}, "mapping": {"text_field": "", "value_field": "", "template": "", "split_field": "", "prefix": "", "suffix": "", "decimals": "", "fallback": ""}, "timing": {"delay_ms": 0}, "target": {"id": "repaint", "options": {}}}];
+window.__sporeOutputs = [{"element_id": "poll1", "event": "poll_result", "enabled": true}];
 if (typeof sporeInitWidgets === 'function') { sporeInitWidgets(); }
 // SPORE_STUDIO:auto-end
 

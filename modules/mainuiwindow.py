@@ -1071,6 +1071,39 @@ def _inject_animation_observer() -> None:
     _animation_observer_injected = True
 
 
+def _schedule_spore_legacy_widget_notice() -> None:
+    """Warn once when a template still stores a counter or data display as text."""
+
+    def notify_legacy() -> None:
+        try:
+            from .notification_engine import notify
+            from .spore_studio.data_feed_registry import templates_needing_widget_resave
+
+            for row in templates_needing_widget_resave():
+                name = row.get("template") or ""
+                if not name:
+                    continue
+                kind = "counter" if row.get("mode") == "counter" else "data display"
+                notify(
+                    f"{name} still uses a Text {kind}. Open it in Spore Studio and Save so it becomes its own widget.",
+                    type="warning",
+                    timeout=0,
+                    dedupe_key=f"spore-legacy-text:{name}",
+                    dedupe_cooldown_sec=3600,
+                    actions=[
+                        {
+                            "kind": "navigate",
+                            "main_tab": "Spore Studio",
+                            "spore_template": name,
+                        }
+                    ],
+                )
+        except Exception as e:
+            logger.error("Spore Studio legacy widget notice failed: %s", e, exc_info=True)
+
+    layout_schedule(2.0, notify_legacy, once=True)
+
+
 def _schedule_streamdeck_plugin_version_check() -> None:
     """One-shot check after UI is ready; notify if bundled plugin is newer than installed."""
     global _streamdeck_plugin_check_scheduled
@@ -1243,6 +1276,7 @@ def build_root_ui() -> None:
             # services in main.py, so they are already running by this point even if
             # the app booted straight into the tray.
             _schedule_streamdeck_plugin_version_check()
+            _schedule_spore_legacy_widget_notice()
 
     from .uiwindows.activity_feed import register_client_lifecycle_hooks
     from .ui_health_monitor import arm_ui_health_monitor

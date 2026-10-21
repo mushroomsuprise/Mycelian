@@ -310,6 +310,54 @@
             "event": "instant_alert",
             "label": "Hype train",
             "alert_type": "hype_train"
+        },
+        {
+            "event": "poll_state",
+            "label": "Poll update"
+        },
+        {
+            "event": "poll_ended",
+            "label": "Poll ended"
         }
-    ]
+    ],
+    "outputs": {
+        "poll1_result": {
+            "event": "poll_result",
+            "label": "poll1 result",
+            "description": "Winners when the poll ends.",
+            "element_id": "poll1",
+            "element_type": "poll",
+            "payload": [
+                {
+                    "key": "template",
+                    "label": "Template name",
+                    "type": "string"
+                },
+                {
+                    "key": "elementId",
+                    "label": "Block id",
+                    "type": "string"
+                },
+                {
+                    "key": "winners",
+                    "label": "Winners",
+                    "type": "array"
+                },
+                {
+                    "key": "total_votes",
+                    "label": "Total votes",
+                    "type": "number"
+                },
+                {
+                    "key": "options",
+                    "label": "Options",
+                    "type": "array"
+                }
+            ],
+            "generated": true,
+            "match": {
+                "elementId": "poll1"
+            }
+        }
+    }
 }

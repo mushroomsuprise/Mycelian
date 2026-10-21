@@ -36,6 +36,26 @@
             font_family: "Arial",
             vertical_align: "top"
         },
+        counter: {
+            font_size: 32,
+            color: "#ffffff",
+            font_family: "Arial",
+            vertical_align: "top",
+            scroll: false,
+            speed: 8,
+            direction: "left",
+            gap: 48
+        },
+        data_display: {
+            font_size: 32,
+            color: "#ffffff",
+            font_family: "Arial",
+            vertical_align: "top",
+            scroll: false,
+            speed: 8,
+            direction: "left",
+            gap: 48
+        },
         image: { src: "" },
         video: {
             src: "",
@@ -226,6 +246,8 @@
 
     var DEFAULT_SIZE = {
         text: { w: 320, h: 60 },
+        counter: { w: 220, h: 60 },
+        data_display: { w: 280, h: 60 },
         image: { w: 200, h: 200 },
         video: { w: 320, h: 180 },
         audio: { w: 120, h: 32 },
@@ -278,7 +300,7 @@
     var ELEMENT_PROP_SCHEMA = {
         text: [
             { key: "text", label: "Text", type: "textarea",
-              tooltip: "Static text content (static mode only)" }
+              tooltip: "The text this block shows" }
         ].concat(TEXT_STYLE_SCHEMA),
         image: [
             { key: "src", label: "Source URL", type: "text",
@@ -404,7 +426,7 @@
         ],
         marquee: [
             { key: "text", label: "Text", type: "textarea",
-              tooltip: "Static text (static mode only)" },
+              tooltip: "The text that scrolls" },
             { key: "speed", label: "Speed (s)", type: "number", min: 1, max: 120,
               tooltip: "Seconds for one full scroll cycle" },
             { key: "direction", label: "Direction", type: "select",
@@ -412,6 +434,28 @@
               options: ["left", "right"] },
             { key: "gap", label: "Gap (px)", type: "number", min: 0, max: 500,
               tooltip: "Space between the repeated copies of the text" }
+        ].concat(TEXT_STYLE_SCHEMA),
+        counter: [
+            { key: "scroll", label: "Scroll", type: "checkbox",
+              tooltip: "Scroll the counter across the block" },
+            { key: "speed", label: "Scroll speed (s)", type: "number", min: 1, max: 120,
+              tooltip: "Seconds for one full scroll" },
+            { key: "direction", label: "Scroll direction", type: "select",
+              tooltip: "Which way the counter scrolls",
+              options: ["left", "right"] },
+            { key: "gap", label: "Scroll gap (px)", type: "number", min: 0, max: 500,
+              tooltip: "Space between the repeated copies" }
+        ].concat(TEXT_STYLE_SCHEMA),
+        data_display: [
+            { key: "scroll", label: "Scroll", type: "checkbox",
+              tooltip: "Scroll the value across the block" },
+            { key: "speed", label: "Scroll speed (s)", type: "number", min: 1, max: 120,
+              tooltip: "Seconds for one full scroll" },
+            { key: "direction", label: "Scroll direction", type: "select",
+              tooltip: "Which way the value scrolls",
+              options: ["left", "right"] },
+            { key: "gap", label: "Scroll gap (px)", type: "number", min: 0, max: 500,
+              tooltip: "Space between the repeated copies" }
         ].concat(TEXT_STYLE_SCHEMA),
         clock: [
             { key: "format", label: "Format", type: "text",
@@ -453,9 +497,6 @@
             { key: "pointer", label: "Pointer", type: "select",
               tooltip: "Which edge the pointer sits on. The winning slice stops under it.",
               options: ["top", "right", "bottom", "left"] },
-            { key: "source", label: "Segments from", type: "select",
-              options: ["static", "giveaway"],
-              tooltip: "Giveaway replaces segments with the entry pool when a winner is drawn" },
             { key: "variance", label: "Spin variance", type: "checkbox",
               tooltip: "Skip the last random winner and change how far the wheel travels on each spin" },
             { key: "click_sound", label: "Click sound", type: "checkbox",
@@ -593,7 +634,7 @@
         ]
     };
 
-    var TEXT_LIKE_TYPES = { text: true, marquee: true };
+    var TEXT_LIKE_TYPES = { text: true, marquee: true, counter: true, data_display: true };
     /* List props edited in the "List feed" section rather than under Appearance. */
     var LIST_FEED_KEYS = [
         "source", "source_event", "alert_type", "text_field", "value_field",
@@ -602,6 +643,8 @@
     var BLOCK_LABELS = {
         audio: "Audio",
         clock: "Clock",
+        counter: "Counter",
+        data_display: "Data display",
         container: "Container",
         divider: "Divider",
         gradient: "Gradient",
@@ -621,11 +664,11 @@
         wheel: "Wheel"
     };
     var BLOCK_PALETTE = [
-        { group: "Data", types: ["clock", "marquee", "now_playing", "timer"] },
+        { group: "Data", types: ["clock", "data_display", "marquee", "now_playing", "timer"] },
         { group: "Layout", types: ["container", "divider", "gradient", "shape"] },
         { group: "Media", types: ["audio", "embed", "image", "qr", "video"] },
         { group: "Text", types: ["text"] },
-        { group: "Widgets", types: ["list", "poll", "progress_bar", "stat_card", "wheel"] }
+        { group: "Widgets", types: ["counter", "list", "poll", "progress_bar", "stat_card", "wheel"] }
     ];
     var stagePreviewIntervals = [];
 
@@ -667,6 +710,7 @@
         templates: { spore: [], legacy: [] },
         registry: { events: [], actions: [] },
         dataSources: { sources: [], categories: [] },
+        catalog: {},
         controlActions: { actions: [], control_types: [] },
         socket: null,
         previewToken: "",
@@ -810,15 +854,26 @@
         bubble.style.left = "0px";
         bubble.style.top = "0px";
         var rect = anchor.getBoundingClientRect();
-        var left = rect.left;
-        var top = rect.bottom + 6;
         var bw = bubble.offsetWidth;
         var bh = bubble.offsetHeight;
-        if (left + bw > window.innerWidth - 8) {
-            left = Math.max(8, window.innerWidth - bw - 8);
+        var gap = 8;
+        var left = rect.left - bw - gap;
+        var top = rect.top + (rect.height - bh) / 2;
+        if (left < 8) {
+            var right = rect.right + gap;
+            if (right + bw <= window.innerWidth - 8) {
+                left = right;
+            } else {
+                left = Math.max(8, rect.left);
+                top = rect.top - bh - gap;
+            }
         }
         if (top + bh > window.innerHeight - 8) {
-            top = Math.max(8, rect.top - bh - 6);
+            top = Math.max(8, window.innerHeight - bh - 8);
+        }
+        if (top < 8) { top = 8; }
+        if (left + bw > window.innerWidth - 8) {
+            left = Math.max(8, window.innerWidth - bw - 8);
         }
         bubble.style.left = left + "px";
         bubble.style.top = top + "px";
@@ -1498,6 +1553,36 @@
             .replace("{max}", counter.max != null ? String(counter.max) : "");
     }
 
+    function ensureCounterDefaults(el) {
+        if (!el || el.type !== "counter") { return; }
+        el.counter = el.counter || {};
+        var c = el.counter;
+        if (!c.counter_id) { c.counter_id = slugifyCounterId(el.id || "counter"); }
+        if (c.initial_value === undefined) { c.initial_value = 0; }
+        if (!c.format) { c.format = "{value}"; }
+        if (c.persist === undefined) { c.persist = false; }
+        if (!c.database_path && state.model) {
+            c.database_path = state.model.template_name + "/counters";
+        }
+        if (!c.database_key) { c.database_key = c.counter_id; }
+        if (!Array.isArray(c.rules)) { c.rules = []; }
+        el.props = el.props || {};
+        if (el.props.scroll === undefined) { el.props.scroll = false; }
+        ensureValueAnimationDefaults(el);
+    }
+
+    function ensureDataDisplayDefaults(el) {
+        if (!el || el.type !== "data_display") { return; }
+        el.data_display = el.data_display || {};
+        var d = el.data_display;
+        if (!d.format) { d.format = "{value}"; }
+        if (d.default_text === undefined) { d.default_text = "—"; }
+        if (!Array.isArray(d.refresh_on)) { d.refresh_on = []; }
+        el.props = el.props || {};
+        if (el.props.scroll === undefined) { el.props.scroll = false; }
+        ensureValueAnimationDefaults(el);
+    }
+
     function ensureTextModeDefaults(el) {
         if (!el || !TEXT_LIKE_TYPES[el.type]) { return; }
         if (!el.text_mode) { el.text_mode = "static"; }
@@ -1563,8 +1648,9 @@
 
     function listCountersInModel() {
         return (state.model.elements || []).filter(function (e) {
-            return TEXT_LIKE_TYPES[e.type] &&
-                (e.text_mode || "static") === "counter" && e.counter;
+            if (!e.counter) { return false; }
+            if (e.type === "counter") { return true; }
+            return TEXT_LIKE_TYPES[e.type] && (e.text_mode || "static") === "counter";
         }).map(function (e) {
             var cid = e.counter.counter_id || slugifyCounterId(e.id);
             return { id: cid, label: e.id + " (" + cid + ")" };
@@ -3332,158 +3418,13 @@
         return wrap;
     }
 
-    function appendRuleFilterFields(card, rule) {
-        var ev = registryEvent(rule.event);
-        if (!ev || !ev.payload || !ev.payload.length) { return; }
-        var fieldsByKey = {};
-        ev.payload.forEach(function (field) { fieldsByKey[field.key] = field; });
-
-        var filterHost = document.createElement("div");
-        filterHost.className = "ss-section ss-binding-row__filters";
-        filterHost.style.padding = "0";
-        filterHost.style.borderBottom = "none";
-
-        function setFilter(key, v) {
-            rule.filter = rule.filter || {};
-            if (v === "" || v == null) { delete rule.filter[key]; }
-            else { rule.filter[key] = v; }
-            pushHistoryDebounced();
-            modelTouch();
-        }
-
-        function buildControl(field) {
-            var current = (rule.filter || {})[field.key];
-            var examples = field.examples || [];
-            if (examples.length) {
-                var rows = examples.map(function (ex) {
-                    return { id: String(ex), label: String(ex) };
-                });
-                return buildIdSelect(
-                    current == null ? "" : String(current),
-                    rows,
-                    function (v) {
-                        setFilter(field.key, v);
-                        if (field.key === "alert_type") { render(); }
-                    },
-                    "(any)"
-                );
-            }
-            var control = inputEl(
-                "text",
-                current == null ? "" : String(current),
-                function (v) { setFilter(field.key, v); }
-            );
-            control.placeholder = field.type ? "(any " + field.type + ")" : "(any)";
-            return control;
-        }
-
-        /* Fields offered by "Add filter": hide ones that cannot occur for the chosen alert type. */
-        function addableFields() {
-            var filter = rule.filter || {};
-            var chosenType = filter.alert_type ? String(filter.alert_type) : "";
-            return ev.payload.filter(function (field) {
-                if (Object.prototype.hasOwnProperty.call(filter, field.key)) { return false; }
-                if (chosenType && field.alert_types && field.alert_types.indexOf(chosenType) < 0) {
-                    return false;
-                }
-                return true;
-            });
-        }
-
-        function render() {
-            filterHost.innerHTML = "";
-            var help = document.createElement("div");
-            help.className = "ss-binding-row__hint";
-            help.textContent = (
-                "Optional filters. The rule runs only when every filter below matches the event payload."
-            );
-            filterHost.appendChild(help);
-
-            Object.keys(rule.filter || {}).forEach(function (key) {
-                var field = fieldsByKey[key] || { key: key, label: key };
-                var holder = document.createElement("div");
-                holder.style.display = "flex";
-                holder.style.gap = "6px";
-                holder.style.alignItems = "center";
-                var control = buildControl(field);
-                control.style.flex = "1";
-                var rm = document.createElement("button");
-                rm.type = "button";
-                rm.className = "ss-btn ss-btn--sm";
-                rm.textContent = "Remove";
-                rm.title = "Remove this filter";
-                rm.addEventListener("click", function () {
-                    setFilter(key, "");
-                    render();
-                });
-                holder.appendChild(control);
-                holder.appendChild(rm);
-                filterHost.appendChild(formRow(
-                    "Filter: " + (field.label || field.key),
-                    holder,
-                    "Payload key: " + field.key
-                ));
-            });
-
-            var addable = addableFields();
-            if (addable.length) {
-                var addSel = document.createElement("select");
-                var first = document.createElement("option");
-                first.value = "";
-                first.textContent = (rule.filter && Object.keys(rule.filter).length)
-                    ? "+ Add another filter..." : "+ Add filter...";
-                addSel.appendChild(first);
-                addable.forEach(function (field) {
-                    var op = document.createElement("option");
-                    op.value = field.key;
-                    op.textContent = field.label || field.key;
-                    addSel.appendChild(op);
-                });
-                addSel.addEventListener("change", function () {
-                    var key = addSel.value;
-                    if (!key) { return; }
-                    var field = fieldsByKey[key];
-                    var examples = (field && field.examples) || [];
-                    rule.filter = rule.filter || {};
-                    /* Seed a value so the filter row exists; blank text filters stay as "". */
-                    rule.filter[key] = examples.length ? String(examples[0]) : "";
-                    pushHistoryDebounced();
-                    modelTouch();
-                    render();
-                });
-                filterHost.appendChild(addSel);
-            }
-        }
-
-        render();
-        card.appendChild(filterHost);
-    }
-
     function renderTextModeSection(host, el) {
-        if (!TEXT_LIKE_TYPES[el.type] || isLegacyModel()) { return; }
-        ensureTextModeDefaults(el);
-        var modeSel = document.createElement("select");
-        ["static", "counter", "data_display"].forEach(function (m) {
-            var op = document.createElement("option");
-            op.value = m;
-            op.textContent = m === "static" ? "Static text" : (m === "counter" ? "Counter" : "Data display");
-            if ((el.text_mode || "static") === m) { op.selected = true; }
-            modeSel.appendChild(op);
-        });
-        modeSel.addEventListener("change", function () {
-            el.text_mode = modeSel.value;
-            ensureTextModeDefaults(el);
-            pushHistory();
-            renderProperties();
-            renderStage();
-            modelTouch();
-        });
-        host.appendChild(formRow(
-            "Text mode", modeSel,
-            "Static shows the text you type. Counter and data display fill it from live values."
-        ));
+        if (isLegacyModel()) { return; }
+        if (el.type !== "counter" && el.type !== "data_display") { return; }
+        if (el.type === "counter") { ensureCounterDefaults(el); }
+        else { ensureDataDisplayDefaults(el); }
 
-        if (el.text_mode === "counter") {
+        if (el.type === "counter") {
             var c = el.counter;
             host.appendChild(formRow("Counter id", inputEl("text", c.counter_id, function (v) {
                 c.counter_id = slugifyCounterId(v);
@@ -3544,138 +3485,14 @@
                     modelTouch();
                 }), "Key inside that document. Defaults to the counter id."));
             }
-            var rulesHead = document.createElement("h4");
-            rulesHead.className = "ss-section-sub";
-            rulesHead.textContent = "Counter rules";
-            host.appendChild(rulesHead);
-            (c.rules || []).forEach(function (rule, ridx) {
-                var card = document.createElement("div");
-                card.className = "ss-binding-row";
-                card.style.marginBottom = "8px";
-                var trigSel = document.createElement("select");
-                ["event", "streamdeck"].forEach(function (t) {
-                    var op = document.createElement("option");
-                    op.value = t;
-                    op.textContent = t;
-                    if ((rule.trigger || "event") === t) { op.selected = true; }
-                    trigSel.appendChild(op);
-                });
-                trigSel.addEventListener("change", function () {
-                    rule.trigger = trigSel.value;
-                    renderProperties();
-                    modelTouch();
-                });
-                card.appendChild(formRow(
-                    "Trigger", trigSel,
-                    "Event listens to Mycelian. Stream Deck listens for an action id."
-                ));
-                if ((rule.trigger || "event") === "event") {
-                    var evSel = document.createElement("select");
-                    (state.registry.events || []).forEach(function (ev) {
-                        var op = document.createElement("option");
-                        op.value = ev.event;
-                        op.textContent = ev.label || ev.event;
-                        if (rule.event === ev.event) { op.selected = true; }
-                        evSel.appendChild(op);
-                    });
-                    evSel.addEventListener("change", function () {
-                        rule.event = evSel.value;
-                        rule.filter = {};
-                        pushHistory();
-                        renderProperties();
-                        modelTouch();
-                    });
-                    card.appendChild(formRow(
-                        "Event", evSel,
-                        "The counter rule runs when this event fires"
-                    ));
-                    appendRuleFilterFields(card, rule);
-                } else {
-                    card.appendChild(formRow("Stream Deck action id", inputEl("text", rule.streamdeck_action || "", function (v) {
-                        rule.streamdeck_action = v;
-                        pushHistoryDebounced();
-                        modelTouch();
-                    }), "Action id from the Stream Deck tab that runs this rule"));
-                }
-                var opSel = document.createElement("select");
-                ["increment", "decrement", "set", "reset"].forEach(function (o) {
-                    var op = document.createElement("option");
-                    op.value = o;
-                    op.textContent = o;
-                    if ((rule.operation || "increment") === o) { op.selected = true; }
-                    opSel.appendChild(op);
-                });
-                opSel.addEventListener("change", function () {
-                    rule.operation = opSel.value;
-                    pushHistoryDebounced();
-                    modelTouch();
-                });
-                card.appendChild(formRow(
-                    "Operation", opSel,
-                    "Increment adds the delta, decrement subtracts it, set replaces the value, reset returns to the initial value"
-                ));
-                card.appendChild(buildDeltaEditor(rule.delta, function (d) {
-                    rule.delta = d;
-                    pushHistoryDebounced();
-                    modelTouch();
-                }));
-                var rm = document.createElement("button");
-                rm.type = "button";
-                rm.className = "ss-btn";
-                rm.textContent = "Remove rule";
-                rm.title = "Remove this counter rule";
-                rm.addEventListener("click", function () {
-                    c.rules.splice(ridx, 1);
-                    pushHistory();
-                    renderProperties();
-                    modelTouch();
-                });
-                card.appendChild(rm);
-                host.appendChild(card);
-            });
-            var addRule = document.createElement("button");
-            addRule.type = "button";
-            addRule.className = "ss-btn ss-btn--primary";
-            addRule.textContent = "+ Add counter rule";
-            addRule.addEventListener("click", function () {
-                c.rules.push({
-                    trigger: "event",
-                    event: "instant_alert",
-                    filter: {},
-                    operation: "increment",
-                    delta: { kind: "fixed", value: 1 }
-                });
-                pushHistory();
-                renderProperties();
-                modelTouch();
-            });
-            host.appendChild(addRule);
+            var feedHint = document.createElement("div");
+            feedHint.className = "ss-binding-row__hint";
+            feedHint.textContent = "Choose when this counter changes under Data feed. Add to this counter, subtract, set, or reset, and pick the amount there.";
+            host.appendChild(feedHint);
         }
 
-        if (el.text_mode === "data_display") {
+        if (el.type === "data_display") {
             var d = el.data_display;
-            d.source = d.source && typeof d.source === "object"
-                ? d.source
-                : { kind: "data_source", source: "" };
-            hydrateSourceSpec(d.source);
-            host.appendChild(formRow("Data source", buildDataSourceSelect(d.source.source || "", function (sid) {
-                clearSourceDetails(d.source);
-                d.source.kind = "data_source";
-                d.source.source = sid;
-                pushHistory();
-                renderProperties();
-                modelTouch();
-            }, { displayOnly: true }), "Live value shown in this text"));
-            var detailHost = document.createElement("div");
-            appendDataSourceDetailFields(detailHost, d.source, function () {
-                pushHistoryDebounced();
-                modelTouch();
-            }, function () {
-                pushHistoryDebounced();
-                renderProperties();
-                modelTouch();
-            });
-            host.appendChild(detailHost);
             var displayFormatInput = inputEl("text", d.format || "{value}", function (v) {
                 d.format = v;
                 renderStage();
@@ -3696,41 +3513,10 @@
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            }), "Text shown before the first value arrives"));
-            var refreshWrap = document.createElement("div");
-            refreshWrap.style.display = "flex";
-            refreshWrap.style.flexDirection = "column";
-            refreshWrap.style.gap = "4px";
-            (state.registry.events || []).forEach(function (ev) {
-                var en = ev.event;
-                var toggle = buildToggle((d.refresh_on || []).indexOf(en) !== -1, function (checked) {
-                    d.refresh_on = d.refresh_on || [];
-                    if (checked) {
-                        if (d.refresh_on.indexOf(en) === -1) { d.refresh_on.push(en); }
-                    } else {
-                        d.refresh_on = d.refresh_on.filter(function (x) { return x !== en; });
-                    }
-                    pushHistoryDebounced();
-                    modelTouch();
-                });
-                var row = document.createElement("div");
-                row.className = "ss-form-row ss-form-row--inline";
-                row.appendChild(toggle.wrap);
-                var lbl = document.createElement("label");
-                lbl.textContent = ev.label || en;
-                row.appendChild(lbl);
-                if (ev.description) { bindTip(row, ev.description); }
-                refreshWrap.appendChild(row);
-            });
-            host.appendChild(formRow(
-                "Refresh on events", refreshWrap,
-                "Re-read the data source when any checked event fires"
-            ));
+            }), "Text shown before the first value arrives. Choose the live source under Data feed."));
         }
 
-        if (el.text_mode === "counter" || el.text_mode === "data_display") {
-            renderValueAnimationSection(host, el);
-        }
+        renderValueAnimationSection(host, el);
     }
 
     function ensureDynamicControls(model) {
@@ -4444,10 +4230,22 @@
         return isNaN(n) ? String(v) : n.toLocaleString();
     }
 
+    /* The data source the card reads: its value feed, else the older stat_source. */
+    function statCardValueSpec(el) {
+        var feeds = readFeeds(el);
+        for (var i = 0; i < feeds.length; i += 1) {
+            var f = feeds[i];
+            if (f.enabled && f.source.kind === "value" && f.target.id === "set_value") {
+                return f.source.value;
+            }
+        }
+        return el.stat_source || {};
+    }
+
     /* The value the card would show: live session stats when available, else a sample. */
     function statCardPreviewValue(el) {
         ensureStatCardDefaults(el);
-        var spec = el.stat_source;
+        var spec = statCardValueSpec(el);
         hydrateSourceSpec(spec);
         var kind = sourceDetailKind(spec.source);
         if (kind === "counter") {
@@ -4795,20 +4593,6 @@
         }
     }
 
-    var LIST_SOURCE_CHOICES = [
-        { id: "alerts", label: "Alerts (follows, subs, bits, raids...)" },
-        { id: "giveaway", label: "Giveaway entries and winners" },
-        { id: "payload", label: "Another event (choose below)" },
-        { id: "manual", label: "Manual (rows come from Bindings only)" }
-    ];
-
-    var LIST_SOURCE_HELP = {
-        alerts: "A row is added for every alert. Narrow it to one alert type below.",
-        giveaway: "A row is added for each entry and for each drawn winner.",
-        payload: "A row is added each time the chosen event fires.",
-        manual: "Nothing is added automatically. Use the Add list row binding action to push rows."
-    };
-
     function buildChoiceSelect(current, rows, onChange) {
         var sel = document.createElement("select");
         var found = false;
@@ -4830,47 +4614,1081 @@
         return sel;
     }
 
-    /* Events whose payload feeds this list, based on its feed source. */
-    function listFeedEventNames(props) {
-        var source = props.source || "alerts";
-        if (source === "alerts") { return ["instant_alert", "next_alert"]; }
-        if (source === "giveaway") { return ["giveaway_entry", "giveaway_winner"]; }
-        if (source === "payload" && props.source_event) { return [String(props.source_event)]; }
+    /* ------------------------------------------------------------------
+     * Data feed: one system for every block.
+     *
+     * A feed says WHEN to run (an event, a live value, or another template's
+     * output), WHICH payloads to keep (filters), HOW to turn the payload into
+     * text and a number (mapping), and WHERE to send the result (the block's
+     * target). Everything except the target list is identical for every block.
+     * ------------------------------------------------------------------ */
+    var feedOpenParts = {};
+    var feedListSeq = 0;
+
+    var FEED_SOURCE_KINDS = [
+        { id: "event", label: "An event (alert, chat, giveaway...)" },
+        { id: "value", label: "A live value (a data source)" },
+        { id: "template_output", label: "The output of another template" }
+    ];
+
+    var FEED_FALLBACK_OPERATORS = [
+        { id: "eq", label: "equals", needs_value: true },
+        { id: "ne", label: "does not equal", needs_value: true },
+        { id: "contains", label: "contains", needs_value: true },
+        { id: "gt", label: "is greater than", needs_value: true },
+        { id: "gte", label: "is at least", needs_value: true },
+        { id: "lt", label: "is less than", needs_value: true },
+        { id: "lte", label: "is at most", needs_value: true },
+        { id: "empty", label: "is empty", needs_value: false },
+        { id: "not_empty", label: "is not empty", needs_value: false }
+    ];
+
+    function feedClone(v) { return JSON.parse(JSON.stringify(v)); }
+
+    function feedCatalog() { return state.catalog || {}; }
+
+    var FEED_GENERIC_TARGETS = [
+        { id: "show", label: "Show this block", accepts: "trigger", options: [] },
+        { id: "hide", label: "Hide this block", accepts: "trigger", options: [] },
+        { id: "toggle", label: "Toggle visibility", accepts: "trigger", options: [] },
+        {
+            id: "show_for", label: "Show for a few seconds", accepts: "trigger",
+            options: [{ key: "seconds", label: "Seconds", type: "number", default: 5 }]
+        },
+        {
+            id: "flash_class", label: "Play a CSS animation class", accepts: "trigger",
+            options: [
+                { key: "class_name", label: "Class name", type: "text", default: "sporePop" },
+                { key: "duration_ms", label: "Hold (ms)", type: "number", default: 420 }
+            ]
+        },
+        {
+            id: "set_style", label: "Change a style property", accepts: "item",
+            options: [
+                { key: "property", label: "Property", type: "select", default: "background_color",
+                  options: ["background_color", "color", "border_color", "opacity", "font_size"] },
+                { key: "fixed", label: "Fixed value", type: "text", default: "" }
+            ]
+        }
+    ];
+
+    function feedDefaultFilters() {
+        return {
+            alert_type: "any", tier: "any", rules: [], match: "all",
+            users_allow: "", users_block: "",
+            cooldown_ms: 0, max_per_minute: 0, dedupe_ms: 0, skip_first: 0
+        };
+    }
+
+    function normalizeFeed(feed) {
+        feed.enabled = feed.enabled !== false;
+        if (feed.label == null) { feed.label = ""; }
+        var s = (feed.source && typeof feed.source === "object") ? feed.source : {};
+        feed.source = s;
+        if (["event", "template_output", "value"].indexOf(s.kind) < 0) { s.kind = "event"; }
+        if (!Array.isArray(s.events)) { s.events = []; }
+        if (!s.template_output || typeof s.template_output !== "object") { s.template_output = {}; }
+        if (s.template_output.template == null) { s.template_output.template = ""; }
+        if (s.template_output.event == null) { s.template_output.event = ""; }
+        if (!s.template_output.match || typeof s.template_output.match !== "object") {
+            s.template_output.match = {};
+        }
+        if (!s.value || typeof s.value !== "object") { s.value = { kind: "data_source", source: "" }; }
+        s.refresh_ms = Number(s.refresh_ms) || 0;
+        if (!Array.isArray(s.refresh_on)) { s.refresh_on = []; }
+        feed.filters = Object.assign(feedDefaultFilters(), feed.filters || {});
+        if (!Array.isArray(feed.filters.rules)) { feed.filters.rules = []; }
+        feed.mapping = Object.assign({
+            text_field: "", value_field: "", template: "", split_field: "",
+            prefix: "", suffix: "", decimals: "", fallback: ""
+        }, feed.mapping || {});
+        feed.timing = Object.assign({ delay_ms: 0 }, feed.timing || {});
+        if (!feed.target || typeof feed.target !== "object") { feed.target = {}; }
+        if (!feed.target.options || typeof feed.target.options !== "object") { feed.target.options = {}; }
+        return feed;
+    }
+
+    function readFeeds(el) {
+        if (!Array.isArray(el.data_feed)) { return []; }
+        el.data_feed.forEach(normalizeFeed);
+        return el.data_feed;
+    }
+
+    function feedTargetsFor(type) {
+        var fromCat = (feedCatalog().targets || {})[type];
+        if (fromCat && fromCat.length) { return fromCat; }
+        return FEED_GENERIC_TARGETS;
+    }
+
+    function findFeedTarget(type, id) {
+        var rows = feedTargetsFor(type);
+        for (var i = 0; i < rows.length; i += 1) {
+            if (rows[i].id === id) { return rows[i]; }
+        }
+        return null;
+    }
+
+    function feedHasTarget(el, targetId) {
+        return readFeeds(el).some(function (f) { return f.target && f.target.id === targetId; });
+    }
+
+    function nextFeedId(el) {
+        var used = {};
+        (el.data_feed || []).forEach(function (f) { if (f && f.id) { used[f.id] = true; } });
+        var n = (el.data_feed || []).length + 1;
+        while (used["feed" + n]) { n += 1; }
+        return "feed" + n;
+    }
+
+    function newFeedFor(el, overrides) {
+        var cat = feedCatalog();
+        var base = (cat.default_feed || {})[el.type];
+        var feed = normalizeFeed(base ? feedClone(base) : {});
+        feed.id = nextFeedId(el);
+        if (!feed.target.id) {
+            feed.target.id = (cat.default_targets || {})[el.type] || "show";
+        }
+        Object.keys(overrides || {}).forEach(function (k) { feed[k] = overrides[k]; });
+        return normalizeFeed(feed);
+    }
+
+    function newValueFeedFor(el, targetId, spec, refreshMs) {
+        var feed = newFeedFor(el, {});
+        feed.source = {
+            kind: "value",
+            events: [],
+            template_output: { template: "", event: "", match: {} },
+            value: spec ? feedClone(spec) : { kind: "data_source", source: "" },
+            refresh_ms: refreshMs != null ? refreshMs : 1000,
+            refresh_on: ["instant_alert", "next_alert"]
+        };
+        feed.target = { id: targetId, options: {} };
+        return normalizeFeed(feed);
+    }
+
+    function migrateLegacyFeeds(el) {
+        var type = el.type;
+        var props = el.props || {};
+        if (type === "list") {
+            var source = props.source || "alerts";
+            if (source === "manual") { return []; }
+            var feed = newFeedFor(el, {});
+            feed.mapping.text_field = props.text_field || "";
+            feed.mapping.value_field = props.value_field || "";
+            feed.mapping.template = props.row_template || "{username}";
+            if (source === "giveaway") {
+                feed.source.events = ["giveaway_entry", "giveaway_winner"];
+                feed.mapping.split_field = "winners";
+            } else if (source === "payload") {
+                if (!props.source_event) { return []; }
+                feed.source.events = [props.source_event];
+            } else {
+                feed.source.events = ["instant_alert", "next_alert"];
+                feed.filters.alert_type = (props.alert_type || "any").toLowerCase();
+            }
+            feed.target = { id: "list_add", options: {} };
+            return [normalizeFeed(feed)];
+        }
+        if (type === "wheel" && (props.source || "static") === "giveaway") {
+            var wheelFeed = newFeedFor(el, {});
+            wheelFeed.source.kind = "event";
+            wheelFeed.source.events = ["giveaway_winner"];
+            wheelFeed.target = {
+                id: "wheel_spin",
+                options: { segments_field: "pool_entries", land_field: "winners" }
+            };
+            return [normalizeFeed(wheelFeed)];
+        }
+        if (type === "stat_card" && el.stat_source) {
+            return [newValueFeedFor(el, "set_value", el.stat_source, 1000)];
+        }
+        if ((type === "text" || type === "marquee") &&
+                (el.text_mode || "static") === "data_display" && el.data_display) {
+            var d = el.data_display;
+            var disp = newValueFeedFor(el, "set_text", d.source || {}, Number(d.poll_interval_ms) || 0);
+            disp.source.refresh_on = Array.isArray(d.refresh_on) ? d.refresh_on.slice() : [];
+            return [normalizeFeed(disp)];
+        }
+        if (type === "poll" || type === "now_playing") {
+            return [newFeedFor(el, {})];
+        }
         return [];
     }
 
-    /* Payload fields usable as {username}/{value}/tokens for the list's feed. */
-    function listFeedFields(props) {
+    function ensureDataFeedDefaults(el) {
+        if (!el || el.legacy) { return; }
+        if (Array.isArray(el.data_feed)) {
+            el.data_feed.forEach(normalizeFeed);
+            return;
+        }
+        el.data_feed = migrateLegacyFeeds(el);
+    }
+
+    function findTemplateOutput(spec) {
+        var rows = feedCatalog().template_outputs || [];
+        var want = JSON.stringify((spec && spec.match) || {});
+        for (var i = 0; i < rows.length; i += 1) {
+            var r = rows[i];
+            if (r.template === spec.template && r.event === spec.event &&
+                JSON.stringify(r.match || {}) === want) { return r; }
+        }
+        for (var j = 0; j < rows.length; j += 1) {
+            if (rows[j].template === spec.template && rows[j].event === spec.event) { return rows[j]; }
+        }
+        return null;
+    }
+
+    function feedEventFields(names) {
         var out = [];
         var seen = {};
-        listFeedEventNames(props).forEach(function (name) {
+        (names || []).forEach(function (name) {
             var ev = registryEvent(name);
             ((ev && ev.payload) || []).forEach(function (f) {
-                if (seen[f.key] || f.type === "array" || f.type === "object") { return; }
+                if (seen[f.key]) { return; }
                 seen[f.key] = true;
                 out.push(f);
             });
         });
-        if (props.source === "giveaway" && !seen.username) {
-            out.unshift({ key: "username", label: "Winner or entrant name", type: "string" });
-        }
         return out;
     }
 
-    function renderListFeedSection(host, el) {
+    /* Payload fields the feed can read, for the field pickers. */
+    function feedPayloadFields(feed) {
+        var s = feed.source;
+        if (s.kind === "event") { return feedEventFields(s.events); }
+        if (s.kind === "template_output") {
+            var row = findTemplateOutput(s.template_output);
+            return (row && row.payload) || [];
+        }
+        return [{ key: "value", label: "Value", type: "number" }];
+    }
+
+    function feedFieldInput(fields, current, onChange, placeholder) {
+        var input = inputEl("text", current || "", onChange);
+        if (placeholder) { input.placeholder = placeholder; }
+        if (!fields.length) { return input; }
+        var wrap = document.createElement("div");
+        var listId = "ss-feed-fields-" + (feedListSeq += 1);
+        var dl = document.createElement("datalist");
+        dl.id = listId;
+        fields.forEach(function (f) {
+            var op = document.createElement("option");
+            op.value = f.key;
+            op.label = f.label || f.key;
+            dl.appendChild(op);
+        });
+        input.setAttribute("list", listId);
+        input.style.width = "100%";
+        wrap.appendChild(input);
+        wrap.appendChild(dl);
+        return wrap;
+    }
+
+    function feedNumberRow(label, value, onChange, tip, min) {
+        return formRow(label, numberEl(value != null ? value : 0, function (v) {
+            var n = Number(v);
+            onChange(isNaN(n) ? 0 : Math.max(min != null ? min : 0, n));
+        }), tip);
+    }
+
+    function buildFeedEventChecklist(selected, onChange) {
+        var box = document.createElement("div");
+        box.className = "ss-feed__checks";
+        (state.registry.events || []).forEach(function (ev) {
+            var name = ev.event;
+            var toggle = buildToggle(selected.indexOf(name) !== -1, function (checked) {
+                var at = selected.indexOf(name);
+                if (checked && at < 0) { selected.push(name); }
+                if (!checked && at >= 0) { selected.splice(at, 1); }
+                onChange();
+            });
+            var row = document.createElement("div");
+            row.className = "ss-form-row ss-form-row--inline";
+            row.appendChild(toggle.wrap);
+            var lbl = document.createElement("label");
+            lbl.textContent = ev.label || name;
+            row.appendChild(lbl);
+            if (ev.description) { bindTip(row, ev.description); }
+            box.appendChild(row);
+        });
+        return box;
+    }
+
+    function feedHasKey(fields, key) {
+        return (fields || []).some(function (f) { return f.key === key; });
+    }
+
+    function feedEnumFields(fields) {
+        return (fields || []).filter(function (f) {
+            return f.key !== "alert_type" && f.key !== "tier" &&
+                f.type !== "array" && f.type !== "object" &&
+                Array.isArray(f.examples) && f.examples.length;
+        });
+    }
+
+    function feedRuleValue(filters, field) {
+        var rules = filters.rules || [];
+        for (var i = 0; i < rules.length; i += 1) {
+            if (rules[i].field === field && (rules[i].op || "eq") === "eq") {
+                return rules[i].value == null ? "" : String(rules[i].value);
+            }
+        }
+        return "";
+    }
+
+    function feedSetEnumRule(filters, field, value) {
+        filters.rules = (filters.rules || []).filter(function (rule) {
+            return !(rule.field === field && (rule.op || "eq") === "eq");
+        });
+        if (value) {
+            filters.rules.push({ field: field, op: "eq", value: String(value) });
+        }
+    }
+
+    function feedFieldRows(fields, emptyLabel) {
+        var rows = (fields || []).map(function (f) {
+            return { id: f.key, label: (f.label || f.key) + " (" + f.key + ")" };
+        });
+        if (emptyLabel) { rows.unshift({ id: "", label: emptyLabel }); }
+        return rows;
+    }
+
+    /* Filters shared by data feeds and counter rules. opts: { fields, onChange(redraw) }. */
+    function buildFeedFilterEditor(filters, opts) {
+        opts = opts || {};
+        var fields = opts.fields || [];
+        var wrap = document.createElement("div");
+        wrap.className = "ss-feed__filters";
+        function changed(redraw) { if (opts.onChange) { opts.onChange(!!redraw); } }
+
+        if (feedHasKey(fields, "alert_type")) {
+            wrap.appendChild(formRow("Alert type", buildChoiceSelect(
+                filters.alert_type || "any", alertTypeChoices(), function (v) {
+                    filters.alert_type = v || "any";
+                    changed(false);
+                }
+            ), "Only react to this kind of alert."));
+        }
+        if (feedHasKey(fields, "tier")) {
+            wrap.appendChild(formRow("Sub tier", buildTierFilterSelect(filters.tier || "any", function (v) {
+                filters.tier = v;
+                changed(false);
+            }), "Only react to this subscription tier"));
+        }
+        feedEnumFields(fields).forEach(function (field) {
+            var choices = [{ id: "", label: "Any" }].concat(field.examples.map(function (ex) {
+                return { id: String(ex), label: String(ex) };
+            }));
+            wrap.appendChild(formRow(
+                field.label || field.key,
+                buildChoiceSelect(feedRuleValue(filters, field.key), choices, function (v) {
+                    feedSetEnumRule(filters, field.key, v);
+                    changed(true);
+                }),
+                "Only keep items where " + (field.label || field.key) + " matches"
+            ));
+        });
+
+        var operators = feedCatalog().operators || FEED_FALLBACK_OPERATORS;
+        var fieldChoices = feedFieldRows(fields);
+        var rulesHost = document.createElement("div");
+        rulesHost.className = "ss-feed__rules";
+        (filters.rules || []).forEach(function (rule, idx) {
+            var row = document.createElement("div");
+            row.className = "ss-feed__rule";
+            row.appendChild(buildIdSelect(rule.field || "", fieldChoices, function (v) {
+                rule.field = String(v || "").trim();
+                changed(false);
+            }, "Field"));
+            var opSel = buildChoiceSelect(rule.op || "eq", operators, function (v) {
+                rule.op = v;
+                changed(true);
+            });
+            row.appendChild(opSel);
+            var opRow = null;
+            operators.forEach(function (o) { if (o.id === (rule.op || "eq")) { opRow = o; } });
+            if (!opRow || opRow.needs_value !== false) {
+                var valInput = inputEl("text", rule.value == null ? "" : rule.value, function (v) {
+                    rule.value = v;
+                    changed(false);
+                });
+                valInput.placeholder = "value";
+                row.appendChild(valInput);
+            }
+            var rm = document.createElement("button");
+            rm.type = "button";
+            rm.className = "ss-btn ss-btn--sm";
+            rm.textContent = "Remove";
+            rm.title = "Remove this rule";
+            rm.addEventListener("click", function () {
+                filters.rules.splice(idx, 1);
+                changed(true);
+            });
+            row.appendChild(rm);
+            rulesHost.appendChild(row);
+        });
+        wrap.appendChild(formRow("More filters", rulesHost,
+            "Add as many as you need. Each one checks a field from the events above."));
+        var addRule = document.createElement("button");
+        addRule.type = "button";
+        addRule.className = "ss-btn ss-btn--sm";
+        addRule.textContent = "+ Add filter";
+        addRule.addEventListener("click", function () {
+            filters.rules = filters.rules || [];
+            filters.rules.push({ field: "", op: "eq", value: "" });
+            changed(true);
+        });
+        wrap.appendChild(addRule);
+        if ((filters.rules || []).length > 1) {
+            wrap.appendChild(formRow("Rules must match", buildChoiceSelect(filters.match || "all", [
+                { id: "all", label: "All rules" },
+                { id: "any", label: "Any rule" }
+            ], function (v) {
+                filters.match = v;
+                changed(false);
+            }), "Whether every rule has to pass or just one"));
+        }
+
+        wrap.appendChild(formRow("Only these users", inputEl("text", filters.users_allow || "", function (v) {
+            filters.users_allow = v;
+            changed(false);
+        }), "Comma separated names. Leave empty to allow everyone."));
+        wrap.appendChild(formRow("Ignore these users", inputEl("text", filters.users_block || "", function (v) {
+            filters.users_block = v;
+            changed(false);
+        }), "Comma separated names, such as bots"));
+        wrap.appendChild(feedNumberRow("Cooldown (ms)", filters.cooldown_ms, function (n) {
+            filters.cooldown_ms = n;
+            changed(false);
+        }, "Ignore events that arrive sooner than this after the last accepted one"));
+        wrap.appendChild(feedNumberRow("Max per minute", filters.max_per_minute, function (n) {
+            filters.max_per_minute = Math.floor(n);
+            changed(false);
+        }, "Stop accepting events past this many per minute. 0 means no limit."));
+        wrap.appendChild(feedNumberRow("Ignore repeats for (ms)", filters.dedupe_ms, function (n) {
+            filters.dedupe_ms = n;
+            changed(false);
+        }, "Drop an identical payload seen again within this time"));
+        wrap.appendChild(feedNumberRow("Skip the first", filters.skip_first, function (n) {
+            filters.skip_first = Math.floor(n);
+            changed(false);
+        }, "Ignore this many events before reacting"));
+        return wrap;
+    }
+
+    /* Counter rules used a flat equality map. Convert it so one filter editor serves both. */
+    function migrateRuleFilter(rule) {
+        if (!rule.filters || typeof rule.filters !== "object") {
+            rule.filters = feedDefaultFilters();
+        } else {
+            rule.filters = Object.assign(feedDefaultFilters(), rule.filters);
+        }
+        if (!Array.isArray(rule.filters.rules)) { rule.filters.rules = []; }
+        var legacy = rule.filter && typeof rule.filter === "object" ? rule.filter : {};
+        Object.keys(legacy).forEach(function (key) {
+            var value = legacy[key];
+            if (key === "alert_type" && value) {
+                rule.filters.alert_type = String(value);
+            } else if (key === "tier" && value !== "" && value != null) {
+                rule.filters.tier = String(value);
+            } else {
+                rule.filters.rules.push({ field: key, op: "eq", value: value == null ? "" : String(value) });
+            }
+        });
+        rule.filter = {};
+    }
+
+    function feedPreviewMod(value, mod) {
+        var cut = mod.indexOf(":");
+        var name = (cut >= 0 ? mod.slice(0, cut) : mod).trim().toLowerCase();
+        var arg = cut >= 0 ? mod.slice(cut + 1) : "";
+        var n = Number(value);
+        var isNum = value !== "" && value != null && !isNaN(n);
+        var s = value == null ? "" : String(value);
+        switch (name) {
+            case "number": return isNum ? n.toLocaleString("en-US") : s;
+            case "int": return isNum ? String(Math.round(n)) : s;
+            case "decimals": return isNum ? n.toFixed(Math.max(0, parseInt(arg, 10) || 0)) : s;
+            case "percent": return isNum ? (Math.round(n * 1000) / 10) + "%" : s;
+            case "compact":
+                if (!isNum) { return s; }
+                if (Math.abs(n) >= 1e9) { return (n / 1e9).toFixed(1).replace(/\.0$/, "") + "B"; }
+                if (Math.abs(n) >= 1e6) { return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M"; }
+                if (Math.abs(n) >= 1e3) { return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K"; }
+                return String(n);
+            case "duration":
+                if (!isNum) { return s; }
+                var total = Math.max(0, Math.floor(n));
+                var sec = total % 60;
+                return Math.floor(total / 60) + ":" + (sec < 10 ? "0" : "") + sec;
+            case "ordinal":
+                if (!isNum) { return s; }
+                var k = Math.abs(Math.round(n)) % 100;
+                var d = k % 10;
+                var suf = (k >= 11 && k <= 13) ? "th" : (d === 1 ? "st" : d === 2 ? "nd" : d === 3 ? "rd" : "th");
+                return Math.round(n) + suf;
+            case "upper": return s.toUpperCase();
+            case "lower": return s.toLowerCase();
+            case "title":
+                return s.toLowerCase().replace(/(^|\s)(\S)/g, function (all, a, b) { return a + b.toUpperCase(); });
+            case "trim": return s.trim();
+            case "truncate":
+                var len = parseInt(arg, 10);
+                return (len > 0 && s.length > len) ? s.slice(0, Math.max(0, len - 1)) + "\u2026" : s;
+            case "default": return s === "" ? arg : s;
+        }
+        return s;
+    }
+
+    /* Mirrors sporeFeedRender in the runtime so the preview matches the overlay. */
+    function feedPreviewRender(template, data) {
+        return String(template == null ? "" : template).replace(
+            /\{([^{}|]+)((?:\|[^{}|]*)*)\}/g,
+            function (all, field, mods) {
+                var raw = data[String(field).trim()];
+                var value = raw == null ? "" : (typeof raw === "object" ? JSON.stringify(raw) : raw);
+                if (mods) {
+                    mods.split("|").slice(1).forEach(function (mod) {
+                        if (mod !== "") { value = feedPreviewMod(value, mod); }
+                    });
+                }
+                return value == null ? "" : String(value);
+            }
+        );
+    }
+
+    function feedSampleData(fields) {
+        var out = {};
+        (fields || []).forEach(function (f) {
+            if (f.type === "array" || f.type === "object") { return; }
+            var ex = f.examples && f.examples.length ? f.examples[0] : null;
+            if (f.type === "number") {
+                out[f.key] = (ex != null && !isNaN(Number(ex))) ? Number(ex) : 1;
+            } else if (f.type === "boolean") {
+                out[f.key] = String(ex) === "false" ? false : true;
+            } else {
+                out[f.key] = ex != null ? String(ex) : (f.label || f.key);
+            }
+        });
+        return out;
+    }
+
+    function feedPreviewText(feed, fields) {
+        var sample = feedSampleData(fields);
+        var m = feed.mapping || {};
+        var data = Object.assign({}, sample);
+        var textKey = m.text_field || "";
+        data.username = textKey && sample[textKey] != null ? sample[textKey]
+            : (sample.username != null ? sample.username
+                : (sample.label != null ? sample.label
+                    : (sample.result != null ? sample.result : (sample.message || ""))));
+        var numberField = (fields || []).filter(function (f) { return f.type === "number"; })[0];
+        var valueRaw = m.value_field ? sample[m.value_field]
+            : (numberField ? sample[numberField.key] : "");
+        data.value = valueRaw != null ? valueRaw : "";
+        if (m.decimals !== "" && m.decimals != null && data.value !== "" && !isNaN(Number(data.value))) {
+            data.value = Number(data.value).toFixed(Math.max(0, parseInt(m.decimals, 10) || 0));
+        }
+        var raw;
+        if (m.template) {
+            raw = feedPreviewRender(m.template, data);
+        } else if (textKey || data.username !== "") {
+            raw = String(data.username);
+        } else if (data.value !== "") {
+            raw = String(data.value);
+        } else {
+            raw = "Pick events above to preview";
+        }
+        if ((raw === "" || raw == null) && m.fallback) { raw = m.fallback; }
+        return (m.prefix || "") + raw + (m.suffix || "");
+    }
+
+    function feedSourceSummary(feed) {
+        var s = feed.source;
+        if (s.kind === "event") {
+            var names = (s.events || []).map(function (n) {
+                var ev = registryEvent(n);
+                return (ev && ev.label) || n;
+            });
+            if (!names.length) { return "no event chosen"; }
+            return names.length > 2 ? names.slice(0, 2).join(", ") + " +" + (names.length - 2) : names.join(", ");
+        }
+        if (s.kind === "template_output") {
+            var t = s.template_output || {};
+            return (t.template || "template") + ": " + (t.event || "output");
+        }
+        var row = findDataSourceRow(String((s.value && s.value.source) || ""));
+        return row ? (row.label || row.id) : "no value chosen";
+    }
+
+    function feedTargetLabel(el, feed) {
+        var t = findFeedTarget(el.type, feed.target.id);
+        return t ? t.label : (feed.target.id || "no target");
+    }
+
+    function feedPart(host, key, title, tip, build) {
+        var details = document.createElement("details");
+        details.className = "ss-feed__part";
+        details.open = !!feedOpenParts[key];
+        var summary = document.createElement("summary");
+        summary.textContent = title;
+        if (tip) { bindTip(summary, tip); }
+        details.appendChild(summary);
+        var body = document.createElement("div");
+        body.className = "ss-feed__part-body";
+        build(body);
+        details.appendChild(body);
+        details.addEventListener("toggle", function () { feedOpenParts[key] = details.open; });
+        host.appendChild(details);
+    }
+
+    function buildFeedSourceEditor(host, feed, ctx) {
+        var s = feed.source;
+        host.appendChild(formRow("Run when", buildChoiceSelect(s.kind, FEED_SOURCE_KINDS, function (v) {
+            s.kind = v;
+            ctx.commit(true);
+        }), "Pick what starts this feed"));
+
+        if (s.kind === "event") {
+            host.appendChild(formRow("Events", buildFeedEventChecklist(s.events, function () {
+                ctx.commit(true);
+            }), "The feed runs for each checked event. Filters and fields below follow these."));
+            return;
+        }
+
+        if (s.kind === "template_output") {
+            var spec = s.template_output;
+            var rows = (feedCatalog().template_outputs || []).map(function (r) {
+                return { id: r.id, label: r.template + " - " + (r.label || r.event) };
+            });
+            var current = findTemplateOutput(spec);
+            host.appendChild(formRow("Template output", buildIdSelect(
+                current ? current.id : "", rows, function (id) {
+                    var chosen = (feedCatalog().template_outputs || []).filter(function (r) {
+                        return r.id === id;
+                    })[0];
+                    if (chosen) {
+                        spec.template = chosen.template;
+                        spec.event = chosen.event;
+                        spec.match = feedClone(chosen.match || {});
+                    }
+                    ctx.commit(true);
+                }, "(choose an output)"
+            ), "Results other templates send out, such as a roulette result. Save that template first to list it."));
+            host.appendChild(formRow("Template name", inputEl("text", spec.template || "", function (v) {
+                spec.template = String(v || "").trim();
+                ctx.commit(true);
+            }), "Type a template name if it is not in the list"));
+            host.appendChild(formRow("Output event", inputEl("text", spec.event || "", function (v) {
+                spec.event = String(v || "").trim();
+                ctx.commit(true);
+            }), "Event name that template emits"));
+            var matchKey = Object.keys(spec.match || {})[0] || "";
+            var matchVal = matchKey ? spec.match[matchKey] : "";
+            var matchRow = document.createElement("div");
+            matchRow.className = "ss-feed__pair";
+            var keyInput = inputEl("text", matchKey, function (v) {
+                var k = String(v || "").trim();
+                spec.match = k ? (function () { var o = {}; o[k] = valInput.value; return o; })() : {};
+                ctx.commit(false);
+            });
+            keyInput.placeholder = "field";
+            var valInput = inputEl("text", matchVal, function (v) {
+                var k = keyInput.value.trim();
+                spec.match = k ? (function () { var o = {}; o[k] = v; return o; })() : {};
+                ctx.commit(false);
+            });
+            valInput.placeholder = "equals";
+            matchRow.appendChild(keyInput);
+            matchRow.appendChild(valInput);
+            host.appendChild(formRow("Only when", matchRow,
+                "Optional. React only when this payload field equals the value, for example one widget in that template."));
+            return;
+        }
+
+        var v = s.value;
+        hydrateSourceSpec(v);
+        host.appendChild(formRow("Data source", buildDataSourceSelect(v.source || "", function (sid) {
+            clearSourceDetails(v);
+            v.kind = "data_source";
+            v.source = sid;
+            ctx.commit(true);
+        }, { displayOnly: true }), "Live value to read"));
+        var detail = document.createElement("div");
+        appendDataSourceDetailFields(detail, v, function () { ctx.commit(false); }, function () {
+            ctx.commit(true);
+        });
+        host.appendChild(detail);
+        host.appendChild(feedNumberRow("Re-read every (ms)", s.refresh_ms, function (n) {
+            s.refresh_ms = Math.floor(n);
+            ctx.commit(false);
+        }, "0 reads only when a checked event fires"));
+        host.appendChild(formRow("Re-read on events", buildFeedEventChecklist(s.refresh_on, function () {
+            ctx.commit(false);
+        }), "Read the value again whenever a checked event fires"));
+    }
+
+    function buildFeedMappingEditor(host, feed, fields, ctx) {
+        var m = feed.mapping;
+        var textRows = feedFieldRows(fields);
+        var numberRows = feedFieldRows((fields || []).filter(function (f) {
+            return f.type === "number" || f.type === "string" || !f.type;
+        }));
+        host.appendChild(formRow("Main text field", buildIdSelect(m.text_field || "", textRows, function (v) {
+            m.text_field = String(v || "").trim();
+            ctx.commit(true);
+        }, "(none)"), "Name, message, or label shown for each item. Choices come from the events you turned on."));
+        host.appendChild(formRow("Number field", buildIdSelect(m.value_field || "", numberRows, function (v) {
+            m.value_field = String(v || "").trim();
+            ctx.commit(true);
+        }, "(none)"), "Amount, count, or other number. Used by {value} and by blocks that need a number."));
+
+        var tmplWrap = document.createElement("div");
+        tmplWrap.className = "ss-feed__template";
+        var tmplInput = inputEl("text", m.template || "", function (v) {
+            m.template = v;
+            ctx.commit(false);
+        });
+        tmplInput.placeholder = "{username} - {value|number}";
+        tmplWrap.appendChild(tmplInput);
+        function insertInto(text) {
+            tmplInput.value = String(tmplInput.value || "") + text;
+            m.template = tmplInput.value;
+            ctx.commit(false);
+        }
+        var fieldSel = document.createElement("select");
+        var fieldBlank = document.createElement("option");
+        fieldBlank.value = "";
+        fieldBlank.textContent = "Insert a field...";
+        fieldSel.appendChild(fieldBlank);
+        [{ key: "username", label: "Name" }, { key: "value", label: "Value" }]
+            .concat(fields.filter(function (f) { return f.key !== "username" && f.key !== "value"; }))
+            .forEach(function (f) {
+                var op = document.createElement("option");
+                op.value = f.key;
+                op.textContent = "{" + f.key + "}" + (f.label ? " - " + f.label : "");
+                fieldSel.appendChild(op);
+            });
+        fieldSel.addEventListener("change", function () {
+            if (!fieldSel.value) { return; }
+            insertInto("{" + fieldSel.value + "}");
+            fieldSel.value = "";
+        });
+        tmplWrap.appendChild(fieldSel);
+        var fmtSel = document.createElement("select");
+        var fmtBlank = document.createElement("option");
+        fmtBlank.value = "";
+        fmtBlank.textContent = "Insert a format...";
+        fmtSel.appendChild(fmtBlank);
+        (feedCatalog().formatters || []).forEach(function (f) {
+            var op = document.createElement("option");
+            op.value = f.example || "";
+            op.textContent = f.label + (f.example ? "  " + f.example : "");
+            fmtSel.appendChild(op);
+        });
+        fmtSel.addEventListener("change", function () {
+            if (!fmtSel.value) { return; }
+            insertInto(fmtSel.value);
+            fmtSel.value = "";
+        });
+        tmplWrap.appendChild(fmtSel);
+        host.appendChild(formRow("Template", tmplWrap,
+            "Text built from the payload. Add formats after a pipe, for example {amount|number}. Empty uses the text field."));
+
+        var arrayFields = (fields || []).filter(function (f) { return f.type === "array"; });
+        if (arrayFields.length) {
+            host.appendChild(formRow("Split into rows", buildIdSelect(
+                m.split_field || "", feedFieldRows(arrayFields), function (v) {
+                    m.split_field = String(v || "").trim();
+                    ctx.commit(true);
+                }, "(keep as one item)"
+            ), "Each entry of this list becomes its own row, such as giveaway winners."));
+        } else if (m.split_field) {
+            m.split_field = "";
+        }
+        host.appendChild(formRow("Prefix", inputEl("text", m.prefix || "", function (v) {
+            m.prefix = v;
+            ctx.commit(false);
+        }), "Text added before the result"));
+        host.appendChild(formRow("Suffix", inputEl("text", m.suffix || "", function (v) {
+            m.suffix = v;
+            ctx.commit(false);
+        }), "Text added after the result"));
+        host.appendChild(formRow("Decimals", numberEl(m.decimals, function (v) {
+            m.decimals = v === "" ? "" : Math.max(0, Math.min(10, parseInt(v, 10) || 0));
+            ctx.commit(false);
+        }), "Round numbers to this many decimals. Leave empty to keep the value as it is."));
+        host.appendChild(formRow("If a field is missing", inputEl("text", m.fallback || "", function (v) {
+            m.fallback = v;
+            ctx.commit(false);
+        }), "Text used when the payload has no value for the field"));
+
+        var preview = document.createElement("div");
+        preview.className = "ss-feed__preview";
+        preview.textContent = "Looks like: " + feedPreviewText(feed, fields);
+        host.appendChild(preview);
+    }
+
+    function feedOptionControl(opt, current, onChange) {
+        var value = current === undefined ? opt.default : current;
+        if (opt.type === "number") {
+            var num = numberEl(value, function (v) {
+                if (v === "") { onChange(undefined); return; }
+                var n = Number(v);
+                if (isNaN(n)) { onChange(undefined); return; }
+                if (opt.min != null) { n = Math.max(opt.min, n); }
+                if (opt.max != null) { n = Math.min(opt.max, n); }
+                onChange(n);
+            });
+            if (opt.min != null) { num.min = opt.min; }
+            if (opt.max != null) { num.max = opt.max; }
+            return num;
+        }
+        if (opt.type === "select") {
+            var rows = (opt.options || []).map(function (o) {
+                return (o && typeof o === "object") ? o : { id: o, label: o };
+            });
+            return buildChoiceSelect(value == null ? "" : value, rows, onChange);
+        }
+        if (opt.type === "color") {
+            return buildColorPicker(value || "#ffffff", onChange);
+        }
+        return inputEl("text", value == null ? "" : value, function (v) {
+            onChange(v === "" ? undefined : v);
+        });
+    }
+
+    function buildFeedTargetEditor(host, el, feed, ctx) {
+        var targets = feedTargetsFor(el.type);
+        var rows = targets.map(function (t) { return { id: t.id, label: t.label }; });
+        host.appendChild(formRow("Update this block", buildChoiceSelect(feed.target.id || "", rows, function (v) {
+            feed.target.id = v;
+            feed.target.options = {};
+            ctx.commit(true);
+        }), "What this block does with each matching item. Nothing is sent elsewhere."));
+        var target = findFeedTarget(el.type, feed.target.id);
+        if (!target) { return; }
+        if (target.description) {
+            var hint = document.createElement("div");
+            hint.className = "ss-binding-row__hint ss-binding-row__hint--inline";
+            hint.textContent = target.description;
+            host.appendChild(hint);
+        }
+        (target.options || []).forEach(function (opt) {
+            var control = feedOptionControl(opt, feed.target.options[opt.key], function (v) {
+                if (v === undefined) { delete feed.target.options[opt.key]; }
+                else { feed.target.options[opt.key] = v; }
+                ctx.commit(false);
+            });
+            host.appendChild(formRow(opt.label || opt.key, control, opt.tooltip || ""));
+        });
+        if (String(target.id || "").indexOf("counter_") === 0 && target.id !== "counter_reset") {
+            if (!feed.target.options.delta || typeof feed.target.options.delta !== "object") {
+                feed.target.options.delta = { kind: "fixed", value: 1 };
+            }
+            var deltaReady = false;
+            host.appendChild(buildDeltaEditor(feed.target.options.delta, function (d) {
+                feed.target.options.delta = d;
+                if (deltaReady) { ctx.commit(false); }
+            }));
+            deltaReady = true;
+        }
+    }
+
+    /* Keep the list preview in step with the first row template a feed defines. */
+    function syncListRowTemplate(el) {
+        if (el.type !== "list") { return; }
+        var feeds = readFeeds(el);
+        for (var i = 0; i < feeds.length; i += 1) {
+            if (feeds[i].target.id === "list_add" && feeds[i].mapping.template) {
+                el.props = el.props || {};
+                el.props.row_template = feeds[i].mapping.template;
+                return;
+            }
+        }
+    }
+
+    function renderFeedCard(host, el, feed, index) {
+        var card = document.createElement("div");
+        card.className = "ss-feed" + (feed.enabled ? "" : " ss-feed--off");
+        var ctx = {
+            commit: function (redraw) {
+                syncListRowTemplate(el);
+                if (redraw) {
+                    pushHistory();
+                    renderProperties();
+                } else {
+                    pushHistoryDebounced();
+                }
+                renderStage();
+                modelTouch();
+            }
+        };
+        var keyBase = el.id + ":" + feed.id + ":";
+
+        var head = document.createElement("div");
+        head.className = "ss-feed__head";
+        var toggle = buildToggle(feed.enabled, function (checked) {
+            feed.enabled = checked;
+            ctx.commit(true);
+        });
+        bindTip(toggle.wrap, "Turn this feed on or off without deleting it");
+        head.appendChild(toggle.wrap);
+        var title = inputEl("text", feed.label || "", function (v) {
+            feed.label = v;
+            ctx.commit(false);
+        });
+        title.className = "ss-feed__title";
+        title.placeholder = "Feed " + (index + 1);
+        head.appendChild(title);
+        var dup = document.createElement("button");
+        dup.type = "button";
+        dup.className = "ss-btn ss-btn--sm";
+        dup.textContent = "Copy";
+        dup.title = "Duplicate this feed";
+        dup.addEventListener("click", function () {
+            var copy = feedClone(feed);
+            copy.id = nextFeedId(el);
+            el.data_feed.splice(index + 1, 0, copy);
+            ctx.commit(true);
+        });
+        head.appendChild(dup);
+        var rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "ss-btn ss-btn--sm";
+        rm.textContent = "Remove";
+        rm.title = "Delete this feed";
+        rm.addEventListener("click", function () {
+            el.data_feed.splice(index, 1);
+            ctx.commit(true);
+        });
+        head.appendChild(rm);
+        card.appendChild(head);
+
+        var summary = document.createElement("div");
+        summary.className = "ss-feed__summary";
+        summary.textContent = feedSourceSummary(feed) + "  \u2192  " + feedTargetLabel(el, feed);
+        card.appendChild(summary);
+
+        var fields = feedPayloadFields(feed);
+        feedPart(card, keyBase + "source", "1. When it runs", "Pick the event, value, or template output that starts this feed",
+            function (body) { buildFeedSourceEditor(body, feed, ctx); });
+        feedPart(card, keyBase + "filters", "2. Which ones to keep", "Filters that decide which payloads get through",
+            function (body) {
+                body.appendChild(buildFeedFilterEditor(feed.filters, {
+                    fields: fields,
+                    onChange: function (redraw) { ctx.commit(redraw); }
+                }));
+            });
+        feedPart(card, keyBase + "mapping", "3. What it says", "Choose fields and format the text",
+            function (body) { buildFeedMappingEditor(body, feed, fields, ctx); });
+        feedPart(card, keyBase + "timing", "4. Timing", "Delay before the result is sent",
+            function (body) {
+                body.appendChild(feedNumberRow("Delay (ms)", feed.timing.delay_ms, function (n) {
+                    feed.timing.delay_ms = n;
+                    ctx.commit(false);
+                }, "Wait this long after the trigger before sending the result"));
+            });
+        feedPart(card, keyBase + "target", "5. Update this block", "What this block does with each matching item",
+            function (body) { buildFeedTargetEditor(body, el, feed, ctx); });
+        host.appendChild(card);
+    }
+
+    function renderDataFeedSection(host, el) {
+        var guide = document.createElement("div");
+        guide.className = "ss-binding-row__hint";
+        guide.textContent = (
+            "A feed listens for something, keeps the payloads you want, shapes the text, " +
+            "and sends the result to this block. Every block uses the same setup."
+        );
+        host.appendChild(guide);
+        var feeds = readFeeds(el);
+        if (!feeds.length) {
+            var empty = document.createElement("div");
+            empty.className = "ss-empty";
+            empty.textContent = "No feed yet. Add one to drive this block from live data.";
+            host.appendChild(empty);
+        }
+        feeds.forEach(function (feed, idx) { renderFeedCard(host, el, feed, idx); });
+        var add = document.createElement("button");
+        add.type = "button";
+        add.className = "ss-btn ss-btn--primary";
+        add.textContent = "+ Add feed";
+        add.addEventListener("click", function () {
+            el.data_feed = el.data_feed || [];
+            el.data_feed.push(newFeedFor(el, {}));
+            pushHistory();
+            renderProperties();
+            renderStage();
+            modelTouch();
+        });
+        host.appendChild(add);
+    }
+
+    /* Results this block announces so other templates can listen to them. */
+    function blockOutputSpecs(el) {
+        var specs = (feedCatalog().block_outputs || {})[el.type] || [];
+        return specs.filter(function (spec) {
+            if (spec.only_when === "counter") { return (el.text_mode || "static") === "counter"; }
+            return true;
+        });
+    }
+
+    function renderBlockOutputsSection(host, el) {
+        var specs = blockOutputSpecs(el);
+        var guide = document.createElement("div");
+        guide.className = "ss-binding-row__hint";
+        guide.textContent = (
+            "These results are written into the template's JSON when you save. Other templates can " +
+            "use them as a feed source under \"The output of another template\"."
+        );
+        host.appendChild(guide);
+        el.output_settings = (el.output_settings && typeof el.output_settings === "object") ? el.output_settings : {};
+        specs.forEach(function (spec) {
+            var cfg = el.output_settings[spec.id] || {};
+            var enabled = cfg.enabled !== undefined ? !!cfg.enabled : spec.default_enabled !== false;
+            var card = document.createElement("div");
+            card.className = "ss-feed";
+            var head = document.createElement("div");
+            head.className = "ss-feed__head";
+            var toggle = buildToggle(enabled, function (checked) {
+                el.output_settings[spec.id] = Object.assign({}, el.output_settings[spec.id] || {}, { enabled: checked });
+                pushHistory();
+                modelTouch();
+            });
+            head.appendChild(toggle.wrap);
+            var name = document.createElement("div");
+            name.className = "ss-feed__summary";
+            name.textContent = (spec.label || spec.id) + "  (" + spec.event + ")";
+            head.appendChild(name);
+            card.appendChild(head);
+            var lbl = inputEl("text", cfg.label || "", function (v) {
+                var next = Object.assign({}, el.output_settings[spec.id] || {});
+                if (v) { next.label = v; } else { delete next.label; }
+                el.output_settings[spec.id] = next;
+                pushHistoryDebounced();
+                modelTouch();
+            });
+            lbl.placeholder = spec.label || spec.id;
+            card.appendChild(formRow("Label", lbl, "Name shown when another template picks this output"));
+            var payload = document.createElement("div");
+            payload.className = "ss-binding-row__hint ss-binding-row__hint--inline";
+            payload.textContent = "Sends: " + (spec.payload || []).map(function (f) {
+                return f.label || f.key;
+            }).join(", ");
+            card.appendChild(payload);
+            host.appendChild(card);
+        });
+    }
+
+    function renderListSection(host, el) {
         el.props = el.props || {};
         var props = el.props;
-        var source = props.source || "alerts";
 
-        function change(key, value, redraw) {
+        function change(key, value) {
             el.props = el.props || {};
             el.props[key] = value;
-            if (redraw) {
-                pushHistory();
-                renderProperties();
-            } else {
-                pushHistoryDebounced();
-            }
+            pushHistoryDebounced();
             renderStage();
             modelTouch();
         }
@@ -4882,114 +5700,21 @@
         var guide = document.createElement("div");
         guide.className = "ss-binding-row__hint";
         guide.textContent = (
-            "Set up in three steps: pick where rows come from, choose which fields fill the " +
-            "{username} and {value} slots, then write the row template."
+            "Where rows come from and what each row says is set under Data feed. " +
+            "Bindings can also add or clear rows with the Add list row and Clear list actions."
         );
         host.appendChild(guide);
-
-        addRow("source", "1. Rows come from", buildChoiceSelect(source, LIST_SOURCE_CHOICES, function (v) {
-            change("source", v, true);
-        }), "What adds rows to the list");
-        var sourceHelp = document.createElement("div");
-        sourceHelp.className = "ss-binding-row__hint ss-binding-row__hint--inline";
-        sourceHelp.textContent = LIST_SOURCE_HELP[source] || "";
-        host.appendChild(sourceHelp);
-
-        if (source === "payload") {
-            var evRows = (state.registry.events || []).map(function (ev) {
-                return { id: ev.event, label: (ev.label || ev.event) + " (" + ev.event + ")" };
-            });
-            addRow("source_event", "Listen to event", buildIdSelect(
-                props.source_event || "", evRows, function (v) { change("source_event", v, true); },
-                "(choose an event)"
-            ), "A row is added every time this event fires");
-        }
-
-        if (source === "alerts") {
-            var typeRows = alertTypeChoices().filter(function (r) { return r.id !== "any"; });
-            addRow("alert_type", "Only this alert type", buildIdSelect(
-                props.alert_type && props.alert_type !== "any" ? props.alert_type : "",
-                typeRows,
-                function (v) { change("alert_type", v || "any", false); },
-                "Any alert type"
-            ), "Leave on Any alert type to list every alert");
-        }
-
-        if (source !== "manual") {
-            var fields = listFeedFields(props);
-            var fieldRows = fields.map(function (f) {
-                return { id: f.key, label: (f.label || f.key) + " (" + f.key + ")" };
-            });
-            addRow("text_field", "2. Fills {username}", buildIdSelect(
-                props.text_field || "", fieldRows,
-                function (v) { change("text_field", v, false); }, "(default: username)"
-            ), "Event field shown in the {username} slot");
-            var numericRows = fields.filter(function (f) { return f.type === "number"; })
-                .concat(fields.filter(function (f) { return f.type !== "number"; }))
-                .map(function (f) {
-                    return { id: f.key, label: (f.label || f.key) + " (" + f.key + ")" };
-                });
-            addRow("value_field", "Fills {value}", buildIdSelect(
-                props.value_field || "", numericRows,
-                function (v) { change("value_field", v, false); }, "(default: amount or quantity)"
-            ), "Event field shown in the {value} slot");
-        }
-
-        var tmplWrap = document.createElement("div");
-        tmplWrap.style.display = "flex";
-        tmplWrap.style.flexDirection = "column";
-        tmplWrap.style.gap = "6px";
-        var tmplInput = inputEl("text", props.row_template || "{username}", function (v) {
-            change("row_template", v, false);
-        });
-        tmplWrap.appendChild(tmplInput);
-        var tokenRows = [{ id: "username", label: "{username}" }, { id: "value", label: "{value}" }];
-        listFeedFields(props).forEach(function (f) {
-            if (f.key !== "username" && f.key !== "value") {
-                tokenRows.push({ id: f.key, label: "{" + f.key + "} - " + (f.label || f.key) });
-            }
-        });
-        var tokenSel = document.createElement("select");
-        var tokenBlank = document.createElement("option");
-        tokenBlank.value = "";
-        tokenBlank.textContent = "Insert a field...";
-        tokenSel.appendChild(tokenBlank);
-        tokenRows.forEach(function (row) {
-            var op = document.createElement("option");
-            op.value = row.id;
-            op.textContent = row.label;
-            tokenSel.appendChild(op);
-        });
-        tokenSel.addEventListener("change", function () {
-            if (!tokenSel.value) { return; }
-            var next = String(tmplInput.value || "") + "{" + tokenSel.value + "}";
-            tmplInput.value = next;
-            tokenSel.value = "";
-            change("row_template", next, false);
-        });
-        tmplWrap.appendChild(tokenSel);
-        addRow("row_template", "3. Row template", tmplWrap,
-            "Text for each row. Insert fields with the dropdown, for example {username} - {value}");
-
         addRow("max_items", "Max rows", numberEl(props.max_items != null ? props.max_items : 8, function (v) {
-            change("max_items", Math.max(1, Math.min(100, parseInt(v, 10) || 1)), false);
+            change("max_items", Math.max(1, Math.min(100, parseInt(v, 10) || 1)));
         }), "Oldest rows drop off after this many");
         addRow("newest", "New rows go", buildChoiceSelect(props.newest || "top", [
             { id: "top", label: "To the top" },
             { id: "bottom", label: "To the bottom" }
-        ], function (v) { change("newest", v, false); }), "Where a new row is inserted");
+        ], function (v) { change("newest", v); }), "Where a new row is inserted");
         addRow("row_lifetime_s", "Remove rows after (seconds)", numberEl(
             props.row_lifetime_s != null ? props.row_lifetime_s : 0,
-            function (v) { change("row_lifetime_s", Math.max(0, Number(v) || 0), false); }
+            function (v) { change("row_lifetime_s", Math.max(0, Number(v) || 0)); }
         ), "0 keeps a row until newer rows push it out");
-
-        var tail = document.createElement("div");
-        tail.className = "ss-binding-row__hint";
-        tail.textContent = (
-            "Bindings can also add or clear rows on any event: choose the Add list row or " +
-            "Clear list action and target this list."
-        );
-        host.appendChild(tail);
     }
 
     function renderWheelSection(host, el) {
@@ -5141,32 +5866,6 @@
         ));
     }
 
-    function renderStatCardSection(host, el) {
-        ensureStatCardDefaults(el);
-        hydrateSourceSpec(el.stat_source);
-        host.appendChild(formRow("Data source", buildDataSourceSelect(el.stat_source.source || "", function (sid) {
-            clearSourceDetails(el.stat_source);
-            el.stat_source.kind = "data_source";
-            el.stat_source.source = sid;
-            pushHistory();
-            renderProperties();
-            renderStage();
-            modelTouch();
-        }, { displayOnly: true }), "Value shown on the card"));
-        var detail = document.createElement("div");
-        appendDataSourceDetailFields(detail, el.stat_source, function () {
-            renderStage();
-            pushHistoryDebounced();
-            modelTouch();
-        }, function () {
-            pushHistory();
-            renderProperties();
-            renderStage();
-            modelTouch();
-        });
-        host.appendChild(detail);
-    }
-
     function renderStage() {
         clearStagePreviewIntervals();
         var stage = $("#ss-stage");
@@ -5222,8 +5921,9 @@
                 node.classList.add("ss-element--animated");
             }
 
-            if (el.type === "text" || el.type === "marquee") {
-                var tmode = el.text_mode || "static";
+            if (el.type === "text" || el.type === "marquee" || el.type === "counter" || el.type === "data_display") {
+                var tmode = el.type === "counter" ? "counter"
+                    : (el.type === "data_display" ? "data_display" : (el.text_mode || "static"));
                 var displayText = "";
                 if (tmode === "counter" && el.counter) {
                     displayText = formatCounterPreview(el.counter, el.counter.format);
@@ -5233,7 +5933,9 @@
                 } else {
                     displayText = (el.props && el.props.text) || "";
                 }
-                if (el.type === "marquee") {
+                var scrolling = el.type === "marquee" ||
+                    ((el.type === "counter" || el.type === "data_display") && el.props && el.props.scroll);
+                if (scrolling) {
                     node.textContent = "";
                     node.classList.add("ss-marquee-preview", "spore-marquee");
                     var mInner = document.createElement("div");
@@ -5364,7 +6066,8 @@
         }
         var textDeco = composeTextDecoration(props);
         node.style.textDecoration = textDeco || "";
-        if (el.type === "text" || el.type === "marquee" || el.type === "clock" || el.type === "timer") {
+        if (el.type === "text" || el.type === "marquee" || el.type === "counter" ||
+                el.type === "data_display" || el.type === "clock" || el.type === "timer") {
             var va = props.vertical_align || "top";
             if (va === "center" || va === "bottom") {
                 node.style.display = "flex";
@@ -6351,14 +7054,14 @@
             ));
         }));
 
-        if (el.type === "text" && !isLegacyModel()) {
-            host.appendChild(buildCollapsibleSection("Text mode", "Static, counter, or data display", function (body) {
+        if (el.type === "counter" && !isLegacyModel()) {
+            host.appendChild(buildCollapsibleSection("Counter", "Value, format, persistence, and rules", function (body) {
                 renderTextModeSection(body, el);
             }));
         }
 
-        if (el.type === "marquee" && !isLegacyModel()) {
-            host.appendChild(buildCollapsibleSection("Marquee mode", "Static, counter, or data display", function (body) {
+        if (el.type === "data_display" && !isLegacyModel()) {
+            host.appendChild(buildCollapsibleSection("Data display", "Format and fallback text. The live source is the Data feed.", function (body) {
                 renderTextModeSection(body, el);
             }));
         }
@@ -6397,19 +7100,29 @@
         }
 
         if (el.type === "list" && !isLegacyModel()) {
-            var feedSection = buildCollapsibleSection(
-                "List feed", "Where rows come from and what each row says",
-                function (body) { renderListFeedSection(body, el); }
-            );
-            /* Open the first time so the setup is visible; later renders keep the user's choice. */
-            feedSection.open = !sameElement;
-            host.appendChild(feedSection);
+            host.appendChild(buildCollapsibleSection(
+                "List", "How many rows show and how they enter and leave",
+                function (body) { renderListSection(body, el); }
+            ));
         }
 
-        if (el.type === "stat_card" && !isLegacyModel()) {
-            host.appendChild(buildCollapsibleSection("Stat value", "Data source shown in the card", function (body) {
-                renderStatCardSection(body, el);
-            }));
+        if (!isLegacyModel() && feedTargetsFor(el.type).length) {
+            var dataFeedSection = buildCollapsibleSection(
+                "Data feed",
+                "Drive this block from events, live values, or another template's output",
+                function (body) { renderDataFeedSection(body, el); }
+            );
+            /* Open the first time so the setup is visible; later renders keep the user's choice. */
+            dataFeedSection.open = !sameElement && readFeeds(el).length > 0;
+            host.appendChild(dataFeedSection);
+        }
+
+        if (!isLegacyModel() && blockOutputSpecs(el).length) {
+            host.appendChild(buildCollapsibleSection(
+                "Outputs",
+                "Results this block announces for other templates to use",
+                function (body) { renderBlockOutputsSection(body, el); }
+            ));
         }
 
         var schema = ELEMENT_PROP_SCHEMA[el.type] || [];
@@ -7671,6 +8384,8 @@
             ensureElementExposeDefaults(el);
             ensureElementAnimations(el);
             if (type === "text" || type === "marquee") { ensureTextModeDefaults(el); }
+            if (type === "counter") { ensureCounterDefaults(el); }
+            if (type === "data_display") { ensureDataDisplayDefaults(el); }
             if (type === "image") { ensureImageSrcDefaults(el); }
             if (type === "progress_bar") { ensureProgressBarDefaults(el); }
             if (type === "shape") { ensureShapeDefaults(el); }
@@ -7684,6 +8399,17 @@
             }
             if (type === "wheel") { ensureWheelDefaults(el); }
             if (type === "stat_card") { ensureStatCardDefaults(el); }
+            if (type === "list" || type === "poll" || type === "now_playing") {
+                el.data_feed = [newFeedFor(el, {})];
+            } else if (type === "stat_card") {
+                el.data_feed = [newValueFeedFor(el, "set_value", el.stat_source, 1000)];
+            } else if (type === "data_display") {
+                el.data_feed = [newValueFeedFor(el, "set_text", {
+                    kind: "data_source", source: "alert.username"
+                }, 0)];
+            } else {
+                el.data_feed = [];
+            }
             if (pid) { ensurePlacementDefaults(el); }
             state.model.elements = state.model.elements || [];
             state.model.elements.push(el);
@@ -7968,6 +8694,16 @@
         );
         model.elements = Array.isArray(model.elements) ? model.elements : [];
         model.elements.forEach(function (el) {
+            var legacyMode = el.text_mode || "static";
+            if ((el.type === "text" || el.type === "marquee") &&
+                    (legacyMode === "counter" || legacyMode === "data_display")) {
+                if (el.type === "marquee") {
+                    el.props = el.props || {};
+                    el.props.scroll = true;
+                }
+                el.type = legacyMode === "counter" ? "counter" : "data_display";
+                delete el.text_mode;
+            }
             el.id = el.id || uuid();
             el.type = el.type || "container";
             el.category = el.category || "Elements";
@@ -7995,6 +8731,14 @@
                     ensureTextModeDefaults(el);
                     normalizeElementFontFamily(el);
                 }
+                if (el.type === "counter") {
+                    ensureCounterDefaults(el);
+                    normalizeElementFontFamily(el);
+                }
+                if (el.type === "data_display") {
+                    ensureDataDisplayDefaults(el);
+                    normalizeElementFontFamily(el);
+                }
                 if (el.type === "image") {
                     ensureImageSrcDefaults(el);
                 }
@@ -8014,6 +8758,7 @@
                 }
                 if (el.type === "wheel") { ensureWheelDefaults(el); }
                 if (el.type === "stat_card") { ensureStatCardDefaults(el); }
+                ensureDataFeedDefaults(el);
                 if (pidNorm(el.parent_id)) {
                     ensurePlacementDefaults(el);
                 }
@@ -9280,7 +10025,8 @@
             fetch("/api/spore-studio/events").then(function (r) { return r.json(); }),
             fetch("/api/spore-studio/data-sources").then(function (r) { return r.json(); }),
             fetch("/api/spore-studio/control-actions").then(function (r) { return r.json(); }),
-            fetch("/api/spore-studio/fonts").then(function (r) { return r.json(); })
+            fetch("/api/spore-studio/fonts").then(function (r) { return r.json(); }),
+            fetch("/api/spore-studio/data-catalog").then(function (r) { return r.json(); })
         ])
             .then(function (results) {
                 var evData = results[0] || {};
@@ -9289,14 +10035,21 @@
                 state.dataSources = results[1] || { sources: [], categories: [] };
                 state.controlActions = results[2] || { actions: [], control_types: [] };
                 state.defaultFonts = (results[3] && results[3].fonts) || [];
+                state.catalog = results[4] || {};
                 renderPreviewMockToolbar();
             })
             .then(refreshTemplateList)
             .then(function () {
                 var sel = $("#ss-template-select");
                 if (sel.options.length > 0) {
-                    var saved = "";
-                    try { saved = localStorage.getItem("mycelian-spore-last-template") || ""; } catch (err) {}
+                    var requested = "";
+                    try {
+                        requested = new URLSearchParams(window.location.search).get("template") || "";
+                    } catch (err) {}
+                    var saved = requested;
+                    if (!saved) {
+                        try { saved = localStorage.getItem("mycelian-spore-last-template") || ""; } catch (err) {}
+                    }
                     var hasSaved = false;
                     for (var i = 0; i < sel.options.length; i++) {
                         if (sel.options[i].value === saved) { hasSaved = true; break; }
