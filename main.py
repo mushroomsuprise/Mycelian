@@ -195,11 +195,16 @@ logger = logging.getLogger(__name__)
 # Signal handlers for graceful shutdown
 def signal_handler(sig, frame):
     """Handle termination signals"""
-    from modules.shutdown import (
-        cleanup_shared_memory,
-        is_shutdown_in_progress,
-        shutdown_application,
-    )
+    try:
+        from modules.shutdown import (
+            cleanup_shared_memory,
+            is_shutdown_in_progress,
+            shutdown_application,
+        )
+    except ImportError:
+        # A signal can land while shutdown.py is still executing its import
+        # (atexit in a spawn child). Returning avoids the circular-import traceback.
+        return
 
     if is_shutdown_in_progress():
         # Shutdown is already underway. Returning (instead of sys.exit) avoids the
@@ -222,15 +227,12 @@ def signal_handler(sig, frame):
         sys.exit(1)
 
 
-# Register signal handlers
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-
-
-# Register atexit handler as final fallback for statistics saving
 def emergency_stats_save():
     """Emergency statistics save as final fallback"""
-    from modules.shutdown import is_shutdown_in_progress, mark_shutdown_in_progress
+    try:
+        from modules.shutdown import is_shutdown_in_progress, mark_shutdown_in_progress
+    except ImportError:
+        return
 
     if is_shutdown_in_progress():
         return
@@ -247,7 +249,13 @@ def emergency_stats_save():
         print(f"Emergency statistics save failed: {str(e)}")
 
 
-atexit.register(emergency_stats_save)
+# Spawn children re-import this module (NiceGUI's webview process is SpawnProcess-N).
+# They must not install these handlers: a SIGTERM during their atexit import of
+# modules.shutdown raises "cannot import name ... from partially initialized module".
+if multiprocessing.current_process().name == "MainProcess":
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    atexit.register(emergency_stats_save)
 
 if __name__ == "__main__":
     # Enable multiprocessing support for frozen executables

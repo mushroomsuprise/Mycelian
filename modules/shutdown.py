@@ -676,19 +676,18 @@ def _signal_native_shutdown() -> None:
 
 
 def _hard_exit_after_native_close() -> None:
-    """Worker thread: same path as NiceGUI's check_shutdown (must not run on the loop)."""
+    """Worker thread: force-exit after the native window closes.
+
+    Must not run on the event loop. NiceGUI 3.13 dropped ``core.stop_and_exit``.
+    Setting ``Server.should_exit`` starts uvicorn's connection drain, which can hang
+    forever on a ghost Windows connection (NiceGUI #5443), so hard-exit instead.
+    """
     try:
-        from nicegui import core
+        from .updater import _force_application_exit
 
-        core.stop_and_exit()
-    except Exception as e:
-        logger.error("Native close hard-exit failed: %s", e)
-        try:
-            from .updater import _force_application_exit
-
-            _force_application_exit()
-        except Exception:
-            os._exit(1)
+        _force_application_exit()
+    except Exception:
+        os._exit(1)
 
 
 def _start_native_close_hard_exit() -> None:
