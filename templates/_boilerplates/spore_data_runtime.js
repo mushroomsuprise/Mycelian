@@ -644,8 +644,19 @@
         if (!meta) { return; }
         var val = window.__sporeCounters[counterId];
         if (val == null) { val = meta.initial_value || 0; }
-        if (meta.min != null && val < meta.min) { val = meta.min; }
-        if (meta.max != null && val > meta.max) { val = meta.max; }
+        var displayMax = meta.max;
+        if (sporeCounterUsesProgressive(meta)) {
+            if (meta.min != null && val < meta.min) { val = meta.min; }
+            var shown = sporeProgressiveBounds(val, meta.goals, meta.min);
+            if (shown && val > shown.ceiling) {
+                val = shown.ceiling;
+                shown = sporeProgressiveBounds(val, meta.goals, meta.min);
+            }
+            displayMax = shown ? shown.activeGoal : meta.max;
+        } else {
+            if (meta.min != null && val < meta.min) { val = meta.min; }
+            if (meta.max != null && val > meta.max) { val = meta.max; }
+        }
         window.__sporeCounters[counterId] = val;
         var fmt = meta.format || '{value}';
         var skipAnim = opts && opts.skipAnimation;
@@ -663,10 +674,10 @@
         if (!skipAnim && anim && anim.enabled && anim.type === 'tick_up' && meta.elementId) {
             sporeAnimateValueTick(
                 meta.elementId, prev, val, fmt, anim, afterText,
-                { min: meta.min, max: meta.max }
+                { min: meta.min, max: displayMax }
             );
         } else {
-            var text = sporeFormatCounterDisplay(val, fmt, meta.min, meta.max);
+            var text = sporeFormatCounterDisplay(val, fmt, meta.min, displayMax);
             if (meta.elementId && typeof sporeSetText === 'function') {
                 sporeSetText(meta.elementId, text);
             }
@@ -676,6 +687,7 @@
             afterText();
         }
         window.__sporeCounterLastRendered[counterId] = val;
+        if (typeof sporeApplyTransforms === 'function') { sporeApplyTransforms(); }
     }
 
     function sporeCounterPersist(counterId) {
@@ -713,6 +725,65 @@
         });
     }
 
+    function sporeNormalizeGoals(goals) {
+        var out = [];
+        (goals || []).forEach(function (raw) {
+            var n = Number(raw);
+            if (typeof n !== 'number' || isNaN(n)) { return; }
+            if (out.length && n < out[out.length - 1]) { n = out[out.length - 1]; }
+            if (out.length && n === out[out.length - 1]) { return; }
+            out.push(n);
+        });
+        return out;
+    }
+
+    function sporeCounterUsesProgressive(meta) {
+        return !!(meta && meta.progressive && sporeNormalizeGoals(meta.goals).length);
+    }
+
+    /* Active goal is the first goal above value, or the last goal once that
+     * value has been reached. Floor is the previous goal (or min before the
+     * first). Ceiling is always the last goal. */
+    function sporeProgressiveBounds(value, goals, minBound) {
+        goals = sporeNormalizeGoals(goals);
+        if (!goals.length) { return null; }
+        var val = sporeCoerceNumber(value, 0);
+        var activeIndex = goals.length - 1;
+        var i;
+        for (i = 0; i < goals.length; i++) {
+            if (goals[i] > val) {
+                activeIndex = i;
+                break;
+            }
+        }
+        var floor = (minBound != null && minBound !== '') ? sporeCoerceNumber(minBound, 0) : null;
+        if (activeIndex > 0) { floor = goals[activeIndex - 1]; }
+        return {
+            goals: goals,
+            floor: floor,
+            ceiling: goals[goals.length - 1],
+            activeGoal: goals[activeIndex],
+            activeIndex: activeIndex
+        };
+    }
+
+    function sporeEmitProgressiveGoals(meta, counterId, before, val) {
+        if (!sporeCounterUsesProgressive(meta) || !(val > before)) { return; }
+        var goals = sporeNormalizeGoals(meta.goals);
+        goals.forEach(function (goal, index) {
+            if (!(goal > before && goal <= val)) { return; }
+            var next = index + 1 < goals.length ? goals[index + 1] : null;
+            sporeEmitOutput('goal_reached', meta.elementId, {
+                counterId: counterId,
+                value: val,
+                goal: goal,
+                max: goal,
+                nextGoal: next,
+                index: index
+            });
+        });
+    }
+
     function sporeCounterAdjust(counterId, operation, deltaSpec, payload) {
         var meta = window.__sporeCounterMeta[counterId];
         if (!meta) { return; }
@@ -729,9 +800,27 @@
             if (op === 'decrement') { delta = -delta; }
             val = val + delta;
         }
-        if (meta.min != null) { val = Math.max(meta.min, val); }
-        if (meta.max != null) { val = Math.min(meta.max, val); }
+        if (op === 'reset') {
+            if (meta.min != null) { val = Math.max(meta.min, val); }
+            if (sporeCounterUsesProgressive(meta)) {
+                var resetBounds = sporeProgressiveBounds(val, meta.goals, meta.min);
+                if (resetBounds && val > resetBounds.ceiling) { val = resetBounds.ceiling; }
+            } else if (meta.max != null) {
+                val = Math.min(meta.max, val);
+            }
+        } else if (sporeCounterUsesProgressive(meta)) {
+            var live = sporeProgressiveBounds(before, meta.goals, meta.min);
+            if (meta.min != null) { val = Math.max(meta.min, val); }
+            if (live) {
+                if (live.floor != null) { val = Math.max(live.floor, val); }
+                val = Math.min(live.ceiling, val);
+            }
+        } else {
+            if (meta.min != null) { val = Math.max(meta.min, val); }
+            if (meta.max != null) { val = Math.min(meta.max, val); }
+        }
         window.__sporeCounters[counterId] = val;
+        if (op !== 'reset') { sporeEmitProgressiveGoals(meta, counterId, before, val); }
         sporeCounterRender(counterId);
         sporeCounterPersist(counterId);
         if (val !== before) {
@@ -750,6 +839,15 @@
                 mv = mmeta ? (mmeta.initial_value || 0) : 0;
             }
             return sporeCoerceNumber(mv, 0);
+        }
+        if (spec.follow_counter_goals) {
+            var goalMeta = window.__sporeCounterMeta[spec.counter_id];
+            if (sporeCounterUsesProgressive(goalMeta)) {
+                var goalCurrent = window.__sporeCounters[spec.counter_id];
+                if (goalCurrent == null) { goalCurrent = goalMeta.initial_value || 0; }
+                var goalBounds = sporeProgressiveBounds(goalCurrent, goalMeta.goals, goalMeta.min);
+                if (goalBounds) { return goalBounds.activeGoal; }
+            }
         }
         return sporeCoerceNumber(spec.max, 100);
     }
@@ -896,6 +994,7 @@
                 window.__sporeStatsCache = doc;
                 sporeRefreshAllDataDisplays();
                 if (typeof sporeFeedRefreshAllValues === 'function') { sporeFeedRefreshAllValues(); }
+                if (typeof sporeApplyTransforms === 'function') { sporeApplyTransforms(); }
             }
         });
     }
@@ -2934,7 +3033,10 @@
         }
         var delay = sporeCoerceNumber(feed.timing && feed.timing.delay_ms, 0);
         rows.forEach(function (row) {
-            var run = function () { sporeFeedApply(feed, row, valueKind); };
+            var run = function () {
+                sporeFeedApply(feed, row, valueKind);
+                if (typeof sporeApplyTransforms === 'function') { sporeApplyTransforms(); }
+            };
             if (delay > 0) { setTimeout(run, delay); } else { run(); }
         });
     }
@@ -3018,12 +3120,217 @@
         feeds.forEach(sporeFeedBind);
     }
 
+    function sporeTransformOriginCss(origin) {
+        var map = {
+            center: 'center center',
+            'top left': 'left top',
+            'top center': 'center top',
+            'top right': 'right top',
+            'center left': 'left center',
+            'center right': 'right center',
+            'bottom left': 'left bottom',
+            'bottom center': 'center bottom',
+            'bottom right': 'right bottom'
+        };
+        return map[origin] || 'center center';
+    }
+
+    function sporeMapTransform(value, rule) {
+        var n = sporeCoerceNumber(value, rule.in_min);
+        var inMin = sporeCoerceNumber(rule.in_min, 0);
+        var inMax = sporeCoerceNumber(rule.in_max, 100);
+        var outMin = sporeCoerceNumber(rule.out_min, 0);
+        var outMax = sporeCoerceNumber(rule.out_max, 1);
+        var t = (inMax === inMin) ? 0 : (n - inMin) / (inMax - inMin);
+        if (t < 0) { t = 0; }
+        if (t > 1) { t = 1; }
+        return outMin + t * (outMax - outMin);
+    }
+
+    function sporeFirstNumber(data, preferredKey) {
+        if (typeof data === 'number' && !isNaN(data)) { return data; }
+        if (data == null || typeof data !== 'object') {
+            var direct = Number(data);
+            return isNaN(direct) ? null : direct;
+        }
+        var keys = [];
+        if (preferredKey) { keys.push(preferredKey); }
+        ['value', 'amount', 'count', 'delta', 'goal', 'max'].forEach(function (key) {
+            if (keys.indexOf(key) < 0) { keys.push(key); }
+        });
+        var i;
+        for (i = 0; i < keys.length; i++) {
+            if (data[keys[i]] == null || data[keys[i]] === '') { continue; }
+            var num = Number(data[keys[i]]);
+            if (!isNaN(num)) { return num; }
+        }
+        return null;
+    }
+
+    function sporeResolveTransformInput(rule) {
+        var src = rule.source || {};
+        if (src.kind === 'event' || src.kind === 'template_output') {
+            if (rule._lastNumber == null) {
+                var remembered = src.value && src.value.fallback;
+                return remembered != null && remembered !== '' ? remembered : rule.in_min;
+            }
+            return rule._lastNumber;
+        }
+        var spec = src.value || {};
+        var last = window.__sporeLastPayload || {};
+        var resolved = sporeResolveSource(spec, last.event || {}, last.ctx || {});
+        if (resolved == null || resolved === '') {
+            if (spec.fallback != null && spec.fallback !== '') { return spec.fallback; }
+            return rule.in_min;
+        }
+        return resolved;
+    }
+
+    function sporeComposeTransform(rules) {
+        var acc = {
+            translate_x: 0,
+            translate_y: 0,
+            rotate: 0,
+            skew_x: 0,
+            skew_y: 0,
+            scale: 1,
+            origin: 'center'
+        };
+        var any = false;
+        (rules || []).forEach(function (rule) {
+            if (!rule || rule.enabled === false) { return; }
+            var prop = rule.property || 'scale';
+            if (!Object.prototype.hasOwnProperty.call(acc, prop)) { return; }
+            acc[prop] = sporeMapTransform(sporeResolveTransformInput(rule), rule);
+            if (rule.origin) { acc.origin = rule.origin; }
+            any = true;
+        });
+        if (!any) { return null; }
+        var parts = [];
+        if (acc.translate_x || acc.translate_y) {
+            parts.push('translate(' + acc.translate_x + 'px, ' + acc.translate_y + 'px)');
+        }
+        if (acc.rotate) { parts.push('rotate(' + acc.rotate + 'deg)'); }
+        if (acc.skew_x || acc.skew_y) {
+            parts.push('skew(' + acc.skew_x + 'deg, ' + acc.skew_y + 'deg)');
+        }
+        if (acc.scale !== 1) { parts.push('scale(' + acc.scale + ')'); }
+        return {
+            transform: parts.join(' '),
+            origin: sporeTransformOriginCss(acc.origin)
+        };
+    }
+
+    function sporeWriteTransform(el, composed) {
+        if (!el) { return; }
+        if (!composed) {
+            if (el.getAttribute('data-spore-transform-owned') === '1') {
+                el.style.transform = '';
+                el.style.transformOrigin = '';
+                el.removeAttribute('data-spore-transform-owned');
+            }
+            return;
+        }
+        el.setAttribute('data-spore-transform-owned', '1');
+        el.style.transform = composed.transform;
+        el.style.transformOrigin = composed.origin;
+    }
+
+    function sporeApplyTransforms() {
+        var table = window.__sporeTransforms;
+        if (!table) { return; }
+        sporeWriteTransform(
+            document.getElementById('sporeRoot'),
+            sporeComposeTransform(table.canvas || [])
+        );
+        var elements = table.elements || {};
+        Object.keys(elements).forEach(function (id) {
+            sporeWriteTransform(document.getElementById(id), sporeComposeTransform(elements[id]));
+        });
+    }
+
+    function sporeTransformUsesStats(rule) {
+        var src = (rule && rule.source) || {};
+        var spec = src.value || {};
+        var sid = String(spec.source || '');
+        return src.kind === 'value' && (sid === 'stats' || sid.indexOf('stats.') === 0);
+    }
+
+    function sporeBindTransformRule(rule) {
+        var src = rule.source || {};
+        var hasSocket = typeof socket !== 'undefined' && socket && socket.on;
+        if (!hasSocket) { return; }
+        if (src.kind === 'event') {
+            (src.events || []).forEach(function (evName) {
+                socket.on(evName, function (data) {
+                    data = (data && typeof data === 'object') ? data : { value: data };
+                    var num = sporeFirstNumber(data, rule.value_field);
+                    if (num != null) { rule._lastNumber = num; }
+                    window.__sporeLastPayload.event = data;
+                    sporeApplyTransforms();
+                });
+            });
+            return;
+        }
+        if (src.kind === 'template_output') {
+            var want = src.template_output || {};
+            socket.on('template_output', function (env) {
+                env = env || {};
+                if (want.event && env.event !== want.event) { return; }
+                if (want.template && env.template && env.template !== want.template) { return; }
+                var data = (env.data && typeof env.data === 'object') ? env.data : {};
+                var match = want.match || {};
+                var keys = Object.keys(match);
+                var i;
+                for (i = 0; i < keys.length; i++) {
+                    if (String(data[keys[i]]) !== String(match[keys[i]])) { return; }
+                }
+                var num = sporeFirstNumber(data, rule.value_field);
+                if (num != null) { rule._lastNumber = num; }
+                window.__sporeLastPayload.event = data;
+                sporeApplyTransforms();
+            });
+            return;
+        }
+        (src.refresh_on || []).forEach(function (evName) {
+            socket.on(evName, function (data) {
+                window.__sporeLastPayload.event = data || {};
+                sporeApplyTransforms();
+            });
+        });
+        var ms = sporeCoerceNumber(src.refresh_ms, 0);
+        if (ms > 0) {
+            setInterval(function () { sporeApplyTransforms(); }, Math.max(100, ms));
+        }
+    }
+
+    function sporeInitTransforms() {
+        if (window.__sporeTransformsBound) { return; }
+        window.__sporeTransformsBound = true;
+        var table = window.__sporeTransforms || { canvas: [], elements: {} };
+        var rules = (table.canvas || []).slice();
+        Object.keys(table.elements || {}).forEach(function (id) {
+            (table.elements[id] || []).forEach(function (rule) { rules.push(rule); });
+        });
+        var usesStats = rules.some(sporeTransformUsesStats);
+        if (usesStats && typeof sporeLoadStatsCache === 'function') {
+            sporeLoadStatsCache();
+            if (!window.__sporeStatsPoll) {
+                window.__sporeStatsPoll = setInterval(sporeLoadStatsCache, 15000);
+            }
+        }
+        rules.forEach(sporeBindTransformRule);
+        sporeApplyTransforms();
+    }
+
     window.sporeListAdd = sporeListAdd;
     window.sporeListClear = sporeListClear;
     window.sporeWheelSpin = sporeWheelSpin;
     window.sporeRefreshStatCards = sporeRefreshStatCards;
     window.sporeInitWidgets = sporeInitWidgets;
     window.sporeInitFeeds = sporeInitFeeds;
+    window.sporeApplyTransforms = sporeApplyTransforms;
+    window.sporeInitTransforms = sporeInitTransforms;
     window.sporeFeedFilterPasses = sporeFeedFilterPasses;
     window.sporeFeedRender = sporeFeedRender;
     window.sporeFeedItem = sporeFeedItem;

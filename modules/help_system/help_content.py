@@ -3444,6 +3444,12 @@ Open the **Canvas** inspector tab when no element-specific setting applies, or s
 
 The **Minimum from layout** label updates live as you edit elements. Duration auto-bumps up when the layout needs more time; you can set it higher manually.
 
+### Transformations
+
+**Transformations** on the Canvas tab map a live value onto the whole template. The same section on a block maps a value onto that block only. Both can be on at once: the canvas transform applies first, and the block adds its own.
+
+Each rule picks one property — size, move X, move Y, rotate, or skew — and a data source from the same picker as a [Data feed](help:spore_studio_data_feed) (a counter, a session stat, an alert field, another template's output, or a fixed number). **Input min/max** is the source range. **Output min/max** is the result: size is a multiplier where 1 is unchanged, move is pixels, and rotate and skew are degrees. Values between the inputs are interpolated. A counter can grow with its own value, for example input 0–1000 and size output 1–2.
+
 ### Queue vs Instant alert system
 
 | Value | Label in UI | Use when |
@@ -3781,7 +3787,7 @@ Fills from a counter toward a goal.
 |---------|---------|----------------|
 | **Counter** | empty | Which counter drives the fill |
 | **Max kind** | fixed | `fixed` uses the max number. `counter` uses another counter as the goal. |
-| **Max** | 100 | Goal when max kind is fixed |
+| **Max** | 100 | Goal when max kind is fixed. Unused when the value counter has progressive goals; the bar then fills toward that counter's active goal. |
 | **Track color / Fill color** | slate / purple | Empty and filled colors |
 | **Border radius / width / color** | 8 / 0 / black | Frame around the bar |
 | **Fill animation (ms)** | 500 | How long the width eases to the new value |
@@ -4618,7 +4624,7 @@ See [Dynamic Controls (Source Controls Tab)](help:spore_studio_dynamic_controls)
         id="spore_studio_counters",
         title="Counters in Spore Studio",
         category=HelpCategory.SPORE_STUDIO,
-        summary="Set up numeric counters, rules, persistence, image ranges, and binding adjustments",
+        summary="Set up numeric counters, progressive goals, rules, persistence, image ranges, and binding adjustments",
         content="""
 # Counters in Spore Studio
 
@@ -4698,6 +4704,21 @@ When persistence is **off**, the counter resets to **Initial value** every time 
 
 > **Tip:** Use persistence for marathon totals; leave it off for per-stream counters you reset manually.
 
+## Progressive goals
+
+Turn on **Progressive goals** to replace the single max with a list, such as 100, then 200, then 300. Add as many as you need. Each goal must be at least as high as the one before it.
+
+The count itself is never reset when a goal is reached. `{max}` and a progress bar driven by this counter switch to the next goal instead:
+
+| Count | Goal shown |
+|-------|------------|
+| 0–99 | 100 |
+| 100–199 | 200 |
+| 200–299 | 300 |
+| 300 | 300, and further increases stay at 300 |
+
+Once a goal is reached, the count cannot fall below it. It also cannot rise above the last goal. **Reset** is what returns the count to the initial value and the first goal. Reaching a goal emits `goal_reached` (one event per goal if a single update skips ahead). The progress bar's own `goal_reached` still fires only when the bar is full, which is the last goal.
+
 ## Value Change Animation
 
 Separate from element **Entrance / Exit** animations (Show/Hide bindings):
@@ -4772,6 +4793,8 @@ or a one-off adjustment from a different event than your main rules.
             "counter rules",
             "counter_adjust",
             "tick_up",
+            "progressive goals",
+            "goal reached",
             "spore studio",
         ],
         related_topics=[

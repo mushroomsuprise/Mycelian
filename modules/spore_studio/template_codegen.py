@@ -51,6 +51,7 @@ from .spore_data_codegen import (
     counter_image_range_src_id,
     progress_bar_max_config_id,
     progress_bar_max_kind_config_id,
+    progressive_goal_state,
     inject_data_runtime_block,
     timer_config_ids,
     timer_format,
@@ -707,8 +708,14 @@ def _text_element_display(
             init = cfg.get("initial_value", 0)
         except (TypeError, ValueError):
             init = 0
+        max_bound = cfg.get("max")
+        if cfg.get("progressive"):
+            shown = progressive_goal_state(init, cfg.get("goals"), cfg.get("min"))
+            if shown:
+                init = shown["value"]
+                max_bound = shown["active_goal"]
         text_default = _apply_counter_format_tokens(
-            fmt, init, cfg.get("min"), cfg.get("max")
+            fmt, init, cfg.get("min"), max_bound
         )
         jinja_var = counter_format_config_id(eid)
     elif text_mode == "data_display":

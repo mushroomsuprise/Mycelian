@@ -632,6 +632,155 @@ class SporeStudioDataFeaturesTests(unittest.TestCase):
         self.assertIn("sporeEffectiveSourceId", html)
         self.assertIn("sporeSpecPassesAlertFilters", html)
 
+    def test_progressive_goals_compile(self):
+        self.assertEqual(
+            spore_data_codegen.normalize_progressive_goals([100, 50, 200, 200, 300]),
+            [100, 200, 300],
+        )
+        mid = spore_data_codegen.progressive_goal_state(150, [100, 200, 300], 0)
+        self.assertEqual(mid["active_goal"], 200)
+        self.assertEqual(mid["floor"], 100)
+        self.assertEqual(mid["value"], 150)
+        done = spore_data_codegen.progressive_goal_state(300, [100, 200, 300], 0)
+        self.assertEqual(done["active_goal"], 300)
+        self.assertEqual(done["floor"], 200)
+        over = spore_data_codegen.progressive_goal_state(900, [100, 200, 300], 0)
+        self.assertEqual(over["value"], 300)
+        self.assertEqual(over["active_goal"], 300)
+
+        model = {
+            "template_name": "prog_goals",
+            "alert_system": "instant",
+            "design": {"width": 400, "height": 120},
+            "elements": [
+                {
+                    "id": "bits",
+                    "type": "counter",
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 200, "h": 40},
+                    "props": {},
+                    "counter": {
+                        "counter_id": "bits",
+                        "initial_value": 150,
+                        "min": 0,
+                        "max": 75,
+                        "progressive": True,
+                        "goals": [100, 200, 300],
+                        "format": "{value}/{max}",
+                        "rules": [],
+                    },
+                },
+                {
+                    "id": "cheer_bar",
+                    "type": "progress_bar",
+                    "position": {"x": 0, "y": 50},
+                    "size": {"w": 300, "h": 24},
+                    "props": {},
+                    "progress_source": {
+                        "counter_id": "bits",
+                        "max_kind": "fixed",
+                        "max": 9999,
+                    },
+                },
+            ],
+        }
+        html, _cfg = template_codegen.compile_model(model)
+        self.assertIn("150/200", html)
+        self.assertNotIn("150/75", html)
+        self.assertNotIn("150/9999", html)
+        js = spore_data_codegen.compile_spore_data_features(model)
+        self.assertIn('"progressive": true', js)
+        self.assertIn('"goals": [100, 200, 300]', js)
+        self.assertIn('"max": null', js)
+        self.assertIn('"follow_counter_goals": true', js)
+        runtime = spore_data_codegen.load_data_runtime_js()
+        self.assertIn("function sporeProgressiveBounds", runtime)
+        self.assertIn("follow_counter_goals", runtime)
+        goal_at = runtime.find("if (spec.follow_counter_goals)")
+        fixed_at = runtime.find("return sporeCoerceNumber(spec.max, 100);", goal_at)
+        self.assertGreater(goal_at, 0)
+        self.assertGreater(fixed_at, goal_at)
+
+    def test_transforms_compile(self):
+        model = {
+            "template_name": "tf_tpl",
+            "alert_system": "instant",
+            "design": {"width": 400, "height": 200},
+            "canvas_transforms": [
+                {
+                    "id": "tf_canvas",
+                    "enabled": True,
+                    "property": "rotate",
+                    "source": {
+                        "kind": "value",
+                        "value": {"kind": "fixed", "value": 10},
+                        "refresh_ms": 0,
+                        "refresh_on": [],
+                    },
+                    "in_min": 0,
+                    "in_max": 10,
+                    "out_min": 0,
+                    "out_max": 45,
+                    "origin": "center",
+                },
+                {
+                    "id": "tf_bad",
+                    "enabled": True,
+                    "property": "not_a_property",
+                    "source": {},
+                    "in_min": 0,
+                    "in_max": 1,
+                    "out_min": 0,
+                    "out_max": 1,
+                },
+            ],
+            "elements": [
+                {
+                    "id": "cnt",
+                    "type": "counter",
+                    "position": {"x": 0, "y": 0},
+                    "size": {"w": 120, "h": 40},
+                    "props": {},
+                    "counter": {
+                        "counter_id": "cnt",
+                        "initial_value": 0,
+                        "format": "{value}",
+                        "rules": [],
+                    },
+                    "transforms": [
+                        {
+                            "id": "tf_scale",
+                            "enabled": True,
+                            "property": "scale",
+                            "source": {
+                                "kind": "value",
+                                "value": {
+                                    "kind": "data_source",
+                                    "source": "counter",
+                                    "source_id": "cnt",
+                                },
+                            },
+                            "in_min": 0,
+                            "in_max": 1000,
+                            "out_min": 1,
+                            "out_max": 2,
+                            "origin": "center",
+                        }
+                    ],
+                }
+            ],
+        }
+        js = spore_data_codegen.compile_spore_data_features(model)
+        self.assertIn("window.__sporeTransforms", js)
+        self.assertIn("sporeInitTransforms", js)
+        self.assertIn('"property": "scale"', js)
+        self.assertIn('"property": "rotate"', js)
+        self.assertNotIn("not_a_property", js)
+        self.assertIn('"source_id": "cnt"', js)
+        runtime = spore_data_codegen.load_data_runtime_js()
+        self.assertIn("function sporeApplyTransforms", runtime)
+        self.assertIn("function sporeInitTransforms", runtime)
+
 
 if __name__ == "__main__":
     unittest.main()

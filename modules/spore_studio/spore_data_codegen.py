@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .data_source_registry import ALERT_PAYLOAD_KEYS, CHAT_PAYLOAD_KEYS
 from .behavior_blocks import _js_string, _js_value
@@ -188,6 +188,156 @@ def _is_display_element(el: Dict[str, Any]) -> bool:
     if etype in ("text", "marquee") and (el.get("text_mode") or "static") == "data_display":
         return isinstance(el.get("data_display"), dict)
     return False
+
+
+def normalize_progressive_goals(goals: Any) -> List[float]:
+    """Keep goal order, raise any goal that sits below the one before it, drop duplicates."""
+    cleaned: List[float] = []
+    for raw in goals or []:
+        if isinstance(raw, bool):
+            continue
+        try:
+            number = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if cleaned and number < cleaned[-1]:
+            number = cleaned[-1]
+        if cleaned and number == cleaned[-1]:
+            continue
+        cleaned.append(int(number) if number == int(number) else number)
+    return cleaned
+
+
+def progressive_goal_state(
+    value: Any,
+    goals: Any,
+    min_bound: Any = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Active goal and clamps for a progressive counter.
+
+    The active goal is the first goal strictly above ``value``, or the last
+    goal once that value has been reached. The floor is the previous goal
+    (or ``min_bound`` before the first goal). The ceiling is the last goal.
+    """
+    cleaned = normalize_progressive_goals(goals)
+    if not cleaned:
+        return None
+    try:
+        current = float(value)
+    except (TypeError, ValueError):
+        current = 0.0
+    if isinstance(value, bool):
+        current = 0.0
+    floor: Optional[float] = None
+    if min_bound not in (None, ""):
+        try:
+            floor = float(min_bound)
+        except (TypeError, ValueError):
+            floor = None
+    if floor is not None and current < floor:
+        current = floor
+    ceiling = cleaned[-1]
+    if current > ceiling:
+        current = ceiling
+    active_index = len(cleaned) - 1
+    for index, goal in enumerate(cleaned):
+        if goal > current:
+            active_index = index
+            break
+    if active_index > 0:
+        floor = cleaned[active_index - 1]
+    active = cleaned[active_index]
+
+    def _num(number: Optional[float]) -> Optional[float]:
+        if number is None:
+            return None
+        return int(number) if number == int(number) else number
+
+    return {
+        "value": _num(current),
+        "goals": cleaned,
+        "floor": _num(floor),
+        "ceiling": _num(ceiling),
+        "active_goal": _num(active),
+        "active_index": active_index,
+    }
+
+
+def _counter_cfg_by_id(
+    elements: List[Dict[str, Any]], counter_id: str
+) -> Optional[Dict[str, Any]]:
+    want = _slugify_id(counter_id)
+    if not want:
+        return None
+    for el, cfg in _collect_counters(elements):
+        cid = _slugify_id(str(cfg.get("counter_id") or el.get("id") or ""))
+        if cid == want:
+            return cfg
+    return None
+
+
+_TRANSFORM_PROPERTIES = frozenset(
+    {"scale", "translate_x", "translate_y", "rotate", "skew_x", "skew_y"}
+)
+
+
+def _normalize_transform_rule(raw: Any) -> Optional[Dict[str, Any]]:
+    """One continuous map from a data-panel value onto a CSS transform property."""
+    if not isinstance(raw, dict):
+        return None
+    prop = str(raw.get("property") or "scale").strip()
+    if prop not in _TRANSFORM_PROPERTIES:
+        return None
+    source = raw.get("source") if isinstance(raw.get("source"), dict) else {}
+
+    def _num(key: str, default: float) -> float:
+        try:
+            if raw.get(key) in (None, ""):
+                return default
+            number = float(raw.get(key))
+        except (TypeError, ValueError):
+            return default
+        return int(number) if number == int(number) else number
+
+    origin = str(raw.get("origin") or "center").strip() or "center"
+    return {
+        "id": str(raw.get("id") or ""),
+        "enabled": raw.get("enabled") is not False,
+        "property": prop,
+        "source": source,
+        "in_min": _num("in_min", 0),
+        "in_max": _num("in_max", 100),
+        "out_min": _num("out_min", 0),
+        "out_max": _num("out_max", 1),
+        "origin": origin,
+    }
+
+
+def _compile_transform_table(model: Dict[str, Any], elements: List[Dict[str, Any]]) -> str:
+    canvas: List[Dict[str, Any]] = []
+    for raw in model.get("canvas_transforms") or []:
+        rule = _normalize_transform_rule(raw)
+        if rule:
+            canvas.append(rule)
+    by_element: Dict[str, List[Dict[str, Any]]] = {}
+    for el in elements or []:
+        if not isinstance(el, dict) or not el.get("id"):
+            continue
+        rules: List[Dict[str, Any]] = []
+        for raw in el.get("transforms") or []:
+            rule = _normalize_transform_rule(raw)
+            if rule:
+                rules.append(rule)
+        if rules:
+            by_element[str(el.get("id"))] = rules
+    if not canvas and not by_element:
+        return ""
+    table = {"canvas": canvas, "elements": by_element}
+    return (
+        "window.__sporeTransforms = " + _js_value(table) + ";\n"
+        "if (typeof sporeInitTransforms === 'function') { sporeInitTransforms(); }"
+    )
 
 
 def _collect_counters(elements: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
@@ -409,6 +559,15 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
             if effect not in ("none", "pulse", "shimmer", "scroll"):
                 effect = "pulse" if props.get("near_goal_pulse") else "none"
             effect_var = f"{eid_slug}_near_goal_effect"
+            follow_goals = False
+            if max_kind != "counter":
+                bound = _counter_cfg_by_id(elements, cid)
+                if (
+                    isinstance(bound, dict)
+                    and bound.get("progressive")
+                    and normalize_progressive_goals(bound.get("goals"))
+                ):
+                    follow_goals = True
             lines.append(
                 "window.__sporeProgressBars.push({"
                 f'"elementId": {_js_string(eid)}, '
@@ -416,6 +575,7 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
                 f'"max_kind": {_js_string(max_kind)}, '
                 f'"max": {_jinja_tojson_default(max_var, max_default)}, '
                 f'"max_counter_id": {_js_string(max_counter_id)}, '
+                f'"follow_counter_goals": {str(follow_goals).lower()}, '
                 f'"near_goal_threshold": {threshold}, '
                 f'"near_goal_effect": {_jinja_tojson_default(effect_var, effect)}'
                 "});"
@@ -434,16 +594,21 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
         db_key = str(cfg.get("database_key") or cid).strip()
         fmt_default = str(cfg.get("format") or "{value}")
         fmt_var = counter_format_config_id(_slugify_id(eid))
+        goals = normalize_progressive_goals(cfg.get("goals"))
+        progressive = bool(cfg.get("progressive")) and bool(goals)
         meta: Dict[str, Any] = {
             "elementId": eid,
             "counter_id": cid,
             "initial_value": cfg.get("initial_value", 0),
             "min": cfg.get("min"),
-            "max": cfg.get("max"),
+            "max": None if progressive else cfg.get("max"),
             "persist": bool(cfg.get("persist")),
             "database_path": db_path,
             "database_key": db_key,
         }
+        if progressive:
+            meta["progressive"] = True
+            meta["goals"] = goals
         va_meta = _value_animation_meta(el)
         if va_meta:
             meta["value_animation"] = va_meta
@@ -797,6 +962,9 @@ def compile_spore_data_features(model: Dict[str, Any]) -> str:
     )
 
     lines.append("if (typeof sporeInitWidgets === 'function') { sporeInitWidgets(); }")
+    transform_js = _compile_transform_table(model, elements)
+    if transform_js:
+        lines.append(transform_js)
 
     return "\n".join(lines)
 

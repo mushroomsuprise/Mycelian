@@ -385,6 +385,19 @@ BLOCK_OUTPUTS: Dict[str, List[Dict[str, Any]]] = {
                 _p("delta", "Change", "number"),
             ],
         ),
+        _out(
+            "goal", "goal_reached", "goal reached",
+            "The count reached one of its progressive goals.",
+            [
+                _TEMPLATE_FIELD, _ELEMENT_FIELD,
+                _p("counterId", "Counter id"),
+                _p("value", "Value", "number"),
+                _p("goal", "Goal reached", "number"),
+                _p("nextGoal", "Next goal", "number"),
+                _p("index", "Goal index", "number"),
+                _p("max", "Goal reached", "number"),
+            ],
+        ),
     ],
     "progress_bar": [
         _out(

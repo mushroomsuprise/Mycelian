@@ -1512,15 +1512,63 @@
         }
     }
 
-    function counterInitialValueById(counterId) {
-        if (!counterId || !state.model) { return 0; }
-        var found = (state.model.elements || []).find(function (e) {
-            return TEXT_LIKE_TYPES[e.type] &&
-                (e.text_mode || "static") === "counter" && e.counter &&
-                String(e.counter.counter_id || slugifyCounterId(e.id)) === String(counterId);
+    function isCounterElement(el) {
+        if (!el || !el.counter) { return false; }
+        if (el.type === "counter") { return true; }
+        return !!TEXT_LIKE_TYPES[el.type] && (el.text_mode || "static") === "counter";
+    }
+
+    function counterElementById(counterId) {
+        if (!counterId || !state.model) { return null; }
+        var found = null;
+        (state.model.elements || []).forEach(function (el) {
+            if (found || !isCounterElement(el)) { return; }
+            var cid = el.counter.counter_id || slugifyCounterId(el.id);
+            if (String(cid) === String(counterId)) { found = el; }
         });
+        return found;
+    }
+
+    function counterInitialValueById(counterId) {
+        var found = counterElementById(counterId);
         if (!found || !found.counter) { return 0; }
         return found.counter.initial_value != null ? found.counter.initial_value : 0;
+    }
+
+    function normalizeGoalList(goals) {
+        var out = [];
+        (goals || []).forEach(function (raw) {
+            var n = Number(raw);
+            if (isNaN(n)) { return; }
+            if (out.length && n < out[out.length - 1]) { n = out[out.length - 1]; }
+            if (out.length && n === out[out.length - 1]) { return; }
+            out.push(n);
+        });
+        return out;
+    }
+
+    function progressivePreviewState(value, goals, minBound) {
+        var cleaned = normalizeGoalList(goals);
+        if (!cleaned.length) { return null; }
+        var current = Number(value);
+        if (isNaN(current)) { current = 0; }
+        var floor = (minBound != null && minBound !== "") ? Number(minBound) : null;
+        if (floor != null && !isNaN(floor) && current < floor) { current = floor; }
+        var ceiling = cleaned[cleaned.length - 1];
+        if (current > ceiling) { current = ceiling; }
+        var activeIndex = cleaned.length - 1;
+        var i;
+        for (i = 0; i < cleaned.length; i++) {
+            if (cleaned[i] > current) {
+                activeIndex = i;
+                break;
+            }
+        }
+        return {
+            value: current,
+            activeGoal: cleaned[activeIndex],
+            floor: activeIndex > 0 ? cleaned[activeIndex - 1] : floor
+        };
     }
 
     function progressMaxForPreview(el) {
@@ -1529,6 +1577,12 @@
         if (ps.max_kind === "counter" && ps.max_counter_id) {
             var mv = counterInitialValueById(ps.max_counter_id);
             return mv > 0 ? mv : 100;
+        }
+        var valueEl = counterElementById(ps.counter_id);
+        if (valueEl && valueEl.counter && valueEl.counter.progressive) {
+            var cur = valueEl.counter.initial_value != null ? valueEl.counter.initial_value : 0;
+            var shown = progressivePreviewState(cur, valueEl.counter.goals, valueEl.counter.min);
+            if (shown) { return shown.activeGoal; }
         }
         return ps.max != null ? ps.max : 100;
     }
@@ -1547,10 +1601,18 @@
         if (!counter) { return ""; }
         var fmt = format || "{value}";
         var val = counter.initial_value != null ? counter.initial_value : 0;
+        var maxBound = counter.max;
+        if (counter.progressive) {
+            var shown = progressivePreviewState(val, counter.goals, counter.min);
+            if (shown) {
+                val = shown.value;
+                maxBound = shown.activeGoal;
+            }
+        }
         return fmt
             .replace("{value}", String(val))
             .replace("{min}", counter.min != null ? String(counter.min) : "")
-            .replace("{max}", counter.max != null ? String(counter.max) : "");
+            .replace("{max}", maxBound != null && maxBound !== "" ? String(maxBound) : "");
     }
 
     function ensureCounterDefaults(el) {
@@ -1560,6 +1622,8 @@
         if (!c.counter_id) { c.counter_id = slugifyCounterId(el.id || "counter"); }
         if (c.initial_value === undefined) { c.initial_value = 0; }
         if (!c.format) { c.format = "{value}"; }
+        if (c.progressive === undefined) { c.progressive = false; }
+        if (!Array.isArray(c.goals)) { c.goals = []; }
         if (c.persist === undefined) { c.persist = false; }
         if (!c.database_path && state.model) {
             c.database_path = state.model.template_name + "/counters";
@@ -1647,11 +1711,7 @@
     }
 
     function listCountersInModel() {
-        return (state.model.elements || []).filter(function (e) {
-            if (!e.counter) { return false; }
-            if (e.type === "counter") { return true; }
-            return TEXT_LIKE_TYPES[e.type] && (e.text_mode || "static") === "counter";
-        }).map(function (e) {
+        return (state.model.elements || []).filter(isCounterElement).map(function (e) {
             var cid = e.counter.counter_id || slugifyCounterId(e.id);
             return { id: cid, label: e.id + " (" + cid + ")" };
         });
@@ -2805,6 +2865,7 @@
         cidSel.addEventListener("change", function () {
             ps.counter_id = cidSel.value;
             pushHistoryDebounced();
+            renderProperties();
             renderStage();
             modelTouch();
         });
@@ -2813,6 +2874,18 @@
             cidSel,
             "Set min and max on the value counter to use {min}/{max} in its format string"
         ));
+        var valueCounter = counterElementById(ps.counter_id);
+        var followsGoals = valueCounter && valueCounter.counter && valueCounter.counter.progressive &&
+            normalizeGoalList(valueCounter.counter.goals).length;
+        if (followsGoals && (ps.max_kind || "fixed") !== "counter") {
+            var goalNote = document.createElement("div");
+            goalNote.className = "ss-binding-row__hint";
+            goalNote.textContent = (
+                "This counter uses progressive goals. The bar fills toward the active goal. " +
+                "The max value below is not used."
+            );
+            sect.appendChild(goalNote);
+        }
 
         var maxKindSel = document.createElement("select");
         [
@@ -3418,6 +3491,77 @@
         return wrap;
     }
 
+    function renderProgressiveGoalList(host, counter) {
+        if (!Array.isArray(counter.goals)) { counter.goals = []; }
+        var hint = document.createElement("div");
+        hint.className = "ss-binding-row__hint";
+        hint.textContent = (
+            "Each goal must be at least the one before it. The count cannot drop below a goal " +
+            "it has already reached, and it cannot rise above the last goal. Reset returns to the initial value."
+        );
+        host.appendChild(hint);
+        counter.goals.forEach(function (goal, idx) {
+            var row = document.createElement("div");
+            row.className = "ss-row";
+            var input = numberEl(goal, function (v) {
+                var n = Number(v);
+                if (isNaN(n)) { n = 0; }
+                if (idx > 0 && n < Number(counter.goals[idx - 1])) {
+                    n = Number(counter.goals[idx - 1]);
+                }
+                counter.goals[idx] = n;
+                var j;
+                for (j = idx + 1; j < counter.goals.length; j++) {
+                    if (Number(counter.goals[j]) < Number(counter.goals[j - 1])) {
+                        counter.goals[j] = Number(counter.goals[j - 1]);
+                    }
+                }
+                pushHistoryDebounced();
+                renderProperties();
+                renderStage();
+                modelTouch();
+            });
+            input.step = "any";
+            row.appendChild(formRow(
+                "Goal " + (idx + 1),
+                input,
+                idx === 0
+                    ? "First goal. {max} shows this until the count reaches it."
+                    : "Must be at least the previous goal. Reaching the previous goal switches {max} to this."
+            ));
+            var rm = document.createElement("button");
+            rm.type = "button";
+            rm.className = "ss-btn ss-btn--sm";
+            rm.textContent = "Remove";
+            rm.title = "Remove this goal";
+            rm.addEventListener("click", function () {
+                counter.goals.splice(idx, 1);
+                pushHistory();
+                renderProperties();
+                renderStage();
+                modelTouch();
+            });
+            row.appendChild(rm);
+            host.appendChild(row);
+        });
+        var add = document.createElement("button");
+        add.type = "button";
+        add.className = "ss-btn";
+        add.textContent = "+ Add goal";
+        add.addEventListener("click", function () {
+            var last = counter.goals.length ? Number(counter.goals[counter.goals.length - 1]) : 0;
+            if (isNaN(last)) { last = 0; }
+            var prev = counter.goals.length > 1 ? Number(counter.goals[counter.goals.length - 2]) : null;
+            var step = (prev != null && !isNaN(prev) && last > prev) ? (last - prev) : (last > 0 ? last : 100);
+            counter.goals.push(last + step);
+            pushHistory();
+            renderProperties();
+            renderStage();
+            modelTouch();
+        });
+        host.appendChild(add);
+    }
+
     function renderTextModeSection(host, el) {
         if (isLegacyModel()) { return; }
         if (el.type !== "counter" && el.type !== "data_display") { return; }
@@ -3444,12 +3588,36 @@
                 pushHistoryDebounced();
                 modelTouch();
             }), "Lowest allowed value. Leave empty for no minimum. Available as {min}."));
-            host.appendChild(formRow("Max", numberEl(c.max != null ? c.max : "", function (v) {
-                c.max = v === "" ? null : Number(v);
-                renderStage();
-                pushHistoryDebounced();
-                modelTouch();
-            }), "Highest allowed value. Leave empty for no maximum. Available as {max}."));
+            host.appendChild(formRowCheckbox(
+                "Progressive goals",
+                !!c.progressive,
+                function (checked) {
+                    c.progressive = checked;
+                    if (checked && !normalizeGoalList(c.goals).length) {
+                        var seed = c.max != null && c.max !== "" ? Number(c.max) : 100;
+                        if (isNaN(seed)) { seed = 100; }
+                        c.goals = [seed];
+                    }
+                    pushHistory();
+                    renderProperties();
+                    renderStage();
+                    modelTouch();
+                },
+                "When the count reaches a goal, {max} moves to the next one. The count stays where it is."
+            ));
+            if (c.progressive && normalizeGoalList(c.goals).length) {
+                renderProgressiveGoalList(host, c);
+            } else {
+                if (c.progressive) { renderProgressiveGoalList(host, c); }
+                host.appendChild(formRow("Max", numberEl(c.max != null ? c.max : "", function (v) {
+                    c.max = v === "" ? null : Number(v);
+                    renderStage();
+                    pushHistoryDebounced();
+                    modelTouch();
+                }), c.progressive
+                    ? "Used until you add a goal. Leave empty for no maximum."
+                    : "Highest allowed value. Leave empty for no maximum. Available as {max}."));
+            }
             var formatInput = inputEl("text", c.format || "{value}", function (v) {
                 c.format = v;
                 el.props = el.props || {};
@@ -5866,6 +6034,388 @@
         ));
     }
 
+    var TRANSFORM_PROPERTIES = [
+        { id: "scale", label: "Size" },
+        { id: "translate_x", label: "Move X" },
+        { id: "translate_y", label: "Move Y" },
+        { id: "rotate", label: "Rotate" },
+        { id: "skew_x", label: "Skew X" },
+        { id: "skew_y", label: "Skew Y" }
+    ];
+
+    var TRANSFORM_ORIGINS = [
+        { id: "center", label: "Center" },
+        { id: "top left", label: "Top left" },
+        { id: "top center", label: "Top center" },
+        { id: "top right", label: "Top right" },
+        { id: "center left", label: "Center left" },
+        { id: "center right", label: "Center right" },
+        { id: "bottom left", label: "Bottom left" },
+        { id: "bottom center", label: "Bottom center" },
+        { id: "bottom right", label: "Bottom right" }
+    ];
+
+    function transformOriginCss(origin) {
+        var map = {
+            center: "center center",
+            "top left": "left top",
+            "top center": "center top",
+            "top right": "right top",
+            "center left": "left center",
+            "center right": "right center",
+            "bottom left": "left bottom",
+            "bottom center": "center bottom",
+            "bottom right": "right bottom"
+        };
+        return map[origin] || "center center";
+    }
+
+    function defaultTransformRanges(property) {
+        if (property === "scale") {
+            return { in_min: 0, in_max: 1000, out_min: 1, out_max: 2 };
+        }
+        if (property === "translate_x" || property === "translate_y") {
+            return { in_min: 0, in_max: 100, out_min: 0, out_max: 40 };
+        }
+        if (property === "rotate") {
+            return { in_min: 0, in_max: 100, out_min: 0, out_max: 45 };
+        }
+        return { in_min: 0, in_max: 100, out_min: 0, out_max: 20 };
+    }
+
+    function defaultTransformSource(el) {
+        var value = { kind: "data_source", source: "", fallback: "" };
+        if (el && el.counter) {
+            value.source = "counter";
+            value.source_id = el.counter.counter_id || slugifyCounterId(el.id);
+        }
+        return {
+            kind: "value",
+            events: [],
+            template_output: { template: "", event: "", match: {} },
+            value: value,
+            refresh_ms: 0,
+            refresh_on: []
+        };
+    }
+
+    function ensureTransformSource(rule) {
+        if (!rule.source || typeof rule.source !== "object") {
+            rule.source = defaultTransformSource(null);
+        }
+        var src = rule.source;
+        if (["event", "template_output", "value"].indexOf(src.kind) < 0) { src.kind = "value"; }
+        if (!Array.isArray(src.events)) { src.events = []; }
+        if (!src.template_output || typeof src.template_output !== "object") {
+            src.template_output = { template: "", event: "", match: {} };
+        }
+        if (src.template_output.template == null) { src.template_output.template = ""; }
+        if (src.template_output.event == null) { src.template_output.event = ""; }
+        if (!src.template_output.match || typeof src.template_output.match !== "object") {
+            src.template_output.match = {};
+        }
+        if (!src.value || typeof src.value !== "object") {
+            src.value = { kind: "data_source", source: "" };
+        }
+        src.refresh_ms = Number(src.refresh_ms) || 0;
+        if (!Array.isArray(src.refresh_on)) { src.refresh_on = []; }
+        return src;
+    }
+
+    function nextTransformId(rules) {
+        var used = {};
+        (rules || []).forEach(function (rule) {
+            if (rule && rule.id) { used[rule.id] = true; }
+        });
+        var n = (rules || []).length + 1;
+        while (used["tf" + n]) { n += 1; }
+        return "tf" + n;
+    }
+
+    function mapTransformPreview(value, rule) {
+        var n = Number(value);
+        if (isNaN(n)) { n = Number(rule.in_min) || 0; }
+        var inMin = Number(rule.in_min);
+        if (isNaN(inMin)) { inMin = 0; }
+        var inMax = Number(rule.in_max);
+        if (isNaN(inMax)) { inMax = 100; }
+        var outMin = Number(rule.out_min);
+        if (isNaN(outMin)) { outMin = 0; }
+        var outMax = Number(rule.out_max);
+        if (isNaN(outMax)) { outMax = 1; }
+        var t = inMax === inMin ? 0 : (n - inMin) / (inMax - inMin);
+        if (t < 0) { t = 0; }
+        if (t > 1) { t = 1; }
+        return outMin + t * (outMax - outMin);
+    }
+
+    function designTimeTransformInput(rule) {
+        var src = rule.source || {};
+        var spec = (src.value && typeof src.value === "object") ? src.value : {};
+        if ((!src.kind || src.kind === "value") && spec.kind === "fixed") {
+            var fixed = Number(spec.value);
+            return isNaN(fixed) ? (Number(rule.in_min) || 0) : fixed;
+        }
+        if (!src.kind || src.kind === "value") {
+            var source = String(spec.source || "");
+            var cid = spec.source_id || "";
+            if (source.indexOf("counter.") === 0) {
+                cid = source.slice("counter.".length);
+                source = "counter";
+            }
+            if (source === "counter" && cid) { return counterInitialValueById(cid); }
+            if (spec.fallback != null && spec.fallback !== "" && !isNaN(Number(spec.fallback))) {
+                return Number(spec.fallback);
+            }
+        }
+        return Number(rule.in_min) || 0;
+    }
+
+    function composeDesignTransform(rules) {
+        var acc = {
+            translate_x: 0,
+            translate_y: 0,
+            rotate: 0,
+            skew_x: 0,
+            skew_y: 0,
+            scale: 1,
+            origin: "center"
+        };
+        var any = false;
+        (rules || []).forEach(function (rule) {
+            if (!rule || rule.enabled === false) { return; }
+            if (!Object.prototype.hasOwnProperty.call(acc, rule.property)) { return; }
+            acc[rule.property] = mapTransformPreview(designTimeTransformInput(rule), rule);
+            if (rule.origin) { acc.origin = rule.origin; }
+            any = true;
+        });
+        if (!any) { return null; }
+        var parts = [];
+        if (acc.translate_x || acc.translate_y) {
+            parts.push("translate(" + acc.translate_x + "px, " + acc.translate_y + "px)");
+        }
+        if (acc.rotate) { parts.push("rotate(" + acc.rotate + "deg)"); }
+        if (acc.skew_x || acc.skew_y) {
+            parts.push("skew(" + acc.skew_x + "deg, " + acc.skew_y + "deg)");
+        }
+        if (acc.scale !== 1) { parts.push("scale(" + acc.scale + ")"); }
+        return { transform: parts.join(" "), origin: transformOriginCss(acc.origin) };
+    }
+
+    function applyDesignTransform(node, rules) {
+        if (!node) { return; }
+        var composed = composeDesignTransform(rules);
+        if (!composed || !composed.transform) {
+            node.style.transform = "";
+            node.style.transformOrigin = "";
+            return;
+        }
+        node.style.transform = composed.transform;
+        node.style.transformOrigin = composed.origin;
+    }
+
+    function layoutPointOnStage(el) {
+        var x = (el && el.position && el.position.x) || 0;
+        var y = (el && el.position && el.position.y) || 0;
+        var pid = el ? pidNorm(el.parent_id) : "";
+        var guard = 0;
+        while (pid && guard < 24) {
+            var parent = elementByIdFromModel(pid);
+            if (!parent) { break; }
+            x += (parent.position && parent.position.x) || 0;
+            y += (parent.position && parent.position.y) || 0;
+            pid = pidNorm(parent.parent_id);
+            guard += 1;
+        }
+        return { x: x, y: y };
+    }
+
+    function clientToStageLocal(clientX, clientY) {
+        var stage = $("#ss-stage");
+        if (!stage) { return { x: 0, y: 0 }; }
+        var style = window.getComputedStyle(stage);
+        var transform = style.transform;
+        if (!transform || transform === "none") {
+            var rect = stage.getBoundingClientRect();
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+        var parent = stage.offsetParent || document.documentElement;
+        var parentRect = parent.getBoundingClientRect();
+        var layoutLeft = parentRect.left + stage.offsetLeft - (parent.scrollLeft || 0);
+        var layoutTop = parentRect.top + stage.offsetTop - (parent.scrollTop || 0);
+        var origin = (style.transformOrigin || "0px 0px").split(/\s+/);
+        var ox = parseFloat(origin[0]) || 0;
+        var oy = parseFloat(origin[1]) || 0;
+        try {
+            var inv = new DOMMatrix(transform).inverse();
+            var point = inv.transformPoint(new DOMPoint(
+                clientX - layoutLeft - ox,
+                clientY - layoutTop - oy
+            ));
+            return { x: point.x + ox, y: point.y + oy };
+        } catch (err) {
+            return { x: clientX - layoutLeft, y: clientY - layoutTop };
+        }
+    }
+
+    function clientPointInNode(node, clientX, clientY) {
+        if (!node || node.id === "ss-stage") { return clientToStageLocal(clientX, clientY); }
+        var stagePt = clientToStageLocal(clientX, clientY);
+        var el = elementByIdFromModel(node.dataset.sporeId);
+        var origin = el ? layoutPointOnStage(el) : { x: 0, y: 0 };
+        var localX = stagePt.x - origin.x;
+        var localY = stagePt.y - origin.y;
+        var transform = window.getComputedStyle(node).transform;
+        if (!transform || transform === "none") { return { x: localX, y: localY }; }
+        var parts = (window.getComputedStyle(node).transformOrigin || "0px 0px").split(/\s+/);
+        var ox = parseFloat(parts[0]) || 0;
+        var oy = parseFloat(parts[1]) || 0;
+        try {
+            var inv = new DOMMatrix(transform).inverse();
+            var point = inv.transformPoint(new DOMPoint(localX - ox, localY - oy));
+            return { x: point.x + ox, y: point.y + oy };
+        } catch (err) {
+            return { x: localX, y: localY };
+        }
+    }
+
+    function transformNumberInput(value, onChange) {
+        var input = numberEl(value, function (v) {
+            var n = Number(v);
+            onChange(isNaN(n) ? 0 : n);
+        });
+        input.step = "any";
+        return input;
+    }
+
+    function renderTransformRules(host, rules, ownerEl) {
+        function commit(redraw) {
+            if (redraw) {
+                pushHistory();
+                if (ownerEl) { renderProperties(); }
+                else { renderCanvasPanel(); }
+            } else {
+                pushHistoryDebounced();
+            }
+            renderStage();
+            modelTouch();
+        }
+        if (!rules.length) {
+            var empty = document.createElement("div");
+            empty.className = "ss-empty";
+            empty.textContent = ownerEl
+                ? "No transform yet. Map a live value onto this block's size, position, rotation, or skew."
+                : "No canvas transform yet. One here moves, sizes, rotates, or skews the whole template.";
+            host.appendChild(empty);
+        }
+        rules.forEach(function (rule, index) {
+            ensureTransformSource(rule);
+            var card = document.createElement("div");
+            card.className = "ss-feed" + (rule.enabled === false ? " ss-feed--off" : "");
+            var head = document.createElement("div");
+            head.className = "ss-feed__head";
+            var toggle = buildToggle(rule.enabled !== false, function (checked) {
+                rule.enabled = checked;
+                commit(true);
+            });
+            head.appendChild(toggle.wrap);
+            var title = document.createElement("div");
+            title.className = "ss-feed__summary";
+            var propLabel = (TRANSFORM_PROPERTIES.filter(function (row) {
+                return row.id === rule.property;
+            })[0] || {}).label || rule.property;
+            title.textContent = propLabel || "Transform";
+            head.appendChild(title);
+            var rm = document.createElement("button");
+            rm.type = "button";
+            rm.className = "ss-btn ss-btn--sm";
+            rm.textContent = "Remove";
+            rm.addEventListener("click", function () {
+                rules.splice(index, 1);
+                commit(true);
+            });
+            head.appendChild(rm);
+            card.appendChild(head);
+            card.appendChild(formRow("Property", buildChoiceSelect(rule.property || "scale", TRANSFORM_PROPERTIES, function (v) {
+                rule.property = v;
+                commit(true);
+            }), "Size uses a multiplier (1 is unchanged). Move is pixels. Rotate and skew are degrees."));
+            card.appendChild(formRow("Origin", buildChoiceSelect(rule.origin || "center", TRANSFORM_ORIGINS, function (v) {
+                rule.origin = v;
+                commit(false);
+            }), "Where size, rotation, and skew pivot. The last enabled rule's origin is used."));
+            var rangeRow = document.createElement("div");
+            rangeRow.className = "ss-row";
+            rangeRow.appendChild(formRow("Input min", transformNumberInput(rule.in_min, function (n) {
+                rule.in_min = n;
+                commit(false);
+            }), "Source value that maps to the output minimum"));
+            rangeRow.appendChild(formRow("Input max", transformNumberInput(rule.in_max, function (n) {
+                rule.in_max = n;
+                commit(false);
+            }), "Source value that maps to the output maximum"));
+            card.appendChild(rangeRow);
+            var outRow = document.createElement("div");
+            outRow.className = "ss-row";
+            outRow.appendChild(formRow("Output min", transformNumberInput(rule.out_min, function (n) {
+                rule.out_min = n;
+                commit(false);
+            }), "Result at the low end of the input range"));
+            outRow.appendChild(formRow("Output max", transformNumberInput(rule.out_max, function (n) {
+                rule.out_max = n;
+                commit(false);
+            }), "Result at the high end of the input range"));
+            card.appendChild(outRow);
+            var fixedOn = rule.source.kind === "value" && rule.source.value && rule.source.value.kind === "fixed";
+            card.appendChild(formRowCheckbox("Use a fixed number", fixedOn, function (checked) {
+                if (checked) {
+                    var current = Number(rule.source.value && rule.source.value.value);
+                    if (isNaN(current)) { current = Number(rule.in_min) || 0; }
+                    rule.source.kind = "value";
+                    rule.source.value = { kind: "fixed", value: current };
+                } else {
+                    rule.source = defaultTransformSource(ownerEl);
+                }
+                commit(true);
+            }, "Ignore the live source and map this number instead."));
+            if (fixedOn) {
+                card.appendChild(formRow("Fixed number", transformNumberInput(
+                    rule.source.value.value != null ? rule.source.value.value : 0,
+                    function (n) {
+                        rule.source.value.kind = "fixed";
+                        rule.source.value.value = n;
+                        commit(false);
+                    }
+                ), "Constant input for this transform"));
+            } else {
+                buildFeedSourceEditor(card, { source: rule.source }, {
+                    commit: function (redraw) { commit(!!redraw); }
+                });
+            }
+            host.appendChild(card);
+        });
+        var add = document.createElement("button");
+        add.type = "button";
+        add.className = "ss-btn ss-btn--primary";
+        add.textContent = "+ Add transform";
+        add.addEventListener("click", function () {
+            var ranges = defaultTransformRanges("scale");
+            rules.push({
+                id: nextTransformId(rules),
+                enabled: true,
+                property: "scale",
+                source: defaultTransformSource(ownerEl),
+                in_min: ranges.in_min,
+                in_max: ranges.in_max,
+                out_min: ranges.out_min,
+                out_max: ranges.out_max,
+                origin: "center"
+            });
+            commit(true);
+        });
+        host.appendChild(add);
+    }
+
     function renderStage() {
         clearStagePreviewIntervals();
         var stage = $("#ss-stage");
@@ -5912,6 +6462,7 @@
             node.style.width = sz.w + "px";
             node.style.height = sz.h + "px";
             applyPropsToNode(node, el);
+            applyDesignTransform(node, el.transforms || []);
             if (el.id === state.selectedId) {
                 node.classList.add("selected");
             }
@@ -6040,6 +6591,7 @@
                 paintElementBranch(el, stage);
             }
         });
+        applyDesignTransform(stage, (state.model && state.model.canvas_transforms) || []);
         startStagePreviewIntervals();
     }
 
@@ -6182,33 +6734,30 @@
         var stage = $("#ss-stage");
         if (!stage || !domNode) { return; }
         var np = pidNorm(newParentIdMaybe);
-        var nr = domNode.getBoundingClientRect();
+        var stagePt = layoutPointOnStage(modelEl);
         if (np) {
             var cn = $(".ss-element[data-spore-id=\"" + cssEscapeSs(np) +
                 "\"]", stage);
-            if (!cn || cn.dataset.sporeType !== "container") {
+            var parEl = elementByIdFromModel(np);
+            if (!cn || !parEl || cn.dataset.sporeType !== "container") {
                 delete modelEl.parent_id;
                 np = null;
             } else {
-                var pr = cn.getBoundingClientRect();
+                var parentPt = layoutPointOnStage(parEl);
                 modelEl.parent_id = np;
                 modelEl.position = {
-                    x: Math.max(0, Math.round(nr.left - pr.left)),
-                    y: Math.max(0, Math.round(nr.top - pr.top))
+                    x: Math.max(0, Math.round(stagePt.x - parentPt.x)),
+                    y: Math.max(0, Math.round(stagePt.y - parentPt.y))
                 };
-                var parEl = elementByIdFromModel(np);
-                if (parEl) {
-                    ensurePlacementDefaults(modelEl);
-                    syncPlacementFromPosition(modelEl, parEl);
-                }
+                ensurePlacementDefaults(modelEl);
+                syncPlacementFromPosition(modelEl, parEl);
                 return;
             }
         }
-        var sr = stage.getBoundingClientRect();
         delete modelEl.parent_id;
         modelEl.position = {
-            x: Math.max(0, Math.round(nr.left - sr.left)),
-            y: Math.max(0, Math.round(nr.top - sr.top))
+            x: Math.max(0, Math.round(stagePt.x)),
+            y: Math.max(0, Math.round(stagePt.y))
         };
     }
 
@@ -6257,11 +6806,12 @@
             )) {
                 dragData.didMove = true;
             }
-            var dx = ev.clientX - dragData.refX;
-            var dy = ev.clientY - dragData.refY;
+            var parentNode = node.offsetParent || $("#ss-stage");
+            var dragStart = clientPointInNode(parentNode, dragData.refX, dragData.refY);
+            var dragNow = clientPointInNode(parentNode, ev.clientX, ev.clientY);
             modelEl.position = {
-                x: Math.max(0, Math.round(dragData.origX + dx)),
-                y: Math.max(0, Math.round(dragData.origY + dy))
+                x: Math.max(0, Math.round(dragData.origX + (dragNow.x - dragStart.x))),
+                y: Math.max(0, Math.round(dragData.origY + (dragNow.y - dragStart.y)))
             };
             node.style.left = modelEl.position.x + "px";
             node.style.top = modelEl.position.y + "px";
@@ -6353,11 +6903,12 @@
         });
         document.addEventListener("mousemove", function (ev) {
             if (!resizeData) { return; }
-            var dx = ev.clientX - resizeData.startX;
-            var dy = ev.clientY - resizeData.startY;
+            var resizeParent = node.offsetParent || $("#ss-stage");
+            var resizeStart = clientPointInNode(resizeParent, resizeData.startX, resizeData.startY);
+            var resizeNow = clientPointInNode(resizeParent, ev.clientX, ev.clientY);
             modelEl.size = {
-                w: Math.max(20, Math.round(resizeData.origW + dx)),
-                h: Math.max(12, Math.round(resizeData.origH + dy))
+                w: Math.max(20, Math.round(resizeData.origW + (resizeNow.x - resizeStart.x))),
+                h: Math.max(12, Math.round(resizeData.origH + (resizeNow.y - resizeStart.y)))
             };
             node.style.width = modelEl.size.w + "px";
             node.style.height = modelEl.size.h + "px";
@@ -7103,6 +7654,15 @@
             host.appendChild(buildCollapsibleSection(
                 "List", "How many rows show and how they enter and leave",
                 function (body) { renderListSection(body, el); }
+            ));
+        }
+
+        if (!isLegacyModel()) {
+            if (!Array.isArray(el.transforms)) { el.transforms = []; }
+            host.appendChild(buildCollapsibleSection(
+                "Transformations",
+                "Grow, move, rotate, or skew this block from a live value. Canvas transforms stack underneath.",
+                function (body) { renderTransformRules(body, el.transforms, el); }
             ));
         }
 
@@ -8310,7 +8870,6 @@
             var blockType = ev.dataTransfer.getData("text/spore-block");
             var assetUrl = ev.dataTransfer.getData("text/spore-asset");
             var assetKind = ev.dataTransfer.getData("text/spore-asset-kind");
-            var rect = stage.getBoundingClientRect();
             var parentPid =
                 ev.altKey
                     ? null
@@ -8320,16 +8879,17 @@
                         ev.clientY,
                         null
                     );
-            var dropX = Math.max(0, Math.round(ev.clientX - rect.left));
-            var dropY = Math.max(0, Math.round(ev.clientY - rect.top));
+            var dropLocal = clientToStageLocal(ev.clientX, ev.clientY);
+            var dropX = Math.max(0, Math.round(dropLocal.x));
+            var dropY = Math.max(0, Math.round(dropLocal.y));
             if (parentPid) {
                 var cnode =
                     $(".ss-element[data-spore-id=\"" + cssEscapeSs(parentPid) +
                         "\"]", stage);
                 if (cnode) {
-                    var cr = cnode.getBoundingClientRect();
-                    dropX = Math.max(0, Math.round(ev.clientX - cr.left));
-                    dropY = Math.max(0, Math.round(ev.clientY - cr.top));
+                    var inParent = clientPointInNode(cnode, ev.clientX, ev.clientY);
+                    dropX = Math.max(0, Math.round(inParent.x));
+                    dropY = Math.max(0, Math.round(inParent.y));
                 } else {
                     parentPid = null;
                 }
@@ -9473,6 +10033,23 @@
             window.SporeJsEditor.setValue(state.model.advanced_js || "");
         }
         refreshDurationCanvasUi();
+        var tfHost = $("#ss-canvas-transforms");
+        if (tfHost) {
+            tfHost.innerHTML = "";
+            if (!Array.isArray(state.model.canvas_transforms)) {
+                state.model.canvas_transforms = [];
+            }
+            var heading = document.createElement("h3");
+            heading.textContent = "Transformations";
+            tfHost.appendChild(heading);
+            var hint = document.createElement("p");
+            hint.className = "ss-binding-row__hint";
+            hint.textContent = (
+                "These apply to the whole canvas. A block can add its own transform on top."
+            );
+            tfHost.appendChild(hint);
+            renderTransformRules(tfHost, state.model.canvas_transforms, null);
+        }
     }
 
     function setupCanvasPanel() {
