@@ -859,6 +859,7 @@
             setTimeout(function () {
                 if (streamerID) {
                     fetchAllEmotesAndBadges();
+                    startThirdPartyEmoteListeners();
                 }
             }, 400);
         }
@@ -916,6 +917,7 @@
         var bannerAfterExit = null;
         var streamerID = null;
         var emoteFetchInProgress = false;
+        var emoteFetchToken = 0;
         var badgeFetchInProgress = false;
         var CHAT_DEBUG = false;
 
@@ -1345,11 +1347,14 @@
                     channelPointsIconCache.url = null;
                     channelPointsIconCache.loaded = false;
                     channelPointsIconCache.failed = false;
+                    clearSevenTvUser();
+                    ffzUserSignature = null;
                 }
                 streamerID = data.user_id;
                 chatLog('Received streamer ID:', streamerID);
                 applyChannelPointsIconFromStreamerInfo(data);
                 fetchAllEmotesAndBadges();
+                startThirdPartyEmoteListeners();
             } else {
                 console.warn('Invalid or missing streamer info:', data);
             }
@@ -1744,6 +1749,12 @@
             if (!streamerID || emoteFetchInProgress) return;
 
             emoteFetchInProgress = true;
+            var fetchToken = ++emoteFetchToken;
+            // Twitch responses normally clear this. If none arrive, don't leave the
+            // FFZ poll parked behind the flag.
+            setTimeout(function () {
+                if (fetchToken === emoteFetchToken) emoteFetchInProgress = false;
+            }, 15000);
             chatLog('Starting emote and badge fetch...');
 
             // Fetch third-party emotes (no auth required)
@@ -4351,7 +4362,8 @@
             }
         });
 
-        // Refresh emotes periodically (every 30 minutes)
+        // Fail-safe refresh for every provider, including Twitch badges and cheermotes.
+        // 7TV and BTTV also push changes over their sockets, and FFZ is polled faster.
         setInterval(function () {
             if (streamerID && !emoteFetchInProgress) {
                 chatLog('Refreshing emotes...');
@@ -4740,9 +4752,865 @@
         // Initialize
         chatLog('Mycelian Chat initialized');
 
+        // Live third-party emotes. REST fetches below stay as the initial load and the
+        // 30-minute fail-safe. 7TV and BTTV push changes; FFZ is polled just under its cap.
+        var SEVENTV_WS_URL = 'wss://events.7tv.io/v3';
+        var BTTV_WS_URL = 'wss://sockets.betterttv.net/ws';
+        var FFZ_POLL_BASE_MS = 1100;
+        var FFZ_POLL_MAX_MS = 30000;
+        var FFZ_POLL_COOLDOWN_MS = 60000;
+        var FFZ_POLL_EASE_AFTER = 30;
+
+        var seventvSocket = null;
+        var seventvReconnectTimer = null;
+        var seventvReconnectDelay = 1000;
+        var seventvHeartbeatTimer = null;
+        var seventvHeartbeatInterval = 30000;
+        var seventvHelloReceived = false;
+        var seventvAwaitingResume = false;
+        var seventvWantResume = false;
+        var seventvResumeId = null;
+        var seventvPendingResumeId = null;
+        var seventvClosePlan = null;
+        var seventvResetBackoffOnHeartbeat = false;
+        var seventvConnectedAt = 0;
+        var seventvDesired = {};
+        var seventvActive = {};
+        var seventvGlobalSetId = null;
+        var seventvUserSetId = null;
+        var seventvUserId = null;
+        var seventvUserRefetchQueued = false;
+        var seventvUserRefetchAgain = false;
+        var seventvSetRefetch = {};
+
+        var bttvSocket = null;
+        var bttvJoinedChannel = null;
+        var bttvReconnectTimer = null;
+        var bttvReconnectDelay = 1000;
+
+        var ffzPollTimer = null;
+        var ffzPollStarted = false;
+        var ffzPollDelay = FFZ_POLL_BASE_MS;
+        var ffzPollSuccessStreak = 0;
+        var ffzRateLimitedUntil = 0;
+        var ffzFetchPromise = null;
+        var ffzGlobalSignature = null;
+        var ffzUserSignature = null;
+
+        function socketIsLive(ws) {
+            return !!(ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN));
+        }
+
+        function startThirdPartyEmoteListeners() {
+            if (!streamerID) return;
+            connectSevenTvEvents();
+            connectBttvEvents();
+            startFfzFastPoll();
+        }
+
+        function seventvSubKey(type, objectId) {
+            return type + '\n' + String(objectId);
+        }
+
+        function seventvSend(op, data) {
+            if (!seventvSocket || seventvSocket.readyState !== WebSocket.OPEN) return false;
+            seventvSocket.send(JSON.stringify({
+                op: op,
+                t: Date.now(),
+                d: data || {}
+            }));
+            return true;
+        }
+
+        function seventvDesire(type, objectId) {
+            if (!objectId) return;
+            seventvDesired[seventvSubKey(type, objectId)] = {
+                type: type,
+                objectId: String(objectId)
+            };
+            seventvFlushSubscribes();
+        }
+
+        function seventvForget(type, objectId) {
+            if (!objectId) return;
+            var key = seventvSubKey(type, objectId);
+            delete seventvDesired[key];
+            if (!seventvActive[key]) return;
+            delete seventvActive[key];
+            seventvSend(36, {
+                type: type,
+                condition: { object_id: String(objectId) }
+            });
+        }
+
+        function seventvFlushSubscribes() {
+            if (seventvAwaitingResume || !seventvHelloReceived) return;
+            if (!seventvSocket || seventvSocket.readyState !== WebSocket.OPEN) return;
+            Object.keys(seventvDesired).forEach(function (key) {
+                if (seventvActive[key]) return;
+                var sub = seventvDesired[key];
+                seventvActive[key] = true;
+                var sent = seventvSend(35, {
+                    type: sub.type,
+                    condition: { object_id: sub.objectId }
+                });
+                if (!sent) delete seventvActive[key];
+            });
+        }
+
+        function seventvArmHeartbeat() {
+            if (seventvHeartbeatTimer) clearTimeout(seventvHeartbeatTimer);
+            var interval = seventvHeartbeatInterval || 30000;
+            seventvHeartbeatTimer = setTimeout(function () {
+                seventvHeartbeatTimer = null;
+                console.warn('7TV heartbeat missed, reconnecting');
+                seventvForceReconnect(seventvReconnectDelay, true);
+            }, interval * 3);
+        }
+
+        function scheduleSevenTvReconnect(delayMs) {
+            if (seventvReconnectTimer) clearTimeout(seventvReconnectTimer);
+            var wait = delayMs == null ? seventvReconnectDelay : delayMs;
+            if (wait < 0) wait = 0;
+            seventvReconnectTimer = setTimeout(function () {
+                seventvReconnectTimer = null;
+                openSevenTvSocket();
+            }, wait);
+            seventvReconnectDelay = Math.min(30000, Math.max(1000, seventvReconnectDelay * 2));
+        }
+
+        function seventvForceReconnect(delayMs, resume) {
+            seventvWantResume = !!resume && !!seventvResumeId;
+            if (!seventvWantResume) seventvActive = {};
+            if (seventvHeartbeatTimer) {
+                clearTimeout(seventvHeartbeatTimer);
+                seventvHeartbeatTimer = null;
+            }
+            seventvHelloReceived = false;
+            seventvAwaitingResume = false;
+            var ws = seventvSocket;
+            seventvSocket = null;
+            if (ws) {
+                ws.onclose = null;
+                ws.onmessage = null;
+                ws.onerror = null;
+                try { ws.close(); } catch (error) { /* socket already closing */ }
+            }
+            scheduleSevenTvReconnect(delayMs);
+        }
+
+        function seventvHandleClose(code) {
+            if (code === 4001 || code === 4002 || code === 4003 || code === 4004 ||
+                code === 4009 || code === 4010 || code === 4011) {
+                console.error('7TV socket closed by client error:', code);
+                seventvActive = {};
+                seventvWantResume = false;
+                seventvResumeId = null;
+                scheduleSevenTvReconnect(seventvReconnectDelay);
+                return;
+            }
+            if (code === 4005) {
+                seventvWantResume = !!seventvResumeId;
+                console.warn('7TV socket rate limited, reconnecting after 30s');
+                scheduleSevenTvReconnect(Math.max(seventvReconnectDelay, 30000));
+                return;
+            }
+            if (code === 4007) {
+                seventvWantResume = !!seventvResumeId;
+                console.warn('7TV socket in maintenance, reconnecting in 5 minutes');
+                scheduleSevenTvReconnect(5 * 60 * 1000);
+                return;
+            }
+            seventvWantResume = !!seventvResumeId;
+            scheduleSevenTvReconnect(seventvReconnectDelay);
+        }
+
+        function connectSevenTvEvents() {
+            if (socketIsLive(seventvSocket)) {
+                seventvFlushSubscribes();
+                return;
+            }
+            if (seventvReconnectTimer) return;
+            openSevenTvSocket();
+        }
+
+        function openSevenTvSocket() {
+            if (socketIsLive(seventvSocket)) return;
+            var ws;
+            try {
+                ws = new WebSocket(SEVENTV_WS_URL);
+            } catch (error) {
+                console.error('7TV socket failed to open:', error);
+                scheduleSevenTvReconnect(seventvReconnectDelay);
+                return;
+            }
+            seventvSocket = ws;
+            seventvHelloReceived = false;
+            seventvAwaitingResume = false;
+            ws.onmessage = function (event) {
+                var msg;
+                try {
+                    msg = JSON.parse(event.data);
+                } catch (error) {
+                    return;
+                }
+                handleSevenTvMessage(msg);
+            };
+            ws.onerror = function () {
+                chatLog('7TV socket error');
+            };
+            ws.onclose = function (event) {
+                if (seventvSocket !== ws) return;
+                seventvSocket = null;
+                seventvHelloReceived = false;
+                seventvAwaitingResume = false;
+                if (seventvHeartbeatTimer) {
+                    clearTimeout(seventvHeartbeatTimer);
+                    seventvHeartbeatTimer = null;
+                }
+                var code = event && event.code;
+                if (!(code >= 4000 && code <= 4011) && seventvClosePlan) {
+                    code = seventvClosePlan;
+                }
+                seventvClosePlan = null;
+                chatLog('7TV socket closed:', code);
+                seventvHandleClose(code);
+            };
+        }
+
+        function handleSevenTvHello(data) {
+            data = data || {};
+            var resumeWith = (seventvWantResume && seventvResumeId) ? seventvResumeId : null;
+            seventvWantResume = false;
+            seventvResumeId = data.session_id || seventvResumeId;
+            if (data.heartbeat_interval) seventvHeartbeatInterval = data.heartbeat_interval;
+            seventvHelloReceived = true;
+            seventvConnectedAt = Date.now();
+            seventvResetBackoffOnHeartbeat = true;
+            seventvArmHeartbeat();
+            chatLog('7TV event socket connected');
+            if (resumeWith) {
+                seventvAwaitingResume = true;
+                seventvPendingResumeId = resumeWith;
+                seventvSend(34, { session_id: resumeWith });
+                return;
+            }
+            seventvAwaitingResume = false;
+            seventvActive = {};
+            seventvFlushSubscribes();
+        }
+
+        function handleSevenTvResumeAck(ackData) {
+            seventvAwaitingResume = false;
+            ackData = ackData || {};
+            var restored = ackData.subscriptions_restored || 0;
+            var wanted = Object.keys(seventvDesired).length;
+            if (ackData.success && (restored > 0 || !wanted)) {
+                if (seventvPendingResumeId) seventvResumeId = seventvPendingResumeId;
+                chatLog('7TV session resumed, subscriptions restored:', restored);
+            } else {
+                chatLog('7TV resume did not restore subscriptions');
+                seventvActive = {};
+            }
+            seventvPendingResumeId = null;
+            seventvFlushSubscribes();
+        }
+
+        function handleSevenTvMessage(msg) {
+            if (!msg || msg.op == null) return;
+            if (msg.op === 1) {
+                handleSevenTvHello(msg.d);
+                return;
+            }
+            if (msg.op === 2) {
+                // The server sends a heartbeat immediately on connect. Wait out one
+                // interval before treating the socket as stable, so a reconnect loop
+                // keeps backing off.
+                if (seventvResetBackoffOnHeartbeat &&
+                    Date.now() - seventvConnectedAt >= Math.min(seventvHeartbeatInterval || 30000, 10000)) {
+                    seventvReconnectDelay = 1000;
+                    seventvResetBackoffOnHeartbeat = false;
+                }
+                seventvArmHeartbeat();
+                return;
+            }
+            if (msg.op === 0) {
+                handleSevenTvDispatch(msg.d);
+                return;
+            }
+            if (msg.op === 4) {
+                chatLog('7TV requested reconnect');
+                seventvForceReconnect(seventvReconnectDelay, true);
+                return;
+            }
+            if (msg.op === 5) {
+                var ack = msg.d || {};
+                if (ack.command === 'RESUME') handleSevenTvResumeAck(ack.data);
+                return;
+            }
+            if (msg.op === 6) {
+                console.error('7TV event error:', msg.d);
+                return;
+            }
+            if (msg.op === 7) {
+                seventvClosePlan = (msg.d && msg.d.code) || 4000;
+                chatLog('7TV end of stream', seventvClosePlan, (msg.d && msg.d.message) || '');
+            }
+        }
+
+        function seventvEmoteId(value) {
+            if (!value || typeof value !== 'object') return '';
+            if (value.id) return String(value.id);
+            if (value.data && value.data.id) return String(value.data.id);
+            return '';
+        }
+
+        function seventvEmoteName(value) {
+            if (!value || typeof value !== 'object') return '';
+            return value.name ? String(value.name) : '';
+        }
+
+        function seventvListForSet(setId) {
+            if (!setId) return null;
+            if (seventvGlobalSetId && String(setId) === String(seventvGlobalSetId)) {
+                if (!Array.isArray(emoteCache.seventv.global)) emoteCache.seventv.global = [];
+                return emoteCache.seventv.global;
+            }
+            if (seventvUserSetId && String(setId) === String(seventvUserSetId)) {
+                if (!Array.isArray(emoteCache.seventv.user)) emoteCache.seventv.user = [];
+                return emoteCache.seventv.user;
+            }
+            return null;
+        }
+
+        function seventvFindEmote(list, id, name) {
+            for (var i = 0; i < list.length; i++) {
+                if (id && String(list[i].id) === id) return i;
+                if (name && list[i].name === name) return i;
+            }
+            return -1;
+        }
+
+        function seventvChangeList(body, key) {
+            return (body && Array.isArray(body[key])) ? body[key] : [];
+        }
+
+        function seventvEmoteChangesNeedRefetch(fields) {
+            for (var i = 0; i < fields.length; i++) {
+                var field = fields[i];
+                if (!field || field.key !== 'emotes') continue;
+                if (field.nested) return true;
+                if (Array.isArray(field.value) || Array.isArray(field.old_value)) return true;
+            }
+            return false;
+        }
+
+        function seventvMergeEmote(existing, value) {
+            var merged = {};
+            var key;
+            if (existing) {
+                for (key in existing) {
+                    if (Object.prototype.hasOwnProperty.call(existing, key)) merged[key] = existing[key];
+                }
+            }
+            if (value && typeof value === 'object') {
+                for (key in value) {
+                    if (Object.prototype.hasOwnProperty.call(value, key) && value[key] != null) {
+                        merged[key] = value[key];
+                    }
+                }
+            }
+            return merged;
+        }
+
+        function refetchSevenTvSet(setId) {
+            if (!setId || seventvSetRefetch[setId]) return;
+            seventvSetRefetch[setId] = true;
+            fetch('https://7tv.io/v3/emote-sets/' + setId)
+                .then(function (response) {
+                    if (!response.ok) throw new Error('7TV emote set failed: ' + response.status);
+                    return response.json();
+                })
+                .then(function (data) {
+                    var emotes = (data && data.emotes) || [];
+                    if (String(setId) === String(seventvGlobalSetId)) {
+                        emoteCache.seventv.global = emotes;
+                        chatLog('7TV global emotes reloaded:', emotes.length);
+                    } else if (String(setId) === String(seventvUserSetId)) {
+                        emoteCache.seventv.user = emotes;
+                        chatLog('7TV user emotes reloaded:', emotes.length);
+                    } else {
+                        return;
+                    }
+                    rebuildEmoteLookupMap();
+                })
+                .catch(function (error) {
+                    console.error('Error refetching 7TV emote set:', error);
+                })
+                .then(function () {
+                    delete seventvSetRefetch[setId];
+                });
+        }
+
+        function applySevenTvEmoteSetUpdate(body) {
+            if (!body) return;
+            var list = seventvListForSet(body.id);
+            if (!list) return;
+            var pushed = seventvChangeList(body, 'pushed');
+            var pulled = seventvChangeList(body, 'pulled');
+            var updated = seventvChangeList(body, 'updated');
+            if (seventvEmoteChangesNeedRefetch(pushed) ||
+                seventvEmoteChangesNeedRefetch(pulled) ||
+                seventvEmoteChangesNeedRefetch(updated)) {
+                refetchSevenTvSet(body.id);
+                return;
+            }
+            var changed = false;
+            var i;
+            for (i = 0; i < pushed.length; i++) {
+                var added = pushed[i];
+                if (!added || added.key !== 'emotes') continue;
+                var addedId = seventvEmoteId(added.value);
+                var addedName = seventvEmoteName(added.value);
+                if (!addedId && !addedName) {
+                    refetchSevenTvSet(body.id);
+                    return;
+                }
+                var addedIndex = seventvFindEmote(list, addedId, addedName);
+                if (addedIndex >= 0) list[addedIndex] = seventvMergeEmote(list[addedIndex], added.value);
+                else list.push(added.value);
+                changed = true;
+            }
+            for (i = 0; i < pulled.length; i++) {
+                var removed = pulled[i];
+                if (!removed || removed.key !== 'emotes') continue;
+                var removedSource = removed.old_value;
+                if (!removedSource || typeof removedSource !== 'object') removedSource = removed.value;
+                var removedId = '';
+                var removedName = '';
+                if (typeof removedSource === 'string') removedId = removedSource;
+                else {
+                    removedId = seventvEmoteId(removedSource);
+                    removedName = seventvEmoteName(removedSource);
+                }
+                if (!removedId && !removedName) {
+                    refetchSevenTvSet(body.id);
+                    return;
+                }
+                for (var r = list.length - 1; r >= 0; r--) {
+                    if ((removedId && String(list[r].id) === removedId) ||
+                        (removedName && list[r].name === removedName)) {
+                        list.splice(r, 1);
+                        changed = true;
+                    }
+                }
+            }
+            for (i = 0; i < updated.length; i++) {
+                var edited = updated[i];
+                if (!edited || edited.key !== 'emotes') continue;
+                var oldId = seventvEmoteId(edited.old_value);
+                var oldName = seventvEmoteName(edited.old_value);
+                var newId = seventvEmoteId(edited.value);
+                var newName = seventvEmoteName(edited.value);
+                if (!oldId && !oldName && !newId && !newName) {
+                    refetchSevenTvSet(body.id);
+                    return;
+                }
+                var editedIndex = seventvFindEmote(list, oldId || newId, oldName);
+                if (editedIndex < 0 && newName) editedIndex = seventvFindEmote(list, '', newName);
+                if (editedIndex >= 0) {
+                    list[editedIndex] = seventvMergeEmote(list[editedIndex], edited.value);
+                    changed = true;
+                } else if (newId || newName) {
+                    list.push(edited.value);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                rebuildEmoteLookupMap();
+                chatLog('7TV emote set updated:', body.id);
+            }
+        }
+
+        function fetchSevenTvUser(twitchId) {
+            return fetch('https://7tv.io/v3/users/twitch/' + twitchId).then(function (response) {
+                if (response.status === 404) return null;
+                if (!response.ok) throw new Error('7TV user emotes failed: ' + response.status);
+                return response.json();
+            });
+        }
+
+        function refetchSevenTvUser() {
+            if (!streamerID) return;
+            if (seventvUserRefetchQueued) {
+                seventvUserRefetchAgain = true;
+                return;
+            }
+            seventvUserRefetchQueued = true;
+            var requestedId = streamerID;
+            fetchSevenTvUser(requestedId).then(function (data) {
+                if (String(requestedId) !== String(streamerID)) return;
+                if (!data) {
+                    clearSevenTvUser();
+                    return;
+                }
+                noteSevenTvUser(data);
+            }).catch(function (error) {
+                console.error('Error refetching 7TV user emotes:', error);
+            }).then(function () {
+                seventvUserRefetchQueued = false;
+                if (seventvUserRefetchAgain) {
+                    seventvUserRefetchAgain = false;
+                    refetchSevenTvUser();
+                }
+            });
+        }
+
+        function handleSevenTvDispatch(payload) {
+            if (!payload || !payload.type) return;
+            if (payload.type === 'emote_set.update') {
+                applySevenTvEmoteSetUpdate(payload.body);
+                return;
+            }
+            if (payload.type === 'user.update') {
+                var body = payload.body || {};
+                if (seventvUserId && body.id && String(body.id) !== String(seventvUserId)) return;
+                refetchSevenTvUser();
+            }
+        }
+
+        function noteSevenTvGlobal(data) {
+            if (!data || !data.id) {
+                console.error('Invalid 7TV global emote set');
+                return;
+            }
+            var setId = String(data.id);
+            if (seventvGlobalSetId && seventvGlobalSetId !== setId) {
+                seventvForget('emote_set.update', seventvGlobalSetId);
+            }
+            seventvGlobalSetId = setId;
+            emoteCache.seventv.global = data.emotes || [];
+            rebuildEmoteLookupMap();
+            chatLog('7TV global emotes loaded:', emoteCache.seventv.global.length);
+            seventvDesire('emote_set.update', seventvGlobalSetId);
+        }
+
+        function noteSevenTvUser(data) {
+            var userId = (data && data.user && data.user.id) ? String(data.user.id) : '';
+            var setId = '';
+            if (data && data.emote_set && data.emote_set.id) setId = String(data.emote_set.id);
+            else if (data && data.emote_set_id) setId = String(data.emote_set_id);
+            if (seventvUserId && seventvUserId !== userId) seventvForget('user.update', seventvUserId);
+            if (seventvUserSetId && seventvUserSetId !== setId) seventvForget('emote_set.update', seventvUserSetId);
+            seventvUserId = userId || null;
+            seventvUserSetId = setId || null;
+            if (data && data.emote_set && Array.isArray(data.emote_set.emotes)) {
+                emoteCache.seventv.user = data.emote_set.emotes;
+            } else if (!setId) {
+                emoteCache.seventv.user = [];
+            }
+            rebuildEmoteLookupMap();
+            chatLog('7TV user emotes loaded:', emoteCache.seventv.user.length);
+            // user.id is the 7TV user. The top-level id on this payload is the Twitch id.
+            if (seventvUserId) seventvDesire('user.update', seventvUserId);
+            if (seventvUserSetId) seventvDesire('emote_set.update', seventvUserSetId);
+            if (setId && !(data.emote_set && Array.isArray(data.emote_set.emotes))) {
+                refetchSevenTvSet(setId);
+            }
+        }
+
+        function clearSevenTvUser() {
+            if (seventvUserId) seventvForget('user.update', seventvUserId);
+            if (seventvUserSetId) seventvForget('emote_set.update', seventvUserSetId);
+            seventvUserId = null;
+            seventvUserSetId = null;
+            emoteCache.seventv.user = [];
+            rebuildEmoteLookupMap();
+        }
+
+        function bttvSend(name, data) {
+            if (!bttvSocket || bttvSocket.readyState !== WebSocket.OPEN) return;
+            bttvSocket.send(JSON.stringify({ name: name, data: data }));
+        }
+
+        function bttvSyncChannel() {
+            if (!streamerID || !bttvSocket || bttvSocket.readyState !== WebSocket.OPEN) return;
+            var next = String(streamerID);
+            if (bttvJoinedChannel && bttvJoinedChannel !== next) {
+                bttvSend('part_channel', { name: 'twitch:' + bttvJoinedChannel });
+                bttvJoinedChannel = null;
+            }
+            if (bttvJoinedChannel === next) return;
+            bttvSend('join_channel', { name: 'twitch:' + next });
+            bttvJoinedChannel = next;
+            chatLog('BTTV joined channel', next);
+        }
+
+        function scheduleBttvReconnect(delayMs) {
+            if (bttvReconnectTimer) clearTimeout(bttvReconnectTimer);
+            var wait = delayMs == null ? bttvReconnectDelay : delayMs;
+            bttvReconnectTimer = setTimeout(function () {
+                bttvReconnectTimer = null;
+                if (streamerID) openBttvSocket();
+            }, wait);
+            bttvReconnectDelay = Math.min(30000, Math.max(1000, bttvReconnectDelay * 2));
+        }
+
+        function connectBttvEvents() {
+            if (!streamerID) return;
+            if (socketIsLive(bttvSocket)) {
+                bttvSyncChannel();
+                return;
+            }
+            if (bttvReconnectTimer) return;
+            openBttvSocket();
+        }
+
+        function openBttvSocket() {
+            if (!streamerID || socketIsLive(bttvSocket)) return;
+            var ws;
+            try {
+                ws = new WebSocket(BTTV_WS_URL);
+            } catch (error) {
+                console.error('BTTV socket failed to open:', error);
+                scheduleBttvReconnect(bttvReconnectDelay);
+                return;
+            }
+            bttvSocket = ws;
+            ws.onopen = function () {
+                bttvReconnectDelay = 1000;
+                bttvJoinedChannel = null;
+                bttvSyncChannel();
+            };
+            ws.onmessage = function (event) {
+                var msg;
+                try {
+                    msg = JSON.parse(event.data);
+                } catch (error) {
+                    return;
+                }
+                handleBttvMessage(msg);
+            };
+            ws.onerror = function () {
+                chatLog('BTTV socket error');
+            };
+            ws.onclose = function (event) {
+                if (bttvSocket !== ws) return;
+                bttvSocket = null;
+                bttvJoinedChannel = null;
+                chatLog('BTTV socket closed:', event && event.code);
+                scheduleBttvReconnect(bttvReconnectDelay);
+            };
+        }
+
+        function handleBttvMessage(msg) {
+            if (!msg || !msg.name) return;
+            var data = msg.data || {};
+            var channel = data.channel || '';
+            if (channel && channel !== 'twitch:' + streamerID) return;
+            if (msg.name === 'emote_create') {
+                var emote = data.emote;
+                if (!emote || emote.id == null) return;
+                if (!Array.isArray(emoteCache.bttv.user)) emoteCache.bttv.user = [];
+                for (var i = 0; i < emoteCache.bttv.user.length; i++) {
+                    if (String(emoteCache.bttv.user[i].id) === String(emote.id)) return;
+                }
+                emoteCache.bttv.user.push(emote);
+                rebuildEmoteLookupMap();
+                chatLog('BTTV emote added:', emote.code);
+                return;
+            }
+            if (msg.name === 'emote_update') {
+                var updated = data.emote || {};
+                if (updated.id == null || !updated.code) return;
+                if (!Array.isArray(emoteCache.bttv.user)) return;
+                for (var u = 0; u < emoteCache.bttv.user.length; u++) {
+                    if (String(emoteCache.bttv.user[u].id) === String(updated.id)) {
+                        emoteCache.bttv.user[u].code = updated.code;
+                        rebuildEmoteLookupMap();
+                        chatLog('BTTV emote updated:', updated.code);
+                        return;
+                    }
+                }
+                return;
+            }
+            if (msg.name === 'emote_delete') {
+                var emoteId = data.emoteId || data.emote_id;
+                if (emoteId == null || !Array.isArray(emoteCache.bttv.user)) return;
+                var kept = [];
+                var removedOne = false;
+                for (var d = 0; d < emoteCache.bttv.user.length; d++) {
+                    if (String(emoteCache.bttv.user[d].id) === String(emoteId)) removedOne = true;
+                    else kept.push(emoteCache.bttv.user[d]);
+                }
+                if (!removedOne) return;
+                emoteCache.bttv.user = kept;
+                rebuildEmoteLookupMap();
+                chatLog('BTTV emote removed:', emoteId);
+            }
+        }
+
+        function ffzListSignature(emotes) {
+            if (!emotes || !emotes.length) return '';
+            var parts = new Array(emotes.length);
+            for (var i = 0; i < emotes.length; i++) {
+                var emote = emotes[i] || {};
+                var url = '';
+                if (emote.urls) url = emote.urls['1'] || emote.urls['2'] || emote.urls['4'] || '';
+                parts[i] = (emote.id != null ? emote.id : '') + ':' + (emote.name || '') + ':' + url;
+            }
+            return parts.join('|');
+        }
+
+        function ffzGlobalEmotes(data) {
+            var sets = (data && data.sets) || {};
+            var ids = (data && Array.isArray(data.default_sets)) ? data.default_sets.slice() : [];
+            if (!ids.length && sets['3']) ids = [3];
+            var emotes = [];
+            for (var i = 0; i < ids.length; i++) {
+                var set = sets[String(ids[i])];
+                if (set && Array.isArray(set.emoticons)) emotes = emotes.concat(set.emoticons);
+            }
+            return emotes;
+        }
+
+        function applyFfzList(which, emotes) {
+            var signature = ffzListSignature(emotes);
+            if (which === 'global') {
+                if (signature === ffzGlobalSignature) return false;
+                ffzGlobalSignature = signature;
+                emoteCache.ffz.global = emotes;
+                chatLog('FFZ global emotes loaded:', emotes.length);
+                return true;
+            }
+            if (signature === ffzUserSignature) return false;
+            ffzUserSignature = signature;
+            emoteCache.ffz.user = emotes;
+            chatLog('FFZ user emotes loaded:', emotes.length);
+            return true;
+        }
+
+        function noteFfzRateLimit() {
+            ffzPollDelay = Math.min(FFZ_POLL_MAX_MS, Math.max(FFZ_POLL_BASE_MS, ffzPollDelay) * 2);
+            ffzPollSuccessStreak = 0;
+            ffzRateLimitedUntil = Date.now() + FFZ_POLL_COOLDOWN_MS;
+            console.warn('FFZ emote poll rate limited; backing off to ' + ffzPollDelay + 'ms');
+        }
+
+        function scheduleFfzPoll(delay) {
+            if (ffzPollTimer) clearTimeout(ffzPollTimer);
+            var wait = delay;
+            if (ffzRateLimitedUntil) {
+                var remaining = ffzRateLimitedUntil - Date.now();
+                if (remaining > 0) wait = Math.max(wait, remaining);
+                else ffzRateLimitedUntil = 0;
+            }
+            ffzPollTimer = setTimeout(runFfzFastPoll, wait);
+        }
+
+        function startFfzFastPoll() {
+            if (ffzPollStarted) return;
+            ffzPollStarted = true;
+            scheduleFfzPoll(ffzPollDelay);
+        }
+
+        function runFfzFastPoll() {
+            ffzPollTimer = null;
+            if (ffzRateLimitedUntil && Date.now() < ffzRateLimitedUntil) {
+                scheduleFfzPoll(ffzRateLimitedUntil - Date.now());
+                return;
+            }
+            if (!streamerID || emoteFetchInProgress) {
+                scheduleFfzPoll(ffzPollDelay);
+                return;
+            }
+            fetchFFZEmotes().then(function (result) {
+                if (result && result.rateLimited) {
+                    scheduleFfzPoll(FFZ_POLL_COOLDOWN_MS);
+                    return;
+                }
+                if (result && result.ok) {
+                    ffzPollSuccessStreak++;
+                    if (ffzPollDelay > FFZ_POLL_BASE_MS && ffzPollSuccessStreak >= FFZ_POLL_EASE_AFTER) {
+                        ffzPollDelay = Math.max(FFZ_POLL_BASE_MS, Math.floor(ffzPollDelay / 2));
+                        ffzPollSuccessStreak = 0;
+                        chatLog('FFZ poll interval eased to', ffzPollDelay);
+                    }
+                } else {
+                    ffzPollSuccessStreak = 0;
+                }
+                scheduleFfzPoll(ffzPollDelay);
+            }, function () {
+                ffzPollSuccessStreak = 0;
+                scheduleFfzPoll(ffzPollDelay);
+            });
+        }
+
+        function fetchFfzJson(url) {
+            return fetch(url).then(function (response) {
+                if (response.status === 429) return { rateLimited: true };
+                if (response.status === 404) return { ok: true, missing: true };
+                if (!response.ok) return { ok: false, status: response.status };
+                return response.json().then(function (data) {
+                    return { ok: true, data: data };
+                });
+            }).catch(function (error) {
+                console.error('Error fetching FFZ emotes:', error);
+                return { ok: false, error: true };
+            });
+        }
+
+        function fetchFFZEmotesNow() {
+            var jobs = [fetchFfzJson('https://api.frankerfacez.com/v1/set/global')];
+            if (streamerID) jobs.push(fetchFfzJson('https://api.frankerfacez.com/v1/room/id/' + streamerID));
+            return Promise.all(jobs).then(function (results) {
+                var rateLimited = false;
+                var ok = true;
+                var changed = false;
+                var globalResult = results[0] || {};
+                if (globalResult.rateLimited) rateLimited = true;
+                else if (globalResult.ok && globalResult.data) {
+                    changed = applyFfzList('global', ffzGlobalEmotes(globalResult.data)) || changed;
+                } else ok = false;
+
+                var roomResult = results[1];
+                if (roomResult) {
+                    if (roomResult.rateLimited) rateLimited = true;
+                    else if (roomResult.missing) changed = applyFfzList('user', []) || changed;
+                    else if (roomResult.ok && roomResult.data) {
+                        var data = roomResult.data;
+                        var roomSet = null;
+                        if (data.room && data.room.set != null && data.sets) {
+                            roomSet = data.sets[data.room.set] || data.sets[String(data.room.set)];
+                        }
+                        if (roomSet) changed = applyFfzList('user', roomSet.emoticons || []) || changed;
+                    } else ok = false;
+                }
+                if (changed) rebuildEmoteLookupMap();
+                if (rateLimited) {
+                    noteFfzRateLimit();
+                    return { ok: false, rateLimited: true };
+                }
+                return { ok: ok };
+            });
+        }
+
+        function fetchFFZEmotes() {
+            if (ffzFetchPromise) return ffzFetchPromise;
+            ffzFetchPromise = fetchFFZEmotesNow().then(function (result) {
+                ffzFetchPromise = null;
+                return result;
+            }, function (error) {
+                ffzFetchPromise = null;
+                throw error;
+            });
+            return ffzFetchPromise;
+        }
+
         // BTTV Emote Fetching
         function fetchBTTVEmotes() {
-            // Global BTTV emotes
+            // Global BTTV emotes. The BTTV socket has no global channel, so this
+            // REST load and the 30-minute refresh are how globals stay current.
             fetch('https://api.betterttv.net/3/cached/emotes/global')
                 .then(response => response.json())
                 .then(data => {
@@ -4767,53 +5635,28 @@
 
         // 7TV Emote Fetching
         function fetchSevenTVEmotes() {
-            // Global 7TV emotes
             fetch('https://7tv.io/v3/emote-sets/global')
-                .then(response => response.json())
-                .then(data => {
-                    emoteCache.seventv.global = data.emotes || [];
-                    rebuildEmoteLookupMap();
-                    chatLog('7TV global emotes loaded:', emoteCache.seventv.global.length);
+                .then(function (response) {
+                    if (!response.ok) throw new Error('7TV global emotes failed: ' + response.status);
+                    return response.json();
+                })
+                .then(function (data) {
+                    noteSevenTvGlobal(data);
                 })
                 .catch(error => console.error('Error fetching 7TV global emotes:', error));
 
-            // User 7TV emotes
             if (streamerID) {
-                fetch(`https://7tv.io/v3/users/twitch/${streamerID}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        emoteCache.seventv.user = (data.emote_set && data.emote_set.emotes) || [];
-                        rebuildEmoteLookupMap();
-                        chatLog('7TV user emotes loaded:', emoteCache.seventv.user.length);
+                var requestedId = streamerID;
+                fetchSevenTvUser(requestedId)
+                    .then(function (data) {
+                        if (String(requestedId) !== String(streamerID)) return;
+                        if (!data) {
+                            clearSevenTvUser();
+                            return;
+                        }
+                        noteSevenTvUser(data);
                     })
                     .catch(error => console.error('Error fetching 7TV user emotes:', error));
-            }
-        }
-
-        // FFZ Emote Fetching
-        function fetchFFZEmotes() {
-            // Global FFZ emotes
-            fetch('https://api.frankerfacez.com/v1/set/global')
-                .then(response => response.json())
-                .then(data => {
-                    emoteCache.ffz.global = (data.sets && data.sets['3'] && data.sets['3'].emoticons) || [];
-                    rebuildEmoteLookupMap();
-                    chatLog('FFZ global emotes loaded:', emoteCache.ffz.global.length);
-                })
-                .catch(error => console.error('Error fetching FFZ global emotes:', error));
-
-            // User FFZ emotes
-            if (streamerID) {
-                fetch(`https://api.frankerfacez.com/v1/room/id/${streamerID}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.room && data.room.set && data.sets && data.sets[data.room.set]) {
-                            emoteCache.ffz.user = data.sets[data.room.set].emoticons || [];
-                            rebuildEmoteLookupMap();
-                            chatLog('FFZ user emotes loaded:', emoteCache.ffz.user.length);
-                        }
-                    })
-                    .catch(error => console.error('Error fetching FFZ user emotes:', error));
             }
         }
 
