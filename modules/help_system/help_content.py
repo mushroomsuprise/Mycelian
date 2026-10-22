@@ -105,37 +105,45 @@ multiple platforms.
         id="twitch_setup",
         title="Connecting Your Twitch Account",
         category=HelpCategory.GETTING_STARTED,
-        summary="How to connect and configure Twitch integration",
+        summary="Create a Twitch app, then connect with Client ID and Client Secret",
         content="""
 # Connecting Your Twitch Account
 
-Mycelian requires a Twitch connection to receive events like follows, subs, and bits.
-See the full [Twitch Integration](help:integrations_twitch) guide for advanced details.
+Mycelian needs your own Twitch application. **Client ID** and **Client Secret** are required before you can connect.
 
-## Prerequisites
+After the account is connected, see [Twitch Integration](help:integrations_twitch) for the events and switches that connection unlocks.
 
-You'll need:
-- A Twitch account
-- Twitch Developer Application credentials (optional for advanced users)
+## Create a Twitch application
 
-> **Note:** You can start with the Quick Connection below and skip the manual setup entirely.
+1. Open the [Twitch developer console](https://dev.twitch.tv/console/apps) and sign in as the channel owner.
+2. Click **Register Your Application**.
+3. Name the application (for example, Mycelian).
+4. Set the **OAuth Redirect URL** to exactly `http://localhost:17563`. On **Settings → Twitch**, the copy button next to **Connect** copies this address. It must match character for character: `http`, `localhost`, port `17563`, no trailing slash, and not `127.0.0.1`.
+5. Choose a category and create the application.
+6. Copy the **Client ID**.
+7. Click **New Secret**, then copy the **Client Secret** immediately. Twitch shows it only once. If you lose it, generate a new secret and paste that value into Mycelian.
 
-## Quick Connection (Recommended)
+## Connect the main account
 
-1. Open **Settings** → **Twitch** tab
-2. Click **"Connect with Twitch"**
-3. Authorize Mycelian in the browser window
-4. Return to the app - you should see "Connected" status
+1. Open **Settings** → **Twitch**.
+2. On **Main Account**, expand **Advanced**.
+3. Paste the **Client ID** and **Client Secret**.
+4. Click **Connect**. Mycelian stores those credentials and opens your browser.
+5. Sign in as the broadcaster and accept every permission Twitch shows.
+6. Return to Mycelian. Status should show **Connected**, with your username beside it.
 
-## Manual Setup (Advanced)
+**Refresh** only updates the status labels. It does not sign you in. Use **Connect** when you need to authorize again.
 
-If you prefer to use your own Twitch application:
+## Chatbot account (optional)
 
-1. Go to [Twitch Developer Console](https://dev.twitch.tv/console)
-2. Create a new application
-3. Set OAuth Redirect URL to: `http://localhost:17563`
-4. Copy your Client ID and Client Secret
-5. Enter them in Settings → Twitch
+Use **Chatbot Account** when chat messages and announcements should come from a separate bot.
+
+1. On **Chatbot Account**, expand **Advanced**.
+2. Paste a **Client ID** and **Client Secret**. The same Twitch application as the main account is fine. A second application also works if its redirect URL is `http://localhost:17563`.
+3. In the browser, sign out of the broadcaster, or use a private window. Twitch will not ask you to switch accounts while the broadcaster is still signed in.
+4. Click **Connect** on the chatbot card and authorize the bot account.
+
+Make the bot a moderator on your channel so it can post announcements and run moderation actions.
 
 ## Connection Status
 
@@ -154,20 +162,31 @@ The bottom status bar uses these colors for Twitch. The full legend is in [Statu
 
 > **Tip:** For more detailed connection troubleshooting, see [Connection Issues](help:troubleshooting_connections).
 
-**"Authentication Failed"**
-- Clear browser cookies and try again
-- Ensure pop-ups are not blocked
+**"Please enter your Client ID and Client Secret first"**
+- Expand **Advanced** on that account card, fill in both fields, then click **Connect**.
 
-**"Token Expired"**
-- Click "Reconnect" to refresh your token
-- Tokens are automatically refreshed when possible
+**Redirect URL rejected**
+- The console URL must be exactly `http://localhost:17563`. Copy it from the button next to **Connect**.
+
+**Client Secret was not copied**
+- In the developer console, click **New Secret**, copy the new value, paste it under **Advanced**, and click **Connect** again.
+
+**"Authentication Failed"**
+- Allow the browser window. A pop-up blocker can stop the sign-in page from opening.
+- Clear cookies for twitch.tv and click **Connect** again.
+
+**Token expired**
+- Click **Connect** on that account card and authorize again.
+- While the Client Secret is saved, Mycelian refreshes the token on its own until that refresh is no longer valid.
         """,
-        keywords=["twitch", "connect", "oauth", "authentication", "api"],
+        keywords=["twitch", "connect", "oauth", "authentication", "api", "client id", "client secret", "redirect"],
         related_topics=[
             "getting_started_intro",
+            "integrations_twitch",
             "alerts_overview",
             "first_alert_setup",
             "status_footer",
+            "troubleshooting_connections",
         ],
         ui_context="settings.twitch",
     ),
@@ -5344,127 +5363,50 @@ For how to use controls on stream (hotkeys, grouping, performance), see
         id="integrations_twitch",
         title="Twitch Integration Setup",
         category=HelpCategory.INTEGRATIONS,
-        summary="Complete guide to connecting Twitch services",
+        summary="Events and options after your Twitch account is connected",
         content="""
 # Twitch Integration Setup
 
-Connect Mycelian to your Twitch channel for real-time events.
-For the quick-start version, see [Connecting Your Twitch Account](help:twitch_setup).
+A connected Twitch account sends live channel events into Mycelian. Connection steps, including the required **Client ID** and **Client Secret**, are in [Connecting Your Twitch Account](help:twitch_setup).
 
-## Prerequisites
+## What the connection is for
 
-- Active Twitch account
-- Channel ownership or moderator permissions
-- Stable internet connection
+Once the main account is connected, Mycelian can receive:
 
-## Quick Setup
+- **Follows**
+- **Subscriptions** and gift subscriptions
+- **Bits**
+- **Raids**
+- **Channel point** redemptions
+- **Hype trains**
+- **Polls** and **predictions**
 
-### Automatic Connection
-1. Open **Settings** → **Twitch** tab
-2. Click **"Connect with Twitch"**
-3. Authorize Mycelian in browser
-4. Return to app - status shows "Connected"
+Use these events in [alerts](help:alerts_overview) and [connector triggers](help:connector_triggers).
 
-### Manual Setup (Advanced)
-For custom applications:
-1. Visit [Twitch Developer Console](https://dev.twitch.tv/console)
-2. Create application
-3. Set redirect URL: `http://localhost:17563`
-4. Enter Client ID and Secret in settings
+## Permissions
 
-## Required Permissions
+When the browser opens, accept the permissions Twitch lists. Mycelian uses them for alerts, chat, raids, polls, and moderation. Declining a permission disables the features that need it.
 
-Mycelian requests these scopes:
-- **channel:read:subscriptions** - Subscription events
-- **bits:read** - Bit cheer events
-- **channel:read:redemptions** - Channel point rewards
-- **chat:read** - Chat messages (for chatbot)
-- **chat:edit** - Send chat messages
+## Options on the Twitch tab
 
-## Event Types
+**Settings → Twitch** has three switches under **Options**. Click **Save** after changing them.
 
-### Viewer Events
-- **Follows**: New followers
-- **Subscriptions**: New and renewed subs
-- **Gift Subs**: Gifted subscriptions
-- **Bits**: Cheer events
+- **Process Twitch alerts** — send Twitch events into the alert queue and activity feed. Turn this off to keep the connection without playing alerts.
+- **Send native Twitch Shoutout** — after a raid, send Twitch's own shoutout.
+- **Send chat raid shoutout** — after a raid, also post a shoutout in chat.
 
-### Channel Events
-- **Raids**: Incoming raids
-- **Channel Points**: Reward redemptions
-- **Hype Train**: Progress events
-- **Polls/Predictions**: Interactive events
+## If events stop
 
-## Connection Status
-
-The bottom status bar uses these colors for Twitch. The full legend is in [Status Footer](help:status_footer).
-
-| Status | Meaning |
-|--------|---------|
-| <span class="help-status-swatch help-status-swatch-success"></span> Connected | Twitch is active and receiving events |
-| <span class="help-status-swatch help-status-swatch-warning"></span> Degraded | Signed in, but events have stopped or the session dropped |
-| <span class="help-status-swatch help-status-swatch-muted"></span> Idle | Not set up yet, or waiting for you to sign in |
-| <span class="help-status-swatch help-status-swatch-error"></span> Error | The connection failed. Check the log |
-| <span class="help-status-swatch help-status-swatch-error"></span> No Internet | This computer cannot reach the network |
-| <span class="help-status-swatch help-status-swatch-error"></span> Unreachable | Twitch itself cannot be reached |
-
-## Troubleshooting
-
-### Connection Issues
-**"Authentication Failed"**
-- Clear browser cache/cookies
-- Try different browser
-- Check pop-up blockers
-
-**"Invalid Token"**
-- Reconnect account
-- Check account permissions
-- Verify application settings
-
-**"Rate Limited"**
-- Wait before retrying
-- Reduce API calls
-- Check usage limits
-
-### Event Issues
-**Missing Events**
-- Verify webhook subscriptions
-- Check event log
-- Test with manual triggers
-
-**Delayed Events**
-- Check network connection
-- Monitor Twitch status
-- Verify server stability
-
-## Advanced Configuration
-
-### Event Filtering
-- Enable/disable specific events
-- Set minimum thresholds
-- Configure spam protection
-
-### Custom Handling
-- Create custom event responses
-- Set up [connector triggers](help:connector_triggers)
-- Configure [alert](help:alerts_overview) mappings
-
-> **Important:** If events stop arriving, check [Connection Troubleshooting](help:troubleshooting_connections) for solutions.
-
-## Security
-
-### Token Management
-- Tokens auto-refresh when possible
-- Manual reconnection for expired tokens
-- Secure credential storage
-
-### Permission Levels
-- Review requested scopes
-- Grant minimal required access
-- Revoke access when needed
+Check the status colors in [Connecting Your Twitch Account](help:twitch_setup). If the session has dropped, click **Connect** again. More fixes are in [Connection Issues](help:troubleshooting_connections).
         """,
-        keywords=["twitch", "integration", "oauth", "events", "webhooks"],
-        related_topics=["getting_started_intro", "alerts_overview", "status_footer"],
+        keywords=["twitch", "integration", "oauth", "events", "alerts", "shoutout"],
+        related_topics=[
+            "twitch_setup",
+            "getting_started_intro",
+            "alerts_overview",
+            "connector_triggers",
+            "status_footer",
+        ],
     ),
     # =========================================
     # Settings
@@ -5734,7 +5676,7 @@ Huge shoutouts to **m4v3k** for all of their work and contributions to the FF7 c
 ### Check Twitch Connection
 1. Go to [Settings → Twitch](help:twitch_setup)
 2. Status should show "Connected"
-3. If not, click "Reconnect" (see [Connection Issues](help:troubleshooting_connections))
+3. If not, open **Advanced**, enter **Client ID** and **Client Secret**, then click **Connect** (see [Connection Issues](help:troubleshooting_connections))
 
 ### Check Alert Settings
 1. Go to Alerts tab
@@ -5807,43 +5749,46 @@ Modern browsers block autoplay. Solutions:
 
 ## Twitch Connection Problems
 
-> **Tip:** Make sure you've followed the [Twitch Setup](help:twitch_setup) steps first.
+> **Tip:** Follow [Twitch Setup](help:twitch_setup) first. **Client ID** and **Client Secret** are required.
 
-### Connection Status: Disconnected
+### Not connected
 
 **Symptoms:**
-- Status shows 🔴 Disconnected
+- Status is Idle, Error, or anything other than Connected
 - No events received
 - [Alerts](help:alerts_overview) not triggering
 
 **Solutions:**
-1. Click **"Reconnect"** button
-2. Check internet connection
-3. Verify Twitch account permissions
-4. Clear browser cache and retry
+1. Open **Settings** → **Twitch** → **Main Account** → **Advanced**
+2. Paste the **Client ID** and **Client Secret** from your Twitch application
+3. Click **Connect** and authorize in the browser
+4. Confirm the OAuth redirect URL is exactly `http://localhost:17563`
+
+**Refresh** only updates the status display. It does not sign you in.
 
 ### Authentication Failed
 
 **Symptoms:**
-- "Authentication failed" error
-- Browser popup closes immediately
+- "Authentication failed" or "Failed to connect" message
+- The browser window closes immediately, or never opens
 
 **Solutions:**
-1. Clear browser cookies for twitch.tv
-2. Disable pop-up blockers
-3. Try different browser
-4. Check if Twitch is down
+1. Confirm both credential fields under **Advanced** are filled in
+2. Allow pop-ups for the sign-in window
+3. Clear browser cookies for twitch.tv
+4. Try a different browser
+5. Check that Twitch is reachable
 
-### Token Expired
+### Token expired
 
 **Symptoms:**
-- Events stop working after some time
-- Status shows ⚠️ Error
+- Events stop after the account had been connected
+- Status shows Error or Degraded
 
 **Solutions:**
-1. Click **"Reconnect"** to refresh token
-2. Check token expiration settings
-3. Verify app permissions haven't changed
+1. Click **Connect** on that account card and authorize again
+2. If the Client Secret was regenerated, paste the new secret under **Advanced** before connecting
+3. Confirm the Twitch application still exists in the developer console
 
 ## Donation alerts
 

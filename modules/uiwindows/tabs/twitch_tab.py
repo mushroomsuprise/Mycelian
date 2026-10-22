@@ -277,8 +277,8 @@ class TwitchTab:
                 "dense"
             ):
                 ui.label(
-                    "Client ID and secret for a custom Twitch application. "
-                    "Connect still uses these values."
+                    "Client ID and Client Secret are required. "
+                    "Paste both, then click Connect."
                 ).classes("text-xs secondary-text mb-2")
                 self._build_credential_fields(
                     client_id_key,
