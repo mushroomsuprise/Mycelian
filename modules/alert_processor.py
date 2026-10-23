@@ -347,11 +347,14 @@ def initialize():
         logger.info("Alert state manager not initialized, initializing now...")
         initialize_alert_state()
     else:
+        # The startup preload already read most collections; read only the
+        # rest here. Stored alerts load in the background once the overlay
+        # server is up (SU-03 / DBX-01).
         logger.info(
-            "Alert state manager already initialized, reloading alerts from Firebase to ensure latest data"
+            "Alert state manager already initialized, loading alert paths the startup preload skipped"
         )
-        with StartupTimer("alert_processor.reload_from_firebase"):
-            alert_state_manager.reload_from_firebase()
+        with StartupTimer("alert_processor.load_missing_alert_paths"):
+            alert_state_manager.load_missing_alert_paths()
 
     # Initialize web engine with correct path for templates
     from .path_utils import get_template_path
@@ -377,6 +380,14 @@ def initialize():
         # and restart it.
         web_engine_instance.server_thread = web_thread
         logger.info("Web engine thread started")
+
+    # Readers that need stored alerts before this finishes wait for it.
+    try:
+        from . import alertutils as _alertutils
+
+        _alertutils.alert_state_manager.prefetch_alert_storage()
+    except Exception as e:
+        logger.debug("Stored alert prefetch could not start: %s", e)
 
     # Verify web thread is running
     if web_thread.is_alive():
