@@ -490,6 +490,15 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         keywords=['settings', 'configuration', 'preferences', 'setup', 'about', 'theme', 'database', 'backup'],
         related_topics=['integrations_twitch', 'getting_started_intro', 'game_hooks', 'status_footer'],
     ),
+    'settings_statistics': HelpTopic(
+        id='settings_statistics',
+        title='Statistics',
+        category=HelpCategory.SETTINGS,
+        summary='Charts, leaderboards and a shareable highlights image for your stream activity',
+        keywords=['statistics', 'stats', 'analytics', 'leaderboard', 'highlights', 'export', 'chart', 'viewer', 'top chatters'],
+        related_topics=['settings_overview', 'status_footer', 'chatbot_giveaways', 'chatbot_polls'],
+        ui_context='settings.statistics',
+    ),
     'status_footer': HelpTopic(
         id='status_footer',
         title='Status Footer',

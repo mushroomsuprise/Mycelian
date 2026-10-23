@@ -1,1881 +1,1226 @@
 # Copyright (c) 2024-2026 Mycelian
 # SPDX-License-Identifier: MIT
+"""
+Settings → Statistics dashboard.
+
+Two data sources, both read-only here:
+
+* The timestamped event log (``user_events``), queried through
+  ``statistics_insights`` for anything scoped by the date range: headline tiles with
+  deltas, activity over time, the weekly heatmap, leaderboards, viewer lookup and the
+  highlights export.
+* The lifetime aggregates held by ``StatisticsManager`` (``get_all_statistics``),
+  shown on the Lifetime section and refreshed live.
+"""
+
 from __future__ import annotations
 
+import base64
+import html
+import io
 import logging
 import os
 import time
-from contextlib import contextmanager
-from datetime import datetime, timedelta
-from typing import Any, Dict, Generator, List, Optional
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from nicegui import ui
-from ...notification_engine import notify
-from ...ui_form_controls import form_input
-from ...ui_timer import layout_schedule
 
 from ... import dataobjects
-from ...dataobjects import state_manager
+from ...notification_engine import notify
+from ...statistics_insights import (
+    EVENT_TYPES,
+    METRICS,
+    METRICS_BY_KEY,
+    PRESETS,
+    DateRange,
+    Insights,
+    Metric,
+    compact,
+    custom_range,
+    pct_change,
+    preset_range,
+)
 from ...statistics_manager import get_statistics_manager
+from ...ui_buttons import primary_button
+from ...ui_form_controls import form_input
+from ...ui_timer import layout_schedule
+from .statistics_charts import ChartColors, level_columns, time_columns, weekly_heatmap
+from .statistics_styles import STATISTICS_CSS
 
 logger = logging.getLogger(__name__)
+
+_css_injected = False
+
+SECTIONS: Tuple[Tuple[str, str, str], ...] = (
+    ("overview", "Overview", "insights"),
+    ("leaders", "Leaderboards", "leaderboard"),
+    ("lifetime", "Lifetime", "all_inclusive"),
+    ("lookup", "Viewer lookup", "person_search"),
+    ("export", "Export highlights", "photo_camera"),
+)
+
+# Leaderboard cards: (title, icon, event types, aggregation, value suffix)
+LEADERBOARDS: Tuple[Tuple[str, str, Tuple[str, ...], str, str], ...] = (
+    ("Top chatters", "chat", ("chat_message",), "count", "messages"),
+    ("Top cheerers", "diamond", ("bit",), "sum", "bits"),
+    ("Top gifters", "redeem", ("giftsub",), "sum", "gifted"),
+    ("Channel points", "toll", ("point_redeem",), "sum", "points"),
+    ("Subscribers", "star", ("sub", "resub"), "count", "subs"),
+    ("Longest watch streaks", "local_fire_department", ("watch_streak",), "max", "streams"),
+    ("Raiders", "groups_2", ("raid",), "count", "raids"),
+    ("Giveaway entries", "confirmation_number", ("giveaway_entry",), "count", "entries"),
+    ("Bot command users", "terminal", ("chatbot_command",), "count", "uses"),
+)
+
+LIVE_INTERVAL_SEC = 5
+LIVE_REQUERY_EVERY = 6  # ticks: re-query the event log every 30s while live
+
+
+def _icon(name: str, extra: str = "") -> str:
+    return f'<span class="material-icons {extra}" aria-hidden="true">{html.escape(name)}</span>'
+
+
+def _initial(name: str) -> str:
+    name = (name or "?").strip()
+    return html.escape(name[:1].upper() or "?")
+
+
+def _sparkline(values: Sequence[float], width: int = 74, height: int = 24) -> str:
+    """Tiny trend line in the de-emphasis ink with the latest point in the accent."""
+    vals = [float(v or 0) for v in values]
+    if len(vals) > 12:
+        # About 12 points: sum into equal bins so daily on/off-stream gaps don't read as noise.
+        size = len(vals) / 12
+        vals = [sum(vals[int(i * size):int((i + 1) * size)]) for i in range(12)]
+    if len(vals) < 2 or max(vals) <= 0:
+        return f'<svg class="mst-spark" width="{width}" height="{height}"></svg>'
+    lo, hi = 0.0, max(vals)
+    step = (width - 6) / (len(vals) - 1)
+
+    def y(v: float) -> float:
+        return height - 3 - (v - lo) / (hi - lo or 1) * (height - 6)
+
+    pts = " ".join(f"{3 + i * step:.1f},{y(v):.1f}" for i, v in enumerate(vals))
+    lx, ly = 3 + (len(vals) - 1) * step, y(vals[-1])
+    return (
+        f'<svg class="mst-spark" width="{width}" height="{height}" viewBox="0 0 {width} {height}" aria-hidden="true">'
+        f'<polyline points="{pts}" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5" '
+        'stroke-linejoin="round" stroke-linecap="round" opacity=".7"/>'
+        f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="3" fill="var(--color-primary)" stroke="var(--color-bg-surface)" stroke-width="1.5"/>'
+        "</svg>"
+    )
+
+
+def _delta_html(current: float, previous: Optional[float], comparing: bool) -> str:
+    """Signed change vs the previous period, with an arrow so it never relies on color."""
+    if not comparing or previous is None:
+        return ""
+    change = pct_change(current, previous)
+    if change is None:
+        if current > 0:
+            return f'<span class="mst-delta is-new" title="Nothing in the previous period">{_icon("fiber_new")}New</span>'
+        return '<span class="mst-delta is-none">—</span>'
+    if abs(change) < 0.5:
+        return f'<span class="mst-delta is-flat" title="Previous period: {compact(previous)}">{_icon("trending_flat")}0%</span>'
+    up = change > 0
+    text = f"{abs(change):.0f}%" if abs(change) < 1000 else "999%+"
+    return (
+        f'<span class="mst-delta {"is-up" if up else "is-down"}" title="Previous period: {compact(previous)}">'
+        f'{_icon("trending_up" if up else "trending_down")}{text}</span>'
+    )
+
+
+def _time_ago(ts: float) -> str:
+    delta = time.time() - ts
+    if delta < 60:
+        return "just now"
+    if delta < 3600:
+        return f"{int(delta // 60)}m ago"
+    if delta < 86400:
+        return f"{int(delta // 3600)}h ago"
+    if delta < 86400 * 7:
+        return f"{int(delta // 86400)}d ago"
+    return datetime.fromtimestamp(ts).strftime("%b %d, %Y")
+
+
+def _event_sentence(ev: Dict[str, Any]) -> Tuple[str, str]:
+    """(main text, detail) for a timeline row."""
+    et = EVENT_TYPES.get(ev["event_type"])
+    label = et.label if et else ev["event_type"]
+    amount = ev.get("amount") or 0
+    detail = ev.get("alert_name") or ""
+    if et and et.amount_label and amount:
+        label = f"{label} · {compact(amount)} {et.amount_label}"
+    return label, detail
 
 
 class StatisticsTab:
     name = "Statistics"
 
     def __init__(self) -> None:
-        self.dirty: bool = (
-            False  # Statistics tab doesn't have save/discard functionality
-        )
-        self.buffer: Optional[dataobjects.AppSettings] = None
+        self.dirty: bool = False  # nothing to save; statistics persist on their own
         self.ui_elements: Dict[str, Any] = {}
 
-        # Statistics-specific attributes
-        self.statistics_container = None
-        self.live_update_timer = None
-        self.live_updates_enabled = False
-        self.live_update_interval = 5  # seconds
-        self._update_counter = 0
-        # Full UI rebuild (for dynamic “top user” cards) clears inputs; keep this modest.
-        self._live_full_refresh_every_n = 36  # e.g. 36 * 5s ≈ 3 minutes
+        self.section = "overview"
+        self.range_key = "30d"
+        self.custom_start: Optional[str] = None
+        self.custom_end: Optional[str] = None
+        self.metric_key = "chat"
+        self.chart_as_line = False
+        self.compare_previous = True
+        self.heatmap_scope = "chat"
+        self.lookup_username = ""
+        self.lookup_types: set = set()
+        self.export_layout = "wide"
+        self.export_last_path: Optional[str] = None
 
-        # UI element references for live updates
-        self._session_duration_label = None
-        self._last_save_label = None
-        self._saving_status_label = None
-        self._live_status_label = None
-        self._live_toggle_button = None
+        self.root = None
+        self.toolbar = None
+        self.nav = None
+        self.body = None
+        self.live_enabled = True
+        self.live_timer = None
+        self._tick = 0
+        self._session_label = None
+        self._save_label = None
+        self._live_badge = None
+        self._lifetime_labels: Dict[str, Any] = {}
+        self._overview_refs: Dict[str, Any] = {}
+        self._export_preview = None
 
-        # Alert statistic labels
-        self._bit_alerts_label = None
-        self._total_bits_label = None
-        self._resubs_label = None
-        self._new_subs_label = None
-        self._gift_subs_label = None
-        self._total_gift_subs_label = None
+    # ----- lifecycle (TabBase) -----
 
-        # Social statistic labels
-        self._follow_alerts_label = None
-        self._point_alerts_label = None
-        self._total_channel_points_label = None
-        self._twitch_messages_label = None
-
-        # Hype train level labels (dictionary for dynamic levels)
-        self._hype_train_labels: Dict[int, Any] = {}
-
-        # Connector statistic labels
-        self._connectors_created_label = None
-        self._total_triggers_label = None
-        self._connectors_triggered_label = None
-
-        # Chatbot statistic labels
-        self._commands_created_label = None
-        self._events_created_label = None
-        self._commands_triggered_label = None
-        self._events_triggered_label = None
-        self._giveaways_completed_label = None
-        self._giveaways_entries_label = None
-        self._giveaways_avg_label = None
-        self._polls_ran_label = None
-        self._polls_votes_label = None
-        self._polls_avg_label = None
-        self._polls_most_votes_label = None
-        self._polls_most_wins_label = None
-
-        # Quote statistic labels
-        self._quotes_created_label = None
-        self._quotes_redeemed_label = None
-
-        # Template statistic labels (dict for dynamic templates)
-        self._template_stat_labels = {}
-
-        # Per-user statistics section references
-        self._user_search_input = None
-        self._user_start_date = None
-        self._user_end_date = None
-        self._per_user_results_container = None
-        self._selected_username: Optional[str] = None
-
-        # Export highlights section references
-        self._export_start_date = None
-        self._export_end_date = None
-        self._export_status_label = None
-
-    # ----- lifecycle -----
     def on_enter(self) -> None:
-        """Called when the tab becomes active."""
-        # Start live updates when entering the tab
-        self._start_live_updates()
+        if self.live_enabled:
+            self._start_live()
 
     def on_exit(self) -> None:
-        """Called when the tab is no longer active."""
-        # Stop live updates when leaving the tab
-        self._stop_live_updates()
+        self._stop_live()
 
     def save(self) -> None:
-        """Statistics tab doesn't have save functionality."""
         pass
 
     def discard(self) -> None:
-        """Statistics tab doesn't have discard functionality."""
         pass
 
-    @contextmanager
-    def _stat_card(self, title: str) -> Generator[None, None, None]:
-        """Compact metric card with title top-left and horizontal metrics row."""
-        with ui.card().classes("statistics-metric-card w-full"):
-            ui.label(title).classes(
-                "font-semibold text-sm mb-1 w-full text-left shrink-0"
-            )
-            with ui.row().classes(
-                "w-full gap-3 justify-start items-start flex-wrap"
-            ):
-                yield
+    # ----- helpers -----
 
-    def _stat_value(
-        self, text: str, caption: str, value_class: str = "text-theme-primary"
-    ) -> Any:
-        with ui.column().classes("items-start gap-0 shrink-0 min-w-[4.5rem]"):
-            lbl = ui.label(text).classes(f"text-lg font-bold leading-tight {value_class}")
-            ui.label(caption).classes("text-xs secondary-text text-left leading-tight")
-            return lbl
+    @property
+    def mgr(self):
+        return get_statistics_manager()
 
-    def _stat_footer(self, *lines: str) -> None:
-        if not lines:
-            return
-        with ui.column().classes(
-            "w-full items-start gap-0 mt-2 pt-2 "
-            "border-t border-[var(--color-border-default)]"
-        ):
-            for i, line in enumerate(lines):
-                cls = (
-                    "text-xs secondary-text text-left"
-                    if i
-                    else "text-xs text-theme-primary-light text-left"
-                )
-                ui.label(line).classes(cls)
+    @property
+    def insights(self) -> Insights:
+        return Insights(self.mgr)
 
-    # ----- building -----
-    def build(self, parent_container) -> None:
-        """Build the statistics tab UI inside parent_container."""
-        with parent_container:
-            self._build_statistics_dashboard()
-
-    def _build_statistics_dashboard(self):
-        """Build the statistics dashboard with elegant card-based layout"""
+    def _colors(self) -> ChartColors:
         try:
-            # Clean up any existing references before building
-            self._cleanup_live_updates()
-
-            # Store reference to the container for refresh functionality
-            self.statistics_container = ui.column().classes(
-                "w-full statistics-dashboard"
-            )
-
-            with self.statistics_container:
-                # Build the actual content
-                self._rebuild_statistics_content()
-
-                # Try to ensure periodic saving is running
-                try:
-                    stats_manager = get_statistics_manager()
-                    stats_manager.ensure_periodic_saving()
-                except Exception as e:
-                    print(f"Could not ensure periodic saving on load: {e}")
-
-            # Start live updates by default AFTER UI elements are created
-            print("Starting live updates from dashboard build")
-            self._start_live_updates()
-
-        except Exception as e:
-            logger.error(f"Error building statistics dashboard: {str(e)}", exc_info=True)
-            with ui.card().classes(
-                "content-section statistics-section w-full"
-            ):
-                ui.label("❌ Error Loading Statistics").classes(
-                    "text-xl font-bold mb-4 text-red-400"
-                )
-                ui.label(
-                    "Unable to load statistics at this time. Please try again later."
-                ).classes("secondary-text")
-
-    def _cleanup_live_updates(self):
-        """Clean up live update references when dashboard is rebuilt"""
-        # Clear UI element references to avoid memory leaks
-        # Session labels
-        self._session_duration_label = None
-        self._last_save_label = None
-        self._saving_status_label = None
-        self._live_status_label = None
-        self._live_toggle_button = None
-
-        # Alert statistic labels
-        self._bit_alerts_label = None
-        self._total_bits_label = None
-        self._resubs_label = None
-        self._new_subs_label = None
-        self._gift_subs_label = None
-        self._total_gift_subs_label = None
-
-        # Social statistic labels
-        self._follow_alerts_label = None
-        self._point_alerts_label = None
-        self._total_channel_points_label = None
-        self._twitch_messages_label = None
-
-        # Hype train level labels (dictionary for dynamic levels)
-        self._hype_train_labels: Dict[int, Any] = {}
-
-        # Connector statistic labels
-        self._connectors_created_label = None
-        self._total_triggers_label = None
-        self._connectors_triggered_label = None
-
-        # Chatbot statistic labels
-        self._commands_created_label = None
-        self._events_created_label = None
-        self._commands_triggered_label = None
-        self._events_triggered_label = None
-        self._giveaways_completed_label = None
-        self._giveaways_entries_label = None
-        self._giveaways_avg_label = None
-        self._polls_ran_label = None
-        self._polls_votes_label = None
-        self._polls_avg_label = None
-        self._polls_most_votes_label = None
-        self._polls_most_wins_label = None
-
-        # Quote statistic labels
-        self._quotes_created_label = None
-        self._quotes_redeemed_label = None
-
-        # Template statistic labels
-        self._template_stat_labels = {}
-
-        # Per-user section references
-        self._user_search_input = None
-        self._user_start_date = None
-        self._user_end_date = None
-        self._per_user_results_container = None
-        self._selected_username = None
-
-        # Export section references
-        self._export_start_date = None
-        self._export_end_date = None
-        self._export_status_label = None
-
-        # Initialize UI element references for live updates
-        self._initialize_ui_references()
-
-        # Initialize update counter for periodic full refreshes
-        self._update_counter = 0
-
-    def _initialize_ui_references(self):
-        """Initialize UI element references for live updates"""
-        # Session labels
-        self._session_duration_label = None
-        self._last_save_label = None
-        self._saving_status_label = None
-        self._live_status_label = None
-        self._live_toggle_button = None
-
-        # Alert statistic labels
-        self._bit_alerts_label = None
-        self._total_bits_label = None
-        self._resubs_label = None
-        self._new_subs_label = None
-        self._gift_subs_label = None
-        self._total_gift_subs_label = None
-
-        # Social statistic labels
-        self._follow_alerts_label = None
-        self._point_alerts_label = None
-        self._total_channel_points_label = None
-        self._twitch_messages_label = None
-
-        # Hype train level labels (dictionary for dynamic levels)
-        self._hype_train_labels: Dict[int, Any] = {}
-
-        # Connector statistic labels
-        self._connectors_created_label = None
-        self._total_triggers_label = None
-        self._connectors_triggered_label = None
-
-        # Chatbot statistic labels
-        self._commands_created_label = None
-        self._events_created_label = None
-        self._commands_triggered_label = None
-        self._events_triggered_label = None
-        self._giveaways_completed_label = None
-        self._giveaways_entries_label = None
-        self._giveaways_avg_label = None
-        self._polls_ran_label = None
-        self._polls_votes_label = None
-        self._polls_avg_label = None
-        self._polls_most_votes_label = None
-        self._polls_most_wins_label = None
-
-        # Quote statistic labels
-        self._quotes_created_label = None
-        self._quotes_redeemed_label = None
-
-        # Template statistic labels (dict for dynamic templates)
-        self._template_stat_labels = {}
-
-        # Per-user section references
-        self._user_search_input = None
-        self._user_start_date = None
-        self._user_end_date = None
-        self._per_user_results_container = None
-
-        # Export section references
-        self._export_start_date = None
-        self._export_end_date = None
-        self._export_status_label = None
-
-    @staticmethod
-    def _normalize_date_str(s: str) -> str:
-        """Reduce date inputs to YYYY-MM-DD (NiceGUI may return longer ISO strings)."""
-        s = (s or "").strip()
-        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
-            return s[:10]
-        return s
-
-    def _input_value_str(self, element) -> str:
-        """Best-effort read of a NiceGUI input value as string."""
-        if element is None:
-            return ""
-        v = getattr(element, "value", None)
-        if v is None:
-            return ""
-        raw = str(v).strip()
-        if self._looks_like_date_value(raw):
-            return self._normalize_date_str(raw)
-        return raw
-
-    @staticmethod
-    def _looks_like_date_value(s: str) -> bool:
-        s = (s or "").strip()
-        return len(s) >= 10 and s[4] == "-" and s[7] == "-"
-
-    def _snapshot_statistics_inputs(self) -> Dict[str, str]:
-        """Capture per-user and export date fields before a full dashboard rebuild."""
-        return {
-            "user_search": self._input_value_str(self._user_search_input),
-            "user_start": self._input_value_str(self._user_start_date),
-            "user_end": self._input_value_str(self._user_end_date),
-            "export_start": self._input_value_str(self._export_start_date),
-            "export_end": self._input_value_str(self._export_end_date),
-        }
-
-    def _restore_statistics_inputs(self, snap: Dict[str, str]) -> None:
-        """Re-apply inputs after rebuild; re-run per-user search if a username was set."""
-        if not snap:
-            return
-        try:
-            if self._user_search_input and snap.get("user_search"):
-                self._user_search_input.value = snap["user_search"]
-            if self._user_start_date and snap.get("user_start"):
-                self._user_start_date.value = snap["user_start"]
-            if self._user_end_date and snap.get("user_end"):
-                self._user_end_date.value = snap["user_end"]
-            if self._export_start_date and snap.get("export_start"):
-                self._export_start_date.value = snap["export_start"]
-            if self._export_end_date and snap.get("export_end"):
-                self._export_end_date.value = snap["export_end"]
-            if snap.get("user_search"):
-                self._on_user_search(show_notification=False)
-        except Exception as e:
-            print(f"Could not restore statistics tab inputs: {e}")
-
-    def _refresh_statistics(self):
-        """Refresh the statistics dashboard"""
-        try:
-            notify("🔄 Refreshing statistics...", type="info")
-
-            # Clear the current container and rebuild
-            if self.statistics_container is not None:
-                self.statistics_container.clear()
-                with self.statistics_container:
-                    self._rebuild_statistics_content()
-                notify("✅ Statistics refreshed!", type="positive")
-            else:
-                # If no container exists, rebuild the entire dashboard
-                self._build_statistics_dashboard()
-                notify("✅ Statistics dashboard rebuilt!", type="positive")
-
-        except Exception as e:
-            logger.error(f"Error refreshing statistics: {str(e)}", exc_info=True)
-            notify("❌ Error refreshing statistics", type="negative")
-
-    def _force_save_statistics(self):
-        """Force an immediate save of statistics"""
-        try:
-            notify("Force saving statistics...", type="info")
-
-            stats_manager = get_statistics_manager()
-            saved_stats = stats_manager.force_save()
-            notify("Statistics saved successfully!", type="positive")
-
-        except Exception as e:
-            logger.error(f"Error force saving statistics: {str(e)}", exc_info=True)
-            notify("Error saving statistics", type="negative")
-
-    def _debug_counts(self):
-        """Debug current dynamic counts"""
-        try:
-            notify("🔍 Checking dynamic counts...", type="info")
-
-            stats_manager = get_statistics_manager()
-
-            # Test each count method directly
-            commands_count = stats_manager._get_commands_count()
-            events_count = stats_manager._get_events_count()
-            quotes_count = stats_manager._get_quotes_count()
-            connectors_count = stats_manager._get_connector_count()
-
-            notify(
-                f"Counts - Commands: {commands_count}, Events: {events_count}, Quotes: {quotes_count}, Connectors: {connectors_count}",
-                type="info",
-            )
-
-            # Also refresh the statistics display
-            self._refresh_statistics()
-
-        except Exception as e:
-            logger.error(f"Error debugging counts: {str(e)}", exc_info=True)
-            notify("Error checking counts", type="negative")
-
-    def _start_live_updates(self):
-        """Start automatic live updates for the statistics dashboard"""
-        # Check if timer is already running
-        if self.live_update_timer and self.live_update_timer.active:
-            return  # Already running
-
-        # Only start live updates if we have the necessary UI elements
-        if self.statistics_container is None:
-            print("Not starting live updates - statistics container not yet created")
-            return
-
-        # Check if essential labels exist (they should be created by _rebuild_statistics_content)
-        essential_labels_exist = (
-            hasattr(self, "_session_duration_label")
-            and self._session_duration_label is not None
-        )
-
-        if not essential_labels_exist:
-            print("Not starting live updates - essential UI labels not yet created")
-            return
-
-        self.live_updates_enabled = True
-        print(
-            f"Starting live statistics updates every {self.live_update_interval} seconds"
-        )
-
-        def update_task():
-            try:
-                if (
-                    self.live_updates_enabled
-                    and self.statistics_container is not None
-                    and not getattr(self.statistics_container, "is_deleted", False)
-                ):
-                    # Only update if the statistics tab is currently visible
-                    # We'll do a lightweight update without clearing the entire container
-                    self._update_statistics_display()
-            except Exception as e:
-                print(f"Error in live statistics update: {str(e)}")
-
-        # Start the timer
-        self.live_update_timer = layout_schedule(
-            self.live_update_interval, update_task, active=True
-        )
-        print(
-            f"Timer created and started: {self.live_update_timer} active={self.live_update_timer.active if self.live_update_timer else 'None'}"
-        )
-
-    def _stop_live_updates(self):
-        """Stop automatic live updates for the statistics dashboard"""
-        self.live_updates_enabled = False
-        if self.live_update_timer:
-            self.live_update_timer.active = False
-            self.live_update_timer = None
-        print("Stopped live statistics updates")
-
-    def _toggle_live_updates(self):
-        """Toggle live updates on/off"""
-        if self.live_updates_enabled:
-            self._stop_live_updates()
-            notify(" Live updates disabled", type="info")
-            # Update button text if it exists
-            if hasattr(self, "_live_toggle_button") and self._live_toggle_button:
-                self._live_toggle_button.set_text(" Live Updates")
-        else:
-            self._start_live_updates()
-            notify(" Live updates enabled", type="positive")
-            # Update button text if it exists
-            if hasattr(self, "_live_toggle_button") and self._live_toggle_button:
-                self._live_toggle_button.set_text("⏸️ Stop Live")
-
-    def _update_statistics_display(self):
-        """Lightweight update of statistics display values without rebuilding UI structure"""
-        try:
-            # print("Live update triggered")
-            # Get fresh statistics data
-            stats_manager = get_statistics_manager()
-            stats_data = stats_manager.get_all_statistics()
-            # print(f"Got statistics data: {stats_data is not None}")
-
-            if not stats_data:
-                print("No statistics data available, skipping update")
-                return
-
-            # Occasionally do a full refresh to update dynamic content (top items/users)
-            # This is done every 10th update to keep performance good while ensuring
-            # the dynamic content stays current
-            # Update session duration and last save time
-            try:
-                if (
-                    hasattr(self, "_session_duration_label")
-                    and self._session_duration_label
-                ):
-                    session_duration = time.time() - stats_data["session"]["start_time"]
-                    hours = int(session_duration // 3600)
-                    minutes = int((session_duration % 3600) // 60)
-                    seconds = int(session_duration % 60)
-                    new_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                    self._session_duration_label.set_text(new_time)
-                    # print(f"Updated session duration to: {new_time}")
-                else:
-                    print("Session duration label not found")
-            except Exception as e:
-                print(f"Could not update session duration: {e}")
-
-            try:
-                if hasattr(self, "_last_save_label") and self._last_save_label:
-                    if stats_data["session"]["last_save_time"]:
-                        last_save = datetime.fromtimestamp(
-                            stats_data["session"]["last_save_time"]
-                        )
-                        new_save_time = last_save.strftime("%H:%M:%S")
-                        self._last_save_label.set_text(new_save_time)
-                        # print(f"Updated last save time to: {new_save_time}")
-                    else:
-                        self._last_save_label.set_text("Never")
-                else:
-                    print("Last save label not found")
-            except Exception as e:
-                print(f"Could not update last save time: {e}")
-
-            # Update individual statistic labels if they exist
-            try:
-                self._update_statistic_labels(stats_data)
-            except Exception as e:
-                print(f"Could not update statistic labels: {e}")
-
-        except Exception as e:
-            logger.error(f"Error updating statistics display: {str(e)}", exc_info=True)
-
-    def _update_statistic_labels(self, stats_data):
-        """Update individual statistic value labels"""
-        try:
-            # Update Alert Statistics
-            try:
-                if hasattr(self, "_bit_alerts_label") and self._bit_alerts_label:
-                    self._bit_alerts_label.set_text(
-                        f"{stats_data['alerts']['bit_alerts_played']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update bit alerts: {e}")
-
-            try:
-                if hasattr(self, "_total_bits_label") and self._total_bits_label:
-                    self._total_bits_label.set_text(
-                        f"{stats_data['alerts']['total_bits']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update total bits: {e}")
-
-            try:
-                if hasattr(self, "_resubs_label") and self._resubs_label:
-                    self._resubs_label.set_text(
-                        f"{stats_data['alerts']['resubs_played']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update resubs: {e}")
-
-            try:
-                if hasattr(self, "_new_subs_label") and self._new_subs_label:
-                    self._new_subs_label.set_text(
-                        f"{stats_data['alerts']['new_subs_played']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update new subs: {e}")
-
-            try:
-                if hasattr(self, "_gift_subs_label") and self._gift_subs_label:
-                    self._gift_subs_label.set_text(
-                        f"{stats_data['alerts']['gift_subs_played']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update gift subs: {e}")
-
-            try:
-                if (
-                    hasattr(self, "_total_gift_subs_label")
-                    and self._total_gift_subs_label
-                ):
-                    self._total_gift_subs_label.set_text(
-                        f"{stats_data['alerts']['total_gift_subs']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update total gift subs: {e}")
-
-            # Update Social Statistics
-            try:
-                if hasattr(self, "_follow_alerts_label") and self._follow_alerts_label:
-                    self._follow_alerts_label.set_text(
-                        f"{stats_data['alerts']['follow_alerts_played']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update follow alerts: {e}")
-
-            try:
-                if hasattr(self, "_point_alerts_label") and self._point_alerts_label:
-                    self._point_alerts_label.set_text(
-                        f"{stats_data['alerts']['point_alerts_redeemed']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update point alerts: {e}")
-
-            try:
-                if (
-                    hasattr(self, "_total_channel_points_label")
-                    and self._total_channel_points_label
-                ):
-                    self._total_channel_points_label.set_text(
-                        f"{stats_data['alerts']['total_channel_points_redeemed']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update total channel points: {e}")
-
-            try:
-                if (
-                    hasattr(self, "_twitch_messages_label")
-                    and self._twitch_messages_label
-                ):
-                    self._twitch_messages_label.set_text(
-                        f"{stats_data['chat']['twitch_messages_received']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update twitch messages: {e}")
-
-            # Update Hype Train Statistics
-            try:
-                if hasattr(self, "_hype_train_labels") and self._hype_train_labels:
-                    # Check for new format first, fallback to old format
-                    raw_level_completions = stats_data["hype_trains"].get(
-                        "level_completions", {}
-                    )
-
-                    # Convert string keys to integers (JSON serialization converts int keys to strings)
-                    level_completions = {}
-                    # Always process level_completions, even if it's an empty dict
-                    for k, v in raw_level_completions.items():
-                        try:
-                            level_completions[int(k)] = v
-                        except (ValueError, TypeError):
-                            pass
-
-                    # If level_completions is empty or missing, initialize with zeros for levels 1-5
-                    if not level_completions:
-                        level_completions = {level: 0 for level in range(1, 6)}
-
-                    # Update only labels that exist in our dictionary
-                    for level, label in self._hype_train_labels.items():
-                        if label:
-                            count = level_completions.get(level, 0)
-                            label.set_text(f"{count:,}")
-                else:
-                    print("Hype train labels not initialized")
-            except Exception as e:
-                import traceback
-
-                traceback.print_exc()
-
-            # Update Connector Statistics
-            try:
-                if (
-                    hasattr(self, "_connectors_created_label")
-                    and self._connectors_created_label
-                ):
-                    connectors_created = stats_data["connectors"]["connectors_created"]
-                    self._connectors_created_label.set_text(f"{connectors_created:,}")
-                    # print(f" UI: Updated connectors created to: {connectors_created}")
-            except Exception as e:
-                print(f"Could not update connectors created: {e}")
-
-            try:
-                if (
-                    hasattr(self, "_total_triggers_label")
-                    and self._total_triggers_label
-                ):
-                    self._total_triggers_label.set_text(
-                        f"{stats_data['connectors']['total_triggers']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update total triggers: {e}")
-
-            try:
-                if (
-                    hasattr(self, "_connectors_triggered_label")
-                    and self._connectors_triggered_label
-                ):
-                    self._connectors_triggered_label.set_text(
-                        f"{stats_data['connectors']['connectors_triggered']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update connectors triggered: {e}")
-
-            # Update Chatbot Statistics
-            try:
-                if (
-                    hasattr(self, "_commands_created_label")
-                    and self._commands_created_label
-                ):
-                    self._commands_created_label.set_text(
-                        f"{stats_data['chatbot']['commands_created']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update commands created: {e}")
-
-            try:
-                if (
-                    hasattr(self, "_events_created_label")
-                    and self._events_created_label
-                ):
-                    self._events_created_label.set_text(
-                        f"{stats_data['chatbot']['events_created']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update events created: {e}")
-
-            try:
-                if (
-                    hasattr(self, "_commands_triggered_label")
-                    and self._commands_triggered_label
-                ):
-                    self._commands_triggered_label.set_text(
-                        f"{stats_data['chatbot']['commands_triggered']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update commands triggered: {e}")
-
-            try:
-                if (
-                    hasattr(self, "_events_triggered_label")
-                    and self._events_triggered_label
-                ):
-                    self._events_triggered_label.set_text(
-                        f"{stats_data['chatbot']['events_triggered']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update events triggered: {e}")
-
-            try:
-                gw = stats_data.get("giveaways", {}) or {}
-                if (
-                    hasattr(self, "_giveaways_completed_label")
-                    and self._giveaways_completed_label
-                ):
-                    self._giveaways_completed_label.set_text(
-                        f"{int(gw.get('giveaways_completed', 0) or 0):,}"
-                    )
-                if (
-                    hasattr(self, "_giveaways_entries_label")
-                    and self._giveaways_entries_label
-                ):
-                    self._giveaways_entries_label.set_text(
-                        f"{int(gw.get('total_entry_events', 0) or 0):,}"
-                    )
-                if hasattr(self, "_giveaways_avg_label") and self._giveaways_avg_label:
-                    avg_gw = float(gw.get("average_entries_per_giveaway", 0) or 0)
-                    self._giveaways_avg_label.set_text(f"{avg_gw:.2f}")
-                polls = stats_data.get("polls", {}) or {}
-                if hasattr(self, "_polls_ran_label") and self._polls_ran_label:
-                    self._polls_ran_label.set_text(
-                        f"{int(polls.get('polls_completed', 0) or 0):,}"
-                    )
-                if hasattr(self, "_polls_votes_label") and self._polls_votes_label:
-                    self._polls_votes_label.set_text(
-                        f"{int(polls.get('total_votes', 0) or 0):,}"
-                    )
-                if hasattr(self, "_polls_avg_label") and self._polls_avg_label:
-                    avg_polls = float(polls.get("average_votes_per_poll", 0) or 0)
-                    self._polls_avg_label.set_text(f"{avg_polls:.2f}")
-                most_votes = polls.get("most_votes") or {}
-                most_wins = polls.get("most_wins") or {}
-                if hasattr(self, "_polls_most_votes_label") and self._polls_most_votes_label:
-                    self._polls_most_votes_label.set_text(
-                        f"{most_votes.get('name') or '—'} ({int(most_votes.get('count') or 0):,})"
-                    )
-                if hasattr(self, "_polls_most_wins_label") and self._polls_most_wins_label:
-                    self._polls_most_wins_label.set_text(
-                        f"{most_wins.get('name') or '—'} ({int(most_wins.get('count') or 0):,})"
-                    )
-            except Exception as e:
-                print(f"Could not update giveaway statistics: {e}")
-
-            # Update Quote Statistics
-            try:
-                if (
-                    hasattr(self, "_quotes_created_label")
-                    and self._quotes_created_label
-                ):
-                    self._quotes_created_label.set_text(
-                        f"{stats_data['quotes']['quotes_created']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update quotes created: {e}")
-
-            try:
-                if (
-                    hasattr(self, "_quotes_redeemed_label")
-                    and self._quotes_redeemed_label
-                ):
-                    self._quotes_redeemed_label.set_text(
-                        f"{stats_data['quotes']['total_quotes_redeemed']:,}"
-                    )
-            except Exception as e:
-                print(f"Could not update quotes redeemed: {e}")
-
-            # Update Template Statistics
-            try:
-                if (
-                    hasattr(self, "_template_stat_labels")
-                    and self._template_stat_labels
-                ):
-                    for (
-                        template_name,
-                        template_labels,
-                    ) in self._template_stat_labels.items():
-                        if template_name in stats_data["templates"]:
-                            template_stats = stats_data["templates"][template_name]
-                            if "custom_stats" in template_stats:
-                                for stat_name, label in template_labels.items():
-                                    if stat_name in template_stats["custom_stats"]:
-                                        stat_value = template_stats["custom_stats"][
-                                            stat_name
-                                        ]
-                                        label.set_text(f"{stat_value:,}")
-            except Exception as e:
-                print(f"Could not update template stats: {e}")
-
-        except Exception as e:
-            logger.error(f"Error updating statistic labels: {str(e)}", exc_info=True)
-
-    def _rebuild_statistics_content(self):
-        """Rebuild the statistics dashboard content without recreating the container"""
-        try:
-            # Get fresh statistics data
-            stats_manager = get_statistics_manager()
-            stats_data = stats_manager.get_all_statistics()
-
-            # Alert Statistics Section
-            with ui.card().classes("content-section statistics-section w-full"):
-                ui.label("🎯 Alert Statistics").classes("text-base font-bold mb-2")
-
-                with ui.grid(columns=4).classes("w-full gap-2"):
-                    with self._stat_card("⚡ Bits"):
-                        self._bit_alerts_label = self._stat_value(
-                            f"{stats_data['alerts']['bit_alerts_played']:,}",
-                            "Alerts played",
-                            "text-theme-primary",
-                        )
-                        self._total_bits_label = self._stat_value(
-                            f"{stats_data['alerts']['total_bits']:,}",
-                            "Total bits",
-                            "text-theme-primary-light",
-                        )
-
-                    with self._stat_card("🔄 Resubs"):
-                        self._resubs_label = self._stat_value(
-                            f"{stats_data['alerts']['resubs_played']:,}",
-                            "Total played",
-                            "text-blue-400",
-                        )
-
-                    with self._stat_card("🆕 New Subs"):
-                        self._new_subs_label = self._stat_value(
-                            f"{stats_data['alerts']['new_subs_played']:,}",
-                            "Total played",
-                            "text-green-400",
-                        )
-
-                    with self._stat_card("🎁 Gift Subs"):
-                        self._gift_subs_label = self._stat_value(
-                            f"{stats_data['alerts']['gift_subs_played']:,}",
-                            "Alerts played",
-                            "text-pink-400",
-                        )
-                        self._total_gift_subs_label = self._stat_value(
-                            f"{stats_data['alerts']['total_gift_subs']:,}",
-                            "Total subs",
-                            "text-pink-300",
-                        )
-
-            # Follow & Point Statistics Section
-            with ui.card().classes("content-section statistics-section w-full"):
-                ui.label("👥 Social & Interaction Statistics").classes(
-                    "text-base font-bold mb-2"
-                )
-
-                with ui.grid(columns=3).classes("w-full gap-2"):
-                    with self._stat_card("👤 Follow Alerts"):
-                        self._follow_alerts_label = self._stat_value(
-                            f"{stats_data['alerts']['follow_alerts_played']:,}",
-                            "Total played",
-                            "text-cyan-400",
-                        )
-
-                    with self._stat_card("🎯 Point Alerts"):
-                        self._point_alerts_label = self._stat_value(
-                            f"{stats_data['alerts']['point_alerts_redeemed']:,}",
-                            "Redeemed",
-                            "text-orange-400",
-                        )
-                        self._total_channel_points_label = self._stat_value(
-                            f"{stats_data['alerts']['total_channel_points_redeemed']:,}",
-                            "Points spent",
-                            "text-orange-300",
-                        )
-
-                    with self._stat_card("💬 Chat Messages"):
-                        self._twitch_messages_label = self._stat_value(
-                            f"{stats_data['chat']['twitch_messages_received']:,}",
-                            "Total received",
-                            "text-indigo-400",
-                        )
-
-            # Hype Train Statistics Section
-            # Check for new format first, fallback to old format for backwards compatibility
-            raw_level_completions = stats_data["hype_trains"].get(
-                "level_completions", {}
-            )
-
-            # Convert string keys to integers (JSON serialization converts int keys to strings)
-            level_completions = {}
-            if raw_level_completions:
-                for k, v in raw_level_completions.items():
-                    try:
-                        level_completions[int(k)] = v
-                    except (ValueError, TypeError):
-                        pass
-
-            if not level_completions:
-                # Fallback to old format if new format doesn't exist
-                level_completions = {
-                    level: stats_data["hype_trains"].get(
-                        f"level_{level}_completions", 0
-                    )
-                    for level in range(1, 6)
-                }
-
-            # Always show at least levels 1-5, plus any higher levels that exist
-            max_level = max(level_completions.keys()) if level_completions else 5
-            max_level = max(max_level, 5)  # Ensure we always show at least 5 levels
-
-            # Build complete level data (including zeros for display)
-            all_levels = {
-                level: level_completions.get(level, 0)
-                for level in range(1, max_level + 1)
-            }
-
-            # Always show the hype train section
-            with ui.card().classes(
-                "content-section statistics-section statistics-section-full w-full"
-            ):
-                ui.label("🚂 Hype Train Statistics").classes("text-base font-bold mb-2")
-
-                with ui.grid(columns=5).classes("w-full gap-2"):
-                    for level in sorted(all_levels.keys()):
-                        count = all_levels[level]
-                        with self._stat_card(f"Level {level}"):
-                            self._hype_train_labels[level] = self._stat_value(
-                                f"{count:,}",
-                                "Completed",
-                                "text-yellow-400",
-                            )
-
-            # Connector Statistics Section
-            with ui.card().classes("content-section statistics-section w-full"):
-                ui.label("🔗 Connector Statistics").classes("text-base font-bold mb-2")
-
-                # Get connector insights
-                top_connector = stats_manager.get_top_connectors(limit=1)
-                top_connector_user = stats_manager.get_top_users_by_statistic(
-                    "connector_triggers", limit=1
-                )
-
-                with ui.grid(columns=3).classes("w-full gap-2"):
-                    with self._stat_card("📦 Total Connectors"):
-                        self._connectors_created_label = self._stat_value(
-                            f"{stats_data['connectors']['connectors_created']:,}",
-                            "Created",
-                            "text-emerald-400",
-                        )
-                        if top_connector:
-                            cn = top_connector[0]["connector_name"]
-                            cc = top_connector[0]["trigger_count"]
-                            self._stat_footer(
-                                f"Most used: {cn}",
-                                f"({cc:,} triggers)",
-                            )
-
-                    with self._stat_card("⚡ Total Triggers"):
-                        self._total_triggers_label = self._stat_value(
-                            f"{stats_data['connectors']['total_triggers']:,}",
-                            "All executions",
-                            "text-green-400",
-                        )
-                        if top_connector_user:
-                            un = top_connector_user[0]["username"]
-                            uc = top_connector_user[0]["value"]
-                            self._stat_footer(
-                                f"Top user: {un}",
-                                f"({uc:,} triggers)",
-                            )
-
-                    with self._stat_card("🔗 Unique Triggered"):
-                        self._connectors_triggered_label = self._stat_value(
-                            f"{stats_data['connectors']['connectors_triggered']:,}",
-                            "Unique runs",
-                            "text-red-400",
-                        )
-
-            # Quote Statistics Section
-            with ui.card().classes("content-section statistics-section w-full"):
-                ui.label("💬 Quote Statistics").classes("text-base font-bold mb-2")
-
-                top_quote_user = stats_manager.get_top_users_by_statistic(
-                    "quotes_redeemed", limit=1
-                )
-
-                with ui.grid(columns=2).classes("w-full gap-2"):
-                    with self._stat_card("📚 Total Quotes"):
-                        self._quotes_created_label = self._stat_value(
-                            f"{stats_data['quotes']['quotes_created']:,}",
-                            "In database",
-                            "text-indigo-400",
-                        )
-                        individual_quote_usage = stats_data["quotes"].get(
-                            "individual_quote_usage", {}
-                        )
-                        if individual_quote_usage:
-                            quote_id, quote_count = max(
-                                individual_quote_usage.items(), key=lambda x: x[1]
-                            )
-                            self._stat_footer(
-                                f"Most redeemed: {quote_id}",
-                                f"({quote_count:,} redemptions)",
-                            )
-
-                    with self._stat_card("🎯 Quotes Redeemed"):
-                        self._quotes_redeemed_label = self._stat_value(
-                            f"{stats_data['quotes']['total_quotes_redeemed']:,}",
-                            "Total uses",
-                            "text-pink-400",
-                        )
-                        if top_quote_user:
-                            user_name = top_quote_user[0]["username"]
-                            user_count = top_quote_user[0]["value"]
-                            self._stat_footer(
-                                f"Top user: {user_name}",
-                                f"({user_count:,} redemptions)",
-                            )
-
-            # Chatbot Statistics Section
-            with ui.card().classes(
-                "content-section statistics-section statistics-section-full w-full"
-            ):
-                ui.label("🤖 Chatbot Statistics").classes("text-base font-bold mb-2")
-
-                # Get chatbot insights
-                top_command = stats_manager.get_top_commands(limit=1)
-                top_event = stats_manager.get_top_events(limit=1)
-                top_command_user = stats_manager.get_top_users_by_statistic(
-                    "chatbot_interactions", limit=1
-                )
-
-                with ui.grid(columns=4).classes("w-full gap-2"):
-                    with self._stat_card("📝 Commands"):
-                        self._commands_created_label = self._stat_value(
-                            f"{stats_data['chatbot']['commands_created']:,}",
-                            "Created",
-                            "text-theme-primary",
-                        )
-                        if top_command:
-                            command_name = top_command[0]["command_name"]
-                            command_count = top_command[0]["usage_count"]
-                            self._stat_footer(
-                                f"Most used: {command_name}",
-                                f"({command_count:,} uses)",
-                            )
-
-                    with self._stat_card("🎪 Events"):
-                        self._events_created_label = self._stat_value(
-                            f"{stats_data['chatbot']['events_created']:,}",
-                            "Created",
-                            "text-blue-400",
-                        )
-                        if top_event:
-                            event_name = top_event[0]["event_name"]
-                            event_count = top_event[0]["trigger_count"]
-                            self._stat_footer(
-                                f"Most used: {event_name}",
-                                f"({event_count:,} triggers)",
-                            )
-
-                    with self._stat_card("⚡ Commands Used"):
-                        self._commands_triggered_label = self._stat_value(
-                            f"{stats_data['chatbot']['commands_triggered']:,}",
-                            "Executions",
-                            "text-green-400",
-                        )
-                        if top_command_user:
-                            user_name = top_command_user[0]["username"]
-                            user_count = top_command_user[0]["value"]
-                            self._stat_footer(
-                                f"Top user: {user_name}",
-                                f"({user_count:,} interactions)",
-                            )
-
-                    with self._stat_card("🎯 Events Triggered"):
-                        self._events_triggered_label = self._stat_value(
-                            f"{stats_data['chatbot']['events_triggered']:,}",
-                            "Executions",
-                            "text-orange-400",
-                        )
-
-                gw = stats_data.get("giveaways", {}) or {}
-                ui.label("🎁 Giveaways").classes("text-sm font-semibold mb-1 mt-2")
-                with ui.grid(columns=3).classes("w-full gap-2"):
-                    with self._stat_card("Draws completed"):
-                        self._giveaways_completed_label = self._stat_value(
-                            f"{int(gw.get('giveaways_completed', 0) or 0):,}",
-                            "Draw clicks",
-                            "text-pink-400",
-                        )
-                    with self._stat_card("Total entries"):
-                        self._giveaways_entries_label = self._stat_value(
-                            f"{int(gw.get('total_entry_events', 0) or 0):,}",
-                            "Keyword matches",
-                            "text-rose-400",
-                        )
-                    avg_gw = float(gw.get("average_entries_per_giveaway", 0) or 0)
-                    with self._stat_card("Avg / giveaway"):
-                        self._giveaways_avg_label = self._stat_value(
-                            f"{avg_gw:.2f}",
-                            "Per draw",
-                            "text-fuchsia-400",
-                        )
-
-                polls = stats_data.get("polls", {}) or {}
-                ui.label("📊 Polls").classes("text-sm font-semibold mb-1 mt-2")
-                most_votes = polls.get("most_votes") or {}
-                most_wins = polls.get("most_wins") or {}
-                votes_name = most_votes.get("name") or "—"
-                wins_name = most_wins.get("name") or "—"
-                with ui.grid(columns=3).classes("w-full gap-2"):
-                    with self._stat_card("Polls ran"):
-                        self._polls_ran_label = self._stat_value(
-                            f"{int(polls.get('polls_completed', 0) or 0):,}",
-                            "Finished polls",
-                            "text-violet-400",
-                        )
-                    with self._stat_card("Total votes"):
-                        self._polls_votes_label = self._stat_value(
-                            f"{int(polls.get('total_votes', 0) or 0):,}",
-                            "All categories",
-                            "text-purple-400",
-                        )
-                    avg_polls = float(polls.get("average_votes_per_poll", 0) or 0)
-                    with self._stat_card("Avg / poll"):
-                        self._polls_avg_label = self._stat_value(
-                            f"{avg_polls:.2f}",
-                            "Votes per poll",
-                            "text-indigo-300",
-                        )
-                    with self._stat_card("Most votes"):
-                        self._polls_most_votes_label = self._stat_value(
-                            f"{votes_name} ({int(most_votes.get('count', 0) or 0):,})",
-                            "Lifetime votes",
-                            "text-violet-300",
-                        )
-                    with self._stat_card("Most wins"):
-                        self._polls_most_wins_label = self._stat_value(
-                            f"{wins_name} ({int(most_wins.get('count', 0) or 0):,})",
-                            "Times won",
-                            "text-fuchsia-300",
-                        )
-
-            # Template Statistics Section (if any templates have stats)
-            if stats_data["templates"]:
-                with ui.card().classes("content-section statistics-section w-full"):
-                    ui.label("🎨 Template Statistics").classes(
-                        "text-base font-bold mb-2"
-                    )
-
-                    for template_name, template_stats in stats_data[
-                        "templates"
-                    ].items():
-                        with ui.card().classes("settings-card mb-4"):
-                            ui.label(f"📄 {template_name}").classes(
-                                "text-lg font-semibold mb-3"
-                            )
-
-                            if template_stats["custom_stats"]:
-                                # Initialize template entry in the labels dict
-                                if template_name not in self._template_stat_labels:
-                                    self._template_stat_labels[template_name] = {}
-
-                                with ui.grid(columns=3).classes("w-full gap-2"):
-                                    for stat_name, stat_value in template_stats[
-                                        "custom_stats"
-                                    ].items():
-                                        with ui.card().classes(
-                                            "text-center p-2 statistics-stat-cell rounded"
-                                        ):
-                                            ui.label(
-                                                stat_name.replace("_", " ").title()
-                                            ).classes("font-semibold mb-1 text-sm")
-                                            self._template_stat_labels[template_name][
-                                                stat_name
-                                            ] = ui.label(f"{stat_value:,}").classes(
-                                                "text-xl font-bold text-theme-primary"
-                                            )
-                            else:
-                                ui.label("No custom statistics recorded yet").classes(
-                                    "secondary-text italic"
-                                )
-
-            # Per-User Statistics Section
-            self._build_per_user_section(stats_manager)
-
-            # Export Highlights Section
-            self._build_export_section()
-
-        except Exception as e:
-            logger.error(f"Error rebuilding statistics content: {str(e)}", exc_info=True)
-            with ui.card().classes(
-                "content-section statistics-section w-full"
-            ):
-                ui.label("❌ Error Loading Statistics").classes(
-                    "text-xl font-bold mb-4 text-red-400"
-                )
-                ui.label(
-                    "Unable to load statistics at this time. Please try again later."
-                ).classes("secondary-text")
-
-    # ---- Per-User Statistics Section ----
-
-    def _build_per_user_section(self, stats_manager):
-        """Build the per-user statistics lookup section."""
-        with ui.card().classes(
-            "content-section statistics-section statistics-section-full w-full"
-        ):
-            ui.label("👤 Per-User Statistics").classes("text-xl font-bold mb-4")
-            ui.label(
-                "Date range shows the timestamped event log (alerts, chat messages, connectors, "
-                "chatbot, quotes, giveaways, etc.). Lifetime totals below are all-time saved aggregates."
-            ).classes("secondary-text mb-4")
-
-            with ui.row().classes("w-full gap-4 items-end mb-4"):
-                # Username search with autocomplete
-                known_users = stats_manager.get_all_tracked_usernames()
-                self._user_search_input = form_input(
-                    tooltip="Twitch username to look up in saved statistics",
-                    label="🔍 Search username",
-                    placeholder="Type a username...",
-                    classes="flex-1",
-                    autocomplete=known_users,
-                )
-
-                today = datetime.now()
-                thirty_days_ago = today - timedelta(days=30)
-
-                self._user_start_date = form_input(
-                    tooltip="Start of the date range for per-user event statistics",
-                    label="Start date",
-                    value=thirty_days_ago.strftime("%Y-%m-%d"),
-                    classes="w-40",
-                )
-                self._user_start_date.props("type=date")
-
-                self._user_end_date = form_input(
-                    tooltip="End of the date range for per-user event statistics",
-                    label="End date",
-                    value=today.strftime("%Y-%m-%d"),
-                    classes="w-40",
-                )
-                self._user_end_date.props("type=date")
-
-                ui.button(
-                    "Search",
-                    on_click=lambda: self._on_user_search(),
-                ).classes(
-                    "btn-primary px-4 py-2 rounded-lg font-semibold"
-                )
-
-            # Results container
-            self._per_user_results_container = ui.column().classes("w-full gap-4")
-            with self._per_user_results_container:
-                with ui.card().classes("settings-card w-full text-center p-6"):
-                    ui.label("Enter a username and click Search to view their stats.").classes(
-                        "secondary-text italic"
-                    )
-
-    def _on_user_search(self, show_notification: bool = True):
-        """Handle user search: fetch and display per-user stats for the selected date range."""
-        try:
-            username = (
-                self._user_search_input.value.strip()
-                if self._user_search_input and self._user_search_input.value
-                else ""
-            )
-            if not username:
-                if show_notification:
-                    notify("Please enter a username.", type="warning")
-                return
-
-            self._selected_username = username
-
-            # Parse date range
-            start_str = self._normalize_date_str(
-                str(self._user_start_date.value or "") if self._user_start_date else ""
-            )
-            end_str = self._normalize_date_str(
-                str(self._user_end_date.value or "") if self._user_end_date else ""
-            )
-
-            try:
-                start_dt = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime.now() - timedelta(days=30)
-                end_dt = datetime.strptime(end_str, "%Y-%m-%d") if end_str else datetime.now()
-                # End of day (inclusive of last moment, matches export / SQLite range)
-                end_dt = end_dt.replace(
-                    hour=23, minute=59, second=59, microsecond=999999
-                )
-            except ValueError:
-                if show_notification:
-                    notify("Invalid date format. Use YYYY-MM-DD.", type="negative")
-                return
-
-            start_ts = start_dt.timestamp()
-            end_ts = end_dt.timestamp()
-
-            stats_manager = get_statistics_manager()
-
-            # Get events from the timestamped database
-            events = stats_manager.get_user_events(
-                username, start_time=start_ts, end_time=end_ts, limit=200
-            )
-
-            # Also get the lifetime aggregate stats for context
-            user_stats = stats_manager.get_user_statistics(username)
-
-            # Aggregate the timestamped events by type for the date range
-            range_counts: Dict[str, int] = {}
-            range_totals: Dict[str, float] = {}
-            for ev in events:
-                etype = ev.get("event_type", "unknown")
-                range_counts[etype] = range_counts.get(etype, 0) + 1
-                amt = float(ev.get("amount", 0) or 0)
-                if etype == "watch_streak":
-                    range_totals[etype] = max(range_totals.get(etype, 0), amt)
-                else:
-                    range_totals[etype] = range_totals.get(etype, 0) + amt
-
-            # Build UI
-            if self._per_user_results_container:
-                self._per_user_results_container.clear()
-                with self._per_user_results_container:
-                    self._render_per_user_results(
-                        username, start_dt, end_dt, events, range_counts, range_totals, user_stats
-                    )
-
-            if show_notification:
-                notify(f"Found {len(events)} events for {username}.", type="positive")
-
-        except Exception as e:
-            print(f"Error in user search: {e}")
-            if show_notification:
-                notify("Error searching user statistics.", type="negative")
-
-    def _render_per_user_results(
-        self,
-        username: str,
-        start_dt: datetime,
-        end_dt: datetime,
-        events: List[Dict[str, Any]],
-        range_counts: Dict[str, int],
-        range_totals: Dict[str, float],
-        user_stats: Dict[str, Any],
-    ):
-        """Render per-user results cards inside the results container."""
-        display_name = user_stats.get("username") or username
-        has_lifetime = any(
-            bool(user_stats.get(k))
-            for k in ("alerts", "connectors", "chatbot", "quotes", "giveaways", "chat")
-        )
-
-        # Header
-        with ui.card().classes("settings-card w-full p-4"):
-            with ui.row().classes("w-full justify-between items-center"):
-                ui.label(f"📊 Stats for {display_name}").classes("text-lg font-bold text-theme-primary-light")
-                date_range_str = f"{start_dt.strftime('%b %d, %Y')} - {end_dt.strftime('%b %d, %Y')}"
-                ui.label(date_range_str).classes("text-sm secondary-text")
-
-        # Date range event counts (SQLite event log)
-        with ui.card().classes("settings-card w-full p-4"):
-            ui.label("Date range (event log)").classes("font-semibold mb-1")
-            ui.label(
-                "Each row is a timestamped event: alerts, chat messages, connectors, chatbot, "
-                "quotes, giveaways, and more."
-            ).classes("text-xs secondary-text mb-3")
-
-            if not events:
-                ui.label("No events recorded in this date range.").classes(
-                    "secondary-text italic"
-                )
-                if user_stats.get("chat") and has_lifetime:
-                    ui.label(
-                        "Lifetime chat totals below may include messages from before per-message "
-                        "logging or from periods outside this range."
-                    ).classes("text-xs secondary-text mt-2")
-            else:
-                event_config = [
-                    ("bit", "⚡ Bits", "text-theme-primary", "total bits"),
-                    ("sub", "🔄 Subs", "text-blue-400", "events"),
-                    ("giftsub", "🎁 Gift Subs", "text-pink-400", "total gifted"),
-                    ("donation", "💰 Donations", "text-green-400", "events"),
-                    ("point_redeem", "🎯 Point Redeems", "text-orange-400", "total points"),
-                    ("follow", "👤 Follows", "text-cyan-400", "events"),
-                    ("watch_streak", "🔥 Watch streaks", "text-amber-400", "peak streak"),
-                    ("raid", "🛡️ Raids", "text-yellow-400", "events"),
-                    ("connector", "🔗 Connectors", "text-emerald-400", "trigger weight"),
-                    ("chatbot_command", "🤖 Commands", "text-theme-primary", "uses"),
-                    ("chatbot_event", "🎪 Chatbot events", "text-blue-300", "uses"),
-                    ("quote_redeem", "💬 Quote redeems", "text-pink-300", "uses"),
-                    ("chat_message", "📨 Chat messages", "text-indigo-400", "messages"),
-                    ("giveaway_entry", "🎁 Giveaway entries", "text-rose-400", "entries"),
-                    ("giveaway_win", "🏆 Giveaway wins", "text-fuchsia-400", "wins"),
-                    ("poll_complete", "✅ Polls finished", "text-violet-400", "polls"),
-                    ("poll_win", "🏆 Poll wins", "text-purple-300", "wins"),
-                ]
-                # Show zero-count placeholders only for core alert types (legacy UI behavior).
-                show_if_zero = ("bit", "sub", "giftsub", "donation", "point_redeem")
-
-                with ui.grid(columns=4).classes("w-full gap-4"):
-                    for etype, label, color_cls, amount_label in event_config:
-                        count = range_counts.get(etype, 0)
-                        total = range_totals.get(etype, 0)
-                        if count > 0 or etype in show_if_zero:
-                            with ui.card().classes("settings-card text-center p-3"):
-                                ui.label(label).classes("font-semibold mb-1 text-sm")
-                                ui.label(f"{count:,}").classes(
-                                    f"text-xl font-bold {color_cls}"
-                                )
-                                ui.label("Events").classes("text-xs secondary-text")
-                                if total > 0:
-                                    ui.label(f"{int(total):,}").classes(
-                                        f"text-lg font-semibold {color_cls} mt-1"
-                                    )
-                                    ui.label(amount_label).classes("text-xs secondary-text")
-
-        # Lifetime totals (JSON-backed categories)
-        if has_lifetime:
-            with ui.card().classes("settings-card w-full p-4"):
-                ui.label("Lifetime totals (all time)").classes("font-semibold mb-3")
-
-                alert_stats = user_stats.get("alerts") or {}
-                if alert_stats:
-                    ui.label("Alerts").classes("text-sm font-semibold mb-2 text-theme-primary-light")
-                    with ui.grid(columns=5).classes("w-full gap-3"):
-                        lifetime_items = [
-                            ("Bit Alerts", alert_stats.get("bit_alerts_played", 0), "text-theme-primary"),
-                            ("Resubs", alert_stats.get("resubs_played", 0), "text-blue-400"),
-                            ("New Subs", alert_stats.get("new_subs_played", 0), "text-green-400"),
-                            ("Gift Subs", alert_stats.get("gift_subs_played", 0), "text-pink-400"),
-                            ("Donations", alert_stats.get("donations", 0), "text-emerald-400"),
-                            ("Follow Alerts", alert_stats.get("follow_alerts_played", 0), "text-cyan-400"),
-                            ("Watch streak alerts", alert_stats.get("watch_streak_alerts_played", 0), "text-amber-400"),
-                            ("Highest streak (lifetime)", alert_stats.get("highest_watch_streak", 0), "text-orange-300"),
-                            ("Raids", alert_stats.get("raids", 0), "text-yellow-400"),
-                            ("Point Alerts", alert_stats.get("point_alerts_redeemed", 0), "text-orange-400"),
-                            ("Total Alerts", alert_stats.get("total_alerts", 0), "text-theme-primary"),
-                        ]
-                        for label, value, color in lifetime_items:
-                            with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
-                                ui.label(label).classes("text-xs secondary-text mb-1")
-                                ui.label(f"{value:,}").classes(f"text-lg font-bold {color}")
-
-                    first_seen = alert_stats.get("first_seen")
-                    last_seen = alert_stats.get("last_seen")
-                    if first_seen:
-                        with ui.row().classes("gap-4 mt-2"):
-                            ui.label(
-                                f"First seen: {datetime.fromtimestamp(first_seen).strftime('%b %d, %Y %H:%M')}"
-                            ).classes("text-xs secondary-text")
-                            if last_seen:
-                                ui.label(
-                                    f"Last seen: {datetime.fromtimestamp(last_seen).strftime('%b %d, %Y %H:%M')}"
-                                ).classes("text-xs secondary-text")
-
-                chat_stats = user_stats.get("chat") or {}
-                if chat_stats:
-                    ui.label("Chat").classes("text-sm font-semibold mb-2 mt-4 text-indigo-300")
-                    with ui.grid(columns=4).classes("w-full gap-3"):
-                        with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
-                            ui.label("Twitch messages").classes("text-xs secondary-text mb-1")
-                            ui.label(f"{int(chat_stats.get('twitch_messages_received', 0) or 0):,}").classes(
-                                "text-lg font-bold text-indigo-400"
-                            )
-                        with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
-                            ui.label("Total messages").classes("text-xs secondary-text mb-1")
-                            ui.label(f"{int(chat_stats.get('total_messages', 0) or 0):,}").classes(
-                                "text-lg font-bold text-indigo-300"
-                            )
-                        fs = chat_stats.get("first_seen")
-                        ls = chat_stats.get("last_seen")
-                        if fs:
-                            with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
-                                ui.label("Activity window").classes("text-xs secondary-text mb-1")
-                                fs_s = datetime.fromtimestamp(fs).strftime("%b %d, %Y %H:%M")
-                                ls_s = (
-                                    datetime.fromtimestamp(ls).strftime("%b %d, %Y %H:%M")
-                                    if ls
-                                    else "—"
-                                )
-                                ui.label(f"{fs_s} → {ls_s}").classes("text-xs secondary-text")
-
-                conn_stats = user_stats.get("connectors") or {}
-                if conn_stats:
-                    ui.label("Connectors").classes("text-sm font-semibold mb-2 mt-4 text-emerald-300")
-                    with ui.grid(columns=3).classes("w-full gap-3"):
-                        with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
-                            ui.label("Unique triggered").classes("text-xs secondary-text mb-1")
-                            ui.label(f"{int(conn_stats.get('connectors_triggered', 0) or 0):,}").classes(
-                                "text-lg font-bold text-emerald-400"
-                            )
-                        with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
-                            ui.label("Total triggers").classes("text-xs secondary-text mb-1")
-                            ui.label(f"{int(conn_stats.get('total_triggers', 0) or 0):,}").classes(
-                                "text-lg font-bold text-green-400"
-                            )
-                        fs, ls = conn_stats.get("first_seen"), conn_stats.get("last_seen")
-                        if fs:
-                            with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
-                                ui.label("First / last").classes("text-xs secondary-text mb-1")
-                                ui.label(
-                                    datetime.fromtimestamp(fs).strftime("%b %d, %Y")
-                                    + (" / " + datetime.fromtimestamp(ls).strftime("%b %d, %Y") if ls else "")
-                                ).classes("text-xs secondary-text")
-
-                bot_stats = user_stats.get("chatbot") or {}
-                if bot_stats:
-                    ui.label("Chatbot").classes("text-sm font-semibold mb-2 mt-4 text-blue-300")
-                    with ui.grid(columns=4).classes("w-full gap-3"):
-                        for lbl, key in (
-                            ("Commands used", "commands_triggered"),
-                            ("Events used", "events_triggered"),
-                            ("Total interactions", "total_interactions"),
-                        ):
-                            with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
-                                ui.label(lbl).classes("text-xs secondary-text mb-1")
-                                ui.label(f"{int(bot_stats.get(key, 0) or 0):,}").classes(
-                                    "text-lg font-bold text-theme-primary"
-                                )
-
-                quote_stats = user_stats.get("quotes") or {}
-                if quote_stats:
-                    ui.label("Quotes").classes("text-sm font-semibold mb-2 mt-4 text-pink-300")
-                    with ui.grid(columns=2).classes("w-full gap-3"):
-                        with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
-                            ui.label("Total redeemed").classes("text-xs secondary-text mb-1")
-                            ui.label(f"{int(quote_stats.get('total_quotes_redeemed', 0) or 0):,}").classes(
-                                "text-lg font-bold text-pink-400"
-                            )
-
-                gw_stats = user_stats.get("giveaways") or {}
-                if gw_stats:
-                    ui.label("Giveaways").classes("text-sm font-semibold mb-2 mt-4 text-rose-300")
-                    with ui.card().classes("text-center p-2 statistics-stat-cell rounded"):
-                        ui.label("Giveaway wins").classes("text-xs secondary-text mb-1")
-                        ui.label(f"{int(gw_stats.get('giveaway_wins', 0) or 0):,}").classes(
-                            "text-lg font-bold text-rose-400"
-                        )
-
-        # Recent event timeline
-        if events:
-            with ui.card().classes("settings-card w-full p-4"):
-                ui.label("Recent Event Timeline").classes("font-semibold mb-3")
-
-                # Show at most 50 events in the timeline
-                timeline_events = events[:50]
-                with ui.scroll_area().classes("w-full").style("max-height: 300px;"):
-                    for ev in timeline_events:
-                        ev_type = ev.get("event_type", "?")
-                        ev_amount = ev.get("amount", 0) or 0
-                        ev_ts = ev.get("timestamp", 0)
-                        ev_alert = ev.get("alert_name", "")
-
-                        type_icons = {
-                            "bit": "⚡",
-                            "sub": "🔄",
-                            "giftsub": "🎁",
-                            "donation": "💰",
-                            "point_redeem": "🎯",
-                            "follow": "👤",
-                            "raid": "🛡️",
-                            "connector": "🔗",
-                            "chatbot_command": "🤖",
-                            "chatbot_event": "🎪",
-                            "quote_redeem": "💬",
-                            "chat_message": "📨",
-                            "giveaway_entry": "🎁",
-                            "giveaway_win": "🏆",
-                            "giveaway_draw_complete": "✅",
-                            "poll_complete": "📊",
-                            "poll_win": "🏆",
-                        }
-                        icon = type_icons.get(ev_type, "📌")
-                        ts_str = datetime.fromtimestamp(ev_ts).strftime(
-                            "%b %d, %Y %H:%M:%S"
-                        ) if ev_ts else "?"
-
-                        amount_str = f" ({int(ev_amount):,})" if ev_amount > 0 else ""
-                        alert_str = f" - {ev_alert}" if ev_alert else ""
-
-                        with ui.row().classes("w-full items-center gap-2 py-1"):
-                            ui.label(icon).classes("text-base")
-                            ui.label(f"{ev_type}{amount_str}{alert_str}").classes(
-                                "font-semibold text-sm"
-                            )
-                            ui.label(ts_str).classes("text-xs secondary-text ml-auto")
-
-    # ---- Export Highlights Section ----
-
-    def _build_export_section(self):
-        """Build the export highlights section with date range pickers and export button."""
-        with ui.card().classes(
-            "content-section statistics-section statistics-section-full w-full"
-        ):
-            ui.label("📸 Export Highlights").classes("text-xl font-bold mb-4")
-            ui.label(
-                "Export a shareable PNG summary of alert, social, and chatbot stats "
-                "for the selected date range. Totals and leaders (top bit donor, top "
-                "chatter, etc.) are computed from the timestamped event log for that "
-                "range only—not from stored highlight records."
-            ).classes("secondary-text mb-4")
-
-            with ui.row().classes("w-full gap-4 items-end"):
-                # Date range pickers
-                today = datetime.now()
-                thirty_days_ago = today - timedelta(days=30)
-
-                self._export_start_date = form_input(
-                    tooltip="Start date for the highlights export image",
-                    label="Start date",
-                    value=thirty_days_ago.strftime("%Y-%m-%d"),
-                    classes="w-40",
-                )
-                self._export_start_date.props("type=date")
-
-                self._export_end_date = form_input(
-                    tooltip="End date for the highlights export image",
-                    label="End date",
-                    value=today.strftime("%Y-%m-%d"),
-                    classes="w-40",
-                )
-                self._export_end_date.props("type=date")
-
-                ui.button(
-                    "📸 Export Image",
-                    on_click=lambda: self._export_highlights(),
-                ).classes(
-                    "btn-primary px-6 py-2 rounded-lg font-semibold"
-                )
-
-                self._export_status_label = ui.label("").classes("text-sm secondary-text ml-4")
-
-    def _export_highlights(self):
-        """Handle the export highlights button click."""
-        try:
-            from ...path_utils import get_data_path
-
-            _p_data = get_data_path(os.path.join("data", "statistics.db"))
-            _p_root = get_data_path("statistics.db")
-
-            def _exists_size(p: str) -> tuple:
-                try:
-                    return (os.path.isfile(p), os.path.getsize(p) if os.path.isfile(p) else None)
-                except OSError:
-                    return (False, None)
-
-            _ed, _es = _exists_size(_p_data)
-            _er, _ers = _exists_size(_p_root)
-            print(
-                "[highlights export] db paths data=",
-                _p_data,
-                "exists=",
-                _ed,
-                "size=",
-                _es,
-                "| root statistics.db=",
-                _p_root,
-                "exists=",
-                _er,
-                "size=",
-                _ers,
-            )
-
-            # Parse date range
-            raw_start = (
-                str(self._export_start_date.value or "")
-                if self._export_start_date
-                else ""
-            )
-            raw_end = (
-                str(self._export_end_date.value or "")
-                if self._export_end_date
-                else ""
-            )
-            start_str = self._normalize_date_str(raw_start)
-            end_str = self._normalize_date_str(raw_end)
-
-            try:
-                start_dt = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime.now() - timedelta(days=30)
-                end_dt = datetime.strptime(end_str, "%Y-%m-%d") if end_str else datetime.now()
-                end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
-            except ValueError:
-                notify("Invalid date format. Use YYYY-MM-DD.", type="negative")
-                return
-
-            start_ts = start_dt.timestamp()
-            end_ts = end_dt.timestamp()
-            print(
-                "[highlights export] dates raw_start/end=",
-                repr(raw_start),
-                repr(raw_end),
-                "parsed=",
-                start_str,
-                end_str,
-                "start_dt=",
-                start_dt.isoformat(),
-                "end_dt=",
-                end_dt.isoformat(),
-                "start_ts/end_ts=",
-                start_ts,
-                end_ts,
-            )
-
-            if self._export_status_label:
-                self._export_status_label.set_text("Generating image...")
-
-            stats_manager = get_statistics_manager()
-            highlights, _hl_source = stats_manager.get_highlights_for_export(
-                start_ts, end_ts
-            )
-            print(
-                "[highlights export] after get_highlights_for_export: source=",
-                _hl_source,
-                "total_events=",
-                highlights.get("total_events"),
-                "n_keys=",
-                len(highlights),
-                "fallback_partial=",
-                highlights.get("_fallback_partial"),
-            )
-
-            if not highlights.get("total_events", 0):
-                log = stats_manager.get_event_log_summary()
-                print("[highlights export] no rows in range; event_log_summary=", log)
-                total_rows = int(log.get("total_rows") or 0)
-                if total_rows == 0:
-                    extra = (
-                        " The event log is empty. Run Mycelian while viewers chat, redeem alerts, "
-                        "use commands, etc., to record timestamped events."
-                    )
-                else:
-                    mn = log.get("min_timestamp")
-                    mx = log.get("max_timestamp")
-                    if mn is not None and mx is not None:
-                        d0 = datetime.fromtimestamp(float(mn)).strftime("%Y-%m-%d")
-                        d1 = datetime.fromtimestamp(float(mx)).strftime("%Y-%m-%d")
-                        extra = (
-                            f" Event log spans {d0} to {d1} ({total_rows:,} rows). "
-                            "Adjust the export range to overlap that span."
-                        )
-                    else:
-                        extra = f" ({total_rows:,} rows in log; could not read date span.)"
-                notify(
-                    "Nothing to export: no events in the event log for this date range." + extra,
-                    type="warning",
-                )
-                if self._export_status_label:
-                    self._export_status_label.set_text("No data — see notification.")
-                return
-
-            # Generate output path
-            export_dir = get_data_path("exports")
-            os.makedirs(export_dir, exist_ok=True)
-            filename = f"highlights_{start_dt.strftime('%Y%m%d')}_{end_dt.strftime('%Y%m%d')}.png"
-            output_path = os.path.join(export_dir, filename)
-
-            # Generate the image
-            from ...statistics_export import generate_highlights_image
             from ...theme_manager import get_theme_manager
 
-            settings = state_manager.get_app_settings()
-            streamer = (settings.streamer_name or "Mycelian").strip() or "Mycelian"
-            theme_manager = get_theme_manager()
-            theme_manager.load_themes_from_directory()
-            theme = theme_manager.get_theme()
+            return ChartColors.from_theme(get_theme_manager().get_theme())
+        except Exception:
+            return ChartColors.from_theme(None)
 
-            print(
-                "[highlights export] calling generate_highlights_image path=",
-                output_path,
-            )
-            success = generate_highlights_image(
-                highlights=highlights,
-                start_date=start_dt,
-                end_date=end_dt,
-                output_path=output_path,
-                streamer_name=streamer,
-                theme=theme,
-            )
-            print("[highlights export] generate_highlights_image success=", success)
-
-            if success:
-                if self._export_status_label:
-                    self._export_status_label.set_text(f"Saved to: {output_path}")
-                lifetime_note = (
-                    "\n\nNumbers are lifetime totals from stored statistics, not limited to the selected dates."
-                    if _hl_source == "lifetime"
-                    else ""
+    def _range(self) -> DateRange:
+        if self.range_key == "custom" and self.custom_start and self.custom_end:
+            try:
+                return custom_range(
+                    datetime.strptime(self.custom_start[:10], "%Y-%m-%d"),
+                    datetime.strptime(self.custom_end[:10], "%Y-%m-%d"),
                 )
-                notify(
-                    f"Highlights image exported successfully!{lifetime_note}\n{output_path}",
-                    type="positive",
-                    close_button=True,
-                )
-            else:
-                if self._export_status_label:
-                    self._export_status_label.set_text("Export failed.")
-                notify("Failed to generate highlights image.", type="negative")
+            except ValueError:
+                pass
+        first = self.insights.first_event_ts() if self.range_key == "all" else None
+        return preset_range(self.range_key if self.range_key != "custom" else "30d", first_event_ts=first)
 
+    @property
+    def _comparing(self) -> bool:
+        return self.range_key != "all"
+
+    def _range_includes_now(self, rng: DateRange) -> bool:
+        return rng.end_ts >= time.time()
+
+    @staticmethod
+    def _button(html_content: str, classes: str, on_click: Callable[[], None], title: str = ""):
+        el = ui.element("button").classes(classes).props(f'type=button title="{html.escape(title)}"' if title else "type=button")
+        with el:
+            ui.html(html_content, sanitize=False).classes("contents")
+        el.on("click", lambda _e: on_click())
+        return el
+
+    # ----- building -----
+
+    def build(self, parent_container) -> None:
+        global _css_injected
+        if not _css_injected:
+            from ...help_system.help_render import promote_color_importance
+
+            ui.add_head_html(f"<style id='mycelian-statistics'>{promote_color_importance(STATISTICS_CSS)}</style>", shared=True)
+            _css_injected = True
+        try:
+            self.mgr.ensure_periodic_saving()
         except Exception as e:
-            print(f"Error exporting highlights: {e}")
-            if self._export_status_label:
-                self._export_status_label.set_text(f"Error: {e}")
-            notify("Error exporting highlights image.", type="negative")
+            logger.debug("Could not ensure periodic saving: %s", e)
+
+        with parent_container:
+            self.root = ui.element("div").classes("mst")
+            with self.root:
+                self.toolbar = ui.element("div").classes("mst-toolbar")
+                self.nav = ui.element("div").classes("mst-nav")
+                self.body = ui.element("div").classes("mst").style("gap:12px")
+        self._render_toolbar()
+        self._render_nav()
+        self._render_section()
+        self._start_live()
+
+    def _render_toolbar(self) -> None:
+        self.toolbar.clear()
+        rng = self._range()
+        with self.toolbar:
+            with ui.element("div").classes("mst-seg"):
+                for key, label in (*PRESETS, ("custom", "Custom")):
+                    icon = _icon("date_range") if key == "custom" else ""
+                    self._button(
+                        icon + html.escape(label),
+                        "mst-seg-btn" + (" is-active" if key == self.range_key else ""),
+                        lambda k=key: self._set_range(k),
+                    )
+            if self.range_key == "custom":
+                start = form_input(tooltip="First day of the range", label="From", value=self.custom_start or rng.start.strftime("%Y-%m-%d"), classes="mst-date-input")
+                start.props("type=date dense")
+                end = form_input(tooltip="Last day of the range", label="To", value=self.custom_end or rng.end.strftime("%Y-%m-%d"), classes="mst-date-input")
+                end.props("type=date dense")
+
+                def apply_custom():
+                    self.custom_start = str(start.value or "")[:10]
+                    self.custom_end = str(end.value or "")[:10]
+                    self._render_toolbar()
+                    self._render_section()
+
+                primary_button("Apply", apply_custom)
+            caption = rng.label
+            if self.range_key != "custom" and self.range_key != "today":
+                caption = f"{rng.start:%b %d} – {rng.end:%b %d, %Y}"
+            if self._comparing:
+                caption += f" · compared with the previous {rng.days} day{'s' if rng.days != 1 else ''}"
+            ui.label(caption).classes("mst-range-caption")
+            ui.element("div").classes("mst-spacer")
+
+            self._live_badge = ui.element("div").classes("mst-live" + (" is-on" if self.live_enabled else ""))
+            with self._live_badge:
+                ui.element("span").classes("mst-live-dot")
+                ui.label("Live" if self.live_enabled else "Paused").classes("font-semibold")
+                ui.label("·")
+                self._session_label = ui.label(self._session_text()).tooltip("This session's running time")
+                ui.label("·")
+                self._save_label = ui.label(self._save_text()).tooltip("Lifetime totals are saved automatically")
+            ui.switch(value=self.live_enabled, on_change=lambda e: self._set_live(bool(e.value))).props("dense").tooltip(
+                "Update numbers automatically"
+            )
+            ui.button(icon="refresh", on_click=self._refresh).props("flat round dense").tooltip("Refresh now")
+            ui.button(icon="save", on_click=self._save_now).props("flat round dense").tooltip("Save lifetime totals now")
+
+    def _render_nav(self) -> None:
+        self.nav.clear()
+        with self.nav:
+            for key, label, icon in SECTIONS:
+                self._button(
+                    _icon(icon) + html.escape(label),
+                    "mst-nav-btn" + (" is-active" if key == self.section else ""),
+                    lambda k=key: self._set_section(k),
+                )
+
+    def _render_section(self) -> None:
+        self.body.clear()
+        self._lifetime_labels = {}
+        self._overview_refs = {}
+        self._export_preview = None
+        try:
+            with self.body:
+                {
+                    "overview": self._build_overview,
+                    "leaders": self._build_leaders,
+                    "lifetime": self._build_lifetime,
+                    "lookup": self._build_lookup,
+                    "export": self._build_export,
+                }[self.section]()
+        except Exception as e:
+            logger.error("Error building statistics section %s: %s", self.section, e, exc_info=True)
+            with self.body:
+                with ui.element("div").classes("mst-card mst-empty"):
+                    ui.html(_icon("error_outline") + "Statistics could not be loaded. Check the log for details.", sanitize=False)
+
+    # ----- state changes -----
+
+    def _set_range(self, key: str) -> None:
+        if key == "custom" and not self.custom_start:
+            rng = self._range()
+            self.custom_start, self.custom_end = rng.start.strftime("%Y-%m-%d"), rng.end.strftime("%Y-%m-%d")
+        self.range_key = key
+        self._render_toolbar()
+        if key != "custom":
+            self._render_section()
+
+    def _set_section(self, key: str) -> None:
+        self.section = key
+        self._render_nav()
+        self._render_section()
+
+    def _open_viewer(self, username: str) -> None:
+        if not username or username == "?":
+            return
+        self.lookup_username = username
+        self.lookup_types = set()
+        self._set_section("lookup")
+
+    def _refresh(self) -> None:
+        self._render_toolbar()
+        self._render_section()
+
+    def _save_now(self) -> None:
+        try:
+            self.mgr.force_save()
+            notify("Statistics saved", type="positive")
+            if self._save_label:
+                self._save_label.set_text(self._save_text())
+        except Exception as e:
+            logger.error("Error force saving statistics: %s", e, exc_info=True)
+            notify("Could not save statistics", type="negative")
+
+    # ----- live updates -----
+
+    def _session_text(self) -> str:
+        try:
+            start = self.mgr.data.session.start_time
+            secs = int(time.time() - start)
+            return f"session {secs // 3600:d}:{secs % 3600 // 60:02d}:{secs % 60:02d}"
+        except Exception:
+            return "session —"
+
+    def _save_text(self) -> str:
+        try:
+            ts = self.mgr.data.session.last_save_time
+            return f"saved {datetime.fromtimestamp(ts):%H:%M:%S}" if ts else "not saved yet"
+        except Exception:
+            return "saved —"
+
+    def _set_live(self, enabled: bool) -> None:
+        self.live_enabled = enabled
+        if enabled:
+            self._start_live()
+        else:
+            self._stop_live()
+        self._render_toolbar()
+
+    def _start_live(self) -> None:
+        if not self.live_enabled or self.root is None:
+            return
+        if self.live_timer is not None and getattr(self.live_timer, "active", False):
+            return
+        self.live_timer = layout_schedule(LIVE_INTERVAL_SEC, self._live_tick, active=True)
+
+    def _stop_live(self) -> None:
+        if self.live_timer is not None:
+            try:
+                self.live_timer.active = False
+            except Exception:
+                pass
+        self.live_timer = None
+
+    def _live_tick(self) -> None:
+        if self.root is None or getattr(self.root, "is_deleted", False):
+            self._stop_live()
+            return
+        self._tick += 1
+        try:
+            if self._session_label:
+                self._session_label.set_text(self._session_text())
+            if self._save_label:
+                self._save_label.set_text(self._save_text())
+            if self.section == "lifetime":
+                self._update_lifetime_labels()
+            elif self.section == "overview" and self._tick % LIVE_REQUERY_EVERY == 0:
+                rng = self._range()
+                if self._range_includes_now(rng):
+                    self._update_overview(rng)
+        except Exception as e:
+            logger.debug("statistics live tick failed: %s", e)
+
+    # ======================================================================
+    # Overview
+    # ======================================================================
+
+    def _overview_data(self, rng: DateRange) -> Dict[str, Any]:
+        ins = self.insights
+        summary = ins.summary(rng)
+        prev = ins.summary(rng.previous()) if self._comparing else None
+        series = ins.timeseries(rng)
+        prev_series = ins.timeseries(rng.previous(), bucket=series["bucket"]) if self._comparing else None
+        return {"summary": summary, "prev": prev, "series": series, "prev_series": prev_series}
+
+    def _build_overview(self) -> None:
+        rng = self._range()
+        data = self._overview_data(rng)
+        summary, series = data["summary"], data["series"]
+
+        if summary["total_events"] == 0:
+            self._empty_range_notice(rng)
+
+        # KPI tiles: click one to chart it.
+        tiles = {}
+        with ui.element("div").classes("mst-kpis"):
+            for metric in METRICS:
+                tiles[metric.key] = self._metric_tile(metric, data)
+        self._overview_refs["tiles"] = tiles
+
+        with ui.element("div").classes("mst-grid mst-grid-main"):
+            self._build_trend_card(rng, data)
+            self._build_spotlight_card(rng)
+
+        with ui.element("div").classes("mst-grid mst-grid-2"):
+            self._build_mix_card(summary)
+            self._build_heatmap_card(rng)
+        self._overview_refs["series_bucket"] = series["bucket"]
+
+    def _empty_range_notice(self, rng: DateRange) -> None:
+        span = self.mgr.get_event_log_summary()
+        with ui.element("div").classes("mst-card"):
+            with ui.row().classes("items-center gap-3 no-wrap"):
+                ui.icon("info").classes("text-theme-info")
+                with ui.column().classes("gap-0"):
+                    ui.label("No activity recorded in this range").classes("font-semibold")
+                    if span.get("total_rows"):
+                        d0 = datetime.fromtimestamp(span["min_timestamp"]).strftime("%b %d, %Y")
+                        d1 = datetime.fromtimestamp(span["max_timestamp"]).strftime("%b %d, %Y")
+                        ui.label(f"The event log covers {d0} to {d1} ({span['total_rows']:,} events). Try All time.").classes("mst-muted")
+                    else:
+                        ui.label("Mycelian records events while it runs: chat, alerts, commands, giveaways and more.").classes("mst-muted")
+            if span.get("total_rows") and self.range_key != "all":
+                ui.button("Show all time", on_click=lambda: self._set_range("all")).props("flat no-caps dense color=primary").classes("mt-2")
+
+    def _metric_tile(self, metric: Metric, data: Dict[str, Any]) -> Dict[str, Any]:
+        value = Insights.metric_value(data["summary"], metric)
+        prev = Insights.metric_value(data["prev"], metric) if data["prev"] else None
+        spark = Insights.metric_series(data["series"], metric)
+        tile = ui.element("button").classes("mst-tile" + (" is-active" if metric.key == self.metric_key else "")).props(
+            f'type=button title="Show {html.escape(metric.label.lower())} over time"'
+        )
+        with tile:
+            ui.html(f'<div class="mst-tile-label">{_icon(metric.icon)}{html.escape(metric.label)}</div>', sanitize=False)
+            value_label = ui.label(compact(value)).classes("mst-tile-value")
+            foot = ui.html(self._tile_foot(value, prev, spark), sanitize=False).classes("mst-tile-foot")
+        tile.on("click", lambda _e, k=metric.key: self._select_metric(k))
+        return {"el": tile, "value": value_label, "foot": foot}
+
+    def _tile_foot(self, value: float, prev: Optional[float], spark: Sequence[float]) -> str:
+        delta = _delta_html(value, prev, self._comparing) or '<span class="mst-tile-note">in range</span>'
+        return delta + _sparkline(spark)
+
+    def _select_metric(self, key: str) -> None:
+        if key == self.metric_key:
+            return
+        self.metric_key = key
+        for k, ref in (self._overview_refs.get("tiles") or {}).items():
+            ref["el"].classes(add="is-active") if k == key else ref["el"].classes(remove="is-active")
+        self._redraw_trend()
+
+    def _build_trend_card(self, rng: DateRange, data: Dict[str, Any]) -> None:
+        with ui.element("div").classes("mst-card is-fill"):
+            with ui.element("div").classes("mst-card-head"):
+                with ui.column().classes("gap-0 grow"):
+                    self._overview_refs["trend_title"] = ui.label("").classes("mst-card-title")
+                    self._overview_refs["trend_sub"] = ui.label("").classes("mst-card-sub")
+                with ui.row().classes("items-center gap-2"):
+                    if self._comparing:
+                        ui.checkbox("Previous period average", value=self.compare_previous, on_change=lambda e: self._toggle_compare(bool(e.value))).props(
+                            "dense"
+                        ).classes("text-xs").tooltip("Average of the equally long period before this one")
+                    with ui.element("div").classes("mst-seg"):
+                        for as_line, icon, tip in ((False, "bar_chart", "Columns"), (True, "show_chart", "Line")):
+                            self._button(
+                                _icon(icon),
+                                "mst-seg-btn" + (" is-active" if self.chart_as_line == as_line else ""),
+                                lambda v=as_line: self._toggle_line(v),
+                                title=tip,
+                            )
+            self._overview_refs["trend_chart"] = ui.echart({}).classes("mst-chart")
+        self._overview_refs["data"] = data
+        self._redraw_trend()
+
+    def _toggle_compare(self, value: bool) -> None:
+        self.compare_previous = value
+        self._redraw_trend()
+
+    def _toggle_line(self, value: bool) -> None:
+        if self.chart_as_line == value:
+            return
+        self.chart_as_line = value
+        self._render_section()
+
+    def _redraw_trend(self) -> None:
+        refs = self._overview_refs
+        data = refs.get("data")
+        chart = refs.get("trend_chart")
+        if not data or chart is None:
+            return
+        metric = METRICS_BY_KEY.get(self.metric_key, METRICS[0])
+        series = data["series"]
+        values = Insights.metric_series(series, metric)
+        prev = None
+        if self._comparing and self.compare_previous and data.get("prev_series"):
+            prev = Insights.metric_series(data["prev_series"], metric)[: len(values)]
+        chart.options.clear()
+        chart.options.update(
+            time_columns(series["labels"], values, self._colors(), series_name=metric.label, previous=prev, as_line=self.chart_as_line)
+        )
+        chart.update()
+        per = {"hour": "per hour", "day": "per day", "week": "per week"}[series["bucket"]]
+        total = sum(values)
+        sub = f"{per} · total {compact(total)}"
+        if total and not metric.distinct_users:
+            i = max(range(len(values)), key=lambda j: values[j])
+            when = {"hour": " at ", "day": " on ", "week": ", "}[series["bucket"]]
+            sub += f" · peak {compact(values[i])}{when}{series['labels'][i].replace('Week of', 'week of')}"
+        elif metric.distinct_users:
+            sub = f"{per} · distinct viewers in each {per.split()[-1]}"
+        refs["trend_title"].set_text(f"{metric.label} over time")
+        refs["trend_sub"].set_text(sub)
+
+    def _update_overview(self, rng: DateRange) -> None:
+        data = self._overview_data(rng)
+        self._overview_refs["data"] = data
+        for metric in METRICS:
+            ref = (self._overview_refs.get("tiles") or {}).get(metric.key)
+            if not ref:
+                continue
+            value = Insights.metric_value(data["summary"], metric)
+            prev = Insights.metric_value(data["prev"], metric) if data["prev"] else None
+            ref["value"].set_text(compact(value))
+            ref["foot"].set_content(self._tile_foot(value, prev, Insights.metric_series(data["series"], metric)))
+        self._redraw_trend()
+
+    def _build_spotlight_card(self, rng: DateRange) -> None:
+        ins = self.insights
+        picks = (
+            ("Most active viewer", "bolt", ins.leaders(rng, tuple(k for k in EVENT_TYPES if k != "giveaway_draw_complete"), "count", 1), "events"),
+            ("Top chatter", "chat", ins.leaders(rng, ("chat_message",), "count", 1), "messages"),
+            ("Biggest supporter (bits)", "diamond", ins.leaders(rng, ("bit",), "sum", 1), "bits"),
+            ("Top gifter", "redeem", ins.leaders(rng, ("giftsub",), "sum", 1), "subs gifted"),
+            ("Longest watch streak", "local_fire_department", ins.leaders(rng, ("watch_streak",), "max", 1), "streams"),
+        )
+        with ui.element("div").classes("mst-card"):
+            with ui.element("div").classes("mst-card-head"):
+                with ui.column().classes("gap-0"):
+                    ui.label("Spotlight").classes("mst-card-title")
+                    ui.label("Click a name to see that viewer's activity").classes("mst-card-sub")
+            with ui.element("div").classes("mst-grid").style("gap:8px"):
+                shown = 0
+                for kicker, icon, rows, unit in picks:
+                    if not rows:
+                        continue
+                    shown += 1
+                    row = rows[0]
+                    spot = ui.element("div").classes("mst-spot")
+                    with spot:
+                        ui.html(f'<div class="mst-avatar">{_initial(row["username"])}</div>', sanitize=False)
+                        with ui.column().classes("gap-0 min-w-0 grow"):
+                            ui.html(f'<div class="mst-spot-kicker">{_icon(icon, "text-sm align-middle")} {html.escape(kicker)}</div>', sanitize=False)
+                            ui.label(row["username"]).classes("mst-spot-name")
+                            ui.label(f"{compact(row['value'])} {unit}").classes("mst-spot-value")
+                    spot.on("click", lambda _e, u=row["username"]: self._open_viewer(u))
+                if not shown:
+                    ui.html(f'<div class="mst-empty">{_icon("emoji_events")}No viewer activity in this range yet.</div>', sanitize=False)
+
+    def _build_mix_card(self, summary: Dict[str, Any]) -> None:
+        metric_for_type = {}
+        for m in METRICS:
+            for et, _agg in m.parts:
+                metric_for_type.setdefault(et, m.key)
+        rows = sorted(
+            ((k, v["count"]) for k, v in summary["types"].items() if v["count"] and k in EVENT_TYPES),
+            key=lambda kv: kv[1],
+            reverse=True,
+        )
+        peak = rows[0][1] if rows else 0
+        with ui.element("div").classes("mst-card"):
+            with ui.element("div").classes("mst-card-head"):
+                with ui.column().classes("gap-0"):
+                    ui.label("What happened").classes("mst-card-title")
+                    ui.label(f"{summary['total_events']:,} events from {summary['unique_users']:,} viewers").classes("mst-card-sub")
+            if not rows:
+                ui.html(f'<div class="mst-empty">{_icon("bar_chart")}Nothing recorded in this range.</div>', sanitize=False)
+                return
+            with ui.element("div").classes("mst-bars"):
+                for et, count in rows:
+                    meta = EVENT_TYPES[et]
+                    metric_key = metric_for_type.get(et)
+                    row = ui.element("div").classes("mst-bar-row" + (" is-link" if metric_key else "")).props(
+                        f'title="{html.escape(meta.label)}: {count:,}' + (" · click to chart" if metric_key else "") + '"'
+                    )
+                    with row:
+                        ui.html(f'<div class="mst-bar-label">{_icon(meta.icon)}{html.escape(meta.label)}</div>', sanitize=False)
+                        ui.html(
+                            f'<div class="mst-bar-track"><div class="mst-bar-fill" style="width:{max(count / peak * 100, 1):.1f}%"></div></div>',
+                            sanitize=False,
+                        )
+                        ui.label(compact(count)).classes("mst-bar-value")
+                    if metric_key:
+                        row.on("click", lambda _e, k=metric_key: self._select_metric(k))
+
+    def _build_heatmap_card(self, rng: DateRange) -> None:
+        scopes = {"chat": ("Chat messages", ("chat_message",), "messages"), "all": ("All events", None, "events")}
+        title, types, unit = scopes.get(self.heatmap_scope, scopes["chat"])
+        grid = self.insights.heatmap(rng, types)
+        total = sum(sum(r) for r in grid)
+        with ui.element("div").classes("mst-card"):
+            with ui.element("div").classes("mst-card-head"):
+                with ui.column().classes("gap-0 grow"):
+                    ui.label("When your community is active").classes("mst-card-title")
+                    sub = "Local time, by weekday and hour"
+                    if total:
+                        d, h = max(((d, h) for d in range(7) for h in range(24)), key=lambda dh: grid[dh[0]][dh[1]])
+                        sub += f" · busiest {['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'][d]} at {h:02d}:00"
+                    ui.label(sub).classes("mst-card-sub")
+                with ui.element("div").classes("mst-seg"):
+                    for key, (label, _t, _u) in scopes.items():
+                        self._button(html.escape(label), "mst-seg-btn" + (" is-active" if key == self.heatmap_scope else ""), lambda k=key: self._set_heatmap(k))
+            if not total:
+                ui.html(f'<div class="mst-empty">{_icon("calendar_view_week")}No {unit} in this range.</div>', sanitize=False)
+                return
+            ui.echart(weekly_heatmap(grid, self._colors(), value_name=unit)).classes("mst-chart").style("height: 250px")
+
+    def _set_heatmap(self, scope: str) -> None:
+        self.heatmap_scope = scope
+        self._render_section()
+
+    # ======================================================================
+    # Leaderboards
+    # ======================================================================
+
+    def _build_leaders(self) -> None:
+        rng = self._range()
+        ins = self.insights
+        ui.label(f"Leaders for {rng.label.lower() if self.range_key != 'custom' else rng.label}. Click a viewer for details.").classes("mst-muted")
+        with ui.element("div").classes("mst-grid mst-grid-3"):
+            for title, icon, types, agg, unit in LEADERBOARDS:
+                rows = ins.leaders(rng, types, agg, 10)
+                with ui.element("div").classes("mst-card"):
+                    with ui.element("div").classes("mst-card-head"):
+                        ui.html(f'<div class="mst-tile-label" style="font-size:.95rem;color:var(--color-text-primary);font-weight:600">{_icon(icon)}{html.escape(title)}</div>', sanitize=False)
+                    self._ranked_list(rows, unit)
+
+    def _ranked_list(self, rows: List[Dict[str, Any]], unit: str, clickable: bool = True) -> None:
+        if not rows:
+            ui.html(f'<div class="mst-empty">{_icon("hourglass_empty")}Nobody yet in this range.</div>', sanitize=False)
+            return
+        peak = max(r["value"] for r in rows) or 1
+        with ui.element("div").classes("mst-rank"):
+            for i, r in enumerate(rows, start=1):
+                row = ui.element("div").classes("mst-rank-row" + ("" if clickable else " is-static")).props(
+                    f'title="{html.escape(r["username"])}: {r["value"]:,.0f} {html.escape(unit)}"'
+                )
+                with row:
+                    ui.label(str(i)).classes("mst-rank-pos")
+                    ui.html(
+                        f'<div class="min-w-0"><div class="mst-rank-name">{html.escape(r["username"])}</div>'
+                        f'<div class="mst-rank-bar" style="width:{max(r["value"] / peak * 100, 2):.1f}%"></div></div>',
+                        sanitize=False,
+                    )
+                    ui.label(compact(r["value"])).classes("mst-rank-value")
+                if clickable:
+                    row.on("click", lambda _e, u=r["username"]: self._open_viewer(u))
+
+    # ======================================================================
+    # Lifetime (aggregates; live)
+    # ======================================================================
+
+    def _lifetime_values(self, stats: Dict[str, Any]) -> Dict[str, str]:
+        a = stats.get("alerts", {}) or {}
+        cb = stats.get("chatbot", {}) or {}
+        cn = stats.get("connectors", {}) or {}
+        q = stats.get("quotes", {}) or {}
+        gw = stats.get("giveaways", {}) or {}
+        pl = stats.get("polls", {}) or {}
+        ch = stats.get("chat", {}) or {}
+        mv = pl.get("most_votes") or {}
+        mw = pl.get("most_wins") or {}
+
+        def n(v) -> str:
+            return f"{int(v or 0):,}"
+
+        return {
+            "alerts.bits": n(a.get("total_bits")),
+            "alerts.bit_alerts": n(a.get("bit_alerts_played")),
+            "alerts.new_subs": n(a.get("new_subs_played")),
+            "alerts.resubs": n(a.get("resubs_played")),
+            "alerts.gift_alerts": n(a.get("gift_subs_played")),
+            "alerts.gift_total": n(a.get("total_gift_subs")),
+            "alerts.follows": n(a.get("follow_alerts_played")),
+            "alerts.raids": n(a.get("raids")),
+            "alerts.point_alerts": n(a.get("point_alerts_redeemed")),
+            "alerts.points": n(a.get("total_channel_points_redeemed")),
+            "alerts.streak_alerts": n(a.get("watch_streak_alerts_played")),
+            "alerts.streak_peak": n(a.get("highest_watch_streak_seen")),
+            "chat.twitch": n(ch.get("twitch_messages_received")),
+            "chatbot.commands": n(cb.get("commands_created")),
+            "chatbot.commands_used": n(cb.get("commands_triggered")),
+            "chatbot.events": n(cb.get("events_created")),
+            "chatbot.events_used": n(cb.get("events_triggered")),
+            "connectors.created": n(cn.get("connectors_created")),
+            "connectors.unique": n(cn.get("connectors_triggered")),
+            "connectors.total": n(cn.get("total_triggers")),
+            "quotes.created": n(q.get("quotes_created")),
+            "quotes.redeemed": n(q.get("total_quotes_redeemed")),
+            "giveaways.completed": n(gw.get("giveaways_completed")),
+            "giveaways.entries": n(gw.get("total_entry_events")),
+            "giveaways.avg": f"{float(gw.get('average_entries_per_giveaway') or 0):.1f}",
+            "polls.ran": n(pl.get("polls_completed")),
+            "polls.votes": n(pl.get("total_votes")),
+            "polls.avg": f"{float(pl.get('average_votes_per_poll') or 0):.1f}",
+            "polls.most_votes": f"{mv['name']} ({n(mv.get('count'))})" if mv.get("name") else "—",
+            "polls.most_wins": f"{mw['name']} ({n(mw.get('count'))})" if mw.get("name") else "—",
+        }
+
+    def _kv_grid(self, values: Dict[str, str], items: Sequence[Tuple[str, str]]) -> None:
+        with ui.element("div").classes("mst-kv"):
+            for key, label in items:
+                with ui.element("div").classes("mst-kv-item"):
+                    ui.label(label).classes("mst-kv-label")
+                    self._lifetime_labels[key] = ui.label(values.get(key, "0")).classes("mst-kv-value")
+
+    def _lifetime_card(self, title: str, icon: str, subtitle: str = ""):
+        card = ui.element("div").classes("mst-card")
+        with card:
+            with ui.element("div").classes("mst-card-head"):
+                with ui.column().classes("gap-0"):
+                    ui.html(f'<div class="mst-tile-label" style="font-size:.95rem;color:var(--color-text-primary);font-weight:600">{_icon(icon)}{html.escape(title)}</div>', sanitize=False)
+                    if subtitle:
+                        ui.label(subtitle).classes("mst-card-sub")
+        return card
+
+    def _build_lifetime(self) -> None:
+        stats = self.mgr.get_all_statistics()
+        values = self._lifetime_values(stats)
+        ui.label("All-time totals since you started using Mycelian. These update live and do not follow the date range.").classes("mst-muted")
+
+        with self._lifetime_card("Alerts", "notifications_active", "Alerts played and what they brought in"):
+            self._kv_grid(values, (
+                ("alerts.bits", "Bits cheered"), ("alerts.bit_alerts", "Bit alerts"),
+                ("alerts.new_subs", "New subs"), ("alerts.resubs", "Resubs"),
+                ("alerts.gift_total", "Subs gifted"), ("alerts.gift_alerts", "Gift sub alerts"),
+                ("alerts.follows", "Follows"), ("alerts.raids", "Raids"),
+                ("alerts.points", "Channel points spent"), ("alerts.point_alerts", "Point redeems"),
+                ("alerts.streak_alerts", "Watch streak alerts"), ("alerts.streak_peak", "Longest watch streak"),
+                ("chat.twitch", "Chat messages"),
+            ))
+
+        with ui.element("div").classes("mst-grid mst-grid-2"):
+            with self._lifetime_card("Hype trains", "train", "Completions by level reached"):
+                raw = (stats.get("hype_trains", {}) or {}).get("level_completions", {}) or {}
+                levels: Dict[int, int] = {}
+                for k, v in raw.items():
+                    try:
+                        levels[int(k)] = int(v or 0)
+                    except (TypeError, ValueError):
+                        pass
+                top = max([5, *levels.keys()])
+                keys = list(range(1, top + 1))
+                counts = [levels.get(k, 0) for k in keys]
+                if sum(counts):
+                    ui.echart(level_columns(keys, counts, self._colors())).classes("mst-chart").style("height: 200px")
+                else:
+                    ui.html(f'<div class="mst-empty">{_icon("train")}No hype trains completed yet.</div>', sanitize=False)
+
+            with self._lifetime_card("Chatbot", "smart_toy", "Commands and timed or event messages"):
+                self._kv_grid(values, (
+                    ("chatbot.commands", "Commands"), ("chatbot.commands_used", "Command uses"),
+                    ("chatbot.events", "Bot events"), ("chatbot.events_used", "Event runs"),
+                ))
+                top = [{"username": c["command_name"], "value": c["usage_count"]} for c in self.mgr.get_top_commands(limit=5)]
+                if top:
+                    ui.label("Most used commands").classes("mst-section-title mt-3 mb-1")
+                    self._ranked_list(top, "uses", clickable=False)
+
+            with self._lifetime_card("Connectors", "cable", "Automations you've built and how often they ran"):
+                self._kv_grid(values, (("connectors.created", "Connectors"), ("connectors.unique", "Distinct ran"), ("connectors.total", "Total runs")))
+                top = [{"username": c["connector_name"], "value": c["trigger_count"]} for c in self.mgr.get_top_connectors(limit=5)]
+                if top:
+                    ui.label("Most active connectors").classes("mst-section-title mt-3 mb-1")
+                    self._ranked_list(top, "runs", clickable=False)
+
+            with self._lifetime_card("Quotes", "format_quote"):
+                self._kv_grid(values, (("quotes.created", "Quotes saved"), ("quotes.redeemed", "Times redeemed")))
+                usage = (stats.get("quotes", {}) or {}).get("individual_quote_usage", {}) or {}
+                top = sorted(({"username": f"Quote #{k}", "value": v} for k, v in usage.items()), key=lambda r: r["value"], reverse=True)[:5]
+                if top:
+                    ui.label("Most requested").classes("mst-section-title mt-3 mb-1")
+                    self._ranked_list(top, "requests", clickable=False)
+
+            with self._lifetime_card("Giveaways", "emoji_events"):
+                self._kv_grid(values, (("giveaways.completed", "Draws"), ("giveaways.entries", "Entries"), ("giveaways.avg", "Entries per draw")))
+                wins = (stats.get("giveaways", {}) or {}).get("user_wins", {}) or {}
+                top = sorted(({"username": k, "value": v} for k, v in wins.items()), key=lambda r: r["value"], reverse=True)[:5]
+                if top:
+                    ui.label("Luckiest viewers").classes("mst-section-title mt-3 mb-1")
+                    self._ranked_list(top, "wins")
+
+            with self._lifetime_card("Polls", "ballot"):
+                self._kv_grid(values, (
+                    ("polls.ran", "Polls run"), ("polls.votes", "Votes cast"), ("polls.avg", "Votes per poll"),
+                    ("polls.most_votes", "Most voted option"), ("polls.most_wins", "Most winning option"),
+                ))
+
+        templates = stats.get("templates") or {}
+        with_stats = {name: t.get("custom_stats") or {} for name, t in templates.items() if (t or {}).get("custom_stats")}
+        if with_stats:
+            with self._lifetime_card("Overlay statistics", "dashboard_customize", "Counters reported by your overlays"):
+                for name, custom in with_stats.items():
+                    ui.label(name).classes("mst-section-title mt-2 mb-1")
+                    with ui.element("div").classes("mst-kv"):
+                        for stat, val in custom.items():
+                            with ui.element("div").classes("mst-kv-item"):
+                                ui.label(stat.replace("_", " ").capitalize()).classes("mst-kv-label")
+                                self._lifetime_labels[f"tpl.{name}.{stat}"] = ui.label(
+                                    f"{val:,}" if isinstance(val, (int, float)) else str(val)
+                                ).classes("mst-kv-value")
+
+    def _update_lifetime_labels(self) -> None:
+        if not self._lifetime_labels:
+            return
+        stats = self.mgr.get_all_statistics()
+        values = self._lifetime_values(stats)
+        for name, t in (stats.get("templates") or {}).items():
+            for stat, val in ((t or {}).get("custom_stats") or {}).items():
+                values[f"tpl.{name}.{stat}"] = f"{val:,}" if isinstance(val, (int, float)) else str(val)
+        for key, label in self._lifetime_labels.items():
+            text = values.get(key)
+            if text is not None and label.text != text:
+                label.set_text(text)
+
+    # ======================================================================
+    # Viewer lookup
+    # ======================================================================
+
+    def _build_lookup(self) -> None:
+        known = []
+        try:
+            known = self.mgr.get_all_tracked_usernames()
+        except Exception:
+            pass
+        with ui.element("div").classes("mst-card"):
+            with ui.row().classes("w-full items-end gap-3 no-wrap"):
+                search = form_input(
+                    tooltip="Twitch username to look up in saved statistics",
+                    label="Viewer",
+                    placeholder="Type a username…",
+                    value=self.lookup_username,
+                    classes="grow",
+                    autocomplete=known,
+                )
+                search.props("clearable")
+
+                def go():
+                    self.lookup_username = str(search.value or "").strip()
+                    self.lookup_types = set()
+                    self._render_lookup_results(results)
+
+                search.on("keydown.enter", lambda _e: go())
+                primary_button("Look up", go, icon="person_search")
+            ui.label(f"{len(known):,} viewers have recorded activity. Date range: {self._range().label}.").classes("mst-muted mt-1")
+        results = ui.element("div").classes("mst").style("gap:12px")
+        self._render_lookup_results(results)
+
+    def _render_lookup_results(self, container) -> None:
+        container.clear()
+        username = self.lookup_username
+        with container:
+            if not username:
+                ui.html(f'<div class="mst-card mst-empty">{_icon("person_search")}Search for a viewer, or click a name on Overview or Leaderboards.</div>', sanitize=False)
+                return
+            rng = self._range()
+            ins = self.insights
+            first, last, lifetime_events = ins.user_span(username)
+            summary = ins.summary(rng, username)
+            stats = self.mgr.get_user_statistics(username) or {}
+            display = stats.get("username") or username
+
+            if not lifetime_events and not any(stats.get(k) for k in ("alerts", "chat", "chatbot", "connectors", "quotes", "giveaways")):
+                ui.html(f'<div class="mst-card mst-empty">{_icon("person_off")}No statistics recorded for “{html.escape(username)}”.</div>', sanitize=False)
+                return
+
+            with ui.element("div").classes("mst-card"):
+                with ui.element("div").classes("mst-profile"):
+                    ui.html(f'<div class="mst-avatar is-lg">{_initial(display)}</div>', sanitize=False)
+                    with ui.column().classes("gap-0 grow"):
+                        ui.label(display).classes("mst-profile-name")
+                        meta = []
+                        if first:
+                            meta.append(f'{_icon("history")}First seen {datetime.fromtimestamp(first):%b %d, %Y}')
+                        if last:
+                            meta.append(f'{_icon("schedule")}Last seen {_time_ago(last)}')
+                        meta.append(f'{_icon("bolt")}{lifetime_events:,} events all time')
+                        ui.html('<div class="mst-profile-meta">' + "".join(f"<span>{m}</span>" for m in meta) + "</div>", sanitize=False)
+                    with ui.column().classes("items-end gap-0"):
+                        ui.label(compact(summary["total_events"])).classes("mst-hero-value")
+                        ui.label(f"events · {rng.label if self.range_key == 'custom' else rng.label.lower()}").classes("mst-muted")
+
+            # Per-viewer tiles (only what this viewer did).
+            prev = ins.summary(rng.previous(), username) if self._comparing else None
+            tiles = [m for m in METRICS if not m.distinct_users and Insights.metric_value(summary, m)]
+            if tiles:
+                with ui.element("div").classes("mst-kpis is-auto"):
+                    for m in tiles:
+                        v = Insights.metric_value(summary, m)
+                        pv = Insights.metric_value(prev, m) if prev else None
+                        with ui.element("div").classes("mst-tile is-static"):
+                            ui.html(f'<div class="mst-tile-label">{_icon(m.icon)}{html.escape(m.label)}</div>', sanitize=False)
+                            ui.label(compact(v)).classes("mst-tile-value")
+                            ui.html(_delta_html(v, pv, self._comparing) or '<span class="mst-tile-note">in range</span>', sanitize=False).classes("mst-tile-foot")
+
+            with ui.element("div").classes("mst-grid mst-grid-main"):
+                with ui.element("div").classes("mst-card"):
+                    ui.label("Activity over time").classes("mst-card-title")
+                    series = ins.timeseries(rng, username=username)
+                    totals = [0.0] * len(series["keys"])
+                    for row in series["types"].values():
+                        for i, v in enumerate(row["count"]):
+                            totals[i] += v
+                    per = {"hour": "per hour", "day": "per day", "week": "per week"}[series["bucket"]]
+                    ui.label(f"All events {per}").classes("mst-card-sub mb-2")
+                    if sum(totals):
+                        ui.echart(time_columns(series["labels"], totals, self._colors(), series_name="Events")).classes("mst-chart").style("height: 220px")
+                    else:
+                        ui.html(f'<div class="mst-empty">{_icon("bar_chart")}No activity in this range.</div>', sanitize=False)
+                with ui.element("div").classes("mst-card"):
+                    ui.label("Lifetime totals").classes("mst-card-title")
+                    ui.label("Saved aggregates for this viewer, all time").classes("mst-card-sub mb-2")
+                    self._viewer_lifetime(stats)
+
+            self._viewer_timeline(rng, username, summary, container)
+
+    def _viewer_lifetime(self, stats: Dict[str, Any]) -> None:
+        a = stats.get("alerts") or {}
+        items = [
+            ("Chat messages", (stats.get("chat") or {}).get("twitch_messages_received")),
+            ("Bit alerts", a.get("bit_alerts_played")),
+            ("New subs", a.get("new_subs_played")),
+            ("Resubs", a.get("resubs_played")),
+            ("Gift sub alerts", a.get("gift_subs_played")),
+            ("Donations", a.get("donations")),
+            ("Follows", a.get("follow_alerts_played")),
+            ("Raids", a.get("raids")),
+            ("Point redeems", a.get("point_alerts_redeemed")),
+            ("Longest watch streak", a.get("highest_watch_streak")),
+            ("Bot commands", (stats.get("chatbot") or {}).get("commands_triggered")),
+            ("Bot events", (stats.get("chatbot") or {}).get("events_triggered")),
+            ("Connector runs", (stats.get("connectors") or {}).get("total_triggers")),
+            ("Quotes requested", (stats.get("quotes") or {}).get("total_quotes_redeemed")),
+            ("Giveaway wins", (stats.get("giveaways") or {}).get("giveaway_wins")),
+        ]
+        items = [(label, v) for label, v in items if v]
+        if not items:
+            ui.html(f'<div class="mst-empty">{_icon("inventory_2")}No lifetime totals saved.</div>', sanitize=False)
+            return
+        with ui.element("div").classes("mst-kv"):
+            for label, v in items:
+                with ui.element("div").classes("mst-kv-item"):
+                    ui.label(label).classes("mst-kv-label")
+                    ui.label(f"{int(v):,}").classes("mst-kv-value")
+
+    def _viewer_timeline(self, rng: DateRange, username: str, summary: Dict[str, Any], container) -> None:
+        counts = {k: v["count"] for k, v in summary["types"].items() if v["count"]}
+        with ui.element("div").classes("mst-card"):
+            with ui.element("div").classes("mst-card-head"):
+                with ui.column().classes("gap-0 grow"):
+                    ui.label("Recent activity").classes("mst-card-title")
+                    ui.label("Newest first, up to 200 events. Filter by type:").classes("mst-card-sub")
+            if not counts:
+                ui.html(f'<div class="mst-empty">{_icon("history")}No events in this range.</div>', sanitize=False)
+                return
+            with ui.element("div").classes("mst-chips mb-2"):
+                for et, count in sorted(counts.items(), key=lambda kv: kv[1], reverse=True):
+                    meta = EVENT_TYPES.get(et)
+                    label = meta.label if meta else et
+                    chip = self._button(
+                        _icon(meta.icon if meta else "label") + html.escape(label) + f' <span class="mst-chip-count">{count:,}</span>',
+                        "mst-chip" + (" is-active" if et in self.lookup_types else ""),
+                        lambda t=et: self._toggle_lookup_type(t, container),
+                    )
+                    chip.props("aria-pressed=" + ("true" if et in self.lookup_types else "false"))
+            events = self.insights.recent_events(rng, username, sorted(self.lookup_types) or None, 200)
+            with ui.element("div").classes("mst-timeline"):
+                for ev in events:
+                    meta = EVENT_TYPES.get(ev["event_type"])
+                    main, detail = _event_sentence(ev)
+                    ui.html(
+                        '<div class="mst-tl-row">'
+                        f'<div class="mst-tl-icon">{_icon(meta.icon if meta else "label")}</div>'
+                        f'<div class="mst-tl-main">{html.escape(main)}'
+                        + (f' <span class="mst-tl-detail">· {html.escape(detail)}</span>' if detail else "")
+                        + "</div>"
+                        f'<div class="mst-tl-time" title="{datetime.fromtimestamp(ev["timestamp"]):%b %d, %Y %H:%M:%S}">{_time_ago(ev["timestamp"])}</div>'
+                        "</div>",
+                        sanitize=False,
+                    )
+
+    def _toggle_lookup_type(self, event_type: str, container) -> None:
+        if event_type in self.lookup_types:
+            self.lookup_types.discard(event_type)
+        else:
+            self.lookup_types.add(event_type)
+        self._render_lookup_results(container)
+
+    # ======================================================================
+    # Export highlights
+    # ======================================================================
+
+    def _build_export(self) -> None:
+        rng = self._range()
+        with ui.element("div").classes("mst-export"):
+            with ui.element("div").classes("mst-card"):
+                ui.label("Share your stream highlights").classes("mst-card-title")
+                ui.label("A PNG summary of the selected date range: headline numbers, daily activity and top viewers. Colors follow your theme.").classes(
+                    "mst-card-sub mb-3"
+                )
+                ui.label("Range").classes("mst-option-label")
+                ui.label(rng.label if self.range_key in ("custom", "today", "all") else f"{rng.start:%b %d} – {rng.end:%b %d, %Y}").classes("font-semibold")
+                ui.label("Change it in the bar above.").classes("mst-muted mb-3")
+                ui.label("Layout").classes("mst-option-label")
+                with ui.element("div").classes("mst-seg mb-3"):
+                    for key, label, icon in (("wide", "Wide 16:9", "crop_16_9"), ("portrait", "Portrait 4:5", "crop_portrait")):
+                        self._button(
+                            _icon(icon) + html.escape(label),
+                            "mst-seg-btn" + (" is-active" if key == self.export_layout else ""),
+                            lambda k=key: self._set_export_layout(k),
+                        )
+                with ui.row().classes("gap-2"):
+                    primary_button("Save PNG", self._export_save, icon="download")
+                    ui.button(icon="folder_open", on_click=self._open_exports_folder).props("outline no-caps color=primary").tooltip("Open the exports folder")
+                self._export_status = ui.column().classes("gap-1 mt-3 w-full")
+                self._render_export_status()
+            self._export_preview = ui.element("div").classes("mst-export-preview" + (" is-portrait" if self.export_layout == "portrait" else ""))
+        self._render_export_preview()
+
+    def _set_export_layout(self, key: str) -> None:
+        self.export_layout = key
+        self._render_section()
+
+    def _render_export_status(self) -> None:
+        if not getattr(self, "_export_status", None):
+            return
+        self._export_status.clear()
+        if self.export_last_path:
+            with self._export_status:
+                ui.label("Last saved").classes("mst-option-label")
+                ui.label(self.export_last_path).classes("mst-path")
+
+    def _export_inputs(self, rng: DateRange) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
+        highlights, source = self.mgr.get_highlights_for_export(rng.start_ts, rng.end_ts)
+        ins = self.insights
+        series = ins.timeseries(rng)
+        totals = [0.0] * len(series["keys"])
+        for et, row in series["types"].items():
+            if et == "giveaway_draw_complete":
+                continue
+            for i, v in enumerate(row["count"]):
+                totals[i] += v
+        extra = {
+            "activity_labels": series["labels"],
+            "activity_values": totals,
+            "activity_bucket": series["bucket"],
+        }
+        if self._comparing:
+            cur, prev = ins.summary(rng), ins.summary(rng.previous())
+            extra["deltas"] = {m.key: pct_change(Insights.metric_value(cur, m), Insights.metric_value(prev, m)) for m in METRICS}
+        return highlights, source, extra
+
+    def _render_image(self, rng: DateRange):
+        from ...statistics_export import render_highlights_image
+        from ...theme_manager import get_theme_manager
+
+        highlights, source, extra = self._export_inputs(rng)
+        if not highlights.get("total_events"):
+            return None, source
+        streamer = self._channel_name()
+        image = render_highlights_image(
+            highlights,
+            rng.start,
+            rng.end,
+            streamer_name=streamer,
+            theme=get_theme_manager().get_theme(),
+            layout=self.export_layout,
+            extra=extra,
+            source=source,
+        )
+        return image, source
+
+    @staticmethod
+    def _channel_name() -> str:
+        """Connected Twitch display name, else the stored streamer name."""
+        try:
+            from ... import twitch
+
+            name = str(twitch.get_twitch_connection_status().get("user_name") or "").strip()
+            if name and name not in ("N/A", "None", "Unknown"):
+                return name
+        except Exception:
+            pass
+        settings = dataobjects.state_manager.get_app_settings()
+        return (getattr(settings, "streamer_name", "") or "Mycelian").strip() or "Mycelian"
+
+    def _render_export_preview(self) -> None:
+        box = self._export_preview
+        if box is None:
+            return
+        box.clear()
+        rng = self._range()
+        try:
+            image, _source = self._render_image(rng)
+        except Exception as e:
+            logger.error("Highlights preview failed: %s", e, exc_info=True)
+            image = None
+        with box:
+            if image is None:
+                ui.html(f'<div class="mst-empty">{_icon("image_not_supported")}Nothing to export for this range yet.</div>', sanitize=False)
+                return
+            preview = image.copy()
+            preview.thumbnail((1280, 1280))
+            buf = io.BytesIO()
+            preview.convert("RGB").save(buf, "JPEG", quality=88)
+            ui.html(f'<img alt="Highlights preview" src="data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode()}">', sanitize=False).classes("w-full")
+
+    def _export_save(self) -> None:
+        from ...path_utils import get_data_path
+
+        rng = self._range()
+        try:
+            image, source = self._render_image(rng)
+            if image is None:
+                notify("Nothing to export: no events were recorded in this date range.", type="warning")
+                return
+            export_dir = get_data_path("exports")
+            os.makedirs(export_dir, exist_ok=True)
+            suffix = "" if self.export_layout == "wide" else "_portrait"
+            path = os.path.join(export_dir, f"highlights_{rng.start:%Y%m%d}_{rng.end:%Y%m%d}{suffix}.png")
+            image.convert("RGB").save(path, "PNG")
+            self.export_last_path = path
+            self._render_export_status()
+            note = " Numbers are lifetime totals because the event log has nothing in this range." if source == "lifetime" else ""
+            notify(f"Highlights saved.{note}\n{path}", type="positive", close_button=True)
+        except Exception as e:
+            logger.error("Error exporting highlights: %s", e, exc_info=True)
+            notify("Could not export the highlights image", type="negative")
+
+    def _open_exports_folder(self) -> None:
+        from pathlib import Path
+
+        from ...path_utils import get_data_path, reveal_in_file_manager
+
+        path = Path(self.export_last_path) if self.export_last_path else Path(get_data_path("exports"))
+        try:
+            os.makedirs(get_data_path("exports"), exist_ok=True)
+            reveal_in_file_manager(path)
+        except Exception as e:
+            logger.debug("Could not open exports folder: %s", e)
+            notify("Could not open the exports folder", type="warning")

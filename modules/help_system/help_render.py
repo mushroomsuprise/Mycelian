@@ -152,8 +152,12 @@ body:not(.body--dark) .help-doc :is(p, span, div, label):not([class]) { color: i
 """
 
 
-def _promote_colors(css: str) -> str:
+def promote_color_importance(css: str) -> str:
+    """Mark every ``color:`` declaration ``!important`` (see the note above)."""
     return _COLOR_DECL_RE.sub(lambda m: f"{m.group(1)}{m.group(2)} !important{m.group(3)}", css)
+
+
+_promote_colors = promote_color_importance
 
 
 @lru_cache(maxsize=1)
