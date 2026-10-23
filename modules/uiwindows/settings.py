@@ -3961,8 +3961,18 @@ class SettingsUI:
                     self._changelog_loading = False  # Reset loading flag on error
                     return False  # Stop checking
 
-            # Start timer to check results every 200ms (reduced frequency)
-            layout_schedule(0.2, check_changelog_result)
+            # Start timer to check results every 200ms (reduced frequency).
+            # Cancel it once the result is handled so each click does not leave a
+            # no-op timer running for the rest of the session.
+            changelog_timer: Dict[str, object] = {}
+
+            def _changelog_tick():
+                if not check_changelog_result():
+                    timer = changelog_timer.get("timer")
+                    if timer is not None:
+                        timer.cancel()
+
+            changelog_timer["timer"] = layout_schedule(0.2, _changelog_tick)
 
         except Exception as e:
             logger.error(f"Error showing changelog modal: {e}", exc_info=True)
