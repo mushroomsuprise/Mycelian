@@ -584,16 +584,32 @@ def _is_obs_main_process_name(name: str) -> bool:
     return compact in {"obs", "obsstudio", "obs64", "obs32"}
 
 
+# Last OBS main process a scan found. While it is still the same live process (PID +
+# start time) with an OBS name, the full process-list walk is skipped; once it exits
+# the next call scans again, so quit/start detection timing is unchanged.
+_cached_obs_proc: Any = None
+
+
 def obs_process_is_running() -> bool:
     """True when an OBS Studio main process appears in the process list."""
+    global _cached_obs_proc
     try:
         import psutil
     except Exception:
         return False
+    cached = _cached_obs_proc
+    if cached is not None:
+        try:
+            if cached.is_running() and _is_obs_main_process_name(cached.name() or ""):
+                return True
+        except Exception:
+            pass
+        _cached_obs_proc = None
     try:
         for proc in psutil.process_iter(["name"]):
             name = str(proc.info.get("name") or "")
             if _is_obs_main_process_name(name):
+                _cached_obs_proc = proc
                 return True
     except Exception:
         return False
