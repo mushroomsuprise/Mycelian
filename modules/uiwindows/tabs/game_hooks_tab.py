@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from nicegui import ui
+from nicegui import run, ui
 from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_timer import layout_schedule
@@ -54,6 +54,7 @@ class GameHooksTab:
         self._status_timer: Optional[Any] = None
         self._hook_supported: Dict[str, bool] = {}
         self._last_error_notified: Dict[str, str] = {}
+        self._refresh_inflight: bool = False
 
     def _load_from_db(self) -> None:
         for meta in list_hooks_for_ui():
@@ -192,6 +193,25 @@ class GameHooksTab:
             self._refresh_runtime_status(meta.hook_id)
             self._refresh_hook_actions(meta.hook_id)
 
+    def _collect_hook_ui_actions(self, hook_ids: list) -> Dict[str, list]:
+        return {hid: self._hook_ui_actions(hid) for hid in hook_ids}
+
+    async def _refresh_all_runtime_status_async(self) -> None:
+        """Timer refresh: hook action state (process scans, mods-folder reads) is
+        computed on a worker thread and applied here, so the UI loop never blocks."""
+        if self._refresh_inflight:
+            return
+        self._refresh_inflight = True
+        try:
+            hook_ids = [meta.hook_id for meta in list_hooks_for_ui()]
+            for hid in hook_ids:
+                self._refresh_runtime_status(hid)
+            actions = await run.io_bound(self._collect_hook_ui_actions, hook_ids) or {}
+            for hid in hook_ids:
+                self._refresh_hook_actions(hid, actions.get(hid, []))
+        finally:
+            self._refresh_inflight = False
+
     def build(self, parent_container) -> None:
         self._load_from_db()
         hook_metas = list_hooks_for_ui()
@@ -245,14 +265,14 @@ class GameHooksTab:
                             self._render_hook_actions(hid)
 
                 self._status_timer = layout_schedule(
-                    0.5, self._refresh_all_runtime_status, active=True
+                    0.5, self._refresh_all_runtime_status_async, active=True
                 )
 
             with ui.row().classes("justify-end gap-2 mt-4 w-full"):
                 outline_button("Discard", self.discard)
                 primary_button("Save", self.save)
 
-        layout_schedule(0.05, self._refresh_all_runtime_status, once=True)
+        layout_schedule(0.05, self._refresh_all_runtime_status_async, once=True)
 
     def _hook_ui_actions(self, hook_id: str) -> list:
         cls = get_hook_class(hook_id)
@@ -293,7 +313,7 @@ class GameHooksTab:
                     extra_classes="text-xs",
                 )
                 if tooltip:
-                    btn.tooltip(tooltip)
+                    self._set_action_tooltip(hook_id, aid, btn, tooltip)
                 if not enabled or not callable(run):
                     btn.disable()
                 self.ui_elements[f"{hook_id}_action_{aid}"] = btn
@@ -303,8 +323,25 @@ class GameHooksTab:
                     lbl = ui.label(detail).classes(self._detail_classes(tone))
                     self.ui_elements[f"{hook_id}_action_{aid}_detail"] = lbl
 
-    def _refresh_hook_actions(self, hook_id: str) -> None:
-        for action in self._hook_ui_actions(hook_id):
+    def _set_action_tooltip(self, hook_id: str, aid: str, btn: Any, text: str) -> None:
+        """Create the button tooltip once, then only update its text.
+
+        ``Element.tooltip()`` adds a new Tooltip element per call, so calling it from
+        the refresh timer leaked one element per tick.
+        """
+        key = f"{hook_id}_action_{aid}_tooltip"
+        tip = self.ui_elements.get(key)
+        if tip is None:
+            tip = ui.tooltip(text)
+            tip.props["target"] = f"#{btn.html_id}"
+            self.ui_elements[key] = tip
+        elif tip.text != text:
+            tip.set_text(text)
+
+    def _refresh_hook_actions(self, hook_id: str, actions: Optional[list] = None) -> None:
+        if actions is None:
+            actions = self._hook_ui_actions(hook_id)
+        for action in actions:
             if not isinstance(action, dict):
                 continue
             aid = str(action.get("id") or "")
@@ -327,7 +364,7 @@ class GameHooksTab:
             tooltip = str(action.get("tooltip") or "")
             if tooltip:
                 try:
-                    btn.tooltip(tooltip)
+                    self._set_action_tooltip(hook_id, aid, btn, tooltip)
                 except Exception:
                     pass
             detail_el = self.ui_elements.get(f"{hook_id}_action_{aid}_detail")
@@ -384,7 +421,7 @@ class GameHooksTab:
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
-        layout_schedule(0.05, self._refresh_all_runtime_status, once=True)
+        layout_schedule(0.05, self._refresh_all_runtime_status_async, once=True)
 
     def on_exit(self) -> None:
         if self._status_timer is not None:

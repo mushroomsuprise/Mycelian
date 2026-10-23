@@ -111,10 +111,57 @@ def portable_data_dir_from_exe(exe_path: Optional[str]) -> Optional[str]:
     return None
 
 
+def _is_fallback_match(name: str, exe: str) -> bool:
+    if "factorio" not in name and "factorio" not in exe:
+        return False
+    return "crash" not in name and "crash" not in exe
+
+
+# Last Factorio process a scan found, as (psutil.Process, matched_by_exact_name).
+# While it is still the same live process (PID + start time) and still matches the
+# rule that found it, it is returned without walking the whole process list; when it
+# exits the very next call falls through to the full scans, as before.
+_cached_factorio_proc: Optional[Tuple[Any, bool]] = None
+
+
+def _cached_factorio_pid() -> Optional[int]:
+    global _cached_factorio_proc
+    cached = _cached_factorio_proc
+    if cached is None:
+        return None
+    proc, by_name = cached
+    try:
+        if proc.is_running():
+            name = (proc.name() or "").lower()
+            if by_name:
+                if name in FactorioGameHook.process_names:
+                    return int(proc.pid)
+            elif _is_fallback_match(name, (proc.exe() or "").lower()):
+                return int(proc.pid)
+    except Exception:
+        pass
+    _cached_factorio_proc = None
+    return None
+
+
+def _remember_factorio_pid(pid: int, by_name: bool) -> None:
+    global _cached_factorio_proc
+    try:
+        import psutil
+
+        _cached_factorio_proc = (psutil.Process(int(pid)), by_name)
+    except Exception:
+        _cached_factorio_proc = None
+
+
 def find_factorio_pid() -> Optional[int]:
     """PID of a running Factorio process (exact names, then exe-path fallback)."""
+    pid = _cached_factorio_pid()
+    if pid:
+        return pid
     pid = find_process_pid(FactorioGameHook.process_names)
     if pid:
+        _remember_factorio_pid(pid, True)
         return pid
     try:
         import psutil
@@ -124,11 +171,11 @@ def find_factorio_pid() -> Optional[int]:
         try:
             name = (proc.info.get("name") or "").lower()
             exe = (proc.info.get("exe") or "").lower()
-            if "factorio" not in name and "factorio" not in exe:
+            if not _is_fallback_match(name, exe):
                 continue
-            if "crash" in name or "crash" in exe:
-                continue
-            return int(proc.info["pid"])
+            pid = int(proc.info["pid"])
+            _remember_factorio_pid(pid, False)
+            return pid
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
     return None
@@ -866,10 +913,9 @@ class FactorioGameHook:
 
     @classmethod
     def ui_actions(cls) -> List[Dict[str, Any]]:
-        from .factorio_mod_installer import detect_state, install_mod, version_label
+        from .factorio_mod_installer import install_mod, install_status
 
-        state = detect_state()
-        detail, tone = version_label()
+        state, detail, tone = install_status()
         if state == "current":
             label = "Mod installed"
             tooltip = "mycelian-stats is installed and up to date. Restart Factorio if it is already running."

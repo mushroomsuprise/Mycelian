@@ -90,16 +90,33 @@ def installed_version(mods_dir: Optional[Path] = None) -> str:
     return best
 
 
-def detect_state(data_dir: Optional[str] = None) -> str:
-    """Return not_installed | outdated | current."""
-    want = bundled_version()
-    mods = mods_dir_for(data_dir)
-    have = installed_version(mods)
+def _state_for(want: str, have: str) -> str:
     if not have:
         return "not_installed"
     if want and have != want:
         return "outdated"
     return "current"
+
+
+def detect_state(data_dir: Optional[str] = None) -> str:
+    """Return not_installed | outdated | current."""
+    want = bundled_version()
+    mods = mods_dir_for(data_dir)
+    have = installed_version(mods)
+    return _state_for(want, have)
+
+
+def install_status() -> Tuple[str, str, str]:
+    """Return (state, detail text, tone) from one bundled/installed lookup.
+
+    Same values as ``detect_state()`` plus ``version_label()``, without resolving the
+    mods folder (a process scan) three times.
+    """
+    want = bundled_version()
+    have = installed_version(mods_dir_for())
+    state = _state_for(want, have)
+    detail, tone = version_label(installed=have, bundled=want, state=state)
+    return state, detail, tone
 
 
 def version_label(
