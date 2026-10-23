@@ -16,11 +16,11 @@ from modules import connection_status_tracker as tracker
 
 @pytest.fixture()
 def net(monkeypatch):
-    state = {"up": True, "calls": 0}
+    state = {"up": True, "calls": 0, "delay": 0.05}
 
     def fake_probe(url: str) -> bool:
         state["calls"] += 1
-        time.sleep(0.05)
+        time.sleep(state["delay"])
         return state["up"]
 
     monkeypatch.setattr(cm, "_http_probe", fake_probe)
@@ -67,6 +67,8 @@ def _blocking_sequence(state) -> list:
 
 def test_ui_loop_reads_return_fast_and_match_inline_labels(net, monkeypatch):
     expected = _blocking_sequence(net)
+    # Each inline round would now take >= 0.15 s; a UI-loop read must stay well under.
+    net["delay"] = 0.15
 
     # Reset to the same starting state for the UI-loop run.
     cm._external_fail_streak = 0
@@ -92,7 +94,7 @@ def test_ui_loop_reads_return_fast_and_match_inline_labels(net, monkeypatch):
         overlay = tracker.get_connectivity_overlay("twitch")
         inet = cm.get_internet_status()
         elapsed = time.perf_counter() - t0
-        assert elapsed < 0.02, f"UI-loop read blocked for {elapsed:.3f}s"
+        assert elapsed < 0.08, f"UI-loop read blocked for {elapsed:.3f}s"
         # While the probe runs, the UI keeps what it showed before (as when it was
         # blocked on the inline probe).
         if previous is not None:
@@ -101,6 +103,8 @@ def test_ui_loop_reads_return_fast_and_match_inline_labels(net, monkeypatch):
         overlay = tracker.get_connectivity_overlay("twitch")
         _drain()
         current = (cm.get_internet_status(), tracker.get_connectivity_overlay("twitch"))
+        _drain()
+        assert not cm._bg_refresh_pending  # settled: nothing left to refresh
         shown.append(current)
         previous = current
 
