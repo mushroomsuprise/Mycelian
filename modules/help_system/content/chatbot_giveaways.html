@@ -1,0 +1,204 @@
+<p class="hx-lead">Run a chat giveaway from <strong>Chatbot → Giveaways</strong>. Viewers enter by typing a keyword you choose. You draw winners, and the chatbot posts the result as a <strong>Twitch chat announcement</strong>.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 3 minutes</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Chatbot</span><span>Giveaways</span></span></span>
+  <span>{{brand:twitch}} Twitch chat</span>
+</div>
+
+<p>Announcements need the chatbot account to be a moderator with the <code>moderator:manage:announcements</code> permission. Setting up the chatbot account is covered in <a href="help:twitch_setup">Twitch Setup</a>.</p>
+
+<h2>The Giveaways tab</h2>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-subtabs">
+      <span class="hm-subtab">Commands</span>
+      <span class="hm-subtab">Events</span>
+      <span class="hm-subtab">Quotes</span>
+      <span class="hm-subtab">Greetings</span>
+      <span class="hm-subtab is-active">Giveaways</span>
+      <span class="hm-subtab">Polls</span>
+    </div>
+    <div class="hm-frame hm-col">
+      <div class="hm-row hm-gap-lg">
+        <span class="hm-sm">Active giveaway: Yes (chat entries on)</span>
+        <span class="hm-sm">Pool size: 3</span>
+        <span class="hm-muted">Winners per draw: 1</span>
+        <span class="hm-marker" data-n="1"></span>
+      </div>
+      <div class="hm-row hm-top hm-nowrap">
+        <div class="hm-col hm-grow">
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-cb-fixed is-focused" data-label="Entry keyword"><span class="hm-value">!enter</span></div>
+            <div class="hm-field hm-cb-fixed" data-label="Winners per draw"><span class="hm-value">1</span></div>
+            <div class="hm-field hm-grow" data-label="Winning announcement"><span class="hm-value">Congratulations {winners}!</span></div>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+          <div class="hm-cb-box">
+            <div class="hm-cb-box-head"><span class="hm-h2">Giveaway Entrants</span><span class="hm-badge">3</span></div>
+            <div class="hm-cb-box-body">
+              <span class="hm-cb-entrant">pixelpat</span>
+              <span class="hm-cb-entrant">night_owl</span>
+              <span class="hm-cb-entrant">ModMika</span>
+            </div>
+          </div>
+        </div>
+        <div class="hm-col hm-cb-side">
+          <div class="hm-field" data-label="Blocked usernames"><span class="hm-placeholder">username</span></div>
+          <div class="hm-row"><span class="hm-chip">spambot42 <span class="hx-mi">close</span></span></div>
+          <span class="hm-marker" data-n="3"></span>
+        </div>
+      </div>
+      <div class="hm-row">
+        <span class="hm-btn hm-success"><span class="hx-mi">play_arrow</span>Start giveaway</span>
+        <span class="hm-btn hm-cb-secondary"><span class="hx-mi">stop</span>Stop accepting</span>
+        <span class="hm-btn"><span class="hx-mi">casino</span>Draw winners</span>
+        <span class="hm-btn hm-danger"><span class="hx-mi">delete_sweep</span>Clear giveaway</span>
+        <span class="hm-btn hm-cb-secondary"><span class="hx-mi">tune</span>Options</span>
+        <span class="hm-btn hm-cb-secondary"><span class="hx-mi">refresh</span>Refresh</span>
+        <span class="hm-marker" data-n="4"></span>
+      </div>
+    </div>
+  </div>
+  <figcaption>Chatbot → Giveaways during an open giveaway. The entrants list shows the newest entry first and updates every few seconds.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">Status line. A <em>Last issue</em> line appears under it in amber if the last draw had a problem.</li>
+  <li data-n="2">Each field saves when you click out of it.</li>
+  <li data-n="3">Type a username and press <kbd>Enter</kbd> to block it. Click the <span class="hx-mi">close</span> on a chip to unblock.</li>
+  <li data-n="4">The controls for a round. <strong>Options</strong> opens the switches described below.</li>
+</ol>
+
+<h2>Run a giveaway</h2>
+
+<section class="hx-guide" data-guide="chatbot_giveaways_run" data-title="Run a giveaway">
+  <div class="hx-step">
+    <h3>Set the keyword</h3>
+    <p>Type what viewers must send in <strong>Entry keyword</strong>, for example <span class="hx-copy" data-copy="!enter">!enter</span>. The whole message must equal the keyword. Capitals do not matter and spaces at the ends are ignored, but <em>"!enter please"</em> does not count.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Start</h3>
+    <p>Click <strong>Start giveaway</strong>. The status changes to <em>Active giveaway: Yes (chat entries on)</em>. Without a keyword you get <em>"Set an entry keyword before starting."</em></p>
+  </div>
+  <div class="hx-step">
+    <h3>Let chat enter</h3>
+    <figure class="hx-figure hx-static">
+      <div class="hm-chat">
+        <div class="hm-chat-title">{{brand:twitch}} Stream chat</div>
+        <div class="hm-chat-line"><b>pixelpat:</b> !enter</div>
+        <div class="hm-chat-line"><b>night_owl:</b> !ENTER</div>
+        <div class="hm-chat-line"><b>pixelpat:</b> !enter</div>
+        <div class="hm-chat-line is-dim">pixelpat's second entry is ignored while No duplicate entries is on.</div>
+      </div>
+    </figure>
+  </div>
+  <div class="hx-step">
+    <h3>Draw winners</h3>
+    <p>Click <strong>Draw winners</strong>. Mycelian picks up to <strong>Winners per draw</strong> names and posts one announcement.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm-chat">
+        <div class="hm-chat-announce">
+          <div class="hm-chat-announce-label"><span class="hx-mi">campaign</span>Announcement</div>
+          <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> Congratulations night_owl!</div>
+        </div>
+      </div>
+    </figure>
+    <p>With <strong>Remove winners from pool</strong> on (the default), winners leave the pool, so you can click <strong>Draw winners</strong> again for a runner-up.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Finish</h3>
+    <p>Click <strong>Stop accepting</strong> to close entries but keep the pool, or <strong>Clear giveaway</strong> to empty the pool, clear the keyword and stop.</p>
+  </div>
+</section>
+
+<h2>Buttons</h2>
+
+<div class="hx-table-wrap"><table>
+  <thead><tr><th>Button</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Start giveaway</strong></td><td>Starts accepting entries. Needs a keyword. Does not clear the pool.</td></tr>
+    <tr><td><strong>Stop accepting</strong></td><td>Stops new entries. The keyword and pool stay.</td></tr>
+    <tr><td><strong>Draw winners</strong></td><td>Picks winners, posts the announcement and records statistics. Does not stop entries. Removes winners from the pool only if that option is on. With an empty pool you get <em>"Pool is empty."</em></td></tr>
+    <tr><td><strong>Clear giveaway</strong></td><td>Empties the pool, clears the keyword and stops accepting.</td></tr>
+    <tr><td><strong>Options</strong></td><td>Opens <strong>Giveaway options</strong>.</td></tr>
+    <tr><td><strong>Refresh</strong></td><td>Reloads the tab from saved settings.</td></tr>
+  </tbody>
+</table></div>
+
+<p>Clearing the <strong>Entry keyword</strong> field also stops accepting entries.</p>
+
+<h2>Giveaway options</h2>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-cb-dialog">
+      <div class="hm-cb-dialog-head"><span>Giveaway options</span></div>
+      <div class="hm-cb-dialog-body">
+        <span class="hm-switch is-on"><i></i>No duplicate entries</span>
+        <span class="hm-switch is-on"><i></i>Unique winners per draw</span>
+        <span class="hm-switch is-on"><i></i>Remove winners from pool</span>
+        <span class="hm-switch"><i></i>Exclude moderators</span>
+        <span class="hm-switch"><i></i>Exclude VIPs</span>
+        <span class="hm-switch"><i></i>Display winners as a banner</span>
+        <div class="hm-row hm-end"><span class="hm-btn hm-dense">Close</span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Defaults shown. Click a switch to preview it; in the app each switch saves as soon as you flip it.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+  <thead><tr><th>Option</th><th>Default</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><strong>No duplicate entries</strong></td><td>On</td><td>One ticket per Twitch account. Off lets a viewer enter many times, and each entry is another ticket.</td></tr>
+    <tr><td><strong>Unique winners per draw</strong></td><td>On</td><td>When drawing more than one winner, a viewer can win only one slot per draw. Off can pick the same viewer twice if they hold several tickets.</td></tr>
+    <tr><td><strong>Remove winners from pool</strong></td><td>On</td><td>Takes every ticket of each winner out of the pool after the draw.</td></tr>
+    <tr><td><strong>Exclude moderators</strong></td><td>Off</td><td>Chatters with the moderator badge cannot enter.</td></tr>
+    <tr><td><strong>Exclude VIPs</strong></td><td>Off</td><td>Chatters with the VIP badge cannot enter.</td></tr>
+    <tr><td><strong>Display winners as a banner</strong></td><td>Off</td><td>Also shows the winner message on the chat overlay banner. The Twitch announcement is still sent.</td></tr>
+  </tbody>
+</table></div>
+
+<h2>The announcement message</h2>
+
+<p><strong>Winning announcement</strong> is sent as a Twitch announcement, the highlighted chat message, not a normal line. <code>{winners}</code> and <code>{winner}</code> both become the winners' names, separated by commas.</p>
+
+<pre><code>🎉 Winners: {winners}. Thanks for entering!</code></pre>
+
+<p>With a dedicated chatbot account the announcement comes from the bot. In fallback mode (no separate bot) it comes from your main account.</p>
+
+<h2>Statistics</h2>
+
+<p>Mycelian counts giveaways completed (each draw), total entries, average entries per giveaway and how often each name has won. The totals are on <span class="hx-path"><span>Settings</span><span>Statistics</span></span>.</p>
+
+<p>The built-in <code>giveaway</code> overlay template shows the keyword, entries and winners live if you add it to OBS. See <a href="help:templates_intro">Templates</a>.</p>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>Nobody gets entered</summary>
+  <ul>
+    <li>The status must say <em>Active giveaway: Yes</em>. Click <strong>Start giveaway</strong>.</li>
+    <li>The message must be exactly the keyword, nothing more.</li>
+    <li>The viewer may be blocked, a moderator or VIP with that exclusion on, or already entered.</li>
+    <li>If the keyword is the name of one of your <a href="help:chatbot_commands">commands</a>, the command answers and the message is not an entry. Pick a keyword that is not a command.</li>
+    <li>Only Twitch chat can enter.</li>
+  </ul>
+</details>
+
+<details class="hx-details">
+  <summary>Winners are drawn but no announcement shows</summary>
+  <p>The toast says <em>"Drew winner(s) but announcement failed."</em> and the <em>Last issue</em> line explains. Check that the chatbot is connected and is a moderator on your channel. The draw still counts and the winners are still removed if that option is on.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The same person keeps winning</summary>
+  <p>Turn on <strong>Remove winners from pool</strong>, or <strong>Clear giveaway</strong> between rounds.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:chatbot_polls">{{icon:poll}}<span><strong>Polls</strong><span class="hx-card-text">Let chat vote with #keywords</span></span></a>
+  <a class="hx-card" href="help:twitch_setup">{{brand:twitch}}<span><strong>Twitch Setup</strong><span class="hx-card-text">Connect the main and chatbot accounts</span></span></a>
+</div>

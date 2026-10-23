@@ -1,0 +1,229 @@
+<p class="hx-lead">Mycelian's alerts, overlays and widgets are web pages served from this PC. You show them on stream by adding each one to OBS as a <strong>Browser Source</strong>.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 5 minutes</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>About</span></span> → Available Source URLs</span>
+</div>
+
+<div class="hx-callout hx-note"><p>Mycelian must be running for its sources to load. The overlay server badge in the status footer should say <span class="hx-badge hx-ok">Running</span>.</p></div>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="obs_setup_prereqs">
+  <li><a href="https://obsproject.com/download">OBS Studio</a> is installed on the same PC as Mycelian.</li>
+  <li>Optional but easier: OBS WebSocket is connected (<a href="help:obs_websocket">Connect OBS</a>). Then Mycelian can add sources for you.</li>
+</ul>
+
+<h2>Find the URL</h2>
+
+<p>Open <span class="hx-path"><span>Settings</span><span>About</span></span> and scroll to <strong>Available Source URLs</strong>. There is one card per template and Spore Studio container.</p>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-panel">
+      <div class="hm-row hm-between hm-top">
+        <div class="hm-col hm-tight">
+          <span class="hm-panel-title">Available Source URLs</span>
+          <span class="hm-muted hm-xs">Copy these URLs to use as Browser Sources in OBS or other streaming software.</span>
+        </div>
+        <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh URLs</span>
+      </div>
+      <div class="hm-url-grid">
+        <div class="hm-url-card">
+          <div class="hm-url-card-head">
+            <span class="hm-url-card-title">Alerts</span><span class="hm-url-card-badge">0 Controls</span>
+            <span class="hm-url-card-btns"><span class="hm-url-card-btn"><span class="hx-mi">content_copy</span></span><span class="hm-url-card-btn">{{brand:obs}}</span></span>
+            <span class="hm-marker" data-n="1"></span>
+          </div>
+          <div class="hm-field hm-nolabel"><span class="hm-value hm-mono">http://127.0.0.1:5000/alerts</span></div>
+        </div>
+        <div class="hm-url-card">
+          <div class="hm-url-card-head">
+            <span class="hm-url-card-title">Follow</span><span class="hm-url-card-badge">0 Controls</span>
+            <span class="hm-url-card-btns"><span class="hm-url-card-btn"><span class="hx-mi">content_copy</span></span><span class="hm-url-card-btn hm-pulse">{{brand:obs}}</span></span>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+          <div class="hm-field hm-nolabel"><span class="hm-value hm-mono">http://127.0.0.1:5000/follow</span></div>
+        </div>
+        <div class="hm-url-card">
+          <div class="hm-url-card-head">
+            <span class="hm-url-card-title">Activity Feed</span><span class="hm-url-card-badge">0 Controls</span>
+            <span class="hm-url-card-btns"><span class="hm-url-card-btn"><span class="hx-mi">content_copy</span></span><span class="hm-url-card-btn">{{brand:obs}}</span></span>
+          </div>
+          <div class="hm-field hm-nolabel"><span class="hm-value hm-mono">http://127.0.0.1:5000/activity_feed</span><span class="hm-marker" data-n="3"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Settings → About → Available Source URLs (three of the cards).</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">The badge shows how many live controls the template has on the <strong>Source Controls</strong> tab. The copy button copies the URL.</li>
+  <li data-n="2">The OBS button (<strong>Add to OBS</strong>) creates the browser source in OBS for you. It needs OBS WebSocket.</li>
+  <li data-n="3">The URL itself. You can select and copy it from here too.</li>
+</ol>
+
+<h2>Add it to OBS</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="auto" class="is-active">From Mycelian (WebSocket)</button>
+    <button data-tab="manual">By hand in OBS</button>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="auto">
+    <p>Click the OBS button on a source card. Mycelian loads your OBS scenes and shows this dialog:</p>
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-gn-dialog">
+          <span class="hm-gn-dialog-title">Add to OBS</span>
+          <span class="hm-muted">Follow</span>
+          <div class="hm-field hm-select" data-label="Scene"><span class="hm-value">Gameplay</span><span class="hm-marker" data-n="1"></span></div>
+          <div class="hm-field" data-label="Source name"><span class="hm-value">Follow</span></div>
+          <div class="hm-grid-2">
+            <div class="hm-field" data-label="Width"><span class="hm-value">1920</span></div>
+            <div class="hm-field" data-label="Height"><span class="hm-value">1080</span></div>
+          </div>
+          <div class="hm-col hm-tight">
+            <span class="hm-check"><i></i>Control audio via OBS</span>
+            <span class="hm-check"><i></i>Use custom frame rate</span>
+            <span class="hm-check is-on"><i></i>Shutdown source when not visible</span>
+            <span class="hm-check"><i></i>Refresh browser source when scene becomes active</span>
+          </div>
+          <div class="hm-row hm-end"><span class="hm-btn hm-outline">Cancel</span><span class="hm-btn">Add</span><span class="hm-marker" data-n="2"></span></div>
+        </div>
+      </div>
+      <figcaption>The Add to OBS dialog with its defaults. Tick boxes to see them change; nothing is sent to OBS.</figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1">Pick the scene. If the template is already a browser source on that scene, a warning says so. If the name is taken, Mycelian picks a free one and tells you.</li>
+      <li data-n="2"><strong>Add</strong> creates the source. <strong>Use custom frame rate</strong> shows an <strong>FPS</strong> field (default 60).</li>
+    </ol>
+    <div class="hx-callout hx-note"><p>If WebSocket is off you get <em>"OBS WebSocket is not enabled. Turn it on in Settings → OBS."</em> If it is on but OBS is closed you get <em>"OBS WebSocket is not connected."</em> Use the other tab, or <a href="help:obs_websocket">connect OBS</a>.</p></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="manual">
+    <ol>
+      <li>Copy the URL from its source card.</li>
+      <li>In OBS, click <strong>+</strong> under <strong>Sources</strong> (or right-click the Sources list) and choose <strong>Browser</strong>.</li>
+      <li>Name it (for example <em>Mycelian Follow</em>) and click <strong>OK</strong>.</li>
+      <li>Paste the URL, set the width and height, and click <strong>OK</strong>.</li>
+    </ol>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-ext">
+          <div class="hm-ext-bar">OBS Studio · Properties for "Mycelian Follow" (simplified)</div>
+          <div class="hm-ext-body">
+            <div class="hm-field is-focused" data-label="URL"><span class="hm-value hm-mono">http://127.0.0.1:5000/follow</span></div>
+            <div class="hm-grid-2">
+              <div class="hm-field" data-label="Width"><span class="hm-value">1920</span></div>
+              <div class="hm-field" data-label="Height"><span class="hm-value">1080</span></div>
+            </div>
+            <span class="hm-check"><i></i>Control audio via OBS</span>
+            <span class="hm-check"><i></i>Use custom frame rate</span>
+            <div class="hm-field hm-textarea" data-label="Custom CSS"><span class="hm-placeholder">Leave as OBS fills it in</span></div>
+            <span class="hm-check is-on"><i></i>Shutdown source when not visible</span>
+            <span class="hm-check"><i></i>Refresh browser when scene becomes active</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>OBS's own Browser Source window, simplified. Labels match OBS; exact wording may vary by OBS version.</figcaption>
+    </figure>
+  </div>
+</div>
+
+<h2>Recommended settings</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Use</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><strong>Width × Height</strong></td><td>1920 × 1080, or your canvas size</td><td>Mycelian's templates are laid out for a full canvas. Position the parts in <strong>Source Settings</strong>, not by squashing the source.</td></tr>
+<tr><td><strong>Shutdown source when not visible</strong></td><td>On</td><td>Saves CPU when the scene is not showing</td></tr>
+<tr><td><strong>Refresh browser when scene becomes active</strong></td><td>Optional</td><td>Reloads the page each time you switch to the scene</td></tr>
+<tr><td><strong>Control audio via OBS</strong></td><td>Off, unless you want a mixer slider</td><td>Alert sounds play from the browser source. Off sends them to your desktop audio; on gives the source its own slider in OBS's Audio Mixer</td></tr>
+<tr><td><strong>Custom frame rate</strong></td><td>Off (or 60)</td><td>Only needed for very smooth animation</td></tr>
+<tr><td><strong>Custom CSS</strong></td><td>Leave as is</td><td>Style templates in Source Settings instead</td></tr>
+</tbody>
+</table></div>
+
+<h3>Positioning and layering</h3>
+
+<ul>
+  <li>Keep alert sources at full canvas size and move the alert itself in Source Settings.</li>
+  <li>Put alert sources near the top of the Sources list so they draw above gameplay.</li>
+  <li>Use OBS's transform tools (right-click → <strong>Transform</strong>) only for small overlays like bars and counters.</li>
+</ul>
+
+<h2>Common URLs</h2>
+
+<p>Mycelian serves every template from port <code>5000</code> on this PC. The About tab lists all of them, including your own.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Template</th><th>URL</th></tr></thead>
+<tbody>
+<tr><td>Alerts (all types except live follows)</td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/alerts">http://127.0.0.1:5000/alerts</span></td></tr>
+<tr><td>Follow alerts</td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/follow">http://127.0.0.1:5000/follow</span></td></tr>
+<tr><td>Chat</td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/chat">http://127.0.0.1:5000/chat</span></td></tr>
+<tr><td>Activity Feed</td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/activity_feed">http://127.0.0.1:5000/activity_feed</span></td></tr>
+<tr><td>Sub Bar</td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/subbar">http://127.0.0.1:5000/subbar</span></td></tr>
+<tr><td>Bit Bar</td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/bitbar">http://127.0.0.1:5000/bitbar</span></td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-tip"><p>To show a source on another PC (a two-PC setup), replace <code>127.0.0.1</code> with this PC's local network address.</p></div>
+
+<h2>Custom browser docks</h2>
+
+<p><strong>Activity Feed</strong> and <strong>Source Controls</strong> work best as OBS docks: in OBS choose <strong>View → Docks → Custom Browser Docks</strong>, give the dock a name, and paste the URL (for example <span class="hx-copy" data-copy="http://127.0.0.1:5000/activity_feed">http://127.0.0.1:5000/activity_feed</span>).</p>
+
+<p>Docks behave differently from scene sources:</p>
+<ul>
+  <li>OBS has no WebSocket refresh for docks, so Mycelian cannot reload them for you.</li>
+  <li>If OBS opened before Mycelian, a dock can show a white page or <em>"This site can't be reached."</em> <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>R</kbd> does not fix it, because it reloads the browser's error page, not the Mycelian URL.</li>
+  <li>The fix: keep Mycelian running and <strong>restart OBS</strong>. Docks reload their URL when OBS starts with Mycelian already listening.</li>
+  <li>When you quit OBS while Mycelian is running, Mycelian points <strong>only its own</strong> docks at a small local page that says <em>"Waiting for Mycelian…"</em>. The next time OBS starts first, the dock waits and then loads instead of failing. Docks for Twitch, StreamElements and other sites are left alone.</li>
+</ul>
+
+<h2>Refreshing sources after a late start</h2>
+
+<p>If OBS is already open when Mycelian starts, Mycelian's scene sources may have failed to load. With OBS WebSocket connected (<span class="hx-path"><span>Settings</span><span>OBS</span></span>), Mycelian refreshes <strong>its own</strong> scene browser sources once after it connects. Other browser sources (StreamElements, YouTube and so on) are left alone. Docks are not covered; see above.</p>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>The source is blank or white</summary>
+  <ul>
+    <li>Check that Mycelian is running and the <strong>Overlay Server</strong> badge says Running.</li>
+    <li>Compare the URL with the one on the About tab.</li>
+    <li>Right-click the source in OBS → <strong>Properties</strong> → <strong>Refresh cache of current page</strong>.</li>
+    <li>A blank alerts source is normal until an alert plays. Click <strong>Test Alert</strong> on the Alerts tab.</li>
+  </ul>
+  <p>More: <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Follows show in the Activity Feed but not on stream</summary>
+  <p>Live follow alerts play on the <code>/follow</code> source, not <code>/alerts</code>. Add a <code>/follow</code> browser source. See <a href="help:first_alert_setup">Setting Up Your First Alert</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>No sound</summary>
+  <p>With <strong>Control audio via OBS</strong> on, the source has its own slider in OBS's Audio Mixer; check it is not muted. With it off, sound goes to your desktop audio. See <a href="help:troubleshooting_audio">Audio Troubleshooting</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>OBS gets slow</summary>
+  <ul>
+    <li>Turn on <strong>Shutdown source when not visible</strong>.</li>
+    <li>Remove browser sources you do not use.</li>
+    <li>Make sure browser source hardware acceleration is on in OBS's advanced settings.</li>
+  </ul>
+  <p>More: <a href="help:troubleshooting_performance">Performance Optimization</a>. OBS's own help is the <a href="https://obsproject.com/kb">OBS Knowledge Base</a>.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:obs_websocket">{{brand:obs}}<span><strong>Connect OBS</strong><span class="hx-card-text">Turn on Add to OBS and auto-refresh</span></span></a>
+  <a class="hx-card" href="help:templates_intro">{{icon:web}}<span><strong>Templates</strong><span class="hx-card-text">What each overlay does and how to style it</span></span></a>
+  <a class="hx-card" href="help:first_alert_setup">{{icon:notifications_active}}<span><strong>Your First Alert</strong><span class="hx-card-text">Create and test a follow alert</span></span></a>
+</div>

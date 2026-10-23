@@ -1,0 +1,112 @@
+<p class="hx-lead">Mycelian is a streaming toolkit for Twitch. It runs on your PC and serves alerts, overlays and docks to OBS as browser sources. It also runs a chatbot, automations and integrations with other services.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 20 minutes for the quick start</span>
+  <span>{{icon:computer}} Runs on the same PC as OBS</span>
+</div>
+
+<h2>The main window</h2>
+
+<p>Everything lives in one window with eight tabs. Mycelian reopens the tab you used last.</p>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-tabs">
+      <span class="hm-tab is-active" data-tab="feed">Activity Feed</span>
+      <span class="hm-tab" data-tab="alerts">Alerts</span>
+      <span class="hm-tab" data-tab="ss">Source Settings</span>
+      <span class="hm-tab" data-tab="sc">Source Controls</span>
+      <span class="hm-tab" data-tab="conn">Connectors</span>
+      <span class="hm-tab" data-tab="bot">Chatbot</span>
+      <span class="hm-tab" data-tab="spore">Spore Studio</span>
+      <span class="hm-tab" data-tab="set">Settings</span>
+      <span class="hm-tabs-tail"><span class="hx-mi">help_outline</span><span class="hm-marker" data-n="2"></span><span class="hx-mi">notifications</span><span class="hm-marker" data-n="3"></span></span>
+    </div>
+    <div class="hm-frame">
+      <div class="hm-win-body" data-panel="feed">
+        <div class="hm-row hm-between"><span class="hm-h2">Activity Feed</span><span class="hm-marker" data-n="1"></span></div>
+        <div class="hm-feed-row"><span class="hx-mi">favorite</span><span><strong>NewViewer</strong> followed</span><span class="hm-feed-time">just now</span></div>
+        <div class="hm-feed-row"><span class="hx-mi">star</span><span><strong>LongtimeFan</strong> subscribed for 12 months</span><span class="hm-feed-time">2 min ago</span></div>
+        <div class="hm-feed-row"><span class="hx-mi">groups</span><span><strong>FriendlyStreamer</strong> raided with 25 viewers</span><span class="hm-feed-time">8 min ago</span></div>
+      </div>
+      <div class="hm-win-body" data-panel="alerts"><span class="hm-h2">Alerts</span><span class="hm-muted">Media, sound, timing and text-to-speech for each alert type: Bits, Subscriptions, Streaks, Gift Subs, Donations, Raids, Follows, Channel Points.</span></div>
+      <div class="hm-win-body" data-panel="ss"><span class="hm-h2">Source Settings</span><span class="hm-muted">Pick a template (alerts, chat, sub bar…), change its look, and preview it live.</span></div>
+      <div class="hm-win-body" data-panel="sc"><span class="hm-h2">Source Controls</span><span class="hm-muted">Buttons and fields that control your overlays while you stream.</span></div>
+      <div class="hm-win-body" data-panel="conn"><span class="hm-h2">Connectors</span><span class="hm-muted">Automations: when something happens (a trigger), do something (actions).</span></div>
+      <div class="hm-win-body" data-panel="bot"><span class="hm-h2">Chatbot</span><span class="hm-muted">Commands, events, quotes, greetings, giveaways and polls.</span></div>
+      <div class="hm-win-body" data-panel="spore"><span class="hm-h2">Spore Studio</span><span class="hm-muted">Design your own overlays and widgets without writing code.</span></div>
+      <div class="hm-win-body" data-panel="set"><span class="hm-h2">Settings</span><span class="hm-muted">Service connections (Twitch, OBS, PSN, Spotify, YouTube, Streamlabs, StreamElements, Discord), Game Hooks, Database, Statistics, Theme, App Settings and About.</span></div>
+    </div>
+    <div class="hm-sf">
+      <span class="hm-sf-item hm-sf-success" data-tip="Online"><span class="hm-sf-icon">{{brand:internet}}</span><span class="hm-sf-name">Internet</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Online</span></span>
+      <span class="hm-sf-item hm-sf-success" data-tip="Running"><span class="hm-sf-name">Overlay Server</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Running</span></span>
+      <span class="hm-sf-item hm-sf-muted" data-tip="Idle"><span class="hm-sf-icon">{{brand:twitch}}</span><span class="hm-sf-name">Twitch</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Idle</span></span>
+      <span class="hm-sf-item hm-sf-muted" data-tip="Disconnected"><span class="hm-sf-icon">{{brand:obs}}</span><span class="hm-sf-name">OBS</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Disconnected</span></span>
+      <span class="hm-marker" data-n="4"></span>
+    </div>
+  </div>
+  <figcaption>The main window on a fresh install. Click a tab to see what it is for.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Tab content.</strong> The eight tabs along the top switch this area. Activity Feed is the live list of follows, subs, raids and other events. The other tabs are described below.</li>
+  <li data-n="2"><strong>Help</strong> ({{icon:help_outline}}) opens help for the tab you are on. Small <strong>?</strong> buttons next to some settings open the matching topic.</li>
+  <li data-n="3"><strong>Notifications</strong> ({{icon:notifications}}) opens the list of recent messages from Mycelian, such as a service connecting or an error.</li>
+  <li data-n="4"><strong>Status footer.</strong> One badge per service. Gray Twitch means it is not connected yet. See <a href="help:status_footer">Status Footer</a>.</li>
+</ol>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Tab</th><th>Use it to</th><th>Learn more</th></tr></thead>
+<tbody>
+<tr><td><strong>Activity Feed</strong></td><td>Watch events as they happen</td><td>Also works as an OBS dock (<a href="help:obs_setup">OBS setup</a>)</td></tr>
+<tr><td><strong>Alerts</strong></td><td>Set media, sound and timing for each alert type</td><td><a href="help:alerts_overview">Alert System Overview</a></td></tr>
+<tr><td><strong>Source Settings</strong></td><td>Style the browser source templates</td><td><a href="help:templates_intro">Templates</a></td></tr>
+<tr><td><strong>Source Controls</strong></td><td>Control overlays live</td><td><a href="help:source_controls">Source Controls</a></td></tr>
+<tr><td><strong>Connectors</strong></td><td>Automate: trigger, then actions</td><td><a href="help:connectors_intro">Connectors</a></td></tr>
+<tr><td><strong>Chatbot</strong></td><td>Commands, quotes, greetings, giveaways, polls</td><td><a href="help:chatbot_commands">Chatbot Commands</a></td></tr>
+<tr><td><strong>Spore Studio</strong></td><td>Build custom overlays and widgets</td><td><a href="help:spore_studio_overview">Spore Studio</a></td></tr>
+<tr><td><strong>Settings</strong></td><td>Connect services, pick a theme, app options</td><td><a href="help:settings_overview">Settings Overview</a></td></tr>
+</tbody>
+</table></div>
+
+<h2>Quick start</h2>
+
+<section class="hx-guide" data-guide="getting_started_intro_quickstart" data-title="Quick start">
+  <div class="hx-step">
+    <h3>Connect Twitch</h3>
+    <p>Create a Twitch application, paste its Client ID and Client Secret into <span class="hx-path"><span>Settings</span><span>Twitch</span></span>, and click <strong>Connect</strong>. Follow <a href="help:twitch_setup">Connect Twitch</a>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Connect OBS (recommended)</h3>
+    <p>Turn on the WebSocket server in OBS and enter its port and password in <span class="hx-path"><span>Settings</span><span>OBS</span></span>. Mycelian can then add browser sources for you and refresh them. Follow <a href="help:obs_websocket">Connect OBS</a>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Add your first browser source</h3>
+    <p>Copy a URL from <span class="hx-path"><span>Settings</span><span>About</span></span> → <strong>Available Source URLs</strong>, or click its OBS button. See <a href="help:obs_setup">Setting Up Browser Sources in OBS</a>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Set up and test an alert</h3>
+    <p>Create a follow alert on the <strong>Alerts</strong> tab and click <strong>Test Alert</strong>. Follow <a href="help:first_alert_setup">Setting Up Your First Alert</a>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Make it yours</h3>
+    <p>Style overlays in <strong>Source Settings</strong>, pick a theme in <span class="hx-path"><span>Settings</span><span>Theme</span></span>, and connect any other services from <a href="help:connection_guides_overview">Connection Guides</a>.</p>
+  </div>
+</section>
+
+<div class="hx-callout hx-tip"><p>Click <strong>Mark step done</strong> as you go. Your progress is saved, so you can come back later.</p></div>
+
+<h2>Getting help</h2>
+
+<ul>
+  <li>Click {{icon:help_outline}} at the top right of the main window for help on the current tab.</li>
+  <li>Click a small <strong>?</strong> next to a setting for that setting's topic.</li>
+  <li>Use the search box in the help window to find any topic.</li>
+  <li>When something does not work, start with <a href="help:troubleshooting_connections">Connection Problems</a> or <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</li>
+</ul>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:twitch_setup">{{brand:twitch}}<span><strong>Connect Twitch</strong><span class="hx-card-text">The first thing to set up</span></span></a>
+  <a class="hx-card" href="help:first_alert_setup">{{icon:notifications_active}}<span><strong>Your First Alert</strong><span class="hx-card-text">Create and test a follow alert</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>Connection Guides</strong><span class="hx-card-text">Every service Mycelian connects to</span></span></a>
+</div>

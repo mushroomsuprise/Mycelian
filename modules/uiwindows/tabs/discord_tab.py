@@ -476,7 +476,7 @@ class DiscordTab:
                         "Connect, then invite the bot, then pick announcement channels."
                     ).classes("text-xs secondary-text")
                     help_button(
-                        topic_id="integrations_discord",
+                        topic_id="guide_discord",
                         tooltip="Discord setup help",
                         size="sm",
                     )

@@ -1,0 +1,201 @@
+<p class="hx-lead">The <strong>Source Controls</strong> tab gathers the live controls of every template in one place: buttons, switches, counters, text boxes and timers. Clicking one changes the overlay in OBS immediately, without opening Source Settings.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Source Controls</span></span></span>
+  <span>{{icon:web_asset}} OBS dock: <span class="hx-copy" data-copy="http://127.0.0.1:5000/source_controls">http://127.0.0.1:5000/source_controls</span></span>
+</div>
+
+<h2>The Source Controls tab</h2>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-tabs">
+      <span class="hm-tab">Activity Feed</span>
+      <span class="hm-tab">Alerts</span>
+      <span class="hm-tab">Source Settings</span>
+      <span class="hm-tab is-active">Source Controls</span>
+      <span class="hm-tab">Connectors</span>
+      <span class="hm-tab">Chatbot</span>
+      <span class="hm-tab">Spore Studio</span>
+      <span class="hm-tab">Settings</span>
+      <span class="hm-tabs-tail"><span class="hx-mi">help_outline</span><span class="hx-mi">notifications</span></span>
+    </div>
+    <div class="hm-frame hm-stack">
+      <div class="hm-col hm-tight">
+        <span class="hm-sc-title">Source Controls</span>
+        <div class="hm-row hm-between">
+          <span class="hm-muted hm-xs">Interactive controls for your templates</span>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-nolabel"><span class="hm-placeholder">Search templates</span></div>
+            <span class="hm-marker" data-n="1"></span>
+            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh</span>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hm-sc-masonry">
+        <div class="hm-sc-col">
+          <div class="hm-sc-card">
+            <div class="hm-sc-head"><span class="hm-sc-name">Factorio Controls</span><span class="hm-badge">1 controls</span></div>
+            <span class="hm-sc-group">Actions</span>
+            <div class="hm-sc-grid"><span class="hm-btn">Resync</span></div>
+          </div>
+          <div class="hm-sc-card">
+            <div class="hm-sc-head"><span class="hm-sc-name">Chat Controls</span><span class="hm-badge">1 controls</span></div>
+            <span class="hm-sc-group">Banner</span>
+            <div class="hm-sc-grid">
+              <div class="hm-sc-span">
+                <span class="hm-sc-label">Manual Banner</span>
+                <div class="hm-field hm-nolabel"><span class="hm-placeholder">Banner message</span></div>
+                <div class="hm-field hm-nolabel"><span class="hm-value">10</span></div>
+                <span class="hm-switch"><i></i>Permanent</span>
+                <div class="hm-sc-row"><span class="hm-btn">Show</span><span class="hm-btn hm-sc-cancel">Clear</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="hm-sc-col">
+          <div class="hm-sc-card">
+            <div class="hm-sc-head"><span class="hm-sc-name">Counter Controls</span><span class="hm-badge">2 controls</span><span class="hm-marker" data-n="3"></span></div>
+            <span class="hm-sc-group">Counters &amp; Numbers <span class="hm-marker" data-n="4"></span></span>
+            <div class="hm-sc-grid">
+              <div class="hm-sc-span"><div class="hm-sc-row"><span class="hm-btn hm-sc-minus">-</span><span class="hm-btn hm-sc-plus">+</span><span class="hm-btn hm-sc-cancel">Reset</span></div></div>
+              <div class="hm-sc-span"><span class="hm-sc-label">Set Counter Value</span><div class="hm-field hm-nolabel"><span class="hm-value">0</span></div></div>
+            </div>
+          </div>
+          <div class="hm-sc-card">
+            <div class="hm-sc-head"><span class="hm-sc-name">Roulette Controls</span><span class="hm-badge">2 controls</span></div>
+            <span class="hm-sc-group">Actions</span>
+            <div class="hm-sc-grid"><span class="hm-btn hm-sc-warn">Spin</span><span class="hm-btn">Refresh</span></div>
+          </div>
+        </div>
+        <div class="hm-sc-col">
+          <div class="hm-sc-card">
+            <div class="hm-sc-head"><span class="hm-sc-name">Title Controls</span><span class="hm-badge">4 controls</span></div>
+            <span class="hm-sc-group">Adjustments</span>
+            <div class="hm-sc-grid"><div class="hm-sc-span"><span class="hm-sc-label">Show Category</span><span class="hm-switch is-on"><i></i></span></div></div>
+            <span class="hm-sc-group">Text Input</span>
+            <div class="hm-sc-grid"><div class="hm-sc-span"><span class="hm-sc-label">Custom Title</span><div class="hm-field hm-nolabel"><span class="hm-placeholder">Enter custom title...</span></div></div></div>
+            <span class="hm-sc-group">Actions <span class="hm-marker" data-n="5"></span></span>
+            <div class="hm-sc-grid"><span class="hm-btn">Clear</span><span class="hm-btn">Refresh</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>A few of the built-in templates' cards. Click a switch to see both states; the buttons in this picture do nothing.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Search templates</strong> hides cards whose template name does not contain the text.</li>
+  <li data-n="2"><strong>Refresh</strong> reloads the cards. Use it after saving a template in Spore Studio or editing a config file.</li>
+  <li data-n="3">One card per template, titled <em>&lt;Template&gt; Controls</em>, with a count of its controls. Templates marked hidden still get a card, with a <strong>Hidden</strong> badge. Cards with fewer controls come first.</li>
+  <li data-n="4">Controls are grouped by kind: <strong>Actions</strong>, <strong>Counters &amp; Numbers</strong>, <strong>Timers</strong>, <strong>Text Input</strong>, <strong>Adjustments</strong>, <strong>Special Controls</strong>, <strong>Banner</strong>.</li>
+  <li data-n="5">Hover a control to see its description.</li>
+</ol>
+
+<h2>Control types</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Control</th><th>Looks like</th><th>What it sends</th></tr></thead>
+<tbody>
+<tr><td><strong>Button</strong></td><td>A button with the control's button text</td><td>One action, for example <em>Refresh</em> or <em>Spin</em></td></tr>
+<tr><td><strong>Toggle</strong></td><td>Label and an on/off switch</td><td>On or off each time you flip it</td></tr>
+<tr><td><strong>Slider</strong></td><td>Label and a slider</td><td>The value as you drag</td></tr>
+<tr><td><strong>Text input</strong></td><td>Label and a text box</td><td>The text, a moment after you stop typing</td></tr>
+<tr><td><strong>Number input</strong></td><td>Label and a number box</td><td>The number when it changes</td></tr>
+<tr><td><strong>Counter</strong></td><td><strong>-</strong>, <strong>+</strong>, <strong>Reset</strong>. Spore Studio counters also have an amount box in front.</td><td>Decrease, increase (by the amount) or reset the counter</td></tr>
+<tr><td><strong>Timer</strong></td><td><strong>Start</strong>, <strong>Stop</strong>, <strong>Reset</strong></td><td>Controls one Spore Studio timer</td></tr>
+<tr><td><strong>Banner</strong></td><td>Message, seconds, <strong>Permanent</strong> switch, <strong>Show</strong> and <strong>Clear</strong></td><td>Shows or clears the chat banner. <strong>Permanent</strong> ignores the seconds.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Built-in controls</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Template</th><th>Controls</th></tr></thead>
+<tbody>
+<tr><td><strong>Title</strong></td><td>Show Category, Custom Title, Clear Custom Title, Refresh Category. See <a href="help:template_title">Title Overlay</a>.</td></tr>
+<tr><td><strong>Counter</strong></td><td>- / + / Reset, Set Counter Value</td></tr>
+<tr><td><strong>Bitcounter</strong>, <strong>Subcounter</strong></td><td>Amount box with - / + / Reset</td></tr>
+<tr><td><strong>Chat</strong></td><td>Manual Banner</td></tr>
+<tr><td>Alert-style templates (for example <strong>Thank You</strong>)</td><td>Trigger … Alert, Stop Current Alert</td></tr>
+<tr><td><strong>Combobar</strong></td><td>Reset ComboBar, Test Level Up, add/subtract test EXP, level goal, Bonus Multiplier, restore level and bar XP</td></tr>
+<tr><td><strong>Roulette</strong></td><td>Spin, Refresh</td></tr>
+<tr><td><strong>Salary</strong></td><td>Test Username, Test Bits Amount, Test Salary Display</td></tr>
+<tr><td><strong>Psnbasetrophies</strong>, <strong>Psntotaltrophies</strong></td><td>Refresh PSN Data</td></tr>
+<tr><td><strong>Factorio</strong>, <strong>Ff7</strong></td><td>Resync overlay; Reset Boss List</td></tr>
+</tbody>
+</table></div>
+
+<p>Templates you build in Spore Studio add their own cards.</p>
+
+<h2>Use it during a stream</h2>
+
+<section class="hx-guide" data-guide="source_controls_live" data-title="Use Source Controls live">
+  <div class="hx-step">
+    <h3>Make sure the overlay is loaded</h3>
+    <p>The template must be open somewhere, usually as a browser source in OBS. Controls talk to the open overlay; nothing happens if no copy of it is loaded.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Find the card</h3>
+    <p>Open <span class="hx-path"><span>Source Controls</span></span> and type part of the template name into <strong>Search templates</strong>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Click the control</h3>
+    <p>The change shows in OBS right away. Every open copy of that template reacts, including the Source Settings preview.</p>
+  </div>
+</section>
+
+<div class="hx-callout hx-note"><p>Most controls change the overlay only while it is open. A browser source refresh brings back the saved settings. The Title overlay's <strong>Show Category</strong> switch is an exception: it is saved to the template's config.</p></div>
+
+<h2>Source Controls as an OBS dock</h2>
+
+<p>The same controls are available as a web page you can dock inside OBS, so you do not need to switch to Mycelian while live.</p>
+
+<ol>
+  <li>In OBS, open <strong>Docks → Custom Browser Docks…</strong> (older versions: <strong>View → Docks</strong>).</li>
+  <li>Name it, for example <em>Source Controls</em>, and set the URL to <span class="hx-copy" data-copy="http://127.0.0.1:5000/source_controls">http://127.0.0.1:5000/source_controls</span>.</li>
+  <li>Click <strong>Apply</strong> and place the dock.</li>
+</ol>
+
+<p>If the dock shows a blank page because OBS started before Mycelian, restart OBS with Mycelian running. See <a href="help:obs_setup">OBS Browser Source Setup</a>.</p>
+
+<h2>Other ways to trigger controls</h2>
+
+<ul>
+  <li><strong>Stream Deck</strong>: template actions can be bound to keys. See <a href="help:guide_streamdeck">Stream Deck</a>.</li>
+  <li><strong>Connectors</strong>: run template actions automatically when an event happens. See <a href="help:connectors_intro">Connectors</a>.</li>
+</ul>
+
+<h2>Adding controls</h2>
+
+<p>This tab is for <strong>using</strong> controls. To <strong>create</strong> them (buttons, toggles, counter shortcuts, timers), use the <strong>Source Controls</strong> inspector tab in Spore Studio. See <a href="help:spore_studio_dynamic_controls">Dynamic Controls</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Tab</th><th>When</th></tr></thead>
+<tbody>
+<tr><td><span class="hx-path"><span>Spore Studio</span><span>Source Controls</span></span></td><td>Design time: decide which controls a template has</td></tr>
+<tr><td><span class="hx-path"><span>Source Controls</span></span> (main tab)</td><td>Stream time: click them</td></tr>
+</tbody>
+</table></div>
+
+<p>Controls are stored in the template's JSON under <code>dynamic_controls</code>. See <a href="help:template_configuration">Configuring Template Settings</a>.</p>
+
+<h2>If something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>I clicked a control and nothing changed in OBS</summary>
+  <p>Check the overlay is loaded in OBS and the browser source is active. If OBS opened before Mycelian, refresh the browser source. Then click the control again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The tab says "No source controls yet"</summary>
+  <p>No template defines controls. Add them in Spore Studio's Source Controls tab, save, then click <strong>Refresh</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>A new control from Spore Studio is missing</summary>
+  <p>Click <strong>Refresh</strong> at the top of the tab. The cards are only built when the tab loads or refreshes.</p>
+</details>

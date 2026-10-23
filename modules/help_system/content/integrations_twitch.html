@@ -1,0 +1,67 @@
+<p class="hx-lead">A connected Twitch account streams your channel's live events into Mycelian, where they drive alerts, the Activity Feed, the Chatbot and Connectors.</p>
+
+<div class="hx-meta">
+  <span>{{icon:bolt}} Live events over Twitch EventSub</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Twitch</span></span></span>
+</div>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:twitch_setup">{{brand:twitch}}<span><strong>Connect Twitch</strong><span class="hx-card-text">Create a Twitch app, paste Client ID and Client Secret, sign in</span></span></a>
+</div>
+
+<h2>Events Mycelian receives</h2>
+
+<p>Once the <strong>Main Account</strong> is connected, Mycelian listens for these events on your channel:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Event</th><th>Used for</th></tr></thead>
+<tbody>
+<tr><td><strong>Follows</strong></td><td>Follow alerts, Activity Feed, Chatbot events, connector triggers</td></tr>
+<tr><td><strong>Subscriptions</strong>, resubs and <strong>gift subs</strong></td><td>Sub alerts, including the resub message</td></tr>
+<tr><td><strong>Bits</strong> (cheers)</td><td>Bit alerts, with the cheer message and emotes</td></tr>
+<tr><td><strong>Raids</strong></td><td>Raid alerts and the optional raid shoutouts below</td></tr>
+<tr><td><strong>Channel point</strong> redemptions</td><td>Channel point alerts and connector triggers</td></tr>
+<tr><td><strong>Hype trains</strong> (start, progress, end)</td><td>Instant alerts and the Activity Feed</td></tr>
+<tr><td><strong>Stream online / offline</strong></td><td>Go-live triggers, and the <a href="help:integrations_discord">Discord go-live post</a></td></tr>
+<tr><td><strong>Channel updates</strong> (title, category)</td><td>A category-change notice, and the current title and category for overlays</td></tr>
+<tr><td><strong>Chat messages</strong> and moderation actions</td><td>Chatbot commands and chat polls. Timeouts, bans and deleted messages are passed on to chat overlays</td></tr>
+</tbody>
+</table></div>
+
+<p>Use these events in <a href="help:alerts_overview">alerts</a>, <a href="help:chatbot_events">Chatbot events</a> and <a href="help:connector_triggers">connector triggers</a>. Chat polls are run by the Chatbot from chat keywords; see <a href="help:chatbot_polls">Chatbot Polls</a>.</p>
+
+<h2>Permissions</h2>
+
+<p>When the browser opens, accept every permission Twitch lists. Mycelian uses them for alerts, chat, raids, shoutouts, announcements and moderation. Declining a permission disables the features that need it.</p>
+
+<h2>Options on the Twitch tab</h2>
+
+<p><span class="hx-path"><span>Settings</span><span>Twitch</span></span> has three switches under <strong>Options</strong>. Click <strong>Save</strong> after changing them.</p>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-panel">
+      <div class="hm-panel-title">Options</div>
+      <div class="hm-row hm-gap-xl">
+        <span class="hm-switch is-on"><i></i>Process Twitch alerts</span>
+        <span class="hm-switch"><i></i>Send native Twitch Shoutout</span>
+        <span class="hm-switch"><i></i>Send chat raid shoutout</span>
+      </div>
+    </div>
+    <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
+  </div>
+  <figcaption>Click a switch to see its on and off states. Changes here are only a preview.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Switch</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Process Twitch alerts</strong></td><td>Sends Twitch events into the alert queue and Activity Feed. Turn it off to keep the connection without playing Twitch alerts.</td></tr>
+<tr><td><strong>Send native Twitch Shoutout</strong></td><td>After a raid, sends Twitch's own shoutout for the raider.</td></tr>
+<tr><td><strong>Send chat raid shoutout</strong></td><td>After a raid, the chatbot also posts a shoutout message in chat.</td></tr>
+</tbody>
+</table></div>
+
+<h2>If events stop</h2>
+
+<p>Check the Twitch item in the status footer. <strong>Degraded</strong> means you are signed in but events have stopped; <strong>Expired</strong> or <strong>Auth Failed</strong> means you need to sign in again. Click <strong>Connect</strong> on the Main Account card. The full status list and fixes are in <a href="help:twitch_setup">Connect Twitch</a>, and more in <a href="help:troubleshooting_connections">Connection Problems</a>.</p>

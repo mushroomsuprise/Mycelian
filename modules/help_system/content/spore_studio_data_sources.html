@@ -1,0 +1,214 @@
+<p class="hx-lead">Data sources are named live values: bits in the last cheer, the chat message, session totals, another counter, a Source Settings field. You pick them from one list in three places.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Where</th><th>What it does with the value</th></tr></thead>
+<tbody>
+<tr><td>A block's <strong>Data feed</strong> → <strong>Run when: A live value (a data source)</strong></td><td>Shows it, or passes it to the block's target. See <a href="help:spore_studio_data_feed">Data feeds</a>.</td></tr>
+<tr><td>A counter delta with <strong>Delta kind</strong> <code>data_source</code></td><td>Adds, subtracts or sets by that amount. See <a href="help:spore_studio_counters">Counters</a>.</td></tr>
+<tr><td>A block's or the canvas's <strong>Transformations</strong></td><td>Maps the value to size, position, rotation or skew</td></tr>
+</tbody>
+</table></div>
+
+<h2>The source picker</h2>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-insp">
+          <div class="hm-ssb-body">
+            <div class="hm-ssb-fr"><label>Data source</label><span class="hm-ssb-in hm-ssb-sel is-focused">Session statistic</span></div>
+            <div class="hm-list">
+              <div class="hm-list-item hm-xs hm-muted">Alert payload</div>
+              <div class="hm-list-item hm-sm">Donation amount · Bits cheered · Raider count …</div>
+              <div class="hm-list-item hm-xs hm-muted">Chat</div>
+              <div class="hm-list-item hm-sm">Chat username · Chat message · Chat message length …</div>
+              <div class="hm-list-item hm-xs hm-muted">Session stats</div>
+              <div class="hm-list-item hm-sm is-selected">Session statistic</div>
+              <div class="hm-list-item hm-xs hm-muted">Template</div>
+              <div class="hm-list-item hm-sm">Another counter in this template · Source Settings field</div>
+            </div>
+            <div class="hm-ssb-fr"><label>Statistic <span class="hm-marker" data-n="1"></span></label><span class="hm-ssb-in hm-ssb-sel">Total bits</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>The list is grouped by category. Some sources ask for one more field.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <ol class="hx-annotations">
+      <li data-n="1">Picking a source can add fields under it:</li>
+    </ol>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Source</th><th>Extra fields</th></tr></thead>
+    <tbody>
+    <tr><td>Alert payload</td><td><strong>Alert type</strong>, listing only the types that carry that field (hidden when only one does). Sub fields also get a <strong>Tier filter</strong>.</td></tr>
+    <tr><td>Subscriptions</td><td><strong>Tier filter</strong></td></tr>
+    <tr><td>Session statistic</td><td><strong>Statistic</strong></td></tr>
+    <tr><td>Another counter</td><td><strong>Counter</strong></td></tr>
+    <tr><td>Source Settings field</td><td><strong>Config field</strong>, or type a <strong>Field id</strong></td></tr>
+    <tr><td>Runtime database field</td><td><strong>Database path</strong>, <strong>Database key</strong></td></tr>
+    <tr><td>Twitch API response field</td><td><strong>Binding</strong> (request id), <strong>Response path</strong></td></tr>
+    </tbody>
+    </table></div>
+  </div>
+</div>
+
+<h2>Which sources appear where</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Kind</th><th>Examples</th><th>Data feed</th><th>Counter delta</th></tr></thead>
+<tbody>
+<tr><td><strong>Numbers</strong></td><td>Bits cheered, session stats, another counter</td><td>yes</td><td>yes</td></tr>
+<tr><td><strong>Text and true/false</strong></td><td>Username, message, alert type, Alerts paused</td><td>yes</td><td>hidden</td></tr>
+<tr><td><strong>Delta-only</strong></td><td>New sub (+1), Resub (+1), Gift sub (+quantity)</td><td>hidden</td><td>yes</td></tr>
+</tbody>
+</table></div>
+
+<p><code>fixed</code>, <code>random_int</code> and <code>random_float</code> are delta kinds, not sources. They are chosen in the <strong>Delta kind</strong> dropdown.</p>
+
+<div class="hx-callout hx-tip"><p>For counters, a feed's <strong>Alert type</strong> filter and a source's <strong>Alert type</strong> differ. The filter stops the feed for other alerts. The source's alert type lets the feed run but uses the <strong>Fallback</strong> (usually <code>0</code>) for other alerts, which leaves the counter unchanged.</p></div>
+
+<h2>Source catalog</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="alert" class="is-active">Alert payload</button>
+    <button data-tab="subs">Subscriptions</button>
+    <button data-tab="chat">Chat</button>
+    <button data-tab="stats">Session stats</button>
+    <button data-tab="other">Template and more</button>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="alert">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Id</th><th>Label</th><th>Type</th><th>Alert types</th></tr></thead>
+    <tbody>
+    <tr><td><code>alert.amount</code></td><td>Donation amount</td><td>number</td><td>donation</td></tr>
+    <tr><td><code>alert.quantity</code></td><td>Alert quantity</td><td>number</td><td>all</td></tr>
+    <tr><td><code>alert.gift_qty</code></td><td>Gift sub quantity</td><td>number</td><td>giftsub</td></tr>
+    <tr><td><code>alert.amt_cheered</code></td><td>Bits cheered</td><td>number</td><td>bit</td></tr>
+    <tr><td><code>alert.cumulative_months</code></td><td>Cumulative months</td><td>number</td><td>resub</td></tr>
+    <tr><td><code>alert.raider_count</code></td><td>Raider count</td><td>number</td><td>raid</td></tr>
+    <tr><td><code>alert.streak_count</code></td><td>Watch streak</td><td>number</td><td>streak</td></tr>
+    <tr><td><code>alert.channel_points_awarded</code></td><td>Channel points awarded</td><td>number</td><td>streak</td></tr>
+    <tr><td><code>alert.level</code></td><td>Hype train level</td><td>number</td><td>hype_train</td></tr>
+    <tr><td><code>alert.total</code></td><td>Hype train total</td><td>number</td><td>hype_train</td></tr>
+    <tr><td><code>alert.duration</code></td><td>Alert duration (seconds)</td><td>number</td><td>all</td></tr>
+    <tr><td><code>alert.timestamp</code></td><td>Alert timestamp</td><td>number</td><td>all</td></tr>
+    <tr><td><code>alert.queue_seq</code></td><td>Queue sequence</td><td>number</td><td>all</td></tr>
+    <tr><td><code>alert.tier</code></td><td>Sub tier</td><td>text</td><td>sub, resub, giftsub</td></tr>
+    <tr><td><code>alert.username</code></td><td>Username</td><td>text</td><td>all</td></tr>
+    <tr><td><code>alert.message</code></td><td>Message</td><td>text</td><td>all</td></tr>
+    <tr><td><code>alert.alert_type</code></td><td>Alert type</td><td>text</td><td>all</td></tr>
+    <tr><td><code>alert.alert_name</code></td><td>Point reward name</td><td>text</td><td>point</td></tr>
+    <tr><td><code>alert.recipient</code></td><td>Gift recipient</td><td>text</td><td>giftsub</td></tr>
+    <tr><td><code>alert.currency</code></td><td>Currency</td><td>text</td><td>donation</td></tr>
+    </tbody>
+    </table></div>
+    <p>Alert types in the <strong>Alert type</strong> dropdown: Follow, New sub, Resub, Gift sub, Bits, Donation, Raid, Hype train, Channel points, Streak.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="subs">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Id</th><th>Label</th><th>Returns</th></tr></thead>
+    <tbody>
+    <tr><td><code>sub.new_sub</code></td><td>New sub (+1)</td><td>1 for a new sub alert, else the fallback</td></tr>
+    <tr><td><code>sub.resub</code></td><td>Resub (+1)</td><td>1 for a resub alert, else the fallback</td></tr>
+    <tr><td><code>sub.gift_sub</code></td><td>Gift sub (+quantity)</td><td>The gifted quantity for a gift-sub alert, else the fallback</td></tr>
+    </tbody>
+    </table></div>
+    <p>Counter deltas only. Add a <strong>Tier filter</strong> to count one tier.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="chat">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Id</th><th>Label</th><th>Type</th></tr></thead>
+    <tbody>
+    <tr><td><code>chat.username</code></td><td>Chat username</td><td>text</td></tr>
+    <tr><td><code>chat.message</code></td><td>Chat message</td><td>text</td></tr>
+    <tr><td><code>chat.message_length</code></td><td>Chat message length</td><td>number</td></tr>
+    <tr><td><code>chat.userid</code></td><td>Chat user ID</td><td>text</td></tr>
+    <tr><td><code>chat.badges</code></td><td>Chat badges</td><td>text</td></tr>
+    <tr><td><code>chat.color</code></td><td>Chat color</td><td>text</td></tr>
+    <tr><td><code>chat.message_text</code></td><td>Connector message text</td><td>text</td></tr>
+    </tbody>
+    </table></div>
+    <p>The <code>chat.*</code> sources read Twitch chat (<strong>Chat message (Twitch)</strong>). <strong>Connector message text</strong>, in its own <strong>Connector chat</strong> group, reads <code>message_text</code> from <strong>Chat message (connector)</strong>.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="stats">
+    <p>Pick <strong>Session statistic</strong>, then a <strong>Statistic</strong>:</p>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Key</th><th>Label</th></tr></thead>
+    <tbody>
+    <tr><td><code>total_gift_subs</code></td><td>Total gift subs</td></tr>
+    <tr><td><code>total_bits</code></td><td>Total bits</td></tr>
+    <tr><td><code>follows</code></td><td>Follows</td></tr>
+    <tr><td><code>subs</code></td><td>Subs</td></tr>
+    <tr><td><code>raids</code></td><td>Raids</td></tr>
+    <tr><td><code>cheers</code></td><td>Cheers</td></tr>
+    </tbody>
+    </table></div>
+    <p>Older templates that stored <code>stats.total_bits</code> directly still work.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="other">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Group</th><th>Label</th><th>Id</th><th>Type</th></tr></thead>
+    <tbody>
+    <tr><td>Alert system</td><td>Alerts paused</td><td><code>alerts.paused</code></td><td>true/false</td></tr>
+    <tr><td>Template</td><td>Another counter in this template</td><td><code>counter</code></td><td>number</td></tr>
+    <tr><td>Template</td><td>Source Settings field</td><td><code>config</code></td><td>text</td></tr>
+    <tr><td>Runtime database</td><td>Runtime database field</td><td><code>runtime</code></td><td>text</td></tr>
+    <tr><td>Twitch API</td><td>Twitch API response field</td><td><code>twitch</code></td><td>text</td></tr>
+    </tbody>
+    </table></div>
+    <p><strong>Source Settings field</strong> reads a field you exposed in Source Settings. See <a href="help:template_configuration">Configuring Template Settings</a>.</p>
+    <p><strong>Twitch API response field</strong> reads a dot path from the last <code>twitch-api-response</code> of a binding. Set up the Helix call on a binding first. See <a href="help:spore_studio_bindings">Event Bindings &amp; Actions</a>.</p>
+  </div>
+</div>
+
+<h2>Showing a value with a Data display</h2>
+
+<p>A <strong>Data display</strong> block (in the <strong>Data</strong> group) shows a value and never changes anything else.</p>
+
+<section class="hx-guide" data-guide="spore_studio_data_sources_display" data-title="Data display">
+  <div class="hx-step">
+    <h3>Add the block and set its text</h3>
+    <p>Drag in a <strong>Data display</strong>. In its <strong>Data display</strong> section set <strong>Format (use {value})</strong>, for example <code>Cheered: {value} bits</code>, and <strong>Default text</strong>, shown before the first value arrives (default <code>—</code>).</p>
+  </div>
+  <div class="hx-step">
+    <h3>Add a feed</h3>
+    <p>Under <strong>Data feed</strong>, click <strong>+ Add feed</strong>. Its target is <strong>Show this value</strong>. Choose how the value arrives:</p>
+    <ul>
+      <li>From the event itself: keep <strong>Run when</strong> on an event and pick the <strong>Main text field</strong> or <strong>Number field</strong>.</li>
+      <li>From a stored value: set <strong>Run when</strong> to <strong>A live value (a data source)</strong>, pick the source, and choose <strong>Re-read on events</strong> or <strong>Re-read every (ms)</strong>.</li>
+    </ul>
+  </div>
+  <div class="hx-step">
+    <h3>Save and test</h3>
+    <p>Click <strong>Save</strong>, then use the mocks in <strong>Preview</strong>.</p>
+  </div>
+</section>
+
+<h2>Common patterns</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Goal</th><th>Setup</th></tr></thead>
+<tbody>
+<tr><td>Last cheerer's name</td><td>Data display. Feed: event <strong>Alert (instant)</strong>, Alert type <strong>Bits</strong>, Main text field <code>username</code>.</td></tr>
+<tr><td>Last cheer amount</td><td>Same feed, Number field <code>amt_cheered</code>, Format <code>{value} bits</code>.</td></tr>
+<tr><td>Running cheer total</td><td>Counter, not a display: <strong>Add to this counter</strong>, delta <code>data_source</code> → <strong>Bits cheered</strong>.</td></tr>
+<tr><td>Session bits</td><td>Data display. Feed: <strong>A live value</strong> → <strong>Session statistic</strong> → <strong>Total bits</strong>, re-read on <strong>Alert (instant)</strong> and <strong>Refresh alerts</strong>.</td></tr>
+<tr><td>Session subs</td><td>As above with <strong>Subs</strong>.</td></tr>
+<tr><td>"Alerts paused" indicator</td><td>Data display. Feed: <strong>A live value</strong> → <strong>Alerts paused</strong>, re-read on <strong>Pause status update</strong>.</td></tr>
+<tr><td>A Source Settings value</td><td>Data display. Feed: <strong>A live value</strong> → <strong>Source Settings field</strong> → your field.</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_data_feed">{{icon:rss_feed}}<span><strong>Data feeds</strong><span class="hx-card-text">Events, filters, formatting and targets</span></span></a>
+  <a class="hx-card" href="help:spore_studio_counters">{{icon:exposure_plus_1}}<span><strong>Counters</strong><span class="hx-card-text">Using sources as deltas</span></span></a>
+  <a class="hx-card" href="help:spore_studio_bindings">{{icon:bolt}}<span><strong>Event Bindings</strong><span class="hx-card-text">Twitch API bindings for response fields</span></span></a>
+</div>

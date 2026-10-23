@@ -1,0 +1,283 @@
+<p class="hx-lead">Mycelian posts to Discord through <strong>your own Discord bot</strong>. You create the bot once in the Discord Developer Portal, paste its <strong>token</strong> into Mycelian, then invite the bot to your server.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 5 minutes</span>
+  <span>{{icon:person}} Discord account with Manage Server on your server</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Discord</span></span></span>
+</div>
+
+<p>The bot only sends messages. For what you can do with it once it is connected, see <a href="help:integrations_discord">Discord Integration</a>.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="guide_discord_prereqs">
+  <li>You can sign in to <a href="https://discord.com/developers/applications">discord.com/developers</a> with your Discord account.</li>
+  <li>You have <strong>Manage Server</strong> on the server the bot should post in. Discord requires it to add a bot.</li>
+  <li>You know which channel should get "Stream is live" posts, if you want them.</li>
+</ul>
+
+<h2>Connect your bot</h2>
+
+<section class="hx-guide" data-guide="guide_discord_setup" data-title="Discord setup">
+
+  <div class="hx-step">
+    <h3>Create an application</h3>
+    <p>Open the <a href="https://discord.com/developers/applications">Discord Developer Portal</a> and click <strong>New Application</strong>. Give it a name (for example <em>Mycelian</em>), accept the terms, and click <strong>Create</strong>.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-browser">
+        <div class="hm-browser-bar"><span class="hm-browser-url">discord.com/developers/applications</span></div>
+        <div class="hm-browser-body">
+          <div class="hm-row hm-between"><span class="hm-h2">Applications</span><span class="hm-btn hm-pulse">New Application</span></div>
+          <div class="hm-card hm-col">
+            <div class="hm-h2">Create an application</div>
+            <div class="hm-field is-focused" data-label="Name"><span class="hm-value">Mycelian</span></div>
+            <span class="hm-check is-on"><i></i>I agree to the Developer Terms of Service</span>
+            <div class="hm-row hm-end"><span class="hm-btn hm-flat">Cancel</span><span class="hm-btn">Create</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Discord's page, simplified. The name is what people see as the bot's name in your server.</figcaption>
+    </figure>
+  </div>
+
+  <div class="hx-step">
+    <h3>Copy the bot token</h3>
+    <p>In the left menu, open <strong>Bot</strong>. Under <strong>Token</strong>, click <strong>Reset Token</strong>, confirm, then click <strong>Copy</strong>.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-browser">
+        <div class="hm-browser-bar"><span class="hm-browser-url">discord.com/developers/applications/…/bot</span></div>
+        <div class="hm-browser-body">
+          <div class="hm-row hm-top hm-gap-lg">
+            <div class="hm-list">
+              <span class="hm-list-item">General Information</span>
+              <span class="hm-list-item">OAuth2</span>
+              <span class="hm-list-item is-selected">Bot</span>
+            </div>
+            <div class="hm-col hm-grow">
+              <div class="hm-h2">Token</div>
+              <div class="hm-row hm-nowrap">
+                <div class="hm-field hm-grow hm-nolabel"><span class="hm-value hm-mono">MTI3…a1b2c3</span></div>
+                <span class="hm-btn">Copy</span>
+                <span class="hm-btn hm-outline">Reset Token</span>
+                <span class="hm-marker" data-n="1"></span>
+              </div>
+              <div class="hm-h2">Privileged Gateway Intents</div>
+              <span class="hm-switch"><i></i>Presence Intent</span>
+              <span class="hm-switch"><i></i>Server Members Intent</span>
+              <span class="hm-switch"><i></i>Message Content Intent</span>
+              <span class="hm-row"><span class="hm-marker" data-n="2"></span><span class="hm-muted hm-xs">Leave all three off</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>The Bot page, simplified. Field names match Discord's page.</figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1">Discord shows the token only right after a reset. If you lose it, click <strong>Reset Token</strong> again and paste the new one into Mycelian. The old token stops working.</li>
+      <li data-n="2">Mycelian only sends messages, so it does not need any privileged intent.</li>
+    </ol>
+    <div class="hx-callout hx-warning"><p>The bot token works like a password for the bot. Do not share it or post it in chat. Mycelian never needs your own Discord password.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Paste the token and click Connect</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>Discord</span></span>. Paste the token into <strong>Bot token</strong> and click <strong>Connect</strong>. Connect saves the token for you.</p>
+
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-tabs">
+          <span class="hm-tab">Activity Feed</span>
+          <span class="hm-tab">Alerts</span>
+          <span class="hm-tab">Source Settings</span>
+          <span class="hm-tab">Source Controls</span>
+          <span class="hm-tab">Connectors</span>
+          <span class="hm-tab">Chatbot</span>
+          <span class="hm-tab">Spore Studio</span>
+          <span class="hm-tab is-active">Settings</span>
+          <span class="hm-tabs-tail"><span class="hx-mi">help_outline</span><span class="hx-mi">notifications</span></span>
+        </div>
+        <div class="hm-frame">
+          <div class="hm-subtabs">
+            <span class="hm-subtab">{{brand:youtube}} YouTube</span>
+            <span class="hm-subtab">{{brand:streamlabs}} Streamlabs</span>
+            <span class="hm-subtab">{{brand:streamelements}} StreamElements</span>
+            <span class="hm-subtab is-active">{{brand:discord}} Discord</span>
+            <span class="hm-subtab"><span class="hx-mi">memory</span> Game Hooks</span>
+          </div>
+          <div class="hm-frame">
+            <div class="hm-col">
+              <div class="hm-status-band">
+                <div class="hm-metric"><span>Status</span><span class="hm-err">Disconnected</span></div>
+              </div>
+              <div class="hm-col hm-tight">
+                <span class="hm-h2">Connection</span>
+                <span class="hm-muted hm-sm">Connect, then invite, then pick channels.</span>
+              </div>
+              <div class="hm-row hm-between hm-nowrap">
+                <span class="hm-muted hm-xs">Connect, then invite the bot, then pick announcement channels.</span>
+                <span class="hm-btn hm-flat hm-round hm-icon-only"><span class="hx-mi">help_outline</span></span>
+              </div>
+              <div class="hm-row hm-nowrap">
+                <div class="hm-field hm-grow is-focused" data-label="Bot token"><span class="hm-value hm-secret">••••••••••••••••</span><span class="hx-mi">visibility_off</span></div>
+                <span class="hm-marker" data-n="1"></span>
+              </div>
+              <div class="hm-field" data-label="Invite URL"><span class="hm-placeholder">Connect to generate</span><span class="hx-mi">visibility_off</span></div>
+              <div class="hm-row hm-end">
+                <span class="hm-btn hm-outline"><span class="hx-mi">content_copy</span>Copy invite</span>
+                <span class="hm-btn hm-outline"><span class="hx-mi">open_in_new</span>Invite bot</span>
+                <span class="hm-btn hm-outline"><span class="hx-mi">logout</span>Disconnect</span>
+                <span class="hm-btn hm-pulse"><span class="hx-mi">login</span>Connect</span>
+                <span class="hm-marker" data-n="2"></span>
+              </div>
+            </div>
+            <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Settings → Discord, top half. The "Stream is live" section sits below it (step 5).</figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>Bot token</strong> is masked. Click the eye icon to check what you pasted. It is stored encrypted in the app database.</li>
+      <li data-n="2"><strong>Connect</strong> changes to <strong>Connecting…</strong> while the bot signs in, then to <strong>Reconnect</strong> once it is online. A toast says <em>"Discord bot connected"</em>.</li>
+    </ol>
+    <div class="hx-callout hx-note"><p>If the field is empty you will see <em>"Enter a Discord bot token first"</em>. A wrong token shows <em>"Discord connect failed: …"</em> and the status turns to <strong>Auth Failed</strong>.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Invite the bot to your server</h3>
+    <p>After a successful connect, <strong>Invite URL</strong> fills in. Click <strong>Invite bot</strong> to open it in your browser, or <strong>Copy invite</strong> to paste it somewhere else. Pick your server, click <strong>Continue</strong>, then <strong>Authorize</strong>.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-browser">
+        <div class="hm-browser-bar"><span class="hm-browser-url">discord.com/oauth2/authorize?client_id=…&amp;scope=bot</span></div>
+        <div class="hm-browser-body">
+          <div class="hm-h2">Mycelian wants to access your Discord account</div>
+          <div class="hm-field hm-select" data-label="Add to server"><span class="hm-value">My Stream Server</span></div>
+          <span class="hm-label">This will allow the developer of Mycelian to:</span>
+          <span class="hm-check is-on"><i></i>View Channels</span>
+          <span class="hm-check is-on"><i></i>Send Messages</span>
+          <span class="hm-check is-on"><i></i>Embed Links</span>
+          <span class="hm-check is-on"><i></i>Read Message History</span>
+          <div class="hm-row hm-end"><span class="hm-btn hm-flat">Back</span><span class="hm-btn">Authorize</span></div>
+        </div>
+      </div>
+      <figcaption>Discord's invite page, simplified. These four permissions are the ones Mycelian's invite link asks for.</figcaption>
+    </figure>
+    <p>Repeat with the same link for each server the bot should post in. Only servers where you have <strong>Manage Server</strong> appear in the list.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Pick announcement channels and save</h3>
+    <p>Back in Mycelian, scroll to <strong>Stream is live</strong>. Choose a <strong>Server</strong> and a <strong>Channel</strong>, click <strong>Add channel</strong>, and turn on <strong>Enable go-live Discord message</strong>. Then click <strong>Save</strong>.</p>
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-col">
+          <div class="hm-col hm-tight">
+            <span class="hm-h2">Stream is live</span>
+            <span class="hm-muted hm-sm">Announce once per stream session when Twitch or YouTube goes live (multi-stream safe — will not double-send)</span>
+          </div>
+          <span class="hm-switch is-on"><i></i>Enable go-live Discord message</span>
+          <div class="hm-field hm-textarea" data-label="Message template"><span class="hm-value">Stream is live on {platform}! {url}</span></div>
+          <span class="hm-muted hm-xs">Placeholders: {platform}, {title}, {url}</span>
+          <span class="hm-bold hm-sm">Announcement channels</span>
+          <div class="hm-row"><span class="hm-chip hm-plain">My Stream Server / #announcements <span class="hx-mi">close</span></span><span class="hm-marker" data-n="1"></span></div>
+          <div class="hm-row">
+            <div class="hm-field hm-select hm-grow" data-label="Server"><span class="hm-value">My Stream Server</span></div>
+            <div class="hm-field hm-select hm-grow" data-label="Channel"><span class="hm-value">#announcements</span></div>
+            <span class="hm-btn hm-outline"><span class="hx-mi">add</span>Add channel</span>
+            <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh servers</span>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+        </div>
+        <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn hm-pulse">Save</span><span class="hm-marker" data-n="3"></span></div>
+      </div>
+      <figcaption>The "Stream is live" section. Click the switch to see both states; it is only a picture.</figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1">Each added channel shows as a chip, <em>Server / #channel</em>. Click its <strong>×</strong> to remove it.</li>
+      <li data-n="2">The lists only fill while the bot is connected. If you just invited the bot, click <strong>Refresh servers</strong>.</li>
+      <li data-n="3">Channels, the switch and the message are not kept until you click <strong>Save</strong>.</li>
+    </ol>
+    <p>Skip this step if you only want Discord replies from the Chatbot or Connectors. Those pick their own channels.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Check it worked</h3>
+    <p>The status band at the top of the tab should be green and show the bot's name:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-status-band">
+          <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected — Mycelian#1234</span></div>
+        </div>
+        <div class="hm-field" data-label="Invite URL"><span class="hm-value hm-secret">••••••••••••••••••••••</span><span class="hx-mi">visibility_off</span></div>
+        <div class="hm-row hm-end">
+          <span class="hm-btn hm-outline"><span class="hx-mi">content_copy</span>Copy invite</span>
+          <span class="hm-btn hm-outline"><span class="hx-mi">open_in_new</span>Invite bot</span>
+          <span class="hm-btn hm-outline"><span class="hx-mi">logout</span>Disconnect</span>
+          <span class="hm-btn"><span class="hx-mi">login</span>Reconnect</span>
+        </div>
+        <div class="hm-footer">
+          <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
+          <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+          <span class="hm-footer-item">{{brand:discord}} Discord <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+        </div>
+      </div>
+      <figcaption>Connected state. Discord appears in the status footer once a bot token is saved.</figcaption>
+    </figure>
+    <p>The bot also shows as online in your server's member list. Mycelian reconnects it on its own when the app starts.</p>
+  </div>
+
+</section>
+
+<h2>Connection status</h2>
+
+<p>The bottom status bar uses these colors for Discord. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>The bot is online</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-info"></span> Connecting</td><td>The bot is signing in</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-info"></span> Reconnecting</td><td>The connection to Discord dropped and the bot is trying again</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>The bot is not connected. Click <strong>Connect</strong></td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Auth Failed</td><td>Discord rejected the bot token. Reset it and paste the new one</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>The bot could not start. Check the log</td></tr>
+</tbody>
+</table></div>
+
+<h2>If something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>Status says Auth Failed</summary>
+  <p>The token is wrong, has a stray space, or was reset in the Developer Portal. Open <strong>Bot</strong>, click <strong>Reset Token</strong>, copy it, paste it into <strong>Bot token</strong> and click <strong>Connect</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Connect the bot first to generate an invite URL"</summary>
+  <p>The invite link is built from the bot's application ID, which Mycelian only learns after the bot signs in. Click <strong>Connect</strong> first and wait for the green status.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The Server list is empty</summary>
+  <p>The bot is not in any server yet, or it is not connected. Invite it (step 4), then click <strong>Refresh servers</strong>. Opening the Discord tab also reloads the list.</p>
+</details>
+
+<details class="hx-details">
+  <summary>My server is missing from Discord's "Add to server" list</summary>
+  <p>You need <strong>Manage Server</strong> on that server. Ask the owner to invite the bot with the link from <strong>Copy invite</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The bot is connected but messages do not appear</summary>
+  <p>Check the channel's permissions in Discord. The bot's role needs <strong>View Channel</strong> and <strong>Send Messages</strong> there. Private channels and channels that override role permissions often block it.</p>
+</details>
+
+<details class="hx-details">
+  <summary>No "Stream is live" message was sent</summary>
+  <p>Make sure the switch is on, at least one channel chip is listed, and you clicked <strong>Save</strong>. Mycelian sends one message per stream session: if Twitch and YouTube both go live, only the first one posts. The session resets once both are offline.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:integrations_discord">{{brand:discord}}<span><strong>Discord Integration</strong><span class="hx-card-text">Go-live posts, Chatbot and Connector messages</span></span></a>
+  <a class="hx-card" href="help:connector_actions">{{icon:bolt}}<span><strong>Connector Actions</strong><span class="hx-card-text">Use Send Discord Message in a connector</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>All connection guides</strong><span class="hx-card-text">Twitch, OBS, Spotify, PSN, YouTube and more</span></span></a>
+</div>

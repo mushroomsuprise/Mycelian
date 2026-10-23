@@ -1,0 +1,180 @@
+<p class="hx-lead">Find your symptom below. Each one lists the likely causes in the order worth checking, with the fix for each. Most alert problems come down to one of three things: the browser source, the connection, or the alert's settings.</p>
+
+<h2>First, two quick checks</h2>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-footer">
+      <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
+      <span class="hm-footer-item">Overlay Server <span class="hm-dot hm-ok"></span><span class="hm-ok">Running</span><span class="hm-marker" data-n="1"></span></span>
+      <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span><span class="hm-marker" data-n="2"></span></span>
+      <span class="hm-footer-item">{{brand:obs}} OBS <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+    </div>
+    <div class="hma-feed-controls" style="margin-top:10px">
+      <span class="hma-ctrl is-paused"><span class="hx-mi">play_arrow</span>RESUME ALERTS<span class="hm-marker" data-n="3"></span></span>
+      <span class="hma-ctrl"><span class="hx-mi">notifications_off</span>MUTE ALERTS</span>
+      <span class="hma-ctrl"><span class="hx-mi">skip_next</span>SKIP ALERT</span>
+    </div>
+  </div>
+  <figcaption>The status footer at the bottom of the window, and the Activity Feed controls.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Overlay Server</strong> serves every browser source. If it is not <strong>Running</strong>, no alert can show. See <a href="help:status_footer">Status Footer</a>.</li>
+  <li data-n="2"><strong>Twitch</strong> (or the donation service) must be green to receive events. See <a href="help:troubleshooting_connections">Connection Problems</a>.</li>
+  <li data-n="3">If the Activity Feed button says <strong>RESUME ALERTS</strong>, alerts are paused. Click it.</li>
+</ol>
+
+<h2>Find your symptom</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="none" class="is-active">Nothing shows</button>
+    <button data-tab="sound">No sound</button>
+    <button data-tab="wrong">Wrong alert</button>
+    <button data-tab="gif">Image problems</button>
+    <button data-tab="late">Late or stuck</button>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="none">
+    <p>Start by clicking <strong>Test Alert</strong> on the alert. If the test shows, the overlay works and the problem is the event. If the test does not show either, the problem is the overlay.</p>
+
+    <details class="hx-details">
+      <summary>Test does not show: wrong or missing browser source</summary>
+      <p><strong>Cause:</strong> OBS is not loading the alerts page.</p>
+      <p><strong>Fix:</strong> In OBS, open the browser source's properties and check the URL is <span class="hx-copy" data-copy="http://127.0.0.1:5000/alerts">http://127.0.0.1:5000/alerts</span>. Make sure the source's eye icon is on and it is in the scene you are viewing. Click <strong>Refresh cache of current page</strong> in its properties. The exact URLs for every overlay are listed in <span class="hx-path"><span>Settings</span><span>About</span></span> under <strong>Available Source URLs</strong>. See <a href="help:obs_setup">OBS Setup</a>.</p>
+    </details>
+
+    <details class="hx-details">
+      <summary>Test does not show: Overlay Server is not Running</summary>
+      <p><strong>Cause:</strong> The local server on port 5000 did not start, often because another program holds the port. Mycelian then shows a notification starting <em>"The overlay server could not bind to port 5000"</em>.</p>
+      <p><strong>Fix:</strong> Close the other program. On macOS, turn off <strong>AirPlay Receiver</strong> in <span class="hx-path"><span>System Settings</span><span>General</span><span>AirDrop &amp; Handoff</span></span>. Mycelian retries on its own.</p>
+    </details>
+
+    <details class="hx-details">
+      <summary>Test does not show: alerts are paused</summary>
+      <p><strong>Cause:</strong> <strong>PAUSE ALERTS</strong> was clicked. The queue holds every alert until you resume.</p>
+      <p><strong>Fix:</strong> On the <strong>Activity Feed</strong>, click <strong>RESUME ALERTS</strong>. Held alerts then play in order.</p>
+    </details>
+
+    <details class="hx-details">
+      <summary>Test shows, real events do not: the event never arrives</summary>
+      <p><strong>Cause:</strong> Twitch (or Streamlabs, StreamElements, YouTube) is not connected. If the event is missing from the Activity Feed, Mycelian never received it.</p>
+      <p><strong>Fix:</strong> Check the service in the status footer and in <span class="hx-path"><span>Settings</span><span>Twitch</span></span>. See <a href="help:troubleshooting_connections">Connection Problems</a>.</p>
+    </details>
+
+    <details class="hx-details">
+      <summary>Test shows, real events do not: that alert type is switched off</summary>
+      <p><strong>Cause:</strong> The event is in the Activity Feed but nothing plays. The type is turned off somewhere.</p>
+      <p><strong>Fix:</strong> Check, in order:</p>
+      <ul class="hx-checklist" data-checklist="troubleshooting_alerts_off">
+        <li><span class="hx-path"><span>Settings</span><span>Twitch</span></span>: <strong>Process Twitch alerts</strong> is on.</li>
+        <li><span class="hx-path"><span>Source Settings</span><span>alerts</span></span>: the matching <strong>Enable … Alerts</strong> box is on. <strong>Enable Watch Streak Alerts</strong> is off by default.</li>
+        <li>Channel Points: the reward has <strong>Enable as Alert</strong> on and was saved.</li>
+        <li>The alert sub-tab has at least one saved alert.</li>
+      </ul>
+    </details>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="sound">
+    <details class="hx-details">
+      <summary>Alerts are muted</summary>
+      <p><strong>Cause:</strong> <strong>MUTE ALERTS</strong> on the Activity Feed silences sound and text-to-speech; the image still shows.</p>
+      <p><strong>Fix:</strong> Click <strong>MUTE ALERTS</strong> again.</p>
+    </details>
+    <details class="hx-details">
+      <summary>The browser source is muted or not routed in OBS</summary>
+      <p><strong>Cause:</strong> OBS handles browser-source audio itself.</p>
+      <p><strong>Fix:</strong> In the browser source properties, turn on <strong>Control audio via OBS</strong>, then check the source's slider and mute button in the <strong>Audio Mixer</strong>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>No sound file, or volume at 0</summary>
+      <p><strong>Cause:</strong> <strong>Primary Sound</strong> is empty, the file was moved, or <strong>Volume</strong> is 0%.</p>
+      <p><strong>Fix:</strong> Open <strong>Audio</strong> on the alert, click <strong>Browse</strong> and pick the file again. Supported formats are MP3, WAV, OGG, M4A and FLAC. See <a href="help:troubleshooting_audio">Audio Troubleshooting</a> for more.</p>
+    </details>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="wrong">
+    <details class="hx-details">
+      <summary>Ranges overlap or leave gaps</summary>
+      <p><strong>Cause:</strong> An exact amount wins first, then the first range that contains the amount. Overlapping ranges make the choice unpredictable; gaps fall back to another alert of the same type.</p>
+      <p><strong>Fix:</strong> Open <strong>Select Alert</strong> and read the list; it is sorted by amount, so overlaps and gaps are easy to spot. Make ranges meet end to end (<code>1-99</code>, <code>100-999</code>, …).</p>
+    </details>
+    <details class="hx-details">
+      <summary>Resubs play the wrong sub alert</summary>
+      <p><strong>Cause:</strong> No alert exists for that month and <strong>Resub Fallback</strong> is off.</p>
+      <p><strong>Fix:</strong> On <strong>Subscriptions</strong>, turn on <strong>Resub Fallback</strong> and set up the <strong>Resub Fallback</strong> alert, or add a month range.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Donations pick an unexpected tier</summary>
+      <p><strong>Cause:</strong> Tips are converted to the <strong>Alert currency</strong> and rounded to a whole number before matching. A 4.60 tip matches 5.</p>
+      <p><strong>Fix:</strong> Check <strong>Alert currency</strong> in <span class="hx-path"><span>Settings</span><span>Streamlabs</span></span> or <span class="hx-path"><span>Settings</span><span>StreamElements</span></span>, and set your ranges in that currency.</p>
+    </details>
+    <p>To confirm a fix, replay the event from the Activity Feed; replay matches against your current saved alerts. See <a href="help:alert_testing">Testing Your Alerts</a>.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="gif">
+    <details class="hx-details">
+      <summary>The image is missing</summary>
+      <p><strong>Cause:</strong> The file is outside the <code>assets</code> folder, was renamed, or <strong>GIF Directory</strong>/<strong>GIF File</strong> is empty.</p>
+      <p><strong>Fix:</strong> Move the file under <code>assets/alerts/</code> and pick it again with <strong>Browse</strong>. To check the file is served, open <code>http://127.0.0.1:5000</code> plus the directory and file name in a normal browser, for example <span class="hx-copy" data-copy="http://127.0.0.1:5000/assets/alerts/bits/medium_cheer.gif">http://127.0.0.1:5000/assets/alerts/bits/medium_cheer.gif</span>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>The GIF does not animate</summary>
+      <p><strong>Cause:</strong> The file is a still image renamed to <code>.gif</code>, or it is so large OBS stutters.</p>
+      <p><strong>Fix:</strong> Open the file in a browser to confirm it moves. Shrink large GIFs (fewer frames and colors, 300-500 px) or convert them to animated WebP.</p>
+    </details>
+    <details class="hx-details">
+      <summary>The image is the wrong size or position</summary>
+      <p><strong>Cause:</strong> Size and placement are template settings, not alert settings.</p>
+      <p><strong>Fix:</strong> In <span class="hx-path"><span>Source Settings</span><span>alerts</span></span>, change <strong>GIF Width</strong>, <strong>GIF Height</strong>, <strong>GIF Top Position</strong>, <strong>GIF Left Position</strong> or <strong>GIF Fit Mode</strong>. See <a href="help:template_configuration">Template Configuration</a>.</p>
+    </details>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="late">
+    <details class="hx-details">
+      <summary>Alerts wait a long time before playing</summary>
+      <p><strong>Cause:</strong> Alerts play one at a time. Each waits for the previous alert's duration, its sound and its speech to finish, plus <strong>Delay Between Alerts</strong> (0.5 seconds by default). A long sound file holds the queue for its full length.</p>
+      <p><strong>Fix:</strong> Shorten <strong>Duration</strong> and trim long sound files. Turn on <strong>Stackable</strong> for types that may overlap. Lower <strong>Delay Between Alerts</strong> in <span class="hx-path"><span>Source Settings</span><span>alerts</span></span>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>One alert is stuck on screen</summary>
+      <p><strong>Cause:</strong> The overlay never reported the alert finished, for example after OBS reloaded the source mid-alert.</p>
+      <p><strong>Fix:</strong> Click <strong>SKIP ALERT</strong> on the Activity Feed. If it happens again, refresh the browser source in OBS.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Alerts arrive several seconds after the event</summary>
+      <p><strong>Cause:</strong> Network delay between Twitch and this computer, or a busy queue.</p>
+      <p><strong>Fix:</strong> Check the <strong>Internet</strong> item in the status footer and the queue causes above. If <strong>Overlay Server</strong> shows <strong>Overloaded</strong>, see <a href="help:troubleshooting_performance">Performance Issues</a>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>I want to empty the queue</summary>
+      <p>The Activity Feed has no clear-queue button. <strong>SKIP ALERT</strong> ends the current one. A Spore Studio or Stream Deck control can use the <strong>Clear alert queue</strong> action; see <a href="help:spore_studio_dynamic_controls">Dynamic Controls</a>. Restarting Mycelian also empties it.</p>
+    </details>
+  </div>
+</div>
+
+<h2>Read the log</h2>
+
+<p>Errors go to <code>mycelian.log</code> in the <code>logs</code> folder next to the Mycelian program. Mycelian also shows the important ones for you:</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-panel">
+      <div class="hm-row hm-between hm-top">
+        <div class="hm-col hm-tight"><span class="hm-bold">Application Logs</span><span class="hm-xs hm-muted">Actionable errors from the application log file, excluding known noise such as expired tokens.</span></div>
+        <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">folder_open</span>Open Logs Folder</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh</span></div>
+      </div>
+      <span class="hm-sm hm-warn">2 actionable errors</span>
+    </div>
+  </div>
+  <figcaption><span class="hx-path"><span>Settings</span><span>About</span></span>. Click <strong>Refresh</strong> after reproducing the problem.</figcaption>
+</figure>
+
+<p>The log records warnings and errors, not every alert. Useful lines to search for: <code>Audio folder not found</code> (a random-sound folder outside <code>assets/alerts/</code>) and <code>Error in alert queue processor</code> (shown in the app as <em>Alert queue hit an error and may be stalled. Check logs.</em>). To see what the overlay itself is doing, open <span class="hx-copy" data-copy="http://127.0.0.1:5000/alerts">http://127.0.0.1:5000/alerts</span> in a normal browser, open its developer console, and click <strong>Test Alert</strong>.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:troubleshooting_audio">{{icon:volume_off}}<span><strong>Audio Troubleshooting</strong><span class="hx-card-text">Sound, volume and OBS audio</span></span></a>
+  <a class="hx-card" href="help:troubleshooting_connections">{{icon:wifi_off}}<span><strong>Connection Problems</strong><span class="hx-card-text">Twitch, OBS, overlay server</span></span></a>
+  <a class="hx-card" href="help:alert_testing">{{icon:play_circle}}<span><strong>Testing Your Alerts</strong><span class="hx-card-text">Test, replay and skip</span></span></a>
+</div>

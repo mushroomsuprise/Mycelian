@@ -3,7 +3,7 @@
 """
 Help Browser UI
 
-In-app help browser component with search, navigation, and markdown rendering.
+In-app help browser component with search, navigation, and HTML help pages.
 Styled to match the Mycelian application design.
 """
 
@@ -18,6 +18,7 @@ from typing import Optional, List, Dict
 from ..theme_manager import HELP_SYSTEM_CSS
 from .help_manager import get_help_manager
 from .help_content import HelpCategory, HelpTopic
+from .help_render import help_page_css, help_page_js, render_topic_html
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +26,19 @@ _help_system_styles_injected = False
 
 
 def ensure_help_system_styles() -> None:
-    """Inject help UI stylesheet once (shared); uses :root theme CSS variables."""
+    """Inject help UI stylesheet and page script once (shared); uses :root theme CSS variables."""
     global _help_system_styles_injected
     if _help_system_styles_injected:
         return
+    css = HELP_SYSTEM_CSS + "\n" + help_page_css()
+    js = help_page_js()
     ui.add_head_html(
-        f'<style id="mycelian-help-system">{HELP_SYSTEM_CSS}</style>',
+        f'<style id="mycelian-help-system">{css}</style>'
+        f'<script id="mycelian-help-script">{js}</script>',
         shared=True,
     )
     if core.loop is not None:
-        css_escaped = json.dumps(HELP_SYSTEM_CSS)
+        css_escaped = json.dumps(css)
         ui.run_javascript(f"""
             if (!document.getElementById('mycelian-help-system')) {{
                 const s = document.createElement('style');
@@ -43,6 +47,7 @@ def ensure_help_system_styles() -> None:
                 document.head.appendChild(s);
             }}
         """)
+        ui.run_javascript(js)
     _help_system_styles_injected = True
 
 
@@ -212,64 +217,13 @@ class HelpBrowser:
             pass
 
     def _inject_content_enhancements(self):
-        """Post-process rendered markdown: callout styling and external link icons."""
-        ui.run_javascript("""
-        (function() {
-            const container = document.querySelector('.help-markdown-content');
-            if (!container) return;
-
-            // Callout styling for blockquotes
-            const blockquotes = container.querySelectorAll('blockquote');
-            const types = {
-                'tip:': 'tip', 'warning:': 'warning',
-                'note:': 'note', 'important:': 'important'
-            };
-            blockquotes.forEach(bq => {
-                const firstP = bq.querySelector('p');
-                if (!firstP) return;
-                const strong = firstP.querySelector('strong');
-                if (!strong) return;
-                const text = strong.textContent.trim().toLowerCase();
-                for (const [key, cls] of Object.entries(types)) {
-                    if (text === key || text === key.slice(0, -1)) {
-                        bq.classList.add('help-callout', 'help-callout-' + cls);
-                        break;
-                    }
-                }
-            });
-
-            // Mark external links with an icon so users know they open in the browser
-            container.querySelectorAll('a[href]').forEach(a => {
-                const href = a.getAttribute('href');
-                if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-                    a.style.cursor = 'pointer';
-                    if (!a.querySelector('.help-external-icon')) {
-                        const icon = document.createElement('span');
-                        icon.className = 'help-external-icon';
-                        icon.textContent = ' \\u2197';
-                        icon.style.fontSize = '0.75em';
-                        a.appendChild(icon);
-                    }
-                }
-            });
-        })();
-        """)
-
-    def _extract_toc(self, content: str) -> list:
-        """Extract table of contents entries from markdown content."""
-        toc = []
-        for line in content.strip().split('\n'):
-            stripped = line.strip()
-            if stripped.startswith('## ') and not stripped.startswith('###'):
-                toc.append(('h2', stripped[3:].strip()))
-            elif stripped.startswith('### '):
-                toc.append(('h3', stripped[4:].strip()))
-        return toc
+        """Activate tabs, guides, checklists and copy buttons on the rendered page (help.js)."""
+        ui.run_javascript("window.MycelianHelp && window.MycelianHelp.enhanceSoon();")
 
     @staticmethod
-    def _estimate_reading_time(content: str) -> int:
+    def _estimate_reading_time(text: str) -> int:
         """Estimate reading time in minutes based on word count."""
-        words = len(re.findall(r'\w+', content))
+        words = len(re.findall(r'\w+', text))
         return max(1, round(words / 200))
 
     def _build_sidebar(self):
@@ -318,7 +272,7 @@ class HelpBrowser:
             with ui.button().props("flat dense align=left no-caps").classes(
                 "help-category-btn w-full"
             ).style("padding: 10px 12px;") as header_btn:
-                with ui.row().classes("w-full items-center"):
+                with ui.row().classes("w-full items-center no-wrap"):
                     ui.icon(category_icon, size="xs").classes("help-icon-accent").style("margin-right: 8px;")
                     ui.label(category_name).classes(
                         "grow text-left text-sm help-text-primary"
@@ -357,6 +311,7 @@ class HelpBrowser:
         """Get icon for category"""
         icons = {
             HelpCategory.GETTING_STARTED: "rocket_launch",
+            HelpCategory.CONNECTION_GUIDES: "power",
             HelpCategory.ALERTS: "notifications",
             HelpCategory.TEMPLATES: "dashboard_customize",
             HelpCategory.SPORE_STUDIO: "edit_square",
@@ -592,8 +547,7 @@ class HelpBrowser:
                 (topic.title, None)
             ])
 
-            # Build TOC
-            toc_items = self._extract_toc(topic.content)
+            page_html, toc_items = render_topic_html(topic.id)
             self._render_toc(toc_items)
 
             with self.content_container:
@@ -613,7 +567,7 @@ class HelpBrowser:
                         for kw in topic.keywords[:5]:
                             ui.label(kw).classes("help-keyword-pill")
 
-                    reading_time = self._estimate_reading_time(topic.content)
+                    reading_time = self._estimate_reading_time(topic.plain_text)
                     with ui.row().classes("help-reading-time items-center"):
                         ui.icon("schedule", size="14px").classes("help-text-muted")
                         ui.label(f"{reading_time} min read").classes("help-text-muted").style(
@@ -622,10 +576,9 @@ class HelpBrowser:
 
                 ui.separator().classes("help-separator-accent").style("margin: 8px 0 16px 0;")
 
-                # Markdown content. Articles are first-party, so keep class
-                # attributes on the status-color swatches.
-                with ui.element("div").classes("help-markdown-content w-full"):
-                    ui.markdown(topic.content, sanitize=False).classes("w-full")
+                # HTML page body. Articles are first-party files, so render unsanitized;
+                # interactive pieces are activated by help.js afterwards.
+                ui.html(page_html, sanitize=False).classes("help-doc")
 
                 # Prev/next navigation
                 prev_topic, next_topic = self.help_manager.get_adjacent_topics(topic.id)
@@ -692,8 +645,8 @@ class HelpBrowser:
         except Exception as e:
             logger.error(f"Error rendering topic {topic.id}: {e}")
 
-    def _render_toc(self, toc_items: list):
-        """Render the table of contents sidebar."""
+    def _render_toc(self, toc_items):
+        """Render the table of contents sidebar from (level, text, anchor) entries."""
         if not self.toc_container:
             return
 
@@ -706,24 +659,13 @@ class HelpBrowser:
         self.toc_container.style("display: flex; flex-direction: column;")
         with self.toc_container:
             ui.label("On This Page").classes("help-toc-title")
-            for level, text in toc_items:
+            for level, text, anchor in toc_items:
                 extra_class = "help-toc-item-h3" if level == "h3" else ""
-                escaped = text.replace("'", "\\'").replace('"', '\\"')
                 ui.label(text).classes(
                     f"help-toc-item {extra_class}"
-                ).on("click", lambda t=escaped: ui.run_javascript(f"""
-                    (function() {{
-                        const headings = document.querySelectorAll(
-                            '.help-markdown-content h2, .help-markdown-content h3'
-                        );
-                        for (const h of headings) {{
-                            if (h.textContent.trim() === '{t}') {{
-                                h.scrollIntoView({{behavior: 'smooth', block: 'start'}});
-                                break;
-                            }}
-                        }}
-                    }})();
-                """))
+                ).on("click", lambda a=anchor: ui.run_javascript(
+                    f"window.MycelianHelp && window.MycelianHelp.scrollTo({json.dumps(a)});"
+                ))
 
     def _hide_toc(self):
         """Hide the TOC sidebar."""
@@ -996,7 +938,8 @@ class HelpBrowser:
     def _navigate_to_category(self, category_name: str):
         """Navigate to the first topic in a given category or specific topic"""
         try:
-            if '_' in category_name and not category_name.endswith('_started') and not category_name.endswith('_overview'):
+            is_category = category_name.lower() in {c.value for c in HelpCategory}
+            if not is_category and '_' in category_name:
                 topic = self.help_manager.get_topic(category_name)
                 if topic:
                     self.navigate_to(topic.id)
@@ -1008,10 +951,9 @@ class HelpBrowser:
                     self._show_welcome()
                 return
 
-            from .help_content import HelpCategory
-
             category_mapping = {
                 "getting_started": HelpCategory.GETTING_STARTED,
+                "connection_guides": HelpCategory.CONNECTION_GUIDES,
                 "alerts": HelpCategory.ALERTS,
                 "templates": HelpCategory.TEMPLATES,
                 "spore_studio": HelpCategory.SPORE_STUDIO,

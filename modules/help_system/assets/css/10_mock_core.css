@@ -1,0 +1,652 @@
+/* =========================================================================
+   Mycelian Help — mock UI kit (hm-*)
+   Static, non-functional replicas of the real app chrome, built from the same
+   theme variables and measurements as modules/ui_styles.py so mocks look like
+   the app under every theme. Mocks are illustrations: nothing in them saves.
+
+   Area-specific mock pieces live in 20_mock_<area>.css files.
+   ========================================================================= */
+
+.help-doc .hm {
+    --hm-radius-input: 10px;
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--color-text-primary);
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-default);
+    border-radius: 12px;
+    padding: 10px;
+    margin: 0 0 0.5rem;
+    overflow: hidden;
+    user-select: none;
+    position: relative;
+    box-shadow: 0 6px 24px var(--color-bg-overlay);
+}
+
+.help-doc .hm * { box-sizing: border-box; }
+.help-doc .hm p { margin: 0; }
+
+/* Optional fake window title bar */
+.help-doc .hm-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: -10px -10px 8px;
+    padding: 7px 10px;
+    background: var(--color-bg-elevated);
+    border-bottom: 1px solid var(--color-border-subtle);
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+}
+
+.help-doc .hm-titlebar::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-error);
+    box-shadow: 16px 0 0 var(--color-warning), 32px 0 0 var(--color-success);
+    margin-right: 38px;
+    opacity: 0.85;
+}
+
+/* ---- Layout helpers -------------------------------------------------- */
+
+.help-doc .hm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.help-doc .hm-row.hm-nowrap { flex-wrap: nowrap; }
+.help-doc .hm-row.hm-between { justify-content: space-between; }
+.help-doc .hm-row.hm-end { justify-content: flex-end; }
+.help-doc .hm-row.hm-top { align-items: flex-start; }
+.help-doc .hm-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.help-doc .hm-col.hm-tight { gap: 2px; }
+.help-doc .hm-grow { flex: 1 1 auto; min-width: 0; }
+.help-doc .hm-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.help-doc .hm-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.help-doc .hm-gap-lg { gap: 16px !important; }
+.help-doc .hm-gap-xl { gap: 24px !important; }
+.help-doc .hm-stack > * + * { margin-top: 12px; }
+
+/* ---- Text ------------------------------------------------------------- */
+
+.help-doc .hm-h1 { font-size: 1.125rem; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm-h2 { font-size: 1rem; font-weight: 600; color: var(--color-text-primary); }
+.help-doc .hm-label { font-size: 0.875rem; color: var(--color-text-primary); }
+.help-doc .hm-muted { font-size: 0.85rem; color: var(--color-text-muted); }
+.help-doc .hm-xs { font-size: 0.75rem; }
+.help-doc .hm-sm { font-size: 0.875rem; }
+.help-doc .hm-bold { font-weight: 600; }
+.help-doc .hm-mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 0.8rem; }
+.help-doc .hm-ok { color: var(--color-success) !important; }
+.help-doc .hm-warn { color: var(--color-warning) !important; }
+.help-doc .hm-err { color: var(--color-error) !important; }
+.help-doc .hm-info { color: var(--color-info) !important; }
+.help-doc .hm-accent { color: var(--color-primary) !important; }
+
+.help-doc .hm .hx-mi,
+.help-doc .hm-icon {
+    font-family: 'Material Icons';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 1.15em;
+    line-height: 1;
+    display: inline-block;
+    vertical-align: middle;
+    font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Tier 1: main tabs + content frame (.mycelian-main-tab-shell) ---- */
+
+.help-doc .hm-tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    overflow: hidden;
+    flex-wrap: nowrap;
+}
+
+.help-doc .hm-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 0 11px;
+    border-radius: 8px 8px 0 0;
+    background: var(--color-bg-surface);
+    color: var(--color-text-muted);
+    border-bottom: 1px solid var(--color-border-subtle);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    white-space: nowrap;
+    position: relative;
+    z-index: 1;
+    cursor: default;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.help-doc .hm-tab.is-active {
+    flex-shrink: 0;
+    overflow: visible;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-accent);
+    border-bottom: none;
+    color: var(--color-primary);
+    font-weight: 600;
+    z-index: 6;
+    margin-bottom: -1px;
+    padding-bottom: 1px;
+}
+
+.help-doc .hm-tabs .hm-tabs-tail {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    align-self: center;
+    color: var(--color-text-secondary);
+    padding-left: 8px;
+}
+
+.help-doc .hm-tabs .hm-tabs-tail .hx-mi { font-size: 20px; padding: 4px; }
+
+.help-doc .hm-frame {
+    border: 1px solid var(--color-border-accent);
+    border-radius: 10px;
+    background: var(--color-bg-elevated);
+    padding: 12px;
+    position: relative;
+    z-index: 2;
+    margin-top: -1px;
+}
+
+/* Tier 2: sub-tabs (Settings, Alerts, Chatbot) */
+.help-doc .hm-subtabs { display: flex; align-items: flex-end; gap: 2px; flex-wrap: nowrap; overflow: hidden; }
+
+.help-doc .hm-subtab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 8px 8px 0 0;
+    background: var(--color-bg-surface);
+    color: var(--color-text-muted);
+    border-bottom: 1px solid var(--color-border-subtle);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    white-space: nowrap;
+    position: relative;
+    z-index: 1;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.help-doc .hm-subtab .hx-mi,
+.help-doc .hm-subtab .hx-brand { font-size: 1.15em; }
+
+.help-doc .hm-subtab.is-active {
+    flex-shrink: 0;
+    overflow: visible;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-accent);
+    border-bottom: none;
+    color: var(--color-primary);
+    font-weight: 600;
+    z-index: 6;
+    margin-bottom: -1px;
+    padding-bottom: 1px;
+}
+
+/* Clickable mock tabs: add data-tab / data-panel (same contract as .hx-tabs) */
+.help-doc .hm [data-tab] { cursor: pointer; }
+.help-doc .hm [data-panel]:not(.is-active) { display: none; }
+
+/* ---- Cards / panels --------------------------------------------------- */
+
+/* content-card */
+.help-doc .hm-card {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 4px;
+    padding: 12px;
+}
+
+/* settings_inner_panel() inside a settings subtab */
+.help-doc .hm-panel {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-accent);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.help-doc .hm-panel-title { font-size: 1rem; font-weight: 600; color: var(--color-text-primary); }
+
+/* settings_status_band() + status_metric() */
+.help-doc .hm-status-band { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; }
+.help-doc .hm-metric { display: flex; flex-direction: column; gap: 0; }
+.help-doc .hm-metric > :first-child { font-size: 0.75rem; color: var(--color-text-muted); }
+.help-doc .hm-metric > :nth-child(2) { font-size: 0.875rem; font-weight: 600; }
+.help-doc .hm-metric > :nth-child(3) { font-size: 0.75rem; color: var(--color-text-muted); }
+
+.help-doc .hm-divider { height: 1px; background: var(--color-border-subtle); margin: 4px 0; border: none; }
+
+/* ---- Buttons (Quasar q-btn: unelevated / outline / flat, no-caps) ---- */
+
+.help-doc .hm-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 4px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    background: var(--color-primary);
+    color: #fff;
+    border: 1px solid transparent;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.help-doc .hm-btn .hx-mi { font-size: 1.3em; margin-left: -4px; }
+.help-doc .hm-btn.hm-outline { background: transparent; color: var(--color-primary); border-color: currentColor; }
+.help-doc .hm-btn.hm-flat { background: transparent; color: var(--color-text-primary); }
+.help-doc .hm-btn.hm-danger { background: transparent; color: var(--color-error); border-color: currentColor; }
+.help-doc .hm-btn.hm-success { background: var(--color-success); color: #fff; }
+.help-doc .hm-btn.hm-warning-btn { background: transparent; color: var(--color-warning); }
+.help-doc .hm-btn.hm-dense { min-height: 28px; padding: 2px 10px; font-size: 13px; }
+.help-doc .hm-btn.hm-round { min-height: 32px; width: 32px; padding: 0; border-radius: 50%; }
+.help-doc .hm-btn.hm-round .hx-mi { margin: 0; }
+.help-doc .hm-btn.hm-icon-only { padding: 4px 8px; background: transparent; color: var(--color-text-primary); }
+.help-doc .hm-btn.hm-icon-only .hx-mi { margin: 0; }
+.help-doc .hm-btn.is-disabled { opacity: 0.45; }
+
+/* settings_action_row(): Discard + Save, right aligned */
+.help-doc .hm-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+/* ---- Form fields (q-field outlined dense) ---------------------------- */
+
+.help-doc .hm-field {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 14px 12px 4px;
+    border-radius: var(--hm-radius-input);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-primary);
+    font-size: 0.875rem;
+    min-width: 0;
+}
+
+.help-doc .hm-field[data-label]::before {
+    content: attr(data-label);
+    position: absolute;
+    top: 3px;
+    left: 12px;
+    font-size: 0.68rem;
+    color: var(--color-text-muted);
+}
+
+.help-doc .hm-field.hm-nolabel { padding-top: 4px; }
+.help-doc .hm-field > .hm-value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.help-doc .hm-field > .hm-placeholder { flex: 1 1 auto; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; }
+.help-doc .hm-field > .hx-mi { color: var(--color-text-muted); font-size: 1.25em; }
+.help-doc .hm-field.is-focused { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-focus-ring); }
+.help-doc .hm-field.is-error { border-color: var(--color-error); }
+.help-doc .hm-field.hm-base { background: var(--color-bg-base); }
+.help-doc .hm-field.hm-elevated { background: var(--color-bg-elevated); }
+
+/* Select: adds a dropdown arrow */
+.help-doc .hm-field.hm-select::after {
+    font-family: 'Material Icons';
+    content: 'arrow_drop_down';
+    font-size: 22px;
+    color: var(--color-text-muted);
+    margin-right: -6px;
+}
+
+/* Textarea */
+.help-doc .hm-field.hm-textarea { align-items: flex-start; min-height: 72px; white-space: pre-wrap; }
+
+/* Secret value rendered as dots */
+.help-doc .hm-secret { letter-spacing: 2px; }
+
+/* ---- Switch (q-toggle) ------------------------------------------------ */
+
+.help-doc .hm-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+    cursor: pointer;
+}
+
+.help-doc .hm-switch > i {
+    position: relative;
+    flex: 0 0 auto;
+    width: 34px;
+    height: 14px;
+    border-radius: 7px;
+    background: var(--color-border-default);
+    transition: background 0.2s ease;
+}
+
+.help-doc .hm-switch > i::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    transform: translateY(-50%);
+    background: var(--color-text-secondary);
+    box-shadow: 0 1px 3px var(--color-bg-overlay);
+    transition: left 0.2s ease, background 0.2s ease;
+}
+
+.help-doc .hm-switch.is-on > i { background: color-mix(in srgb, var(--color-primary) 85%, transparent); }
+.help-doc .hm-switch.is-on > i::after { left: 16px; background: var(--color-primary); }
+
+/* ---- Checkbox --------------------------------------------------------- */
+
+.help-doc .hm-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    cursor: pointer;
+}
+
+.help-doc .hm-check > i {
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    border: 2px solid var(--color-border-default);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.help-doc .hm-check.is-on > i { background: var(--color-primary); border-color: var(--color-primary); }
+.help-doc .hm-check.is-on > i::after { content: '\2713'; color: #fff; font-size: 12px; font-style: normal; font-weight: 700; }
+
+/* ---- Slider ----------------------------------------------------------- */
+
+.help-doc .hm-slider {
+    --hm-val: 50%;
+    position: relative;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--color-border-subtle);
+    margin: 10px 8px;
+    min-width: 80px;
+}
+
+.help-doc .hm-slider::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--hm-val);
+    background: var(--color-primary);
+    border-radius: inherit;
+}
+
+.help-doc .hm-slider::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: var(--hm-val);
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    transform: translate(-50%, -50%);
+}
+
+/* ---- Chips & badges -------------------------------------------------- */
+
+.help-doc .hm-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: var(--color-primary-light);
+    border: 1px solid var(--color-border-accent);
+    color: var(--color-text-primary);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.help-doc .hm-chip.hm-plain { background: var(--color-bg-surface); border-color: var(--color-border-subtle); }
+
+.help-doc .hm-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: var(--color-primary);
+    color: #fff;
+    line-height: 1.5;
+}
+
+.help-doc .hm-badge.hm-outline { background: transparent; color: var(--color-primary); border: 1px solid currentColor; }
+.help-doc .hm-badge.hm-badge-ok { background: var(--color-success); }
+.help-doc .hm-badge.hm-badge-warn { background: var(--color-warning); color: var(--color-text-inverse); }
+.help-doc .hm-badge.hm-badge-err { background: var(--color-error); }
+
+.help-doc .hm-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-text-muted);
+    flex: 0 0 auto;
+}
+
+.help-doc .hm-dot.hm-ok { background: var(--color-success); }
+.help-doc .hm-dot.hm-warn { background: var(--color-warning); }
+.help-doc .hm-dot.hm-err { background: var(--color-error); }
+.help-doc .hm-dot.hm-info { background: var(--color-info); }
+
+/* ---- Expansion (q-expansion-item dense) ------------------------------ */
+
+.help-doc .hm-expansion {
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--color-bg-surface);
+}
+
+.help-doc .hm-expansion > .hm-expansion-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    min-height: 36px;
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+    border-bottom: 1px solid var(--color-border-subtle);
+    cursor: pointer;
+}
+
+.help-doc .hm-expansion > .hm-expansion-head::after {
+    font-family: 'Material Icons';
+    content: 'keyboard_arrow_down';
+    margin-left: auto;
+    font-size: 20px;
+    color: var(--color-text-secondary);
+    transition: transform 0.2s ease;
+}
+
+.help-doc .hm-expansion.is-open > .hm-expansion-head::after { transform: rotate(180deg); }
+.help-doc .hm-expansion > .hm-expansion-body { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.help-doc .hm-expansion:not(.is-open) > .hm-expansion-body { display: none; }
+
+/* ---- Simple list / table --------------------------------------------- */
+
+.help-doc .hm-list { display: flex; flex-direction: column; border: 1px solid var(--color-border-subtle); border-radius: 6px; overflow: hidden; }
+.help-doc .hm-list-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-bg-surface); font-size: 0.85rem; }
+.help-doc .hm-list-item:last-child { border-bottom: none; }
+.help-doc .hm-list-item.is-selected { background: var(--color-primary-light); }
+
+.help-doc .hm table.hm-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.help-doc .hm table.hm-table th { background: var(--color-bg-surface); color: var(--color-text-primary); border-bottom: 1px solid var(--color-border-default); padding: 6px 10px; text-align: left; font-weight: 600; }
+.help-doc .hm table.hm-table td { color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border-subtle); padding: 6px 10px; }
+.help-doc .hm table.hm-table tr:hover td { background: var(--color-hover-overlay); }
+
+/* ---- Service status footer (.service-status-footer) ------------------ */
+
+.help-doc .hm-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px 16px;
+    min-height: 36px;
+    margin-top: 8px;
+    padding: 6px 12px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-accent);
+    border-radius: 8px;
+}
+
+.help-doc .hm-footer-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    padding: 0 4px;
+    border-radius: 4px;
+}
+
+.help-doc .hm-footer-item .hx-brand { font-size: 0.85rem; }
+
+/* ---- Toast (notification_engine) ------------------------------------- */
+
+.help-doc .hm-toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
+    border-left: 4px solid var(--hm-toast, var(--color-notify-info));
+    border-radius: 8px;
+    box-shadow: 0 6px 18px var(--color-bg-overlay);
+    font-size: 0.85rem;
+    max-width: 380px;
+}
+
+.help-doc .hm-toast > .hx-mi { color: var(--hm-toast, var(--color-notify-info)); font-size: 20px; }
+.help-doc .hm-toast.hm-ok { --hm-toast: var(--color-notify-success); color: inherit !important; }
+.help-doc .hm-toast.hm-warn { --hm-toast: var(--color-notify-warning); color: inherit !important; }
+.help-doc .hm-toast.hm-err { --hm-toast: var(--color-notify-error); color: inherit !important; }
+
+/* ---- Annotation markers ---------------------------------------------- */
+/* Place <span class="hm-marker" data-n="1"></span> next to a mock element and
+   pair it with <ol class="hx-annotations"><li data-n="1">…</li></ol>. Hovering
+   either side highlights both. */
+
+.help-doc .hm-marker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-size: 0.7rem;
+    font-weight: 700;
+    box-shadow: 0 0 0 3px var(--color-primary-light);
+    cursor: help;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    z-index: 10;
+}
+
+.help-doc .hm-marker::before { content: attr(data-n); }
+.help-doc .hm-marker.is-hot { transform: scale(1.2); box-shadow: 0 0 0 5px var(--color-focus-ring); }
+
+/* Absolutely positioned marker: add hm-pin and set style="top:…;left:…" */
+.help-doc .hm-marker.hm-pin { position: absolute; }
+
+/* Highlight ring around a mock element: add hm-highlight */
+.help-doc .hm .hm-highlight {
+    outline: 2px dashed var(--color-primary);
+    outline-offset: 3px;
+    border-radius: 6px;
+}
+
+/* Pulse an element to show "click here" */
+@keyframes hm-pulse {
+    0% { box-shadow: 0 0 0 0 var(--color-focus-ring); }
+    70% { box-shadow: 0 0 0 8px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.help-doc .hm .hm-pulse { animation: hm-pulse 1.8s ease-out infinite; }
+
+/* Browser window frame for third-party sites (Twitch console, Spotify dashboard…).
+   These are not Mycelian UI, so they use neutral surface colors rather than brand
+   palettes and are labeled as external pages. */
+.help-doc .hm.hm-browser { padding: 0; background: var(--color-bg-elevated); }
+
+.help-doc .hm-browser-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    background: var(--color-bg-surface);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hm-browser-bar::before {
+    content: '';
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--color-text-muted);
+    box-shadow: 14px 0 0 var(--color-text-muted), 28px 0 0 var(--color-text-muted);
+    margin-right: 32px;
+    opacity: 0.5;
+}
+
+.help-doc .hm-browser-url {
+    flex: 1;
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 999px;
+    padding: 3px 12px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.help-doc .hm-browser-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+
+@media (max-width: 900px) {
+    .help-doc .hm-grid-2,
+    .help-doc .hm-grid-3 { grid-template-columns: 1fr; }
+}

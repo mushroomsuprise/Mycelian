@@ -1,0 +1,335 @@
+/* =========================================================================
+   Mycelian Help — general mock pieces (Getting Started, Settings, Connection
+   Guides hub). Scoped under .help-doc .hm, theme variables only.
+   ========================================================================= */
+
+/* ---- Service status footer, faithful copy of .service-status-footer ------
+   (modules/ui_styles.py). The core .hm-footer is a simplified version; these
+   pieces add the pill badge, the dot and the minimal ring mode.            */
+
+.help-doc .hm .hm-sf {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px 16px;
+    min-height: 36px;
+    padding: 6px 12px;
+    margin-top: 6px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-accent);
+    border-radius: 10px;
+    line-height: 1;
+}
+
+.help-doc .hm .hm-sf-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    white-space: nowrap;
+    position: relative;
+}
+
+.help-doc .hm .hm-sf-item:hover { background: var(--color-hover-overlay); }
+
+.help-doc .hm .hm-sf-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+}
+
+.help-doc .hm .hm-sf-icon .hx-brand,
+.help-doc .hm .hm-sf-icon svg { width: 14px; height: 14px; font-size: 14px; display: block; }
+
+.help-doc .hm .hm-sf-name { font-size: 12px; font-weight: 500; color: var(--color-text-primary); }
+
+.help-doc .hm .hm-sf-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: var(--hm-sf, var(--color-text-secondary));
+}
+
+.help-doc .hm .hm-sf-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--hm-sf, var(--color-text-secondary));
+    background: color-mix(in srgb, var(--hm-sf, var(--color-text-secondary)) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--hm-sf, var(--color-text-secondary)) 25%, transparent);
+}
+
+/* Tier colors (same mapping as footer_status_tier) */
+.help-doc .hm .hm-sf-success { --hm-sf: var(--color-success); }
+.help-doc .hm .hm-sf-info { --hm-sf: var(--color-info); }
+.help-doc .hm .hm-sf-muted { --hm-sf: var(--color-text-secondary); }
+.help-doc .hm .hm-sf-warning { --hm-sf: var(--color-warning); }
+.help-doc .hm .hm-sf-error { --hm-sf: var(--color-error); }
+
+/* Minimal mode: icon with a status-colored ring, name and badge hidden */
+.help-doc .hm .hm-sf.hm-sf-minimal .hm-sf-item:not(.hm-sf-progress) { gap: 0; padding: 2px; }
+.help-doc .hm .hm-sf.hm-sf-minimal .hm-sf-item:not(.hm-sf-progress) .hm-sf-name,
+.help-doc .hm .hm-sf.hm-sf-minimal .hm-sf-item:not(.hm-sf-progress) .hm-sf-dot,
+.help-doc .hm .hm-sf.hm-sf-minimal .hm-sf-item:not(.hm-sf-progress) .hm-sf-badge { display: none; }
+
+.help-doc .hm .hm-sf.hm-sf-minimal .hm-sf-item:not(.hm-sf-progress) .hm-sf-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    box-shadow: 0 0 0 2px var(--hm-sf, var(--color-text-muted));
+}
+
+/* Hover tooltip used in mocks to show the status word (data-tip) */
+.help-doc .hm .hm-sf-item[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    right: 0;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 20;
+}
+
+/* ---- Main window shell ------------------------------------------------- */
+
+.help-doc .hm .hm-win-body {
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.help-doc .hm .hm-feed-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    font-size: 0.82rem;
+}
+
+.help-doc .hm .hm-feed-row .hx-mi { color: var(--color-primary); }
+.help-doc .hm .hm-feed-row .hm-feed-time { margin-left: auto; color: var(--color-text-muted); font-size: 0.72rem; }
+
+/* Settings "Jump to" select sits above the sub-tab strip */
+.help-doc .hm .hm-jump { width: 14rem; max-width: 100%; margin-bottom: 6px; }
+
+/* ---- Source URL card (Settings → About → Available Source URLs) ------- */
+
+.help-doc .hm .hm-url-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 8px;
+}
+
+.help-doc .hm .hm-url-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    min-width: 0;
+}
+
+.help-doc .hm .hm-url-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.help-doc .hm .hm-url-card-title { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.help-doc .hm .hm-url-card-badge {
+    font-size: 0.68rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.help-doc .hm .hm-url-card-btns { margin-left: auto; display: inline-flex; gap: 4px; flex: 0 0 auto; }
+
+.help-doc .hm .hm-url-card-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    border-radius: 4px;
+    border: 1px solid var(--color-primary);
+    color: var(--color-primary);
+}
+
+.help-doc .hm .hm-url-card-btn .hx-mi { font-size: 16px; }
+.help-doc .hm .hm-url-card-btn .hx-brand svg { width: 14px; height: 14px; }
+
+/* ---- Dialog card (Quasar q-dialog > q-card) --------------------------- */
+
+.help-doc .hm .hm-gn-dialog {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 16px;
+    border-radius: 8px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
+    box-shadow: 0 10px 30px var(--color-bg-overlay);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.help-doc .hm .hm-gn-dialog-title { font-size: 1.05rem; font-weight: 700; }
+
+/* ---- Neutral third-party app window (OBS) ----------------------------- */
+
+.help-doc .hm .hm-ext {
+    border: 1px solid var(--color-border-default);
+    border-radius: 6px;
+    background: var(--color-bg-surface);
+    overflow: hidden;
+}
+
+.help-doc .hm .hm-ext-bar {
+    padding: 5px 10px;
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    background: var(--color-bg-base);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hm .hm-ext-body { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+.help-doc .hm .hm-ext-menu {
+    display: flex;
+    flex-direction: column;
+    min-width: 180px;
+    max-width: 240px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    background: var(--color-bg-elevated);
+    font-size: 0.82rem;
+}
+
+.help-doc .hm .hm-ext-menu > span { padding: 5px 10px; }
+.help-doc .hm .hm-ext-menu > span.is-hot { background: var(--color-primary-light); color: var(--color-text-primary); }
+
+/* ---- Game Hooks card (content-card with a 2px state border) ----------- */
+
+.help-doc .hm .hm-hook-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 4px;
+    background: var(--color-bg-surface);
+    border: 2px solid transparent;
+    min-width: 0;
+}
+
+.help-doc .hm .hm-hook-card.is-ok { border-color: var(--color-success); }
+.help-doc .hm .hm-hook-card.is-warn { border-color: var(--color-warning); }
+.help-doc .hm .hm-hook-card.is-err { border-color: var(--color-error); }
+.help-doc .hm .hm-hook-card.is-unsupported { border-color: var(--color-error); opacity: 0.6; }
+
+.help-doc .hm .hm-os {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.help-doc .hm .hm-os > span {
+    font-size: 0.62rem;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--color-border-default);
+    color: var(--color-text-primary);
+}
+
+.help-doc .hm .hm-os > span.is-off { opacity: 0.45; color: var(--color-text-muted); }
+
+/* ---- Theme swatches (read the live theme variables) ------------------- */
+
+.help-doc .hm .hm-swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 6px;
+}
+
+.help-doc .hm .hm-gn-swatch { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 9px; color: var(--color-text-muted); }
+.help-doc .hm .hm-gn-swatch > i { width: 100%; height: 22px; border-radius: 3px; border: 1px solid var(--color-border-default); }
+.help-doc .hm .hm-swatch-primary > i { background: var(--color-primary); }
+.help-doc .hm .hm-swatch-base > i { background: var(--color-bg-base); }
+.help-doc .hm .hm-swatch-surface > i { background: var(--color-bg-surface); }
+.help-doc .hm .hm-swatch-elevated > i { background: var(--color-bg-elevated); }
+.help-doc .hm .hm-swatch-text > i { background: var(--color-text-primary); }
+.help-doc .hm .hm-swatch-muted > i { background: var(--color-text-muted); }
+.help-doc .hm .hm-swatch-success > i { background: var(--color-success); }
+.help-doc .hm .hm-swatch-warning > i { background: var(--color-warning); }
+.help-doc .hm .hm-swatch-error > i { background: var(--color-error); }
+.help-doc .hm .hm-swatch-info > i { background: var(--color-info); }
+
+/* ---- Alert preview (what a test alert looks like on the overlay) ------ */
+
+.help-doc .hm .hm-overlay {
+    position: relative;
+    height: 190px;
+    max-width: 100%;
+    border-radius: 6px;
+    background: var(--color-bg-base);
+    border: 1px dashed var(--color-border-default);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.help-doc .hm .hm-overlay-alert {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+}
+
+.help-doc .hm .hm-overlay-gif {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    background: var(--color-primary-light);
+    border: 1px solid var(--color-border-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-primary);
+}
+
+.help-doc .hm .hm-overlay-gif .hx-mi { font-size: 30px; }
+.help-doc .hm .hm-overlay-name { font-weight: 700; color: var(--color-primary); }
+
+@media (max-width: 700px) {
+    .help-doc .hm .hm-url-grid { grid-template-columns: 1fr; }
+}
+
+/* Sub-tab strip that wraps onto two rows (Settings has 14 tabs) */
+.help-doc .hm .hm-subtabs.hm-wrap { flex-wrap: wrap; row-gap: 4px; }
+.help-doc .hm .hm-subtabs.hm-wrap .hm-subtab { flex: 0 0 auto; border-radius: 8px; border: 1px solid var(--color-border-subtle); }
+.help-doc .hm .hm-subtabs.hm-wrap .hm-subtab.is-active { border-color: var(--color-border-accent); margin-bottom: 0; padding-bottom: 0; }
+.help-doc .hm .hm-subtabs.hm-wrap + .hm-frame { margin-top: 6px; }

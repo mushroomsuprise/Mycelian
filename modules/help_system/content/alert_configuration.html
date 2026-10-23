@@ -1,0 +1,322 @@
+<p class="hx-lead">This page walks through every control on an alert: the selector row, the five settings sections, and the Save, Test and Delete buttons. For a first walkthrough, see <a href="help:first_alert_setup">Setting Up Your First Alert</a>.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 5 minutes per alert</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Alerts</span><span>Bits</span></span> (or any other sub-tab)</span>
+</div>
+
+<h2>Create an alert</h2>
+
+<section class="hx-guide" data-guide="alert_configuration_create" data-title="New alert">
+  <div class="hx-step">
+    <h3>Pick the alert type</h3>
+    <p>Open the <strong>Alerts</strong> tab and click a sub-tab: <strong>Bits</strong>, <strong>Subscriptions</strong>, <strong>Streaks</strong>, <strong>Gift Subs</strong>, <strong>Donations</strong>, <strong>Raids</strong>, <strong>Follows</strong> or <strong>Channel Points</strong>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Choose + Create New Alert</h3>
+    <p>Open <strong>Select Alert</strong> and choose <strong>+ Create New Alert</strong>. The form fills with defaults: <strong>Duration</strong> 3 seconds, <strong>Volume</strong> 100%, everything else empty or off. To start from an existing alert instead, select it and click <strong>Duplicate</strong>; the copy gets the next free amount.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Set the amount</h3>
+    <p>Type one amount, or turn on <strong>Range Mode</strong> and fill <strong>Min</strong> and <strong>Max</strong>. The amount is what identifies the alert, so each amount or range can only have one alert. See <a href="#amounts-and-ranges">Amounts and ranges</a>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Add a GIF and a sound</h3>
+    <p>Open <strong>Visual</strong> and click <strong>Browse</strong> to pick an image. Open <strong>Audio</strong> and click <strong>Browse</strong> under <strong>Primary Sound</strong>. Both must be inside Mycelian's <code>assets</code> folder; see <a href="help:alert_media">Alert Media Configuration</a>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Test, then save</h3>
+    <p>Click <strong>Test Alert</strong> to play the form as it is. When it looks right, click <strong>Save Alert</strong>. A toast confirms, for example <em>Saved bits alert: 100-999 Bits</em>.</p>
+  </div>
+</section>
+
+<h2>The alert form</h2>
+
+<p>Every alert type uses this form. Click a section header to open or close it; in the app all sections start closed.</p>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hma-alert-bar">
+      <div class="hm-field hm-select hm-base hma-w-select" data-label="Select Alert"><span class="hm-value">100-999 Bits</span></div>
+      <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
+      <span class="hm-sm">Range Mode</span><span class="hm-switch is-on"><i></i></span>
+      <div class="hm-field hm-base hma-w-num-sm" data-label="Min"><span class="hm-value">100 bits</span></div>
+      <div class="hm-field hm-base hma-w-num-sm" data-label="Max"><span class="hm-value">999 bits</span></div>
+      <span class="hm-marker" data-n="1"></span>
+    </div>
+    <div class="hma-alert-form">
+      <div class="hm-col">
+        <div class="hm-expansion is-open">
+          <div class="hm-expansion-head"><span class="hx-mi">settings</span>General<span class="hm-marker" data-n="2"></span></div>
+          <div class="hm-expansion-body">
+            <div class="hma-fgroup-grid">
+              <div class="hma-fgroup"><span class="hma-fgroup-title">Timing</span><div class="hm-field hm-base" data-label="Duration"><span class="hm-value">5.0</span></div></div>
+              <div class="hma-fgroup"><span class="hma-fgroup-title">Behavior</span><span class="hm-switch"><i></i>Stackable</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hm-expansion is-open">
+          <div class="hm-expansion-head"><span class="hx-mi">volume_up</span>Audio<span class="hm-marker" data-n="3"></span></div>
+          <div class="hm-expansion-body">
+            <div class="hma-fgroup">
+              <span class="hma-fgroup-title">Audio Controls</span>
+              <div class="hma-vol">
+                <div class="hm-field hm-base" data-label="Fade In"><span class="hm-value">0</span></div>
+                <div class="hm-field hm-base" data-label="Fade Out"><span class="hm-value">250</span></div>
+                <span class="hma-vol-slider"><span class="hm-sm hm-bold">Volume</span><span class="hm-slider" style="--hm-val:80%"></span><span class="hm-sm hm-bold">80%</span></span>
+              </div>
+            </div>
+            <div class="hma-fgroup">
+              <span class="hma-fgroup-title">Primary Sound</span>
+              <div class="hm-field hm-base" data-label="Directory"><span class="hm-value hm-mono">/assets/alerts/bits/</span></div>
+              <div class="hm-field hm-base" data-label="File"><span class="hm-value hm-mono">cheer.mp3</span></div>
+              <div class="hm-row"><span class="hm-btn hm-flat hm-dense"><span class="hx-mi">folder</span>Browse</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hm-expansion is-open">
+          <div class="hm-expansion-head"><span class="hx-mi">record_voice_over</span>TTS<span class="hm-marker" data-n="4"></span></div>
+          <div class="hm-expansion-body">
+            <div class="hma-fgroup"><span class="hma-fgroup-title">Speech Playback</span><span class="hm-switch"><i></i>Enable Text-to-Speech</span></div>
+            <div class="hma-fgroup">
+              <span class="hma-fgroup-title">Speech Source</span>
+              <div class="hm-field hm-select hm-base" data-label="TTS Text Source"><span class="hm-value">Alert Message</span></div>
+              <div class="hm-field hm-base" data-label="Custom TTS Message"><span class="hm-placeholder">Thanks for the support!</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="hm-col">
+        <div class="hm-expansion is-open">
+          <div class="hm-expansion-head"><span class="hx-mi">image</span>Visual<span class="hm-marker" data-n="5"></span></div>
+          <div class="hm-expansion-body">
+            <div class="hma-fgroup"><span class="hma-fgroup-title">GIF Directory</span><div class="hm-field hm-base" data-label="GIF Directory"><span class="hm-value hm-mono">/assets/alerts/bits/</span></div></div>
+            <div class="hma-fgroup"><span class="hma-fgroup-title">GIF File</span><div class="hm-field hm-base" data-label="GIF File"><span class="hm-value hm-mono">medium_cheer.gif</span></div></div>
+            <div class="hma-fgroup"><span class="hma-fgroup-title">File Selection</span><div class="hm-row"><span class="hm-btn hm-flat hm-dense"><span class="hx-mi">folder</span>Browse</span></div></div>
+          </div>
+        </div>
+        <div class="hm-expansion">
+          <div class="hm-expansion-head"><span class="hx-mi">shuffle</span>Randomizer<span class="hm-marker" data-n="6"></span></div>
+          <div class="hm-expansion-body">
+            <div class="hma-fgroup">
+              <span class="hma-fgroup-title">Random Sound</span>
+              <span class="hm-switch"><i></i>Enable Random Sounds</span>
+              <div class="hm-field hm-base" data-label="Directory"><span class="hm-placeholder">&nbsp;</span></div>
+              <div class="hm-field hm-base" data-label="Chance (%)"><span class="hm-value">0</span></div>
+              <div class="hm-row"><span class="hm-btn hm-flat hm-dense"><span class="hx-mi">folder</span>Browse</span></div>
+            </div>
+            <div class="hma-fgroup">
+              <span class="hma-fgroup-title">Extra Random Sound</span>
+              <span class="hm-switch"><i></i>Enable Extra Random Sounds</span>
+              <div class="hm-field hm-base" data-label="Directory"><span class="hm-placeholder">&nbsp;</span></div>
+              <div class="hm-field hm-base" data-label="Chance (%)"><span class="hm-value">0</span></div>
+              <div class="hm-row"><span class="hm-btn hm-flat hm-dense"><span class="hx-mi">folder</span>Browse</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="hma-alert-foot">
+      <span class="hma-unsaved">Unsaved changes</span>
+      <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">play_arrow</span>Test Alert</span>
+      <span class="hm-btn hma-solid-danger hm-dense"><span class="hx-mi">delete</span>Delete Alert</span>
+      <span class="hm-btn hm-success hm-dense"><span class="hx-mi">save</span>Save Alert</span>
+      <span class="hm-marker" data-n="7"></span>
+    </div>
+  </div>
+  <figcaption>A Bits range alert. Click <strong>Randomizer</strong> to open it, or click a switch to see it flip. This is a picture; nothing here saves.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">Selector row: which alert you are editing and the amount it answers to.</li>
+  <li data-n="2"><strong>General</strong>: how long it shows and whether it may stack.</li>
+  <li data-n="3"><strong>Audio</strong>: fades, volume and the main sound file.</li>
+  <li data-n="4"><strong>TTS</strong>: read the alert out loud with the browser's speech voice.</li>
+  <li data-n="5"><strong>Visual</strong>: the GIF or image.</li>
+  <li data-n="6"><strong>Randomizer</strong>: play a random sound from a folder some of the time.</li>
+  <li data-n="7"><strong>Unsaved changes</strong> appears after you edit. <strong>Delete Alert</strong> only shows for an alert that is already saved.</li>
+</ol>
+
+<h2>Field reference</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="general" class="is-active">General</button>
+    <button data-tab="audio">Audio</button>
+    <button data-tab="tts">TTS</button>
+    <button data-tab="visual">Visual</button>
+    <button data-tab="random">Randomizer</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="general">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Field</th><th>What it does</th><th>Default</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Duration</strong></td><td>How long the alert shows, in seconds. Minimum 0.1. The overlay also waits for the sound and speech to finish before the next alert.</td><td>3.0</td></tr>
+    <tr><td><strong>Stackable</strong></td><td>Allow multiple alerts of this type to stack instead of waiting in line one after another.</td><td>Off</td></tr>
+    </tbody></table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="audio">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Field</th><th>What it does</th><th>Default</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Fade In</strong></td><td>Milliseconds for the sound to rise from silent to full volume.</td><td>0</td></tr>
+    <tr><td><strong>Fade Out</strong></td><td>Milliseconds to fade the sound out at its end.</td><td>0</td></tr>
+    <tr><td><strong>Volume</strong></td><td>Slider, 0-100%, for this alert's sound.</td><td>100%</td></tr>
+    <tr><td><strong>Primary Sound</strong>: <strong>Directory</strong>, <strong>File</strong></td><td>The sound that plays. <strong>Browse</strong> fills both.</td><td>Empty</td></tr>
+    <tr><td><strong>Audio Only</strong> (Channel Points only)</td><td>Play only audio without any visual elements.</td><td>Off</td></tr>
+    </tbody></table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="tts">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Field</th><th>What it does</th><th>Default</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Enable Text-to-Speech</strong></td><td>Speak this alert using the browser text-to-speech system.</td><td>Off</td></tr>
+    <tr><td><strong>TTS Text Source</strong></td><td><strong>Alert Message</strong> reads the viewer's message. <strong>Custom Message</strong> reads the text below instead.</td><td>Alert Message</td></tr>
+    <tr><td><strong>Custom TTS Message</strong></td><td>Static message to speak when <strong>Custom Message</strong> is selected.</td><td>Empty</td></tr>
+    </tbody></table></div>
+    <p>Speech rate, pitch and volume are template settings: <strong>TTS Speech Rate</strong>, <strong>TTS Pitch</strong> and <strong>TTS Volume</strong> in <span class="hx-path"><span>Source Settings</span><span>alerts</span></span>.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="visual">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Field</th><th>What it does</th><th>Default</th></tr></thead>
+    <tbody>
+    <tr><td><strong>GIF Directory</strong></td><td>Folder that holds the image, as a path starting with <code>/assets/</code>.</td><td>Empty</td></tr>
+    <tr><td><strong>GIF File</strong></td><td>Image file name. GIF, PNG, JPG/JPEG and WebP work.</td><td>Empty</td></tr>
+    <tr><td><strong>Browse</strong></td><td>Opens a file picker and fills both fields.</td><td></td></tr>
+    </tbody></table></div>
+    <p>Size and position of the image are template settings (<strong>GIF Width</strong>, <strong>GIF Height</strong>, <strong>GIF Fit Mode</strong>…) in <span class="hx-path"><span>Source Settings</span><span>alerts</span></span>.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="random">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Field</th><th>What it does</th><th>Default</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Enable Random Sounds</strong></td><td>Turns the randomizer on. Both random options below need this on.</td><td>Off</td></tr>
+    <tr><td><strong>Directory</strong> / <strong>Chance (%)</strong></td><td>Folder of sounds, and the chance (0-100) to play one of them instead of the primary sound.</td><td>Empty / 0</td></tr>
+    <tr><td><strong>Enable Extra Random Sounds</strong></td><td>A second, usually rarer folder. Mycelian rolls for it first.</td><td>Off</td></tr>
+    <tr><td><strong>Directory</strong> / <strong>Chance (%)</strong></td><td>The rare folder and its chance.</td><td>Empty / 0</td></tr>
+    </tbody></table></div>
+    <p>How the rolls combine is explained in <a href="help:alert_media">Alert Media Configuration</a>.</p>
+  </div>
+</div>
+
+<h2 id="amounts-and-ranges">Amounts and ranges</h2>
+
+<p>The selector row is different on each sub-tab:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Sub-tab</th><th>Amount field</th><th>Default for a new alert</th></tr></thead>
+<tbody>
+<tr><td>Bits</td><td><strong>Amount</strong> (shown with "bits")</td><td>100</td></tr>
+<tr><td>Subscriptions</td><td><strong>Month</strong>: 1 for a new sub, 2+ for resub months</td><td>1 (range 1-3)</td></tr>
+<tr><td>Streaks</td><td><strong>Streak count</strong></td><td>2 (range 2-5)</td></tr>
+<tr><td>Gift Subs</td><td><strong>Amount</strong> (subs gifted)</td><td>1</td></tr>
+<tr><td>Donations</td><td><strong>Amount</strong> (alert currency)</td><td>5</td></tr>
+<tr><td>Raids</td><td><strong>Amount</strong> (raiders)</td><td>10</td></tr>
+<tr><td>Follows</td><td>None</td><td></td></tr>
+<tr><td>Channel Points</td><td>None. You pick a Twitch reward.</td><td></td></tr>
+</tbody>
+</table></div>
+
+<p>Turn on <strong>Range Mode</strong> to replace the amount with <strong>Min</strong> and <strong>Max</strong>. Both ends count: <code>100-999</code> matches 100 and 999. A tiered Bits setup could look like this:</p>
+
+<pre><code>1-99        Small cheer
+100-999     Medium cheer
+1000-100000 Big celebration
+</code></pre>
+
+<p>When an event arrives, an exact-amount alert beats a range. If no exact alert exists, the first range containing the amount plays. If nothing matches, Mycelian falls back to another alert of the same type.</p>
+
+<div class="hx-callout hx-warning"><p>Keep ranges from overlapping. If two ranges contain the same amount, either one may play. Test the boundary values (for example exactly 100 and 999) after you save.</p></div>
+
+<div class="hx-callout hx-note"><p>Saving with an amount or range that already has an alert replaces that alert. Use a different amount, or select the existing alert and edit it.</p></div>
+
+<h3>Resub Fallback</h3>
+
+<p>On <strong>Subscriptions</strong>, the selector always lists <strong>Resub Fallback</strong>, and a <strong>Resub Fallback</strong> switch sits at the right of the row. When the switch is on, the Resub Fallback alert plays for resubs that don't match any configured month alert. When it is off, unmatched resubs fall back to another sub alert.</p>
+
+<h3>Channel Points</h3>
+
+<p>The <strong>Channel Points</strong> sub-tab loads your rewards from Twitch. Instead of <strong>Select Alert</strong> it has <strong>Select Point Reward</strong> and a <strong>Refresh Rewards</strong> button. It also adds:</p>
+
+<ul>
+<li><strong>Enable as Alert</strong> in <strong>General</strong>. A reward only plays an alert when this is on.</li>
+<li><strong>Audio Only</strong> in <strong>Audio</strong>, for sound-only redemptions.</li>
+<li>A <strong>Twitch Options</strong> section that edits the reward on Twitch itself.</li>
+</ul>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-expansion is-open">
+      <div class="hm-expansion-head"><span class="hx-mi">api</span>Twitch Options</div>
+      <div class="hm-expansion-body">
+        <div class="hm-grid-2">
+          <div class="hm-field" data-label="Reward Title"><span class="hm-value">Hydrate!</span></div>
+          <div class="hm-field" data-label="Point Cost"><span class="hm-value">100</span></div>
+          <span class="hm-switch is-on"><i></i>Reward Enabled</span>
+          <span class="hm-switch"><i></i>Require User Input</span>
+        </div>
+        <div class="hm-field" data-label="User Input Prompt"><span class="hm-placeholder">&nbsp;</span></div>
+        <div class="hm-grid-2">
+          <span class="hm-switch"><i></i>Limit Per Stream</span>
+          <div class="hm-field" data-label="Max Per Stream"><span class="hm-value">1</span></div>
+          <span class="hm-switch"><i></i>Limit Per User</span>
+          <div class="hm-field" data-label="Max Per User"><span class="hm-value">1</span></div>
+          <span class="hm-switch is-on"><i></i>Global Cooldown</span>
+          <div class="hm-field" data-label="Cooldown (seconds)"><span class="hm-value">60</span></div>
+        </div>
+        <span class="hm-switch"><i></i>Skip Request Queue</span>
+      </div>
+    </div>
+  </div>
+  <figcaption>Channel Points only. <strong>Skip Request Queue</strong> auto-fulfills redemptions on Twitch.</figcaption>
+</figure>
+
+<p>To make a new reward, choose <strong>+ Create New Reward</strong>, fill in <strong>Twitch Options</strong>, and click <strong>Save Alert</strong>. If the list shows <em>Twitch not connected - Please connect in Settings</em>, connect on <a href="help:twitch_setup">Settings → Twitch</a>. If it shows <em>Channel points not available — Affiliate or Partner required</em>, your channel cannot have custom rewards yet.</p>
+
+<h2>Edit, duplicate and delete</h2>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hma-dialog">
+          <span class="hma-dialog-title">Unsaved changes</span>
+          <span class="hm-sm hm-muted">You have unsaved changes on this alert tab. Save them before switching?</span>
+          <div class="hma-dialog-actions">
+            <span class="hm-btn hm-outline hm-dense">Stay</span>
+            <span class="hm-btn hm-outline hm-dense">Discard and switch</span>
+            <span class="hm-btn hm-dense">Save and switch</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>Shown when you switch sub-tab (or pick another alert) with unsaved edits.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <ul>
+      <li><strong>Edit</strong>: choose the alert in <strong>Select Alert</strong>, change fields, click <strong>Save Alert</strong>.</li>
+      <li><strong>Duplicate</strong>: copies this alert into a new unsaved alert and moves it to the next free amount (a range moves to the next block of the same size, so <code>100-999</code> becomes <code>1000-1899</code>). Check the amount, then save.</li>
+      <li><strong>Delete</strong>: click <strong>Delete Alert</strong>. The <strong>Confirm Delete Alert</strong> dialog shows the type, name and ID. This action cannot be undone.</li>
+      <li>There is no list to reorder. The amount decides which alert plays.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Suggested durations</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Event</th><th>Duration</th></tr></thead>
+<tbody>
+<tr><td>Frequent (follows, small cheers)</td><td>3-5 seconds</td></tr>
+<tr><td>Milestones (1000 bits, big gift bombs)</td><td>8-12 seconds</td></tr>
+<tr><td>Rare (raids)</td><td>10-15 seconds</td></tr>
+</tbody>
+</table></div>
+
+<p>The gap between alerts is <strong>Delay Between Alerts</strong> in <span class="hx-path"><span>Source Settings</span><span>alerts</span></span> (0.5 seconds by default).</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:alert_media">{{icon:perm_media}}<span><strong>Alert Media</strong><span class="hx-card-text">File formats, folders and the randomizer</span></span></a>
+  <a class="hx-card" href="help:alert_testing">{{icon:play_circle}}<span><strong>Testing Your Alerts</strong><span class="hx-card-text">Check ranges and sounds before going live</span></span></a>
+  <a class="hx-card" href="help:troubleshooting_alerts">{{icon:build}}<span><strong>Troubleshooting Alerts</strong><span class="hx-card-text">When an alert does not show</span></span></a>
+</div>

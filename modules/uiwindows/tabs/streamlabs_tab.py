@@ -241,7 +241,7 @@ class StreamlabsTab:
                     with ui.row().classes("items-center gap-2"):
                         outline_button("How to connect", self._show_guide)
                         help_button(
-                            topic_id="integrations_streamlabs",
+                            topic_id="guide_streamlabs",
                             tooltip="Streamlabs setup help",
                             size="sm",
                         )

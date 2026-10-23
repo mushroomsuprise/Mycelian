@@ -1,0 +1,549 @@
+<p class="hx-lead">Every block in the Spore Studio <strong>Blocks</strong> panel, what it does, and the settings it adds to <strong>Properties</strong>. Defaults are the values a new block starts with.</p>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ss">
+        <div class="hm-ss-body hm-ss-inspector-only">
+          <div class="hm-ss-left">
+            <div class="hm-ss-section">
+              <div class="hm-ss-h">Blocks</div>
+              <div class="hm-grid-2" style="gap:0 10px">
+                <div>
+                  <div class="hm-ss-group"><div class="hm-ss-group-title">Data</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9200;</span>Clock</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">?</span>Data display</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#8644;</span>Marquee</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9835;</span>Now playing</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9201;</span>Timer</div>
+                  </div>
+                  <div class="hm-ss-group"><div class="hm-ss-group-title">Layout</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9633;</span>Container</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#8212;</span>Divider</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9680;</span>Gradient</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9645;</span>Shape</div>
+                  </div>
+                  <div class="hm-ss-group"><div class="hm-ss-group-title">Text</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">T</span>Text</div>
+                  </div>
+                </div>
+                <div>
+                  <div class="hm-ss-group"><div class="hm-ss-group-title">Media</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#128266;</span>Audio</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9635;</span>Embed</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#128247;</span>Image</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9638;</span>QR code</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#127916;</span>Video</div>
+                  </div>
+                  <div class="hm-ss-group"><div class="hm-ss-group-title">Widgets</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">?</span>Counter</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9776;</span>List</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#10003;</span>Poll</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9644;</span>Progress bar</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">#</span>Stat card</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9684;</span>Wheel</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>The Blocks panel with every group open. Groups are sorted by name, and blocks by label.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <p>Click a group header in the real panel to open or close it. Groups start collapsed, and your choice is remembered.</p>
+    <p>Drag a block onto the canvas, pick a category, then set it up in <strong>Properties</strong>. Every block has the shared sections described below, plus its own.</p>
+    <p>Most rows have a small <strong>Expose in Source Settings</strong> checkbox before the label. When it is on, the value is written to <code>template_configs/{name}.json</code> and can be changed later in <a href="help:template_configuration">Source Settings</a> without reopening Spore Studio. When it is off, the value is baked into the HTML.</p>
+  </div>
+</div>
+
+<h2>Shared settings</h2>
+
+<p>These sections appear for every block. See <a href="help:spore_studio_design">Designing templates</a> for how they work.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Section</th><th>Settings</th></tr></thead>
+<tbody>
+<tr><td><strong>Element</strong></td><td><strong>ID</strong> (unique; renaming updates bindings), <strong>Category</strong>, <strong>Type</strong> (read-only), <strong>Parent</strong> and <strong>Move to canvas</strong></td></tr>
+<tr><td><strong>Layout</strong></td><td><strong>X</strong>, <strong>Y</strong>, <strong>W</strong>, <strong>H</strong> in pixels. Nested blocks add <strong>Placement in container</strong> (3 × 3 anchor plus offset).</td></tr>
+<tr><td><strong>Visibility</strong></td><td><strong>Start hidden until shown</strong>. Turned on automatically while a Show binding exists, unless you change it.</td></tr>
+<tr><td><strong>Transformations</strong></td><td>Map a live value to <strong>Size</strong>, <strong>Move X/Y</strong>, <strong>Rotate</strong> or <strong>Skew X/Y</strong></td></tr>
+<tr><td><strong>Data feed</strong></td><td>Drive the block from events, live values or another template's output. See <a href="help:spore_studio_data_feed">Data feeds</a>.</td></tr>
+<tr><td><strong>Animations</strong></td><td><strong>Entrance</strong> / <strong>Exit</strong> (<code>none</code>, <code>fade</code>, <code>slideIn</code>, <code>slideOut</code>, <code>scaleIn</code>, <code>scaleOut</code>), durations (default 300 ms, 0–120000), <strong>Delay before entrance (ms)</strong> (0–120000), <strong>Easing</strong> (<code>ease</code>, <code>ease-in</code>, <code>ease-out</code>, <code>ease-in-out</code>, <code>linear</code>; default <code>ease-out</code>)</td></tr>
+</tbody>
+</table></div>
+
+<h3>Text style settings</h3>
+
+<p>Text, Marquee, Counter, Data display and List use this full set in <strong>Appearance</strong>. Clock and Timer use it without <strong>Background</strong>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Size</strong></td><td>Font size in pixels</td></tr>
+<tr><td><strong>Color</strong></td><td>Text color</td></tr>
+<tr><td><strong>Font</strong></td><td>A font file from <code>assets/default_assets/fonts/</code> or a family name. Default Arial.</td></tr>
+<tr><td><strong>Bold</strong> / <strong>Italic</strong></td><td>Weight and style</td></tr>
+<tr><td><strong>Underline</strong> / <strong>Strikethrough</strong></td><td>Decoration</td></tr>
+<tr><td><strong>Kerning</strong></td><td>Letter spacing in pixels</td></tr>
+<tr><td><strong>Leading</strong></td><td>Line height in pixels</td></tr>
+<tr><td><strong>Align</strong></td><td><code>left</code>, <code>center</code>, <code>right</code></td></tr>
+<tr><td><strong>V-align</strong></td><td><code>top</code>, <code>center</code>, <code>bottom</code> inside the box</td></tr>
+<tr><td><strong>Background</strong></td><td>Fill behind the text</td></tr>
+</tbody>
+</table></div>
+
+<h3>Outputs</h3>
+
+<p>Some blocks announce results that other templates can listen to, under <em>The output of another template</em> in a Data feed. The <strong>Outputs</strong> section lists them. Each has an on/off switch and a <strong>Label</strong> shown to other templates. They are written into the template's JSON when you save.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Block</th><th>Event</th><th>When</th><th>Sends</th><th>Default</th></tr></thead>
+<tbody>
+<tr><td>Wheel</td><td><code>wheel_result</code></td><td>The wheel stops</td><td>template, elementId, index, label</td><td>On</td></tr>
+<tr><td>Poll</td><td><code>poll_result</code></td><td>The poll ends</td><td>template, elementId, winners, total_votes, options</td><td>On</td></tr>
+<tr><td>Timer</td><td><code>timer_finished</code></td><td>The timer reaches its limit or 0 (not on pause)</td><td>template, elementId, mode, elapsed</td><td>On</td></tr>
+<tr><td>Counter</td><td><code>counter_changed</code></td><td>The value changes</td><td>template, elementId, counterId, value, delta</td><td>On</td></tr>
+<tr><td>Counter</td><td><code>goal_reached</code></td><td>The count reaches one of its progressive goals</td><td>template, elementId, counterId, value, goal, nextGoal, index, max</td><td>On</td></tr>
+<tr><td>Progress bar</td><td><code>goal_reached</code></td><td>The bar is full</td><td>template, elementId, counterId, value, max</td><td>On</td></tr>
+<tr><td>List</td><td><code>list_row_added</code></td><td>A row is added</td><td>template, elementId, text</td><td>Off</td></tr>
+<tr><td>List</td><td><code>list_cleared</code></td><td>The list is cleared</td><td>template, elementId</td><td>Off</td></tr>
+</tbody>
+</table></div>
+
+<h2>Text</h2>
+
+<h3>Text</h3>
+
+<p>Labels and other static copy. Default size 320 × 60.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Text</strong></td><td>Hello</td><td>The copy this block shows</td></tr>
+<tr><td>Text style</td><td>32, <code>#ffffff</code>, Arial, V-align top</td><td>See Text style settings above</td></tr>
+</tbody>
+</table></div>
+
+<p>For a number use <strong>Counter</strong>, and for a live value use <strong>Data display</strong>. A Data feed can still replace Text's copy (<em>Replace this text</em>).</p>
+
+<h2>Data</h2>
+
+<h3>Clock</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Format</strong></td><td><code>HH:mm:ss</code></td><td>Uses the tokens <code>HH</code>, <code>mm</code> and <code>ss</code></td></tr>
+<tr><td><strong>Timezone</strong></td><td><code>local</code></td><td><code>local</code> uses the viewer's clock, <code>utc</code> is universal time, <code>offset</code> adds the minutes below to UTC</td></tr>
+<tr><td><strong>Offset (min)</strong></td><td>0</td><td>Minutes from UTC when Timezone is <code>offset</code></td></tr>
+<tr><td>Text style</td><td>32, centered</td><td>No Background field</td></tr>
+</tbody>
+</table></div>
+
+<h3>Data display</h3>
+
+<p>Shows one live value, such as a session statistic or an alert field. The source is set under <strong>Data feed</strong>. See <a href="help:spore_studio_data_sources">Data sources and data displays</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Format (use {value})</strong></td><td><code>{value}</code></td><td>Text shown. <code>{value}</code> is replaced with the source.</td></tr>
+<tr><td><strong>Default text</strong></td><td>empty</td><td>Shown before the first value arrives</td></tr>
+<tr><td><strong>Value change animation</strong></td><td>off</td><td><strong>Enable on value update</strong>, then <strong>Tick up (count)</strong>, fade-in, slide-in or bounce</td></tr>
+<tr><td><strong>Scroll</strong>, <strong>Scroll speed (s)</strong>, <strong>Scroll direction</strong>, <strong>Scroll gap (px)</strong></td><td>off, 8, left, 48</td><td>Scroll the value across the block like a marquee</td></tr>
+<tr><td>Text style</td><td>32, <code>#ffffff</code></td><td>Full set</td></tr>
+</tbody>
+</table></div>
+
+<h3>Marquee</h3>
+
+<p>Scrolling text. For a scrolling number or value, use a Counter or Data display with <strong>Scroll</strong> on.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Text</strong></td><td>Scrolling text</td><td>The text that scrolls</td></tr>
+<tr><td><strong>Speed (s)</strong></td><td>8</td><td>Seconds for one full cycle, 1–120</td></tr>
+<tr><td><strong>Direction</strong></td><td>left</td><td><code>left</code> or <code>right</code></td></tr>
+<tr><td><strong>Gap (px)</strong></td><td>48</td><td>Space between the repeated copies, 0–500</td></tr>
+<tr><td>Text style</td><td>24, V-align center</td><td>Full set</td></tr>
+</tbody>
+</table></div>
+
+<h3>Now playing</h3>
+
+<p>A card for the current Spotify track. It repaints when Mycelian sends <code>spotify_data_update</code>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Layout</strong></td><td>row</td><td><code>row</code> puts the art beside the text, <code>stack</code> puts it above</td></tr>
+<tr><td><strong>Show art</strong> / <strong>Show title</strong> / <strong>Show artist</strong> / <strong>Show progress</strong></td><td>on</td><td>Hide any part you do not want</td></tr>
+<tr><td><strong>Title color</strong></td><td><code>#ffffff</code></td><td>Track name</td></tr>
+<tr><td><strong>Artist color</strong></td><td><code>#94a3b8</code></td><td>Artist line</td></tr>
+<tr><td><strong>Progress color</strong></td><td><code>#1db954</code></td><td>Fill of the playback bar</td></tr>
+<tr><td><strong>Title size</strong></td><td>18</td><td>Title font size. The artist line is 80% of this.</td></tr>
+<tr><td><strong>Font</strong> / <strong>Bold</strong> / <strong>Italic</strong></td><td>Arial / off / off</td><td>Typeface for title and artist</td></tr>
+<tr><td><strong>Kerning</strong></td><td>empty</td><td>Letter spacing in pixels</td></tr>
+<tr><td><strong>Align</strong></td><td>left</td><td>Alignment of title and artist</td></tr>
+<tr><td><strong>Background</strong></td><td>dark translucent</td><td>Card fill</td></tr>
+</tbody>
+</table></div>
+
+<h3>Timer</h3>
+
+<p>Counts down or up. Saving a template with a timer also adds a <strong>Timer control</strong> (start, pause, reset) to the template's <a href="help:spore_studio_dynamic_controls">Source Controls</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Mode</strong></td><td>Count down</td><td><strong>Count down</strong> from a start value or <strong>Count up</strong> toward a limit</td></tr>
+<tr><td><strong>Start (seconds)</strong></td><td>300</td><td>Where a countdown begins (Count down only)</td></tr>
+<tr><td><strong>Limit (seconds)</strong></td><td>0</td><td>Count up stops here. 0 means no limit. (Count up only)</td></tr>
+<tr><td><strong>Format</strong></td><td>MM:SS</td><td>Presets <strong>MM:SS</strong>, <strong>HH:MM:SS</strong>, <strong>M:SS</strong>, <strong>Total seconds</strong>, or <strong>Custom</strong></td></tr>
+<tr><td><strong>Custom format</strong></td><td><code>{mm}:{ss}</code></td><td>Tokens <code>{hh}</code> <code>{h}</code> <code>{mm}</code> <code>{m}</code> <code>{ss}</code> <code>{s}</code> <code>{time}</code> <code>{total}</code></td></tr>
+<tr><td><strong>Auto start</strong></td><td>on</td><td>Start when the overlay loads</td></tr>
+<tr><td><strong>Preview</strong> buttons</td><td></td><td><strong>Start</strong>, <strong>Pause</strong>, <strong>Reset</strong> play the timer on the canvas only. They do not affect the live overlay.</td></tr>
+<tr><td>Text style</td><td>32, centered</td><td>No Background field</td></tr>
+</tbody>
+</table></div>
+
+<p>Bindings can run <strong>Start timer</strong>, <strong>Pause timer</strong> and <strong>Reset timer</strong>. A Data feed can also <em>Set the timer</em> from a number of seconds. From Advanced JS: <code>sporeTimerStart(id)</code>, <code>sporeTimerPause(id)</code>, <code>sporeTimerReset(id)</code>.</p>
+
+<h2>Layout</h2>
+
+<h3>Container</h3>
+
+<p>Groups and clips its children. Child positions are relative to the container's top-left corner. Drop blocks onto a container to nest them; hold <kbd>Alt</kbd> while dropping to stay on the canvas root.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Background</strong></td><td>faint purple</td><td>Fill behind children</td></tr>
+<tr><td><strong>Border radius (px)</strong></td><td>empty</td><td>Rounds the corners</td></tr>
+<tr><td><strong>Border width (px)</strong></td><td>empty</td><td>Border thickness. 0 hides it.</td></tr>
+<tr><td><strong>Border color</strong></td><td>empty</td><td>Border color</td></tr>
+</tbody>
+</table></div>
+
+<h3>Divider</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Orientation</strong></td><td>horizontal</td><td><code>horizontal</code> or <code>vertical</code></td></tr>
+<tr><td><strong>Color</strong></td><td><code>#64748b</code></td><td>Line color</td></tr>
+<tr><td><strong>Thickness (px)</strong></td><td>2</td><td>1–64</td></tr>
+<tr><td><strong>Opacity</strong></td><td>1</td><td>0–1</td></tr>
+</tbody>
+</table></div>
+
+<h3>Gradient</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Kind</strong></td><td>linear</td><td><code>linear</code> runs along an angle, <code>radial</code> spreads from the center</td></tr>
+<tr><td><strong>Angle (deg)</strong></td><td>90</td><td>Direction of a linear gradient, 0–360</td></tr>
+<tr><td><strong>Color stops</strong></td><td><code>#a855f7</code> at 0, <code>#1e293b</code> at 100</td><td>Each stop is a color and a 0–100 position. Add and remove stops in the Color stops section.</td></tr>
+<tr><td><strong>Corner radius (px)</strong> / <strong>Border width (px)</strong> / <strong>Border color</strong></td><td>0 / 0 / black</td><td>Box shape and outline</td></tr>
+<tr><td><strong>Opacity</strong></td><td>1</td><td>0–1</td></tr>
+</tbody>
+</table></div>
+
+<h3>Shape</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Shape</strong></td><td>rectangle</td><td><code>rectangle</code> or <code>ellipse</code></td></tr>
+<tr><td><strong>Fill</strong></td><td><code>#a855f7</code></td><td>Interior color</td></tr>
+<tr><td><strong>Border width (px)</strong> / <strong>Border color</strong></td><td>0 / black</td><td>Outline</td></tr>
+<tr><td><strong>Corner radius (px)</strong></td><td>8</td><td>Ignored for ellipses</td></tr>
+<tr><td><strong>Opacity</strong></td><td>1</td><td>0–1</td></tr>
+</tbody>
+</table></div>
+
+<h2>Media</h2>
+
+<h3>Audio</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Source URL</strong></td><td>empty</td><td>Audio file</td></tr>
+<tr><td><strong>Volume (0–1)</strong></td><td>1</td><td>0 is silent, 1 is full volume</td></tr>
+<tr><td><strong>Fade-in (ms)</strong> / <strong>Fade-out (ms)</strong></td><td>0</td><td>0–120000. 0 is instant.</td></tr>
+</tbody>
+</table></div>
+
+<p>Play it with the <strong>Play audio element</strong> binding action, a Data feed's <em>Play the audio</em>, or <code>sporePlayMediaAudio(id, opts)</code> in Advanced JS.</p>
+
+<h3>Embed</h3>
+
+<p>Loads a web page in a sandboxed frame.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>URL</strong></td><td><code>https://</code></td><td>The page to show. It must be a page that allows being framed.</td></tr>
+<tr><td><strong>Scale</strong></td><td>1</td><td>Shrink or enlarge the page inside the frame, 0.1–4</td></tr>
+<tr><td><strong>Refresh (seconds)</strong></td><td>0</td><td>0 keeps the page loaded. Any other value reloads it on that interval.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Image</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Image source mode</strong></td><td>Static URL</td><td>Or <strong>From counter (ranges)</strong> to swap the image by a counter's value</td></tr>
+<tr><td><strong>Source URL</strong></td><td>empty</td><td>A file in this template's assets or a custom URL</td></tr>
+<tr><td><strong>Border radius (px)</strong></td><td>empty</td><td>Rounds the corners. Half the size makes a circle.</td></tr>
+<tr><td><strong>Opacity</strong></td><td>1</td><td>0–1</td></tr>
+</tbody>
+</table></div>
+
+<p>In <strong>From counter (ranges)</strong> mode you pick a <strong>Counter</strong>, a <strong>Default src (fallback)</strong>, and <strong>Src ranges (min–max)</strong> rows (Min, Max, Image; <strong>+ Add range</strong>). A <strong>Range change transition</strong> section animates the swap. See <a href="help:spore_studio_counters">Counters</a>.</p>
+
+<h3>QR code</h3>
+
+<p>Draws a QR code from text or a URL. The saved overlay includes the generator, so nothing extra is needed.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Text or URL</strong></td><td><code>https://</code></td><td>The value encoded. Expose it to change the link from Source Settings.</td></tr>
+<tr><td><strong>Foreground</strong></td><td><code>#000000</code></td><td>Color of the QR modules</td></tr>
+<tr><td><strong>Background</strong></td><td><code>#ffffff</code></td><td>Color behind the modules</td></tr>
+</tbody>
+</table></div>
+
+<h3>Video</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Visual source URL</strong></td><td>empty</td><td>Video or image file</td></tr>
+<tr><td><strong>Visual kind</strong></td><td>video</td><td><code>video</code>, or <code>image</code> for a GIF or still</td></tr>
+<tr><td><strong>Optional audio URL</strong></td><td>empty</td><td>A separate soundtrack. Empty uses the visual's own audio.</td></tr>
+<tr><td><strong>Audio volume (0–1)</strong></td><td>1</td><td>Volume of that soundtrack</td></tr>
+<tr><td><strong>Audio fade-in (ms)</strong> / <strong>Audio fade-out (ms)</strong></td><td>0</td><td>0–120000</td></tr>
+<tr><td><strong>Autoplay</strong></td><td>on</td><td>Start when shown</td></tr>
+<tr><td><strong>Loop</strong></td><td>off</td><td>Restart at the end</td></tr>
+<tr><td><strong>Muted</strong></td><td>on</td><td>Silence the visual's own audio</td></tr>
+<tr><td><strong>Border radius (px)</strong></td><td>empty</td><td>Rounds the corners</td></tr>
+</tbody>
+</table></div>
+
+<h2>Widgets</h2>
+
+<h3>Counter</h3>
+
+<p>A number with a format, limits and optional database persistence. When it changes is set under <strong>Data feed</strong> (add, subtract, set or reset). Full guide: <a href="help:spore_studio_counters">Counters in Spore Studio</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Counter id</strong></td><td>from the element id</td><td>Id other blocks use to read or change this counter</td></tr>
+<tr><td><strong>Initial value</strong></td><td>0</td><td>Value used the first time the counter is created</td></tr>
+<tr><td><strong>Min</strong></td><td>empty</td><td>Lowest allowed value. Available as <code>{min}</code>.</td></tr>
+<tr><td><strong>Progressive goals</strong></td><td>off</td><td>Replaces Max with a list of goals. When the count reaches one, <code>{max}</code> moves to the next. The count is not reset.</td></tr>
+<tr><td><strong>Max</strong></td><td>empty</td><td>Highest allowed value. Available as <code>{max}</code>.</td></tr>
+<tr><td><strong>Format ({value}, {min}, {max})</strong></td><td><code>{value}</code></td><td>Text shown for the counter</td></tr>
+<tr><td><strong>Persist (database)</strong>, <strong>DB path</strong>, <strong>DB key</strong></td><td>off, <code>{template}/counters</code>, counter id</td><td>Keep the value across restarts</td></tr>
+<tr><td><strong>Value change animation</strong></td><td>off</td><td><strong>Tick up (count)</strong>, fade-in, slide-in, bounce</td></tr>
+<tr><td><strong>Scroll</strong> settings</td><td>off</td><td>Same as Data display</td></tr>
+</tbody>
+</table></div>
+
+<h3>List</h3>
+
+<p>A feed of rows. Where rows come from and what each row says is set under <strong>Data feed</strong>, like every other block. See <a href="help:spore_studio_data_feed">Data feeds</a>.</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list"><button data-tab="list" class="is-active">List section</button><button data-tab="look">Appearance</button><button data-tab="use">Using it</button></div>
+  <div class="hx-tab-panel" data-panel="list">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Max rows</strong></td><td>8</td><td>The oldest row drops off after this many</td></tr>
+    <tr><td><strong>New rows go</strong></td><td>To the top</td><td><strong>To the top</strong> or <strong>To the bottom</strong></td></tr>
+    <tr><td><strong>Remove rows after (seconds)</strong></td><td>0</td><td>Rows disappear on their own after this long. 0 keeps a row until newer rows push it out.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="look">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td>Text style</td><td>Arial, 18, white</td><td>Applies to every row</td></tr>
+    <tr><td><strong>Row spacing (px)</strong></td><td>4</td><td>Space between rows, 0–64</td></tr>
+    <tr><td><strong>Row background</strong> / <strong>Row padding (px)</strong> / <strong>Row corner radius (px)</strong></td><td>none / 0 / 0</td><td>Give each row its own pill or card look</td></tr>
+    <tr><td><strong>Add animation</strong></td><td>fade</td><td><code>none</code>, <code>fade</code>, <code>slide</code></td></tr>
+    <tr><td><strong>Remove animation</strong></td><td>fade</td><td><code>none</code> or <code>fade</code>. Used when a row expires or is pushed out.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="use">
+    <ul>
+      <li>Giveaway winners add one row per winner when the feed maps <code>{username}</code> or splits the <code>winners</code> field.</li>
+      <li>A list can listen to another template's output, such as a wheel's result.</li>
+      <li>Bindings: <strong>Add list row</strong> (with optional literal text) and <strong>Clear list</strong>.</li>
+      <li>Advanced JS: <code>sporeListAdd(id, payload, literal)</code> and <code>sporeListClear(id)</code>.</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Poll</h3>
+
+<p>A live view of the poll set up in <a href="help:chatbot_polls">Chatbot → Polls</a> for this template. The widget does not collect votes. Options arrive sorted by votes, highest first.</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list"><button data-tab="show" class="is-active">What to show</button><button data-tab="rot">Rotator</button><button data-tab="win">Winner</button><button data-tab="style">Style</button></div>
+  <div class="hx-tab-panel" data-panel="show">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Layout</strong></td><td>vertical</td><td><code>vertical</code> stacks options, <code>horizontal</code> places them side by side</td></tr>
+    <tr><td><strong>Display</strong></td><td>bars</td><td><code>bars</code> draws a fill behind each option, <code>text</code> lists names and counts only</td></tr>
+    <tr><td><strong>Items to show</strong></td><td>6</td><td>Never more than fully fit in the height. 0 uses that maximum.</td></tr>
+    <tr><td><strong>Show timer</strong> / <strong>Show timer bar</strong></td><td>on / on</td><td>Time left. Both stay hidden on a permanent poll.</td></tr>
+    <tr><td><strong>Show counts</strong> / <strong>Show percent</strong></td><td>on / on</td><td>Vote total and share on each option</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="rot">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Rotator</strong></td><td>off</td><td>Page through options that do not fit, highest votes first</td></tr>
+    <tr><td><strong>Rotator seconds</strong></td><td>5</td><td>How long each page stays up, 1–3600</td></tr>
+    <tr><td><strong>Rotator animation</strong></td><td>slide horizontal</td><td><code>slide horizontal</code>, <code>slide vertical</code>, <code>fade</code>, <code>none</code></td></tr>
+    <tr><td><strong>Rotator animation (ms)</strong></td><td>400</td><td>0–5000</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="win">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>After a winner</strong></td><td>highlight</td><td><code>highlight</code> marks winners in the full list, <code>winner_only</code> clears the list down to the tied winners</td></tr>
+    <tr><td><strong>Autohide after winner (seconds)</strong></td><td>0</td><td>Above 0, the widget is hidden whenever no poll is running. After a winner it stays up this long, then hides. 0 leaves the result up.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="style">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Size</strong> / <strong>Color</strong> / <strong>Font</strong> / <strong>Bold</strong></td><td>22 / white / Arial / off</td><td>Text style</td></tr>
+    <tr><td><strong>Row spacing (px)</strong></td><td>8</td><td>Gap between options</td></tr>
+    <tr><td><strong>Background</strong> / <strong>Bar color</strong> / <strong>Track color</strong> / <strong>Winner color</strong></td><td>dark card / purple / faint / gold</td><td>Fills and the winner mark</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+</div>
+
+<h3>Progress bar</h3>
+
+<p>Fills from a counter toward a goal. The <strong>Progress bar</strong> section holds <strong>Progress source</strong>; the colors and effects are in <strong>Appearance</strong>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Value counter</strong></td><td>(select counter)</td><td>The counter that drives the fill. Shows <em>(no counters in template)</em> until you add a Counter block.</td></tr>
+<tr><td><strong>Max kind</strong></td><td>Fixed max</td><td><strong>Fixed max</strong> uses a number. <strong>Goal counter</strong> uses another counter as 100%.</td></tr>
+<tr><td><strong>Max value</strong></td><td>100</td><td>Counter value that fills the bar (Fixed max)</td></tr>
+<tr><td><strong>Goal counter</strong></td><td>(select goal counter)</td><td>Its value is 100% (Goal counter)</td></tr>
+<tr><td><strong>Track color</strong> / <strong>Fill color</strong></td><td><code>#1e293b</code> / <code>#a855f7</code></td><td>Empty and filled parts</td></tr>
+<tr><td><strong>Border radius (px)</strong> / <strong>Border width (px)</strong> / <strong>Border color</strong></td><td>8 / 0 / black</td><td>Frame around the bar</td></tr>
+<tr><td><strong>Fill animation (ms)</strong></td><td>500</td><td>How long the fill takes to catch up, 0–120000</td></tr>
+<tr><td><strong>Fill animation easing</strong></td><td>ease-out</td><td>CSS easing</td></tr>
+<tr><td><strong>Near-goal threshold (%)</strong></td><td>90</td><td>When the near-goal effect starts</td></tr>
+<tr><td><strong>Near-goal effect</strong></td><td>none</td><td><code>none</code>, <code>pulse</code>, <code>shimmer</code>, <code>scroll</code></td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-note"><p>If the value counter uses <strong>Progressive goals</strong>, the bar fills toward that counter's current goal and <strong>Max value</strong> is not used. The section says <em>This counter uses progressive goals. The bar fills toward the active goal. The max value below is not used.</em> The bar's own <code>goal_reached</code> fires only when it is full, which is at the last goal.</p></div>
+
+<p>A Data feed can override the bar with <em>Set the current value</em> or <em>Set the goal (max)</em>.</p>
+
+<h3>Stat card</h3>
+
+<p>An icon, a label and a value. The value comes from <strong>Data feed</strong> (<em>Set the card value</em>), usually a session statistic.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Icon</strong></td><td>★</td><td>Short text or emoji beside the value</td></tr>
+<tr><td><strong>Label</strong></td><td>Stat</td><td>Caption above the value</td></tr>
+<tr><td><strong>Value format</strong></td><td><code>{value}</code></td><td><code>{value}</code> is replaced with the resolved source</td></tr>
+<tr><td><strong>Value color</strong> / <strong>Label color</strong></td><td>white / <code>#94a3b8</code></td><td>Text colors</td></tr>
+<tr><td><strong>Value size</strong></td><td>28</td><td>Value font size. The label is half this.</td></tr>
+<tr><td><strong>Font</strong> / <strong>Bold</strong> / <strong>Italic</strong></td><td>Arial / off / off</td><td>Typeface</td></tr>
+<tr><td><strong>Background</strong></td><td>dark translucent</td><td>Card fill</td></tr>
+<tr><td><strong>Border width (px)</strong> / <strong>Border color</strong> / <strong>Corner radius (px)</strong></td><td>0 / black / 8</td><td>Outline and corners</td></tr>
+</tbody>
+</table></div>
+
+<p>The editor shows a sample value so you can judge the layout. The live overlay shows the real value.</p>
+
+<h3>Wheel</h3>
+
+<p>A spinning prize wheel.</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list"><button data-tab="seg" class="is-active">Wheel segments</button><button data-tab="res">Result</button><button data-tab="app">Appearance</button><button data-tab="spin">Spinning it</button></div>
+  <div class="hx-tab-panel" data-panel="seg">
+    <p><strong>Segments</strong> lists each slice as a label and a color. <strong>+ Segment</strong> adds a slice (labeled <em>New</em>); <strong>Remove</strong> deletes one.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="res">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Show result</strong></td><td>on</td><td>Show the winning label when the wheel stops</td></tr>
+    <tr><td><strong>Location</strong></td><td>Bottom</td><td><strong>Center</strong>, <strong>Top</strong>, <strong>Bottom</strong>, <strong>Above the wheel</strong>, <strong>Below the wheel</strong>. Above and below sit outside the disc.</td></tr>
+    <tr><td><strong>Font size</strong> / <strong>Font</strong> / <strong>Color</strong> / <strong>Bold</strong></td><td>14 / Arial / white / off</td><td>Style of the winning label</td></tr>
+    <tr><td><strong>Format</strong></td><td><code>{label}</code></td><td>Text shown. <code>{label}</code> is the winning slice.</td></tr>
+    <tr><td><strong>Hold (seconds)</strong></td><td>0</td><td>How long the label stays. 0 keeps it until the next spin.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="app">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Spin duration (ms)</strong></td><td>4000</td><td>How long the wheel takes to stop, 200–20000</td></tr>
+    <tr><td><strong>Easing</strong></td><td>ease-out</td><td>How the spin slows down</td></tr>
+    <tr><td><strong>Pointer</strong></td><td>top</td><td><code>top</code>, <code>right</code>, <code>bottom</code>, <code>left</code>. The winning slice stops under it.</td></tr>
+    <tr><td><strong>Spin variance</strong></td><td>on</td><td>Avoids repeating the last random winner and varies how far the wheel travels</td></tr>
+    <tr><td><strong>Click sound</strong></td><td>on</td><td>A click each time the pointer crosses a slice (the roulette click sound)</td></tr>
+    <tr><td><strong>Click volume</strong></td><td>0.2</td><td>0–1</td></tr>
+    <tr><td><strong>Click sound file</strong></td><td><code>click.mp3</code></td><td>File name in the roulette assets folder</td></tr>
+    <tr><td><strong>Background</strong></td><td><code>#0f172a</code></td><td>Fill behind the wheel</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="spin">
+    <ul>
+      <li>The <strong>Spin wheel</strong> binding action, or <code>sporeWheelSpin(id, payload)</code> in Advanced JS. If <code>payload.label</code> matches a slice, that slice wins.</li>
+      <li>A Data feed with <em>Spin the wheel</em>. <strong>Fill slices from field</strong> replaces the slices with a list in the data; <strong>Land on field</strong> names the winner. For a giveaway, listen to <code>giveaway_winner</code>, fill from <code>pool_entries</code> and land on <code>winners</code>.</li>
+      <li>A Data feed with <em>Add a slice</em> adds one slice per item.</li>
+    </ul>
+    <p>When the wheel stops, <code>window.__sporeLastPayload.wheel</code> is <code>{ elementId, index, label }</code>, and the overlay sends <code>wheel_result</code> with the same object (plus the template name) so other templates can listen.</p>
+  </div>
+</div>
+
+<h2>See also</h2>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_design">{{icon:design_services}}<span><strong>Designing templates</strong><span class="hx-card-text">Canvas, nesting and shared sections</span></span></a>
+  <a class="hx-card" href="help:spore_studio_counters">{{icon:pin}}<span><strong>Counters</strong><span class="hx-card-text">Goals, persistence and image ranges</span></span></a>
+  <a class="hx-card" href="help:spore_studio_data_feed">{{icon:rss_feed}}<span><strong>Data feeds</strong><span class="hx-card-text">What drives each block</span></span></a>
+  <a class="hx-card" href="help:spore_studio_data_sources">{{icon:query_stats}}<span><strong>Data sources</strong><span class="hx-card-text">Live values to display</span></span></a>
+  <a class="hx-card" href="help:spore_studio_bindings">{{icon:bolt}}<span><strong>Event bindings</strong><span class="hx-card-text">Actions on events</span></span></a>
+</div>

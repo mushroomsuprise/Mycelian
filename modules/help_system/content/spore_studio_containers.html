@@ -1,0 +1,204 @@
+<p class="hx-lead">A container is one browser-source URL that shows several templates at once. Each template stays its own page and is loaded in a frame inside the container. Mycelian does not merge the HTML files.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Spore Studio</span><span>Containers</span></span></span>
+  <span>{{icon:save}} Saved to <code>templates/_containers/{route}.json</code></span>
+</div>
+
+<p>Use a container when you want one OBS browser source for a whole layout, such as a game scene with a chat box, a goal bar and a now-playing card. Every template inside it still keeps its own URL.</p>
+
+<h2>The Containers screen</h2>
+
+<p>Click <strong>Containers</strong> at the left of the Spore Studio toolbar. The columns change to a template library, a container canvas, and container settings.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm hm-ss">
+    <div class="hm-ss-toolbar">
+      <span class="hm-ss-mode"><span>Templates</span><span class="is-active">Containers</span></span>
+      <span class="hm-ss-select">game_layout</span>
+      <span class="hm-ss-btn">+ New</span>
+      <span class="hm-ss-btn">Duplicate</span>
+      <span class="hm-ss-btn hm-ss-danger">Delete</span>
+      <span class="hm-ss-btn hm-ss-ghost">Undo</span>
+      <span class="hm-ss-btn hm-ss-ghost">Redo</span>
+      <span class="hm-ss-spacer"></span>
+      <span class="hm-ss-dirty">Unsaved changes</span>
+      <span class="hm-ss-btn hm-ss-ghost">Tour</span>
+      <span class="hm-ss-btn hm-ss-ghost">Reload editor</span>
+      <span class="hm-ss-btn hm-ss-ghost">Open externally</span>
+      <span class="hm-ss-btn">Placeholders</span>
+      <span class="hm-ss-btn">Preview</span>
+      <span class="hm-ss-btn hm-ss-primary">Save</span>
+      <span class="hm-marker" data-n="1"></span>
+    </div>
+    <div class="hm-ss-body">
+      <div class="hm-ss-left">
+        <div class="hm-ss-section">
+          <div class="hm-ss-h">Templates <span class="hm-marker" data-n="2"></span></div>
+          <p class="hm-ss-hint" style="margin-bottom:6px">Drag a template onto the canvas. Any template can be placed, including ones not made in Spore Studio.</p>
+          <div class="hm-ss-input is-placeholder" style="margin-bottom:6px">Search templates</div>
+          <div class="hm-ss-outline-head">Spore Studio</div>
+          <div class="hm-ss-block">bitcounter</div>
+          <div class="hm-ss-block">poll</div>
+          <div class="hm-ss-outline-head">Built-in</div>
+          <div class="hm-ss-block">activity_feed</div>
+          <div class="hm-ss-block">source_controls</div>
+          <div class="hm-ss-outline-head">Other templates</div>
+          <div class="hm-ss-block">chat</div>
+        </div>
+      </div>
+      <div class="hm-ss-canvas">
+        <div class="hm-ss-stage hm-ss-16x9">
+          <div class="hm-ss-slot" style="left:0;top:0;width:64%;height:100%">game_frame<small>locked</small></div>
+          <div class="hm-ss-slot is-selected" style="left:66%;top:0;width:34%;height:58%">chat<small>Share leftover height · locked</small></div>
+          <div class="hm-ss-gapbar" style="left:70%;top:59%;width:26%;height:4px"></div>
+          <div class="hm-ss-slot is-flex" style="left:66%;top:61%;width:34%;height:22%">poll<small>flexible</small></div>
+          <div class="hm-ss-slot is-missing" style="left:66%;top:85%;width:34%;height:15%">old_banner (missing)</div>
+          <span class="hm-marker hm-pin" data-n="3" style="top:40%;left:30%"></span>
+        </div>
+      </div>
+      <div class="hm-ss-right">
+        <div class="hm-ss-section">
+          <div class="hm-ss-h">chat <span class="hm-marker" data-n="4"></span></div>
+          <div class="hm-ss-row"><span class="hm-ss-label">Template</span><span class="hm-ss-input hm-ss-sel">chat</span></div>
+          <div class="hm-ss-quad" style="margin-top:6px">
+            <div class="hm-ss-row"><span class="hm-ss-label">X</span><span class="hm-ss-input">1272</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Y</span><span class="hm-ss-input">0</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">W</span><span class="hm-ss-input">648</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">H</span><span class="hm-ss-input">626</span></div>
+          </div>
+          <div class="hm-ss-row" style="margin-top:6px"><span class="hm-ss-label">Size link</span><span class="hm-ss-input hm-ss-sel">Share leftover height</span></div>
+          <div class="hm-ss-row" style="margin-top:6px"><span class="hm-ss-label">Link group</span><span class="hm-ss-input hm-ss-sel">link1</span></div>
+          <div class="hm-ss-row" style="margin-top:6px"><span class="hm-ss-label">Size priority</span><span class="hm-ss-input hm-ss-sel">Locked (priority, keeps this size)</span></div>
+          <div class="hm-ss-pair" style="margin-top:6px">
+            <div class="hm-ss-row"><span class="hm-ss-label">Min px</span><span class="hm-ss-input">300</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Min %</span><span class="hm-ss-input">0</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Containers mode with the <code>chat</code> slot selected. The bar under <code>chat</code> is the spacing handle between linked slots.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Toolbar.</strong> Pick a container, create one, duplicate it, delete it, undo and redo. <strong>Placeholders</strong> shows template names instead of live previews, which keeps the editor light when many templates are placed. <strong>Preview</strong> opens the saved route. <strong>Save</strong> writes the container.</li>
+  <li data-n="2"><strong>Templates.</strong> Every template you can place, grouped as <strong>Spore Studio</strong>, <strong>Built-in</strong> (<code>activity_feed</code> and <code>source_controls</code>, which Spore Studio cannot edit but can place) and <strong>Other templates</strong>. Type in <em>Search templates</em> to filter.</li>
+  <li data-n="3"><strong>Canvas.</strong> Each rectangle is a slot showing one template. Drag to move, and drag the right or bottom edge to resize. A slot whose template no longer exists is marked <strong>(missing)</strong>.</li>
+  <li data-n="4"><strong>Inspector.</strong> Settings for the selected slot. Click empty canvas to see the container's own settings instead.</li>
+</ol>
+
+<h2>Create a container</h2>
+
+<section class="hx-guide" data-guide="spore_studio_containers_create" data-title="New container">
+  <div class="hx-step">
+    <h3>Start a new container</h3>
+    <p>In Containers mode, click <strong>+ New</strong>. Enter a <strong>Name</strong>. The <strong>Route path</strong> fills in from the name; change it if you want a different URL, such as <code>game_layout</code>. Pick a <strong>Resolution</strong>: 1920 × 1080, 1280 × 720, 1080 × 1920 or 720 × 1280. This is the size of the OBS browser source. Click <strong>Create</strong>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Place templates</h3>
+    <p>Drag templates from the <strong>Templates</strong> list onto the canvas. Spore Studio templates, built-in templates and hand-written HTML templates can all be placed. A container cannot be placed inside another container.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Arrange and link slots</h3>
+    <p>Move and resize the slots. Set a size link on slots that should share one side of the canvas (see below).</p>
+  </div>
+  <div class="hx-step">
+    <h3>Save and add it to OBS</h3>
+    <p>Click <strong>Save</strong>. The route is listed on <span class="hx-path"><span>Settings</span><span>About</span></span> with a <strong>Container</strong> badge and a count of the templates inside. Add it to OBS as a browser source at the container's resolution: <span class="hx-copy" data-copy="http://127.0.0.1:{port}/game_layout">http://127.0.0.1:{port}/game_layout</span></p>
+  </div>
+</section>
+
+<h2>Container settings</h2>
+
+<p>With no slot selected, the inspector shows the container itself:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Name</strong></td><td>Display name</td></tr>
+<tr><td><strong>Route path</strong></td><td>The URL path. The full URL is shown under it.</td></tr>
+<tr><td><strong>Resolution</strong></td><td>A preset size, or <strong>Custom</strong></td></tr>
+<tr><td><strong>Width</strong> / <strong>Height</strong></td><td>Canvas size in pixels, 50–7680 by 50–4320</td></tr>
+<tr><td><strong>Background</strong></td><td><strong>Transparent</strong> or <strong>Solid color</strong> (then pick a <strong>Color</strong>)</td></tr>
+<tr><td><strong>Space between templates</strong></td><td>Slider and number, 0–200 px. Used between slots in the same size link. You can also drag the bar between linked slots.</td></tr>
+<tr><td><strong>Snap grid (px)</strong></td><td>0–64. Only helps you place slots; it does not change the layout.</td></tr>
+<tr><td><strong>Enabled (show on the About page and serve the route)</strong></td><td>Turn off to stop serving the route without deleting the container</td></tr>
+</tbody>
+</table></div>
+
+<h2>Slot settings</h2>
+
+<p>Slots are independent rectangles. A slot on the right can grow down through the same band as a slot on the left without moving it.</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="pos" class="is-active">Position and look</button>
+    <button data-tab="fit">Fit and audio</button>
+    <button data-tab="link">Size link</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="pos">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Template</strong></td><td>Swap which template this slot shows</td></tr>
+    <tr><td><strong>X, Y, W, H</strong></td><td>Position and size in pixels. Each shows its percent of the canvas.</td></tr>
+    <tr><td><strong>Z-order</strong></td><td>Stacking order, 0–999. <strong>Bring forward</strong> and <strong>Send backward</strong> change it by one.</td></tr>
+    <tr><td><strong>Opacity %</strong></td><td>0–100</td></tr>
+    <tr><td><strong>Visible</strong></td><td>Hide the slot without removing it</td></tr>
+    <tr><td><strong>Lock position</strong></td><td>Stops accidental drags</td></tr>
+    <tr><td><strong>Click-through</strong></td><td>Mouse clicks pass through the slot</td></tr>
+    <tr><td><strong>Padding same on all sides</strong> / <strong>Padding</strong></td><td>One value, or Top, Right, Bottom and Left separately (0–400 px)</td></tr>
+    <tr><td><strong>Remove from container</strong></td><td>Takes the slot out. The template itself is not deleted.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="fit">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Fit</strong></td><td><strong>Native (template fills the slot)</strong>, or <strong>Scale from design size</strong>, which shrinks or grows a fixed design to fit the slot</td></tr>
+    <tr><td><strong>Design width</strong> / <strong>Design height</strong></td><td>Shown for Scale. The size the template was designed at.</td></tr>
+    <tr><td><strong>Mute audio</strong></td><td>Silences this template inside the container only</td></tr>
+    <tr><td><strong>Volume</strong></td><td>0–100, inside the container only</td></tr>
+    </tbody>
+    </table></div>
+    <p>Mute and Volume never change the template's own URL. Opened on its own, it still plays at full volume.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="link">
+    <p>Set <strong>Size link</strong> to <strong>Share leftover height</strong> or <strong>Share leftover width</strong> on every slot that should split that side of the canvas. Slots with the same <strong>Link group</strong> share the space. Choose <strong>New link</strong> to start another group.</p>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Size priority</th><th>Behavior</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Locked (priority, keeps this size)</strong></td><td>Keeps the size you set, as a maximum. If the template only uses part of the box, the rest goes to the flexible slots. A 500 px slot whose content uses 350 px gives 150 px to the others.</td></tr>
+    <tr><td><strong>Flexible (fills leftover space)</strong></td><td>Shares whatever is left, and can grow past the size you first gave it</td></tr>
+    </tbody>
+    </table></div>
+    <p><strong>Min px</strong>, <strong>Min %</strong>, <strong>Max px</strong> and <strong>Max %</strong> limit a linked slot. The larger minimum wins and the tighter maximum wins. <strong>Move up in stack</strong> and <strong>Move down in stack</strong> change the slot's order inside the link.</p>
+    <p>Templates built to fill their whole frame always keep the full size you set.</p>
+  </div>
+</div>
+
+<h2>Warnings</h2>
+
+<p>When link settings cannot all be met, a warning appears above the canvas:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Warning</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td><em>Minimum sizes are larger than the canvas, so this link overflows.</em></td><td>Lower the minimums or the space between templates</td></tr>
+<tr><td><em>A locked template's minimum is larger than its designated size. The designated size is kept.</em></td><td>Make the slot larger or lower its minimum</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-tip"><p>If you delete a template that a container still uses, its slot stays and the editor marks it <strong>(missing)</strong>. Pick another template for the slot or remove it.</p></div>
+
+<details class="hx-details">
+  <summary>Can I name a template the same as a container route?</summary>
+  <p>No. New template names that match an existing container route are refused, so the two URLs cannot collide.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_overview">{{icon:palette}}<span><strong>Spore Studio overview</strong><span class="hx-card-text">The editor and its toolbar</span></span></a>
+  <a class="hx-card" href="help:obs_setup">{{brand:obs}}<span><strong>OBS setup</strong><span class="hx-card-text">Add a browser source</span></span></a>
+</div>

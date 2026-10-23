@@ -214,14 +214,15 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
 
     if main_tab == "Settings" and sub_tab:
         settings_sub_tab_mapping = {
-            "Twitch": "integrations_twitch",
-            "PSN": "integrations_psn",
-            "Spotify": "integrations_spotify",
-            "YouTube": "integrations_youtube",
-            "Streamlabs": "integrations_streamlabs",
-            "StreamElements": "integrations_streamelements",
-            "Discord": "integrations_discord",
-            "OBS": "obs_setup",
+            # Service tabs are where accounts get connected, so open the setup guide.
+            "Twitch": "twitch_setup",
+            "PSN": "guide_psn",
+            "Spotify": "guide_spotify",
+            "YouTube": "guide_youtube",
+            "Streamlabs": "guide_streamlabs",
+            "StreamElements": "guide_streamelements",
+            "Discord": "guide_discord",
+            "OBS": "obs_websocket",
             "Database": "settings",
             "Statistics": "settings",
             "Theme": "settings",
@@ -498,7 +499,7 @@ def twitch_help_button():
 
 def discord_help_button():
     """Help button specifically for Discord settings"""
-    return help_button(topic_id="integrations_discord", tooltip="Discord setup help")
+    return help_button(topic_id="guide_discord", tooltip="Discord setup help")
 
 def alerts_help_button():
     """Help button specifically for alerts"""

@@ -1,0 +1,166 @@
+<p class="hx-lead">Mycelian watches one or more YouTube channels for new uploads, and with Google OAuth it also reads your <strong>live chat</strong>, <strong>memberships</strong> and <strong>Super Chats</strong> for the chat overlay and alerts.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:guide_youtube">{{brand:youtube}}<span><strong>Not connected yet?</strong><span class="hx-card-text">Connect YouTube: API key for uploads, OAuth client for live chat</span></span></a>
+</div>
+
+<h2>What the connection gives you</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Needs</th><th>Feature</th></tr></thead>
+<tbody>
+<tr><td>API key</td><td><strong>Multi-channel monitoring</strong>: track several channels at once.</td></tr>
+<tr><td>API key</td><td><strong>Latest video</strong>: the newest public upload across all channels, refreshed every 30 minutes.</td></tr>
+<tr><td>API key</td><td><strong>Chatbot variables</strong> for the latest video, globally and per channel.</td></tr>
+<tr><td>API key</td><td><strong>Playlist filter</strong>: skip videos from playlists you name.</td></tr>
+<tr><td>OAuth</td><td><strong>Live chat</strong>: read your active broadcast's chat and post chatbot replies.</td></tr>
+<tr><td>OAuth</td><td><strong>Alerts</strong>: memberships become sub, resub and gift sub alerts; Super Chats and Super Stickers become donation alerts. They use the same alert configs as Twitch.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Chatbot variables</h2>
+
+<p>Use these in <a href="help:chatbot_commands">commands</a> and timed messages. The full list is in <a href="help:chatbot_variables">Chatbot Variables</a>.</p>
+
+<h3>Latest across all channels</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Variable</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td><code>{youtube.latest_video_url}</code></td><td>URL of the latest video</td></tr>
+<tr><td><code>{youtube.latest_video_title}</code></td><td>Title of the latest video</td></tr>
+<tr><td><code>{youtube.latest_video_id}</code></td><td>Video ID of the latest video</td></tr>
+<tr><td><code>{youtube.latest_video_channel}</code></td><td>Channel name of the latest video</td></tr>
+<tr><td><code>{youtube.connection_status}</code></td><td>The upload status text, for example <code>Connected (2 channels)</code></td></tr>
+<tr><td><code>{youtube.channel_count}</code></td><td>Number of configured channels</td></tr>
+</tbody>
+</table></div>
+
+<p>With no video yet, the video variables return <code>No video available</code>.</p>
+
+<h3>Per channel</h3>
+
+<p>Replace <code>channelname</code> with the channel's display name in lower case, with spaces, hyphens and underscores removed. "My Cool-Channel" becomes <code>mycoolchannel</code>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Variable</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td><code>{channelname_latest_video_url}</code></td><td>Latest video URL from that channel</td></tr>
+<tr><td><code>{channelname_latest_video_title}</code></td><td>Latest video title from that channel</td></tr>
+<tr><td><code>{channelname_latest_video_id}</code></td><td>Latest video ID from that channel</td></tr>
+<tr><td><code>{channelname_channel_title}</code></td><td>Channel display name</td></tr>
+<tr><td><code>{channelname_channel_url}</code></td><td>Channel URL</td></tr>
+<tr><td><code>{channelname_last_updated}</code></td><td>When the channel was last checked</td></tr>
+</tbody>
+</table></div>
+
+<h2>Playlist filter</h2>
+
+<p>Under <strong>Playlist filter (exclude)</strong>, type a playlist name and press <kbd>Enter</kbd>. If the newest upload is in a listed playlist, Mycelian skips it and uses the next newest video.</p>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-section">Playlist filter (exclude)</div>
+    <span class="hm-muted hm-xs">Press Enter to add a playlist name</span>
+    <div class="hm-row"><span class="hm-chip">Shorts <span class="hx-mi">close</span></span><span class="hm-chip">Clips <span class="hx-mi">close</span></span></div>
+    <div class="hm-field hm-nolabel is-focused"><span class="hm-value">Stream VODs</span></div>
+  </div>
+  <figcaption>Each name becomes a chip. Click its <strong>×</strong> to remove it, then click <strong>Save</strong>.</figcaption>
+</figure>
+
+<ul>
+<li>Matching ignores case but needs the <strong>whole name</strong>: <code>Shorts</code> excludes a playlist named "Shorts", not "Short Clips".</li>
+<li>A video is excluded if it is in any listed playlist on its channel.</li>
+<li>Each filtered playlist costs extra API quota every update cycle.</li>
+</ul>
+
+<p>Use it to keep Shorts, clips, or a series you do not want to promote out of the "latest video".</p>
+
+<h2>Live chat and alerts</h2>
+
+<h3>Switches</h3>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-row hm-gap-xl">
+      <span class="hm-switch is-on"><i></i>Enable live chat poller</span>
+      <span class="hm-switch is-on"><i></i>Process YouTube alerts</span>
+    </div>
+  </div>
+  <figcaption>Under Settings → YouTube → Live chat &amp; alerts. Click a switch to preview it; nothing is saved.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Switch</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Enable live chat poller</strong></td><td>When on and authorized, Mycelian polls your live chat for messages and alerts.</td></tr>
+<tr><td><strong>Process YouTube alerts</strong></td><td>When off, memberships and Super Chats still reach chat, Connectors and the Chatbot, but skip the alert queue, instant alerts and the activity feed.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Show chat in the overlay</h3>
+
+<p>YouTube chat messages are <strong>off by default</strong> in the chat overlay. In the chat template's Source Settings, turn on <strong>Enable YouTube Chat</strong> (<code>EnableYouTubeChat</code> in <code>chat.json</code>). Membership and Super Chat alerts still fire when it is off.</p>
+
+<h3>Event mapping</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>YouTube event</th><th>Mycelian alert / chat</th></tr></thead>
+<tbody>
+<tr><td>Text message</td><td>Chat overlay (if Enable YouTube Chat is on)</td></tr>
+<tr><td>New membership</td><td>Sub alert (feed: Membership)</td></tr>
+<tr><td>Member milestone</td><td>Resub alert (feed: Member Milestone)</td></tr>
+<tr><td>Gift memberships</td><td>Gift sub alert (feed: Gift Membership)</td></tr>
+<tr><td>Super Chat / Super Sticker</td><td>Donation alert (feed: Super Chat / Super Sticker)</td></tr>
+</tbody>
+</table></div>
+
+<h3>Permission</h3>
+
+<p>Live chat uses the <code>youtube.force-ssl</code> scope so Mycelian can <strong>read</strong> live chat and <strong>send</strong> chatbot replies. If you connected earlier with read-only access, click <strong>Disconnect</strong>, then <strong>Connect</strong> to grant it.</p>
+
+<h2>Quota</h2>
+
+<ul>
+<li>The YouTube Data API allows 10,000 units per day by default.</li>
+<li>When the quota runs out, the status shows <strong>Quota Exceeded (retry in 1 hour)</strong> and Mycelian tries again an hour later.</li>
+<li>Live chat polling costs about 5 units per poll and follows the interval Google asks for (often about 5 seconds). Long streams may need a <a href="https://support.google.com/youtube/contact/yt_api_form">quota extension</a>.</li>
+<li>Fewer channels and fewer filtered playlists use less quota.</li>
+</ul>
+
+<h2>Connection status</h2>
+
+<p>The bottom status bar uses these colors for YouTube, based on the upload status. The guide lists the exact text each one covers: <a href="help:guide_youtube">Connect YouTube</a>. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>YouTube channels are being read</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Partial</td><td>Some channels connected and some did not</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Idle</td><td>An API key or channel URL is still required</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>YouTube is not connected</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>Every channel failed, or the request failed</td></tr>
+</tbody>
+</table></div>
+
+<h2>If the data looks wrong</h2>
+
+<details class="hx-details">
+  <summary>The latest video is not updating</summary>
+  <p>Uploads are checked every 30 minutes, so a new video can take that long to appear. The <strong>Refresh</strong> button only re-reads the status labels; it does not ask YouTube again. If the playlist filter is on, the new video may be excluded; check your filter list.</p>
+</details>
+
+<details class="hx-details">
+  <summary>A video I just published does not show</summary>
+  <p>Only public videos are detected for upload monitoring.</p>
+</details>
+
+<details class="hx-details">
+  <summary>A per-channel variable says "Channel not found"</summary>
+  <p>The name after the brace must match the channel's display name with spaces, hyphens and underscores removed. The variable picker in the Chatbot tab lists the exact variables for each configured channel.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Setup, sign-in or live status problems</summary>
+  <p>See the troubleshooting section of <a href="help:guide_youtube">Connect YouTube</a>.</p>
+</details>

@@ -1,0 +1,129 @@
+<p class="hx-lead">Mycelian itself is light. Most slowdowns come from what OBS has to draw (browser sources, big GIFs) or from a very long alert history. Find where the load is first, then use the fixes for that area.</p>
+
+<h2>Where is the load?</h2>
+
+<p>Open Task Manager (Windows) or Activity Monitor (macOS) while the problem happens, and look at which process is busy:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Busy process</th><th>Usually means</th><th>Go to</th></tr></thead>
+<tbody>
+<tr><td><strong>OBS</strong> or <strong>obs-browser-page</strong></td><td>Browser sources are heavy: large GIFs, many sources, high resolution or frame rate</td><td><a href="#obs-and-browser-sources">OBS and browser sources</a></td></tr>
+<tr><td><strong>Mycelian</strong></td><td>A large activity history, a busy overlay server, or many live widgets</td><td><a href="#mycelian">Mycelian</a></td></tr>
+<tr><td>Neither, but alerts are late</td><td>The queue or the network, not CPU</td><td><a href="#alerts-are-late">Alerts are late</a></td></tr>
+</tbody>
+</table></div>
+
+<p>Also look at <strong>Overlay Server</strong> in the status footer. <strong>Overloaded</strong> means it is too busy to keep up; <strong>Stalled</strong> means it stopped answering. Both are amber. See <a href="help:status_footer">Status Footer</a>.</p>
+
+<h2 id="obs-and-browser-sources">OBS and browser sources</h2>
+
+<details class="hx-details">
+  <summary>OBS lags or drops frames when an alert plays</summary>
+  <p><strong>Cause:</strong> The alert image is large. A long, full-size GIF is expensive to decode.</p>
+  <p><strong>Fix:</strong> Resize images to about the size they show at. The alerts template draws them at <strong>GIF Width</strong> × <strong>GIF Height</strong> (190 × 190 by default), so 300-500 px is plenty. Cut frames and colors, or convert to animated WebP. See <a href="help:alert_media">Alert Media</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Many browser sources, high CPU all the time</summary>
+  <p><strong>Cause:</strong> Each browser source is a small web browser. Hidden sources keep running unless told not to.</p>
+  <p><strong>Fix:</strong> In each source's properties:</p>
+  <ul>
+    <li>Turn on <strong>Shutdown source when not visible</strong> for overlays you only use in some scenes. Leave it off for the alerts source, so alerts still play when you switch scenes.</li>
+    <li>Set <strong>Width</strong> and <strong>Height</strong> to what the overlay needs, not 1920 × 1080 for a small widget.</li>
+    <li>Use <strong>Custom frame rate</strong> 30 unless the overlay needs smooth motion.</li>
+    <li>Reuse one source across scenes with <strong>Add Existing</strong> instead of copies.</li>
+  </ul>
+</details>
+
+<details class="hx-details">
+  <summary>OBS is slow even with few sources</summary>
+  <p><strong>Fix:</strong> Make sure <strong>Enable Browser Source Hardware Acceleration</strong> is on in <span class="hx-path"><span>OBS Settings</span><span>Advanced</span><span>Sources</span></span>, update your graphics driver, and remove OBS plugins you no longer use.</p>
+</details>
+
+<h2 id="mycelian">Mycelian</h2>
+
+<details class="hx-details">
+  <summary>The Activity Feed is slow to open or scroll</summary>
+  <p><strong>Cause:</strong> It loads a lot of history.</p>
+  <p><strong>Fix:</strong> Click <strong>FEED STORAGE</strong> on the Activity Feed (or open <span class="hx-path"><span>Settings</span><span>App Settings</span></span>) and lower <strong>History limit</strong> or <strong>Max pages</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Startup is slow or memory keeps growing over weeks</summary>
+  <p><strong>Cause:</strong> Every alert is stored for replay. Auto-trim is off by default, so storage only grows.</p>
+  <p><strong>Fix:</strong> Turn on <strong>Auto-trim stored alerts</strong> (below). Restarting Mycelian between streams also frees memory.</p>
+</details>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-panel">
+      <div class="hm-panel-title">Storage</div>
+      <span class="hm-xs hm-muted">Activity feed paging and stored-alert retention.</span>
+      <div class="hm-grid-2">
+        <div class="hm-row"><span class="hm-sm">History limit</span><div class="hm-field hm-nolabel" style="width:4.5rem"><span class="hm-value">20</span></div><span class="hm-sm hm-muted">per page</span></div>
+        <div class="hm-row"><span class="hm-sm">Max pages</span><div class="hm-field hm-nolabel" style="width:4.5rem"><span class="hm-value">5</span></div><span class="hm-sm hm-muted">to load</span></div>
+        <div class="hm-row"><span class="hm-switch is-on"><i></i>Auto-trim stored alerts</span><span class="hm-marker" data-n="1"></span></div>
+        <div class="hm-field hm-select" data-label="Trim using"><span class="hm-value">Number and age</span></div>
+        <div class="hm-row"><span class="hm-sm">Keep</span><div class="hm-field hm-nolabel" style="width:5rem"><span class="hm-value">500</span></div><span class="hm-sm hm-muted">alerts</span></div>
+        <div class="hm-row"><span class="hm-sm">Keep</span><div class="hm-field hm-nolabel" style="width:5rem"><span class="hm-value">30</span></div><span class="hm-sm hm-muted">days</span><span class="hm-marker" data-n="2"></span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption><span class="hx-path"><span>Settings</span><span>App Settings</span></span> → <strong>Storage</strong>, shown with auto-trim turned on. Click the switch to see it off.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Auto-trim stored alerts</strong> deletes old stored alerts. Trimmed alerts can no longer be replayed.</li>
+  <li data-n="2"><strong>Trim using</strong>: <strong>Max number</strong> keeps the newest N alerts, <strong>Age</strong> deletes alerts older than the days set, <strong>Number and age</strong> applies both. Defaults are 500 alerts and 30 days.</li>
+</ol>
+
+<p>While a trim runs, the status footer shows its progress.</p>
+
+<details class="hx-details">
+  <summary>Overlay Server shows Overloaded</summary>
+  <p><strong>Cause:</strong> Too many updates are going to browser sources at once, for example many live widgets, connectors that fire on every chat message, or several copies of the same overlay open.</p>
+  <p><strong>Fix:</strong> Close overlay pages you left open in browser tabs. Reduce connectors that run on every message (see <a href="help:connectors_intro">Connectors</a>). Simplify heavy Spore Studio templates. If it stays overloaded, restart Mycelian.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Template controls lag or stop working</summary>
+  <p><strong>Cause:</strong> The browser source lost its live connection to the overlay server.</p>
+  <p><strong>Fix:</strong> Refresh the source in OBS (<strong>Refresh cache of current page</strong>). If <strong>Overlay Server</strong> is not <strong>Running</strong>, see <a href="help:troubleshooting_connections">Connection Problems</a>. More on the live connection: <a href="help:template_websocket">Template WebSocket</a> and <a href="help:source_controls">Source Controls</a>.</p>
+</details>
+
+<h2 id="alerts-are-late">Alerts are late</h2>
+
+<details class="hx-details">
+  <summary>Alerts appear seconds after the event</summary>
+  <p><strong>Cause:</strong> Usually the queue, not the computer. Alerts play one at a time, and each waits for the previous alert's duration, sound and speech, plus <strong>Delay Between Alerts</strong>.</p>
+  <p><strong>Fix:</strong> Shorten durations and long sound files, turn on <strong>Stackable</strong> where overlap is fine, and check the <strong>Internet</strong> item in the footer. See <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Media loads slowly the first time</summary>
+  <p><strong>Cause:</strong> Large files on a slow drive.</p>
+  <p><strong>Fix:</strong> Keep images and sounds small (see above). If the <code>assets</code> folder is on a slow or network drive, move Mycelian to a local SSD.</p>
+</details>
+
+<h2>Optimization checklist</h2>
+
+<ul class="hx-checklist" data-checklist="troubleshooting_performance_checklist">
+  <li>Mycelian is up to date (<span class="hx-path"><span>Settings</span><span>About</span></span> → <strong>Check for Updates</strong>).</li>
+  <li>Alert images are 500 px or smaller and short.</li>
+  <li>Alert sounds are 3-10 seconds, MP3 or OGG.</li>
+  <li>Unused browser sources are removed, or set to <strong>Shutdown source when not visible</strong>.</li>
+  <li>Browser source hardware acceleration is on in OBS.</li>
+  <li><strong>Auto-trim stored alerts</strong> is on.</li>
+  <li>No overlay pages are left open in browser tabs.</li>
+  <li><strong>Overlay Server</strong> shows <strong>Running</strong> during a stream.</li>
+</ul>
+
+<h2>Reporting a problem</h2>
+
+<p>If something keeps getting slower, note when it started, then open <span class="hx-path"><span>Settings</span><span>About</span></span>. <strong>Application Logs</strong> lists recent errors; <strong>Open Logs Folder</strong> opens the folder with <code>mycelian.log</code> (capped at 15 MB, oldest lines trimmed). Include that file and your version number from the same page when you report it on GitHub (<strong>View on GitHub</strong>).</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:obs_setup">{{brand:obs}}<span><strong>OBS Setup</strong><span class="hx-card-text">Browser source settings</span></span></a>
+  <a class="hx-card" href="help:template_configuration">{{icon:tune}}<span><strong>Template Configuration</strong><span class="hx-card-text">Template sizes and options</span></span></a>
+  <a class="hx-card" href="help:troubleshooting_alerts">{{icon:build}}<span><strong>Troubleshooting Alerts</strong><span class="hx-card-text">Delays and stuck alerts</span></span></a>
+</div>

@@ -1,0 +1,175 @@
+<p class="hx-lead">Save memorable lines from your stream and let chat pull them back up. Quotes are numbered. Viewers use the built-in <code>!quote</code> and <code>!add_quote</code> commands; you manage the list on the Quotes tab.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 2 minutes</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Chatbot</span><span>Quotes</span></span></span>
+  <span>{{brand:twitch}} Twitch chat</span>
+</div>
+
+<h2>The Quotes tab</h2>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-subtabs">
+      <span class="hm-subtab">Commands</span>
+      <span class="hm-subtab">Events</span>
+      <span class="hm-subtab is-active">Quotes</span>
+      <span class="hm-subtab">Greetings</span>
+      <span class="hm-subtab">Giveaways</span>
+      <span class="hm-subtab">Polls</span>
+    </div>
+    <div class="hm-frame">
+      <div class="hm-cb-toolbar">
+        <div class="hm-row">
+          <span class="hm-btn"><span class="hx-mi">format_quote</span>New Quote</span>
+          <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh</span>
+          <span class="hm-btn hm-outline"><span class="hx-mi">settings</span>Settings</span>
+          <span class="hm-marker" data-n="1"></span>
+        </div>
+        <div class="hm-field hm-base" data-label="🔍 Search quotes"><span class="hm-placeholder">Search by text, author, or ID...</span></div>
+      </div>
+      <div class="hm-cb-grid">
+        <div class="hm-cb-card">
+          <div class="hm-cb-card-head">
+            <div class="hm-col hm-tight">
+              <span class="hm-cb-card-title">Quote #12</span>
+              <span class="hm-cb-desc">by night_owl</span>
+            </div>
+            <div class="hm-col hm-tight">
+              <span class="hm-btn hm-cb-secondary hm-dense"><span class="hx-mi">edit</span>Edit</span>
+              <span class="hm-btn hm-cb-secondary hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
+              <span class="hm-btn hm-danger hm-dense"><span class="hx-mi">delete</span>Delete</span>
+            </div>
+          </div>
+          <span class="hm-muted hm-xs">Quote:</span>
+          <div class="hm-cb-quote">"I meant to jump into the lava."</div>
+          <div class="hm-cb-stats"><span>Added by: ModMika</span><span>Added: 10/14 21:07</span></div>
+        </div>
+        <div class="hm-cb-card">
+          <div class="hm-cb-card-head">
+            <div class="hm-col hm-tight">
+              <span class="hm-cb-card-title">Quote #13</span>
+              <span class="hm-muted hm-xs"><em>Anonymous</em></span>
+              <span class="hm-marker" data-n="2"></span>
+            </div>
+            <div class="hm-col hm-tight">
+              <span class="hm-btn hm-cb-secondary hm-dense"><span class="hx-mi">edit</span>Edit</span>
+              <span class="hm-btn hm-cb-secondary hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
+              <span class="hm-btn hm-danger hm-dense"><span class="hx-mi">delete</span>Delete</span>
+            </div>
+          </div>
+          <span class="hm-muted hm-xs">Quote:</span>
+          <div class="hm-cb-quote">"Chat, I have a plan. It is a bad plan."</div>
+          <div class="hm-cb-stats"><span>Added by: UI</span><span>Added: 10/21 20:55</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Chatbot → Quotes. Quotes added from this tab show <em>Added by: UI</em>; quotes added from chat show the chatter's name.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>New Quote</strong> adds one by hand. <strong>Settings</strong> turns the quote system on or off and sets the cooldown.</li>
+  <li data-n="2">A quote without an author shows <em>Anonymous</em>.</li>
+</ol>
+
+<h2>Add a quote from the app</h2>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-cb-dialog">
+          <div class="hm-cb-dialog-head"><span>Add New Quote</span><span class="hx-mi">close</span></div>
+          <div class="hm-cb-dialog-body">
+            <div class="hm-field hm-textarea" data-label="Quote Text"><span class="hm-placeholder">Enter the quote text...</span></div>
+            <div class="hm-field" data-label="Author (optional)"><span class="hm-placeholder">Who said this quote?</span></div>
+            <div class="hm-row hm-end"><span class="hm-btn hm-flat">Cancel</span><span class="hm-btn"><span class="hx-mi">save</span>Add Quote</span></div>
+          </div>
+        </div>
+      </div>
+    </figure>
+  </div>
+  <div>
+    <ol>
+      <li>Click <strong>New Quote</strong>.</li>
+      <li>Type the line in <strong>Quote Text</strong>. Leave out the quotation marks; the card adds them.</li>
+      <li>Optionally fill in <strong>Author</strong>.</li>
+      <li>Click <strong>Add Quote</strong>. A toast confirms <em>"Quote #N added successfully!"</em></li>
+    </ol>
+    <p><strong>Edit</strong> on a card changes the text and author (<strong>Update Quote</strong>). The number stays the same.</p>
+  </div>
+</div>
+
+<h2>Chat commands</h2>
+
+<p>These are built in. You do not create them on the Commands tab, and no custom command can use the names <code>quote</code> or <code>add_quote</code>.</p>
+
+<div class="hx-table-wrap"><table>
+  <thead><tr><th>Type in chat</th><th>Bot replies</th></tr></thead>
+  <tbody>
+    <tr><td><span class="hx-copy" data-copy="!quote">!quote</span></td><td>A random quote, as <em>12. I meant to jump into the lava.</em></td></tr>
+    <tr><td><span class="hx-copy" data-copy="!quote 12">!quote 12</span></td><td>Quote number 12, or <em>Quote #12 not found!</em></td></tr>
+    <tr><td><span class="hx-copy" data-copy="!quote lava">!quote lava</span></td><td>The best match for <em>lava</em> in the text or author, or <em>No quotes found matching 'lava'</em></td></tr>
+    <tr><td><span class="hx-copy" data-copy='!add_quote "I meant to jump into the lava." night_owl'>!add_quote "text" author</span></td><td>Saves a new quote and replies <em>Quote #14 added successfully!</em> The author after the closing quotation mark is optional.</td></tr>
+  </tbody>
+</table></div>
+
+<figure class="hx-figure hx-static">
+  <div class="hm-chat">
+    <div class="hm-chat-title">{{brand:twitch}} Stream chat</div>
+    <div class="hm-chat-line is-mod"><span class="hm-chat-badge is-mod">M</span><b>ModMika:</b> !add_quote "Chat, I have a plan. It is a bad plan."</div>
+    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> Quote #13 added successfully!</div>
+    <div class="hm-chat-line"><b>night_owl:</b> !quote lava</div>
+    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> 12. I meant to jump into the lava.</div>
+    <div class="hm-chat-line"><b>pixelpat:</b> !quote</div>
+    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> Quote command is on cooldown. Please wait 24 seconds.</div>
+  </div>
+  <figcaption>Replies show the number and text only. The author is stored but not posted.</figcaption>
+</figure>
+
+<div class="hx-callout hx-warning"><p>Anyone in chat can use <code>!add_quote</code>. There is no moderator-only setting for it. Review new quotes on the tab and delete anything you do not want.</p></div>
+
+<h2>Quote Settings</h2>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-cb-dialog">
+      <div class="hm-cb-dialog-head"><span class="hm-info">Quote Settings</span><span class="hx-mi">close</span></div>
+      <div class="hm-cb-dialog-body">
+        <div class="hm-row hm-between"><span class="hm-label hm-bold">Enable Quote System</span><span class="hm-switch is-on"><i></i></span></div>
+        <div class="hm-field" data-label="Global Quote Cooldown (seconds)"><span class="hm-value">30</span></div>
+        <div class="hm-cb-hint"><strong>💡 Quote Cooldown</strong><br>• Set to 0 to disable cooldown<br>• Applies to all quote commands (!quote)</div>
+        <div class="hm-row hm-end"><span class="hm-btn hm-flat">Cancel</span><span class="hm-btn hm-cb-secondary"><span class="hx-mi">save</span>Save Settings</span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Opened with <strong>Settings</strong> on the Quotes tab. The switch is a preview only.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>Enable Quote System</strong> turns <code>!quote</code> and <code>!add_quote</code> on or off. It takes effect as soon as you flip it.</li>
+  <li><strong>Global Quote Cooldown</strong> is shared by everyone. The default is 30 seconds. It starts when a quote is posted, not when one is added.</li>
+</ul>
+
+<h2>Questions</h2>
+
+<details class="hx-details">
+  <summary>Why did my quote numbers skip?</summary>
+  <p>A new quote gets the highest number plus one. Deleting a quote does not renumber the others, so there can be gaps.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Can I post a quote from my own command?</summary>
+  <p>The Variables panel has a <strong>Quotes</strong> group with <code>{quote.id.text}</code>, <code>{quote.id.author}</code> and similar. They fill in on the card preview, but chat replies currently post them as plain text. Point viewers to <code>!quote</code> instead. See <a href="help:chatbot_variables">Chatbot Variables</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>!quote does nothing</summary>
+  <p>Check that <strong>Enable Quote System</strong> is on and that Twitch is connected. If the cooldown is running the bot says so. Quote commands only work in Twitch chat.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:chatbot_commands">{{icon:terminal}}<span><strong>Commands</strong><span class="hx-card-text">Make your own !commands</span></span></a>
+  <a class="hx-card" href="help:chatbot_events">{{icon:celebration}}<span><strong>Events</strong><span class="hx-card-text">Automatic messages for stream events</span></span></a>
+</div>

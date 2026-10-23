@@ -1,0 +1,176 @@
+<p class="hx-lead">Alert sound is played by the <strong>alerts browser source</strong>, not by Mycelian's window. So the sound passes through several volume controls before it reaches your stream. Work along the chain below until you find the one that is off.</p>
+
+<p>For file formats and folders, see <a href="help:alert_media">Alert Media Configuration</a>.</p>
+
+<h2>The audio chain</h2>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hma-flow">
+      <div class="hma-flow-step"><span class="hx-mi">tune</span><strong>1. Alert</strong><span class="hm-xs">Sound file set, <strong>Volume</strong> above 0</span></div>
+      <span class="hma-flow-arrow">arrow_forward</span>
+      <div class="hma-flow-step"><span class="hx-mi">notifications_off</span><strong>2. Activity Feed</strong><span class="hm-xs"><strong>MUTE ALERTS</strong> off</span></div>
+      <span class="hma-flow-arrow">arrow_forward</span>
+      <div class="hma-flow-step"><span class="hx-mi">web</span><strong>3. Browser source</strong><span class="hm-xs"><strong>Control audio via OBS</strong> on</span></div>
+      <span class="hma-flow-arrow">arrow_forward</span>
+      <div class="hma-flow-step"><span class="hx-mi">graphic_eq</span><strong>4. OBS Audio Mixer</strong><span class="hm-xs">Source not muted, fader up</span></div>
+      <span class="hma-flow-arrow">arrow_forward</span>
+      <div class="hma-flow-step"><span class="hx-mi">headphones</span><strong>5. Your ears</strong><span class="hm-xs">Audio Monitoring, system volume</span></div>
+    </div>
+  </div>
+  <figcaption>Steps 1-2 are in Mycelian. Steps 3-5 are in OBS and your system.</figcaption>
+</figure>
+
+<h3>Quick check</h3>
+
+<ul class="hx-checklist" data-checklist="troubleshooting_audio_chain">
+  <li><strong>Test Alert</strong> on the alert shows the image. (If not, the problem is not audio: see <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.)</li>
+  <li>The alert's <strong>Audio</strong> section has a <strong>Directory</strong> and <strong>File</strong>, and <strong>Volume</strong> is above 0%.</li>
+  <li>The Activity Feed button reads <strong>MUTE ALERTS</strong> and is not highlighted.</li>
+  <li>The browser source has <strong>Control audio via OBS</strong> on and shows in the OBS <strong>Audio Mixer</strong>.</li>
+  <li>The source is not muted in the mixer and its fader is up.</li>
+  <li>OBS's monitoring or your system volume lets you hear it.</li>
+</ul>
+
+<h2>Fix by symptom</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="none" class="is-active">No sound</button>
+    <button data-tab="level">Too quiet or loud</button>
+    <button data-tab="crackle">Crackling</button>
+    <button data-tab="delay">Delay</button>
+    <button data-tab="wrong">Wrong sound</button>
+    <button data-tab="hear">Stream hears it, I don't</button>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="none">
+    <details class="hx-details">
+      <summary>Alerts are muted in Mycelian</summary>
+      <p><strong>Cause:</strong> <strong>MUTE ALERTS</strong> silences every alert sound and text-to-speech. Images still show.</p>
+      <p><strong>Fix:</strong> Click <strong>MUTE ALERTS</strong> on the <strong>Activity Feed</strong> again to unmute.</p>
+    </details>
+    <details class="hx-details">
+      <summary>The browser source is not in the Audio Mixer</summary>
+      <p><strong>Cause:</strong> <strong>Control audio via OBS</strong> is off, so OBS sends the source's sound straight to your desktop audio instead of the mixer.</p>
+      <p><strong>Fix:</strong> In OBS, right-click the browser source → <strong>Properties</strong>, tick <strong>Control audio via OBS</strong>, click OK. The source now has its own mixer strip. If it does not appear, restart OBS.</p>
+    </details>
+    <details class="hx-details">
+      <summary>No sound file, or the file moved</summary>
+      <p><strong>Cause:</strong> <strong>Primary Sound</strong> is empty, or points at a file that was renamed or moved out of <code>assets</code>.</p>
+      <p><strong>Fix:</strong> Open the alert's <strong>Audio</strong> section, click <strong>Browse</strong>, and pick the file again. Check it plays by opening its address in a browser, for example <span class="hx-copy" data-copy="http://127.0.0.1:5000/assets/alerts/bits/cheer.mp3">http://127.0.0.1:5000/assets/alerts/bits/cheer.mp3</span>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Random sounds never play</summary>
+      <p><strong>Cause:</strong> <strong>Enable Random Sounds</strong> is off, the chance is 0, or the folder is not inside <code>assets/alerts/</code>. The log then shows <code>Audio folder not found</code>.</p>
+      <p><strong>Fix:</strong> Move the folder under <code>assets/alerts/</code>, browse to it again, and set a chance above 0. See <a href="help:alert_media">Alert Media</a>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>It works in OBS but not in a browser tab</summary>
+      <p><strong>Cause:</strong> Normal browsers block sound on a page you have not clicked yet. OBS browser sources do not have this rule.</p>
+      <p><strong>Fix:</strong> Click once anywhere on the overlay page, then test again.</p>
+    </details>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="level">
+    <p>Set levels in this order, testing after each:</p>
+    <ol>
+      <li>Per alert: the <strong>Volume</strong> slider in the alert's <strong>Audio</strong> section, then <strong>Test Alert</strong>.</li>
+      <li>All alerts at once: the browser source's fader in the OBS <strong>Audio Mixer</strong>.</li>
+      <li>Speech: <strong>TTS Volume</strong> in <span class="hx-path"><span>Source Settings</span><span>alerts</span></span>.</li>
+    </ol>
+    <details class="hx-details">
+      <summary>The sound drops very low when an alert has TTS</summary>
+      <p><strong>Cause:</strong> This is on purpose. While text-to-speech is on, the alert sound plays at a quarter of its <strong>Volume</strong> so the voice is clear.</p>
+      <p><strong>Fix:</strong> Raise the alert's <strong>Volume</strong>, or turn off <strong>Enable Text-to-Speech</strong> for that alert.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Some files are much louder than others</summary>
+      <p><strong>Cause:</strong> The files were recorded at different levels. Random folders make this obvious.</p>
+      <p><strong>Fix:</strong> Normalize every file to the same level (for example -12 to -6 dB peak) in an editor such as Audacity, then copy them back over the originals.</p>
+    </details>
+    <p>A starting point for <strong>Volume</strong>: follows 50-70%, subs 70-90%, big donations and raids 90-100%.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="crackle">
+    <details class="hx-details">
+      <summary>Crackling, pops or distortion</summary>
+      <p><strong>Causes and fixes, most likely first:</strong></p>
+      <ul>
+        <li><strong>Clipping</strong>: the file is too loud. Lower the alert's Volume or normalize the file.</li>
+        <li><strong>Sample rate mismatch</strong>: use 44.1 kHz or 48 kHz files, matching OBS's <span class="hx-path"><span>Settings</span><span>Audio</span><span>Sample Rate</span></span>.</li>
+        <li><strong>Damaged file</strong>: re-export or re-download it.</li>
+        <li><strong>CPU load</strong>: close heavy programs, or see <a href="help:troubleshooting_performance">Performance Issues</a>.</li>
+      </ul>
+    </details>
+    <details class="hx-details">
+      <summary>The sound starts or ends with a click</summary>
+      <p><strong>Fix:</strong> Set <strong>Fade In</strong> and <strong>Fade Out</strong> to 20-100 ms in the alert's <strong>Audio</strong> section.</p>
+    </details>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="delay">
+    <details class="hx-details">
+      <summary>The sound is slightly behind the image</summary>
+      <p><strong>Cause:</strong> Browser audio can lag by 100-500 ms.</p>
+      <p><strong>Fix:</strong> In OBS, open <strong>Advanced Audio Properties</strong> and give your other sources a matching <strong>Sync Offset</strong>, or accept the small lag.</p>
+    </details>
+    <details class="hx-details">
+      <summary>The whole alert plays long after the event</summary>
+      <p><strong>Cause:</strong> Alerts play one at a time, and each waits for the previous sound to finish. Long sound files hold the queue.</p>
+      <p><strong>Fix:</strong> Keep alert sounds to 3-10 seconds and trim silence at the end. Lower <strong>Delay Between Alerts</strong> in <span class="hx-path"><span>Source Settings</span><span>alerts</span></span>. More in <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
+    </details>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="wrong">
+    <details class="hx-details">
+      <summary>An unexpected sound plays</summary>
+      <p><strong>Cause:</strong> A different alert matched (overlapping ranges), or the randomizer picked a file.</p>
+      <p><strong>Fix:</strong> Replay the event from the Activity Feed to see which alert it picks. Check the alert's <strong>Randomizer</strong> section; the Extra Random roll comes first. See <a href="help:alert_configuration">Configuring Alert Settings</a>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Sound plays twice</summary>
+      <p><strong>Cause:</strong> Two browser sources load the alerts page, for example a copy of the source in another scene, or the page open in a browser tab at the same time.</p>
+      <p><strong>Fix:</strong> Keep one alerts browser source and add it to other scenes with <strong>Add Existing</strong> rather than a new copy.</p>
+    </details>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="hear">
+    <details class="hx-details">
+      <summary>Viewers hear alerts but you don't</summary>
+      <p><strong>Cause:</strong> OBS sends browser-source audio to the stream only, not to your headphones.</p>
+      <p><strong>Fix:</strong> In the OBS Audio Mixer, open the source's menu → <strong>Advanced Audio Properties</strong> and set <strong>Audio Monitoring</strong> to <strong>Monitor and Output</strong>. Pick your headphones under <span class="hx-path"><span>Settings</span><span>Audio</span><span>Monitoring Device</span></span>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>You hear alerts but viewers don't</summary>
+      <p><strong>Cause:</strong> Monitoring is set to <strong>Monitor Only (mute output)</strong>, or the source is excluded from your stream track.</p>
+      <p><strong>Fix:</strong> Set <strong>Audio Monitoring</strong> to <strong>Monitor and Output</strong>, and check the source's track boxes in <strong>Advanced Audio Properties</strong>.</p>
+    </details>
+  </div>
+</div>
+
+<h2>File checklist</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Format</th><th>Works</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>MP3</td><td>Yes</td><td>Best choice. 128-192 kbps keeps files small.</td></tr>
+<tr><td>OGG</td><td>Yes</td><td>Small, open format.</td></tr>
+<tr><td>WAV</td><td>Yes</td><td>Large files; fine for short sounds.</td></tr>
+<tr><td>M4A</td><td>Yes</td><td>Fine in OBS.</td></tr>
+<tr><td>FLAC</td><td>Yes</td><td>Lossless and large. Convert to MP3 unless you need it.</td></tr>
+<tr><td>AAC</td><td>Random folders only</td><td>The <strong>Browse</strong> picker does not offer <code>.aac</code> for the primary sound.</td></tr>
+</tbody>
+</table></div>
+
+<p>Keep alert sounds 3-10 seconds and under about 2 MB. Longer files hold up the queue.</p>
+
+<h2>Music widgets</h2>
+
+<p>The <a href="help:integrations_spotify">Spotify</a> widget only shows what is playing. The music itself comes from the Spotify app and never passes through Mycelian, so control its volume in Spotify or in OBS's desktop-audio source.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:alert_media">{{icon:perm_media}}<span><strong>Alert Media</strong><span class="hx-card-text">Formats, folders, randomizer</span></span></a>
+  <a class="hx-card" href="help:troubleshooting_alerts">{{icon:build}}<span><strong>Troubleshooting Alerts</strong><span class="hx-card-text">When the alert itself is missing</span></span></a>
+  <a class="hx-card" href="help:obs_setup">{{brand:obs}}<span><strong>OBS Setup</strong><span class="hx-card-text">Browser source settings</span></span></a>
+</div>

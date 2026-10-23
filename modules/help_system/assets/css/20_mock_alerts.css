@@ -1,0 +1,273 @@
+/* =========================================================================
+   Mycelian Help — Alerts mock pieces
+   Used by alerts_overview, alert_configuration, alert_media, alert_testing
+   and the troubleshooting pages. Mirrors modules/uiwindows/alertsettings.py,
+   modules/uiwindows/activity_feed.py and templates/alerts.html.
+   Theme variables only.
+   ========================================================================= */
+
+/* Alerts sub-tab strip: eight tabs, allow wrapping in narrow help panes */
+.help-doc .hm .hm-subtabs.hma-alert-subtabs { flex-wrap: wrap; row-gap: 2px; }
+
+/* Selector row above the form (Select Alert, Duplicate, Range Mode, Amount) */
+.help-doc .hma-alert-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 2px 10px;
+}
+.help-doc .hma-alert-bar .hm-field { min-width: 0; }
+.help-doc .hma-alert-bar .hma-w-select { width: 220px; max-width: 100%; }
+.help-doc .hma-alert-bar .hma-w-num { width: 120px; }
+.help-doc .hma-alert-bar .hma-w-num-sm { width: 92px; }
+.help-doc .hma-alert-bar .hma-spacer { flex: 1 1 auto; }
+
+/* Two-column form, stacks when narrow (ui.grid(columns=2)) */
+.help-doc .hma-alert-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 10px;
+    align-items: start;
+}
+.help-doc .hma-alert-form > .hm-col { gap: 4px; }
+
+/* Expansion styled as content-card inside the alert form */
+.help-doc .hma-alert-form .hm-expansion { margin: 0; }
+
+/* form-group: a small heading plus its controls */
+.help-doc .hma-fgroup {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 4px;
+    border-radius: 8px;
+}
+.help-doc .hma-fgroup + .hma-fgroup { border-top: 1px solid var(--color-border-subtle); }
+.help-doc .hma-fgroup-title { font-size: 0.8rem; font-weight: 600; color: var(--color-text-secondary); }
+.help-doc .hma-fgroup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* Volume row: label, slider, value */
+.help-doc .hma-vol { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.help-doc .hma-vol-slider { flex: 1 1 160px; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.help-doc .hma-vol .hm-slider { flex: 1 1 60px; }
+.help-doc .hma-vol .hm-field { width: 88px; }
+
+/* Bottom row: Unsaved changes ... Test Alert / Delete Alert / Save Alert */
+.help-doc .hma-alert-foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+.help-doc .hma-alert-foot .hma-unsaved { margin-right: auto; font-size: 0.8rem; color: var(--color-warning); }
+.help-doc .hm-btn.hma-solid-danger { background: var(--color-error); color: #fff; border-color: transparent; }
+
+/* Error hint card (Channel Points locked banner) */
+.help-doc .hma-hint-err {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--color-error);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    font-size: 0.8rem;
+    margin-bottom: 8px;
+}
+
+/* ---- Dialogs (ui.dialog > ui.card) ------------------------------------ */
+.help-doc .hma-dialog {
+    max-width: 440px;
+    margin: 6px auto;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
+    box-shadow: 0 10px 30px var(--color-bg-overlay);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.help-doc .hma-dialog.hma-wide { max-width: 620px; }
+.help-doc .hma-dialog-title { font-size: 1rem; font-weight: 700; }
+.help-doc .hma-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.help-doc .hma-scrim { background: var(--color-bg-overlay); border-radius: 10px; padding: 12px 8px; }
+
+/* File browser listing */
+.help-doc .hma-filelist {
+    border: 1px solid var(--color-border-default);
+    border-radius: 8px;
+    background: var(--color-bg-base);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.help-doc .hma-file {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+}
+.help-doc .hma-file .hx-mi { font-size: 1.1rem; }
+.help-doc .hma-file.is-folder .hx-mi { color: var(--color-warning); }
+.help-doc .hma-file.is-match { color: var(--color-success); }
+.help-doc .hma-file.is-match .hx-mi { color: var(--color-success); }
+.help-doc .hma-file.is-image .hx-mi { color: var(--color-primary); }
+.help-doc .hma-file.is-selected { background: var(--color-hover-overlay); outline: 1px solid var(--color-border-accent); }
+
+/* ---- Activity Feed ---------------------------------------------------- */
+.help-doc .hma-feed-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.help-doc .hma-feed-controls .hma-spacer { flex: 1 1 auto; }
+.help-doc .hma-ctrl {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    padding: 2px 10px;
+    border-radius: 6px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-primary);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+.help-doc .hma-ctrl .hx-mi { font-size: 1.05rem; }
+.help-doc .hma-ctrl.is-active { border-color: var(--color-primary); color: var(--color-primary); }
+.help-doc .hma-ctrl.is-paused { border-color: var(--color-warning); color: var(--color-warning); }
+
+.help-doc .hma-feed-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    margin-bottom: 6px;
+}
+.help-doc .hma-feed-type {
+    flex: 0 0 auto;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: var(--color-primary);
+    color: #fff;
+}
+.help-doc .hma-feed-msg { flex: 1 1 auto; min-width: 0; font-size: 0.8125rem; }
+.help-doc .hma-feed-time { flex: 0 0 auto; font-size: 0.7rem; color: var(--color-text-muted); }
+.help-doc .hma-feed-acts { display: inline-flex; gap: 4px; }
+.help-doc .hma-feed-acts .hma-mini {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
+}
+.help-doc .hma-feed-acts .hma-mini .hx-mi { font-size: 1rem; }
+
+/* ---- Overlay preview (templates/alerts.html, default layout) ---------- */
+.help-doc .hma-stage {
+    padding: 14px;
+    border-radius: 8px;
+    border: 1px dashed var(--color-border-default);
+    background: var(--color-bg-base);
+}
+.help-doc .hma-ov {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 460px;
+    padding: 8px;
+    border-radius: 10px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+}
+.help-doc .hma-ov-gif {
+    flex: 0 0 auto;
+    width: 74px;
+    height: 74px;
+    border-radius: 4px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-muted);
+}
+.help-doc .hma-ov-gif .hx-mi { font-size: 2rem; }
+.help-doc .hma-ov-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.help-doc .hma-ov-user { font-weight: 700; font-size: 1rem; color: var(--color-primary); }
+.help-doc .hma-ov-head { font-size: 0.875rem; }
+.help-doc .hma-ov-msg { font-size: 0.75rem; color: var(--color-text-muted); }
+
+/* ---- Pipeline (event -> match -> queue -> overlay) -------------------- */
+.help-doc .hma-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 6px;
+}
+.help-doc .hma-flow-step {
+    flex: 1 1 130px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    min-width: 0;
+}
+.help-doc .hma-flow-step .hx-mi { color: var(--color-primary); font-size: 1.3rem; }
+.help-doc .hma-flow-step > strong { font-size: 0.85rem; }
+.help-doc .hma-flow-step span.hm-xs { color: var(--color-text-muted); }
+.help-doc .hma-flow-arrow {
+    flex: 0 0 auto;
+    align-self: center;
+    color: var(--color-text-muted);
+    font-family: 'Material Icons';
+    font-size: 1.2rem;
+}
+
+/* Probability bar for the randomizer example */
+.help-doc .hma-odds { display: flex; height: 26px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border-default); }
+.help-doc .hma-odds > span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    color: #fff;
+}
+.help-doc .hma-odds .hma-odds-primary { background: var(--color-primary); }
+.help-doc .hma-odds .hma-odds-random { background: var(--color-success); }
+.help-doc .hma-odds .hma-odds-extra { background: var(--color-warning); }
+.help-doc .hma-odds .hma-odds-none { background: var(--color-bg-surface); color: var(--color-text-muted); }
+
+/* Diagnostic step list for troubleshooting */
+.help-doc .hma-diag { display: flex; flex-direction: column; gap: 6px; }
+.help-doc .hma-diag-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    font-size: 0.8125rem;
+}
+.help-doc .hma-diag-row .hm-grow { min-width: 0; }

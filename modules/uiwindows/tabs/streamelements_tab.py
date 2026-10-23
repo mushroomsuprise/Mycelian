@@ -207,7 +207,7 @@ class StreamElementsTab:
                     with ui.row().classes("items-center gap-2"):
                         outline_button("How to connect", self._show_guide)
                         help_button(
-                            topic_id="integrations_streamelements",
+                            topic_id="guide_streamelements",
                             tooltip="StreamElements setup help",
                             size="sm",
                         )

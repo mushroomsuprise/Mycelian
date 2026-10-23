@@ -1,0 +1,204 @@
+<p class="hx-lead">The trigger is the event that starts a connector. Each connector has one. You pick it from <strong>Trigger Type</strong> in the editor's <strong>Trigger Configuration</strong> section.</p>
+
+<p>The trigger also decides two things: which <strong>Field</strong> choices you get for <a href="help:connector_conditions">conditions</a>, and which <code>{placeholders}</code> hold real data in your <a href="help:connector_actions">actions</a>.</p>
+
+<h2>Choosing a trigger</h2>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-cx-form-section">
+          <div class="hm-cx-form-section-title">Trigger Configuration</div>
+          <div class="hm-field hm-select hm-cx-tint-trigger is-focused" data-label="Trigger Type"><span class="hm-value">Twitch Bits</span></div>
+          <div class="hm-cx-menu">
+            <div class="is-selected">Twitch Bits</div>
+            <div>Twitch Subscription</div>
+            <div>Twitch Resubscription</div>
+            <div>Twitch Gift Sub</div>
+            <div>Twitch Follow</div>
+            <div>Twitch Raid</div>
+            <div>Channel Points</div>
+            <div>Twitch Chat Message</div>
+            <div>Twitch Stream Online</div>
+            <div>Twitch Stream Offline</div>
+            <div>YouTube Chat Message</div>
+            <div>YouTube Membership</div>
+            <div>YouTube Member Milestone</div>
+            <div>YouTube Gift Membership</div>
+            <div>YouTube Super Chat</div>
+            <div>YouTube Super Sticker</div>
+            <div>Any (all events)</div>
+            <div>Donation</div>
+            <div>Hotkey Trigger</div>
+            <div>Stream Deck</div>
+            <div>OBS — Program scene changed</div>
+            <div>OBS — Stream status</div>
+            <div>OBS — Recording status</div>
+            <div>OBS — Input mute changed</div>
+          </div>
+        </div>
+      </div>
+      <figcaption><span>The full Trigger Type list, in the order the editor shows it. Scroll the list.</span></figcaption>
+    </figure>
+  </div>
+  <div>
+    <p>The list has 24 triggers in five groups:</p>
+    <ul>
+      <li><strong>Twitch</strong>: cheers, subs, follows, raids, channel points, chat, and going live or offline. Needs <a href="help:twitch_setup">Twitch connected</a>.</li>
+      <li><strong>YouTube</strong>: live chat, memberships, Super Chats and Super Stickers. Needs <a href="help:guide_youtube">YouTube connected</a>.</li>
+      <li><strong>Donation</strong>: tips from <a href="help:guide_streamlabs">Streamlabs</a> or <a href="help:guide_streamelements">StreamElements</a>.</li>
+      <li><strong>OBS</strong>: scene, stream, recording and mute changes. Needs <a href="help:obs_websocket">OBS WebSocket</a>.</li>
+      <li><strong>Manual</strong>: a keyboard <strong>Hotkey Trigger</strong> or a <strong>Stream Deck</strong> button.</li>
+    </ul>
+    <p><strong>Any (all events)</strong> fires on every event the connector system receives.</p>
+    <p>On the connector card, some names are shorter: <em>Twitch Sub</em>, <em>Twitch Resub</em>, <em>Gift Sub</em>, <em>Chat Message</em>, <em>Hotkey</em>, <em>OBS Scene</em>, <em>OBS Stream</em>, <em>OBS Record</em>, <em>OBS Input Mute</em>.</p>
+  </div>
+</div>
+
+<h2>Trigger reference</h2>
+
+<p>For each trigger: when it fires, the <strong>Field</strong> choices it offers for conditions, and the data you can use as placeholders. Every event also carries <code>{event_type}</code>, <code>{timestamp}</code> and <code>{source}</code>.</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="twitch" class="is-active">Twitch</button>
+    <button data-tab="youtube">YouTube</button>
+    <button data-tab="donation">Donation</button>
+    <button data-tab="obs">OBS</button>
+    <button data-tab="manual">Hotkey &amp; Stream Deck</button>
+    <button data-tab="any">Any</button>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="twitch">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Trigger</th><th>Fires when</th><th>Condition fields</th><th>Placeholders</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Twitch Bits</strong></td><td>Someone cheers</td><td>Amount, Username, Message</td><td><code>{amount}</code> <code>{username}</code> <code>{message}</code> <code>{user_id}</code> <code>{is_anonymous}</code></td></tr>
+    <tr><td><strong>Twitch Subscription</strong></td><td>A new subscription</td><td>Tier, Username, Message</td><td><code>{tier}</code> <code>{username}</code> <code>{message}</code> <code>{months}</code> (always 1) <code>{is_gift}</code></td></tr>
+    <tr><td><strong>Twitch Resubscription</strong></td><td>A subscriber shares a resub message</td><td>Tier, Username, Message</td><td><code>{tier}</code> <code>{username}</code> <code>{message}</code> <code>{months}</code> (total) <code>{streak_months}</code></td></tr>
+    <tr><td><strong>Twitch Gift Sub</strong></td><td>Someone gifts subs</td><td>Tier, Gifter Username, Quantity, Recipient Username</td><td><code>{username}</code> (the gifter) <code>{gift_count}</code> <code>{tier}</code> <code>{is_anonymous}</code></td></tr>
+    <tr><td><strong>Twitch Follow</strong></td><td>A new follower</td><td>Username</td><td><code>{username}</code> <code>{user_id}</code> <code>{followed_at}</code></td></tr>
+    <tr><td><strong>Twitch Raid</strong></td><td>Another channel raids you</td><td>Viewer Count, Username</td><td><code>{username}</code> (raiding channel) <code>{viewer_count}</code></td></tr>
+    <tr><td><strong>Channel Points</strong></td><td>A reward is redeemed</td><td>Reward Name, Reward ID, Username, User Input</td><td><code>{reward_name}</code> <code>{reward_id}</code> <code>{reward_cost}</code> <code>{user_input}</code> <code>{username}</code></td></tr>
+    <tr><td><strong>Twitch Chat Message</strong></td><td>Any chat message</td><td>Username, Message, Is Moderator</td><td><code>{username}</code> <code>{message}</code> <code>{command}</code> (word after <code>!</code>) <code>{is_command}</code> <code>{is_moderator}</code> <code>{user_id}</code></td></tr>
+    <tr><td><strong>Twitch Stream Online</strong></td><td>Your stream goes live</td><td>—</td><td><code>{started_at}</code> <code>{stream_type}</code></td></tr>
+    <tr><td><strong>Twitch Stream Offline</strong></td><td>Your stream ends</td><td>—</td><td>—</td></tr>
+    </tbody>
+    </table></div>
+    <div class="hx-callout hx-note"><p>Twitch sends sub tiers as <code>1000</code>, <code>2000</code> and <code>3000</code>. A condition for Tier 3 is <em>Tier = 3000</em>.</p></div>
+    <div class="hx-callout hx-warning"><p><strong>Twitch Gift Sub</strong>: the event holds the gifter in <code>username</code> and the number of subs in <code>gift_count</code>. The condition fields <em>Gifter Username</em> and <em>Quantity</em> are not in the event, so conditions on them never pass. To filter on the gifter, use <em>Recipient Username</em>, which checks <code>username</code>.</p></div>
+    <p><strong>Is Moderator</strong> is true for moderators and for the broadcaster.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="youtube">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Trigger</th><th>Fires when</th><th>Condition fields</th><th>Placeholders</th></tr></thead>
+    <tbody>
+    <tr><td><strong>YouTube Chat Message</strong></td><td>A live chat message</td><td>Username, Message, User ID</td><td><code>{username}</code> <code>{message}</code> <code>{user_id}</code></td></tr>
+    <tr><td><strong>YouTube Membership</strong></td><td>A new channel member</td><td>Username, Member Level, Message</td><td><code>{username}</code> <code>{member_level}</code> <code>{message}</code></td></tr>
+    <tr><td><strong>YouTube Member Milestone</strong></td><td>A member shares a milestone</td><td>Username, Months, Member Level, Message</td><td><code>{username}</code> <code>{months}</code> <code>{member_level}</code> <code>{message}</code></td></tr>
+    <tr><td><strong>YouTube Gift Membership</strong></td><td>Someone gifts memberships</td><td>Username, Gift Count, Quantity, Member Level</td><td><code>{username}</code> <code>{gift_count}</code> <code>{quantity}</code> <code>{member_level}</code></td></tr>
+    <tr><td><strong>YouTube Super Chat</strong></td><td>A Super Chat</td><td>Amount, Username, Message, Currency, Display Amount</td><td><code>{amount}</code> <code>{currency}</code> <code>{display_amount}</code> (e.g. $5.00) <code>{username}</code> <code>{message}</code></td></tr>
+    <tr><td><strong>YouTube Super Sticker</strong></td><td>A Super Sticker</td><td>Amount, Username, Message, Currency, Display Amount</td><td>Same as Super Chat</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="donation">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Trigger</th><th>Fires when</th><th>Condition fields</th><th>Placeholders</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Donation</strong></td><td>A tip arrives from Streamlabs or StreamElements</td><td>Amount, Username, Message</td><td><code>{amount}</code> <code>{currency}</code> <code>{formatted_amount}</code> <code>{original_amount}</code> <code>{original_currency}</code> <code>{username}</code> <code>{message}</code> <code>{source}</code></td></tr>
+    </tbody>
+    </table></div>
+    <p>Twitch Bits and YouTube Super Chats are separate triggers. They do not fire the Donation trigger.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="obs">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Trigger</th><th>Fires when</th><th>Condition fields</th></tr></thead>
+    <tbody>
+    <tr><td><strong>OBS — Program scene changed</strong></td><td>The live (program) scene changes</td><td>Scene name (<code>scene_name</code>), Previous scene (<code>previous_scene_name</code>)</td></tr>
+    <tr><td><strong>OBS — Stream status</strong></td><td>Streaming starts, stops or changes state</td><td>Streaming output active (true/false), Stream state constant</td></tr>
+    <tr><td><strong>OBS — Recording status</strong></td><td>Recording starts, stops, pauses or changes state</td><td>Recording active (true/false), Record state constant</td></tr>
+    <tr><td><strong>OBS — Input mute changed</strong></td><td>An audio source is muted or unmuted</td><td>Input name (<code>input_name</code>), Input muted (<code>input_muted</code>)</td></tr>
+    </tbody>
+    </table></div>
+    <p>State constants look like <code>OBS_WEBSOCKET_OUTPUT_STATE_STARTED</code>, <code>…_STOPPED</code> or <code>…_PAUSED</code>, plus <code>…_STARTING</code> and <code>…_STOPPING</code> while OBS is switching. For a simple on/off check, use the active field with <em>= true</em> or <em>= false</em>.</p>
+    <p>The editor shows a hint under <strong>Conditions (optional)</strong> for each OBS trigger, for example: <em>only after switching into a scene named BRB — Field scene_name Equals BRB.</em></p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="manual">
+    <p><strong>Hotkey Trigger</strong></p>
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-cx-form-section">
+          <div class="hm-cx-form-section-title">Trigger Configuration</div>
+          <div class="hm-field hm-select hm-cx-tint-trigger" data-label="Trigger Type"><span class="hm-value">Hotkey Trigger</span></div>
+          <div class="hm-sm hm-bold hm-muted">Hotkey Configuration</div>
+          <div class="hm-cx-hint-warn">Also used by: Scene to BRB</div>
+          <div class="hm-row hm-nowrap"><div class="hm-field is-focused hm-grow" data-label="Key Combination"><span class="hm-value">ctrl+shift+f</span></div><span class="hm-marker" data-n="1"></span></div>
+          <div class="hm-cx-hint">Use + to combine keys (ctrl+shift+f)</div>
+          <div class="hm-row">
+            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">fiber_manual_record</span>Record</span>
+            <span class="hm-cx-hint">Press a combination to fill the field. Matching combinations on other connectors also fire.</span>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+          <div class="hm-row"><span class="hm-check is-on"><i></i>Global hotkey (works when app is not focused)</span><span class="hm-marker" data-n="3"></span></div>
+        </div>
+      </div>
+      <figcaption><span>Hotkey settings appear under Trigger Type when you pick Hotkey Trigger. Click the checkbox to see both states.</span></figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1">Type the combination, joined with <code>+</code>: <code>ctrl+shift+f</code>, <code>f12</code>, <code>alt+tab</code>. Modifiers are <code>ctrl</code>, <code>alt</code>, <code>shift</code> and <code>cmd</code>/<code>meta</code>.</li>
+      <li data-n="2"><strong>Record</strong> opens a small dialog. Press the keys and the field fills in. If another connector already uses the same combination, an orange <em>Also used by:</em> line names it. Both connectors fire.</li>
+      <li data-n="3"><strong>Global hotkey</strong> (on by default) works while another app, such as your game, has focus.</li>
+    </ol>
+    <p>The modifiers must match exactly: <code>ctrl+f</code> does not fire for <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>.</p>
+
+    <p><strong>Stream Deck</strong></p>
+    <p>The editor shows: <em>Assign this connector on a Stream Deck button using the Connector action in the Mycelian Stream Deck plugin.</em> There is nothing else to set here. Save the connector, then pick it in the plugin's <strong>Connector</strong> action. See <a href="help:guide_streamdeck">Connect Stream Deck</a>.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="any">
+    <p><strong>Any (all events)</strong> fires for every event type above: bits, chat, subs, OBS changes, hotkeys, Stream Deck presses and more. The editor warns:</p>
+    <div class="hx-callout hx-warning"><p>Warning: This trigger fires on every connector event type (bits, chat, subs, OBS, hotkeys, and more). Use specific conditions to avoid unwanted activations.</p></div>
+    <p>Its <strong>Field</strong> list combines the fields of every trigger, sorted by name. Events that do not have a field fail a condition on it, so a condition like <em>Message ∋ hype</em> limits it to events that carry a message.</p>
+  </div>
+</div>
+
+<h2>Triggers the editor does not offer</h2>
+
+<p>These are not in the Trigger Type list. Here is what to do instead:</p>
+<ul>
+  <li><strong>Chat commands</strong>: use <strong>Twitch Chat Message</strong> with the condition <em>Message ^ !yourcommand</em> (First word). See <a href="help:connector_conditions">Conditions</a>. For simple replies, <a href="help:chatbot_commands">Chatbot Commands</a> may be easier.</li>
+  <li><strong>Timers and schedules</strong>: not available from the editor.</li>
+  <li><strong>Hype trains</strong>: not available as a trigger.</li>
+  <li><strong>Combining triggers</strong>: one connector has one trigger. Make one connector per trigger, or use <strong>Any (all events)</strong> with conditions.</li>
+  <li><strong>"10 follows in 5 minutes"</strong> style thresholds do not exist.</li>
+</ul>
+
+<h2>Placeholders from the trigger</h2>
+
+<p>Write a field name in single braces in any action text: <code>Thanks {username} for {amount} bits!</code>. Besides the trigger's own fields, these always work:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Placeholder</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td><code>{event_type}</code></td><td>The event's internal name, e.g. <code>twitch_bits</code></td></tr>
+<tr><td><code>{source}</code></td><td>Where it came from, e.g. <code>twitch</code>, <code>youtube</code>, <code>obs</code>, <code>hotkey</code></td></tr>
+<tr><td><code>{timestamp}</code>, <code>{triggered_at}</code></td><td>Event time and fire time (Unix seconds)</td></tr>
+<tr><td><code>{connector_id}</code>, <code>{trigger_id}</code>, <code>{trigger_type}</code></td><td>Identifiers for this connector and its trigger</td></tr>
+<tr><td><code>{message.word.1}</code>, <code>{message.word.2}</code>…</td><td>The Nth word of the message</td></tr>
+<tr><td><code>{message_after_conditions}</code></td><td>The message with the text matched by your Message conditions removed. See <a href="help:connector_conditions">Conditions</a>.</td></tr>
+</tbody>
+</table></div>
+
+<p>A placeholder with no value becomes empty text. The full list, including outputs from earlier actions, is on <a href="help:connector_actions">Connector Actions</a>.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:connector_conditions">{{icon:filter_list}}<span><strong>Conditions</strong><span class="hx-card-text">Filter the trigger by its fields</span></span></a>
+  <a class="hx-card" href="help:connector_actions">{{icon:play_arrow}}<span><strong>Actions</strong><span class="hx-card-text">What happens when it fires</span></span></a>
+  <a class="hx-card" href="help:connector_examples">{{icon:lightbulb}}<span><strong>Examples</strong><span class="hx-card-text">Complete connectors to copy</span></span></a>
+</div>

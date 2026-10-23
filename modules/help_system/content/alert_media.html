@@ -1,0 +1,161 @@
+<p class="hx-lead">Each alert can show one image and play one sound. The <strong>Randomizer</strong> can swap that sound for a random file from a folder. All media must live inside Mycelian's <code>assets</code> folder so the browser source can load it.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Alerts</span><span>any sub-tab</span></span> → <strong>Visual</strong>, <strong>Audio</strong>, <strong>Randomizer</strong></span>
+</div>
+
+<p>For the rest of the form see <a href="help:alert_configuration">Configuring Alert Settings</a>. To check your files play, see <a href="help:alert_testing">Testing Your Alerts</a>.</p>
+
+<h2>Supported files</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Used for</th><th>Formats the picker offers</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><strong>Visual</strong> (GIF File)</td><td>GIF, PNG, JPG, JPEG, WebP</td><td>Animated GIF and animated WebP both animate. Size on screen comes from the alerts template (<strong>GIF Width</strong> and <strong>GIF Height</strong>, 190 × 190 by default), so 300-500 px source files are plenty.</td></tr>
+<tr><td><strong>Primary Sound</strong></td><td>MP3, WAV, OGG, M4A, FLAC</td><td>MP3 is the safest choice in OBS. Keep alert sounds short; the next alert waits until the sound ends.</td></tr>
+<tr><td><strong>Random</strong> and <strong>Extra Random</strong> folders</td><td>MP3, WAV, OGG, M4A, AAC, FLAC</td><td>Every matching file directly in the folder is a candidate. Subfolders are not searched.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Where to put files</h2>
+
+<p>The <code>assets</code> folder sits next to the Mycelian program (in a source checkout, in the project folder). Keep alert media under <code>assets/alerts/</code>, one folder per type:</p>
+
+<pre><code>assets/
+└── alerts/
+    └── bits/
+        ├── small_cheer.gif
+        ├── medium_cheer.gif
+        ├── cheer.mp3
+        ├── random/
+        │   ├── cheer1.mp3
+        │   ├── cheer2.mp3
+        │   └── cheer3.mp3
+        └── rare/
+            └── epic_cheer.mp3
+</code></pre>
+
+<div class="hx-callout hx-important"><p>Random and Extra Random folders must be inside <code>assets/alerts/</code>. The overlay asks for those folders by their path under <code>assets/alerts/</code>; a folder anywhere else is not found and no random sound plays.</p></div>
+
+<p>The fields store web paths, not disk paths: a file at <code>assets/alerts/bits/cheer.mp3</code> is saved as <strong>Directory</strong> <code>/assets/alerts/bits/</code> and <strong>File</strong> <code>cheer.mp3</code>. <strong>Browse</strong> fills these in for you.</p>
+
+<h2>Pick a file with Browse</h2>
+
+<p>Every <strong>Browse</strong> button opens the same picker. For a GIF or primary sound you pick a file; for the randomizer you pick a folder.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hma-scrim">
+      <div class="hma-dialog hma-wide">
+        <span class="hma-dialog-title">Select GIF File</span>
+        <div class="hm-row hm-nowrap">
+          <span class="hm-sm hm-bold">Path:</span>
+          <div class="hm-field hm-grow hm-nolabel"><span class="hm-value hm-mono">…/assets/alerts/bits</span></div>
+          <span class="hm-btn hm-dense"><span class="hx-mi">folder</span>Go</span>
+        </div>
+        <div class="hm-row">
+          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">home</span>Assets Root</span>
+          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">folder</span>Default Assets</span>
+          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">image</span>Images</span>
+          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">audiotrack</span>Sounds</span>
+          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">folder_special</span>Bits</span>
+          <span class="hm-marker" data-n="1"></span>
+        </div>
+        <div class="hma-filelist">
+          <span class="hma-file">.. (Parent Directory)</span>
+          <span class="hma-file is-folder"><span class="hx-mi">folder</span>random</span>
+          <span class="hma-file is-folder"><span class="hx-mi">folder</span>rare</span>
+          <span class="hma-file is-match is-image"><span class="hx-mi">image</span>big_cheer.gif</span>
+          <span class="hma-file is-match is-image is-selected"><span class="hx-mi">image</span>medium_cheer.gif<span class="hm-marker" data-n="2"></span></span>
+          <span class="hma-file is-match is-image"><span class="hx-mi">image</span>small_cheer.gif</span>
+          <span class="hma-file"><span class="hx-mi">description</span>cheer.mp3</span>
+        </div>
+        <div class="hm-row"><span class="hm-sm hm-bold">Selected:</span><span class="hm-sm hm-mono">medium_cheer.gif</span></div>
+        <div class="hma-dialog-actions">
+          <span class="hm-btn hm-flat hm-dense">Cancel</span>
+          <span class="hm-btn hm-success hm-dense"><span class="hx-mi">description</span>Select File</span>
+          <span class="hm-marker" data-n="3"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>The file picker opened from <strong>Visual → Browse</strong> on the Bits tab.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">Shortcuts. <strong>Default Assets</strong>, <strong>Images</strong> and <strong>Sounds</strong> open the bundled media under <code>assets/default_assets</code>. The last button is named after the sub-tab you are on and opens <code>assets/bits</code> (or <code>assets/raids</code>, …), not <code>assets/alerts/…</code>.</li>
+  <li data-n="2">Files of the right type are highlighted. Folders show a folder icon; click one to open it.</li>
+  <li data-n="3"><strong>Select File</strong> fills <strong>Directory</strong> and <strong>File</strong>. In folder mode the buttons are <strong>Select This Directory</strong> and <strong>Select Directory</strong>.</li>
+</ol>
+
+<p>If you pick something outside <code>assets</code>, Mycelian warns: <em>"This file is outside the assets folder. Move it under assets for correct browser-source paths."</em> Move or copy the file into <code>assets/alerts/…</code> and browse again.</p>
+
+<h2>Volume and fades</h2>
+
+<p>Open <strong>Audio</strong>. <strong>Volume</strong> (0-100%) applies to whichever sound plays, primary or random. <strong>Fade In</strong> and <strong>Fade Out</strong> are in milliseconds; <code>0</code> means no fade.</p>
+
+<p>On the <strong>Channel Points</strong> tab, <strong>Audio Only</strong> plays the sound with no image or text, which suits sound-effect rewards.</p>
+
+<h2>Random sounds</h2>
+
+<p>Open <strong>Randomizer</strong>. Nothing random happens until <strong>Enable Random Sounds</strong> is on. Then, each time the alert plays:</p>
+
+<ol>
+<li>If <strong>Enable Extra Random Sounds</strong> is on, roll 1-100. At or under its <strong>Chance (%)</strong>, play a random file from the extra folder and stop.</li>
+<li>Otherwise roll again for <strong>Random Sound</strong>. At or under its <strong>Chance (%)</strong>, play a random file from that folder.</li>
+<li>Otherwise play the <strong>Primary Sound</strong>.</li>
+<li>If no primary sound is set, always play a random file from the Random Sound folder.</li>
+</ol>
+
+<p>Pick a scenario to see the odds:</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="both" class="is-active">Primary + random + extra</button>
+    <button data-tab="random">Primary + random</button>
+    <button data-tab="noprimary">Random only</button>
+    <button data-tab="off">Randomizer off</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="both">
+    <pre><code>Primary Sound            /assets/alerts/bits/  cheer.mp3
+Enable Random Sounds     on   Directory /assets/alerts/bits/random/  Chance 30
+Enable Extra Random      on   Directory /assets/alerts/bits/rare/    Chance 5
+</code></pre>
+    <figure class="hx-figure hx-static"><div class="hm"><div class="hma-odds"><span class="hma-odds-extra" style="width:5%">5%</span><span class="hma-odds-random" style="width:28.5%">28.5% random/</span><span class="hma-odds-primary" style="width:66.5%">66.5% cheer.mp3</span></div></div>
+    <figcaption>The extra roll comes first, so the 30% only applies to the 95% that is left.</figcaption></figure>
+  </div>
+  <div class="hx-tab-panel" data-panel="random">
+    <pre><code>Primary Sound            /assets/alerts/bits/  cheer.mp3
+Enable Random Sounds     on   Directory /assets/alerts/bits/random/  Chance 30
+Enable Extra Random      off
+</code></pre>
+    <figure class="hx-figure hx-static"><div class="hm"><div class="hma-odds"><span class="hma-odds-random" style="width:30%">30% random/</span><span class="hma-odds-primary" style="width:70%">70% cheer.mp3</span></div></div>
+    <figcaption>Classic variety: mostly the usual sound, sometimes a surprise.</figcaption></figure>
+  </div>
+  <div class="hx-tab-panel" data-panel="noprimary">
+    <pre><code>Primary Sound            (empty)
+Enable Random Sounds     on   Directory /assets/alerts/bits/random/  Chance 0
+</code></pre>
+    <figure class="hx-figure hx-static"><div class="hm"><div class="hma-odds"><span class="hma-odds-random" style="width:100%">100% random file from random/</span></div></div>
+    <figcaption>With no primary sound, every alert picks a random file, whatever the chance says.</figcaption></figure>
+  </div>
+  <div class="hx-tab-panel" data-panel="off">
+    <pre><code>Primary Sound            /assets/alerts/bits/  cheer.mp3
+Enable Random Sounds     off
+</code></pre>
+    <figure class="hx-figure hx-static"><div class="hm"><div class="hma-odds"><span class="hma-odds-primary" style="width:100%">100% cheer.mp3</span></div></div>
+    <figcaption>Folders and chances are ignored while the switch is off, including the extra folder.</figcaption></figure>
+  </div>
+</div>
+
+<div class="hx-callout hx-note"><p>The Extra Random tooltip in the app says the extra sound plays <em>after</em> the main sound. In practice it plays <em>instead of</em> it: one sound per alert.</p></div>
+
+<h2>Text-to-speech</h2>
+
+<p>The <strong>TTS</strong> section reads the alert aloud through the browser source. It starts together with the sound. While speech is on, the sound plays at a quarter of its <strong>Volume</strong> so the voice is clear, and the next alert waits for both to finish. <strong>MUTE ALERTS</strong> silences speech too. Voice speed, pitch and loudness are set on the alerts template in <span class="hx-path"><span>Source Settings</span><span>alerts</span></span>.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:alert_testing">{{icon:play_circle}}<span><strong>Testing Your Alerts</strong><span class="hx-card-text">Hear the result before going live</span></span></a>
+  <a class="hx-card" href="help:troubleshooting_audio">{{icon:volume_off}}<span><strong>Audio Troubleshooting</strong><span class="hx-card-text">No sound, wrong volume, crackling</span></span></a>
+  <a class="hx-card" href="help:alert_configuration">{{icon:tune}}<span><strong>Configuring Alert Settings</strong><span class="hx-card-text">All other fields</span></span></a>
+</div>

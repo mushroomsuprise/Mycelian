@@ -1,0 +1,143 @@
+<p class="hx-lead">With PlayStation Network connected, Mycelian knows which PlayStation game you are playing and how many trophies you have, and shows it on stream with trophy overlays.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:guide_psn">{{brand:psn}}<span><strong>Not connected yet?</strong><span class="hx-card-text">Connect PlayStation Network: sign in and capture the NPSSO token</span></span></a>
+</div>
+
+<h2>What the connection gives you</h2>
+
+<ul>
+<li><strong>Now playing</strong>: the current game's name and cover art, from your PlayStation presence.</li>
+<li><strong>Trophy progress</strong>: earned and total trophies for the current game, and its completion percentage.</li>
+<li><strong>Trophy totals</strong>: your overall trophy counts by type, including platinums.</li>
+<li><strong>Online status</strong>: whether the tracked player is online.</li>
+</ul>
+
+<p>Mycelian checks PlayStation presence about every 6 seconds and pushes changes to the overlays. PlayStation itself can take a few minutes to report a new trophy.</p>
+
+<div class="hx-callout hx-note"><p>Trophies are not part of the alert system. There are no trophy alert types, and PSN has no chatbot variables. Trophy changes show up in the trophy overlays below.</p></div>
+
+<h2>Trophy overlays</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Template</th><th>Shows</th></tr></thead>
+<tbody>
+<tr><td><code>trophies</code></td><td>Current game title and icon, a trophy message, platinum info and a progress bar, with an animation when the trophy count changes</td></tr>
+<tr><td><code>psnbasetrophies</code></td><td>"Now playing" text, game name and icon, trophies for the current game, total platinums and a progress bar</td></tr>
+<tr><td><code>psntotaltrophies</code></td><td>The same layout as <code>psnbasetrophies</code>, for your overall trophy totals</td></tr>
+</tbody>
+</table></div>
+
+<ol>
+<li>Open <span class="hx-path"><span>Settings</span><span>About</span></span> and find the template under <strong>Available Source URLs</strong>.</li>
+<li>Click the copy button, or the OBS button to add it to a scene (needs <a href="help:obs_websocket">the OBS WebSocket</a>).</li>
+<li>Change fonts, positions, colors, animations and the default text shown when there is no data in the template's settings. See <a href="help:template_configuration">Template Configuration</a>.</li>
+</ol>
+
+<h2>Game mismatches and the game cache</h2>
+
+<p>PlayStation reports the game you are playing (presence) and your trophy lists separately, and the names do not always match. When Mycelian cannot find the presence name in your trophy data, the PSN tab shows a warning and the overlays may show no trophies.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-status-band">
+      <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected as YourPSN_ID</span></div>
+      <div class="hm-metric"><span>Tracking</span><span>YourPSN_ID (own account)</span></div>
+    </div>
+    <div class="hm-hint-warn">
+      <span class="hx-mi">warning</span>
+      <span class="hm-col hm-tight hm-grow"><span class="hm-bold">Game Mismatch Detected</span><span class="hm-sm">Game: "Example Game Remastered" not found in trophy data</span></span>
+      <span class="hm-sm">Edit in Game Cache below</span>
+    </div>
+    <div class="hm-divider"></div>
+    <div class="hm-section">Game Cache<span class="hm-marker" data-n="1"></span></div>
+    <span class="hm-muted hm-xs">Edit cached game data to fix name mismatches. Remove chips to clear entries (re-cached on next play).</span>
+    <div class="hm-row">
+      <span class="hm-chip">Example Game <span class="hx-mi">close</span></span>
+      <span class="hm-chip">Another Game <span class="hx-mi">close</span></span>
+    </div>
+    <div class="hm-row hm-nowrap">
+      <span class="hm-muted hm-sm">Search game</span>
+      <div class="hm-field hm-select hm-grow hm-nolabel"><span class="hm-value">Example Game</span></div>
+    </div>
+    <span class="hm-sm hm-bold">Selected game</span>
+    <div class="hm-grid-2">
+      <div class="hm-metric"><span>Trophy name</span><span>Example Game</span></div>
+      <div class="hm-metric"><span>Platform</span><span>PS5</span></div>
+      <div class="hm-metric"><span>NP Communication ID</span><span class="hm-mono">NPWR00000_00</span></div>
+      <div class="hm-metric"><span>Last updated</span><span>2026-10-22 17:31</span></div>
+    </div>
+    <div class="hm-grid-2">
+      <div class="hm-field is-focused" data-label="Presence name"><span class="hm-value">Example Game Remastered</span></div>
+      <div class="hm-field" data-label="NP Title ID"><span class="hm-placeholder">e.g. PPSA01234_00</span></div>
+    </div>
+    <div class="hm-row hm-end"><span class="hm-marker" data-n="2"></span><span class="hm-btn">Save Changes</span></div>
+  </div>
+  <figcaption>Settings → PSN with a mismatch, and the Game Cache section below it. Names and IDs are examples.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">Each game Mycelian has seen gets a chip. Click the <strong>×</strong> on a chip to clear that entry; it is cached again the next time you play the game. With no games yet, the section shows <em>"No cached games yet. Play a game to populate the cache."</em></li>
+  <li data-n="2">Pick the game under <strong>Search game</strong>, set <strong>Presence name</strong> to the name in the warning (and the <strong>NP Title ID</strong> if you know it), then click <strong>Save Changes</strong>. The button stays disabled until you change a field.</li>
+</ol>
+
+<h2>Options on the PSN tab</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Control</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>NPSSO code</strong></td><td>The sign-in token. <strong>Connect to PSN</strong> fills it in for you.</td></tr>
+<tr><td><strong>PSN username</strong></td><td>Optional. A PSN online ID to track instead of your own account. You can only track yourself or friends whose status is online.</td></tr>
+<tr><td><strong>How to Connect</strong></td><td>Shows the steps for getting a token by hand.</td></tr>
+<tr><td><strong>Save</strong></td><td>Saves both fields and reconnects PSN.</td></tr>
+<tr><td><strong>Connect to PSN</strong></td><td>Opens the PlayStation sign-in window and captures a new token.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Connection status</h2>
+
+<p>The bottom status bar uses these colors for PlayStation Network. The guide lists the exact text each one covers: <a href="help:guide_psn">Connect PlayStation Network</a>. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>PSN is signed in and the tracked player is online</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Offline</td><td>The account is linked, and the player is not online</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Idle</td><td>PSN is not set up yet</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Expired</td><td>Sony did not accept the NPSSO token. Sign in again</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Auth Failed</td><td>PlayStation refused the request</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> No Internet</td><td>This computer cannot reach the network</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Unreachable</td><td>PlayStation cannot be reached</td></tr>
+</tbody>
+</table></div>
+
+<h2>If the overlays look wrong</h2>
+
+<details class="hx-details">
+  <summary>Trophies do not show for the game I am playing</summary>
+  <p>Look for <strong>Game Mismatch Detected</strong> on the PSN tab and fix the entry in <strong>Game Cache</strong>. Also check that trophy sync is on for the console, and give PlayStation a few minutes to report new trophies.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Nothing shows for another player</summary>
+  <p>Check the <strong>PSN username</strong> spelling. The player must be your friend, appear online, and allow friends to see their trophies and online status.</p>
+</details>
+
+<details class="hx-details">
+  <summary>My own game and trophies do not show</summary>
+  <p>On the console, go to <strong>Settings</strong> → <strong>Users and Accounts</strong> → <strong>Privacy</strong> and let at least <strong>Friends</strong> see your trophies and online status.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Status says Token Expired</summary>
+  <p>NPSSO tokens last about two months. Click <strong>Connect to PSN</strong> on the PSN tab to get a new one. See <a href="help:guide_psn">Connect PlayStation Network</a>.</p>
+</details>
+
+<h2>Security</h2>
+
+<ul>
+<li>Mycelian does not store your PlayStation password. The sign-in window keeps only the NPSSO token.</li>
+<li>The NPSSO token is stored in Mycelian's database on this computer. Treat it like a password and do not show it on stream.</li>
+<li>Overlays never receive the token.</li>
+<li>Signing out of PlayStation on all devices ends the token.</li>
+</ul>

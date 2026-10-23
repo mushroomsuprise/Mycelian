@@ -1,0 +1,213 @@
+<p class="hx-lead">Use the <strong>Advanced JS</strong> tab when a binding or data feed cannot do what you need. Your script is saved into the overlay and kept across saves, and it can call the same helpers the generated code uses.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Spore Studio</span><span>Advanced JS</span></span></span>
+  <span>{{icon:code}} Plain JavaScript in the overlay page</span>
+</div>
+
+<h2>The editor</h2>
+
+<p>Short scripts fit in the box on the tab. <strong>Expand editor</strong> opens a larger editor for the same script.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm hm-ss">
+    <div class="hm-ss-preview">
+      <div class="hm-ss-preview-head">Advanced JS<span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Find</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Reference</span><span class="hm-marker" data-n="1"></span><span class="hm-ss-spacer"></span><span class="hm-ss-btn hm-ss-primary hm-ss-sm">Done</span></div>
+      <div class="hm-ss-preview-bar">
+        <span class="hm-ss-input" style="min-width:110px">thank</span>
+        <span class="hm-ss-input is-placeholder" style="min-width:110px">Replace</span>
+        <span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Prev</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Next</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Replace</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">All</span>
+      </div>
+      <div class="hm-grid-2" style="grid-template-columns:minmax(0,1fr) 190px;gap:0">
+        <div class="hm-ss-code" style="border:none;border-radius:0">
+          <div class="hm-ss-gutter">1
+2
+3
+4
+5
+6</div>
+          <div class="hm-ss-src"><span class="f">socket</span>.<span class="f">on</span>(<span class="s">'instant_alert'</span>, <span class="k">function</span> (data) {
+    <span class="k">if</span> (!data || data.alert_type !== <span class="s">'bit'</span>) <span class="k">return</span>;
+    <span class="f">sporeShow</span>(<span class="s">'thank_you'</span>);
+    <span class="f">sporeSetText</span>(<span class="s">'who'</span>, data.username || <span class="s">''</span>);
+});
+<span class="c">// more…</span></div>
+        </div>
+        <div class="hm-ss-ref">
+          <b class="hm-ss-h">Insert helper <span class="hm-marker" data-n="2"></span></b>
+          <span>sporeShow(id)</span>
+          <span>sporeHide(id)</span>
+          <span>sporeSetText(id, value)</span>
+          <span>sporePlayMediaAudio</span>
+          <span>sporeCounterAdjust</span>
+          <span>sporeTimerStart / Pause / Reset</span>
+          <span>sporeDbGet(path, cb)</span>
+          <span>sporeDbSet(path, data)</span>
+          <span>socket.on(event)</span>
+          <span>alert_complete</span>
+        </div>
+      </div>
+      <div class="hm-ss-codestatus"><span>Ln 4, Col 22</span><span>213 chars</span><span class="hm-marker" data-n="3"></span></div>
+    </div>
+  </div>
+  <figcaption>The expanded Advanced JS editor with Find and Reference open.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Find</strong> opens find and replace (also <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>F</kbd>). <strong>Reference</strong> opens the helper list. <strong>Done</strong> closes the editor.</li>
+  <li data-n="2"><strong>Insert helper</strong>: click an entry to insert a ready-made snippet at the cursor.</li>
+  <li data-n="3">Cursor position and length of the script.</li>
+</ol>
+
+<p>The editor has line numbers, <kbd>Tab</kbd> indent, matching brackets and syntax coloring. Both editors edit the same script. Closing the large editor, or pausing while you type, records an undo step.</p>
+
+<h2>Where your script goes</h2>
+
+<p>On Save, Mycelian writes the overlay script in three marked regions:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Markers</th><th>What happens on Save</th></tr></thead>
+<tbody>
+<tr><td><code>SPORE_STUDIO:data-runtime-begin</code> … <code>data-runtime-end</code></td><td>The shared helper library. Replaced from the boilerplate.</td></tr>
+<tr><td><code>SPORE_STUDIO:auto-begin</code> … <code>auto-end</code></td><td>Rebuilt from bindings, counters, feeds and widgets. Do not edit it.</td></tr>
+<tr><td><code>SPORE_STUDIO:user-begin</code> … <code>user-end</code></td><td>Your script, kept exactly as you wrote it</td></tr>
+</tbody>
+</table></div>
+
+<p>Your script runs in the same page script as the helpers, after them, so <code>socket</code> and every function below already exist.</p>
+
+<h2>Helpers you can call</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Function</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>sporeShow(id)</code></td><td>Show the element and play its entrance animation</td></tr>
+<tr><td><code>sporeHide(id)</code></td><td>Play the exit animation, then hide it</td></tr>
+<tr><td><code>sporeSetText(id, value)</code></td><td>Set an element's text. Marquee copies are updated too.</td></tr>
+<tr><td><code>sporePlayMediaAudio(id, opts)</code></td><td>Play the element's audio. <code>opts</code> may set <code>volume</code> (0–1) and <code>fade_in_ms</code>.</td></tr>
+<tr><td><code>sporeCounterAdjust(counterId, operation, delta, payload)</code></td><td><code>operation</code>: <code>increment</code>, <code>decrement</code>, <code>set</code>, <code>reset</code>. <code>delta</code>: <code>{ kind: "fixed", value: 1 }</code>, <code>{ kind: "random_int", min: 1, max: 5 }</code>, <code>{ kind: "random_float", min, max, decimals }</code>, or <code>{ kind: "data_source", source: "alert.amt_cheered", fallback: 0 }</code>. Respects Min, Max and progressive goals, saves if the counter persists, and sends <code>counter_changed</code> / <code>goal_reached</code>.</td></tr>
+<tr><td><code>sporeTimerStart(id)</code> / <code>sporeTimerPause(id)</code> / <code>sporeTimerReset(id)</code></td><td>Control a Timer element</td></tr>
+<tr><td><code>sporeListAdd(id, payload, literal)</code></td><td>Add a row to a List, built from <code>payload</code> or the literal text</td></tr>
+<tr><td><code>sporeListClear(id)</code></td><td>Remove every row</td></tr>
+<tr><td><code>sporeWheelSpin(id, payload)</code></td><td>Spin a Wheel. If <code>payload.label</code> matches a slice, that slice wins.</td></tr>
+<tr><td><code>sporeDbGet(path, callback)</code></td><td>Read a database document. <code>callback(data)</code> runs with the data, or <code>null</code> on error or after 8 seconds.</td></tr>
+<tr><td><code>sporeDbSet(path, data, callback)</code></td><td>Write a database document. <code>callback</code> is optional.</td></tr>
+<tr><td><code>sporeLoadStatsCache()</code></td><td>Reload session statistics, then refresh data displays and stat cards</td></tr>
+<tr><td><code>sporeRefreshAllDataDisplays()</code></td><td>Re-read every data display and stat card</td></tr>
+<tr><td><code>sporeResolveSource(spec, payload, ctx)</code></td><td>Resolve one data-source spec the same way counters do</td></tr>
+</tbody>
+</table></div>
+
+<h3>Globals</h3>
+
+<ul>
+<li><code>socket</code> is the overlay's Socket.IO connection.</li>
+<li><code>window.__sporeLastPayload.event</code> is the last event payload. Data displays and stat cards read it.</li>
+<li><code>window.__sporeLastPayload.wheel</code> is <code>{ elementId, index, label }</code> after a wheel stops. The overlay also sends <code>wheel_result</code> with it.</li>
+<li><code>window.__sporeTwitchCache</code> holds Twitch API responses by <code>requestId</code>.</li>
+<li><code>MycelianLog.info(msg)</code>, <code>MycelianLog.warn(msg)</code> and <code>MycelianLog.error(msg)</code> write to <code>mycelian.log</code> under this template's name. Uncaught errors, <code>console.warn</code> and <code>console.error</code> are sent there too.</li>
+</ul>
+
+<h2>Recipes</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="events" class="is-active">Listen to events</button>
+    <button data-tab="queue">Queue alerts</button>
+    <button data-tab="sc">Source Controls</button>
+    <button data-tab="tw">Twitch API</button>
+    <button data-tab="db">Database</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="events">
+    <p>Add listeners next to the generated ones. Do not replace the generated <code>socket.on</code> handlers.</p>
+<pre><code>socket.on('instant_alert', function (data) {
+    if (!data || data.alert_type !== 'bit') return;
+    sporeShow('thank_you');
+    sporeSetText('who', data.username || '');
+    sporeCounterAdjust('bits', 'increment', {
+        kind: 'data_source',
+        source: 'alert.amt_cheered',
+        alert_type_filter: 'bit',
+        fallback: 0
+    }, data);
+});
+</code></pre>
+    <p>If you handle an event yourself and want data displays to follow, set <code>window.__sporeLastPayload.event = data</code> and call <code>sporeRefreshAllDataDisplays()</code>.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="queue">
+    <p>A <strong>Queue</strong> template handles the alert queue for you. It lines up each <code>next_alert</code>, runs your bindings, holds for the template's <strong>Duration</strong> (or the alert's <code>duration</code>) and while its media plays, and then reports the alert done. It does this only when the template is one of the alert's <code>queue_holders</code>; otherwise it just watches.</p>
+    <div class="hx-callout hx-warning"><p>Do not send <code>alert_complete</code> yourself in a Queue template. The template already does, and an extra one ends the alert early. The dropdown label <em>emit alert_complete in Advanced JS</em> and the Reference snippet date from before this was automatic. Use <strong>Duration</strong> on the Canvas tab to control how long the alert holds.</p></div>
+    <p>A <code>socket.on('next_alert', …)</code> listener in your script runs as soon as the alert arrives, not when the template's own queue reaches it. For per-alert visuals, prefer bindings, which run in queue order.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="sc">
+    <p>A Source Control with action <code>my_action</code> on template <code>my_overlay</code> sends <code>my_overlay_my_action</code>. Listen for that name:</p>
+<pre><code>socket.on('my_overlay_my_action', function (data) {
+    sporeSetText('banner', (data &amp;&amp; data.value) || 'clicked');
+});
+</code></pre>
+    <p>See <a href="help:spore_studio_dynamic_controls">Dynamic controls</a>.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="tw">
+    <p>Prefer a <a href="help:spore_studio_bindings">Twitch API binding</a> when the request belongs to one element. From script, send the request and read the answer yourself:</p>
+<pre><code>socket.emit('twitch-api-request', {
+    endpoint: 'https://api.twitch.tv/helix/users',
+    method: 'GET',
+    requestId: 'my-follower-check',
+    params: { login: 'someuser' }
+});
+
+socket.on('twitch-api-response', function (data) {
+    if (!data || data.requestId !== 'my-follower-check') return;
+    window.__sporeTwitchCache['my-follower-check'] = data;
+    sporeRefreshAllDataDisplays();
+});
+</code></pre>
+    <p>A data source of type <strong>Twitch API response field</strong> reads that cache. Ids Spore Studio makes for bindings look like <code>spore_tw_elementId_0</code>.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="db">
+<pre><code>sporeDbGet('my_overlay/counters', function (doc) {
+    doc = doc || {};
+    sporeSetText('note', String(doc.note || ''));
+});
+
+sporeDbSet('my_overlay/counters', { note: 'saved from the overlay' });
+</code></pre>
+    <p>Persisted counters use <code>{template}/counters</code> by default, keyed by counter id.</p>
+  </div>
+</div>
+
+<h3>Counters and lists</h3>
+
+<p>Prefer a Counter's <a href="help:spore_studio_counters">Data feed</a> when the math is "add this field on this alert". Use <code>sporeCounterAdjust</code> when the change depends on something the feed editor cannot see, such as a calculation, a timer or a Twitch response.</p>
+
+<p>A List with no Data feed stays empty until a binding or <code>sporeListAdd</code> adds rows. A List with a feed (alerts, giveaways, any event) fills itself.</p>
+
+<h2>Pitfalls</h2>
+
+<details class="hx-details">
+  <summary>My edits disappeared after Save</summary>
+  <p>They were inside <code>auto-begin</code> … <code>auto-end</code>, which is rebuilt on every save. Put your code between <code>user-begin</code> and <code>user-end</code>, which is what the Advanced JS tab edits.</p>
+</details>
+<details class="hx-details">
+  <summary>Alerts end too early, or the queue skips ahead</summary>
+  <p>Remove any <code>socket.emit('alert_complete', …)</code> from a Queue template's script; the template already sends it. Raise <strong>Duration</strong> on the Canvas tab if the alert needs longer.</p>
+</details>
+<details class="hx-details">
+  <summary>A counter jumps on unrelated alerts</summary>
+  <p>Give the data-source delta <code>fallback: 0</code> and an <code>alert_type_filter</code>, so other alert types add nothing.</p>
+</details>
+<details class="hx-details">
+  <summary><code>sporeShow</code> does nothing</summary>
+  <p>The id must match the element's <strong>ID</strong> in Properties exactly, including case.</p>
+</details>
+<details class="hx-details">
+  <summary>An error says <code>socket</code> is not defined</summary>
+  <p>The boilerplate creates <code>socket</code> before your block. If you still see this, wrap the code in <code>if (typeof socket !== 'undefined') { … }</code>. Check <code>mycelian.log</code> for the full error; overlay errors are logged under the template name.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_advanced">{{icon:preview}}<span><strong>Preview and legacy</strong><span class="hx-card-text">Test scripts with mock events</span></span></a>
+  <a class="hx-card" href="help:spore_studio_bindings">{{icon:bolt}}<span><strong>Event bindings</strong><span class="hx-card-text">No-code event handling</span></span></a>
+  <a class="hx-card" href="help:spore_studio_widgets">{{icon:widgets}}<span><strong>Widget reference</strong><span class="hx-card-text">Element types and ids</span></span></a>
+  <a class="hx-card" href="help:template_websocket">{{icon:hub}}<span><strong>Websocket events</strong><span class="hx-card-text">Every event an overlay can hear</span></span></a>
+</div>

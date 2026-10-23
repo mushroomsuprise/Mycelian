@@ -1,0 +1,37 @@
+<p class="hx-lead">Mycelian listens for <strong>StreamElements tips</strong> and turns them into donation alerts. Follows and subscriptions stay on the Twitch connection.</p>
+
+<div class="hx-meta">
+  <span>{{icon:payments}} Tips only</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>StreamElements</span></span></span>
+</div>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:guide_streamelements">{{brand:streamelements}}<span><strong>Connect StreamElements</strong><span class="hx-card-text">Copy your channel JWT and paste it into Mycelian</span></span></a>
+</div>
+
+<h2>What a tip does</h2>
+
+<p>Each StreamElements tip:</p>
+<ul>
+<li>plays the matching alert from <strong>Alerts → Donations</strong>,</li>
+<li>appears in the <strong>Activity Feed</strong>,</li>
+<li>fires donation events for the <a href="help:chatbot_events">Chatbot</a> and <a href="help:connector_triggers">Connectors</a>.</li>
+</ul>
+
+<p>Tips sent with <strong>Emulate</strong> in the StreamElements overlay editor count too, which makes them a quick test.</p>
+
+<h3>Tip moderation</h3>
+
+<p>If tip moderation is on in StreamElements, a held tip alerts only after you allow it. Rejected tips are ignored. Each tip alerts once.</p>
+
+<h2>Alert currency</h2>
+
+<p>The alert currency is shared with Streamlabs and set on either tab. Thresholds in <strong>Alerts → Donations</strong> use that currency. A tip in another currency is converted using daily exchange rates, rounded to the nearest whole unit to pick the alert, and shown as the original amount with the converted amount in parentheses, for example <code>€10.00 ($10.85)</code>. Details are in <a href="help:integrations_streamlabs">Streamlabs Integration</a>.</p>
+
+<h2>Status</h2>
+
+<p>StreamElements appears in the status footer once a JWT is saved. The status colors and fixes are in <a href="help:guide_streamelements">Connect StreamElements</a>; the full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-callout hx-warning"><p><strong>Disconnect</strong> deletes the saved JWT. To connect again you need to paste it again.</p></div>
+
+<p>JWTs expire. When yours does, Mycelian shows a notification and the status turns to <strong>Expired</strong>. Copy a new one from the dashboard.</p>

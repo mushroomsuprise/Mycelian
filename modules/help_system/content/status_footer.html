@@ -1,0 +1,183 @@
+<p class="hx-lead">The bar at the bottom of the main window shows every service Mycelian is watching and whether it is working. Click a badge to jump to that service's settings.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} Bottom of the main window</span>
+  <span>{{icon:tune}} <span class="hx-path"><span>Settings</span><span>App Settings</span></span></span>
+</div>
+
+<h2>What the footer looks like</h2>
+
+<p>Each badge has the service icon, its name, a colored dot and a short status word. Switch between the two display modes below.</p>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-subtabs">
+      <span class="hm-subtab is-active" data-tab="full">Full badges</span>
+      <span class="hm-subtab" data-tab="min">Minimal status badges</span>
+    </div>
+    <div class="hm-frame">
+      <div data-panel="full">
+        <div class="hm-sf">
+          <span class="hm-sf-item hm-sf-success" data-tip="Online"><span class="hm-sf-icon">{{brand:internet}}</span><span class="hm-sf-name">Internet</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Online</span></span>
+          <span class="hm-sf-item hm-sf-success" data-tip="Running"><span class="hm-sf-name">Overlay Server</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Running</span></span>
+          <span class="hm-sf-item hm-sf-success" data-tip="Connected"><span class="hm-sf-icon">{{brand:twitch}}</span><span class="hm-sf-name">Twitch</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connected</span></span>
+          <span class="hm-sf-item hm-sf-muted" data-tip="Disconnected"><span class="hm-sf-icon">{{brand:obs}}</span><span class="hm-sf-name">OBS</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Disconnected</span></span>
+          <span class="hm-sf-item hm-sf-warning" data-tip="Offline"><span class="hm-sf-icon">{{brand:psn}}</span><span class="hm-sf-name">PSN</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Offline</span></span>
+          <span class="hm-sf-item hm-sf-error" data-tip="Expired"><span class="hm-sf-icon">{{brand:spotify}}</span><span class="hm-sf-name">Spotify</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Expired</span></span>
+          <span class="hm-sf-item hm-sf-info" data-tip="Connecting"><span class="hm-sf-icon">{{brand:streamelements}}</span><span class="hm-sf-name">StreamElements</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connecting</span></span>
+        </div>
+      </div>
+      <div data-panel="min">
+        <div class="hm-sf hm-sf-minimal">
+          <span class="hm-sf-item hm-sf-success" data-tip="Online"><span class="hm-sf-icon">{{brand:internet}}</span><span class="hm-sf-name">Internet</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Online</span></span>
+          <span class="hm-sf-item hm-sf-success" data-tip="Connected"><span class="hm-sf-icon">{{brand:twitch}}</span><span class="hm-sf-name">Twitch</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connected</span></span>
+          <span class="hm-sf-item hm-sf-muted" data-tip="Disconnected"><span class="hm-sf-icon">{{brand:obs}}</span><span class="hm-sf-name">OBS</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Disconnected</span></span>
+          <span class="hm-sf-item hm-sf-warning" data-tip="Offline"><span class="hm-sf-icon">{{brand:psn}}</span><span class="hm-sf-name">PSN</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Offline</span></span>
+          <span class="hm-sf-item hm-sf-error" data-tip="Expired"><span class="hm-sf-icon">{{brand:spotify}}</span><span class="hm-sf-name">Spotify</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Expired</span></span>
+          <span class="hm-sf-item hm-sf-info" data-tip="Connecting"><span class="hm-sf-icon">{{brand:streamelements}}</span><span class="hm-sf-name">StreamElements</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connecting</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Click the two tabs to compare the modes. Hover a badge to see its status word, as in the app.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>Full badges</strong> (the default) show the icon, name, dot and status word.</li>
+  <li><strong>Minimal status badges</strong> show only the service icon with a colored ring. The ring uses the same color as the full badge. Hover the icon to read the status word; in this mode that hover text is the only label.</li>
+</ul>
+
+<div class="hx-callout hx-note"><p><strong>Overlay Server</strong> has no icon, so it does not show up in minimal mode. Switch back to full badges to see it.</p></div>
+
+<h2>Which services appear</h2>
+
+<p>Badges appear in this order: Internet, Overlay Server, Twitch, OBS, PSN, Spotify, YouTube, Discord, Streamlabs, StreamElements.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Badge</th><th>Shown when</th><th>Click opens</th></tr></thead>
+<tbody>
+<tr><td>{{brand:internet}} Internet</td><td>Always</td><td>Nothing (not clickable)</td></tr>
+<tr><td>Overlay Server</td><td>Always</td><td><span class="hx-path"><span>Settings</span><span>App Settings</span></span></td></tr>
+<tr><td>{{brand:twitch}} Twitch</td><td>Always</td><td><span class="hx-path"><span>Settings</span><span>Twitch</span></span></td></tr>
+<tr><td>{{brand:obs}} OBS</td><td><strong>Enable OBS integration</strong> is on (it is on by default)</td><td><span class="hx-path"><span>Settings</span><span>OBS</span></span></td></tr>
+<tr><td>{{brand:psn}} PSN</td><td>An NPSSO code is saved</td><td><span class="hx-path"><span>Settings</span><span>PSN</span></span></td></tr>
+<tr><td>{{brand:spotify}} Spotify</td><td>A Client ID and Client Secret are saved</td><td><span class="hx-path"><span>Settings</span><span>Spotify</span></span></td></tr>
+<tr><td>{{brand:youtube}} YouTube</td><td>An API key is saved</td><td><span class="hx-path"><span>Settings</span><span>YouTube</span></span></td></tr>
+<tr><td>{{brand:discord}} Discord</td><td>A bot token is saved</td><td><span class="hx-path"><span>Settings</span><span>Discord</span></span></td></tr>
+<tr><td>{{brand:streamlabs}} Streamlabs</td><td>A Client ID or access token is saved</td><td><span class="hx-path"><span>Settings</span><span>Streamlabs</span></span></td></tr>
+<tr><td>{{brand:streamelements}} StreamElements</td><td>A JWT token is saved</td><td><span class="hx-path"><span>Settings</span><span>StreamElements</span></span></td></tr>
+</tbody>
+</table></div>
+
+<p>A service you have never set up has no badge. That is normal. See <a href="help:connection_guides_overview">Connection Guides</a> to set one up.</p>
+
+<h3>Progress badges</h3>
+
+<p>Two extra badges appear only while work is running, and disappear when it ends. They keep their text label in minimal mode, and they appear even when the footer is turned off.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-sf">
+      <span class="hm-sf-item hm-sf-progress hm-sf-warning"><span class="hm-sf-name">Alert trim</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">120 of 400</span></span>
+      <span class="hm-sf-item hm-sf-progress hm-sf-warning"><span class="hm-sf-name">Copying</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">3 of 12</span></span>
+    </div>
+  </div>
+  <figcaption>Progress badges while stored alerts are trimmed and a template is copied.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>Alert trim</strong>: Mycelian is deleting old stored alerts (see <strong>Auto-trim stored alerts</strong> in App Settings). It shows <em>Calculating</em>, then <em>N to delete</em>, then <em>N of M</em>. Click it to open App Settings.</li>
+  <li><strong>Copying</strong> / <strong>Deleting</strong>: a template is being duplicated or deleted. It shows <em>Preparing</em>, then <em>N of M</em> files. A Deleting badge is red.</li>
+</ul>
+
+<h2>Turn the footer on or off</h2>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-panel">
+      <div class="hm-panel-title">General</div>
+      <div class="hm-col hm-tight">
+        <span class="hm-switch is-on"><i></i>Notifications</span>
+        <span class="hm-row"><span class="hm-switch is-on"><i></i>Show connection status footer</span><span class="hx-mi hm-muted">help_outline</span><span class="hm-marker" data-n="1"></span></span>
+        <span class="hm-row"><span class="hm-switch"><i></i>Minimal status badges</span><span class="hm-marker" data-n="2"></span></span>
+      </div>
+    </div>
+    <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span><span class="hm-marker" data-n="3"></span></div>
+  </div>
+  <figcaption>Part of Settings → App Settings. The switches here only flip the picture.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Show connection status footer</strong> shows or hides the whole bar. The <strong>?</strong> beside it opens this page.</li>
+  <li data-n="2"><strong>Minimal status badges</strong> switches to icon-and-ring mode.</li>
+  <li data-n="3">Changes take effect when you click <strong>Save</strong>.</li>
+</ol>
+
+<h2>Colors</h2>
+
+<p>Colors come from the theme you have selected, so they match the rest of the app.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Color</th><th>Statuses</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td style="white-space:nowrap"><span class="help-status-swatch help-status-swatch-success"></span> Green</td><td>Connected, Running, Online</td><td>Working. Nothing to do.</td></tr>
+<tr><td style="white-space:nowrap"><span class="help-status-swatch help-status-swatch-info"></span> Blue</td><td>Connecting, Disconnecting, Starting, Restarting, Reconnecting, Checking</td><td>In progress. Leave it alone.</td></tr>
+<tr><td style="white-space:nowrap"><span class="help-status-swatch help-status-swatch-muted"></span> Gray</td><td>Disconnected, Idle, Unknown</td><td>Not connected, and that is normal. Idle means Mycelian is waiting for you to sign in, opening the browser, or the service is not set up yet.</td></tr>
+<tr><td style="white-space:nowrap"><span class="help-status-swatch help-status-swatch-warning"></span> Amber</td><td>Degraded, Stalled, Overloaded, Partial, Stopped, Offline</td><td>Up, but not healthy. PSN <strong>Offline</strong> means the linked account is simply not online.</td></tr>
+<tr><td style="white-space:nowrap"><span class="help-status-swatch help-status-swatch-error"></span> Red</td><td>Error, Crashed, Frozen, Expired, Auth Failed, No Internet, Unreachable</td><td>Needs you. Internet <strong>Offline</strong> is red.</td></tr>
+</tbody>
+</table></div>
+
+<p>Each integration's help page lists what its statuses mean for that service.</p>
+
+<h2>Internet</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Online</td><td>This computer can reach the network</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-info"></span> Checking</td><td>Mycelian is still testing the connection</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Offline</td><td>No network. Twitch, Spotify, YouTube and PSN will show <strong>No Internet</strong> or <strong>Unreachable</strong> too.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Overlay server</h2>
+
+<p>The overlay server is the local page host for your browser sources, docks and the Stream Deck plugin. Hover its badge for a short health detail.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Running</td><td>Overlays are being served</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-info"></span> Starting</td><td>The server is coming up</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-info"></span> Restarting</td><td>The server is restarting</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Stopped</td><td>The server is not running</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Stalled</td><td>The server stopped answering</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Overloaded</td><td>The server is too busy to keep up</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Crashed</td><td>The server exited unexpectedly</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Frozen</td><td>The server is stuck</td></tr>
+</tbody>
+</table></div>
+
+<h2>Common questions</h2>
+
+<details class="hx-details">
+  <summary>A service I set up has no badge</summary>
+  <p>The badge appears once the credentials it needs are saved (see the table above). Open that service's Settings tab, check the fields are filled in, and click <strong>Save</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Twitch shows Idle even though I never use it</summary>
+  <p>Twitch always has a badge. Gray <strong>Idle</strong> just means it is not set up. Nothing is wrong.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Everything turned red at once</summary>
+  <p>Check the Internet badge first. When it is red, online services show <strong>No Internet</strong> or <strong>Unreachable</strong> until the network comes back. See <a href="help:troubleshooting_connections">Connection Problems</a>.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>Connection Guides</strong><span class="hx-card-text">Set up each service</span></span></a>
+  <a class="hx-card" href="help:settings_overview">{{icon:settings}}<span><strong>Settings Overview</strong><span class="hx-card-text">Every Settings tab at a glance</span></span></a>
+  <a class="hx-card" href="help:troubleshooting_connections">{{icon:build}}<span><strong>Connection Problems</strong><span class="hx-card-text">When a badge stays red</span></span></a>
+</div>

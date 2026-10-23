@@ -1,0 +1,305 @@
+/* Mock pieces for the Templates pages: Source Settings editor + preview,
+   Source Controls cards, and simplified overlay renders.
+   Scoped under .help-doc .hm, theme variables only. */
+
+/* ---- Source Settings: editor / preview split ------------------------- */
+
+.help-doc .hm .hm-cs-split {
+    display: grid;
+    grid-template-columns: minmax(0, 62fr) 6px minmax(0, 38fr);
+    gap: 0;
+    align-items: stretch;
+    min-width: 0;
+}
+
+.help-doc .hm .hm-cs-divider {
+    background: var(--color-border-default);
+    opacity: 0.6;
+    border-radius: 3px;
+}
+
+.help-doc .hm .hm-cs-editor,
+.help-doc .hm .hm-cs-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding: 0 8px;
+}
+
+@media (max-width: 760px) {
+    .help-doc .hm .hm-cs-split { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+    .help-doc .hm .hm-cs-divider { display: none; }
+}
+
+/* One config element (form-group): label, description, control */
+.help-doc .hm .hm-cs-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px;
+    border-radius: 4px;
+    min-width: 0;
+}
+
+.help-doc .hm .hm-cs-cell > .hm-cs-label { font-size: 0.8125rem; font-weight: 500; color: var(--color-text-primary); }
+.help-doc .hm .hm-cs-cell > .hm-cs-desc { font-size: 0.6875rem; color: var(--color-text-muted); line-height: 1.35; }
+.help-doc .hm .hm-cs-cell .hm-field { margin: 0; }
+.help-doc .hm .hm-cs-cell.is-changed { box-shadow: 0 0 0 2px var(--color-warning); }
+
+.help-doc .hm .hm-cs-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 8px;
+}
+
+@media (max-width: 560px) {
+    .help-doc .hm .hm-cs-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Slider + numeric readout */
+.help-doc .hm .hm-cs-slider-row { display: flex; align-items: center; gap: 8px; }
+.help-doc .hm .hm-cs-slider-row .hm-slider { flex: 1 1 auto; }
+.help-doc .hm .hm-cs-readout { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8125rem; min-width: 2.5rem; text-align: right; }
+
+/* Color field: swatch + text input */
+.help-doc .hm .hm-color-row { display: flex; align-items: center; gap: 8px; }
+.help-doc .hm .hm-color-row .hm-field { flex: 1 1 auto; min-width: 0; }
+
+.help-doc .hm .hm-tp-swatch {
+    position: relative;
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border-default);
+    overflow: hidden;
+    cursor: pointer;
+    background-color: var(--color-bg-base);
+    background-image:
+        linear-gradient(45deg, var(--color-border-subtle) 25%, transparent 25%, transparent 75%, var(--color-border-subtle) 75%),
+        linear-gradient(45deg, var(--color-border-subtle) 25%, transparent 25%, transparent 75%, var(--color-border-subtle) 75%);
+    background-size: 10px 10px;
+    background-position: 0 0, 5px 5px;
+}
+
+.help-doc .hm .hm-tp-swatch > i { position: absolute; inset: 0; background: var(--hm-sw, var(--color-primary)); }
+.help-doc .hm .hm-tp-swatch.hm-sw-clear > i { background: transparent; }
+
+/* "Pick color" dialog */
+.help-doc .hm .hm-tp-dialog {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 340px;
+}
+
+.help-doc .hm .hm-tp-dialog-title { font-size: 1.05rem; font-weight: 600; color: var(--color-text-primary); }
+
+.help-doc .hm .hm-presets { display: grid; grid-template-columns: repeat(8, 22px); gap: 4px; }
+.help-doc .hm .hm-presets .hm-tp-swatch { width: 22px; height: 22px; }
+
+.help-doc .hm .hm-sv-box {
+    height: 90px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border-subtle);
+    background:
+        linear-gradient(to top, var(--color-bg-base), transparent),
+        linear-gradient(to right, var(--color-text-primary), var(--color-primary));
+}
+
+/* Preview panel */
+.help-doc .hm .hm-cs-prevbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.75rem; }
+.help-doc .hm .hm-cs-prevbar .hm-field { width: 64px; min-height: 28px; padding: 2px 6px; }
+.help-doc .hm .hm-cs-prevbar .hm-slider { flex: 1 1 70px; }
+.help-doc .hm .hm-cs-mockbar { display: flex; gap: 2px; flex-wrap: wrap; align-items: center; }
+.help-doc .hm .hm-cs-mockbar .hm-btn { min-height: 24px; padding: 1px 8px; font-size: 12px; }
+
+/* Overlay stage: the transparent browser-source area (checkerboard) */
+.help-doc .hm .hm-stage {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    border-radius: 4px;
+    border: 1px solid var(--color-border-subtle);
+    overflow: hidden;
+    background-color: var(--color-bg-base);
+    background-image:
+        linear-gradient(45deg, var(--color-bg-surface) 25%, transparent 25%, transparent 75%, var(--color-bg-surface) 75%),
+        linear-gradient(45deg, var(--color-bg-surface) 25%, transparent 25%, transparent 75%, var(--color-bg-surface) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+}
+
+.help-doc .hm .hm-stage.hm-stage-strip { aspect-ratio: 900 / 120; }
+.help-doc .hm .hm-stage.hm-stage-square { aspect-ratio: 1 / 1; max-width: 220px; }
+.help-doc .hm .hm-stage.hm-stage-tall { aspect-ratio: 1 / 2.2; max-width: 120px; }
+.help-doc .hm .hm-stage.hm-al-start { justify-content: flex-start; }
+.help-doc .hm .hm-stage.hm-al-end { justify-content: flex-end; }
+.help-doc .hm .hm-stage.hm-va-start { align-items: flex-start; }
+.help-doc .hm .hm-stage.hm-va-end { align-items: flex-end; }
+
+/* OBS canvas with a browser-source bounding box */
+.help-doc .hm .hm-canvas {
+    position: relative;
+    max-width: 560px;
+    margin: 0 auto;
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    border-radius: 4px;
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+    overflow: hidden;
+}
+
+.help-doc .hm .hm-canvas-src {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--color-error);
+    color: var(--color-text-primary);
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: center;
+    overflow: hidden;
+}
+
+.help-doc .hm .hm-canvas-src::before,
+.help-doc .hm .hm-canvas-src::after {
+    content: '';
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    background: var(--color-error);
+}
+.help-doc .hm .hm-canvas-src::before { top: -4px; left: -4px; }
+.help-doc .hm .hm-canvas-src::after { bottom: -4px; right: -4px; }
+
+.help-doc .hm .hm-canvas-src.is-stretched { transform: scaleY(1.9); transform-origin: top left; filter: blur(0.6px); }
+
+/* Simplified overlay text */
+.help-doc .hm .hm-ov-title { font-weight: 700; color: var(--color-text-primary); line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
+.help-doc .hm .hm-ov-title.hm-ov-nowrap { white-space: nowrap; overflow-wrap: normal; }
+.help-doc .hm .hm-ov-xl { font-size: 1.6rem; }
+.help-doc .hm .hm-ov-lg { font-size: 1.15rem; }
+.help-doc .hm .hm-ov-md { font-size: 0.85rem; }
+.help-doc .hm .hm-ov-sm { font-size: 0.6rem; }
+
+/* Simplified alert overlay (before/after custom CSS) */
+.help-doc .hm .hm-ov-alert {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 16px;
+    text-align: center;
+    color: var(--color-text-primary);
+}
+
+.help-doc .hm .hm-ov-gif {
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+}
+
+.help-doc .hm .hm-ov-gif .hx-mi { font-size: 30px; color: #fff; }
+.help-doc .hm .hm-ov-user { font-weight: 700; font-size: 1.05rem; color: var(--color-primary); }
+.help-doc .hm .hm-ov-text { font-size: 0.85rem; }
+.help-doc .hm .hm-ov-msg { font-size: 0.75rem; color: var(--color-text-secondary); }
+
+.help-doc .hm .hm-ov-alert.is-styled {
+    background: var(--color-bg-elevated);
+    border: 3px solid var(--color-warning);
+    border-radius: 14px;
+}
+.help-doc .hm .hm-ov-alert.is-styled .hm-ov-user { color: var(--color-warning); font-size: 1.3rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.help-doc .hm .hm-ov-alert.is-styled .hm-ov-msg { display: none; }
+.help-doc .hm .hm-ov-alert.is-styled .hm-ov-gif { animation: hm-ov-bounce 1s ease-in-out infinite; }
+
+@keyframes hm-ov-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .help-doc .hm .hm-ov-alert.is-styled .hm-ov-gif { animation: none; }
+}
+
+/* ---- Source Controls tab -------------------------------------------- */
+
+.help-doc .hm .hm-sc-title { font-size: 1.05rem; font-weight: 600; color: var(--color-text-primary); }
+
+.help-doc .hm .hm-sc-masonry {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+    align-items: start;
+}
+
+.help-doc .hm .hm-sc-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+.help-doc .hm .hm-sc-card {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.help-doc .hm .hm-sc-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.help-doc .hm .hm-sc-name { font-size: 0.875rem; font-weight: 600; color: var(--color-text-primary); }
+
+.help-doc .hm .hm-sc-group {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    margin-top: 2px;
+}
+
+.help-doc .hm .hm-sc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.help-doc .hm .hm-sc-span { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.help-doc .hm .hm-sc-span > .hm-sc-label { font-size: 0.75rem; font-weight: 500; color: var(--color-text-primary); }
+.help-doc .hm .hm-sc-grid .hm-btn { width: 100%; min-height: 28px; padding: 2px 8px; font-size: 12px; }
+.help-doc .hm .hm-sc-grid .hm-field { margin: 0; min-height: 30px; }
+.help-doc .hm .hm-sc-row { display: flex; gap: 4px; }
+.help-doc .hm .hm-sc-row > * { flex: 1 1 0; min-width: 0; }
+
+.help-doc .hm .hm-btn.hm-sc-plus { background: var(--color-success); color: #fff; }
+.help-doc .hm .hm-btn.hm-sc-minus { background: var(--color-error); color: #fff; }
+.help-doc .hm .hm-btn.hm-sc-warn { background: var(--color-warning); color: var(--color-text-inverse); }
+.help-doc .hm .hm-btn.hm-sc-cancel { background: var(--color-bg-elevated); color: var(--color-text-primary); border-color: var(--color-border-default); }
+
+/* Event flow strip (template_websocket) */
+.help-doc .hm .hm-flow { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+.help-doc .hm .hm-flow > .hm-card { flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px; }
+.help-doc .hm .hm-flow-arrow { align-self: center; color: var(--color-text-muted); }
+.help-doc .hm .hm-flow code { font-size: 0.75rem; }
+
+.help-doc .hm .hm-sc-solo { max-width: 380px; }
+.help-doc .hm .hm-sc-group .hm-marker, .help-doc .hm .hm-sc-label .hm-marker { vertical-align: middle; }
+
+/* Square source next to a strip source */
+.help-doc .hm .hm-stage-pair { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; align-items: center; }
+.help-doc .hm .hm-stage-pair .hm-stage-square { max-width: none; }
+@media (max-width: 560px) { .help-doc .hm .hm-stage-pair { grid-template-columns: minmax(0, 1fr); } }
+
+.help-doc .hm .hm-stage.hm-stage-mid { max-width: 520px; margin: 0 auto; }

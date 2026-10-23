@@ -1,0 +1,373 @@
+<p class="hx-lead">Complete connectors you can rebuild in a few minutes. Each tab shows the finished card, the values to enter in the editor, and what happens on stream.</p>
+
+<p>New to connectors? Read <a href="help:connectors_intro">Connector System Introduction</a> first. Values in the tables are typed or picked in the editor exactly as shown.</p>
+
+<h2>Examples</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="raid" class="is-active">Raid welcome</button>
+    <button data-tab="so">!so command</button>
+    <button data-tab="lurk">!lurk reply</button>
+    <button data-tab="cheer">Big cheer</button>
+    <button data-tab="t3">Tier 3 sub</button>
+    <button data-tab="hydrate">Hydrate reward</button>
+    <button data-tab="brb">BRB hotkey</button>
+    <button data-tab="sc">Super Chat thanks</button>
+    <button data-tab="tip">Tips to Discord</button>
+  </div>
+
+  <!-- Raid welcome -->
+  <div class="hx-tab-panel" data-panel="raid">
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure hx-static">
+          <div class="hm">
+            <div class="hm-cx-conn-card is-enabled">
+              <div class="hm-cx-conn-head">
+                <div class="hm-col hm-tight hm-grow"><span class="hm-cx-conn-name">Raid welcome</span><span class="hm-cx-conn-desc">Thank raids of 10+ and show a scene</span></div>
+                <span class="hm-cx-conn-tools"><span class="hm-switch is-on"><i></i></span><span class="hm-btn hm-icon-only"><span class="hx-mi">edit</span></span><span class="hm-btn hm-icon-only"><span class="hx-mi">play_arrow</span></span></span>
+              </div>
+              <div class="hm-cx-flow">
+                <div class="hm-cx-flow-row is-trigger"><span class="hx-mi">flash_on</span><span class="hm-cx-flow-label">Trigger</span><span class="hm-cx-tbadge">Twitch Raid</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Viewer Count ≥ 10</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-action"><span class="hx-mi">play_arrow</span><span class="hm-cx-flow-label">Actions</span><span class="hm-cx-abadge">Send Chat Message → Twitch</span><span class="hm-cx-abadge">OBS: set program scene</span><span class="hm-cx-abadge">OBS: set program scene</span></div>
+              </div>
+              <div class="hm-cx-conn-stats"><span>Triggered: 0x</span><span>Never triggered</span></div>
+            </div>
+          </div>
+          <figcaption><span>The finished card.</span></figcaption>
+        </figure>
+      </div>
+      <div>
+        <div class="hx-table-wrap"><table>
+        <tbody>
+        <tr><th>Trigger Type</th><td>Twitch Raid</td></tr>
+        <tr><th>Condition #1</th><td>Viewer Count ≥ 10</td></tr>
+        <tr><th>Action #1</th><td>Send Chat Message, Twitch only:<br><code>Welcome raiders from {username}! All {viewer_count} of you, make yourselves at home.</code></td></tr>
+        <tr><th>Action #2</th><td>Delay 2 s. OBS Studio (WebSocket), <em>OBS — Set program scene</em>, Scene <code>Raid Welcome</code></td></tr>
+        <tr><th>Action #3</th><td>Delay 10 s. Same operation, Scene <code>Main</code></td></tr>
+        </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p><strong>What happens:</strong> a raid with 10 or more viewers posts the welcome, waits 2 seconds, shows your <em>Raid Welcome</em> scene for 10 seconds, then returns to <em>Main</em>. Smaller raids do nothing. Change the scene names to ones in your OBS.</p>
+  </div>
+
+  <!-- !so -->
+  <div class="hx-tab-panel" data-panel="so">
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure hx-static">
+          <div class="hm">
+            <div class="hm-cx-conn-card is-enabled">
+              <div class="hm-cx-conn-head">
+                <div class="hm-col hm-tight hm-grow"><span class="hm-cx-conn-name">Shoutout command</span><span class="hm-cx-conn-desc">!so name, mods only</span></div>
+                <span class="hm-cx-conn-tools"><span class="hm-switch is-on"><i></i></span><span class="hm-btn hm-icon-only"><span class="hx-mi">edit</span></span><span class="hm-btn hm-icon-only"><span class="hx-mi">play_arrow</span></span></span>
+              </div>
+              <div class="hm-cx-flow">
+                <div class="hm-cx-flow-row is-trigger"><span class="hx-mi">flash_on</span><span class="hm-cx-flow-label">Trigger</span><span class="hm-cx-tbadge">Chat Message</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Message ^ !so</span><span class="hm-cx-cbadge">Is Moderator = True</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-action"><span class="hx-mi">play_arrow</span><span class="hm-cx-flow-label">Actions</span><span class="hm-cx-abadge">Send Chat Message → Twitch</span></div>
+              </div>
+              <div class="hm-cx-conn-stats"><span>Triggered: 0x</span><span>Never triggered</span></div>
+            </div>
+          </div>
+          <figcaption><span>The finished card.</span></figcaption>
+        </figure>
+      </div>
+      <div>
+        <div class="hx-table-wrap"><table>
+        <tbody>
+        <tr><th>Trigger Type</th><td>Twitch Chat Message</td></tr>
+        <tr><th>Condition #1</th><td>Field Message, Operator <code>^</code> (First word), Value <code>!so</code></td></tr>
+        <tr><th>Condition #2</th><td>Is Moderator = True</td></tr>
+        <tr><th>Action #1</th><td>Send Chat Message, Twitch only:<br><code>Go follow {message_after_word.1} at twitch.tv/{message_after_word.1}</code></td></tr>
+        </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p><strong>What happens:</strong> a moderator (or you) types <code>!so CoolStreamer</code>. The First word condition matches <code>!so</code> and removes it, so <code>{message_after_word.1}</code> is <code>CoolStreamer</code>. The bot posts <em>Go follow CoolStreamer at twitch.tv/CoolStreamer</em>. Viewers who are not moderators get no reply.</p>
+  </div>
+
+  <!-- !lurk -->
+  <div class="hx-tab-panel" data-panel="lurk">
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure hx-static">
+          <div class="hm">
+            <div class="hm-cx-conn-card is-enabled">
+              <div class="hm-cx-conn-head">
+                <div class="hm-col hm-tight hm-grow"><span class="hm-cx-conn-name">Lurk reply</span></div>
+                <span class="hm-cx-conn-tools"><span class="hm-switch is-on"><i></i></span><span class="hm-btn hm-icon-only"><span class="hx-mi">edit</span></span><span class="hm-btn hm-icon-only"><span class="hx-mi">play_arrow</span></span></span>
+              </div>
+              <div class="hm-cx-flow">
+                <div class="hm-cx-flow-row is-trigger"><span class="hx-mi">flash_on</span><span class="hm-cx-flow-label">Trigger</span><span class="hm-cx-tbadge">Chat Message</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Message ^ !lurk</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-action"><span class="hx-mi">play_arrow</span><span class="hm-cx-flow-label">Actions</span><span class="hm-cx-abadge">Send Chat Message → Twitch</span></div>
+              </div>
+              <div class="hm-cx-conn-stats"><span>Triggered: 0x</span><span>Never triggered</span></div>
+            </div>
+          </div>
+          <figcaption><span>The finished card.</span></figcaption>
+        </figure>
+      </div>
+      <div>
+        <div class="hx-table-wrap"><table>
+        <tbody>
+        <tr><th>Trigger Type</th><td>Twitch Chat Message</td></tr>
+        <tr><th>Condition #1</th><td>Message <code>^</code> <code>!lurk</code></td></tr>
+        <tr><th>Action #1</th><td>Send Chat Message, Twitch only:<br><code>Enjoy the lurk, {username}! See you when you're back.</code></td></tr>
+        </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p><strong>What happens:</strong> anyone who types <code>!lurk</code> (or <code>!lurk brb dinner</code>) gets a reply with their name. Matching is case-sensitive, so <code>!Lurk</code> does not match. To answer YouTube viewers too, make a copy with the <strong>YouTube Chat Message</strong> trigger and the YouTube box ticked. For plain text replies like this one, <a href="help:chatbot_commands">chatbot commands</a> also work.</p>
+  </div>
+
+  <!-- Big cheer -->
+  <div class="hx-tab-panel" data-panel="cheer">
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure hx-static">
+          <div class="hm">
+            <div class="hm-cx-conn-card is-enabled">
+              <div class="hm-cx-conn-head">
+                <div class="hm-col hm-tight hm-grow"><span class="hm-cx-conn-name">Big cheer</span><span class="hm-cx-conn-desc">500+ bits get a banner and an announcement</span></div>
+                <span class="hm-cx-conn-tools"><span class="hm-switch is-on"><i></i></span><span class="hm-btn hm-icon-only"><span class="hx-mi">edit</span></span><span class="hm-btn hm-icon-only"><span class="hx-mi">play_arrow</span></span></span>
+              </div>
+              <div class="hm-cx-flow">
+                <div class="hm-cx-flow-row is-trigger"><span class="hx-mi">flash_on</span><span class="hm-cx-flow-label">Trigger</span><span class="hm-cx-tbadge">Twitch Bits</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Amount ≥ 500</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-action"><span class="hx-mi">play_arrow</span><span class="hm-cx-flow-label">Actions</span><span class="hm-cx-abadge">Display Banner</span><span class="hm-cx-abadge">Send Announcement (purple)</span></div>
+              </div>
+              <div class="hm-cx-conn-stats"><span>Triggered: 0x</span><span>Never triggered</span></div>
+            </div>
+          </div>
+          <figcaption><span>The finished card.</span></figcaption>
+        </figure>
+      </div>
+      <div>
+        <div class="hx-table-wrap"><table>
+        <tbody>
+        <tr><th>Trigger Type</th><td>Twitch Bits</td></tr>
+        <tr><th>Condition #1</th><td>Amount ≥ 500</td></tr>
+        <tr><th>Action #1</th><td>Display Banner: <code>{username} cheered {amount} bits!</code>, Duration 15</td></tr>
+        <tr><th>Action #2</th><td>Send Announcement, Color Purple: <code>Huge thanks to {username} for {amount} bits!</code></td></tr>
+        </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p><strong>What happens:</strong> cheers of 500 bits or more show a banner on your chat overlay for 15 seconds and post a purple announcement in Twitch chat. Your normal bits alert still plays as usual. Announcements need the chatbot to have the announcements permission.</p>
+    <p>For tiers (100–499, 500+…), make one connector per range, for example <em>Amount ≥ 100</em> and <em>Amount &lt; 500</em> on the first, <em>Amount ≥ 500</em> on the second.</p>
+  </div>
+
+  <!-- Tier 3 -->
+  <div class="hx-tab-panel" data-panel="t3">
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure hx-static">
+          <div class="hm">
+            <div class="hm-cx-conn-card is-enabled">
+              <div class="hm-cx-conn-head">
+                <div class="hm-col hm-tight hm-grow"><span class="hm-cx-conn-name">Tier 3 thanks</span></div>
+                <span class="hm-cx-conn-tools"><span class="hm-switch is-on"><i></i></span><span class="hm-btn hm-icon-only"><span class="hx-mi">edit</span></span><span class="hm-btn hm-icon-only"><span class="hx-mi">play_arrow</span></span></span>
+              </div>
+              <div class="hm-cx-flow">
+                <div class="hm-cx-flow-row is-trigger"><span class="hx-mi">flash_on</span><span class="hm-cx-flow-label">Trigger</span><span class="hm-cx-tbadge">Twitch Sub</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Tier = 3000</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-action"><span class="hx-mi">play_arrow</span><span class="hm-cx-flow-label">Actions</span><span class="hm-cx-abadge">Send Announcement (orange)</span></div>
+              </div>
+              <div class="hm-cx-conn-stats"><span>Triggered: 0x</span><span>Never triggered</span></div>
+            </div>
+          </div>
+          <figcaption><span>The finished card.</span></figcaption>
+        </figure>
+      </div>
+      <div>
+        <div class="hx-table-wrap"><table>
+        <tbody>
+        <tr><th>Trigger Type</th><td>Twitch Subscription</td></tr>
+        <tr><th>Condition #1</th><td>Tier = <code>3000</code></td></tr>
+        <tr><th>Action #1</th><td>Send Announcement, Color Orange: <code>{username} just subscribed at Tier 3. Thank you!</code></td></tr>
+        </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p><strong>What happens:</strong> a new Tier 3 subscription gets an orange announcement. Twitch reports tiers as <code>1000</code>, <code>2000</code> and <code>3000</code>, so the value must be <code>3000</code>, not <code>3</code>. Returning subscribers who share a resub message use the separate <strong>Twitch Resubscription</strong> trigger; copy this connector and switch the trigger to cover them.</p>
+  </div>
+
+  <!-- Hydrate -->
+  <div class="hx-tab-panel" data-panel="hydrate">
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure hx-static">
+          <div class="hm">
+            <div class="hm-cx-conn-card is-enabled">
+              <div class="hm-cx-conn-head">
+                <div class="hm-col hm-tight hm-grow"><span class="hm-cx-conn-name">Hydrate reward</span><span class="hm-cx-conn-desc">Channel point reward "Hydrate"</span></div>
+                <span class="hm-cx-conn-tools"><span class="hm-switch is-on"><i></i></span><span class="hm-btn hm-icon-only"><span class="hx-mi">edit</span></span><span class="hm-btn hm-icon-only"><span class="hx-mi">play_arrow</span></span></span>
+              </div>
+              <div class="hm-cx-flow">
+                <div class="hm-cx-flow-row is-trigger"><span class="hx-mi">flash_on</span><span class="hm-cx-flow-label">Trigger</span><span class="hm-cx-tbadge">Channel Points</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Reward Name = Hydrate</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-action"><span class="hx-mi">play_arrow</span><span class="hm-cx-flow-label">Actions</span><span class="hm-cx-abadge">Display Banner</span><span class="hm-cx-abadge">Write to hydrate.log</span></div>
+              </div>
+              <div class="hm-cx-conn-stats"><span>Triggered: 0x</span><span>Never triggered</span></div>
+            </div>
+          </div>
+          <figcaption><span>The finished card.</span></figcaption>
+        </figure>
+      </div>
+      <div>
+        <div class="hx-table-wrap"><table>
+        <tbody>
+        <tr><th>Trigger Type</th><td>Channel Points</td></tr>
+        <tr><th>Condition #1</th><td>Reward Name = <code>Hydrate</code> (the reward's exact title on Twitch)</td></tr>
+        <tr><th>Action #1</th><td>Display Banner: <code>{username} says: drink some water!</code>, Duration 20</td></tr>
+        <tr><th>Action #2</th><td>Write to File, File Path <code>logs/hydrate.log</code>, Append to file on, Content <code>{username} redeemed Hydrate</code> followed by a new line</td></tr>
+        </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p><strong>What happens:</strong> each redemption of the <em>Hydrate</em> reward shows a banner for 20 seconds and adds a line to <code>logs/hydrate.log</code>. Other rewards do nothing. If the reward asks viewers for text, <code>{user_input}</code> holds it.</p>
+  </div>
+
+  <!-- BRB hotkey -->
+  <div class="hx-tab-panel" data-panel="brb">
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure hx-static">
+          <div class="hm">
+            <div class="hm-cx-conn-card is-enabled">
+              <div class="hm-cx-conn-head">
+                <div class="hm-col hm-tight hm-grow"><span class="hm-cx-conn-name">BRB</span><span class="hm-cx-conn-desc">Ctrl+Shift+B: BRB scene, mic muted</span></div>
+                <span class="hm-cx-conn-tools"><span class="hm-switch is-on"><i></i></span><span class="hm-btn hm-icon-only"><span class="hx-mi">edit</span></span><span class="hm-btn hm-icon-only"><span class="hx-mi">play_arrow</span></span></span>
+              </div>
+              <div class="hm-cx-flow">
+                <div class="hm-cx-flow-row is-trigger"><span class="hx-mi">flash_on</span><span class="hm-cx-flow-label">Trigger</span><span class="hm-cx-tbadge">Hotkey</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-action"><span class="hx-mi">play_arrow</span><span class="hm-cx-flow-label">Actions</span><span class="hm-cx-abadge">OBS: set program scene</span><span class="hm-cx-abadge">OBS: set input mute</span></div>
+              </div>
+              <div class="hm-cx-conn-stats"><span>Triggered: 0x</span><span>Never triggered</span></div>
+            </div>
+          </div>
+          <figcaption><span>No conditions, so the card goes straight from trigger to actions.</span></figcaption>
+        </figure>
+      </div>
+      <div>
+        <div class="hx-table-wrap"><table>
+        <tbody>
+        <tr><th>Trigger Type</th><td>Hotkey Trigger, Key Combination <code>ctrl+shift+b</code>, Global hotkey on</td></tr>
+        <tr><th>Action #1</th><td>OBS Studio (WebSocket), <em>OBS — Set program scene</em>, Scene <code>BRB</code></td></tr>
+        <tr><th>Action #2</th><td>OBS Studio (WebSocket), <em>OBS — Set input mute</em>, Input <code>Mic/Aux</code>, Muted <em>Muted</em></td></tr>
+        </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p><strong>What happens:</strong> pressing <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>, even while your game has focus, switches OBS to <em>BRB</em> and mutes the mic. Make a second connector (for example <code>ctrl+shift+n</code>) that switches back and unmutes. Using a <strong>Stream Deck</strong> trigger instead puts the same connector on a button.</p>
+  </div>
+
+  <!-- Super Chat -->
+  <div class="hx-tab-panel" data-panel="sc">
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure hx-static">
+          <div class="hm">
+            <div class="hm-cx-conn-card is-enabled">
+              <div class="hm-cx-conn-head">
+                <div class="hm-col hm-tight hm-grow"><span class="hm-cx-conn-name">Super Chat thanks</span></div>
+                <span class="hm-cx-conn-tools"><span class="hm-switch is-on"><i></i></span><span class="hm-btn hm-icon-only"><span class="hx-mi">edit</span></span><span class="hm-btn hm-icon-only"><span class="hx-mi">play_arrow</span></span></span>
+              </div>
+              <div class="hm-cx-flow">
+                <div class="hm-cx-flow-row is-trigger"><span class="hx-mi">flash_on</span><span class="hm-cx-flow-label">Trigger</span><span class="hm-cx-tbadge">YouTube Super Chat</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Amount ≥ 5</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-action"><span class="hx-mi">play_arrow</span><span class="hm-cx-flow-label">Actions</span><span class="hm-cx-abadge">Send Chat Message → YouTube</span></div>
+              </div>
+              <div class="hm-cx-conn-stats"><span>Triggered: 0x</span><span>Never triggered</span></div>
+            </div>
+          </div>
+          <figcaption><span>The finished card.</span></figcaption>
+        </figure>
+      </div>
+      <div>
+        <div class="hx-table-wrap"><table>
+        <tbody>
+        <tr><th>Trigger Type</th><td>YouTube Super Chat</td></tr>
+        <tr><th>Condition #1</th><td>Amount ≥ 5</td></tr>
+        <tr><th>Action #1</th><td>Send Chat Message, YouTube only:<br><code>Thank you {username} for the {display_amount} Super Chat!</code></td></tr>
+        </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p><strong>What happens:</strong> Super Chats of 5 or more (in the sender's currency) get a thank-you in YouTube chat, with the amount as YouTube shows it, such as <em>$5.00</em>. Compare on <strong>Amount</strong>; <strong>Display Amount</strong> is text and does not work with ≥.</p>
+  </div>
+
+  <!-- Tips to Discord -->
+  <div class="hx-tab-panel" data-panel="tip">
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure hx-static">
+          <div class="hm">
+            <div class="hm-cx-conn-card is-enabled">
+              <div class="hm-cx-conn-head">
+                <div class="hm-col hm-tight hm-grow"><span class="hm-cx-conn-name">Tips to Discord</span><span class="hm-cx-conn-desc">Post tips of 20+ to the community server</span></div>
+                <span class="hm-cx-conn-tools"><span class="hm-switch is-on"><i></i></span><span class="hm-btn hm-icon-only"><span class="hx-mi">edit</span></span><span class="hm-btn hm-icon-only"><span class="hx-mi">play_arrow</span></span></span>
+              </div>
+              <div class="hm-cx-flow">
+                <div class="hm-cx-flow-row is-trigger"><span class="hx-mi">flash_on</span><span class="hm-cx-flow-label">Trigger</span><span class="hm-cx-tbadge">Donation</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Amount ≥ 20</span></div>
+                <span class="hm-cx-flow-arrow">arrow_downward</span>
+                <div class="hm-cx-flow-row is-action"><span class="hx-mi">play_arrow</span><span class="hm-cx-flow-label">Actions</span><span class="hm-cx-abadge">Send Discord → #stream-chat</span></div>
+              </div>
+              <div class="hm-cx-conn-stats"><span>Triggered: 0x</span><span>Never triggered</span></div>
+            </div>
+          </div>
+          <figcaption><span>The finished card.</span></figcaption>
+        </figure>
+      </div>
+      <div>
+        <div class="hx-table-wrap"><table>
+        <tbody>
+        <tr><th>Trigger Type</th><td>Donation</td></tr>
+        <tr><th>Condition #1</th><td>Amount ≥ 20</td></tr>
+        <tr><th>Action #1</th><td>Send Discord Message: <code>{username} just tipped {formatted_amount} on stream: {message}</code>. Server and Channel <code>#stream-chat</code>, then <strong>Add channel</strong></td></tr>
+        </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p><strong>What happens:</strong> Streamlabs or StreamElements tips of 20 or more are posted to your Discord channel with the tipper's message. Needs your Discord bot connected; see <a href="help:guide_discord">Connect Discord</a>.</p>
+  </div>
+</div>
+
+<h2>Tips for your own connectors</h2>
+
+<ul>
+  <li><strong>Start small.</strong> One trigger and one action. Test, then add.</li>
+  <li><strong>Test sends for real.</strong> The {{icon:play_arrow}} button runs the actions with sample data, so a chat action posts to your real chat. Some triggers, such as Raid and Channel Points, have no sample data; see <a href="help:connectors_intro">Testing a connector</a>.</li>
+  <li><strong>Watch for loops.</strong> A chat connector with <em>Message ∋ hype</em> whose reply also contains "hype" can answer itself. Use <strong>First word</strong> with a <code>!command</code>, or keep the trigger word out of the reply.</li>
+  <li><strong>Use delays for overlays.</strong> Give a scene or banner a few seconds before the next step.</li>
+  <li><strong>Plan for missing data.</strong> An anonymous cheer or an empty message leaves its placeholder blank. Write messages that still read well without it.</li>
+  <li><strong>Need OR?</strong> Duplicate the connector and change the condition. All conditions on one connector must pass.</li>
+</ul>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:connector_triggers">{{icon:flash_on}}<span><strong>Triggers</strong><span class="hx-card-text">Every trigger, its fields and placeholders</span></span></a>
+  <a class="hx-card" href="help:connector_conditions">{{icon:filter_list}}<span><strong>Conditions</strong><span class="hx-card-text">Operators and matching rules</span></span></a>
+  <a class="hx-card" href="help:connector_actions">{{icon:play_arrow}}<span><strong>Actions</strong><span class="hx-card-text">Every action and its settings</span></span></a>
+</div>

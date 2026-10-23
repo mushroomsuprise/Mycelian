@@ -1,0 +1,192 @@
+<p class="hx-lead">This guide sets up a follow alert from start to finish: create it on the <strong>Alerts</strong> tab, add the overlay to OBS, and test it without waiting for a real follower.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 10 minutes</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Alerts</span><span>Follows</span></span></span>
+</div>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="first_alert_setup_prereqs">
+  <li>Twitch is connected (<a href="help:twitch_setup">Connect Twitch</a>) and <strong>Process Twitch alerts</strong> is on in <span class="hx-path"><span>Settings</span><span>Twitch</span></span>. You can test without Twitch, but real follows need it.</li>
+  <li>OBS is installed on this PC. See <a href="help:obs_setup">Setting Up Browser Sources in OBS</a>.</li>
+  <li>Optional: a GIF or image and a sound file for the alert.</li>
+</ul>
+
+<h2>Create a follow alert</h2>
+
+<section class="hx-guide" data-guide="first_alert_setup_follow" data-title="Follow alert">
+
+  <div class="hx-step">
+    <h3>Open Alerts, then Follows</h3>
+    <p>Click the <strong>Alerts</strong> main tab, then the <strong>Follows</strong> sub-tab. The Alerts tab opens on <strong>Bits</strong>.</p>
+
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-subtabs">
+          <span class="hm-subtab">Bits</span>
+          <span class="hm-subtab">Subscriptions</span>
+          <span class="hm-subtab">Streaks</span>
+          <span class="hm-subtab">Gift Subs</span>
+          <span class="hm-subtab">Donations</span>
+          <span class="hm-subtab">Raids</span>
+          <span class="hm-subtab is-active">Follows</span>
+          <span class="hm-subtab">Channel Points</span>
+        </div>
+        <div class="hm-frame">
+          <div class="hm-row">
+            <div class="hm-field hm-select is-focused hm-base" data-label="Select Alert"><span class="hm-value">+ Create New Alert</span></div>
+            <span class="hm-btn hm-outline"><span class="hx-mi">content_copy</span>Duplicate</span>
+            <span class="hm-marker" data-n="1"></span>
+          </div>
+          <div class="hm-grid-2">
+            <div class="hm-col">
+              <div class="hm-expansion is-open">
+                <div class="hm-expansion-head"><span class="hx-mi">settings</span>General<span class="hm-marker" data-n="2"></span></div>
+                <div class="hm-expansion-body">
+                  <div class="hm-grid-2">
+                    <div class="hm-col hm-tight"><span class="hm-sm hm-bold">Timing</span><div class="hm-field hm-base" data-label="Duration"><span class="hm-value">5</span></div></div>
+                    <div class="hm-col hm-tight"><span class="hm-sm hm-bold">Behavior</span><span class="hm-switch"><i></i>Stackable</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="hm-expansion">
+                <div class="hm-expansion-head"><span class="hx-mi">volume_up</span>Audio<span class="hm-marker" data-n="4"></span></div>
+                <div class="hm-expansion-body">
+                  <span class="hm-sm hm-bold">Audio Controls</span>
+                  <div class="hm-grid-2">
+                    <div class="hm-field hm-base" data-label="Fade In"><span class="hm-value">0</span></div>
+                    <div class="hm-field hm-base" data-label="Fade Out"><span class="hm-value">0</span></div>
+                  </div>
+                  <div class="hm-row hm-nowrap"><span class="hm-sm">Volume</span><div class="hm-slider hm-grow" style="--hm-val:80%"></div><span class="hm-sm">80%</span></div>
+                  <span class="hm-sm hm-bold">Playback Mode</span>
+                  <span class="hm-switch"><i></i>Audio Only</span>
+                  <span class="hm-sm hm-bold">Primary Sound</span>
+                  <div class="hm-grid-2">
+                    <div class="hm-field hm-base" data-label="Directory"><span class="hm-value">assets/sounds</span></div>
+                    <div class="hm-field hm-base" data-label="File"><span class="hm-value">follow.mp3</span></div>
+                  </div>
+                  <span class="hm-btn hm-flat hm-dense"><span class="hx-mi">folder</span>Browse</span>
+                </div>
+              </div>
+              <div class="hm-expansion">
+                <div class="hm-expansion-head"><span class="hx-mi">record_voice_over</span>TTS</div>
+                <div class="hm-expansion-body"><span class="hm-sm hm-bold">Speech Playback</span><span class="hm-switch"><i></i>Enable Text-to-Speech</span></div>
+              </div>
+            </div>
+            <div class="hm-col">
+              <div class="hm-expansion is-open">
+                <div class="hm-expansion-head"><span class="hx-mi">image</span>Visual<span class="hm-marker" data-n="3"></span></div>
+                <div class="hm-expansion-body">
+                  <div class="hm-field hm-base" data-label="GIF Directory"><span class="hm-value">assets/follow</span></div>
+                  <div class="hm-field hm-base" data-label="GIF File"><span class="hm-value">hello.gif</span></div>
+                  <span class="hm-btn hm-flat hm-dense"><span class="hx-mi">folder</span>Browse</span>
+                </div>
+              </div>
+              <div class="hm-expansion">
+                <div class="hm-expansion-head"><span class="hx-mi">shuffle</span>Randomizer</div>
+                <div class="hm-expansion-body"><span class="hm-sm hm-bold">Random Sound</span><span class="hm-switch"><i></i>Enable Random Sounds</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="hm-row hm-end">
+            <span class="hm-warn hm-sm">Unsaved changes</span>
+            <span class="hm-btn hm-outline"><span class="hx-mi">play_arrow</span>Test Alert</span>
+            <span class="hm-btn"><span class="hx-mi">save</span>Save Alert</span>
+            <span class="hm-marker" data-n="5"></span>
+          </div>
+        </div>
+      </div>
+      <figcaption>Alerts → Follows. Click a section header (General, Audio, TTS, Visual, Randomizer) to open or close it. File names are examples.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>Select Alert</strong>: pick <strong>+ Create New Alert</strong>, or an alert you already have. <strong>Duplicate</strong> copies the current alert into a new, unsaved one.</li>
+      <li data-n="2"><strong>General</strong>: <strong>Duration</strong> is how long the alert shows, in seconds (new alerts start at 3). <strong>Stackable</strong> lets several alerts of this type show at once.</li>
+      <li data-n="3"><strong>Visual</strong>: the GIF or image to show. Click <strong>Browse</strong> to pick a file; the folder and file name fill in.</li>
+      <li data-n="4"><strong>Audio</strong>: the sound, its volume and fades (in milliseconds). <strong>Audio Only</strong> plays the sound without the picture.</li>
+      <li data-n="5"><strong>Test Alert</strong> plays the alert with the current form values, saved or not. <strong>Save Alert</strong> stores it. <em>Unsaved changes</em> shows until you save.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Set the duration and media</h3>
+    <p>Open <strong>General</strong> and set <strong>Duration</strong>, for example <code>5</code>. Then open <strong>Visual</strong> and <strong>Audio</strong> and click <strong>Browse</strong> to pick a GIF and a sound. Both are optional.</p>
+    <p>More on file types and folders: <a href="help:alert_media">Alert Media</a>.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Save the alert</h3>
+    <p>Click <strong>Save Alert</strong>. Twitch follows use one follow alert: the default one, or the first one in the list if there is no default.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Set the message text</h3>
+    <p>The follow message is part of the overlay, not the alert. Open the <strong>Source Settings</strong> tab, pick <strong>follow</strong> in the template list, and edit <strong>Follow Message</strong>. Put <code>{{FolName}}</code> where the follower's name should go. The default is:</p>
+    <pre>Thanks for the follow {{FolName}}!</pre>
+    <p>Click <strong>Save</strong> on Source Settings when you are done. See <a href="help:template_configuration">Template Configuration</a>.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Add the overlays to OBS</h3>
+    <p>Live follow alerts play on the <strong>follow</strong> overlay. Every other alert type plays on the <strong>alerts</strong> overlay. Add both as browser sources so you are covered:</p>
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Overlay</th><th>URL</th><th>Shows</th></tr></thead>
+      <tbody>
+        <tr><td>follow</td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/follow">http://127.0.0.1:5000/follow</span></td><td>Live follow alerts</td></tr>
+        <tr><td>alerts</td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/alerts">http://127.0.0.1:5000/alerts</span></td><td>Bits, subs, raids, donations, channel points and test alerts</td></tr>
+      </tbody>
+    </table></div>
+    <p>Set both to <strong>1920 × 1080</strong> (or your canvas size). The URLs are also listed in <span class="hx-path"><span>Settings</span><span>About</span></span> → <strong>Available Source URLs</strong>, with an OBS button that adds them for you when OBS WebSocket is connected. Step-by-step: <a href="help:obs_setup">Setting Up Browser Sources in OBS</a>.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Test it</h3>
+    <p>Back on <span class="hx-path"><span>Alerts</span><span>Follows</span></span>, click <strong>Test Alert</strong>. In OBS you should see something like this:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-overlay">
+          <div class="hm-overlay-alert">
+            <div class="hm-overlay-gif"><span class="hx-mi">waving_hand</span></div>
+            <div>Thanks for the follow <span class="hm-overlay-name">TestUser</span>!</div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Illustration of a follow alert on the stream canvas. Position, font and animation come from the template's Source Settings.</figcaption>
+    </figure>
+    <p>Nothing showed up? Check that Mycelian is running, the source URL is right, and the source is visible in the current scene. More in <a href="help:alert_testing">Testing Alerts</a> and <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
+  </div>
+
+</section>
+
+<h2>Other alert types</h2>
+
+<p>The other sub-tabs work the same way. Bits, Subscriptions, Streaks, Gift Subs, Donations and Raids also have <strong>Range Mode</strong>, so you can make different alerts for different amounts. See <a href="help:alert_configuration">Alert Configuration</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Sub-tab</th><th>Plays when</th><th>Needs</th></tr></thead>
+<tbody>
+<tr><td>Bits</td><td>Someone cheers</td><td>Twitch</td></tr>
+<tr><td>Subscriptions</td><td>A new sub or resub (by month)</td><td>Twitch</td></tr>
+<tr><td>Streaks</td><td>A viewer shares a watch streak</td><td>Twitch</td></tr>
+<tr><td>Gift Subs</td><td>Someone gifts subs</td><td>Twitch</td></tr>
+<tr><td>Donations</td><td>A tip arrives</td><td><a href="help:guide_streamlabs">Streamlabs</a> or <a href="help:guide_streamelements">StreamElements</a></td></tr>
+<tr><td>Raids</td><td>Another channel raids you</td><td>Twitch</td></tr>
+<tr><td>Follows</td><td>Someone follows</td><td>Twitch</td></tr>
+<tr><td>Channel Points</td><td>A reward is redeemed (turn on <strong>Enable as Alert</strong> per reward)</td><td>Twitch</td></tr>
+</tbody>
+</table></div>
+
+<h2>Tips</h2>
+
+<ul>
+  <li><strong>Start simple.</strong> Get one alert working, then add more. Test after each change.</li>
+  <li><strong>Keep it short.</strong> 3 to 5 seconds for everyday alerts, 5 to 10 for big moments. Do not cover gameplay.</li>
+  <li><strong>Match your look.</strong> Fonts, colors and positions are set per overlay in <strong>Source Settings</strong>.</li>
+</ul>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:alert_configuration">{{icon:tune}}<span><strong>Alert Configuration</strong><span class="hx-card-text">Ranges, variations and options</span></span></a>
+  <a class="hx-card" href="help:alert_media">{{icon:perm_media}}<span><strong>Alert Media</strong><span class="hx-card-text">Sounds, GIFs and video</span></span></a>
+  <a class="hx-card" href="help:alert_testing">{{icon:play_circle}}<span><strong>Testing Alerts</strong><span class="hx-card-text">Preview before you go live</span></span></a>
+</div>

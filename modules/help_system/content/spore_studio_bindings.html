@@ -1,0 +1,286 @@
+<p class="hx-lead">A binding makes an element react to something: a Mycelian <a href="help:template_websocket">websocket event</a> such as an alert, or a Stream Deck key. Each binding has a trigger, optional filters, one action, and up to 15 chained steps.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Spore Studio</span><span>Bindings</span></span></span>
+</div>
+
+<p>For canvas and property basics, see <a href="help:spore_studio_design">Designing templates</a>. To drive a block continuously from live values, a <a href="help:spore_studio_data_feed">Data feed</a> is often simpler than a binding.</p>
+
+<h2>Add a binding</h2>
+
+<section class="hx-guide" data-guide="spore_studio_bindings_add" data-title="Add a binding">
+  <div class="hx-step">
+    <h3>Select the element</h3>
+    <p>Click the element on the canvas or in the <strong>Outline</strong>, then open the <strong>Bindings</strong> tab. With nothing selected the tab says <em>Select an element to attach event bindings.</em></p>
+  </div>
+  <div class="hx-step">
+    <h3>Click + Add binding and pick a trigger</h3>
+    <p><strong>Trigger</strong> is <strong>Registry event</strong> (listens to Mycelian) or <strong>Stream Deck action</strong> (listens to a hardware key). Then pick the <strong>Event</strong>, or the Stream Deck action.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Narrow it with filters (optional)</h3>
+    <p>Each field the event carries gets a <strong>Filter:</strong> row. Leave a row blank to match anything. Type a value to fire only when that field equals it.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Choose the action</h3>
+    <p>Pick the <strong>Action</strong> and fill in its fields. Add <strong>Chained actions</strong> if more should happen after it.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Test in Preview</h3>
+    <p>Click <strong>Preview</strong> and fire mock events. Bindings work in the preview before you save. See <a href="help:spore_studio_advanced">Live preview</a>.</p>
+  </div>
+</section>
+
+<h2>The binding card</h2>
+
+<div class="hx-split">
+  <div>
+
+<figure class="hx-figure">
+  <div class="hm hm-ss">
+    <div class="hm-ss-body hm-ss-inspector-only">
+      <div class="hm-ss-right">
+        <div class="hm-ss-tabs"><span class="hm-ss-tab">Properties</span><span class="hm-ss-tab is-active">Bindings</span><span class="hm-ss-tab">Stream Deck</span></div>
+        <div class="hm-ss-section">
+          <div class="hm-ss-card">
+            <div class="hm-ss-card-head">Binding #1<span class="hm-ss-x">×</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Trigger <span class="hm-marker" data-n="1"></span></span><span class="hm-ss-input hm-ss-sel">Registry event</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Event</span><span class="hm-ss-input hm-ss-sel">Alert (instant)</span></div>
+            <span class="hm-ss-hint">Fired by the alert processor for non-blocking alerts that do not participate in the queue handshake.</span>
+            <span class="hm-ss-hint">Filters narrow when this binding fires. Leave a field blank to match any value; type an exact value to only fire when the payload field matches.</span>
+            <div class="hm-ss-row"><span class="hm-ss-label">Filter: Alert type <span class="hm-marker" data-n="2"></span></span><span class="hm-ss-input">follow</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Filter: Username</span><span class="hm-ss-input is-placeholder">(any string)</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Filter: Sub tier</span><span class="hm-ss-input is-placeholder">(any) — e.g. 1000, 2000, 3000</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Action <span class="hm-marker" data-n="3"></span></span><span class="hm-ss-input hm-ss-sel">Show for N seconds</span></div>
+            <div class="hm-ss-pair">
+              <div class="hm-ss-row"><span class="hm-ss-label">Seconds</span><span class="hm-ss-input">5</span></div>
+              <div class="hm-ss-row"><span class="hm-ss-label">Entrance animation</span><span class="hm-ss-input hm-ss-sel">fade</span></div>
+            </div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Exit animation</span><span class="hm-ss-input hm-ss-sel">fade</span></div>
+            <div class="hm-ss-sub">Chained actions <span class="hm-marker" data-n="4"></span></div>
+            <span class="hm-ss-hint">Each step waits delay (ms) after the previous step returns, then runs. show_for still uses its own internal timers.</span>
+            <div class="hm-ss-step">
+              <div class="hm-ss-card-head">Chain step 1<span class="hm-ss-x">×</span></div>
+              <div class="hm-ss-row"><span class="hm-ss-label">Delay before this step (ms)</span><span class="hm-ss-input">200</span></div>
+              <div class="hm-ss-row"><span class="hm-ss-label">Action</span><span class="hm-ss-input hm-ss-sel">Play CSS class animation</span></div>
+              <div class="hm-ss-pair">
+                <div class="hm-ss-row"><span class="hm-ss-label">Class name</span><span class="hm-ss-input">sporeShake</span></div>
+                <div class="hm-ss-row"><span class="hm-ss-label">Hold (ms)</span><span class="hm-ss-input">420</span></div>
+              </div>
+            </div>
+            <span class="hm-ss-btn hm-ss-sm" style="align-self:flex-start">+ Add chained step</span>
+          </div>
+          <span class="hm-ss-btn hm-ss-primary hm-ss-sm">+ Add binding</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>A binding that shows the element for 5 seconds on every follow, then shakes it.</figcaption>
+</figure>
+  </div>
+  <div>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Trigger</strong> and <strong>Event</strong>. The event's description appears under the dropdown.</li>
+  <li data-n="2">One <strong>Filter:</strong> row per payload field. The placeholder shows example values when the event has them.</li>
+  <li data-n="3"><strong>Action</strong> and its fields. The action's description appears under it.</li>
+  <li data-n="4"><strong>Chained actions</strong> run after the main action, in order, each after its own delay.</li>
+</ol>
+  </div>
+</div>
+
+<h2>Triggers</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list"><button data-tab="reg" class="is-active">Registry event</button><button data-tab="sd">Stream Deck action</button></div>
+  <div class="hx-tab-panel" data-panel="reg">
+    <p>A curated list of Mycelian socket events that are useful to overlays. Internal plumbing is left out. Outputs from other templates, such as a wheel's <code>wheel_result</code>, are added to the list automatically with the template name in the label.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="sd">
+    <p>Runs when a Stream Deck key mapped to one of this template's actions is pressed. Add actions on the <strong>Stream Deck</strong> tab first; until then the binding says <em>Add Stream Deck actions in the Stream Deck tab first.</em> New bindings default to the first action not already used. The card shows the <em>Socket event</em> that action sends. See <a href="help:spore_studio_streamdeck">Stream Deck actions</a>.</p>
+  </div>
+</div>
+
+<h2>Filters</h2>
+
+<p>A filter row compares the payload field with what you typed, exactly. Leave it blank to match anything.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Event</th><th>Filter</th><th>Fires for</th></tr></thead>
+<tbody>
+<tr><td>Alert (queue) / Alert (instant)</td><td>Alert type = <code>follow</code></td><td>Follows only. Other types: <code>sub</code>, <code>resub</code>, <code>giftsub</code>, <code>bit</code>, <code>donation</code>, <code>raid</code>, <code>hype_train</code>, <code>point</code>, <code>streak</code>.</td></tr>
+<tr><td>Alert (queue) / Alert (instant)</td><td>Sub tier = <code>3000</code></td><td>Tier 3 subs</td></tr>
+<tr><td>Chat message (Twitch)</td><td>Message type = <code>action</code></td><td><code>/me</code> messages. Also <code>text</code>, <code>highlight</code>.</td></tr>
+<tr><td>Chat message (Twitch)</td><td>Username = <code>StreamerName</code></td><td>One user, exact spelling</td></tr>
+<tr><td>Chat moderation event</td><td>Action = <code>timeout</code></td><td>Timeouts. Also <code>delete</code>, <code>ban</code>.</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-warning"><p>Event filters compare as text. They work on text fields such as alert type, tier, username, message type and action. A value typed for a number or true/false field (for example <strong>Paused</strong> or <strong>Amount</strong>) does not match. For those, use a <a href="help:spore_studio_data_feed">Data feed</a> filter or <a href="help:spore_studio_advanced_js">Advanced JS</a>. Twitch API response filters are different: their values are read as JSON, so <code>true</code> works there.</p></div>
+
+<h2>Event reference</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Label</th><th>Event</th><th>When it fires</th><th>Main fields</th></tr></thead>
+<tbody>
+<tr><td>Alert (queue)</td><td><code>next_alert</code></td><td>Queued alerts: follows, subs, raids, bits, donations…</td><td><code>queue_seq</code>, <code>queue_holders</code>, <code>alert_type</code>, <code>username</code>, <code>message</code>, <code>amount</code>, <code>currency</code>, <code>tier</code>, <code>cumulative_months</code>, <code>raider_count</code>, <code>amt_cheered</code>, <code>quantity</code>, <code>gift_qty</code>, <code>recipient</code>, <code>alert_name</code>, <code>streak_count</code>, <code>level</code>, <code>total</code>, <code>gif_name</code>, <code>duration</code></td></tr>
+<tr><td>Alert (instant)</td><td><code>instant_alert</code></td><td>Non-blocking alerts for bars, counters, HUDs</td><td>Same alert fields, without the queue fields</td></tr>
+<tr><td>Giveaway entry</td><td><code>giveaway_entry</code></td><td>A chat user joins the giveaway pool</td><td><code>username</code>, <code>pool_size</code></td></tr>
+<tr><td>Giveaway winner</td><td><code>giveaway_winner</code></td><td>Winners are drawn</td><td><code>winners</code>, <code>pool_size</code>, <code>pool_entries</code></td></tr>
+<tr><td>Poll update</td><td><code>poll_state</code></td><td>A poll starts, gets a vote, or changes</td><td><code>template</code>, <code>status</code>, <code>total_votes</code>, <code>options</code>, <code>winners</code>, <code>remaining_seconds</code></td></tr>
+<tr><td>Poll ended</td><td><code>poll_ended</code></td><td>A poll is stopped or runs out</td><td><code>template</code>, <code>status</code>, <code>total_votes</code>, <code>options</code>, <code>winners</code></td></tr>
+<tr><td>Now playing (Spotify)</td><td><code>spotify_data_update</code></td><td>The track or playback position changes</td><td><code>track_name</code>, <code>artist_name</code>, <code>album_image_url</code>, <code>progress_percentage</code></td></tr>
+<tr><td>Refresh alerts</td><td><code>refresh-alerts</code></td><td>Alert settings change</td><td>(none)</td></tr>
+<tr><td>Alerts paused</td><td><code>alerts_paused</code></td><td>You pause alerts</td><td><code>paused</code></td></tr>
+<tr><td>Alerts resumed</td><td><code>alerts_resumed</code></td><td>You resume alerts</td><td><code>paused</code></td></tr>
+<tr><td>Pause status update</td><td><code>pause_status_update</code></td><td>Every pause or resume, and at startup</td><td><code>paused</code></td></tr>
+<tr><td>Chat message (Twitch)</td><td><code>new-message</code></td><td>Every Twitch chat message</td><td><code>username</code>, <code>message</code>, <code>color</code>, <code>badges</code>, <code>emotes</code>, <code>message_type</code>, <code>userid</code>, <code>timestamp</code></td></tr>
+<tr><td>Chat banner</td><td><code>chat_display_banner</code></td><td>A banner is sent to the chat overlay</td><td><code>message</code>, <code>duration</code>, <code>permanent</code>, <code>source</code>, <code>style.*</code></td></tr>
+<tr><td>Chat message (connector)</td><td><code>chat_add_message</code></td><td>A connector's "Add message" action</td><td><code>username</code>, <code>message_text</code>, <code>is_moderator</code></td></tr>
+<tr><td>Chat moderation event</td><td><code>message_moderation</code></td><td>A message is deleted, or a user timed out or banned</td><td><code>action</code>, <code>user_id</code>, <code>message_id</code></td></tr>
+<tr><td>Twitch API call (response)</td><td><code>twitch-api-response</code></td><td>The answer to a Helix request this binding sends</td><td>Whatever Twitch returns (see below)</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-note"><p>A Queue template answers the alert queue on its own: it holds each <code>next_alert</code> for the template's Duration and while media plays, then reports it done. Only overlays listed in the alert's <code>queue_holders</code> (usually <code>alerts</code>, plus a matching Queued point-reward template) take part; other overlays just watch. See <a href="help:spore_studio_advanced_js">Advanced JS</a>.</p></div>
+
+<h2>Action reference</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="vis" class="is-active">Visibility</button>
+    <button data-tab="content">Content and media</button>
+    <button data-tab="motion">Motion</button>
+    <button data-tab="widgets">Counters and widgets</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="vis">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action</th><th>Fields</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Show element</strong></td><td>none</td></tr>
+    <tr><td><strong>Hide element</strong></td><td>none</td></tr>
+    <tr><td><strong>Toggle visibility</strong></td><td>none</td></tr>
+    <tr><td><strong>Show for N seconds</strong></td><td><strong>Seconds</strong> (0.1–600, default 5), <strong>Entrance animation</strong> (<code>none</code>, <code>fade</code>, <code>slideIn</code>, <code>scaleIn</code>), <strong>Exit animation</strong> (<code>none</code>, <code>fade</code>, <code>slideOut</code>, <code>scaleOut</code>). Both default to <code>fade</code>.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="content">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action</th><th>Fields</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Set text content</strong></td><td><strong>Payload field</strong> (for example <code>username</code>), or <strong>Literal text</strong> when the payload field is blank</td></tr>
+    <tr><td><strong>Set image source</strong></td><td><strong>Payload field</strong> or <strong>Literal URL</strong></td></tr>
+    <tr><td><strong>Set visual source (GIF/video)</strong></td><td><strong>Payload field</strong> or <strong>Literal URL</strong>, for a Video block</td></tr>
+    <tr><td><strong>Play audio element</strong></td><td><strong>Volume override (0–1)</strong> and <strong>Fade-in override (ms)</strong>. Blank uses the element's own settings.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="motion">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action</th><th>Fields</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Randomize position within bounds</strong></td><td><strong>X min (px)</strong>, <strong>X max (px, -1=canvas)</strong>, <strong>Y min (px)</strong>, <strong>Y max (px, -1=canvas)</strong>. -1 means the canvas edge minus the element's size.</td></tr>
+    <tr><td><strong>Set CSS transform</strong></td><td><strong>Translate X (px)</strong>, <strong>Translate Y (px)</strong>, <strong>Rotate (degrees)</strong>, <strong>Scale (uniform)</strong>. Blank fields are skipped.</td></tr>
+    <tr><td><strong>Random transform jitter</strong></td><td><strong>Rotate range (degrees)</strong>, <strong>Translate range (px)</strong>, <strong>Scale min</strong>, <strong>Scale max</strong></td></tr>
+    <tr><td><strong>Play CSS class animation</strong></td><td><strong>Class name</strong> (default <code>sporeShake</code>; try <code>sporePop</code>) and <strong>Hold (ms)</strong> (default 420)</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="widgets">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action</th><th>Fields</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Adjust counter</strong></td><td><strong>Counter id</strong>, <strong>Operation</strong> (<code>increment</code>, <code>decrement</code>, <code>set</code>, <code>reset</code>), <strong>Delta kind</strong> (<code>fixed</code>, <code>random_int</code>, <code>random_float</code>, <code>data_source</code>), <strong>Fixed delta / fallback</strong> (1), <strong>Data source id</strong>, <strong>Random min</strong> (1), <strong>Random max</strong> (5)</td></tr>
+    <tr><td><strong>Start timer</strong> / <strong>Pause timer</strong> / <strong>Reset timer</strong></td><td>none. Reset returns to the start and applies Auto start.</td></tr>
+    <tr><td><strong>Add list row</strong></td><td><strong>Literal text</strong>, used when the payload has no row text</td></tr>
+    <tr><td><strong>Clear list</strong></td><td>none</td></tr>
+    <tr><td><strong>Spin wheel</strong></td><td>none. The winner is stored in <code>window.__sporeLastPayload.wheel</code> and sent as <code>wheel_result</code>.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+</div>
+
+<h3>Examples</h3>
+
+<details class="hx-details">
+  <summary>Show a follow alert for 5 seconds with a fade</summary>
+  <p>Event <strong>Alert (queue)</strong>, Filter: Alert type <code>follow</code>. Action <strong>Show for N seconds</strong>: Seconds <code>5</code>, Entrance <code>fade</code>, Exit <code>fade</code>. Turn on <strong>Start hidden until shown</strong> on the element so it does not flash on load.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Write the alert's username into a text block</summary>
+  <p>Action <strong>Set text content</strong>, Payload field <code>username</code>. To show a fixed message instead, leave Payload field blank and type it in Literal text, such as <code>Welcome to the stream!</code></p>
+</details>
+
+<details class="hx-details">
+  <summary>Pop up somewhere random in the lower part of the canvas</summary>
+  <p>Action <strong>Randomize position within bounds</strong>: X min <code>0</code>, X max <code>-1</code>, Y min <code>400</code>, Y max <code>-1</code>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Add bits to a counter</summary>
+  <p>Event <strong>Alert (instant)</strong>, Filter: Alert type <code>bit</code>. Action <strong>Adjust counter</strong>: Counter id <code>bit_count</code>, Operation <code>increment</code>, Delta kind <code>data_source</code>, Data source id <code>alert.amt_cheered</code>.</p>
+  <p>For "add this field on this alert", a Counter block's <a href="help:spore_studio_counters">Data feed</a> is usually simpler. Use <strong>Adjust counter</strong> when the change is part of a chain or comes from another trigger, such as a Stream Deck key.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Show, shake, then hide</summary>
+  <p>Action <strong>Show element</strong>. Chain step 1: delay <code>200</code>, <strong>Play CSS class animation</strong> <code>sporeShake</code>. Chain step 2: delay <code>3000</code>, <strong>Hide element</strong>.</p>
+</details>
+
+<h2>Chained actions</h2>
+
+<p>Click <strong>+ Add chained step</strong> to run more actions after the main one, up to 15 steps. Each step has <strong>Delay before this step (ms)</strong> and its own <strong>Action</strong>.</p>
+
+<div class="hx-callout hx-note"><p>The delay counts from when the previous step starts, not from when its animation ends. A <strong>Show for N seconds</strong> step runs its own hide timer, separate from the chain delays.</p></div>
+
+<h2>Twitch API bindings</h2>
+
+<p>Pick <strong>Twitch API call (response)</strong> as the event to have the overlay call the Twitch Helix API once after it connects, then run the action when the answer matches.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm hm-ss hm-ss-narrow">
+    <div class="hm-ss-body hm-ss-inspector-only">
+      <div class="hm-ss-right">
+        <div class="hm-ss-section">
+          <div class="hm-ss-card">
+            <div class="hm-ss-row"><span class="hm-ss-label">Event</span><span class="hm-ss-input hm-ss-sel">Twitch API call (response)</span></div>
+            <div class="hm-ss-sub">Twitch API request</div>
+            <span class="hm-ss-hint">Emitted once after the socket connects (same pattern as standalone templates). URL must start with https://api.twitch.tv/. requestId is fixed for this binding and applied to response filters automatically.</span>
+            <div class="hm-ss-row"><span class="hm-ss-label">Endpoint</span><span class="hm-ss-input">https://api.twitch.tv/helix/users</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Method</span><span class="hm-ss-input hm-ss-sel">GET</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">JSON parameters (query)</span><span class="hm-ss-input hm-ss-area">{"login":"someone"}</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">JSON body</span><span class="hm-ss-input hm-ss-area is-placeholder">Optional JSON object body for POST / PUT / PATCH</span></div>
+            <div class="hm-ss-sub">Response filters</div>
+            <div class="hm-ss-pair"><span class="hm-ss-input">success</span><span class="hm-ss-input">true</span></div>
+            <span class="hm-ss-btn hm-ss-sm" style="align-self:flex-start">+ Add filter</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>The request and response filter fields for a Twitch API binding.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Field</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><strong>Endpoint</strong></td><td>Full Helix URL. Must start with <code>https://api.twitch.tv/</code>.</td></tr>
+<tr><td><strong>Method</strong></td><td><code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>PATCH</code>, <code>DELETE</code></td></tr>
+<tr><td><strong>JSON parameters (query)</strong></td><td>Optional JSON object added to the URL as query parameters</td></tr>
+<tr><td><strong>JSON body</strong></td><td>Optional JSON body for POST, PUT and PATCH</td></tr>
+<tr><td><strong>Response filters</strong></td><td>Rows of payload field and value. Values are read as JSON (<code>true</code>, <code>false</code>, numbers). Leave a key empty to ignore the row, or a value empty to match any.</td></tr>
+</tbody>
+</table></div>
+
+<p>Spore Studio gives each binding a fixed <code>requestId</code> (like <code>spore_tw_elementId_0</code>) and adds it to the filters, so the binding only reacts to its own answer. For calls outside bindings, see <a href="help:spore_studio_advanced_js">Advanced JS</a>.</p>
+
+<h2>Legacy templates</h2>
+
+<p>Hand-written templates manage their own websocket code. Their Bindings tab says <em>Legacy templates manage their own websocket bindings inside the hand-authored HTML — bindings are not editable here.</em> See <a href="help:spore_studio_advanced">Legacy templates</a>.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_examples">{{icon:menu_book}}<span><strong>Examples and recipes</strong><span class="hx-card-text">Complete binding walkthroughs</span></span></a>
+  <a class="hx-card" href="help:spore_studio_data_feed">{{icon:rss_feed}}<span><strong>Data feeds</strong><span class="hx-card-text">Drive blocks from live data</span></span></a>
+  <a class="hx-card" href="help:connector_examples">{{icon:cable}}<span><strong>Connector examples</strong><span class="hx-card-text">Send chat_add_message and more</span></span></a>
+</div>

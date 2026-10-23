@@ -977,6 +977,14 @@ def get_data_files():
         data_files.append((str(project_icons), "assets/default_assets/icons"))
         print(f"Including application icons: {project_icons}")
 
+    # Help pages and their CSS/JS are read from disk at runtime (help_render.py).
+    help_system_dir = get_project_root() / "modules" / "help_system"
+    for sub in ("content", "assets"):
+        help_dir = help_system_dir / sub
+        if help_dir.is_dir():
+            data_files.append((str(help_dir), f"modules/help_system/{sub}"))
+            print(f"Including help {sub}: {help_dir}")
+
     factorio_mod = get_project_root() / "factorio_mod"
     if factorio_mod.is_dir():
         data_files.append((str(factorio_mod), "factorio_mod"))

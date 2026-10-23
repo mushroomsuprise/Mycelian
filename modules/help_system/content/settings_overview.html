@@ -1,0 +1,238 @@
+<p class="hx-lead">The <strong>Settings</strong> tab holds service connections, the theme and app-wide options. Each sub-tab has its own <strong>Discard</strong> and <strong>Save</strong> buttons; nothing changes until you save.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span></span> (last main tab)</span>
+  <span>{{icon:history}} Reopens the sub-tab you used last</span>
+</div>
+
+<h2>Find your way around</h2>
+
+<p>Settings has fourteen sub-tabs. Use the <strong>Jump to</strong> box above them to type a tab name instead of hunting for it. Click a sub-tab in the mock to see what it holds.</p>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-field hm-select hm-jump is-focused" data-label="Jump to"><span class="hm-value">App Settings</span></div>
+    <div class="hm-subtabs hm-wrap">
+      <span class="hm-subtab" data-tab="twitch">{{brand:twitch}} Twitch</span>
+      <span class="hm-subtab" data-tab="obs">{{brand:obs}} OBS</span>
+      <span class="hm-subtab" data-tab="psn">{{brand:psn}} PSN</span>
+      <span class="hm-subtab" data-tab="spotify">{{brand:spotify}} Spotify</span>
+      <span class="hm-subtab" data-tab="youtube">{{brand:youtube}} YouTube</span>
+      <span class="hm-subtab" data-tab="streamlabs">{{brand:streamlabs}} Streamlabs</span>
+      <span class="hm-subtab" data-tab="se">{{brand:streamelements}} StreamElements</span>
+      <span class="hm-subtab" data-tab="discord">{{brand:discord}} Discord</span>
+      <span class="hm-subtab" data-tab="hooks"><span class="hx-mi">memory</span> Game Hooks</span>
+      <span class="hm-subtab" data-tab="db"><span class="hx-mi">storage</span> Database</span>
+      <span class="hm-subtab" data-tab="stats"><span class="hx-mi">analytics</span> Statistics</span>
+      <span class="hm-subtab" data-tab="theme"><span class="hx-mi">palette</span> Theme</span>
+      <span class="hm-subtab is-active" data-tab="app"><span class="hx-mi">tune</span> App Settings</span>
+      <span class="hm-subtab" data-tab="about"><span class="hx-mi">info</span> About</span>
+    </div>
+    <div class="hm-frame">
+
+      <div data-panel="twitch" class="hm-col"><span class="hm-h2">Twitch</span><span class="hm-muted">Main Account and Chatbot Account sign-in, and switches for Twitch alerts and raid shoutouts.</span><span><a href="help:twitch_setup">Connect Twitch</a></span></div>
+      <div data-panel="obs" class="hm-col"><span class="hm-h2">OBS</span><span class="hm-muted">Enable OBS integration, Host, Port and WebSocket password.</span><span><a href="help:obs_websocket">Connect OBS</a></span></div>
+      <div data-panel="psn" class="hm-col"><span class="hm-h2">PSN</span><span class="hm-muted">NPSSO code, PSN username to track, and the game cache.</span><span><a href="help:guide_psn">Connect PlayStation Network</a></span></div>
+      <div data-panel="spotify" class="hm-col"><span class="hm-h2">Spotify</span><span class="hm-muted">Client ID, Client Secret and market country.</span><span><a href="help:guide_spotify">Connect Spotify</a></span></div>
+      <div data-panel="youtube" class="hm-col"><span class="hm-h2">YouTube</span><span class="hm-muted">API key, channel URLs, and Google sign-in for live chat.</span><span><a href="help:guide_youtube">Connect YouTube</a></span></div>
+      <div data-panel="streamlabs" class="hm-col"><span class="hm-h2">Streamlabs</span><span class="hm-muted">Alert currency, Client ID and Client secret, Connect / Disconnect.</span><span><a href="help:guide_streamlabs">Connect Streamlabs</a></span></div>
+      <div data-panel="se" class="hm-col"><span class="hm-h2">StreamElements</span><span class="hm-muted">Alert currency and JWT token, Connect / Disconnect.</span><span><a href="help:guide_streamelements">Connect StreamElements</a></span></div>
+      <div data-panel="discord" class="hm-col"><span class="hm-h2">Discord</span><span class="hm-muted">Bot token, go-live message template and announcement channels.</span><span><a href="help:guide_discord">Connect Discord</a></span></div>
+      <div data-panel="hooks" class="hm-col"><span class="hm-h2">Game Hooks</span><span class="hm-muted">Turn live game data on or off for Final Fantasy VII (2013) and Factorio.</span><span><a href="help:game_hooks">Game Hooks</a></span></div>
+
+      <div data-panel="db" class="hm-col">
+        <div class="hm-panel">
+          <div class="hm-row hm-gap-lg">
+            <div class="hm-status-band">
+              <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected</span></div>
+              <div class="hm-metric"><span>Type</span><span>sql</span></div>
+              <div class="hm-metric"><span>Last check</span><span class="hm-muted">17:31:04</span></div>
+            </div>
+            <div class="hm-field hm-select hm-grow" data-label="Database type"><span class="hm-value">sql</span></div>
+          </div>
+          <div class="hm-panel-title">Configuration</div>
+          <div class="hm-field" data-label="SQLite path"><span class="hm-value">mycelian.db</span></div>
+          <div class="hm-actions">
+            <span class="hm-btn hm-outline"><span class="hx-mi">wifi_tethering</span>Test</span>
+            <span class="hm-btn hm-outline"><span class="hx-mi">sync_alt</span>Migrate</span>
+            <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh</span>
+            <span class="hm-btn hm-outline"><span class="hx-mi">visibility</span>View Data</span>
+            <span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span>
+          </div>
+        </div>
+      </div>
+
+      <div data-panel="stats" class="hm-col">
+        <div class="hm-grid-3">
+          <div class="hm-card"><div class="hm-bold">🎯 Alert Statistics</div><span class="hm-muted hm-xs">Bits, subs, gift subs, follows, raids…</span></div>
+          <div class="hm-card"><div class="hm-bold">👥 Social &amp; Interaction Statistics</div><span class="hm-muted hm-xs">Chat and viewer activity</span></div>
+          <div class="hm-card"><div class="hm-bold">🔗 Connector Statistics</div><span class="hm-muted hm-xs">Triggers fired</span></div>
+          <div class="hm-card"><div class="hm-bold">🤖 Chatbot Statistics</div><span class="hm-muted hm-xs">Commands, giveaways, polls</span></div>
+          <div class="hm-card"><div class="hm-bold">👤 Per-User Statistics</div><span class="hm-muted hm-xs">Search a username and date range</span></div>
+          <div class="hm-card"><div class="hm-bold">📸 Export Highlights</div><span class="hm-muted hm-xs">Export a date range</span></div>
+        </div>
+      </div>
+
+      <div data-panel="theme" class="hm-col">
+        <div class="hm-card">
+          <div class="hm-row">
+            <div class="hm-field hm-select hm-nolabel hm-grow"><span class="hm-value">Dark Theme</span></div>
+            <span class="hm-sm hm-bold">Dark (Dark Theme)</span>
+            <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Apply</span>
+            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">drive_file_rename_outline</span>Save as</span>
+            <span class="hm-btn hm-danger hm-dense is-disabled"><span class="hx-mi">delete</span>Delete</span>
+          </div>
+        </div>
+        <span class="hm-muted hm-xs">Live preview of the app in the selected theme appears here.</span>
+        <div class="hm-bold hm-sm">Edit theme colors</div>
+        <span class="hm-muted hm-xs">Click a swatch to change a color. Changes preview above until you Apply.</span>
+        <div class="hm-swatches">
+          <span class="hm-gn-swatch hm-swatch-primary"><i></i>Primary</span>
+          <span class="hm-gn-swatch hm-swatch-base"><i></i>Base</span>
+          <span class="hm-gn-swatch hm-swatch-surface"><i></i>Surface</span>
+          <span class="hm-gn-swatch hm-swatch-elevated"><i></i>Elevated</span>
+          <span class="hm-gn-swatch hm-swatch-text"><i></i>Text</span>
+          <span class="hm-gn-swatch hm-swatch-muted"><i></i>Muted</span>
+          <span class="hm-gn-swatch hm-swatch-success"><i></i>Success</span>
+          <span class="hm-gn-swatch hm-swatch-warning"><i></i>Warning</span>
+          <span class="hm-gn-swatch hm-swatch-error"><i></i>Error</span>
+          <span class="hm-gn-swatch hm-swatch-info"><i></i>Info</span>
+        </div>
+        <div class="hm-row">
+          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">undo</span>Undo</span>
+          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">redo</span>Redo</span>
+          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">restore</span>Discard</span>
+        </div>
+      </div>
+
+      <div data-panel="app" class="hm-col">
+        <div class="hm-grid-2">
+          <div class="hm-panel">
+            <div class="hm-panel-title">General</div>
+            <div class="hm-grid-2">
+              <div class="hm-field hm-select" data-label="App font"><span class="hm-value">System default</span></div>
+              <div class="hm-field hm-select" data-label="UI scale"><span class="hm-value">100%</span></div>
+            </div>
+            <div class="hm-col hm-tight">
+              <span class="hm-switch is-on"><i></i>Notifications</span>
+              <span class="hm-row"><span class="hm-switch is-on"><i></i>Show connection status footer</span><span class="hx-mi hm-muted">help_outline</span></span>
+              <span class="hm-switch"><i></i>Minimal status badges</span>
+              <span class="hm-switch is-on"><i></i>Auto update</span>
+              <span class="hm-row"><span class="hm-switch"><i></i>Start maximized</span><span class="hm-muted hm-xs">Applies on next launch</span></span>
+            </div>
+            <span class="hm-sm hm-bold">Background</span>
+            <div class="hm-col hm-tight">
+              <span class="hm-switch"><i></i>Minimize to tray</span>
+              <span class="hm-switch"><i></i>Start minimized to tray</span>
+              <span class="hm-switch"><i></i>Run at login</span>
+            </div>
+            <div class="hm-row"><span class="hm-sm">Update check</span><div class="hm-field hm-nolabel"><span class="hm-value">30</span></div><span class="hm-muted">minutes (5–120)</span></div>
+          </div>
+          <div class="hm-panel">
+            <div class="hm-panel-title">Storage</div>
+            <span class="hm-muted hm-xs">Activity feed paging and stored-alert retention.</span>
+            <div class="hm-row"><span class="hm-sm">History limit</span><div class="hm-field hm-nolabel"><span class="hm-value">20</span></div><span class="hm-muted">per page</span></div>
+            <div class="hm-row"><span class="hm-sm">Max pages</span><div class="hm-field hm-nolabel"><span class="hm-value">5</span></div><span class="hm-muted">to load</span></div>
+            <span class="hm-switch"><i></i>Auto-trim stored alerts</span>
+            <div class="hm-field hm-select" data-label="Trim using"><span class="hm-value">Number and age</span></div>
+            <div class="hm-row"><span class="hm-sm">Keep</span><div class="hm-field hm-nolabel"><span class="hm-value">500</span></div><span class="hm-muted">alerts</span></div>
+            <div class="hm-row"><span class="hm-sm">Keep</span><div class="hm-field hm-nolabel"><span class="hm-value">30</span></div><span class="hm-muted">days</span></div>
+          </div>
+        </div>
+        <div class="hm-panel">
+          <div class="hm-panel-title">Stream Deck plugin</div>
+          <div class="hm-row hm-between">
+            <span class="hm-row"><span class="hm-muted">Status</span><span class="hm-bold hm-sm">Not installed</span></span>
+            <span class="hm-btn">Install Plugin</span>
+          </div>
+        </div>
+        <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
+      </div>
+
+      <div data-panel="about" class="hm-col">
+        <div class="hm-panel">
+          <div class="hm-row"><span class="hm-panel-title">Mycelian</span>
+            <span class="hm-btn hm-dense"><span class="hx-mi">system_update</span>Check for Updates</span>
+            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">code</span>View on GitHub</span>
+            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">history</span>View Changelog</span>
+          </div>
+          <span class="hm-muted hm-xs">Version · Build Number · Built on</span>
+        </div>
+        <div class="hm-panel"><div class="hm-row hm-between"><span class="hm-panel-title">Application Logs</span><span class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">folder_open</span>Open Logs Folder</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh</span></span></div><span class="hm-muted hm-xs">No actionable errors</span></div>
+        <div class="hm-panel"><div class="hm-row hm-between"><span class="hm-panel-title">Available Source URLs</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh URLs</span></div><span class="hm-muted hm-xs">Copy these URLs to use as Browser Sources in OBS or other streaming software.</span></div>
+      </div>
+
+    </div>
+  </div>
+  <figcaption>Settings with <strong>App Settings</strong> open. Click any sub-tab; switches and buttons only change the picture.</figcaption>
+</figure>
+
+<h2>What each sub-tab is for</h2>
+
+<h3>Service connections</h3>
+
+<p>Twitch, OBS, PSN, Spotify, YouTube, Streamlabs, StreamElements and Discord each have a tab with a status area, credential fields and their own options. Setup steps for each are in <a href="help:connection_guides_overview">Connection Guides</a>. Donation alerts themselves are set up on the <strong>Alerts</strong> tab under <strong>Donations</strong>; see <a href="help:alerts_overview">Alert System Overview</a>.</p>
+
+<h3>Game Hooks</h3>
+
+<p>Turns on live data from supported PC games for browser overlays and connector actions. See <a href="help:game_hooks">Game Hooks</a>.</p>
+
+<h3>Database</h3>
+
+<p>Chooses where Mycelian keeps settings, alerts and history: <code>sql</code> (a local SQLite file, <code>mycelian.db</code> by default), <code>firebase</code> or <code>mongodb</code>. <strong>Test</strong> checks the connection. <strong>Migrate</strong> copies data from one database to another. <strong>View Data</strong> opens the Database Explorer.</p>
+
+<div class="hx-callout hx-warning"><p>Change the database type only if you know you need to. Use <strong>Migrate</strong> first so your data comes with you.</p></div>
+
+<h3>Statistics</h3>
+
+<p>Totals for alerts, chat, hype trains, connectors, quotes, chatbot, giveaways, polls and templates, plus per-user stats and a highlights export.</p>
+
+<h3>Theme</h3>
+
+<p>Pick a color theme, click <strong>Apply</strong>. The preview below the picker shows the app in that theme before you apply it. To make your own, change swatches under <strong>Edit theme colors</strong> and click <strong>Save as</strong>. The built-in Dark and Light themes cannot be deleted. These help pages use the same theme colors.</p>
+
+<h3>App Settings</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>App font</strong>, <strong>UI scale</strong></td><td>Font and zoom (90% to 125%) for the whole window</td></tr>
+<tr><td><strong>Notifications</strong></td><td>Shows pop-up messages from Mycelian</td></tr>
+<tr><td><strong>Show connection status footer</strong>, <strong>Minimal status badges</strong></td><td>The bar at the bottom of the window. See <a href="help:status_footer">Status Footer</a></td></tr>
+<tr><td><strong>Auto update</strong>, <strong>Update check</strong></td><td>Check for new versions on a schedule; how often to check (5 to 120 minutes). With it off, use <strong>Check for Updates</strong> on the About tab</td></tr>
+<tr><td><strong>Start maximized</strong></td><td>Opens the window maximized. Applies on next launch</td></tr>
+<tr><td><strong>Minimize to tray</strong>, <strong>Start minimized to tray</strong>, <strong>Run at login</strong></td><td>Keep Mycelian running in the background. <strong>Run at login</strong> only works in an installed build</td></tr>
+<tr><td><strong>History limit</strong>, <strong>Max pages</strong></td><td>How many Activity Feed items load per page and how many pages are kept</td></tr>
+<tr><td><strong>Auto-trim stored alerts</strong>, <strong>Trim using</strong>, <strong>Keep</strong></td><td>Delete old stored alerts by number, age, or both</td></tr>
+<tr><td><strong>Stream Deck plugin</strong></td><td>Installs or reinstalls the bundled plugin. See <a href="help:guide_streamdeck">Connect Stream Deck</a></td></tr>
+</tbody>
+</table></div>
+
+<h3>About</h3>
+
+<p>Version and update check, recent errors from the log with <strong>Open Logs Folder</strong>, and <strong>Available Source URLs</strong>: every overlay URL you can add to OBS. See <a href="help:obs_setup">Setting Up Browser Sources in OBS</a>.</p>
+
+<h2>Saving changes</h2>
+
+<ul>
+  <li>Each sub-tab saves separately. Click <strong>Save</strong> on the tab you changed.</li>
+  <li><strong>Discard</strong> puts the tab back to its last saved values.</li>
+  <li>If you leave Settings with unsaved changes, Mycelian asks: <em>"You have unsaved changes in Settings. Save them before leaving?"</em></li>
+</ul>
+
+<h2>Where settings are stored</h2>
+
+<ul>
+  <li><strong>Settings, alerts and history</strong>: the database chosen on the Database tab.</li>
+  <li><strong>Service API credentials</strong>: stored encrypted in <code>api_credentials.json</code>.</li>
+  <li><strong>Database connection</strong>: <code>config.json</code>.</li>
+  <li><strong>Template settings</strong>: <code>templates/template_configs/*.json</code>, edited on the <strong>Source Settings</strong> tab.</li>
+</ul>
+
+<div class="hx-callout hx-tip"><p>To back up, close Mycelian and copy these files and your database file to a safe place.</p></div>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:getting_started_intro">{{icon:rocket_launch}}<span><strong>Welcome to Mycelian</strong><span class="hx-card-text">The main window and a quick start</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>Connection Guides</strong><span class="hx-card-text">Set up each service</span></span></a>
+  <a class="hx-card" href="help:status_footer">{{icon:wifi}}<span><strong>Status Footer</strong><span class="hx-card-text">What the badge colors mean</span></span></a>
+</div>

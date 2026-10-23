@@ -1,0 +1,224 @@
+<p class="hx-lead">Game Hooks let Mycelian read live data from a supported PC game and push it to browser overlays. Two games are supported: <strong>Final Fantasy VII (2013)</strong> on Windows, and <strong>Factorio</strong> on Windows, macOS and Linux.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Game Hooks</span></span></span>
+  <span>{{icon:memory}} Game runs on the same PC as Mycelian</span>
+</div>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Game</th><th>Platforms</th><th>How it reads data</th><th>Writes to the game</th><th>Overlay URL</th></tr></thead>
+<tbody>
+<tr><td><strong>Final Fantasy VII (2013)</strong>, English PC / Steam (<code>ff7_en.exe</code> or <code>ff7.exe</code>)</td><td>Windows</td><td>Process memory, about four times a second</td><td>Yes, through connector actions (crowd control)</td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/ff7">http://127.0.0.1:5000/ff7</span></td></tr>
+<tr><td><strong>Factorio</strong> (2.0)</td><td>Windows, macOS, Linux</td><td>A companion mod writes <code>script-output/mycelian/stats.json</code></td><td>No, read-only</td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/factorio">http://127.0.0.1:5000/factorio</span></td></tr>
+</tbody>
+</table></div>
+
+<h2>The Game Hooks tab</h2>
+
+<p>Each game has a card with a switch. The card's border shows how the hook is doing. Switch the mock between platforms to see how unsupported games look.</p>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-subtabs">
+      <span class="hm-subtab is-active" data-tab="win">On Windows</span>
+      <span class="hm-subtab" data-tab="mac">On macOS or Linux</span>
+    </div>
+    <div class="hm-frame">
+      <span class="hm-muted">When enabled, Mycelian reads live data from supported PC games and broadcasts it to browser templates.</span>
+
+      <div data-panel="win">
+        <div class="hm-grid-2">
+          <div class="hm-hook-card is-ok">
+            <div class="hm-row hm-nowrap">
+              <span class="hm-bold hm-sm">Final Fantasy VII (2013)</span>
+              <span class="hm-os"><span>Windows</span><span class="is-off">Linux</span><span class="is-off">macOS</span></span>
+              <span class="hm-switch is-on hm-grow"><i></i></span>
+              <span class="hm-marker" data-n="1"></span>
+            </div>
+            <span class="hm-muted hm-xs">Green border: attached to the running game.</span>
+          </div>
+          <div class="hm-hook-card is-warn">
+            <div class="hm-row hm-nowrap">
+              <span class="hm-bold hm-sm">Factorio</span>
+              <span class="hm-os"><span>Windows</span><span>Linux</span><span>macOS</span></span>
+              <span class="hm-switch is-on hm-grow"><i></i></span>
+            </div>
+            <div class="hm-row"><span class="hm-btn hm-outline hm-dense">Install mod</span><span class="hm-muted hm-xs">not installed · bundled 1.0.4</span><span class="hm-marker" data-n="2"></span></div>
+            <span class="hm-muted hm-xs">Amber border: enabled, but not receiving data yet.</span>
+          </div>
+        </div>
+      </div>
+
+      <div data-panel="mac">
+        <div class="hm-grid-2">
+          <div class="hm-hook-card is-unsupported">
+            <div class="hm-row hm-nowrap">
+              <span class="hm-bold hm-sm">Final Fantasy VII (2013)</span>
+              <span class="hm-os"><span>Windows</span><span class="is-off">Linux</span><span class="is-off">macOS</span></span>
+              <span class="hm-switch hm-grow"><i></i></span>
+              <span class="hm-marker" data-n="3"></span>
+            </div>
+            <span class="hm-muted hm-xs">Dimmed with a red border: not supported on this OS. The switch is disabled.</span>
+          </div>
+          <div class="hm-hook-card is-ok">
+            <div class="hm-row hm-nowrap">
+              <span class="hm-bold hm-sm">Factorio</span>
+              <span class="hm-os"><span>Windows</span><span>Linux</span><span>macOS</span></span>
+              <span class="hm-switch is-on hm-grow"><i></i></span>
+            </div>
+            <div class="hm-row"><span class="hm-btn hm-outline hm-dense is-disabled">Mod installed</span><span class="hm-ok hm-xs">v1.0.4</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span><span class="hm-marker" data-n="4"></span></div>
+    </div>
+  </div>
+  <figcaption>Settings → Game Hooks. Click the two tabs at the top. The OS icons are shown as text here; in the app they are logos, colored when supported.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">The switch turns the hook on or off. The OS marks show where the game is supported.</li>
+  <li data-n="2">Factorio's mod button: <strong>Install mod</strong>, <strong>Update mod</strong> when a newer version is bundled, or <strong>Mod installed</strong> (disabled) when it is current. The text beside it shows the installed version.</li>
+  <li data-n="3">A game that is not supported on this OS is dimmed and cannot be switched on.</li>
+  <li data-n="4">Nothing changes until you click <strong>Save</strong>. You see <em>"Game Hooks saved"</em>.</li>
+</ol>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Card border</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>None</td><td>Hook is off</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Green</td><td>Attached and receiving data</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Amber</td><td>On, but the game is not running or no data has arrived yet</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Red</td><td>An error. Mycelian also shows the error as a notification</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Red, dimmed</td><td>Not supported on this OS</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-tip"><p>When your Twitch category is Final Fantasy VII, Mycelian shows <em>"Playing … on PC? Try the game hook out!"</em> with a button that opens this tab.</p></div>
+
+<h2>Set up a game</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="ff7" class="is-active">Final Fantasy VII</button>
+    <button data-tab="factorio">Factorio</button>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="ff7">
+    <section class="hx-guide" data-guide="game_hooks_ff7" data-title="FF7 hook">
+      <div class="hx-step"><h3>Turn on the FF7 hook</h3><p>Open <span class="hx-path"><span>Settings</span><span>Game Hooks</span></span>, switch on <strong>Final Fantasy VII (2013)</strong> and click <strong>Save</strong>.</p></div>
+      <div class="hx-step"><h3>Start FF7</h3><p>Run the English PC / Steam version on the same Windows PC. The card turns green once it attaches.</p><div class="hx-callout hx-note"><p>If Windows denies memory access, run Mycelian as Administrator.</p></div></div>
+      <div class="hx-step"><h3>Add the FF7 overlay</h3><p>Add <span class="hx-copy" data-copy="http://127.0.0.1:5000/ff7">http://127.0.0.1:5000/ff7</span> as a browser source. See <a href="help:obs_setup">Setting Up Browser Sources in OBS</a>.</p></div>
+    </section>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="factorio">
+    <section class="hx-guide" data-guide="game_hooks_factorio" data-title="Factorio hook">
+      <div class="hx-step"><h3>Turn on the Factorio hook</h3><p>Open <span class="hx-path"><span>Settings</span><span>Game Hooks</span></span>, switch on <strong>Factorio</strong> and click <strong>Save</strong>.</p></div>
+      <div class="hx-step"><h3>Install the mod</h3><p>Click <strong>Install mod</strong> on the Factorio card. It copies <code>mycelian-stats</code> into your Factorio <code>mods</code> folder and enables it.</p></div>
+      <div class="hx-step"><h3>Restart Factorio and load a save</h3><p>If Factorio is running, quit it fully. Start it and load a save. The mod only loads at startup.</p></div>
+      <div class="hx-step"><h3>Add the Factorio overlay</h3><p>Add <span class="hx-copy" data-copy="http://127.0.0.1:5000/factorio">http://127.0.0.1:5000/factorio</span> as a browser source.</p></div>
+    </section>
+    <div class="hx-callout hx-note"><p>If the hook is on but no data arrives, Mycelian reports <em>"Mycelian stats mod not detected — install it from Settings &gt; Game Hooks"</em>. Use <strong>Install mod</strong> or <strong>Update mod</strong> and restart Factorio. The mod is read-only and does not change gameplay.</p></div>
+  </div>
+</div>
+
+<p>When a hook is off, its overlay still loads but receives a stub payload with <code>disabled: true</code>.</p>
+
+<h2>What is shown</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="ff7" class="is-active">Final Fantasy VII</button>
+    <button data-tab="factorio">Factorio</button>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="ff7">
+    <p>About four times a second, while attached:</p>
+    <ul>
+      <li><strong>Party</strong>: names, levels, HP, max HP, MP, max MP, limit gauge, ATB. In battle these are live battle values; on the field they come from the in-memory save data.</li>
+      <li><strong>Enemies</strong> (battle only): name, level, HP, MP, ATB.</li>
+      <li><strong>Gil</strong> and <strong>play time</strong>.</li>
+      <li><strong>Boss log</strong>: defeated bosses, newest first. Kept until you reset it from the overlay.</li>
+      <li><strong>Menu colors</strong>: your in-game window colors, so the overlay panels can match.</li>
+    </ul>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="factorio">
+    <p>The <code>/factorio</code> overlay is styled like the in-game Production and Electric Network windows. In <strong>Source Settings</strong> you can show, hide, rename and place each section on a grid, or stack them in a row or column.</p>
+    <ul>
+      <li><strong>Power</strong>: satisfaction, generation vs capacity, accumulator charge, producer and consumer lists, and a flow graph.</li>
+      <li><strong>Production / Consumption</strong>: item rates (<code>/m</code>) over a time window you choose. Leave the item list blank to show the top items automatically.</li>
+      <li><strong>Science</strong>: packs per minute, plus current research, progress, ETA and queue.</li>
+      <li><strong>Planets</strong>: current surface, visited planets and space platforms (Space Age; transit shows as <code>Nauvis -&gt; Gleba</code>).</li>
+      <li><strong>Fluids</strong> (optional): fluid rates.</li>
+      <li><strong>Stats</strong> (optional): rockets, evolution, pollution, kills.</li>
+    </ul>
+    <p>Power, Production, Consumption and Fluids follow the planet you are on. Turn on cycle mode to rotate through visited planets; the four sections stay in sync.</p>
+    <p>Payload fields are under <code>hooks.factorio</code>: <code>attached</code>, <code>paused</code>, <code>power</code>, <code>production</code>, <code>consumption</code>, <code>science</code>, <code>planets</code>, <code>misc</code>. Item icons load from your local Factorio install (<code>data/*/graphics/icons</code>).</p>
+  </div>
+</div>
+
+<h2>Crowd control (FF7)</h2>
+
+<p>A connector can change the game with a <strong>Game Hook (memory write)</strong> action. Each action targets one game (FF7 today) and one <strong>operation</strong>, with arguments as shown in the connector editor. If a connector has a Game Hook action and that hook is off or not attached, the whole connector is skipped. See <a href="help:connector_actions">Connector Actions</a>.</p>
+
+<details class="hx-details">
+  <summary>All FF7 operations</summary>
+  <div class="hx-table-wrap"><table>
+  <thead><tr><th>Group</th><th>Operations</th></tr></thead>
+  <tbody>
+  <tr><td>Gil and items</td><td><strong>Add gil</strong>, <strong>Remove gil</strong>, <strong>Add item</strong>, <strong>Add materia</strong>, <strong>Add gear</strong> (these call the game's own add functions), <strong>Query inventory quantity</strong></td></tr>
+  <tr><td>Party</td><td><strong>Add or remove HP</strong>, <strong>KO party member</strong>, <strong>Rename character</strong>, <strong>Change character gear</strong> (swaps with the inventory), <strong>Equip / unequip materia</strong> (checks and swaps through the inventory), <strong>Set party level</strong>, <strong>Set party stat</strong> (str, vit, mag, spr, dex, luk, hp, mp, max_hp, max_mp)</td></tr>
+  <tr><td>Enemies</td><td><strong>Kill enemy</strong>, <strong>Kill all enemies</strong>, <strong>Damage enemy</strong>, <strong>Set enemy level</strong>, <strong>Set enemy stat</strong> (party stats plus speed, evade, def, mdef)</td></tr>
+  <tr><td>Battle</td><td><strong>Start battle</strong> (queued if you are in a menu or victory screen), <strong>Set battle status</strong>, <strong>Battle speed</strong>, <strong>Battle ATB mode</strong> (active, wait, recommended), <strong>Battle infinite items</strong> (experimental; tops up item counts while on)</td></tr>
+  <tr><td>Game and menus</td><td><strong>Game speed</strong> (0.25× to 8× in 0.25 steps), <strong>Menu row access</strong>, <strong>Set menu row visibility</strong>, <strong>Set menu row lock</strong>, <strong>Change menu colors</strong> (named colors, <code>#RRGGBB</code> or <code>rgb(r,g,b)</code>, one corner or all four)</td></tr>
+  </tbody>
+  </table></div>
+  <p>Many of these take an optional duration (for example <code>duration_sec</code> on menu rows) and restore the old value afterwards. Timed restores pause while the game is not attached. Battle-only actions fail with a short message if you are not in a battle.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Which changes survive a restart</summary>
+  <p>Game speed, battle speed, ATB mode, menu rows, field menu access, world speed multiplier, menu colors and infinite items are saved under <code>GameHooks/ff7_connector_overrides</code>. They are applied again when the hook next attaches; timed ones use the time that was left. One-off inventory or stat writes are not saved.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Placeholders in action arguments</summary>
+  <p>Use single braces with <strong>no spaces</strong> inside:</p>
+  <div class="hx-table-wrap"><table>
+  <thead><tr><th>Placeholder</th><th>Gives</th></tr></thead>
+  <tbody>
+  <tr><td><code>{username}</code>, <code>{message}</code></td><td>Who triggered it and their message</td></tr>
+  <tr><td><code>{message.word.1}</code></td><td>Word 1 of the message</td></tr>
+  <tr><td><code>{message_after_conditions}</code></td><td>The chat text after removing the trigger's <code>message</code> condition words</td></tr>
+  <tr><td><code>{message_after_word.1}</code>, <code>{message_after_conditions.word.2}</code></td><td>Word <em>N</em> of that stripped text</td></tr>
+  <tr><td><code>{message_after_from_word.3}</code>, <code>{message_after_conditions.from_word.3}</code></td><td>From word <em>N</em> to the end. Use it for multi-word values such as item names</td></tr>
+  <tr><td><code>{hooks.ff7.party.0.name}</code></td><td>Live game data</td></tr>
+  <tr><td><code>{random_character}</code>, <code>{random_enemy}</code></td><td>A random party member or enemy</td></tr>
+  <tr><td><code>{random_damage.1.9999}</code></td><td>A random number in a range</td></tr>
+  <tr><td><code>{action1.quantity}</code></td><td>Output of an earlier action in the same connector, by its number (Action #1 → <code>action1</code>). Fields include <code>item_name</code>, <code>quantity</code>, <code>resolved_name</code>, <code>kind</code> and <code>error</code> from <strong>Query inventory quantity</strong></td></tr>
+  </tbody>
+  </table></div>
+  <p>Older <code>{{key}}</code> forms still work and are converted.</p>
+</details>
+
+<div class="hx-callout hx-warning"><p>Memory writes are powerful. Use them only on your own single-player game. Online services and anti-cheat systems are not a target for this feature.</p></div>
+
+<h2>Community credit (m4v3k)</h2>
+
+<p>Huge shoutouts to <strong>m4v3k</strong> for all of their work and contributions to the FF7 community. I was able to use his tools and research to create this game hook, so please check out his other projects:</p>
+
+<ul>
+  <li><a href="https://github.com/maciej-trebacz/ff7-ultima">FF7 Ultima</a>: real-time game editor</li>
+  <li><a href="https://github.com/maciej-trebacz/ff7-landscaper">Landscaper</a>: world map editor</li>
+  <li><a href="https://github.com/maciej-trebacz/ff7-lgp-explorer">LGP Explorer</a>: LGP archive browser and asset tools</li>
+  <li><a href="https://github.com/maciej-trebacz/ff7-lib.rs">FF7lib</a>: Rust library for FF7 memory and data structures</li>
+</ul>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:connector_actions">{{icon:bolt}}<span><strong>Connector Actions</strong><span class="hx-card-text">Wire chat or rewards to game writes</span></span></a>
+  <a class="hx-card" href="help:templates_intro">{{icon:web}}<span><strong>Templates</strong><span class="hx-card-text">Style the ff7 and factorio overlays</span></span></a>
+  <a class="hx-card" href="help:settings_overview">{{icon:settings}}<span><strong>Settings Overview</strong><span class="hx-card-text">Every Settings tab at a glance</span></span></a>
+</div>

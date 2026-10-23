@@ -1,0 +1,98 @@
+<p class="hx-lead">With Spotify connected, Mycelian shows the song you are playing on stream: track name, artist, album art and a progress bar.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:guide_spotify">{{brand:spotify}}<span><strong>Not connected yet?</strong><span class="hx-card-text">Connect Spotify: create the app, paste the keys, sign in</span></span></a>
+</div>
+
+<h2>What the connection gives you</h2>
+
+<ul>
+<li><strong>Now playing overlay</strong>: the <code>spotify</code> template shows the current song, artist, album art, elapsed and total time, and a progress bar.</li>
+<li><strong>Live updates</strong>: Mycelian asks Spotify for playback about every 5 seconds and pushes changes to the overlay.</li>
+<li><strong>Pause handling</strong>: album art can turn grayscale when paused, and the overlay can hide when nothing is playing.</li>
+<li><strong>Spore Studio</strong>: the <strong>Now playing (Spotify)</strong> event and the <strong>now playing</strong> widget use the same data. See <a href="help:spore_studio_data_feed">Data Feed</a>.</li>
+</ul>
+
+<p>Spotify has no chatbot variables.</p>
+
+<h2>Add the overlay to OBS</h2>
+
+<ol>
+<li>Open <span class="hx-path"><span>Settings</span><span>About</span></span> and find <strong>Spotify</strong> under <strong>Available Source URLs</strong>.</li>
+<li>Click the copy button, or the OBS button to add it straight to a scene (needs <a href="help:obs_websocket">the OBS WebSocket</a>).</li>
+<li>If you add it by hand, create a <strong>Browser Source</strong> in OBS and paste the URL. See <a href="help:obs_setup">OBS Browser Sources</a>.</li>
+</ol>
+
+<div class="hx-callout hx-note"><p>Music must be playing for the overlay to show anything. Spotify reports playback from any device signed in to your account: desktop app, web player or phone.</p></div>
+
+<h2>Overlay options</h2>
+
+<p>Change these in the template's settings (see <a href="help:template_configuration">Template Configuration</a>). The groups match the settings panel:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Group</th><th>Settings</th></tr></thead>
+<tbody>
+<tr><td><strong>Container Settings</strong></td><td>Top and left position, max width, padding, border radius</td></tr>
+<tr><td><strong>Background &amp; Colors</strong></td><td>Background gradient start and end, background opacity, backdrop blur and blur amount</td></tr>
+<tr><td><strong>Album Art Settings</strong></td><td>Size, border radius, right margin, pulse animation, <strong>Grayscale When Paused</strong>, default album art image (used when a track has no artwork)</td></tr>
+<tr><td><strong>Text Styling</strong></td><td>Font family, track and artist font sizes (with a smaller size for long titles), colors, artist opacity, text shadow</td></tr>
+<tr><td><strong>Progress Bar Settings</strong></td><td>Height, background color and opacity, fill start and end colors, progress indicator</td></tr>
+<tr><td><strong>Time Display</strong></td><td>Font size, color, opacity</td></tr>
+<tr><td><strong>Animations &amp; Effects</strong></td><td>Hover effects, fade-in when a new track starts, transition duration</td></tr>
+<tr><td><strong>Behavior Settings</strong></td><td>Update interval, long title character threshold, <strong>Hide When Nothing Playing</strong>, nothing playing opacity, hide delay (seconds)</td></tr>
+</tbody>
+</table></div>
+
+<h2>Options on the Spotify tab</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Control</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Market country</strong></td><td>Region for Spotify API requests. <strong>Auto (from account)</strong>, <strong>US</strong>, <strong>GB</strong> or <strong>CA</strong>.</td></tr>
+<tr><td><strong>Refresh</strong></td><td>Updates the Status and Current track labels.</td></tr>
+<tr><td><strong>Test</strong></td><td>Checks the saved token and reconnects without a new browser sign-in when possible.</td></tr>
+<tr><td><strong>Connect</strong></td><td>Saves the Client ID and Client Secret and starts the browser sign-in.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Connection status</h2>
+
+<p>The bottom status bar uses these colors for Spotify. The guide lists the exact text each one covers: <a href="help:guide_spotify">Connect Spotify</a>. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Spotify is signed in</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Idle</td><td>Waiting to sign in, opening the browser, or Spotify is not set up</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Spotify is not connected</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Expired</td><td>The token could not be refreshed. Connect again</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Auth Failed</td><td>Authorization was denied or timed out</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>Sign-in or the callback server failed. Check the log</td></tr>
+</tbody>
+</table></div>
+
+<h2>If the overlay looks wrong</h2>
+
+<details class="hx-details">
+  <summary>The overlay is empty</summary>
+  <p>Check that the Spotify tab shows <strong>Connected</strong> and a song under <strong>Current track</strong>. If music is paused, <strong>Hide When Nothing Playing</strong> hides the overlay after the hide delay. Then check the browser source URL and refresh the source in OBS.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Album art is missing</summary>
+  <p>Some tracks, such as local files, have no artwork. The overlay then shows the <strong>Default Album Art Image</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Song changes show up late</summary>
+  <p>Mycelian checks Spotify about every 5 seconds, so a new song can take a few seconds to appear. This is expected.</p>
+</details>
+
+<h2>Privacy</h2>
+
+<ul>
+<li>Mycelian only asks for permission to read playback state and the currently playing track. It cannot control playback or change your library.</li>
+<li>No listening history is stored.</li>
+<li>The Client ID, Client Secret and tokens are stored encrypted on this computer.</li>
+<li>You can remove access any time from your Spotify account under <strong>Manage apps</strong>.</li>
+</ul>

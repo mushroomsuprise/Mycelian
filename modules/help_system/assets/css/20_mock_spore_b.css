@@ -1,0 +1,435 @@
+/* =========================================================================
+   Mycelian Help — Spore Studio mock pieces, part B (hm-ssb-*)
+   Used by spore_studio_examples / counters / data_feed / data_sources /
+   streamdeck / dynamic_controls. Mirrors assets/default_assets/spore_studio/
+   editor.css (inspector tabs, form rows, binding and feed cards, preview
+   mock toolbar) plus the overlay canvas, a Stream Deck key, the plugin's
+   property inspector and a Source Controls card. Theme variables only.
+   ========================================================================= */
+
+/* ---- Inspector shell ------------------------------------------------- */
+
+.help-doc .hm.hm-ssb { font-size: 13px; }
+
+.help-doc .hm-ssb-insp {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    padding: 0 0 8px;
+    min-width: 0;
+    max-width: 24rem;
+}
+.help-doc .hm-ssb-insp.hm-ssb-wide { max-width: none; }
+
+.help-doc .hm-ssb-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 6px 6px 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+    overflow: hidden;
+    flex-wrap: wrap;
+}
+.help-doc .hm-ssb-tabs > span {
+    padding: 5px 8px;
+    font-size: 11px;
+    color: var(--color-text-muted);
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.help-doc .hm-ssb-tabs > span.is-active {
+    color: var(--color-text-primary);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+    border-color: var(--color-border-subtle);
+    border-bottom: 2px solid var(--color-primary);
+}
+
+.help-doc .hm-ssb-body { padding: 8px 10px 0; display: flex; flex-direction: column; gap: 8px; }
+
+.help-doc .hm-ssb-h {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    font-weight: 600;
+}
+
+.help-doc .hm-ssb-hint {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--color-text-muted);
+}
+.help-doc .hm-ssb-hint.hm-warn { color: var(--color-warning); }
+
+.help-doc .hm-ssb-empty {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-style: italic;
+    padding: 6px 0;
+}
+
+/* ---- Collapsible property section (buildCollapsibleSection) ---------- */
+
+.help-doc .hm-ssb .hm-expansion.hm-ssb-sec {
+    background: transparent;
+    border-top: 1px solid var(--color-border-subtle);
+    border-radius: 0;
+}
+.help-doc .hm-ssb .hm-expansion.hm-ssb-sec > .hm-expansion-head {
+    min-height: 30px;
+    padding: 4px 0;
+    font-size: 12px;
+    font-weight: 600;
+    border-bottom: none;
+    cursor: pointer;
+}
+.help-doc .hm-ssb .hm-expansion.hm-ssb-sec > .hm-expansion-head small {
+    font-weight: 400;
+    color: var(--color-text-muted);
+    font-size: 11px;
+}
+.help-doc .hm-ssb .hm-expansion.hm-ssb-sec > .hm-expansion-body { padding: 2px 0 8px; gap: 6px; }
+
+/* ---- Form rows (ss-form-row: label above control) -------------------- */
+
+.help-doc .hm-ssb-fr { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.help-doc .hm-ssb-fr > label,
+.help-doc .hm-ssb-fr > .hm-ssb-lbl {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+}
+.help-doc .hm-ssb-pair { display: flex; gap: 8px; }
+.help-doc .hm-ssb-pair > * { flex: 1 1 0; min-width: 0; }
+
+.help-doc .hm-ssb-in {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 26px;
+    padding: 3px 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--color-text-primary);
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.help-doc .hm-ssb-in.is-ph { color: var(--color-text-muted); }
+.help-doc .hm-ssb-in.hm-ssb-sel::after {
+    font-family: 'Material Icons';
+    content: 'expand_more';
+    margin-left: auto;
+    font-size: 16px;
+    color: var(--color-text-muted);
+}
+.help-doc .hm-ssb-in.hm-ssb-ta {
+    white-space: pre-wrap;
+    align-items: flex-start;
+    min-height: 44px;
+}
+.help-doc .hm-ssb-in.hm-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+.help-doc .hm-ssb-in.is-focused { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-light); }
+
+/* Editor toggle (ss-toggle) — reuses .hm-switch so help.js flips it */
+.help-doc .hm-ssb .hm-switch { font-size: 12px; gap: 6px; }
+.help-doc .hm-ssb .hm-switch > i {
+    width: 30px;
+    height: 16px;
+    border-radius: 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+}
+.help-doc .hm-ssb .hm-switch > i::after {
+    width: 10px;
+    height: 10px;
+    left: 2px;
+    background: var(--color-text-muted);
+    box-shadow: none;
+}
+.help-doc .hm-ssb .hm-switch.is-on > i { background: var(--color-primary); border-color: var(--color-primary); }
+.help-doc .hm-ssb .hm-switch.is-on > i::after { left: 16px; background: var(--color-text-inverse); }
+
+/* ---- Buttons (ss-btn) ------------------------------------------------ */
+
+.help-doc .hm-ssb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 9px;
+    font-size: 12px;
+    border-radius: 6px;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border-subtle);
+    white-space: nowrap;
+    align-self: flex-start;
+}
+.help-doc .hm-ssb-btn.is-primary { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.help-doc .hm-ssb-btn.is-ghost { background: transparent; }
+.help-doc .hm-ssb-btn.is-sm { padding: 2px 7px; font-size: 11px; }
+.help-doc .hm-ssb-btn.is-danger { color: var(--color-error); border-color: color-mix(in srgb, var(--color-error) 35%, transparent); }
+
+/* ---- Cards (ss-binding-row, ss-feed, ss-streamdeck-action) ----------- */
+
+.help-doc .hm-ssb-card {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+.help-doc .hm-ssb-card.is-off { opacity: 0.6; }
+.help-doc .hm-ssb-card .hm-ssb-in { background: var(--color-bg-base); }
+.help-doc .hm-ssb-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.help-doc .hm-ssb-card-head > .hm-ssb-title { font-weight: 600; font-size: 12px; flex: 1 1 auto; min-width: 0; }
+.help-doc .hm-ssb-card-head > .hm-ssb-x { color: var(--color-error); font-size: 15px; line-height: 1; }
+.help-doc .hm-ssb-summary { font-size: 11px; color: var(--color-text-muted); }
+
+/* Numbered feed parts (details.ss-feed__part) — reuse .hm-expansion */
+.help-doc .hm-ssb .hm-expansion.hm-ssb-part {
+    background: transparent;
+    border-top: 1px solid var(--color-border-subtle);
+    border-radius: 0;
+}
+.help-doc .hm-ssb .hm-expansion.hm-ssb-part > .hm-expansion-head {
+    min-height: 26px;
+    padding: 4px 0;
+    font-size: 12px;
+    font-weight: 600;
+    border-bottom: none;
+    cursor: pointer;
+}
+.help-doc .hm-ssb .hm-expansion.hm-ssb-part > .hm-expansion-body { padding: 2px 0 6px; gap: 6px; }
+
+.help-doc .hm-ssb-checks { display: flex; flex-direction: column; gap: 4px; }
+.help-doc .hm-ssb-rule { display: flex; gap: 4px; flex-wrap: wrap; }
+.help-doc .hm-ssb-rule > .hm-ssb-in { flex: 1 1 5rem; }
+.help-doc .hm-ssb-preview {
+    font-size: 11.5px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: var(--color-primary-light);
+    color: var(--color-text-primary);
+}
+
+/* ---- Preview dialog mock toolbar (Alerts: / Other: / SD:) ------------ */
+
+.help-doc .hm-ssb-mocks {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding: 5px 6px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    font-size: 11px;
+}
+.help-doc .hm-ssb-mocks > b { color: var(--color-text-muted); font-weight: 400; margin: 0 2px 0 6px; }
+.help-doc .hm-ssb-mocks > b:first-child { margin-left: 0; }
+.help-doc .hm-ssb-mocks > .hm-ssb-btn { padding: 2px 7px; font-size: 11px; background: transparent; }
+
+/* ---- Overlay canvas (ss-stage, transparent checkerboard) ------------- */
+
+.help-doc .hm-ssb-stage {
+    --hm-chk: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
+    position: relative;
+    margin: 0 auto;
+    width: 100%;
+    max-width: 44rem;
+    border: 1px dashed color-mix(in srgb, var(--color-text-primary) 22%, transparent);
+    border-radius: 4px;
+    background:
+        linear-gradient(45deg, var(--hm-chk) 25%, transparent 25%, transparent 75%, var(--hm-chk) 75%) 0 0 / 16px 16px,
+        linear-gradient(45deg, var(--hm-chk) 25%, transparent 25%, transparent 75%, var(--hm-chk) 75%) 8px 8px / 16px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.help-doc .hm-ssb-dims {
+    font-size: 10.5px;
+    color: var(--color-text-muted);
+    text-align: center;
+    margin-bottom: 4px;
+}
+
+/* Overlay pieces drawn on the stage */
+.help-doc .hm-ssb-ov {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 18px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-bg-base) 82%, transparent);
+    border: 1px solid var(--color-border-accent);
+    color: var(--color-text-primary);
+}
+.help-doc .hm-ssb-ov.is-bare { background: transparent; border-color: transparent; padding: 6px 10px; }
+.help-doc .hm-ssb-ov-img {
+    width: 52px;
+    height: 52px;
+    flex: 0 0 auto;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+}
+.help-doc .hm-ssb-ov-img .hx-mi { font-size: 30px; color: var(--color-primary); }
+.help-doc .hm-ssb-ov-img.is-sm { width: 36px; height: 36px; border-radius: 8px; }
+.help-doc .hm-ssb-ov-img.is-sm .hx-mi { font-size: 22px; }
+.help-doc .hm-ssb-ov-kicker { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-secondary); }
+.help-doc .hm-ssb-ov-big { font-size: 1.35rem; font-weight: 800; line-height: 1.15; }
+.help-doc .hm-ssb-ov-num { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.help-doc .hm-ssb-ov-chat { font-size: 0.95rem; max-width: 26rem; }
+.help-doc .hm-ssb-ov-chat b { color: var(--color-primary); margin-right: 6px; }
+.help-doc .hm-ssb-ov-bar {
+    position: relative;
+    height: 14px;
+    border-radius: 7px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    overflow: hidden;
+    min-width: 10rem;
+}
+.help-doc .hm-ssb-ov-bar > i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--hm-val, 40%);
+    background: var(--color-primary);
+}
+.help-doc .hm-ssb-ov-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-success);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-success) 25%, transparent);
+}
+/* Absolutely placed corner ghosts for the random-position recipe */
+.help-doc .hm-ssb-ghost {
+    position: absolute;
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    border: 1px dashed color-mix(in srgb, var(--color-text-primary) 30%, transparent);
+    color: var(--color-text-muted);
+}
+
+/* Timeline strip for chained actions */
+.help-doc .hm-ssb-timeline { display: flex; gap: 4px; flex-wrap: wrap; align-items: stretch; }
+.help-doc .hm-ssb-timeline > span {
+    flex: 1 1 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-left: 3px solid var(--color-primary);
+    font-size: 11.5px;
+}
+.help-doc .hm-ssb-timeline > span small { color: var(--color-text-muted); font-size: 10.5px; }
+
+/* ---- Stream Deck hardware key + plugin property inspector ------------ */
+
+.help-doc .hm-ssb-deck {
+    display: inline-grid;
+    grid-template-columns: repeat(3, 64px);
+    gap: 8px;
+    padding: 10px;
+    border-radius: 12px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
+}
+.help-doc .hm-ssb-key {
+    width: 64px;
+    height: 64px;
+    border-radius: 9px;
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 9.5px;
+    text-align: center;
+    color: var(--color-text-secondary);
+    line-height: 1.1;
+    padding: 2px;
+}
+.help-doc .hm-ssb-key .hx-mi { font-size: 24px; color: var(--color-text-muted); }
+.help-doc .hm-ssb-key.is-set { border-color: var(--color-primary); color: var(--color-text-primary); }
+.help-doc .hm-ssb-key.is-set .hx-mi { color: var(--color-primary); }
+
+.help-doc .hm-ssb-pi {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    font-size: 12px;
+    min-width: 0;
+}
+.help-doc .hm-ssb-pi-row { display: grid; grid-template-columns: 6.5rem 1fr; gap: 8px; align-items: center; }
+.help-doc .hm-ssb-pi-row > span:first-child { color: var(--color-text-secondary); text-align: right; font-size: 11.5px; }
+.help-doc .hm-ssb-pi-row .hm-ssb-in { background: var(--color-bg-surface); }
+.help-doc .hm-ssb-pi-ctl { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.help-doc .hm-ssb-pi-ctl > .hm-ssb-in { flex: 1 1 auto; }
+.help-doc .hm-ssb-pi-btn {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--color-info);
+    color: #fff;
+    white-space: nowrap;
+}
+
+/* ---- Source Controls runtime card (sourcecontrols.py) ---------------- */
+
+.help-doc .hm-ssb-sc {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-accent);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+.help-doc .hm-ssb-sc-group {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    margin-top: 2px;
+}
+.help-doc .hm-ssb-sc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.help-doc .hm-ssb-sc-grid > .hm-span { grid-column: 1 / -1; }
+.help-doc .hm-ssb-sc-grid .hm-btn { width: 100%; justify-content: center; }
+.help-doc .hm-ssb-sc-counter { display: flex; gap: 6px; align-items: stretch; }
+.help-doc .hm-ssb-sc-counter > * { flex: 1 1 0; min-width: 0; justify-content: center; }
+
+@media (max-width: 640px) {
+    .help-doc .hm-ssb-pi-row { grid-template-columns: 1fr; }
+    .help-doc .hm-ssb-pi-row > span:first-child { text-align: left; }
+}
+
+/* btn-warning (timer Stop, Spin) */
+.help-doc .hm .hm-btn.hm-ssb-warnbtn { background: var(--color-warning); border-color: var(--color-warning); color: #fff; }

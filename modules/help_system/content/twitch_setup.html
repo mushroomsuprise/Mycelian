@@ -1,0 +1,278 @@
+<p class="hx-lead">Mycelian talks to Twitch through <strong>your own Twitch application</strong>. You create it once in the Twitch developer console, paste its <strong>Client ID</strong> and <strong>Client Secret</strong> into Mycelian, then sign in.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 5 minutes</span>
+  <span>{{icon:person}} Twitch broadcaster account</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Twitch</span></span></span>
+</div>
+
+<p>After the account is connected, see <a href="help:integrations_twitch">Twitch Integration</a> for the events and switches that connection unlocks.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="twitch_setup_prereqs">
+  <li>You can sign in to Twitch as the <strong>channel owner</strong> (not a moderator account).</li>
+  <li>Two-factor authentication is turned on for that account. Twitch requires it to register applications.</li>
+  <li>Mycelian is open on this computer. The sign-in returns to <span class="hx-copy" data-copy="http://localhost:17563">http://localhost:17563</span>, which only works on the machine running Mycelian.</li>
+</ul>
+
+<h2>Connect your account</h2>
+
+<section class="hx-guide" data-guide="twitch_setup" data-title="Twitch setup">
+
+  <div class="hx-step">
+    <h3>Register a Twitch application</h3>
+    <p>Open the <a href="https://dev.twitch.tv/console/apps">Twitch developer console</a>, sign in as the channel owner, and click <strong>Register Your Application</strong>. Fill in the form like this:</p>
+
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-browser">
+        <div class="hm-browser-bar"><span class="hm-browser-url">dev.twitch.tv/console/apps/create</span></div>
+        <div class="hm-browser-body">
+          <div class="hm-h2">Register Your Application</div>
+          <div class="hm-field" data-label="Name"><span class="hm-value">Mycelian</span></div>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow is-focused" data-label="OAuth Redirect URLs"><span class="hm-value hm-mono">http://localhost:17563</span></div>
+            <span class="hm-marker" data-n="1"></span>
+          </div>
+          <div class="hm-field hm-select" data-label="Category"><span class="hm-value">Broadcaster Suite</span></div>
+          <div class="hm-field hm-select" data-label="Client Type"><span class="hm-value">Confidential</span></div>
+          <div class="hm-row"><span class="hm-btn">Create</span></div>
+        </div>
+      </div>
+      <figcaption>Twitch's page, simplified. Field names match the real form.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1">Paste <span class="hx-copy" data-copy="http://localhost:17563">http://localhost:17563</span> exactly. It must be <code>http</code> (not https), <code>localhost</code> (not <code>127.0.0.1</code>), port <code>17563</code>, and no trailing slash.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Copy the Client ID and create a secret</h3>
+    <p>Back on the application list, click <strong>Manage</strong> next to your new application.</p>
+    <ol>
+      <li>Copy the <strong>Client ID</strong>.</li>
+      <li>Click <strong>New Secret</strong>, then copy the <strong>Client Secret</strong> right away. Twitch only shows it once.</li>
+    </ol>
+    <div class="hx-callout hx-warning"><p>Treat the Client Secret like a password. If you lose it or it leaks, click <strong>New Secret</strong> again and paste the new value into Mycelian. The old one stops working.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Paste both values into Mycelian</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>Twitch</span></span>. On the <strong>Main Account</strong> card, expand <strong>Advanced</strong> and paste the two values.</p>
+
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-tabs">
+          <span class="hm-tab">Activity Feed</span>
+          <span class="hm-tab">Alerts</span>
+          <span class="hm-tab">Source Settings</span>
+          <span class="hm-tab">Source Controls</span>
+          <span class="hm-tab">Connectors</span>
+          <span class="hm-tab">Chatbot</span>
+          <span class="hm-tab">Spore Studio</span>
+          <span class="hm-tab is-active">Settings</span>
+          <span class="hm-tabs-tail"><span class="hx-mi">help_outline</span><span class="hx-mi">notifications</span></span>
+        </div>
+        <div class="hm-frame">
+          <div class="hm-subtabs">
+            <span class="hm-subtab is-active">{{brand:twitch}} Twitch</span>
+            <span class="hm-subtab">{{brand:obs}} OBS</span>
+            <span class="hm-subtab">{{brand:psn}} PSN</span>
+            <span class="hm-subtab">{{brand:spotify}} Spotify</span>
+            <span class="hm-subtab">{{brand:youtube}} YouTube</span>
+          </div>
+          <div class="hm-frame">
+            <div class="hm-grid-2">
+              <div class="hm-panel">
+                <div class="hm-panel-title">Main Account</div>
+                <div class="hm-row">
+                  <span class="hm-btn hm-pulse"><span class="hx-mi">login</span>Connect</span>
+                  <span class="hm-btn hm-icon-only"><span class="hx-mi">content_copy</span></span>
+                  <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh</span>
+                  <span class="hm-marker" data-n="3"></span>
+                </div>
+                <div class="hm-status-band">
+                  <div class="hm-metric"><span>Status</span><span class="hm-err">Not Configured</span></div>
+                  <div class="hm-metric"><span>User</span><span>N/A</span></div>
+                  <div class="hm-metric"><span>Updated</span><span class="hm-muted">Never</span></div>
+                </div>
+                <div class="hm-expansion is-open">
+                  <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>Advanced<span class="hm-marker" data-n="1"></span></div>
+                  <div class="hm-expansion-body">
+                    <span class="hm-muted hm-xs">Client ID and Client Secret are required. Paste both, then click Connect.</span>
+                    <div class="hm-grid-2">
+                      <div class="hm-field is-focused" data-label="Client ID"><span class="hm-value hm-secret">••••••••••••</span></div>
+                      <div class="hm-field" data-label="Client Secret"><span class="hm-value hm-secret">••••••••••••</span></div>
+                    </div>
+                    <div class="hm-row"><span class="hm-marker" data-n="2"></span><span class="hm-muted hm-xs">Both fields are masked</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="hm-panel">
+                <div class="hm-panel-title">Chatbot Account</div>
+                <div class="hm-row">
+                  <span class="hm-btn"><span class="hx-mi">login</span>Connect</span>
+                  <span class="hm-btn hm-icon-only"><span class="hx-mi">content_copy</span></span>
+                  <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh</span>
+                </div>
+                <div class="hm-status-band">
+                  <div class="hm-metric"><span>Status</span><span class="hm-err">Disconnected (Fallback Mode)</span></div>
+                  <div class="hm-metric"><span>User</span><span>None</span></div>
+                </div>
+                <div class="hm-expansion">
+                  <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>Advanced</div>
+                  <div class="hm-expansion-body">
+                    <div class="hm-grid-2">
+                      <div class="hm-field" data-label="Client ID"><span class="hm-placeholder">Chatbot Twitch API Client ID</span></div>
+                      <div class="hm-field" data-label="Client Secret"><span class="hm-placeholder">Chatbot Twitch API Client Secret</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Settings → Twitch. Click <strong>Advanced</strong> on either card to open or close it.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>Advanced</strong> holds the credentials. It is collapsed by default.</li>
+      <li data-n="2">Paste the <strong>Client ID</strong> and <strong>Client Secret</strong> from step 2.</li>
+      <li data-n="3"><strong>Connect</strong> saves the credentials and opens your browser. The copy button beside it copies the redirect URL. <strong>Refresh</strong> only updates the status labels and does not sign you in.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Click Connect and approve access</h3>
+    <p>Mycelian opens your browser on Twitch's authorization page. Sign in as the broadcaster and click <strong>Authorize</strong>. Accept every permission listed; Mycelian needs them for alerts, chat, polls, predictions and channel points.</p>
+    <p>The browser then shows a short confirmation page. Close it and return to Mycelian.</p>
+    <div class="hx-callout hx-note"><p>If no browser window opens, a pop-up blocker may have stopped it. Allow pop-ups for Mycelian and click <strong>Connect</strong> again. If <strong>Advanced</strong> is empty you will see <em>"Please enter your Client ID and Client Secret first"</em> instead.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Check the status</h3>
+    <p>The <strong>Main Account</strong> card should now look like this, with your username beside <strong>User</strong>:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-panel">
+          <div class="hm-panel-title">Main Account</div>
+          <div class="hm-status-band">
+            <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected</span></div>
+            <div class="hm-metric"><span>User</span><span>YourChannel</span></div>
+            <div class="hm-metric"><span>Updated</span><span class="hm-muted">2026-10-22 17:31:04</span></div>
+            <div class="hm-metric"><span>Next refresh</span><span>3h 42m 10s</span><span>2026-10-22 21:13:14</span></div>
+            <div class="hm-metric"><span>Token expires</span><span>3h 57m 10s</span><span>2026-10-22 21:28:14</span></div>
+          </div>
+        </div>
+        <div class="hm-footer">
+          <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
+          <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+          <span class="hm-footer-item">{{brand:obs}} OBS <span class="hm-dot"></span><span class="hm-muted">Disconnected</span></span>
+        </div>
+      </div>
+      <figcaption>The status footer at the bottom of the window also turns green for Twitch.</figcaption>
+    </figure>
+    <p>Mycelian refreshes the token on its own before it expires. You only need to click <strong>Connect</strong> again if the status turns red. Then click <strong>Save</strong>.</p>
+  </div>
+
+</section>
+
+<h2>Optional: a separate chatbot account</h2>
+
+<p>Use the <strong>Chatbot Account</strong> card when chat messages and announcements should come from a bot account instead of your channel.</p>
+
+<p>Without one, the chatbot posts as your main account and the card shows <strong>Connected (Fallback Mode)</strong> once the main account is connected. A dedicated bot shows <strong>Connected (Dedicated)</strong>.</p>
+
+<section class="hx-guide" data-guide="twitch_setup_bot" data-title="Chatbot account">
+  <div class="hx-step">
+    <h3>Reuse or create an application</h3>
+    <p>On <strong>Chatbot Account</strong>, expand <strong>Advanced</strong> and paste a Client ID and Client Secret. The same application as the main account works. A second application also works if its redirect URL is <span class="hx-copy" data-copy="http://localhost:17563">http://localhost:17563</span>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Sign out of the broadcaster in your browser</h3>
+    <p>Twitch will not offer to switch accounts while the broadcaster is signed in. Sign out on twitch.tv, or copy the authorization link into a private window.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Connect the bot</h3>
+    <p>Click <strong>Connect</strong> on the chatbot card and sign in as the bot account. Its status should show <span class="hx-badge hx-ok">Connected (Dedicated)</span> with the bot's name.</p>
+  </div>
+</section>
+
+<div class="hx-callout hx-tip"><p>Make the bot a moderator on your channel (<code>/mod botname</code>) so it can post announcements and run moderation actions.</p></div>
+
+<h2>Options on this tab</h2>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-panel">
+      <div class="hm-panel-title">Options</div>
+      <div class="hm-row hm-gap-xl">
+        <span class="hm-switch is-on"><i></i>Process Twitch alerts</span>
+        <span class="hm-switch"><i></i>Send native Twitch Shoutout</span>
+        <span class="hm-switch"><i></i>Send chat raid shoutout</span>
+      </div>
+    </div>
+  </div>
+  <figcaption>Click a switch to see its on and off states. Changes here are only a preview.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Switch</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Process Twitch alerts</strong></td><td>Turns Twitch events (follows, subs, bits, raids, channel points) into alerts. Turn it off to keep the connection but stop Twitch alerts.</td></tr>
+<tr><td><strong>Send native Twitch Shoutout</strong></td><td>When someone raids you, Mycelian sends Twitch's built-in <code>/shoutout</code> for the raider.</td></tr>
+<tr><td><strong>Send chat raid shoutout</strong></td><td>When someone raids you, the chatbot posts a shoutout message in chat.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Connection status</h2>
+
+<p>The bottom status bar uses these colors for Twitch. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Twitch is active and receiving events</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Degraded</td><td>Signed in, but events have stopped or the session dropped</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Idle</td><td>Not set up yet, or waiting for you to sign in</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>The connection failed. Check the log</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> No Internet</td><td>This computer cannot reach the network</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Unreachable</td><td>Twitch itself cannot be reached</td></tr>
+</tbody>
+</table></div>
+
+<h2>If something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>Twitch says "redirect_mismatch"</summary>
+  <p>The redirect URL in the developer console does not match exactly. Open your application with <strong>Manage</strong>, set the OAuth Redirect URL to <span class="hx-copy" data-copy="http://localhost:17563">http://localhost:17563</span>, save, wait a minute, and click <strong>Connect</strong> again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Twitch says "invalid client" or "invalid client secret"</summary>
+  <p>The Client ID or Client Secret in <strong>Advanced</strong> is wrong, has a stray space, or the secret was regenerated. Generate a new secret, paste both values again, and connect.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The browser never comes back to Mycelian</summary>
+  <p>Something else on this computer is using port <code>17563</code>, or a firewall is blocking it. Close other streaming tools that use Twitch sign-in, then try again. See <a href="help:troubleshooting_connections">Connection Problems</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The chatbot connected as my main account</summary>
+  <p>The browser was still signed in as the broadcaster. Sign out of twitch.tv (or use a private window) and click <strong>Connect</strong> on the chatbot card again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Status says Expired or Auth Failed</summary>
+  <p>The token could not be refreshed, usually because the secret changed or access was revoked under <strong>Twitch → Settings → Connections</strong>. Click <strong>Connect</strong> to sign in again. If sign-in keeps failing, clear cookies for twitch.tv and retry.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:integrations_twitch">{{brand:twitch}}<span><strong>Twitch Integration</strong><span class="hx-card-text">Events, alerts and switches the connection unlocks</span></span></a>
+  <a class="hx-card" href="help:first_alert_setup">{{icon:notifications}}<span><strong>Your First Alert</strong><span class="hx-card-text">Set up and test a follow alert</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>All connection guides</strong><span class="hx-card-text">OBS, Spotify, PSN, YouTube and more</span></span></a>
+</div>

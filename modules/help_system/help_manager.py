@@ -79,7 +79,10 @@ class HelpManager:
         categories = set()
         for topic in self.topics.values():
             categories.add(topic.category)
-        return sorted(list(categories), key=lambda x: x.value)
+        from .help_content import HelpCategory
+
+        order = list(HelpCategory)
+        return sorted(categories, key=order.index)
 
     def search(self, query: str, limit: int = 10) -> List[HelpTopic]:
         """Search help topics"""
@@ -115,7 +118,7 @@ class HelpManager:
             content_score = 0
 
             # Search in content (lower weight)
-            if query_lower in topic.content.lower():
+            if query_lower in topic.plain_text.lower():
                 content_score += 0.5
 
             # Search in summary (higher weight)
@@ -194,9 +197,10 @@ class HelpManager:
         popular_ids = [
             "getting_started_intro",
             "twitch_setup",
+            "connection_guides_overview",
             "alerts_overview",
-            "integrations_spotify",
-            "integrations_psn",
+            "guide_spotify",
+            "guide_psn",
             "obs_setup",
             "troubleshooting_alerts",
             "templates_intro",
@@ -230,7 +234,7 @@ class HelpManager:
                 errors.append(f"Topic {topic_id}: Missing title")
 
             if not topic.content or not topic.content.strip():
-                errors.append(f"Topic {topic_id}: Missing content")
+                errors.append(f"Topic {topic_id}: Missing content file content/{topic_id}.html")
 
             if not topic.summary or not topic.summary.strip():
                 errors.append(f"Topic {topic_id}: Missing summary")

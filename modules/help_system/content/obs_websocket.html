@@ -1,0 +1,186 @@
+<p class="hx-lead">Mycelian talks to OBS through OBS's built-in <strong>WebSocket server</strong>. You turn the server on in OBS, then give Mycelian the host, port and password.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 3 minutes</span>
+  <span>{{icon:videocam}} OBS Studio 28 or newer</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>OBS</span></span></span>
+</div>
+
+<p>You do not need this connection to show overlays. Browser sources work with only a URL (see <a href="help:obs_setup">OBS Browser Sources</a>). The WebSocket adds the extras listed under <strong>What the connection does</strong> below.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="obs_websocket_prereqs">
+  <li>OBS Studio 28 or newer is installed. Those versions include the WebSocket server; older versions need the separate obs-websocket plugin.</li>
+  <li>You know which computer runs OBS. Use <span class="hx-copy" data-copy="localhost">localhost</span> when it is the same computer as Mycelian.</li>
+  <li>If OBS runs on another computer, its firewall allows incoming connections on the WebSocket port (default <span class="hx-copy" data-copy="4455">4455</span>).</li>
+</ul>
+
+<h2>Connect OBS</h2>
+
+<section class="hx-guide" data-guide="obs_websocket_setup" data-title="OBS WebSocket setup">
+
+  <div class="hx-step">
+    <h3>Turn on the WebSocket server in OBS</h3>
+    <p>In OBS, open <span class="hx-path"><span>Tools</span><span>WebSocket Server Settings</span></span>.</p>
+
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-titlebar"><span class="hm-sm">WebSocket Server Settings</span></div>
+        <div class="hm-col">
+          <span class="hm-label">Plugin Settings</span>
+          <div class="hm-row"><span class="hm-check is-on"><i></i>Enable WebSocket server</span><span class="hm-marker" data-n="1"></span></div>
+          <span class="hm-label">Server Settings</span>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow" data-label="Server Port"><span class="hm-value hm-mono">4455</span></div>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+          <div class="hm-row"><span class="hm-check is-on"><i></i>Enable Authentication</span></div>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow" data-label="Server Password"><span class="hm-value hm-secret">••••••••••••</span></div>
+            <span class="hm-btn hm-outline hm-dense">Generate Password</span>
+            <span class="hm-marker" data-n="3"></span>
+          </div>
+          <div class="hm-row hm-between">
+            <span class="hm-btn hm-outline hm-dense">Show Connect Info</span>
+            <span class="hm-row"><span class="hm-btn hm-outline hm-dense">Cancel</span><span class="hm-btn hm-dense">OK</span></span>
+          </div>
+        </div>
+      </div>
+      <figcaption>OBS's dialog, simplified. Field names match OBS.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1">Tick <strong>Enable WebSocket server</strong>.</li>
+      <li data-n="2">Note the <strong>Server Port</strong>. The default is <span class="hx-copy" data-copy="4455">4455</span>.</li>
+      <li data-n="3">With <strong>Enable Authentication</strong> on, copy the <strong>Server Password</strong>. <strong>Show Connect Info</strong> also shows the port and password. Click <strong>OK</strong> to save.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Enter the values in Mycelian</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>OBS</span></span>. The tab repeats the three-line checklist from step 1 above the fields.</p>
+
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-subtabs">
+          <span class="hm-subtab">{{brand:twitch}} Twitch</span>
+          <span class="hm-subtab is-active">{{brand:obs}} OBS</span>
+          <span class="hm-subtab">{{brand:psn}} PSN</span>
+          <span class="hm-subtab">{{brand:spotify}} Spotify</span>
+          <span class="hm-subtab">{{brand:youtube}} YouTube</span>
+          <span class="hm-subtab">{{brand:streamlabs}} Streamlabs</span>
+        </div>
+        <div class="hm-frame">
+          <div class="hm-status-band">
+            <div class="hm-row"><span class="hm-muted hm-xs">Live status</span><span class="hm-bold hm-err">Disconnected</span></div>
+            <span class="hm-switch is-on"><i></i>Enable OBS integration</span>
+            <span class="hm-marker" data-n="1"></span>
+          </div>
+          <div class="hm-col hm-tight">
+            <div class="hm-row"><span class="hm-sm hm-bold">WebSocket checklist</span><span class="hm-btn hm-flat hm-icon-only"><span class="hx-mi">help_outline</span></span></div>
+            <span class="hm-xs hm-muted">1. In OBS, open Tools → WebSocket Server Settings.</span>
+            <span class="hm-xs hm-muted">2. Enable the server and note the port (default 4455) and password.</span>
+            <span class="hm-xs hm-muted">3. Enter those values here, Save, then Test.</span>
+          </div>
+          <div class="hm-grid-2">
+            <div class="hm-field" data-label="Host"><span class="hm-value hm-secret">••••••••</span></div>
+            <div class="hm-field" data-label="Port"><span class="hm-value hm-secret">••••</span></div>
+          </div>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow is-focused" data-label="WebSocket password"><span class="hm-value hm-secret">••••••••••••</span></div>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+          <div class="hm-actions">
+            <span class="hm-marker" data-n="3"></span>
+            <span class="hm-btn hm-outline"><span class="hx-mi">wifi_tethering</span>Test</span>
+            <span class="hm-btn hm-outline">Discard</span>
+            <span class="hm-btn hm-pulse">Save</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>Settings → OBS. The switch only flips the picture.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>Enable OBS integration</strong> is on by default. Turn it off to stop Mycelian from connecting to OBS at all.</li>
+      <li data-n="2"><strong>Host</strong> defaults to <code>localhost</code> and <strong>Port</strong> to <code>4455</code>. All three fields are masked; click the eye icon in a field to show its value. Paste the OBS <strong>Server Password</strong> into <strong>WebSocket password</strong>. Leave it empty if authentication is off in OBS.</li>
+      <li data-n="3">Click <strong>Save</strong>, then <strong>Test</strong>. Test also saves first, then asks OBS for its scene list.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Check it worked</h3>
+    <p><strong>Test</strong> shows <em>"OBS responded successfully"</em>. The status shows the OBS version and WebSocket version:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-status-band">
+          <div class="hm-row"><span class="hm-muted hm-xs">Live status</span><span class="hm-bold hm-ok">Connected — 31.0.2 · ws 5.5.4</span></div>
+          <span class="hm-switch is-on"><i></i>Enable OBS integration</span>
+        </div>
+        <div class="hm-footer">
+          <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
+          <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+          <span class="hm-footer-item">{{brand:obs}} OBS <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+        </div>
+      </div>
+      <figcaption>Version numbers are examples. The OBS item in the status footer turns green.</figcaption>
+    </figure>
+    <p>If OBS is closed, Mycelian keeps retrying in the background (5 seconds at first, then up to every 45 seconds). You can start OBS before or after Mycelian.</p>
+  </div>
+
+</section>
+
+<h2>What the connection does</h2>
+
+<ul>
+<li><strong>Refreshes Mycelian's own browser sources</strong> once after the WebSocket connects, so overlays that loaded before Mycelian was ready recover. Other browser sources (StreamElements, YouTube and the rest) are left alone.</li>
+<li><strong>Add to OBS</strong>: the OBS button on each card under <span class="hx-path"><span>Settings</span><span>About</span></span> → <strong>Available Source URLs</strong> creates the browser source in a scene for you.</li>
+<li><strong>Connector actions</strong>: OBS actions such as <em>Set program scene</em>, <em>Show/hide scene item</em>, <em>Toggle input mute</em> and <em>Start stream</em>. See <a href="help:connector_actions">Connector Actions</a>.</li>
+</ul>
+
+<div class="hx-callout hx-note"><p>OBS has no WebSocket command to reload <strong>custom browser docks</strong>. If a dock opened before Mycelian, restart OBS while Mycelian is running. See <a href="help:obs_setup">OBS Browser Sources</a>.</p></div>
+
+<h2>Connection status</h2>
+
+<p>The bottom status bar uses these colors for OBS. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Mycelian is talking to OBS</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-info"></span> Connecting</td><td>The WebSocket connection is opening</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-info"></span> Disconnecting</td><td>The WebSocket connection is closing</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>OBS is not connected. That is normal when OBS is closed</td></tr>
+</tbody>
+</table></div>
+
+<p>The OBS item is hidden from the footer while <strong>Enable OBS integration</strong> is off.</p>
+
+<h2>If something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>Test says "OBS test failed"</summary>
+  <p>Check that OBS is running, <strong>Enable WebSocket server</strong> is ticked, and the port matches. The text after "OBS test failed:" comes from OBS or the network and usually names the problem.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Authentication failed</summary>
+  <p>The password does not match. In OBS click <strong>Show Connect Info</strong>, copy the password again, paste it into <strong>WebSocket password</strong>, and click <strong>Save</strong>. Watch for a stray space at the end.</p>
+</details>
+
+<details class="hx-details">
+  <summary>OBS is on another computer</summary>
+  <p>Enter that computer's IP address in <strong>Host</strong> (for example <code>192.168.1.20</code>). Allow the port through its firewall. Overlay URLs still point at the computer running Mycelian.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"OBS WebSocket is not enabled" when clicking Add to OBS</summary>
+  <p><strong>Enable OBS integration</strong> is off. Turn it on in <span class="hx-path"><span>Settings</span><span>OBS</span></span> and click <strong>Save</strong>. If it says <em>"OBS WebSocket is not connected."</em> instead, OBS is closed or the settings are wrong.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:obs_setup">{{brand:obs}}<span><strong>OBS Browser Sources</strong><span class="hx-card-text">Add Mycelian overlays to your scenes</span></span></a>
+  <a class="hx-card" href="help:connector_actions">{{icon:bolt}}<span><strong>Connector Actions</strong><span class="hx-card-text">Switch scenes and toggle sources from events</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>All connection guides</strong><span class="hx-card-text">Twitch, Spotify, PSN, YouTube and more</span></span></a>
+</div>

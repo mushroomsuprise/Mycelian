@@ -1,0 +1,258 @@
+<p class="hx-lead">Overlays get live data from Mycelian over a <strong>Socket.IO</strong> connection to the built-in web server. This page lists the connection details and the main events, for people writing or editing template JavaScript.</p>
+
+<div class="hx-meta">
+  <span>{{icon:dns}} <span class="hx-copy" data-copy="http://127.0.0.1:5000">http://127.0.0.1:5000</span></span>
+  <span>{{icon:code}} Socket.IO 4 client</span>
+</div>
+
+<div class="hx-callout hx-tip"><p>Building in <a href="help:spore_studio_overview">Spore Studio</a>? Its <a href="help:spore_studio_bindings">event bindings</a> subscribe to these same events without code.</p></div>
+
+<h2>How it fits together</h2>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-flow">
+      <div class="hm-card"><span class="hm-bold hm-sm">Twitch, Spotify, PSN, chat…</span><span class="hm-muted hm-xs">Events arrive in Mycelian</span></div>
+      <span class="hx-mi hm-flow-arrow">arrow_forward</span>
+      <div class="hm-card"><span class="hm-bold hm-sm">Mycelian web server</span><span class="hm-muted hm-xs">Port 5000. Broadcasts e.g. <code>next_alert</code></span></div>
+      <span class="hx-mi hm-flow-arrow">sync_alt</span>
+      <div class="hm-card"><span class="hm-bold hm-sm">Overlay in OBS</span><span class="hm-muted hm-xs"><code>socket.on(…)</code> updates the page; <code>socket.emit(…)</code> asks for data or reports back</span></div>
+    </div>
+  </div>
+  <figcaption>Events flow both ways over one Socket.IO connection per open overlay.</figcaption>
+</figure>
+
+<h2>Connecting</h2>
+
+<p>The server speaks the Socket.IO protocol on the same address and port as the overlay page (default port <code>5000</code>, path <code>/socket.io/</code>). A plain <code>new WebSocket('ws://…')</code> will not work; use the Socket.IO client.</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list"><button data-tab="helper" class="is-active">Built-in helper (recommended)</button><button data-tab="plain">Plain Socket.IO</button></div>
+  <div class="hx-tab-panel" data-panel="helper">
+    <p>All built-in templates load the Socket.IO client and Mycelian's helper, then connect through <code>MycelianOverlay.connect</code>. It adds reconnect settings, announces the overlay to Mycelian, and calls <code>onRecovery</code> when Mycelian asks overlays to resync (for example after a service reconnects).</p>
+<pre><code>&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"&gt;&lt;/script&gt;
+&lt;script src="/assets/default_assets/overlay_recovery.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+    var socket = MycelianOverlay.connect(
+        'http://' + document.domain + ':' + location.port,
+        { onRecovery: function () { /* re-request your data */ } }
+    );
+&lt;/script&gt;
+</code></pre>
+  </div>
+  <div class="hx-tab-panel" data-panel="plain">
+<pre><code>const socket = io('http://127.0.0.1:5000', {
+    transports: ['websocket', 'polling'],
+    reconnection: true
+});
+
+socket.on('connect', () =&gt; {
+    console.log('Connected to Mycelian');
+});
+</code></pre>
+  </div>
+</div>
+
+<h2>Events Mycelian sends</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="alerts" class="is-active">Alerts</button>
+    <button data-tab="state">State</button>
+    <button data-tab="data">Service data</button>
+    <button data-tab="controls">Controls</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="alerts">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Event</th><th>When</th><th>Data</th></tr></thead>
+    <tbody>
+    <tr><td><code>next_alert</code></td><td>The next alert in the queue should play</td><td>Alert object (below)</td></tr>
+    <tr><td><code>instant_alert</code></td><td>An alert that skips the queue</td><td>Alert object</td></tr>
+    <tr><td><code>activity_feed_alert</code></td><td>An alert to list in the Activity Feed</td><td>Alert object</td></tr>
+    <tr><td><code>alert_complete_ack</code></td><td>Reply to your <code>alert_complete</code></td><td><code>{ queue_seq }</code></td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="state">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Event</th><th>When</th><th>Data</th></tr></thead>
+    <tbody>
+    <tr><td><code>alerts_paused</code> / <code>alerts_resumed</code></td><td>Alerts were paused or resumed</td><td><code>{ paused: true }</code> / <code>{ paused: false }</code></td></tr>
+    <tr><td><code>pause_status_update</code></td><td>Pause state changed, or reply to <code>get_pause_status</code></td><td><code>{ paused }</code></td></tr>
+    <tr><td><code>template_config_updated</code></td><td>A template was saved in Source Settings</td><td><code>{ template }</code>. Reload your settings if it is your template.</td></tr>
+    <tr><td><code>theme_update</code></td><td>The app theme changed, or reply to <code>get_current_theme</code></td><td><code>{ css, theme_name, … }</code></td></tr>
+    <tr><td><code>overlay-recovery</code></td><td>Mycelian asks overlays to resync</td><td><code>{ service, … }</code>. Handled by the helper.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="data">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Event</th><th>When</th></tr></thead>
+    <tbody>
+    <tr><td><code>twitch_data_update</code></td><td>Twitch channel data changed, e.g. <code>current_category</code></td></tr>
+    <tr><td><code>spotify_data_update</code></td><td>Now-playing changed, or reply to <code>get_spotify_data</code></td></tr>
+    <tr><td><code>psn_data_update</code></td><td>PSN data changed, or reply to <code>get_psn_data</code></td></tr>
+    <tr><td><code>new-message</code></td><td>A chat message (used by the Chat template)</td></tr>
+    <tr><td><code>streamer-info</code></td><td>Reply to <code>get-streamer-info</code>: <code>streamer_name</code>, <code>user_id</code>, <code>current_category</code></td></tr>
+    <tr><td><code>twitch-api-response</code></td><td>Reply to <code>twitch-api-request</code>: <code>{ requestId, success, data }</code></td></tr>
+    <tr><td><code>get_data</code></td><td>Reply to <code>get_data</code>: <code>{ path, data, request_id }</code></td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="controls">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Event</th><th>When</th><th>Data</th></tr></thead>
+    <tbody>
+    <tr><td><code>&lt;template&gt;_&lt;action&gt;</code></td><td>A control was used in <a href="help:source_controls">Source Controls</a> or the OBS dock. Example: <code>title_refresh_title</code>. Connector actions use the same pattern (e.g. <code>title_change_title</code>).</td><td>Toggle <code>{ enabled }</code>, slider and number <code>{ value }</code>, text <code>{ text }</code>, button: its configured data</td></tr>
+    <tr><td><code>streamdeck_template_action</code></td><td>A Stream Deck key ran a template action</td><td><code>{ templateName, actionName, … }</code>. Check <code>templateName</code> is yours.</td></tr>
+    <tr><td><code>template_output</code></td><td>Another template published a result (e.g. <code>roulette_result</code>)</td><td><code>{ template, event, data }</code></td></tr>
+    </tbody>
+    </table></div>
+  </div>
+</div>
+
+<h3>The alert object</h3>
+
+<p><code>next_alert</code>, <code>instant_alert</code> and <code>activity_feed_alert</code> carry the alert's fields. Only the fields that matter for the alert type are filled in; the rest keep empty defaults. Common ones:</p>
+
+<pre><code>{
+    "alert_type": "sub",          // follow, sub, resub, giftsub, bit, raid, point, donation, ...
+    "alert_name": "...",
+    "username": "ViewerName",
+    "message": "Great stream!",
+    "tier": 1,
+    "resub_month": 6,
+    "gift_qty": 0,
+    "recipient": "",
+    "amt_cheered": 0,
+    "raider_count": 0,
+    "point_cost": 0,
+    "title": null,                // channel point reward name
+    "donation_amount": 0.0,
+    "currency": "USD",
+    "duration": 5.0,
+    "is_test": false,
+    "timestamp": 1761150000.0,
+    "queue_seq": 42               // next_alert only: echo this in alert_complete
+}
+</code></pre>
+
+<h2>Events you can send</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Event</th><th>Data</th><th>Does</th></tr></thead>
+<tbody>
+<tr><td><code>alert_complete</code></td><td><code>{ queue_seq }</code></td><td>Tells the queue the alert finished. The main Alerts overlay sends this; a template that only reacts to alerts does not need to.</td></tr>
+<tr><td><code>get_pause_status</code></td><td>none</td><td>Replies with <code>pause_status_update</code></td></tr>
+<tr><td><code>pause_alerts</code>, <code>resume_alerts</code>, <code>toggle_alerts</code></td><td>none</td><td>Changes the alert pause state</td></tr>
+<tr><td><code>skip_alert</code></td><td>none</td><td>Skips the playing alert</td></tr>
+<tr><td><code>get_data</code></td><td><code>{ path, request_id }</code></td><td>Reads a value from Mycelian's data store; replies with <code>get_data</code></td></tr>
+<tr><td><code>set_data</code>, <code>update_data</code></td><td><code>{ path, data }</code></td><td>Writes or merges a value. Accepted from this computer only.</td></tr>
+<tr><td><code>get-streamer-info</code></td><td>none</td><td>Replies with <code>streamer-info</code></td></tr>
+<tr><td><code>twitch-api-request</code></td><td><code>{ endpoint, requestId, method?, params? }</code></td><td>Calls a Twitch Helix URL (<code>https://api.twitch.tv/…</code>) with your login; replies with <code>twitch-api-response</code></td></tr>
+<tr><td><code>get_spotify_data</code>, <code>get_psn_data</code>, <code>get_twitch_data</code></td><td>none</td><td>Asks for the current service data</td></tr>
+<tr><td><code>get_current_theme</code></td><td>none</td><td>Replies with <code>theme_update</code></td></tr>
+</tbody>
+</table></div>
+
+<h2>Examples</h2>
+
+<h3>React to alerts</h3>
+
+<pre><code>socket.on('next_alert', (alert) =&gt; {
+    if (alert.alert_type === 'sub') {
+        showBanner(alert.username + ' subscribed!');
+    }
+});
+</code></pre>
+
+<h3>Respond to a Source Controls button</h3>
+
+<p>A control with action <code>refresh</code> on template <code>mywidget</code> arrives as <code>mywidget_refresh</code>:</p>
+
+<pre><code>socket.on('mywidget_refresh', (data) =&gt; {
+    reloadEverything();
+});
+
+socket.on('mywidget_toggle_glow', (data) =&gt; {
+    document.body.classList.toggle('glow', data.enabled);
+});
+</code></pre>
+
+<h3>Reload settings after Save</h3>
+
+<pre><code>socket.on('template_config_updated', async (data) =&gt; {
+    if (data.template !== 'mywidget') return;
+    const res = await fetch('/api/template-config/mywidget');
+    applySettings(await res.json());
+});
+</code></pre>
+
+<h3>Read the current category</h3>
+
+<pre><code>socket.on('connect', () =&gt; socket.emit('get-streamer-info'));
+
+socket.on('streamer-info', (info) =&gt; {
+    if (info &amp;&amp; info.current_category) {
+        setCategory(info.current_category);
+    }
+});
+
+socket.on('twitch_data_update', (data) =&gt; {
+    if (data.current_category !== undefined) {
+        setCategory(data.current_category);
+    }
+});
+</code></pre>
+
+<h3>Handle reconnects</h3>
+
+<pre><code>socket.on('disconnect', (reason) =&gt; {
+    console.log('Disconnected, will auto-reconnect:', reason);
+});
+
+socket.on('connect', () =&gt; {
+    // Runs on the first connect and after every reconnect.
+    requestCurrentState();
+});
+</code></pre>
+
+<h2>Debugging</h2>
+
+<p>Open the overlay URL in a desktop browser and press <kbd>F12</kbd> (or right-click → <strong>Inspect</strong>).</p>
+
+<ul>
+  <li><strong>Console</strong>: built-in templates log connection and event messages here.</li>
+  <li><strong>Network</strong>: filter by <strong>WS</strong>, click the <code>socket.io</code> connection, and open <strong>Messages</strong> to see every event in both directions.</li>
+  <li>The Source Settings preview's mock buttons send sample events, so you can test without real alerts. See <a href="help:template_configuration">Configuring Template Settings</a>.</li>
+</ul>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>The overlay cannot connect</summary>
+  <ul>
+    <li>Check Mycelian is running and the overlay server is up in the <a href="help:status_footer">status footer</a>.</li>
+    <li>Use <code>http://</code>, not <code>https://</code>.</li>
+    <li>Something else may be using port 5000, or a firewall is blocking it. See <a href="help:troubleshooting_connections">Connection Problems</a>.</li>
+  </ul>
+</details>
+
+<details class="hx-details">
+  <summary>Connected, but my handler never runs</summary>
+  <ul>
+    <li>Check the event name exactly; names mix underscores and hyphens (<code>next_alert</code>, <code>get-streamer-info</code>).</li>
+    <li>For control events, the prefix is the template's file name: <code>boo chat</code> gives <code>boo chat_trigger</code>.</li>
+    <li>Look for JavaScript errors in the console that stop the script before <code>socket.on</code> runs.</li>
+  </ul>
+</details>
+
+<details class="hx-details">
+  <summary>set_data does nothing</summary>
+  <p><code>set_data</code>, <code>update_data</code> and the Source Controls relay are only accepted from this computer. An overlay opened from another PC can read but not write.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Updates feel delayed</summary>
+  <p>A short delay is normal. If it grows, check CPU use and keep handlers light; see <a href="help:troubleshooting_performance">Performance Optimization</a>.</p>
+</details>

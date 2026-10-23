@@ -1,0 +1,822 @@
+/* =========================================================================
+   Mycelian Help — Spore Studio editor mock pieces (hm-ss-*)
+   Mirrors assets/default_assets/spore_studio/editor.css and
+   container_editor.css: toolbar, Blocks/Outline/Assets column, checkered
+   canvas, inspector tabs, collapsible property sections, binding/feed
+   cards, dialogs, live preview and the Advanced JS editor.
+   Theme variables only. Shared with the other Spore Studio help pages.
+
+   Usage:
+     <div class="hm hm-ss">                       editor root (no padding)
+       <div class="hm-ss-hostbar">…</div>          optional NiceGUI bar above the iframe
+       <div class="hm-ss-toolbar">…</div>
+       <div class="hm-ss-body">                    3 columns
+         <div class="hm-ss-left">…</div>  <div class="hm-ss-canvas">…</div>  <div class="hm-ss-right">…</div>
+       </div>
+     </div>
+   Body modifiers: hm-ss-no-left (canvas + inspector), hm-ss-no-right,
+   hm-ss-inspector-only (single column).
+   ========================================================================= */
+
+.help-doc .hm.hm-ss {
+    padding: 0;
+    font-size: 12px;
+    line-height: 1.35;
+    background: var(--color-bg-base);
+}
+
+/* ---- Host bar (NiceGUI, outside the iframe) -------------------------- */
+
+.help-doc .hm-ss-hostbar {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: var(--color-bg-surface);
+    border-bottom: 1px solid var(--color-border-default);
+}
+
+.help-doc .hm-ss-hostbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--color-text-primary);
+}
+.help-doc .hm-ss-hostbtn .hx-mi { font-size: 15px; }
+
+/* ---- Editor toolbar --------------------------------------------------- */
+
+.help-doc .hm-ss-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    min-height: 38px;
+    background: var(--color-bg-elevated);
+    border-bottom: 1px solid var(--color-border-subtle);
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+
+.help-doc .hm-ss-spacer { flex: 1 1 auto; }
+
+.help-doc .hm-ss-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    font-size: 11px;
+    white-space: nowrap;
+}
+.help-doc .hm-ss-btn .hx-mi { font-size: 15px; }
+.help-doc .hm-ss-btn.hm-ss-primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+}
+.help-doc .hm-ss-btn.hm-ss-ghost { background: transparent; }
+.help-doc .hm-ss-btn.hm-ss-danger {
+    color: var(--color-error);
+    border-color: color-mix(in srgb, var(--color-error) 35%, transparent);
+}
+.help-doc .hm-ss-btn.hm-ss-sm { padding: 2px 7px; font-size: 11px; }
+.help-doc .hm-ss-btn.is-disabled { opacity: 0.5; }
+
+/* Templates | Containers mode switch */
+.help-doc .hm-ss-mode {
+    display: inline-flex;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.help-doc .hm-ss-mode > span {
+    padding: 3px 8px;
+    font-size: 11px;
+    color: var(--color-text-muted);
+    background: var(--color-bg-surface);
+}
+.help-doc .hm-ss-mode > span + span { border-left: 1px solid var(--color-border-subtle); }
+.help-doc .hm-ss-mode > span.is-active {
+    color: var(--color-text-primary);
+    background: color-mix(in srgb, var(--color-primary) 22%, var(--color-bg-surface));
+    font-weight: 600;
+}
+
+/* Template dropdown */
+.help-doc .hm-ss-select {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 110px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    font-weight: 500;
+    font-size: 11.5px;
+}
+.help-doc .hm-ss-select::after {
+    content: '';
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--color-text-muted);
+}
+
+.help-doc .hm-ss-dirty { font-size: 11px; color: var(--color-warning); white-space: nowrap; }
+
+/* ---- Three-column body ----------------------------------------------- */
+
+.help-doc .hm-ss-body {
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr) 250px;
+    min-height: 260px;
+}
+.help-doc .hm-ss-body.hm-ss-no-left { grid-template-columns: minmax(0, 1fr) 250px; }
+.help-doc .hm-ss-body.hm-ss-no-right { grid-template-columns: 170px minmax(0, 1fr); }
+.help-doc .hm-ss-body.hm-ss-inspector-only { grid-template-columns: minmax(0, 1fr); }
+
+.help-doc .hm-ss-left,
+.help-doc .hm-ss-right {
+    background: var(--color-bg-elevated);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.help-doc .hm-ss-left { border-right: 1px solid var(--color-border-subtle); }
+.help-doc .hm-ss-right { border-left: 1px solid var(--color-border-subtle); }
+.help-doc .hm-ss-inspector-only > .hm-ss-right { border-left: none; }
+
+.help-doc .hm-ss-section {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm-ss-section:last-child { border-bottom: none; }
+
+.help-doc .hm-ss-h {
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    margin: 0 0 6px;
+}
+
+.help-doc .hm-ss-empty {
+    color: var(--color-text-muted);
+    font-size: 11.5px;
+    font-style: italic;
+    padding: 6px 0;
+}
+
+.help-doc .hm-ss-hint {
+    color: var(--color-text-muted);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+/* ---- Blocks palette --------------------------------------------------- */
+
+.help-doc .hm-ss-group { margin-bottom: 4px; }
+.help-doc .hm-ss-group-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+    padding: 3px 0;
+}
+.help-doc .hm-ss-group-title::before {
+    content: '';
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid currentColor;
+}
+.help-doc .hm-ss-group.is-collapsed .hm-ss-group-title::before { transform: rotate(-90deg); }
+.help-doc .hm-ss-group.is-collapsed .hm-ss-block { display: none; }
+
+.help-doc .hm-ss-block {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 7px;
+    margin: 3px 0;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    font-size: 11.5px;
+    color: var(--color-text-primary);
+}
+.help-doc .hm-ss-block.is-dragging {
+    border-color: var(--color-primary);
+    opacity: 0.6;
+}
+.help-doc .hm-ss-block-icon {
+    width: 16px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    flex: 0 0 auto;
+}
+
+/* ---- Outline ---------------------------------------------------------- */
+
+.help-doc .hm-ss-outline-head {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 4px 0 2px;
+}
+.help-doc .hm-ss-outline-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 11.5px;
+}
+.help-doc .hm-ss-outline-row.is-selected { background: var(--color-primary-light); }
+.help-doc .hm-ss-outline-row.hm-ss-nest { padding-left: 18px; }
+.help-doc .hm-ss-oid { color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.help-doc .hm-ss-otype { color: var(--color-text-muted); font-size: 10px; }
+
+/* ---- Assets ----------------------------------------------------------- */
+
+.help-doc .hm-ss-assets {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+}
+.help-doc .hm-ss-asset {
+    padding: 5px;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: var(--color-bg-surface);
+    font-size: 10px;
+    color: var(--color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.help-doc .hm-ss-asset-kind {
+    display: block;
+    font-size: 9px;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+/* ---- Canvas ----------------------------------------------------------- */
+
+.help-doc .hm-ss-canvas {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 26px 14px 14px;
+    min-width: 0;
+    background: repeating-conic-gradient(
+        var(--color-bg-elevated) 0% 25%,
+        var(--color-bg-surface) 0% 50%
+    ) 50% / 20px 20px;
+}
+
+.help-doc .hm-ss-stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 1;
+    border: 1px dashed color-mix(in srgb, var(--color-text-primary) 25%, transparent);
+    background:
+        repeating-conic-gradient(
+            color-mix(in srgb, var(--color-text-primary) 6%, transparent) 0% 25%,
+            transparent 0% 50%
+        ) 0 0 / 14px 14px,
+        var(--color-bg-base);
+}
+.help-doc .hm-ss-stage.hm-ss-16x9 { aspect-ratio: 16 / 9; }
+.help-doc .hm-ss-stage.hm-ss-3x1 { aspect-ratio: 3 / 1; }
+.help-doc .hm-ss-stage.hm-ss-2x1 { aspect-ratio: 2 / 1; }
+.help-doc .hm-ss-stage.is-drop-root { border-color: var(--color-primary); }
+
+.help-doc .hm-ss-dims {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+}
+
+/* An element on the canvas. Position it with style="left/top/width/height" in %. */
+.help-doc .hm-ss-el {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-size: 11px;
+    color: var(--color-text-primary);
+    border: 1px solid transparent;
+    background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+}
+.help-doc .hm-ss-el.hm-ss-text { justify-content: flex-start; padding: 0 6px; font-weight: 600; font-size: 13px; }
+.help-doc .hm-ss-el.hm-ss-media {
+    color: var(--color-text-muted);
+    background:
+        repeating-conic-gradient(
+            color-mix(in srgb, var(--color-text-primary) 8%, transparent) 0% 25%,
+            transparent 0% 50%
+        ) 0 0 / 12px 12px,
+        color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+.help-doc .hm-ss-el.hm-ss-audio {
+    background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+    border-radius: 4px;
+    font-size: 10px;
+}
+.help-doc .hm-ss-el.hm-ss-container {
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 3px 5px;
+    font-size: 9.5px;
+    color: var(--color-text-muted);
+    border: 1px dashed color-mix(in srgb, var(--color-text-primary) 25%, transparent);
+    background: color-mix(in srgb, var(--color-primary) 4%, transparent);
+}
+.help-doc .hm-ss-el.is-drop-target {
+    border: 2px solid var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+.help-doc .hm-ss-el.is-selected {
+    border: 1px solid var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
+    overflow: visible;
+}
+.help-doc .hm-ss-el.is-selected::after {      /* bottom-right resize handle */
+    content: '';
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    width: 8px;
+    height: 8px;
+    background: var(--color-primary);
+    border: 1px solid var(--color-bg-base);
+}
+.help-doc .hm-ss-anim {                        /* "anim" badge */
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 8.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #fff;
+    background: var(--color-primary);
+}
+
+/* Progress-bar block on the canvas */
+.help-doc .hm-ss-bar {
+    position: absolute;
+    border-radius: 999px;
+    background: var(--color-bg-elevated);
+    overflow: hidden;
+}
+.help-doc .hm-ss-bar > i {
+    display: block;
+    height: 100%;
+    width: var(--hm-val, 50%);
+    background: var(--color-primary);
+    border-radius: inherit;
+}
+
+/* ---- Inspector tabs --------------------------------------------------- */
+
+.help-doc .hm-ss-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 4px 4px 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+    overflow: hidden;
+    flex-wrap: wrap;
+}
+.help-doc .hm-ss-tab {
+    padding: 4px 6px;
+    font-size: 10px;
+    color: var(--color-text-muted);
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    white-space: nowrap;
+}
+.help-doc .hm-ss-tab.is-active {
+    color: var(--color-text-primary);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+    border-color: var(--color-border-subtle);
+    border-bottom: 2px solid var(--color-primary);
+}
+.help-doc .hm-ss-pane { padding: 0; }
+
+/* Collapsible property section. Combine with hm-expansion so help.js toggles it:
+   <div class="hm-expansion hm-ss-collapse is-open"><div class="hm-expansion-head">Layout</div>
+   <div class="hm-expansion-body">…</div></div> */
+.help-doc .hm-expansion.hm-ss-collapse {
+    border: none;
+    border-bottom: 1px solid var(--color-border-subtle);
+    border-radius: 0;
+    background: transparent;
+}
+.help-doc .hm-expansion.hm-ss-collapse > .hm-expansion-head {
+    padding: 7px 10px;
+    min-height: 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+    background: transparent;
+    border-bottom: none;
+}
+.help-doc .hm-expansion.hm-ss-collapse > .hm-expansion-head::before {   /* summary triangle, like ss-collapse */
+    content: '';
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 5px solid currentColor;
+    transition: transform 0.12s ease;
+}
+.help-doc .hm-expansion.hm-ss-collapse.is-open > .hm-expansion-head::before { transform: rotate(90deg); }
+.help-doc .hm-expansion.hm-ss-collapse > .hm-expansion-head::after { content: none; }
+.help-doc .hm-expansion.hm-ss-collapse.is-open > .hm-expansion-head { color: var(--color-text-primary); }
+.help-doc .hm-expansion.hm-ss-collapse > .hm-expansion-body {
+    padding: 2px 10px 10px;
+    gap: 6px;
+}
+
+/* ---- Form rows -------------------------------------------------------- */
+
+.help-doc .hm-ss-row { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.help-doc .hm-ss-row.hm-ss-inline { flex-direction: row; align-items: center; gap: 8px; }
+.help-doc .hm-ss-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.help-doc .hm-ss-quad { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+
+.help-doc .hm-ss-label {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    font-size: 10.5px;
+    color: var(--color-text-muted);
+}
+
+/* "Expose in Source Settings" checkbox, placed before a property label:
+   <span class="hm-ss-label"><span class="hm-ss-expose is-on"></span>Text</span> */
+.help-doc .hm-ss-expose {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 9.5px;
+    color: var(--color-text-muted);
+}
+.help-doc .hm-ss-expose::before {
+    content: '';
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
+    border: 1px solid var(--color-border-default);
+    background: var(--color-bg-surface);
+}
+.help-doc .hm-ss-expose.is-on::before {
+    content: '\2713';
+    font-size: 9px;
+    line-height: 11px;
+    text-align: center;
+    font-weight: 700;
+    color: #fff;
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.help-doc .hm-ss-input {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    font-size: 11.5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.help-doc .hm-ss-input.is-placeholder { color: var(--color-text-muted); }
+.help-doc .hm-ss-input.is-focused { border-color: var(--color-primary); }
+.help-doc .hm-ss-input.hm-ss-sel { justify-content: space-between; }
+.help-doc .hm-ss-input.hm-ss-sel::after {
+    content: '';
+    flex: 0 0 auto;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--color-text-muted);
+}
+.help-doc .hm-ss-input.hm-ss-area { align-items: flex-start; min-height: 46px; white-space: pre-wrap; }
+.help-doc .hm-ss-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid var(--color-border-default);
+    background: var(--color-primary);
+    flex: 0 0 auto;
+}
+.help-doc .hm-ss-swatch.hm-ss-sw-light { background: var(--color-text-primary); }
+.help-doc .hm-ss-swatch.hm-ss-sw-dark { background: var(--color-bg-base); }
+.help-doc .hm-ss-swatch.hm-ss-sw-accent { background: var(--color-success); }
+
+/* 3×3 placement anchor grid */
+.help-doc .hm-ss-anchor {
+    display: grid;
+    grid-template-columns: repeat(3, 18px);
+    gap: 3px;
+}
+.help-doc .hm-ss-anchor > i {
+    height: 18px;
+    border-radius: 3px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-surface);
+}
+.help-doc .hm-ss-anchor > i.is-on { background: var(--color-primary); border-color: var(--color-primary); }
+
+/* ---- Cards: binding rows, feeds, transforms, Stream Deck actions ----- */
+
+.help-doc .hm-ss-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-surface);
+}
+.help-doc .hm-ss-card.is-off { opacity: 0.65; }
+.help-doc .hm-ss-card .hm-ss-input { background: var(--color-bg-elevated); }
+.help-doc .hm-ss-card-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 11.5px;
+    color: var(--color-text-primary);
+}
+.help-doc .hm-ss-card-head > .hm-ss-x { margin-left: auto; color: var(--color-text-muted); font-weight: 400; }
+.help-doc .hm-ss-sub {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+}
+.help-doc .hm-ss-step {
+    border-left: 2px solid var(--color-border-accent);
+    padding-left: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+/* ---- Dialogs (New template, Element category) ------------------------ */
+
+.help-doc .hm-ss-scrim {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 22px 14px;
+    background: var(--color-bg-overlay);
+}
+.help-doc .hm-ss-dialog {
+    width: 100%;
+    max-width: 380px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-elevated);
+    box-shadow: 0 8px 30px var(--color-bg-overlay);
+}
+.help-doc .hm-ss-dialog-title { font-size: 15px; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm-ss-dialog-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+
+/* ---- Live preview window --------------------------------------------- */
+
+.help-doc .hm-ss-preview {
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--color-bg-elevated);
+}
+.help-doc .hm-ss-preview-head,
+.help-doc .hm-ss-preview-bar {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    padding: 5px 8px;
+    background: var(--color-bg-surface);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm-ss-preview-head { font-weight: 600; color: var(--color-text-primary); }
+.help-doc .hm-ss-preview-bar > b {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    margin-left: 4px;
+}
+.help-doc .hm-ss-preview-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    min-height: 120px;
+    background: repeating-conic-gradient(
+        var(--color-bg-elevated) 0% 25%,
+        var(--color-bg-surface) 0% 50%
+    ) 50% / 20px 20px;
+}
+.help-doc .hm-ss-num {
+    display: inline-block;
+    min-width: 44px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-elevated);
+    font-size: 11px;
+    color: var(--color-text-primary);
+}
+
+/* An overlay "render" inside a canvas or preview (alert card etc.) */
+.help-doc .hm-ss-overlay-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-bg-base) 85%, transparent);
+    border: 1px solid var(--color-border-accent);
+    color: var(--color-text-primary);
+    font-weight: 600;
+}
+
+/* ---- Advanced JS editor ---------------------------------------------- */
+
+.help-doc .hm-ss-code {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.help-doc .hm-ss-gutter {
+    padding: 6px 8px;
+    text-align: right;
+    color: var(--color-text-muted);
+    background: var(--color-bg-elevated);
+    border-right: 1px solid var(--color-border-subtle);
+    white-space: pre;
+    opacity: 0.8;
+}
+.help-doc .hm-ss-src {
+    padding: 6px 10px;
+    white-space: pre;
+    overflow: hidden;
+    color: var(--color-text-primary);
+}
+.help-doc .hm-ss-src .k { color: var(--color-primary); }    /* keyword */
+.help-doc .hm-ss-src .s { color: var(--color-success); }    /* string */
+.help-doc .hm-ss-src .c { color: var(--color-text-muted); font-style: italic; }  /* comment */
+.help-doc .hm-ss-src .f { color: var(--color-info); }       /* function */
+.help-doc .hm-ss-src .n { color: var(--color-warning); }    /* number */
+.help-doc .hm-ss-codestatus {
+    display: flex;
+    gap: 14px;
+    padding: 3px 10px;
+    font-size: 10.5px;
+    color: var(--color-text-muted);
+    background: var(--color-bg-surface);
+    border-top: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm-ss-ref {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px;
+    border-left: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-elevated);
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    color: var(--color-text-primary);
+}
+.help-doc .hm-ss-ref > span {
+    padding: 3px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-surface);
+}
+
+/* ---- Containers mode -------------------------------------------------- */
+
+.help-doc .hm-ss-slot {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 2px;
+    padding: 4px 6px;
+    font-size: 10px;
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border-accent);
+    background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-base));
+    overflow: hidden;
+}
+.help-doc .hm-ss-slot > small { color: var(--color-text-muted); font-size: 9px; }
+.help-doc .hm-ss-slot.is-selected { border: 2px solid var(--color-primary); }
+.help-doc .hm-ss-slot.is-missing {
+    border: 1px dashed var(--color-error);
+    background: color-mix(in srgb, var(--color-error) 8%, var(--color-bg-base));
+    color: var(--color-error);
+}
+.help-doc .hm-ss-slot.is-flex { border-style: dashed; }
+.help-doc .hm-ss-gapbar {                      /* draggable spacing bar between linked slots */
+    position: absolute;
+    background: color-mix(in srgb, var(--color-primary) 45%, transparent);
+    border-radius: 2px;
+}
+
+/* ---- Waiting placeholder + toast ------------------------------------ */
+
+.help-doc .hm-ss-wait {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--color-text-secondary);
+}
+.help-doc .hm-ss-wait > .hx-mi { font-size: 30px; color: var(--color-text-muted); }
+
+.help-doc .hm-ss-toast {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    color: var(--color-text-primary);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm-ss-toast.hm-ss-ok { border-color: color-mix(in srgb, var(--color-success) 60%, transparent); }
+.help-doc .hm-ss-toast.hm-ss-err { border-color: color-mix(in srgb, var(--color-error) 60%, transparent); }
+
+/* Narrow help pane: stack the editor columns */
+@media (max-width: 760px) {
+    .help-doc .hm-ss-body,
+    .help-doc .hm-ss-body.hm-ss-no-left,
+    .help-doc .hm-ss-body.hm-ss-no-right { grid-template-columns: minmax(0, 1fr); }
+    .help-doc .hm-ss-left,
+    .help-doc .hm-ss-right { border: none; border-top: 1px solid var(--color-border-subtle); }
+}
+
+/* Narrow single-panel mock (an inspector card on its own) */
+.help-doc .hm.hm-ss.hm-ss-narrow { max-width: 440px; }

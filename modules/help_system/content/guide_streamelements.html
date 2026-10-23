@@ -1,0 +1,187 @@
+<p class="hx-lead">Mycelian listens for StreamElements <strong>tips</strong> using your channel's <strong>JWT token</strong>. You copy it from the StreamElements dashboard and paste it into Mycelian. There is no app to register.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 3 minutes</span>
+  <span>{{icon:person}} The StreamElements account that receives tips</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>StreamElements</span></span></span>
+</div>
+
+<p>Only tips come from StreamElements. Follows and subscriptions stay on the <a href="help:twitch_setup">Twitch connection</a>. What happens with tips once they arrive is in <a href="help:integrations_streamelements">StreamElements Integration</a>.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="guide_streamelements_prereqs">
+  <li>You can sign in at the <a href="https://streamelements.com/dashboard">StreamElements dashboard</a>.</li>
+  <li>You know which linked channel receives tips (Twitch, YouTube or Kick). Each channel has its own JWT.</li>
+</ul>
+
+<h2>Connect StreamElements</h2>
+
+<section class="hx-guide" data-guide="guide_streamelements_setup" data-title="StreamElements setup">
+
+  <div class="hx-step">
+    <h3>Select the channel that receives tips</h3>
+    <p>Sign in to the <a href="https://streamelements.com/dashboard">StreamElements dashboard</a>. If more than one platform is linked, click your avatar in the top-right and choose the channel that receives tips.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Copy the JWT token</h3>
+    <p>Open <a href="https://streamelements.com/dashboard/account/channels">Account → Channels</a>. Turn on <strong>Show secrets</strong>, then copy the <strong>JWT Token</strong>.</p>
+    <figure class="hx-figure">
+      <div class="hm hm-browser">
+        <div class="hm-browser-bar"><span class="hm-browser-url">streamelements.com/dashboard/account/channels</span></div>
+        <div class="hm-browser-body">
+          <div class="hm-row hm-between"><span class="hm-h2">Channels</span><span class="hm-row"><span class="hm-switch is-on"><i></i>Show secrets</span><span class="hm-marker" data-n="1"></span></span></div>
+          <div class="hm-field" data-label="Account ID"><span class="hm-value hm-mono">5f2a9c…e81b</span></div>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow is-focused" data-label="JWT Token"><span class="hm-value hm-mono">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…</span></div>
+            <span class="hm-btn hm-icon-only"><span class="hx-mi">content_copy</span></span>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+        </div>
+      </div>
+      <figcaption>StreamElements' page, simplified. Click <strong>Show secrets</strong> to see it hide the token; it is only a picture.</figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1">The JWT is hidden until <strong>Show secrets</strong> is on.</li>
+      <li data-n="2">Copy the <strong>JWT Token</strong>, not the Account ID. A JWT is long and starts with <code>eyJ</code>.</li>
+    </ol>
+    <div class="hx-callout hx-warning"><p>The JWT gives full access to your StreamElements channel. Keep it private. Mycelian stores it encrypted.</p></div>
+    <p>StreamElements explains this page in <a href="https://support.streamelements.com/hc/en-us/articles/10474949304466-How-to-Locate-Your-Account-ID-and-JWT-Token">How to locate your Account ID and JWT token</a>.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Paste it into Mycelian and click Connect</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>StreamElements</span></span>. Pick your <strong>Alert currency</strong>, paste the token into <strong>JWT token</strong>, and click <strong>Connect</strong>.</p>
+
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-tabs">
+          <span class="hm-tab">Activity Feed</span>
+          <span class="hm-tab">Alerts</span>
+          <span class="hm-tab">Source Settings</span>
+          <span class="hm-tab">Source Controls</span>
+          <span class="hm-tab">Connectors</span>
+          <span class="hm-tab">Chatbot</span>
+          <span class="hm-tab">Spore Studio</span>
+          <span class="hm-tab is-active">Settings</span>
+          <span class="hm-tabs-tail"><span class="hx-mi">help_outline</span><span class="hx-mi">notifications</span></span>
+        </div>
+        <div class="hm-frame">
+          <div class="hm-subtabs">
+            <span class="hm-subtab">{{brand:youtube}} YouTube</span>
+            <span class="hm-subtab">{{brand:streamlabs}} Streamlabs</span>
+            <span class="hm-subtab is-active">{{brand:streamelements}} StreamElements</span>
+            <span class="hm-subtab">{{brand:discord}} Discord</span>
+            <span class="hm-subtab"><span class="hx-mi">memory</span> Game Hooks</span>
+          </div>
+          <div class="hm-frame">
+            <div class="hm-col">
+              <div class="hm-status-band">
+                <div class="hm-metric"><span>Status</span><span class="hm-warn">Disconnected</span></div>
+              </div>
+              <div class="hm-col hm-tight">
+                <span class="hm-h2">Donations</span>
+                <span class="hm-muted hm-sm">Tips from StreamElements become donation alerts.</span>
+              </div>
+              <div class="hm-row hm-between">
+                <span class="hm-muted hm-xs">Alert amounts are matched in the currency below.</span>
+                <span class="hm-row"><span class="hm-btn hm-outline">How to connect</span><span class="hm-btn hm-flat hm-round hm-icon-only"><span class="hx-mi">help_outline</span></span></span>
+              </div>
+              <div class="hm-row hm-nowrap">
+                <div class="hm-field hm-select hm-grow" data-label="Alert currency"><span class="hm-value">USD</span></div>
+                <span class="hm-marker" data-n="1"></span>
+              </div>
+              <div class="hm-row hm-nowrap">
+                <div class="hm-field hm-grow is-focused" data-label="JWT token"><span class="hm-value hm-secret">••••••••••••••••••••</span><span class="hx-mi">visibility_off</span></div>
+                <span class="hm-marker" data-n="2"></span>
+              </div>
+              <div class="hm-row">
+                <span class="hm-btn hm-pulse">Connect</span>
+                <span class="hm-btn hm-outline">Disconnect</span>
+                <span class="hm-marker" data-n="3"></span>
+              </div>
+            </div>
+            <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Settings → StreamElements. <strong>How to connect</strong> opens a short version of these steps.</figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>Alert currency</strong> is shared with Streamlabs. Donation alert thresholds use it.</li>
+      <li data-n="2">The field is masked. Click the eye icon to check what you pasted.</li>
+      <li data-n="3"><strong>Connect</strong> saves the token and opens the connection. A toast says <em>"Connecting to StreamElements."</em> <strong>Disconnect</strong> also deletes the saved token.</li>
+    </ol>
+    <div class="hx-callout hx-note"><p>If the field is empty you will see <em>"Paste a StreamElements JWT first."</em></p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Check it worked</h3>
+    <p>Within a few seconds the status turns green:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-status-band">
+          <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected</span></div>
+        </div>
+        <div class="hm-footer">
+          <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
+          <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+          <span class="hm-footer-item">{{brand:streamelements}} StreamElements <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+        </div>
+      </div>
+      <figcaption>Connected state. StreamElements appears in the status footer once a JWT is saved.</figcaption>
+    </figure>
+    <p>To test, use <strong>Emulate</strong> → tip in your StreamElements overlay editor. Emulated tips reach Mycelian too and play a donation alert.</p>
+  </div>
+
+</section>
+
+<h2>Connection status</h2>
+
+<p>The StreamElements tab and the bottom status bar show these states. When there is extra detail, the tab adds it after a colon. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Footer</th><th>On the tab</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Connected</td><td>Tips are being received</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-info"></span> Connecting</td><td>Connecting</td><td>Opening the connection, or reconnecting after a drop</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Disconnected</td><td>No JWT saved, or you clicked <strong>Disconnect</strong></td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Expired</td><td>Token expired</td><td>The JWT has expired. Paste a new one</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Auth Failed</td><td>Authentication failed</td><td>StreamElements rejected the JWT</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>Error</td><td>Something else failed. The detail after the colon says what</td></tr>
+</tbody>
+</table></div>
+
+<h2>If something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>"Authentication failed: StreamElements rejected the JWT."</summary>
+  <p>The token is wrong, incomplete, or was regenerated in the dashboard. Copy the <strong>JWT Token</strong> again (not the Account ID), paste it, and click <strong>Connect</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Token expired: Paste a new JWT from the StreamElements dashboard."</summary>
+  <p>JWTs have an expiry date. Mycelian checks it and also shows a notification when it has passed. Copy a fresh token from <strong>Account → Channels</strong> and connect again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Error: Could not read the channel id from the JWT."</summary>
+  <p>What you pasted is not a channel JWT, or StreamElements could not be reached to look up the channel. Check the token, then check your internet connection. Mycelian keeps retrying in the background.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Connected, but tips do not alert</summary>
+  <p>You may have copied the JWT of a different linked channel. Switch to the right channel with the avatar menu and copy its JWT. Also check that donation alerts are set up in <strong>Alerts → Donations</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>A tip alerted late, or not at all</summary>
+  <p>Tips held for moderation alert only after you allow them. Rejected tips are ignored.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:integrations_streamelements">{{brand:streamelements}}<span><strong>StreamElements Integration</strong><span class="hx-card-text">Tips, moderation and alert currency</span></span></a>
+  <a class="hx-card" href="help:alert_configuration">{{icon:notifications}}<span><strong>Alert Configuration</strong><span class="hx-card-text">Set up donation alerts and thresholds</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>All connection guides</strong><span class="hx-card-text">Twitch, OBS, Spotify, PSN, YouTube and more</span></span></a>
+</div>

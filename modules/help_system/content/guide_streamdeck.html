@@ -1,0 +1,242 @@
+<p class="hx-lead">Mycelian ships its own <strong>Stream Deck plugin</strong>. You install it from Mycelian with one button, restart the Stream Deck app, then drag Mycelian actions onto your keys.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 5 minutes</span>
+  <span>{{icon:computer}} Stream Deck app 6.5 or newer, on macOS 12+ or Windows 10+</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>App Settings</span></span></span>
+</div>
+
+<p>The plugin talks to Mycelian over its local overlay server, so there is no account, token or sign-in. Mycelian must be running for the keys to work.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="guide_streamdeck_prereqs">
+  <li>The Elgato <strong>Stream Deck</strong> app is installed and has been opened at least once. Mycelian looks for the plugin folder that app creates.</li>
+  <li>Stream Deck and Mycelian run on the <strong>same computer</strong> (the plugin's default address is <span class="hx-copy" data-copy="127.0.0.1:5000">127.0.0.1:5000</span>).</li>
+  <li>For the <strong>Connector</strong> key: you have a connector with the <strong>Stream Deck</strong> trigger. For the <strong>Template Action</strong> key: a Spore Studio template with Stream Deck actions.</li>
+</ul>
+
+<h2>Install and connect</h2>
+
+<section class="hx-guide" data-guide="guide_streamdeck_setup" data-title="Stream Deck setup">
+
+  <div class="hx-step">
+    <h3>Install the plugin from Mycelian</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>App Settings</span></span> and scroll to the <strong>Stream Deck plugin</strong> panel at the bottom. Click <strong>Install Plugin</strong>.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-tabs">
+          <span class="hm-tab">Activity Feed</span>
+          <span class="hm-tab">Alerts</span>
+          <span class="hm-tab">Source Settings</span>
+          <span class="hm-tab">Source Controls</span>
+          <span class="hm-tab">Connectors</span>
+          <span class="hm-tab">Chatbot</span>
+          <span class="hm-tab">Spore Studio</span>
+          <span class="hm-tab is-active">Settings</span>
+          <span class="hm-tabs-tail"><span class="hx-mi">help_outline</span><span class="hx-mi">notifications</span></span>
+        </div>
+        <div class="hm-frame">
+          <div class="hm-subtabs">
+            <span class="hm-subtab"><span class="hx-mi">storage</span> Database</span>
+            <span class="hm-subtab"><span class="hx-mi">analytics</span> Statistics</span>
+            <span class="hm-subtab"><span class="hx-mi">palette</span> Theme</span>
+            <span class="hm-subtab is-active"><span class="hx-mi">tune</span> App Settings</span>
+            <span class="hm-subtab"><span class="hx-mi">info</span> About</span>
+          </div>
+          <div class="hm-frame">
+            <span class="hm-muted hm-xs">… other App Settings panels …</span>
+            <div class="hm-panel">
+              <div class="hm-panel-title">Stream Deck plugin</div>
+              <div class="hm-row hm-between hm-top">
+                <div class="hm-col hm-tight">
+                  <div class="hm-row"><span class="hm-muted hm-sm">Status</span><span class="hm-bold hm-sm">Not installed</span><span class="hm-marker" data-n="1"></span></div>
+                </div>
+                <span class="hm-row"><span class="hm-btn hm-pulse">Install Plugin</span><span class="hm-marker" data-n="2"></span></span>
+              </div>
+            </div>
+            <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Settings → App Settings, Stream Deck plugin panel.</figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>Status</strong> reads <em>Stream Deck not detected</em> if the Stream Deck app has never run on this computer, <em>Not installed</em> before you install, and <em>Installed</em> after.</li>
+      <li data-n="2">The button copies the plugin bundled with Mycelian into Stream Deck's plugins folder. Once installed it reads <strong>Reinstall Plugin</strong>.</li>
+    </ol>
+    <p>A toast says <em>"Plugin installed successfully! Quit and reopen Stream Deck (or restart it) so the update loads."</em></p>
+    <details class="hx-details">
+      <summary>Where the plugin goes</summary>
+      <div class="hx-tabs">
+        <div class="hx-tab-list"><button data-tab="mac" class="is-active">macOS</button><button data-tab="win">Windows</button></div>
+        <div class="hx-tab-panel" data-panel="mac"><p><code>~/Library/Application Support/com.elgato.StreamDeck/Plugins/com.mushroomsuprise.mycelian.sdPlugin</code></p></div>
+        <div class="hx-tab-panel" data-panel="win"><p><code>%appdata%\Elgato\StreamDeck\Plugins\com.mushroomsuprise.mycelian.sdPlugin</code></p></div>
+      </div>
+      <p>Linux is not supported; the Stream Deck app does not run there.</p>
+    </details>
+  </div>
+
+  <div class="hx-step">
+    <h3>Restart the Stream Deck app</h3>
+    <p>Quit Stream Deck completely and open it again. On macOS use <strong>Stream Deck → Quit Stream Deck</strong> from the menu bar icon; on Windows right-click the tray icon and choose <strong>Quit</strong>. Closing the window is not enough.</p>
+    <p>A <strong>Mycelian</strong> category now appears in the action list on the right, with three actions:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-row hm-top hm-gap-lg">
+          <div class="hm-deck">
+            <span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span>
+            <span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span>
+            <span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span>
+          </div>
+          <div class="hm-card hm-col hm-tight hm-grow">
+            <span class="hm-label">Mycelian</span>
+            <span class="hm-sd-action hm-highlight"><span class="hx-mi">notifications_paused</span>Toggle Alerts</span>
+            <span class="hm-sd-action"><span class="hx-mi">cable</span>Connector</span>
+            <span class="hm-sd-action"><span class="hx-mi">widgets</span>Template Action</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>The Stream Deck app, simplified. Drag an action from the list onto an empty key.</figcaption>
+    </figure>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action</th><th>What a press does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Toggle Alerts</strong></td><td>Pauses or resumes alert playback. The key shows <code>ACTIVE</code> or <code>PAUSED</code> and stays in sync with the app.</td></tr>
+    <tr><td><strong>Connector</strong></td><td>Runs a Mycelian connector that uses the <strong>Stream Deck</strong> trigger. The key shows the connector's name.</td></tr>
+    <tr><td><strong>Template Action</strong></td><td>Runs a Stream Deck action defined in a Spore Studio template, with optional parameters. The key shows template and action.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Point the key at Mycelian and test</h3>
+    <p>Select the key you just placed. Its settings open below the key grid. Under <strong>Connection</strong>, leave <strong>Mycelian server</strong> at <span class="hx-copy" data-copy="127.0.0.1:5000">127.0.0.1:5000</span> and click <strong>Test</strong>.</p>
+    <figure class="hx-figure">
+      <div class="hm" data-tabs>
+        <div class="hm-tabs">
+          <span class="hm-tab is-active" data-tab="toggle">Toggle Alerts</span>
+          <span class="hm-tab" data-tab="connector">Connector</span>
+          <span class="hm-tab" data-tab="template">Template Action</span>
+        </div>
+        <div class="hm-frame">
+          <div class="hm-col">
+            <div class="hm-sd-pi-row"><span>Mycelian server</span><span class="hm-row hm-nowrap"><span class="hm-field hm-nolabel hm-grow"><span class="hm-value hm-mono">127.0.0.1:5000</span></span><span class="hm-btn hm-outline hm-dense">Test</span><span class="hm-marker" data-n="1"></span></span></div>
+            <div class="hm-sd-pi-row"><span></span><span class="hm-ok hm-sm">Connected — alerts are active</span></div>
+            <div data-panel="toggle" class="hm-col">
+              <div class="hm-sd-pi-row"><span>About</span><span class="hm-muted hm-xs">Toggles alert playback in Mycelian. The key shows ACTIVE or PAUSED and stays in sync with the app.</span></div>
+            </div>
+            <div data-panel="connector" class="hm-col">
+              <div class="hm-sd-pi-row"><span>Select connector</span><span class="hm-row hm-nowrap"><span class="hm-field hm-select hm-nolabel hm-grow"><span class="hm-value">Start scene</span></span><span class="hm-btn hm-outline hm-dense">Refresh</span><span class="hm-marker" data-n="2"></span></span></div>
+              <div class="hm-sd-pi-row"><span></span><span class="hm-muted hm-xs">Create a connector in Mycelian with the <strong>Stream Deck</strong> trigger, then refresh this list.</span></div>
+            </div>
+            <div data-panel="template" class="hm-col">
+              <div class="hm-sd-pi-row"><span>Template</span><span class="hm-row hm-nowrap"><span class="hm-field hm-select hm-nolabel hm-grow"><span class="hm-value">my_overlay</span></span><span class="hm-btn hm-outline hm-dense">Refresh</span></span></div>
+              <div class="hm-sd-pi-row"><span>Action</span><span class="hm-row hm-nowrap"><span class="hm-field hm-select hm-nolabel hm-grow"><span class="hm-value">toggle_logo</span></span><span class="hm-btn hm-outline hm-dense">Refresh</span><span class="hm-marker" data-n="3"></span></span></div>
+              <div class="hm-sd-pi-row"><span>Parameters</span><span class="hm-muted hm-xs">Fields for the selected action appear here.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>The key settings for each Mycelian action, simplified. Click the tabs to switch actions; this is only a picture.</figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>Test</strong> asks Mycelian whether it is reachable. <em>"Connection failed — is Mycelian running?"</em> means it is not.</li>
+      <li data-n="2">Pick the connector to run. Click <strong>Refresh</strong> after adding a connector in Mycelian.</li>
+      <li data-n="3">Pick the template, then one of its actions. See <a href="help:spore_studio_streamdeck">Stream Deck Actions in Spore Studio</a> to define them.</li>
+    </ol>
+    <div class="hx-callout hx-note"><p>Each key keeps its own server address. Only change it if Stream Deck runs on a different computer: then enter the Mycelian computer's address with port <code>5000</code>, and allow that port through its firewall.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Check it worked</h3>
+    <p>The keys show live labels from Mycelian, and the App Settings panel shows the installed version:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-row hm-top hm-gap-lg">
+          <div class="hm-deck">
+            <span class="hm-deck-key is-set">TGL ALERTS
+ACTIVE</span>
+            <span class="hm-deck-key is-set">Start scene</span>
+            <span class="hm-deck-key is-set">my_overlay
+toggle_logo</span>
+            <span class="hm-deck-key is-empty"></span><span class="hm-deck-key is-empty"></span>
+          </div>
+          <div class="hm-panel hm-grow">
+            <div class="hm-panel-title">Stream Deck plugin</div>
+            <div class="hm-row hm-between hm-top">
+              <div class="hm-col hm-tight">
+                <div class="hm-row"><span class="hm-muted hm-sm">Status</span><span class="hm-bold hm-sm">Installed</span></div>
+                <span class="hm-muted hm-sm">Installed version: v1.0.0.0</span>
+              </div>
+              <span class="hm-btn">Reinstall Plugin</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Working keys, and App Settings after installing.</figcaption>
+    </figure>
+    <p>Press <strong>Toggle Alerts</strong>: the key flips to <code>PAUSED</code> and Mycelian stops playing alerts until you press it again. A Connector or Template Action key briefly adds a <code>✓</code> after a successful press.</p>
+  </div>
+
+</section>
+
+<h2>Key labels and plugin status</h2>
+
+<p>The plugin does not appear in the status footer. Use the key labels and the App Settings panel instead.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>You see</th><th>Where</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>TGL ALERTS</code> / <code>ACTIVE</code> or <code>PAUSED</code></td><td>Toggle Alerts key</td><td>Connected. Shows whether alerts are playing</td></tr>
+<tr><td><code>TGL ALERTS</code> / <code>ERROR</code></td><td>Toggle Alerts key</td><td>Mycelian cannot be reached. The key keeps retrying</td></tr>
+<tr><td><code>NOT SET</code> or <code>TEMPLATE</code> / <code>NOT SET</code></td><td>Connector or Template Action key</td><td>No connector, or no template and action, picked yet</td></tr>
+<tr><td><code>ERROR</code> or <code>TEMPLATE</code> / <code>ERROR</code></td><td>Connector or Template Action key</td><td>The press did not reach Mycelian, or Mycelian rejected it</td></tr>
+<tr><td><span class="hx-badge hx-warn">Stream Deck not detected</span></td><td>App Settings</td><td>The Stream Deck plugins folder does not exist yet. Open the Stream Deck app once</td></tr>
+<tr><td><span class="hx-badge hx-info">Not installed</span></td><td>App Settings</td><td>Click <strong>Install Plugin</strong></td></tr>
+<tr><td><span class="hx-badge hx-ok">Installed</span></td><td>App Settings</td><td>Plugin is in place. A line <em>New version available: v…</em> means Mycelian has a newer copy; click <strong>Reinstall Plugin</strong></td></tr>
+</tbody>
+</table></div>
+
+<h2>If something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>The Mycelian actions do not show up in Stream Deck</summary>
+  <p>Stream Deck only loads plugins at start. Quit it completely (not just the window) and open it again. Check that App Settings says <strong>Installed</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Install fails and asks me to quit Stream Deck</summary>
+  <p>Stream Deck locks plugin files while it runs, so a reinstall cannot replace them. Quit the Stream Deck app completely (macOS: <strong>Stream Deck → Quit Stream Deck</strong>), click <strong>Reinstall Plugin</strong>, then open Stream Deck again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Plugin files were copied but version check failed."</summary>
+  <p>The files are in place but Mycelian could not read the installed version yet. Restart Stream Deck, then open App Settings again to check.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Plugin source files not found."</summary>
+  <p>The plugin copy that ships with Mycelian (the <code>sd_plugin</code> folder) is missing. Reinstall Mycelian.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Test says "Connection failed — is Mycelian running?"</summary>
+  <p>Mycelian is closed, or its overlay server could not start on port <code>5000</code>. Check the <strong>Overlay Server</strong> item in the status footer. On macOS, AirPlay Receiver also uses port 5000; turn it off in <strong>System Settings → General → AirDrop &amp; Handoff</strong>. See <a href="help:troubleshooting_connections">Connection Problems</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The Connector list is empty</summary>
+  <p>Only connectors with the <strong>Stream Deck</strong> trigger are listed. Create or edit one in <strong>Connectors</strong>, save it, then click <strong>Refresh</strong> in the key settings.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Mycelian says a new Stream Deck plugin version is available</summary>
+  <p>Mycelian was updated and carries a newer plugin. Go to <span class="hx-path"><span>Settings</span><span>App Settings</span></span>, click <strong>Reinstall Plugin</strong>, and restart Stream Deck. Your keys keep their settings.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_streamdeck">{{icon:widgets}}<span><strong>Stream Deck Actions in Spore Studio</strong><span class="hx-card-text">Define template actions for the Template Action key</span></span></a>
+  <a class="hx-card" href="help:connector_triggers">{{icon:bolt}}<span><strong>Connector Triggers</strong><span class="hx-card-text">Use the Stream Deck trigger in a connector</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>All connection guides</strong><span class="hx-card-text">Twitch, OBS, Spotify, PSN, YouTube and more</span></span></a>
+</div>

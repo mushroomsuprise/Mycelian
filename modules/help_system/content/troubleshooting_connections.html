@@ -1,0 +1,200 @@
+<p class="hx-lead">Start at the status footer at the bottom of the window. It shows every service Mycelian is watching and its state. Find the item that is not green, then use the matching tab below.</p>
+
+<div class="hx-meta">
+  <span>{{icon:info}} Colors and states: <a href="help:status_footer">Status Footer</a></span>
+  <span>{{icon:power}} Setup steps: <a href="help:connection_guides_overview">Connection guides</a></span>
+</div>
+
+<h2>Read the footer</h2>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-footer">
+      <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
+      <span class="hm-footer-item">Overlay Server <span class="hm-dot hm-ok"></span><span class="hm-ok">Running</span></span>
+      <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-warn"></span><span class="hm-warn">Degraded</span><span class="hm-marker" data-n="1"></span></span>
+      <span class="hm-footer-item">{{brand:obs}} OBS <span class="hm-dot"></span><span class="hm-muted">Disconnected</span><span class="hm-marker" data-n="2"></span></span>
+      <span class="hm-footer-item">{{brand:streamlabs}} Streamlabs <span class="hm-dot hm-err"></span><span class="hm-err">Error</span></span>
+    </div>
+  </div>
+  <figcaption>Click any item except Internet to open its settings tab.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">Amber means signed in but not healthy. Red means it needs you. Hover the item for the full status text.</li>
+  <li data-n="2">Grey is normal for a service you have not set up or turned off.</li>
+</ol>
+
+<div class="hx-callout hx-tip"><p>If <strong>Internet</strong> is red, fix the network first. Every remote service then shows <strong>No Internet</strong> or <strong>Unreachable</strong>, and they recover on their own once the network is back.</p></div>
+
+<h2>Fix by service</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="twitch" class="is-active">Twitch</button>
+    <button data-tab="obs">OBS</button>
+    <button data-tab="overlay">Overlay Server</button>
+    <button data-tab="donations">Donations</button>
+    <button data-tab="other">Other services</button>
+    <button data-tab="network">Network</button>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="twitch">
+    <p>Twitch needs your own Twitch application. If you have not done that, follow <a href="help:twitch_setup">Twitch Setup</a> first.</p>
+    <details class="hx-details">
+      <summary>Status is Idle or Not Configured</summary>
+      <p><strong>Cause:</strong> No credentials, or you have not signed in yet.</p>
+      <p><strong>Fix:</strong> Open <span class="hx-path"><span>Settings</span><span>Twitch</span></span>, expand <strong>Advanced</strong> on the <strong>Main Account</strong> card, paste the <strong>Client ID</strong> and <strong>Client Secret</strong>, and click <strong>Connect</strong>. <strong>Refresh</strong> only updates the labels; it does not sign you in.</p>
+    </details>
+    <details class="hx-details">
+      <summary>"Please enter your Client ID and Client Secret first"</summary>
+      <p><strong>Cause:</strong> One of the two <strong>Advanced</strong> fields is empty.</p>
+      <p><strong>Fix:</strong> Fill both and click <strong>Connect</strong> again.</p>
+    </details>
+    <details class="hx-details">
+      <summary>The browser opens but never returns to Mycelian</summary>
+      <p><strong>Cause:</strong> The redirect URL in the Twitch console is not exactly <span class="hx-copy" data-copy="http://localhost:17563">http://localhost:17563</span>, or another program or firewall is using port 17563.</p>
+      <p><strong>Fix:</strong> Correct the URL in the Twitch developer console (http, localhost, no trailing slash). Close other streaming tools that use Twitch sign-in and try again.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Status is Expired or Auth Failed</summary>
+      <p><strong>Cause:</strong> The token could not be refreshed: the Client Secret was regenerated, or access was removed on Twitch.</p>
+      <p><strong>Fix:</strong> Paste the new secret under <strong>Advanced</strong> if it changed, then click <strong>Connect</strong> and approve again. Check the application still exists in the developer console.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Status is Degraded and events stopped</summary>
+      <p><strong>Cause:</strong> Signed in, but Twitch's event session dropped.</p>
+      <p><strong>Fix:</strong> Wait a minute; Mycelian reconnects on its own. If it stays amber, click <strong>Connect</strong> on the Main Account card. Check <a href="https://status.twitch.tv/">status.twitch.tv</a> for a Twitch outage.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Connected, but no alerts</summary>
+      <p><strong>Cause:</strong> <strong>Process Twitch alerts</strong> is off, or the problem is on the overlay side.</p>
+      <p><strong>Fix:</strong> Turn on <strong>Process Twitch alerts</strong> under <strong>Options</strong> on <span class="hx-path"><span>Settings</span><span>Twitch</span></span>. If events appear in the Activity Feed but nothing plays, see <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
+    </details>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="obs">
+    <p>Mycelian controls OBS through the OBS WebSocket server built into OBS 28 and newer. Full steps: <a href="help:obs_websocket">OBS WebSocket</a>.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-panel">
+          <div class="hm-row hm-between">
+            <span class="hm-row"><span class="hm-xs hm-muted">Live status</span><span class="hm-bold">Disconnected</span></span>
+            <span class="hm-switch is-on"><i></i>Enable OBS integration</span>
+          </div>
+          <div class="hm-grid-2">
+            <div class="hm-field" data-label="Host"><span class="hm-value">localhost</span></div>
+            <div class="hm-field" data-label="Port"><span class="hm-value">4455</span></div>
+          </div>
+          <div class="hm-field" data-label="WebSocket password"><span class="hm-value hm-secret">••••••••</span></div>
+          <div class="hm-row hm-end"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">wifi_tethering</span>Test</span></div>
+        </div>
+      </div>
+      <figcaption><span class="hx-path"><span>Settings</span><span>OBS</span></span>, simplified.</figcaption>
+    </figure>
+    <details class="hx-details">
+      <summary>Stays Disconnected</summary>
+      <p><strong>Cause:</strong> OBS is closed, its WebSocket server is off, or <strong>Enable OBS integration</strong> is off.</p>
+      <p><strong>Fix:</strong> Start OBS. In OBS, open <span class="hx-path"><span>Tools</span><span>WebSocket Server Settings</span></span> and tick <strong>Enable WebSocket server</strong>. In Mycelian, turn on <strong>Enable OBS integration</strong>, then <strong>Save</strong> and <strong>Test</strong>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Test fails with an authentication error</summary>
+      <p><strong>Cause:</strong> The <strong>WebSocket password</strong> does not match OBS.</p>
+      <p><strong>Fix:</strong> In OBS's WebSocket Server Settings, click <strong>Show Connect Info</strong>, copy the password, paste it into Mycelian and save.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Wrong host or port</summary>
+      <p><strong>Cause:</strong> OBS uses a port other than 4455, or runs on another computer.</p>
+      <p><strong>Fix:</strong> Copy the port from <strong>Show Connect Info</strong>. For OBS on another PC, enter that PC's IP address as <strong>Host</strong> and allow the port in its firewall.</p>
+    </details>
+    <div class="hx-callout hx-note"><p>Browser sources do not need the OBS connection. Alerts and overlays work while OBS shows Disconnected; only <a href="help:source_controls">Source Controls</a> and OBS actions in connectors need it.</p></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="overlay">
+    <p>The overlay server is the local web server on port 5000 that every browser source loads from.</p>
+    <details class="hx-details">
+      <summary>"The overlay server could not bind to port 5000"</summary>
+      <p><strong>Cause:</strong> Another program is using port 5000. Mycelian keeps running and retries.</p>
+      <p><strong>Fix:</strong> Close the other program. On macOS, turn off <strong>AirPlay Receiver</strong> in <span class="hx-path"><span>System Settings</span><span>General</span><span>AirDrop &amp; Handoff</span></span>; it uses port 5000.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Stalled, Overloaded, Crashed or Frozen</summary>
+      <p><strong>Cause:</strong> The server stopped answering or cannot keep up.</p>
+      <p><strong>Fix:</strong> Give it a minute; Mycelian restarts it when it can. If it stays red, restart Mycelian. For repeated <strong>Overloaded</strong>, see <a href="help:troubleshooting_performance">Performance Issues</a>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>A browser source shows old data or stops updating</summary>
+      <p><strong>Cause:</strong> The source lost its live connection to the server, for example after the server restarted.</p>
+      <p><strong>Fix:</strong> In OBS, open the source's properties and click <strong>Refresh cache of current page</strong>. Check the URL against <strong>Available Source URLs</strong> in <span class="hx-path"><span>Settings</span><span>About</span></span>.</p>
+    </details>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="donations">
+    <p>Cash tips come from Streamlabs or StreamElements; YouTube Super Chats use the same donation alerts. Alert amounts use the <strong>Alert currency</strong> set on the service's settings tab.</p>
+    <details class="hx-details">
+      <summary>Streamlabs: "OAuth callback port 9975 is in use."</summary>
+      <p><strong>Cause:</strong> Another program holds the port Streamlabs sign-in returns to.</p>
+      <p><strong>Fix:</strong> Close it and click <strong>Connect</strong> again. The redirect URI in your Streamlabs app must be <span class="hx-copy" data-copy="http://127.0.0.1:9975">http://127.0.0.1:9975</span>. Steps: <a href="help:guide_streamlabs">Streamlabs guide</a>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>StreamElements disconnects or never connects</summary>
+      <p><strong>Cause:</strong> The <strong>JWT token</strong> is wrong, for another channel, or was regenerated.</p>
+      <p><strong>Fix:</strong> Copy a fresh JWT token from StreamElements (Account → Channels, Show secrets) and click <strong>Connect</strong>. Steps: <a href="help:guide_streamelements">StreamElements guide</a>.</p>
+    </details>
+    <details class="hx-details">
+      <summary>Tips arrive but the wrong tier plays</summary>
+      <p>See <em>Donations pick an unexpected tier</em> in <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
+    </details>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="other">
+    <p>Each service has its own guide with the exact values to paste. The sign-in services listen on a local port during sign-in, so that port must be free and exactly as shown:</p>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Service</th><th>Settings tab needs</th><th>Redirect / port</th><th>Guide</th></tr></thead>
+    <tbody>
+    <tr><td>{{brand:spotify}} Spotify</td><td>Client ID, Client Secret</td><td><span class="hx-copy" data-copy="http://127.0.0.1:9973">http://127.0.0.1:9973</span></td><td><a href="help:guide_spotify">Spotify</a></td></tr>
+    <tr><td>{{brand:youtube}} YouTube</td><td>API key, OAuth Client ID and Secret</td><td><span class="hx-copy" data-copy="http://127.0.0.1:9974">http://127.0.0.1:9974</span></td><td><a href="help:guide_youtube">YouTube</a></td></tr>
+    <tr><td>{{brand:psn}} PSN</td><td>NPSSO code, PSN username</td><td>None</td><td><a href="help:guide_psn">PSN</a></td></tr>
+    <tr><td>{{brand:discord}} Discord</td><td>Bot token</td><td>None</td><td><a href="help:guide_discord">Discord</a></td></tr>
+    <tr><td>Stream Deck</td><td>The plugin, from <span class="hx-path"><span>Settings</span><span>App Settings</span></span></td><td>Overlay server (5000)</td><td><a href="help:guide_streamdeck">Stream Deck</a></td></tr>
+    </tbody></table></div>
+    <p>PSN <strong>Offline</strong> (amber) only means the linked account is not online on PlayStation. It is not an error.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="network">
+    <details class="hx-details">
+      <summary>A firewall or antivirus blocks Mycelian</summary>
+      <p><strong>Cause:</strong> Security software blocks the local ports or the outgoing connections.</p>
+      <p><strong>Fix:</strong> Allow Mycelian in your firewall. It needs these local ports:</p>
+      <div class="hx-table-wrap"><table>
+      <thead><tr><th>Port</th><th>Used by</th></tr></thead>
+      <tbody>
+      <tr><td><code>5000</code></td><td>Overlay server (all browser sources)</td></tr>
+      <tr><td><code>17563</code></td><td>Twitch sign-in</td></tr>
+      <tr><td><code>9973</code> / <code>9974</code> / <code>9975</code></td><td>Spotify / YouTube / Streamlabs sign-in</td></tr>
+      <tr><td><code>4455</code></td><td>OBS WebSocket (OBS's default)</td></tr>
+      </tbody></table></div>
+    </details>
+    <details class="hx-details">
+      <summary>Services show Unreachable while Internet is green</summary>
+      <p><strong>Cause:</strong> The service is down, or DNS cannot find it.</p>
+      <p><strong>Fix:</strong> Check the service's status page, such as <a href="https://status.twitch.tv/">status.twitch.tv</a>. Try another DNS server or restart your router. To test from a terminal: <code>ping twitch.tv</code> (Windows: <code>tracert twitch.tv</code>, macOS: <code>traceroute twitch.tv</code>).</p>
+    </details>
+    <details class="hx-details">
+      <summary>A VPN or proxy is on</summary>
+      <p><strong>Cause:</strong> Some VPNs block localhost sign-in returns or Twitch's event connection.</p>
+      <p><strong>Fix:</strong> Turn the VPN off, sign in, then try with it on again. If events stop with it on, leave it off while streaming.</p>
+    </details>
+  </div>
+</div>
+
+<h2>Still stuck: check the log</h2>
+
+<p>Open <span class="hx-path"><span>Settings</span><span>About</span></span>. <strong>Application Logs</strong> lists recent actionable errors and has <strong>Open Logs Folder</strong>, which opens the folder holding <code>mycelian.log</code>. Search the file for the service name (for example <code>twitch</code> or <code>obs</code>) near the time it failed. Critical problems also show in the notification bell at the top right of the main tabs.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>Connection guides</strong><span class="hx-card-text">Set up each service step by step</span></span></a>
+  <a class="hx-card" href="help:twitch_setup">{{brand:twitch}}<span><strong>Twitch Setup</strong><span class="hx-card-text">Client ID, secret and sign-in</span></span></a>
+  <a class="hx-card" href="help:obs_websocket">{{brand:obs}}<span><strong>OBS WebSocket</strong><span class="hx-card-text">Connect Mycelian to OBS</span></span></a>
+  <a class="hx-card" href="help:status_footer">{{icon:traffic}}<span><strong>Status Footer</strong><span class="hx-card-text">Every color and state</span></span></a>
+</div>

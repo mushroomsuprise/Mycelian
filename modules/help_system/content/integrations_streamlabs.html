@@ -1,0 +1,52 @@
+<p class="hx-lead">Mycelian reads <strong>Streamlabs donations</strong> and turns them into donation alerts. Follows, subscriptions and bits stay on the Twitch connection; Twitch events on the Streamlabs socket are ignored.</p>
+
+<div class="hx-meta">
+  <span>{{icon:payments}} Donations only</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Streamlabs</span></span></span>
+</div>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:guide_streamlabs">{{brand:streamlabs}}<span><strong>Connect Streamlabs</strong><span class="hx-card-text">Register an app, paste Client ID and Client Secret, sign in</span></span></a>
+</div>
+
+<h2>What a donation does</h2>
+
+<p>Each Streamlabs donation:</p>
+<ul>
+<li>plays the matching alert from <strong>Alerts → Donations</strong>,</li>
+<li>appears in the <strong>Activity Feed</strong>,</li>
+<li>fires donation events for the <a href="help:chatbot_events">Chatbot</a> and <a href="help:connector_triggers">Connectors</a>.</li>
+</ul>
+<p>The same donation is never alerted twice, even if it arrives both on the live socket and in Mycelian's donation check.</p>
+
+<h2>Alert currency</h2>
+
+<p><strong>Alert currency</strong> on this tab is the currency your donation thresholds in <strong>Alerts → Donations</strong> are written in. It is shared with StreamElements.</p>
+
+<ol>
+<li>A tip in another currency is converted to the alert currency using daily exchange rates (Frankfurter / ECB), cached for an hour.</li>
+<li>The converted amount is rounded to the nearest whole unit (never below 1) to pick the alert.</li>
+<li>The alert shows the original amount first and the converted amount in parentheses.</li>
+</ol>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-row">
+      <span class="hm-chip hm-plain">Alert currency: USD</span>
+      <span class="hx-mi">arrow_forward</span>
+      <span class="hm-chip hm-plain">Tip: €10.00</span>
+      <span class="hx-mi">arrow_forward</span>
+      <span class="hm-chip">Alert text: €10.00 ($10.85)</span>
+      <span class="hm-badge hm-outline">matches 11</span>
+    </div>
+  </div>
+  <figcaption>Example with a made-up rate. A 10 euro tip picks the alert for 11 when the alert currency is USD.</figcaption>
+</figure>
+
+<div class="hx-callout hx-note"><p>If no exchange rate can be fetched, Mycelian matches the donor's original amount as-is.</p></div>
+
+<h2>Status</h2>
+
+<p>Streamlabs appears in the status footer once a Client ID is saved. The status colors and fixes are in <a href="help:guide_streamlabs">Connect Streamlabs</a>; the full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<p><strong>Disconnect</strong> stops the connection and deletes the saved sign-in. Your Client ID and Client Secret stay, so <strong>Connect</strong> signs you in again.</p>

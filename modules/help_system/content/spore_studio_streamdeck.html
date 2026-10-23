@@ -1,0 +1,245 @@
+<p class="hx-lead">A Stream Deck action lets a physical key change your overlay: show or hide a logo, bump a counter, or send your own socket event. You define the action in Spore Studio, bind elements to it, then pick it on a <strong>Template Action</strong> key in the Mycelian Stream Deck plugin.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 5 minutes</span>
+  <span>{{icon:extension}} Mycelian Stream Deck plugin</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Spore Studio</span><span>Stream Deck</span></span></span>
+</div>
+
+<div class="hx-callout hx-note"><p>Install the plugin and connect it to Mycelian first. <a href="help:guide_streamdeck">Stream Deck connection guide</a> covers both.</p></div>
+
+<h2>How a key press reaches the overlay</h2>
+
+<figure class="hx-figure hx-static">
+  <div class="hm hm-ssb">
+    <div class="hm-row hm-gap-lg">
+      <div class="hm-col hm-tight" style="align-items:center">
+        <div class="hm-ssb-key is-set"><span class="hx-mi">visibility</span>Toggle logo</div>
+        <span class="hm-xs hm-muted">Key press</span>
+      </div>
+      <span class="hx-mi hm-muted">arrow_forward</span>
+      <div class="hm-ssb-card" style="max-width:15rem">
+        <span class="hm-xs hm-muted">Plugin sends</span>
+        <span class="hm-mono hm-sm">templateName: my_hud<br>actionName: toggle_logo</span>
+      </div>
+      <span class="hx-mi hm-muted">arrow_forward</span>
+      <div class="hm-ssb-card" style="max-width:15rem">
+        <span class="hm-xs hm-muted">Mycelian looks up the action and emits</span>
+        <span class="hm-mono hm-sm">toggle_logo<br>+ default_data</span>
+      </div>
+      <span class="hx-mi hm-muted">arrow_forward</span>
+      <div class="hm-ssb-card" style="max-width:13rem">
+        <span class="hm-xs hm-muted">Bindings on that event run</span>
+        <span class="hm-sm">Toggle visibility</span>
+      </div>
+    </div>
+  </div>
+  <figcaption>The plugin names the template and the action. The template's own config decides which socket event fires.</figcaption>
+</figure>
+
+<h2>Set up an action</h2>
+
+<section class="hx-guide" data-guide="spore_studio_streamdeck_setup" data-title="Stream Deck action">
+
+  <div class="hx-step">
+    <h3>Add the action on the Stream Deck tab</h3>
+    <p>Open your template in Spore Studio, choose the <strong>Stream Deck</strong> tab in the inspector, and click <strong>+ Add Stream Deck action</strong>. A new card appears with the id <code>action_1</code>, the name <code>New action</code>, and a socket event equal to the id. Rename them.</p>
+
+    <div class="hx-split">
+      <div>
+    <figure class="hx-figure">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-insp">
+          <div class="hm-ssb-tabs">
+            <span>Properties</span><span>Bindings</span><span class="is-active">Stream Deck</span><span>Source Controls</span><span>Advanced JS</span><span>Canvas</span>
+          </div>
+          <div class="hm-ssb-body">
+            <span class="hm-ssb-hint">Defines streamdeck_options in the template JSON (action ids, socket event, default payload). The Stream Deck plugin must send actionName equal to each action id below. Overlays listen for the Socket event string. Bind elements on the Bindings tab using trigger Stream Deck.</span>
+            <div class="hm-ssb-fr"><label>Template description</label><span class="hm-ssb-in hm-ssb-ta is-ph">Logo and scene toggles for my HUD</span></div>
+            <div class="hm-ssb-card">
+              <div class="hm-ssb-card-head"><span class="hm-ssb-title">Toggle logo</span><span class="hm-ssb-x">&times;</span></div>
+              <div class="hm-ssb-fr"><label>Action id <span class="hm-marker" data-n="1"></span></label><span class="hm-ssb-in is-focused">toggle_logo</span></div>
+              <div class="hm-ssb-fr"><label>Display name <span class="hm-marker" data-n="2"></span></label><span class="hm-ssb-in">Toggle logo</span></div>
+              <div class="hm-ssb-fr"><label>Description</label><span class="hm-ssb-in">Shows or hides the channel logo</span></div>
+              <div class="hm-ssb-fr"><label>Socket event <span class="hm-marker" data-n="3"></span></label><span class="hm-ssb-in">toggle_logo</span></div>
+              <div class="hm-ssb-fr"><label>default_data (JSON) <span class="hm-marker" data-n="4"></span></label><span class="hm-ssb-in hm-ssb-ta hm-mono">{}</span></div>
+            </div>
+            <span class="hm-ssb-btn is-primary">+ Add Stream Deck action</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>Spore Studio inspector, Stream Deck tab. The card title follows the display name.</figcaption>
+    </figure>
+      </div>
+      <div>
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>Action id</strong> is the key stored in the template JSON and the value the plugin sends as <code>actionName</code>. Letters, digits, <code>_</code> and <code>-</code> only; other characters become <code>_</code>. Renaming it updates bindings that use it.</li>
+      <li data-n="2"><strong>Display name</strong> is what the plugin's <strong>Action</strong> list and the preview's <strong>SD:</strong> buttons show.</li>
+      <li data-n="3"><strong>Socket event</strong> is the event the overlay listens for. Every binding with this event runs when the key is pressed.</li>
+      <li data-n="4"><strong>default_data</strong> must be a JSON object. Each key becomes an editable field in the plugin (see below).</li>
+    </ol>
+      </div>
+    </div>
+
+    <div class="hx-callout hx-warning"><p>If two actions share a socket event, the tab warns <em>"Multiple actions share socket event(s)…"</em>. Bindings on that event then fire for either key.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Bind elements to the action</h3>
+    <p>Select the element on the canvas, open <strong>Bindings</strong>, and click <strong>+ Add binding</strong>. Set <strong>Trigger</strong> to <strong>Stream Deck action</strong> and pick the action. New bindings default to the first action not already used in this template.</p>
+
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-insp">
+          <div class="hm-ssb-tabs">
+            <span>Properties</span><span class="is-active">Bindings</span><span>Stream Deck</span><span>Source Controls</span><span>Advanced JS</span><span>Canvas</span>
+          </div>
+          <div class="hm-ssb-body">
+            <div class="hm-ssb-card">
+              <div class="hm-ssb-card-head"><span class="hm-ssb-title">Binding #1</span><span class="hm-ssb-x">&times;</span></div>
+              <div class="hm-ssb-fr"><label>Trigger</label><span class="hm-ssb-in hm-ssb-sel">Stream Deck action</span></div>
+              <div class="hm-ssb-fr"><label>Stream Deck action</label><span class="hm-ssb-in hm-ssb-sel">Toggle logo</span></div>
+              <span class="hm-ssb-hint">Socket event: toggle_logo</span>
+              <div class="hm-ssb-fr"><label>Action</label><span class="hm-ssb-in hm-ssb-sel">Toggle visibility</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>The socket event is read-only here. Change it on the Stream Deck tab.</figcaption>
+    </figure>
+    <p>If the list says <em>"Add Stream Deck actions in the Stream Deck tab first."</em>, go back to step 1.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Test in Preview, then Save</h3>
+    <p>Click <strong>Preview</strong>. The mock toolbar has an <strong>SD:</strong> group with one button per action, labelled with its display name. Clicking one emits the action's socket event with its <code>default_data</code>, so no hardware is needed.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-mocks">
+          <b>Alerts:</b><span class="hm-ssb-btn">Follow</span><span class="hm-ssb-btn">Sub</span><span class="hm-ssb-btn">Bits</span>
+          <b>SD:</b><span class="hm-ssb-btn hm-pulse">Toggle logo</span><span class="hm-ssb-btn">Add point</span>
+        </div>
+      </div>
+      <figcaption>Live preview mock toolbar. Hovering a button shows "Emit 'toggle_logo' with default_data".</figcaption>
+    </figure>
+    <p>Click <strong>Save</strong>. The actions are written to <code>streamdeck_options</code> in <code>templates/template_configs/&lt;name&gt;.json</code>, which is where the plugin reads them.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Assign a key in the Stream Deck app</h3>
+    <p>Drag <strong>Template Action</strong> from the Mycelian category onto a key. In its settings pick the template, then the action.</p>
+
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure hx-static">
+          <div class="hm hm-ssb">
+            <div class="hm-ssb-pi">
+              <div class="hm-ssb-pi-row"><span>Mycelian server</span><span class="hm-ssb-pi-ctl"><span class="hm-ssb-in">127.0.0.1:5000</span><span class="hm-ssb-pi-btn">Test</span></span></div>
+              <div class="hm-ssb-pi-row"><span>Template</span><span class="hm-ssb-pi-ctl"><span class="hm-ssb-in hm-ssb-sel">my_hud</span><span class="hm-ssb-pi-btn">Refresh</span></span></div>
+              <div class="hm-ssb-pi-row"><span>Action</span><span class="hm-ssb-pi-ctl"><span class="hm-ssb-in hm-ssb-sel">Toggle logo</span><span class="hm-ssb-pi-btn">Refresh</span></span></div>
+              <div class="hm-ssb-pi-row"><span>Parameters</span><span class="hm-ssb-hint">One field per default_data key</span></div>
+              <div class="hm-ssb-pi-row"><span>About</span><span class="hm-ssb-hint">The key label shows your selection. Ensure Mycelian is running before configuring.</span></div>
+            </div>
+          </div>
+          <figcaption>Template Action settings in the Stream Deck app, simplified.</figcaption>
+        </figure>
+      </div>
+      <div>
+        <ul>
+          <li><strong>Template</strong> lists every template that has Stream Deck actions or Source Controls.</li>
+          <li><strong>Action</strong> shows display names. The key stores the action id.</li>
+          <li><strong>Parameters</strong> shows one field for each key in <code>default_data</code>: true/false keys become True/False choices, numbers a number box, text a text box. Values you set here replace the defaults for this key only.</li>
+          <li>Saved a change in Spore Studio? Click <strong>Refresh</strong> next to Action.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<h2>Payload and name matching</h2>
+
+<p>When a key fires, Mycelian builds the payload in this order:</p>
+<ol>
+  <li>Start with the action's <code>default_data</code>.</li>
+  <li>Apply the values set under <strong>Parameters</strong> on that key. They win on conflicts.</li>
+</ol>
+
+<p>The template's config is authoritative for the socket event. A stale event name saved in the key's settings is ignored. If the action has no socket event, Mycelian uses <code>&lt;template&gt;_&lt;action id&gt;</code>.</p>
+
+<p>Mycelian finds the action by the name the plugin sends, trying each of these in turn:</p>
+<ol>
+  <li>The action id.</li>
+  <li>The display name.</li>
+  <li>The socket event, or an event ending in <code>_&lt;name&gt;</code>.</li>
+</ol>
+
+<div class="hx-callout hx-important"><p>If none match, the press does nothing for your bindings. Renaming an action id after assigning keys breaks those keys until you pick the action again.</p></div>
+
+<h2>Registry events or your own event</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Socket event</th><th>When to use</th></tr></thead>
+<tbody>
+<tr><td>Your own name, such as <code>toggle_logo</code></td><td>The usual choice. Only bindings for this key react. It does not need to exist in the event registry.</td></tr>
+<tr><td>A registry event, such as <code>instant_alert</code></td><td>Replay an existing event with a fixed payload in <code>default_data</code>, for example <code>{"alert_type": "bit", "amt_cheered": 100}</code>. Anything else listening to that event in this overlay also reacts.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Common patterns</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="toggle" class="is-active">Toggle an element</button>
+    <button data-tab="counter">Change a counter</button>
+    <button data-tab="flash">Show, then hide</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="toggle">
+    <ol>
+      <li>Action id <code>toggle_logo</code>, socket event <code>toggle_logo</code>, default_data <code>{}</code>.</li>
+      <li>On the logo <strong>Image</strong>: binding, trigger <strong>Stream Deck action</strong> → <code>Toggle logo</code>, action <strong>Toggle visibility</strong>.</li>
+    </ol>
+  </div>
+  <div class="hx-tab-panel" data-panel="counter">
+    <ol>
+      <li>Add an action such as <code>add_point</code>.</li>
+      <li>On any element (the counter itself works): binding, trigger <strong>Stream Deck action</strong> → <code>add_point</code>, action <strong>Adjust counter</strong>.</li>
+      <li>Set <code>counter_id</code>, <code>operation</code> and the delta fields. See <a href="help:spore_studio_counters">Counters</a>.</li>
+    </ol>
+    <p>A counter's <strong>Data feed</strong> only listens to registry events, so use a binding for keys.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="flash">
+    <p>Binding with primary action <strong>Show element</strong>, then <strong>+ Add chained step</strong> with <strong>Hide element</strong> and a delay in ms. Or use <strong>Show for N seconds</strong> as a single action.</p>
+  </div>
+</div>
+
+<h2>Other ways to fire an action</h2>
+<ul>
+  <li><a href="help:spore_studio_dynamic_controls">Dynamic controls</a> appear in the plugin's <strong>Action</strong> list under their labels, so a key can press a Source Controls button directly.</li>
+</ul>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>The action is missing from the plugin</summary>
+  <p>Save the template in Spore Studio, then click <strong>Refresh</strong> next to Template and Action. If Template shows "Connection failed - click Refresh", Mycelian is not reachable at the server address. Use <strong>Test</strong> and see <a href="help:guide_streamdeck">the connection guide</a>.</p>
+</details>
+<details class="hx-details">
+  <summary>The key works in the plugin but nothing changes on stream</summary>
+  <p>Check that the binding's trigger is <strong>Stream Deck action</strong> with the right action, that the template is saved, and that the OBS browser source was reloaded after saving. The <strong>SD:</strong> button in Preview should do the same thing.</p>
+</details>
+<details class="hx-details">
+  <summary>One key triggers two things</summary>
+  <p>Two actions share a socket event. Give each action its own event on the Stream Deck tab.</p>
+</details>
+<details class="hx-details">
+  <summary>The Stream Deck tab says actions are not edited here</summary>
+  <p>That message appears for legacy templates. Stream Deck actions can only be edited on Spore Studio templates.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:guide_streamdeck">{{icon:power}}<span><strong>Stream Deck connection</strong><span class="hx-card-text">Install the plugin and connect it</span></span></a>
+  <a class="hx-card" href="help:spore_studio_bindings">{{icon:bolt}}<span><strong>Event Bindings &amp; Actions</strong><span class="hx-card-text">Triggers, filters and chained steps</span></span></a>
+  <a class="hx-card" href="help:spore_studio_dynamic_controls">{{icon:tune}}<span><strong>Dynamic Controls</strong><span class="hx-card-text">On-screen buttons in Source Controls</span></span></a>
+  <a class="hx-card" href="help:spore_studio_examples">{{icon:auto_awesome}}<span><strong>Examples</strong><span class="hx-card-text">Stream Deck logo toggle, start to finish</span></span></a>
+</div>

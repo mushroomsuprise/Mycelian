@@ -1,0 +1,201 @@
+<p class="hx-lead">Mycelian reads what Spotify is playing through <strong>your own Spotify app</strong>. You create it once in the Spotify Developer Dashboard, paste its <strong>Client ID</strong> and <strong>Client Secret</strong> into Mycelian, then sign in.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 5 minutes</span>
+  <span>{{icon:person}} Spotify Premium account</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Spotify</span></span></span>
+</div>
+
+<p>After you connect, see <a href="help:integrations_spotify">Spotify Integration</a> for the overlay and what it shows.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="guide_spotify_prereqs">
+  <li>You have a <a href="https://www.spotify.com/premium/">Spotify Premium</a> subscription.</li>
+  <li>You can sign in to the <a href="https://developer.spotify.com/dashboard">Spotify Developer Dashboard</a> with the Spotify account you want to show on stream.</li>
+  <li>Mycelian is open on this computer. Sign-in returns to <span class="hx-copy" data-copy="http://127.0.0.1:9973">http://127.0.0.1:9973</span>, which only works on the machine running Mycelian.</li>
+</ul>
+
+<h2>Connect your account</h2>
+
+<section class="hx-guide" data-guide="guide_spotify_setup" data-title="Spotify setup">
+
+  <div class="hx-step">
+    <h3>Create a Spotify app</h3>
+    <p>Open the <a href="https://developer.spotify.com/dashboard">Spotify Developer Dashboard</a>, sign in, and click <strong>Create app</strong>. Fill in the form like this:</p>
+
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-browser">
+        <div class="hm-browser-bar"><span class="hm-browser-url">developer.spotify.com/dashboard/create</span></div>
+        <div class="hm-browser-body">
+          <div class="hm-h2">Create app</div>
+          <div class="hm-field" data-label="App name"><span class="hm-value">Mycelian</span></div>
+          <div class="hm-field" data-label="App description"><span class="hm-value">Now playing overlay</span></div>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow is-focused" data-label="Redirect URIs"><span class="hm-value hm-mono">http://127.0.0.1:9973</span></div>
+            <span class="hm-btn hm-outline hm-dense">Add</span>
+            <span class="hm-marker" data-n="1"></span>
+          </div>
+          <span class="hm-label">Which API/SDKs are you planning to use?</span>
+          <div class="hm-row">
+            <span class="hm-check is-on"><i></i>Web API</span>
+            <span class="hm-check is-on"><i></i>Web Playback SDK</span>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+          <div class="hm-row"><span class="hm-check is-on"><i></i>I understand and agree with Spotify's Developer Terms of Service</span></div>
+          <div class="hm-row"><span class="hm-btn">Save</span></div>
+        </div>
+      </div>
+      <figcaption>Spotify's page, simplified. Field names match the real form.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1">Type <span class="hx-copy" data-copy="http://127.0.0.1:9973">http://127.0.0.1:9973</span> and click <strong>Add</strong>. It must be <code>http</code>, <code>127.0.0.1</code> (not <code>localhost</code>), port <code>9973</code>, and no trailing slash.</li>
+      <li data-n="2">Tick <strong>Web API</strong> and <strong>Web Playback SDK</strong>.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Copy the Client ID and Client Secret</h3>
+    <p>Open the new app and go to <strong>Settings</strong> → <strong>Basic Information</strong>.</p>
+    <ol>
+      <li>Copy the <strong>Client ID</strong>.</li>
+      <li>Click <strong>View client secret</strong> and copy the <strong>Client secret</strong>.</li>
+    </ol>
+    <div class="hx-callout hx-warning"><p>Treat the Client Secret like a password. If it leaks, rotate it on the same page and paste the new value into Mycelian.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Paste both values into Mycelian</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>Spotify</span></span>, expand <strong>Advanced</strong> and paste the two values.</p>
+
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-subtabs">
+          <span class="hm-subtab">{{brand:twitch}} Twitch</span>
+          <span class="hm-subtab">{{brand:obs}} OBS</span>
+          <span class="hm-subtab">{{brand:psn}} PSN</span>
+          <span class="hm-subtab is-active">{{brand:spotify}} Spotify</span>
+          <span class="hm-subtab">{{brand:youtube}} YouTube</span>
+          <span class="hm-subtab">{{brand:streamlabs}} Streamlabs</span>
+        </div>
+        <div class="hm-frame">
+          <div class="hm-status-band">
+            <div class="hm-metric"><span>Status</span><span class="hm-err">Disconnected</span></div>
+            <div class="hm-metric"><span>Current track</span><span>Not connected</span></div>
+          </div>
+          <div class="hm-expansion is-open">
+            <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>Advanced<span class="hm-marker" data-n="1"></span></div>
+            <div class="hm-expansion-body">
+              <span class="hm-muted hm-xs">Client ID and secret from the Spotify dashboard. Connect still uses these values.</span>
+              <div class="hm-grid-2">
+                <div class="hm-field is-focused" data-label="Client ID"><span class="hm-value hm-secret">••••••••••••</span></div>
+                <div class="hm-field" data-label="Client Secret"><span class="hm-placeholder">Spotify API Client Secret</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="hm-grid-3">
+            <div class="hm-field hm-select" data-label="Market country"><span class="hm-value">Auto (from account)</span></div>
+          </div>
+          <div class="hm-actions">
+            <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh</span>
+            <span class="hm-btn hm-outline"><span class="hx-mi">wifi_tethering</span>Test</span>
+            <span class="hm-btn hm-outline">Discard</span>
+            <span class="hm-btn">Save</span>
+            <span class="hm-btn hm-icon-only"><span class="hx-mi">content_copy</span></span>
+            <span class="hm-btn hm-pulse"><span class="hx-mi">login</span>Connect</span>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+        </div>
+      </div>
+      <figcaption>Settings → Spotify. Click <strong>Advanced</strong> to open or close it.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>Advanced</strong> is collapsed by default. Both fields are masked; the eye icon shows the value.</li>
+      <li data-n="2">The copy button copies the redirect URI <code>http://127.0.0.1:9973</code>. <strong>Connect</strong> saves the Client ID and Client Secret, then opens your browser. <strong>Refresh</strong> only updates the status labels.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Click Connect and approve access</h3>
+    <p>Mycelian opens Spotify's authorization page in your browser. Sign in and click <strong>Agree</strong>. Mycelian asks for two permissions: read your playback state and read your currently playing track. It cannot control playback or change your library.</p>
+    <p>The browser then shows <em>"Authorization Successful!"</em>. Close the tab and return to Mycelian.</p>
+    <div class="hx-callout hx-note"><p>Mycelian waits 5 minutes for you to approve. After that the status shows <strong>Authorization Timeout</strong>; click <strong>Connect</strong> again. If <strong>Advanced</strong> is empty you get <em>"Please enter your Spotify Client ID and Client Secret first!"</em> instead.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Check it worked</h3>
+    <p>Start a song in any Spotify app (desktop, web player or phone). Within a few seconds the tab should look like this:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-status-band">
+          <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected</span></div>
+          <div class="hm-metric"><span>Current track</span><span>Artist Name - Song Title</span></div>
+        </div>
+        <div class="hm-footer">
+          <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
+          <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+          <span class="hm-footer-item">{{brand:spotify}} Spotify <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+        </div>
+      </div>
+      <figcaption>The Spotify item appears in the status footer once a Client ID and Client Secret are saved.</figcaption>
+    </figure>
+    <p>Click <strong>Test</strong> any time to check the saved token. It shows <em>"Spotify connection successful!"</em> or asks you to check your credentials. Mycelian refreshes the token on its own.</p>
+  </div>
+
+</section>
+
+<h2>Market country</h2>
+
+<p><strong>Market country</strong> sets the region used for Spotify API requests. Leave it on <strong>Auto (from account)</strong> unless tracks show up as unavailable. The other choices are <strong>US</strong>, <strong>GB</strong> and <strong>CA</strong>. Click <strong>Save</strong> after changing it.</p>
+
+<h2>Connection status</h2>
+
+<p>The Status label on the tab shows Mycelian's own text. The bottom status bar shortens it to one of these. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Footer</th><th>Tab shows</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Connected</td><td>Spotify is signed in</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Idle</td><td>Not Configured, Authorization Required, Awaiting Authorization, Opening Browser...</td><td>Waiting for you to sign in, or not set up</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Disconnected</td><td>Spotify is not connected</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Expired</td><td>Token Refresh Failed, Token Refresh Error</td><td>The token could not be refreshed. Click Connect again</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Auth Failed</td><td>Authorization Timeout, Authorization Error: …, OAuth Failed</td><td>Authorization was denied, failed or timed out</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>Authentication Error, OAuth Error, Server Error</td><td>Something else failed. Check the log</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> No Internet / Unreachable</td><td>No Internet, Service Unreachable</td><td>This computer is offline, or Spotify cannot be reached</td></tr>
+</tbody>
+</table></div>
+
+<h2>If something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>Spotify says "INVALID_CLIENT: Invalid redirect URI"</summary>
+  <p>The redirect URI in the dashboard does not match exactly. Open your app's <strong>Settings</strong>, make sure <span class="hx-copy" data-copy="http://127.0.0.1:9973">http://127.0.0.1:9973</span> is listed under <strong>Redirect URIs</strong>, save, and click <strong>Connect</strong> again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Status shows "Server Error"</summary>
+  <p>Mycelian could not open port <code>9973</code> for the sign-in callback. Another program, or a second copy of Mycelian, is using it. Close it and try again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Authorization fails or the account is rejected</summary>
+  <p>Clear cookies for spotify.com, or try a different browser. If you sign in with a different Spotify account than the one that owns the app, add that account under <strong>User Management</strong> in the app's settings.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Current track says "Spotify connected (playback may be restricted by region)"</summary>
+  <p>Mycelian is signed in but Spotify reports nothing playing. Start playback, check that Spotify is not in offline mode, and make sure the right device is active. If it persists, try a specific <strong>Market country</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Status says Expired</summary>
+  <p>The saved token could not be refreshed, usually because the Client Secret was rotated or access was removed in your Spotify account under <strong>Manage apps</strong>. Paste the current secret and click <strong>Connect</strong>.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:integrations_spotify">{{brand:spotify}}<span><strong>Spotify Integration</strong><span class="hx-card-text">The now playing overlay and its options</span></span></a>
+  <a class="hx-card" href="help:obs_setup">{{brand:obs}}<span><strong>OBS Browser Sources</strong><span class="hx-card-text">Add the overlay to a scene</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>All connection guides</strong><span class="hx-card-text">Twitch, OBS, PSN, YouTube and more</span></span></a>
+</div>

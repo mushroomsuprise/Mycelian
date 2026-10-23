@@ -1,0 +1,353 @@
+<p class="hx-lead">A <strong>Counter</strong> block shows a number that changes on its own: bits cheered, subs this stream, a game score. Its <strong>Data feed</strong> decides when it changes and by how much. It can stay between streams, count toward goals, and swap images as it grows.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 5 minutes</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Spore Studio</span><span>Blocks</span><span>Widgets</span><span>Counter</span></span></span>
+</div>
+
+<h2>When to use a counter</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Block</th><th>Best for</th></tr></thead>
+<tbody>
+<tr><td><strong>Counter</strong></td><td>Running totals that add, subtract, set or reset on events. Can persist, use goals and drive images and progress bars.</td></tr>
+<tr><td><strong>Text</strong> with a <strong>Set text content</strong> binding</td><td>Showing one payload field as it arrives, such as the latest username</td></tr>
+<tr><td><strong>Data display</strong></td><td>Showing a live value without arithmetic, such as session bits. See <a href="help:spore_studio_data_sources">Data Sources</a>.</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-tip"><p>Set <strong>Alert system</strong> to <strong>Instant (instant_alert)</strong> on the <strong>Canvas</strong> tab for counter HUDs. Instant alerts update the overlay without holding the <a href="help:alerts_overview">alert queue</a>.</p></div>
+
+<h2>Set up a counter</h2>
+
+<section class="hx-guide" data-guide="spore_studio_counters_setup" data-title="Counter setup">
+
+  <div class="hx-step">
+    <h3>Drag a Counter block onto the canvas</h3>
+    <p>It is in the <strong>Widgets</strong> group of the <strong>Blocks</strong> panel. Pick a category when asked (for example <code>Counter</code>).</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Fill in the Counter section</h3>
+    <p>With the block selected, open <strong>Counter</strong> on the <strong>Properties</strong> tab.</p>
+
+    <div class="hx-split">
+      <div>
+        <figure class="hx-figure">
+          <div class="hm hm-ssb">
+            <div class="hm-ssb-insp">
+              <div class="hm-ssb-tabs">
+                <span class="is-active">Properties</span><span>Bindings</span><span>Stream Deck</span><span>Source Controls</span><span>Advanced JS</span><span>Canvas</span>
+              </div>
+              <div class="hm-ssb-body">
+                <div class="hm-expansion hm-ssb-sec is-open">
+                  <div class="hm-expansion-head">Counter</div>
+                  <div class="hm-expansion-body">
+                    <div class="hm-ssb-fr"><label>Counter id <span class="hm-marker" data-n="1"></span></label><span class="hm-ssb-in">bit_count</span></div>
+                    <div class="hm-ssb-fr"><label>Initial value</label><span class="hm-ssb-in">0</span></div>
+                    <div class="hm-ssb-fr"><label>Min</label><span class="hm-ssb-in is-ph"></span></div>
+                    <span class="hm-check"><i></i>Progressive goals <span class="hm-marker" data-n="2"></span></span>
+                    <div class="hm-ssb-fr"><label>Max</label><span class="hm-ssb-in">1000</span></div>
+                    <div class="hm-ssb-fr"><label>Format ({value}, {min}, {max}) <span class="hm-marker" data-n="3"></span></label><span class="hm-ssb-in">Bits: {value} / {max}</span></div>
+                    <span class="hm-check"><i></i>Persist (database) <span class="hm-marker" data-n="4"></span></span>
+                    <span class="hm-ssb-hint">Choose when this counter changes under Data feed. Add to this counter, subtract, set, or reset, and pick the amount there.</span>
+                  </div>
+                </div>
+                <div class="hm-expansion hm-ssb-sec">
+                  <div class="hm-expansion-head">Data feed</div>
+                  <div class="hm-expansion-body"><span class="hm-ssb-hint">See the next step.</span></div>
+                </div>
+                <div class="hm-expansion hm-ssb-sec">
+                  <div class="hm-expansion-head">Outputs</div>
+                  <div class="hm-expansion-body"><span class="hm-ssb-hint">counter changed (counter_changed), goal reached (goal_reached)</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <figcaption>Properties tab with a Counter block selected. Click the section headers to open and close them.</figcaption>
+        </figure>
+      </div>
+      <div>
+        <ol class="hx-annotations">
+          <li data-n="1"><strong>Counter id</strong> is what images, progress bars, bindings and Source Controls use to find this counter. Spaces and symbols become <code>_</code>.</li>
+          <li data-n="2">With <strong>Progressive goals</strong> off you get a single <strong>Max</strong>. Leave <strong>Min</strong> or <strong>Max</strong> empty for no limit. Goals are explained below.</li>
+          <li data-n="3"><strong>Format</strong> is the text shown. <code>{value}</code>, <code>{min}</code> and <code>{max}</code> are replaced. The checkbox next to it exposes the format in Source Settings.</li>
+          <li data-n="4"><strong>Persist (database)</strong> keeps the value between reloads. See Persist below.</li>
+        </ol>
+        <p>The <strong>Appearance</strong> section adds <strong>Scroll</strong>, <strong>Scroll speed (s)</strong>, <strong>Scroll direction</strong> and <strong>Scroll gap (px)</strong> if the number should move across the block like a marquee, plus the usual text styles.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Add a feed for each thing that changes it</h3>
+    <p>Open <strong>Data feed</strong> and click <strong>+ Add feed</strong>. A counter feed starts on <strong>Alert (instant)</strong> and <strong>Alert (queue)</strong> with <strong>Add to this counter</strong>. This feed adds bits on every cheer:</p>
+
+    <div class="hx-split">
+      <div>
+    <figure class="hx-figure">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-card" style="max-width:24rem">
+          <div class="hm-ssb-card-head">
+            <span class="hm-switch is-on"><i></i></span>
+            <span class="hm-ssb-in hm-ssb-title">Cheers</span>
+            <span class="hm-ssb-btn is-sm">Copy</span><span class="hm-ssb-btn is-sm">Remove</span>
+          </div>
+          <span class="hm-ssb-summary">Alert (instant)  →  Add to this counter</span>
+          <div class="hm-expansion hm-ssb-part">
+            <div class="hm-expansion-head">1. When it runs</div>
+            <div class="hm-expansion-body">
+              <div class="hm-ssb-fr"><label>Run when</label><span class="hm-ssb-in hm-ssb-sel">An event (alert, chat, giveaway...)</span></div>
+              <div class="hm-ssb-checks">
+                <span class="hm-switch"><i></i>Alert (queue)</span>
+                <span class="hm-switch is-on"><i></i>Alert (instant)</span>
+                <span class="hm-switch"><i></i>Chat message (Twitch)</span>
+              </div>
+            </div>
+          </div>
+          <div class="hm-expansion hm-ssb-part is-open">
+            <div class="hm-expansion-head">2. Which ones to keep</div>
+            <div class="hm-expansion-body">
+              <div class="hm-ssb-fr"><label>Alert type</label><span class="hm-ssb-in hm-ssb-sel">Bits</span></div>
+            </div>
+          </div>
+          <div class="hm-expansion hm-ssb-part"><div class="hm-expansion-head">3. What it says</div><div class="hm-expansion-body"><span class="hm-ssb-hint">Not needed for counters.</span></div></div>
+          <div class="hm-expansion hm-ssb-part"><div class="hm-expansion-head">4. Timing</div><div class="hm-expansion-body"><div class="hm-ssb-fr"><label>Delay (ms)</label><span class="hm-ssb-in">0</span></div></div></div>
+          <div class="hm-expansion hm-ssb-part is-open">
+            <div class="hm-expansion-head">5. Update this block</div>
+            <div class="hm-expansion-body">
+              <div class="hm-ssb-fr"><label>Update this block</label><span class="hm-ssb-in hm-ssb-sel">Add to this counter</span></div>
+              <span class="hm-ssb-hint">Adds the mapped number. Uses 1 when no number is mapped.</span>
+              <div class="hm-ssb-fr"><label>Delta kind</label><span class="hm-ssb-in hm-ssb-sel">data_source</span></div>
+              <div class="hm-ssb-fr"><label>Source</label><span class="hm-ssb-in hm-ssb-sel">Bits cheered</span></div>
+              <div class="hm-ssb-fr"><label>Fallback</label><span class="hm-ssb-in">0</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>A counter feed. Click the numbered parts to open them. The whole feed setup is explained in <a href="help:spore_studio_data_feed">Data feeds</a>.</figcaption>
+    </figure>
+      </div>
+      <div>
+    <p>Under <strong>Update this block</strong> a counter offers:</p>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Choice</th><th>Effect</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Add to this counter</strong></td><td>Adds the amount. Uses 1 when no number is mapped.</td></tr>
+    <tr><td><strong>Subtract from this counter</strong></td><td>Subtracts the amount</td></tr>
+    <tr><td><strong>Set this counter</strong></td><td>Replaces the value</td></tr>
+    <tr><td><strong>Reset this counter</strong></td><td>Returns to <strong>Initial value</strong></td></tr>
+    <tr><td>Show, hide, toggle and the other shared choices</td><td>Same on every block. See <a href="help:spore_studio_data_feed">Data feeds</a>.</td></tr>
+    </tbody>
+    </table></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Save and test</h3>
+    <p>Click <strong>Save</strong>, open <strong>Preview</strong>, and click a mock under <strong>Alerts:</strong> (for example <strong>Bits</strong> or <strong>Sub</strong>). The number should change. Click <strong>Reload</strong> in the preview to check persistence.</p>
+  </div>
+
+</section>
+
+<h2>The amount: Delta kind</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Delta kind</th><th>Fields</th><th>Use for</th></tr></thead>
+<tbody>
+<tr><td><code>fixed</code></td><td><strong>Value</strong></td><td>+1 per sub, +10 per raid</td></tr>
+<tr><td><code>random_int</code></td><td><strong>Min</strong>, <strong>Max</strong> (inclusive)</td><td>Random whole numbers</td></tr>
+<tr><td><code>random_float</code></td><td><strong>Min</strong>, <strong>Max</strong>, <strong>Decimals</strong></td><td>Random decimals</td></tr>
+<tr><td><code>data_source</code></td><td><strong>Source</strong>, extra source fields, <strong>Fallback</strong></td><td>A live number such as <strong>Bits cheered</strong> (<code>alert.amt_cheered</code>)</td></tr>
+</tbody>
+</table></div>
+
+<p>For alert and subscription sources, <strong>Fallback</strong> is used when the alert does not match. <code>0</code> leaves the counter unchanged. The source list hides text-only sources. See <a href="help:spore_studio_data_sources">Data Sources</a> for every source.</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="bits" class="is-active">Bits total</button>
+    <button data-tab="subs">+1 per sub</button>
+    <button data-tab="tier">Gift subs incl. quantity</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="bits">
+    <p>Event <strong>Alert (instant)</strong> · Alert type <strong>Bits</strong> · <strong>Add to this counter</strong> · Delta <code>data_source</code> → <strong>Bits cheered</strong>. This is how the built-in <code>bitcounter</code> template works.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="subs">
+    <p>Event <strong>Alert (instant)</strong> · Alert type <strong>New sub</strong> · <strong>Add to this counter</strong> · Delta <code>fixed</code> → <code>1</code>.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="tier">
+    <p>Event <strong>Alert (instant)</strong> · <strong>Add to this counter</strong> · Delta <code>data_source</code> → <strong>Gift sub (+quantity)</strong>. It returns the gifted quantity for gift-sub alerts and the fallback for everything else. Add a <strong>Tier filter</strong> to count one tier only.</p>
+  </div>
+</div>
+
+<h2>Persist (database)</h2>
+
+<p>With <strong>Persist (database)</strong> on, the value is stored in Mycelian's database and survives overlay reloads and restarts. Two more fields appear:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Field</th><th>Default</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><strong>DB path</strong></td><td><code>&lt;template name&gt;/counters</code></td><td>Database document that stores the counter</td></tr>
+<tr><td><strong>DB key</strong></td><td>The counter id</td><td>Key inside that document</td></tr>
+</tbody>
+</table></div>
+
+<p>With it off, the counter goes back to <strong>Initial value</strong> every time the browser source reloads.</p>
+
+<div class="hx-callout hx-tip"><p>Persist marathon or all-time totals. Leave it off for per-stream counters, or reset them from <a href="help:spore_studio_dynamic_controls">Source Controls</a>.</p></div>
+
+<h2>Progressive goals</h2>
+
+<p>Turn on <strong>Progressive goals</strong> to replace the single <strong>Max</strong> with a list, such as 100, then 200, then 300. The first goal starts at the old Max (or 100). <strong>+ Add goal</strong> adds the next one at the same spacing. Each goal must be at least the one before it.</p>
+
+<p>The count is never reset when a goal is reached. <code>{max}</code>, and any progress bar driven by this counter, move to the next goal instead. Click a count to see it:</p>
+
+<figure class="hx-figure">
+  <div class="hm hm-ssb" data-tabs>
+    <div class="hm-subtabs">
+      <span class="hm-subtab is-active" data-tab="g1">Count 60</span>
+      <span class="hm-subtab" data-tab="g2">Count 140</span>
+      <span class="hm-subtab" data-tab="g3">Count 250</span>
+      <span class="hm-subtab" data-tab="g4">Count 300</span>
+    </div>
+    <div class="hm-ssb-stage" style="height:120px;margin-top:8px">
+      <div class="hm-ssb-ov">
+        <div class="hm-col hm-tight">
+          <span class="hm-ssb-ov-kicker">Sub goal</span>
+          <div data-panel="g1"><span class="hm-ssb-ov-num">60 / 100</span><div class="hm-ssb-ov-bar" style="--hm-val:60%"><i></i></div></div>
+          <div data-panel="g2"><span class="hm-ssb-ov-num">140 / 200</span><div class="hm-ssb-ov-bar" style="--hm-val:70%"><i></i></div></div>
+          <div data-panel="g3"><span class="hm-ssb-ov-num">250 / 300</span><div class="hm-ssb-ov-bar" style="--hm-val:83%"><i></i></div></div>
+          <div data-panel="g4"><span class="hm-ssb-ov-num">300 / 300</span><div class="hm-ssb-ov-bar" style="--hm-val:100%"><i></i></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Goals 100, 200, 300 with Format <code>{value} / {max}</code> and a progress bar linked to the counter.</figcaption>
+</figure>
+
+<ul>
+  <li>Once a goal is reached, the count cannot fall below it.</li>
+  <li>The count cannot rise above the last goal.</li>
+  <li><strong>Reset</strong> returns the count to the initial value and the first goal.</li>
+  <li>Reaching a goal emits <code>goal_reached</code> with the goal, the next goal and its index. One update that skips past two goals emits one event per goal.</li>
+  <li>The progress bar's own <code>goal_reached</code> fires only when the bar is full, which is at the last goal.</li>
+</ul>
+
+<h2>Value change animation</h2>
+
+<p>Separate from <strong>Entrance</strong> / <strong>Exit</strong> animations, a counter can animate each time its number changes. The settings live in the <strong>Value change animation</strong> group:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Field</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><strong>Enable on value update</strong></td><td>Run an animation when the displayed value changes</td></tr>
+<tr><td><strong>Animation type</strong></td><td><strong>Tick up (count)</strong> counts from the old value to the new one. <code>fade-in</code>, <code>slide-in</code> and <code>bounce</code> are visual effects.</td></tr>
+<tr><td><strong>Duration (ms)</strong> / <strong>Easing</strong></td><td>Timing. Default 500 ms, <code>ease-out</code>.</td></tr>
+<tr><td><strong>Continuous pulse</strong></td><td>Keep pulsing while the value is displayed. Can be distracting during cheer trains.</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-note"><p>In this version the group is not shown under Counter blocks in the editor. Templates that already have it set, such as <code>bitcounter</code> (Tick up, 1000 ms), keep the effect.</p></div>
+
+<h2>Images that change with the count</h2>
+
+<p>An <strong>Image</strong> block can pick its picture from a counter value, for example a bigger cheer gem as bits add up.</p>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-insp">
+          <div class="hm-ssb-body">
+            <div class="hm-ssb-h">Image source</div>
+            <div class="hm-ssb-fr"><label>Image source mode</label><span class="hm-ssb-in hm-ssb-sel">From counter (ranges)</span></div>
+            <div class="hm-ssb-fr"><label>Counter</label><span class="hm-ssb-in hm-ssb-sel">bit_counter (bit_count)</span></div>
+            <div class="hm-ssb-fr"><label>Default src (fallback)</label><span class="hm-ssb-in is-ph">(none)</span></div>
+            <div class="hm-ssb-h">Src ranges (min–max)</div>
+            <div class="hm-ssb-card">
+              <div class="hm-ssb-pair">
+                <div class="hm-ssb-fr"><label>Min</label><span class="hm-ssb-in">100</span></div>
+                <div class="hm-ssb-fr"><label>Max</label><span class="hm-ssb-in">999</span></div>
+              </div>
+              <div class="hm-ssb-fr"><label>Image</label><span class="hm-ssb-in">/assets/bitcounter/cheer100.gif</span></div>
+              <span class="hm-ssb-btn">Remove range</span>
+            </div>
+            <span class="hm-ssb-btn is-primary">+ Add range</span>
+            <div class="hm-ssb-h">Range change transition</div>
+            <span class="hm-check is-on"><i></i>Animate when image changes</span>
+            <div class="hm-ssb-fr"><label>Transition type</label><span class="hm-ssb-in hm-ssb-sel">Roll out, then roll in</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Image block, Image source section.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <ol>
+      <li>Set <strong>Image source mode</strong> to <strong>From counter (ranges)</strong>.</li>
+      <li>Pick the <strong>Counter</strong>.</li>
+      <li>Click <strong>+ Add range</strong> for each step. <strong>Min</strong> and <strong>Max</strong> are whole numbers and both are inclusive. Pick an image from <code>assets/&lt;template name&gt;/</code>.</li>
+      <li>Set <strong>Default src (fallback)</strong> for values outside every range.</li>
+      <li>With two or more ranges, <strong>Range change transition</strong> appears. Types: fade, slide, crossfade, bounce, roll. Default 400 ms.</li>
+    </ol>
+  </div>
+</div>
+
+<p>The built-in <code>bitcounter</code> uses six ranges and a 600 ms roll:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Range</th><th>Image</th></tr></thead>
+<tbody>
+<tr><td>0–99</td><td><code>/assets/bitcounter/cheer1.gif</code></td></tr>
+<tr><td>100–999</td><td><code>/assets/bitcounter/cheer100.gif</code></td></tr>
+<tr><td>1000–4999</td><td><code>/assets/bitcounter/cheer1000.gif</code></td></tr>
+<tr><td>5000–9999</td><td><code>/assets/bitcounter/cheer5000.gif</code></td></tr>
+<tr><td>10000–99999</td><td><code>/assets/bitcounter/cheer10000.gif</code></td></tr>
+<tr><td>100000 and up</td><td><code>/assets/bitcounter/cheer100000.gif</code> (Max set very high)</td></tr>
+</tbody>
+</table></div>
+
+<h2>Changing a counter from somewhere else</h2>
+
+<p>A counter's Data feed listens to Mycelian events. For anything else, use one of these:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>From</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>A Stream Deck key</td><td>Binding with trigger <strong>Stream Deck action</strong> and action <strong>Adjust counter</strong>. See <a href="help:spore_studio_streamdeck">Stream Deck Actions</a>.</td></tr>
+<tr><td>A binding chain</td><td><strong>Adjust counter</strong> as a chained step, for example after <strong>Show for N seconds</strong>. See <a href="help:spore_studio_bindings">Bindings</a>.</td></tr>
+<tr><td>Source Controls</td><td>A <strong>Counter control</strong>, which gives you an amount box with -, + and Reset. See <a href="help:spore_studio_dynamic_controls">Dynamic Controls</a>.</td></tr>
+</tbody>
+</table></div>
+
+<p>The <strong>Adjust counter</strong> binding action takes these arguments:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Arg</th><th>Label</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>counter_id</code></td><td>Counter id</td><td>Target counter</td></tr>
+<tr><td><code>operation</code></td><td>Operation</td><td><code>increment</code>, <code>decrement</code>, <code>set</code>, <code>reset</code></td></tr>
+<tr><td><code>delta_kind</code></td><td>Delta kind</td><td><code>fixed</code>, <code>random_int</code>, <code>random_float</code>, <code>data_source</code></td></tr>
+<tr><td><code>delta_value</code></td><td>Fixed delta / fallback</td><td>Fixed amount, or the fallback for a data source</td></tr>
+<tr><td><code>delta_source</code></td><td>Data source id</td><td>For <code>data_source</code>, for example <code>alert.amt_cheered</code></td></tr>
+<tr><td><code>delta_min</code>, <code>delta_max</code></td><td>Random min / max</td><td>Random range (defaults 1 and 5)</td></tr>
+</tbody>
+</table></div>
+
+<details class="hx-details">
+  <summary>Where did counter rules go?</summary>
+  <p>Older templates stored "counter rules" on the counter. Spore Studio now turns each rule into a Data feed with the same event, filters and delta when you save, and the rules list is cleared. Old Stream Deck rules become feeds that match the action name.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Other templates need to know when my counter changes</summary>
+  <p>Counters publish <code>counter_changed</code> (with the counter id, value and change) and, with goals, <code>goal_reached</code>. Turn them on or off and rename them in the block's <strong>Outputs</strong> section. Other templates pick them under <strong>The output of another template</strong>. See <a href="help:spore_studio_data_feed">Data feeds</a>.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_data_feed">{{icon:rss_feed}}<span><strong>Data feeds</strong><span class="hx-card-text">Events, filters and targets in detail</span></span></a>
+  <a class="hx-card" href="help:spore_studio_data_sources">{{icon:storage}}<span><strong>Data Sources</strong><span class="hx-card-text">Every value a delta can read</span></span></a>
+  <a class="hx-card" href="help:spore_studio_examples">{{icon:auto_awesome}}<span><strong>Examples</strong><span class="hx-card-text">Sub counter and bit counter HUDs</span></span></a>
+</div>

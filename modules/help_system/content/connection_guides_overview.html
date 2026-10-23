@@ -1,0 +1,87 @@
+<p class="hx-lead">Mycelian works on its own for overlays and test alerts. Each service you connect adds live events, data or controls. Pick a guide below; each one walks through the setup step by step.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Twitch … Discord</span></span></span>
+  <span>{{icon:schedule}} 2 to 10 minutes per service</span>
+</div>
+
+<h2>Choose a guide</h2>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:twitch_setup">{{brand:twitch}}<span><strong>Twitch</strong><span class="hx-card-text">Alerts, chat, chatbot and channel points. Start here.</span></span></a>
+  <a class="hx-card" href="help:obs_websocket">{{brand:obs}}<span><strong>OBS (WebSocket)</strong><span class="hx-card-text">Refresh and add browser sources, OBS triggers and actions</span></span></a>
+  <a class="hx-card" href="help:guide_spotify">{{brand:spotify}}<span><strong>Spotify</strong><span class="hx-card-text">Show the current track in overlays and chat</span></span></a>
+  <a class="hx-card" href="help:guide_psn">{{brand:psn}}<span><strong>PlayStation Network</strong><span class="hx-card-text">Trophy overlays and the game you are playing</span></span></a>
+  <a class="hx-card" href="help:guide_youtube">{{brand:youtube}}<span><strong>YouTube</strong><span class="hx-card-text">Channel data, plus live chat with Google sign-in</span></span></a>
+  <a class="hx-card" href="help:guide_discord">{{brand:discord}}<span><strong>Discord</strong><span class="hx-card-text">Post go-live announcements to your server</span></span></a>
+  <a class="hx-card" href="help:guide_streamlabs">{{brand:streamlabs}}<span><strong>Streamlabs</strong><span class="hx-card-text">Donations become alerts</span></span></a>
+  <a class="hx-card" href="help:guide_streamelements">{{brand:streamelements}}<span><strong>StreamElements</strong><span class="hx-card-text">Tips become alerts</span></span></a>
+  <a class="hx-card" href="help:guide_streamdeck">{{icon:grid_view}}<span><strong>Stream Deck</strong><span class="hx-card-text">Control Mycelian from your deck</span></span></a>
+</div>
+
+<div class="hx-callout hx-tip"><p>New to Mycelian? Connect <strong>Twitch</strong> first, then <strong>OBS</strong>. Everything else is optional.</p></div>
+
+<h2>What you need for each</h2>
+
+<p>Every service except Stream Deck has its own tab under <strong>Settings</strong>. Credentials are typed or pasted there, then saved with <strong>Save</strong> or <strong>Connect</strong>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Service</th><th>What it unlocks</th><th>What you enter in Mycelian</th></tr></thead>
+<tbody>
+<tr><td>{{brand:twitch}} <a href="help:twitch_setup">Twitch</a></td><td>Follow, sub, bit, raid and channel point alerts; chat and the chatbot; Twitch triggers for connectors</td><td><strong>Client ID</strong> and <strong>Client Secret</strong> from your own Twitch app, then <strong>Connect</strong> to sign in</td></tr>
+<tr><td>{{brand:obs}} <a href="help:obs_websocket">OBS</a></td><td>Refreshes Mycelian's browser sources after OBS starts; the <strong>Add to OBS</strong> button on source URLs; OBS scene, stream, record and mute triggers; OBS control actions</td><td><strong>Host</strong> (usually <code>localhost</code>), <strong>Port</strong> (default <code>4455</code>) and <strong>WebSocket password</strong> from OBS</td></tr>
+<tr><td>{{brand:spotify}} <a href="help:guide_spotify">Spotify</a></td><td>Now-playing overlays and track info for chat</td><td><strong>Client ID</strong> and <strong>Client Secret</strong> from a Spotify developer app, then <strong>Connect</strong></td></tr>
+<tr><td>{{brand:psn}} <a href="help:guide_psn">PSN</a></td><td>Trophy overlays and game info</td><td><strong>NPSSO code</strong> (a 64-character token) and the <strong>PSN username</strong> to track</td></tr>
+<tr><td>{{brand:youtube}} <a href="help:guide_youtube">YouTube</a></td><td>Channel info and latest video. With Google sign-in: live chat, memberships and Super Chats</td><td><strong>API key</strong> and <strong>Channel URLs</strong>. For live chat, also <strong>OAuth Client ID</strong> and <strong>OAuth Client Secret</strong> under <strong>Advanced</strong></td></tr>
+<tr><td>{{brand:discord}} <a href="help:guide_discord">Discord</a></td><td>Go-live announcements in the channels you pick</td><td><strong>Bot token</strong>, then a server and channel under <strong>Announcement channels</strong></td></tr>
+<tr><td>{{brand:streamlabs}} <a href="help:guide_streamlabs">Streamlabs</a></td><td>Donation alerts</td><td><strong>Client ID</strong> and <strong>Client secret</strong> from a Streamlabs app, then <strong>Connect</strong></td></tr>
+<tr><td>{{brand:streamelements}} <a href="help:guide_streamelements">StreamElements</a></td><td>Tip alerts</td><td><strong>JWT token</strong> from your StreamElements account, then <strong>Connect</strong></td></tr>
+<tr><td>{{icon:grid_view}} <a href="help:guide_streamdeck">Stream Deck</a></td><td>Buttons that pause or resume alerts, run connectors and trigger template actions</td><td>Nothing. Click <strong>Install Plugin</strong> in <span class="hx-path"><span>Settings</span><span>App Settings</span></span></td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-warning"><p>Client secrets, tokens and passwords work like passwords. Mycelian stores its API credentials encrypted. Do not share them or show them on stream.</p></div>
+
+<h2>How to tell what is connected</h2>
+
+<p>The <strong>status footer</strong> at the bottom of the main window has a badge for each service you have set up. Green means it is working.</p>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-sf">
+      <span class="hm-sf-item hm-sf-success" data-tip="Online"><span class="hm-sf-icon">{{brand:internet}}</span><span class="hm-sf-name">Internet</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Online</span></span>
+      <span class="hm-sf-item hm-sf-success" data-tip="Running"><span class="hm-sf-name">Overlay Server</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Running</span></span>
+      <span class="hm-sf-item hm-sf-success" data-tip="Connected"><span class="hm-sf-icon">{{brand:twitch}}</span><span class="hm-sf-name">Twitch</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connected</span><span class="hm-marker" data-n="1"></span></span>
+      <span class="hm-sf-item hm-sf-muted" data-tip="Disconnected"><span class="hm-sf-icon">{{brand:obs}}</span><span class="hm-sf-name">OBS</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Disconnected</span><span class="hm-marker" data-n="2"></span></span>
+      <span class="hm-sf-item hm-sf-muted" data-tip="Idle"><span class="hm-sf-icon">{{brand:spotify}}</span><span class="hm-sf-name">Spotify</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Idle</span><span class="hm-marker" data-n="3"></span></span>
+      <span class="hm-sf-item hm-sf-error" data-tip="Auth Failed"><span class="hm-sf-icon">{{brand:streamlabs}}</span><span class="hm-sf-name">Streamlabs</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Auth Failed</span><span class="hm-marker" data-n="4"></span></span>
+    </div>
+  </div>
+  <figcaption>The status footer. Hover a badge for its status; in the app, clicking it opens that service's Settings tab.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Green</strong> (Connected): working.</li>
+  <li data-n="2"><strong>Gray</strong> (Disconnected): set up but not connected right now. For OBS this usually means OBS is closed.</li>
+  <li data-n="3"><strong>Gray</strong> (Idle): credentials are saved, but sign-in has not finished. Open the tab and click <strong>Connect</strong>.</li>
+  <li data-n="4"><strong>Red</strong> (Error, Expired, Auth Failed): needs you. Check the credentials, then connect again.</li>
+</ol>
+
+<p>A service you have not set up has no badge, except Twitch, which always has one. The full color legend and the minimal badge mode are in <a href="help:status_footer">Status Footer</a>.</p>
+
+<h2>If a connection will not work</h2>
+
+<details class="hx-details">
+  <summary>The browser opened but Mycelian never connected</summary>
+  <p>Most sign-ins return to a <code>localhost</code> address on this computer. The redirect URL in the service's developer app must match exactly what the guide shows. Fix it there and click <strong>Connect</strong> again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The badge turned red after working for days</summary>
+  <p>The token expired or was revoked, or the secret was changed. Open the service's tab and connect again. If that fails, create a new secret and paste it in.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Everything is red at once</summary>
+  <p>Check the <strong>Internet</strong> badge. With no network, online services show <strong>No Internet</strong> or <strong>Unreachable</strong>. See <a href="help:troubleshooting_connections">Connection Problems</a>.</p>
+</details>

@@ -1,0 +1,155 @@
+<p class="hx-lead">Templates are the overlays you show on stream. Each one is a small web page that Mycelian serves on this computer. You add it to OBS as a <strong>Browser Source</strong>, and it updates live as alerts, chat and other events arrive.</p>
+
+<div class="hx-meta">
+  <span>{{icon:dns}} Served at <span class="hx-copy" data-copy="http://127.0.0.1:5000">http://127.0.0.1:5000</span></span>
+  <span>{{icon:place}} <span class="hx-path"><span>Source Settings</span></span> and <span class="hx-path"><span>Source Controls</span></span></span>
+</div>
+
+<h2>How a template works</h2>
+
+<p>Every template is made of up to three files, all named after the template:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>File</th><th>What it holds</th></tr></thead>
+<tbody>
+<tr><td><code>templates/&lt;name&gt;.html</code></td><td>The overlay page itself (HTML, CSS and JavaScript). Its file name is the URL path.</td></tr>
+<tr><td><code>templates/template_configs/&lt;name&gt;.json</code></td><td>Its settings: colors, fonts, sizes, timings. You edit these in <strong>Source Settings</strong>. It can also define live controls for <strong>Source Controls</strong>.</td></tr>
+<tr><td><code>templates/_spore/&lt;name&gt;.spore.json</code></td><td>Only for templates built in <a href="help:spore_studio_overview">Spore Studio</a>. The editable design.</td></tr>
+</tbody>
+</table></div>
+
+<p>When OBS loads the URL, Mycelian fills the page with the saved settings and the page connects back to Mycelian over Socket.IO to receive events. See <a href="help:template_websocket">WebSocket Events</a>.</p>
+
+<h2>Where you work with templates</h2>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:template_configuration">{{icon:tune}}<span><strong>Source Settings tab</strong><span class="hx-card-text">Pick a template, change its settings, preview, Save</span></span></a>
+  <a class="hx-card" href="help:source_controls">{{icon:gamepad}}<span><strong>Source Controls tab</strong><span class="hx-card-text">Buttons, toggles and counters you use while live</span></span></a>
+  <a class="hx-card" href="help:spore_studio_overview">{{icon:brush}}<span><strong>Spore Studio tab</strong><span class="hx-card-text">Design new overlays visually</span></span></a>
+</div>
+
+<h2>Template URLs</h2>
+
+<p>Every template is served at <code>http://127.0.0.1:5000/&lt;name&gt;</code>, where <code>&lt;name&gt;</code> is the HTML file name without <code>.html</code>. The full, current list is in <span class="hx-path"><span>Settings</span><span>About</span></span> under <strong>Available Source URLs</strong>. Each card has a copy button and an <strong>Add to OBS</strong> button.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-panel">
+      <div class="hm-row hm-between hm-top">
+        <div class="hm-col hm-tight">
+          <span class="hm-bold">Available Source URLs</span>
+          <span class="hm-muted hm-sm">Copy these URLs to use as Browser Sources in OBS or other streaming software.</span>
+        </div>
+        <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh URLs</span>
+      </div>
+      <div class="hm-grid-2">
+        <div class="hm-card hm-col hm-tight">
+          <div class="hm-row hm-nowrap">
+            <span class="hm-bold hm-sm hm-grow">Title</span>
+            <span class="hm-badge hm-outline">4 Controls</span>
+            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span></span><span class="hm-marker" data-n="1"></span>
+            <span class="hm-btn hm-outline hm-dense">{{brand:obs}}</span><span class="hm-marker" data-n="2"></span>
+          </div>
+          <div class="hm-field hm-nolabel"><span class="hm-value hm-mono hm-xs">http://127.0.0.1:5000/title</span></div>
+        </div>
+        <div class="hm-card hm-col hm-tight">
+          <div class="hm-row hm-nowrap">
+            <span class="hm-bold hm-sm hm-grow">Alerts</span>
+            <span class="hm-badge hm-outline">0 Controls</span>
+            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span></span>
+            <span class="hm-btn hm-outline hm-dense">{{brand:obs}}</span>
+          </div>
+          <div class="hm-field hm-nolabel"><span class="hm-value hm-mono hm-xs">http://127.0.0.1:5000/alerts</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Settings → About → Available Source URLs (two of the cards).</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">Copies the URL. The list shows <code>127.0.0.1</code>; <code>localhost</code> works the same on this computer.</li>
+  <li data-n="2"><strong>Add to OBS</strong> creates the browser source for you. It needs <a href="help:obs_websocket">OBS WebSocket</a> connected and asks for <strong>Scene</strong>, <strong>Source name</strong>, <strong>Width</strong> and <strong>Height</strong>.</li>
+</ol>
+
+<p>The built-in templates include:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Template</th><th>URL</th><th>Shows</th></tr></thead>
+<tbody>
+<tr><td><strong>Alerts</strong></td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/alerts">/alerts</span></td><td>The main alert queue (follows, subs, bits, raids…)</td></tr>
+<tr><td><strong>Chat</strong></td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/chat">/chat</span></td><td>Chat messages, with a manual banner</td></tr>
+<tr><td><strong>Activity Feed</strong></td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/activity_feed">/activity_feed</span></td><td>Recent alerts with replay and skip. Usually added as an OBS dock.</td></tr>
+<tr><td><strong>Sub Bar</strong> / <strong>Bit Bar</strong></td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/subbar">/subbar</span>, <span class="hx-copy" data-copy="http://127.0.0.1:5000/bitbar">/bitbar</span></td><td>Goal progress bars</td></tr>
+<tr><td><strong>Title</strong></td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/title">/title</span></td><td>Your current Twitch category or a custom title. See <a href="help:template_title">Title Overlay</a>.</td></tr>
+<tr><td><strong>Counter</strong></td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/counter">/counter</span></td><td>A number you change from Source Controls</td></tr>
+<tr><td><strong>Spotify</strong></td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/spotify">/spotify</span></td><td>Now playing</td></tr>
+<tr><td><strong>Source Controls</strong></td><td><span class="hx-copy" data-copy="http://127.0.0.1:5000/source_controls">/source_controls</span></td><td>The Source Controls panel as an OBS dock</td></tr>
+</tbody>
+</table></div>
+
+<p>Others (Bit Boss, Combo Bar, Roulette, Giveaway, Poll, PSN trophies, game hooks…) and any template you build in Spore Studio appear in the same list.</p>
+
+<h2>Add a template to OBS</h2>
+
+<section class="hx-guide" data-guide="templates_intro_obs" data-title="Add a template to OBS">
+  <div class="hx-step">
+    <h3>Copy the URL</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>About</span></span> and click the copy button on the template's card. Or click the OBS button to let Mycelian create the source and skip to the last step.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Create a Browser Source in OBS</h3>
+    <p>In OBS, click <strong>+</strong> under <strong>Sources</strong>, choose <strong>Browser</strong>, name it, and paste the URL.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Set Width and Height</h3>
+    <p>Type the size into the source properties. Do not stretch the source with the mouse handles; that blurs the page. Most overlays expect your canvas size (for example 1920 × 1080). The Title overlay is different; see <a href="help:template_title">Title Overlay</a>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Position it and test</h3>
+    <p>Move the source into place, then trigger a test alert or event. See <a href="help:alert_testing">Testing Alerts</a> and <a href="help:obs_setup">OBS Browser Source Setup</a>.</p>
+  </div>
+</section>
+
+<h2>Customizing</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>You want to</th><th>Use</th></tr></thead>
+<tbody>
+<tr><td>Change colors, fonts, sizes, timings</td><td><a href="help:template_configuration">Source Settings</a>. Saved settings apply to the open overlay.</td></tr>
+<tr><td>Change something live during the stream</td><td><a href="help:source_controls">Source Controls</a></td></tr>
+<tr><td>Restyle beyond the available settings</td><td>The OBS browser source <strong>Custom CSS</strong> box. See <a href="help:template_custom_css">Custom CSS</a>.</td></tr>
+<tr><td>Build a new overlay</td><td><a href="help:spore_studio_overview">Spore Studio</a>: drag blocks, wire <a href="help:spore_studio_bindings">event bindings</a>, add <a href="help:spore_studio_counters">counters</a>, <a href="help:spore_studio_data_sources">data displays</a>, <a href="help:spore_studio_streamdeck">Stream Deck actions</a> and <a href="help:spore_studio_dynamic_controls">dynamic controls</a>, then <strong>Save</strong> to generate the HTML and JSON.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Text placeholders</h3>
+
+<p>Text settings in alert-style templates can contain placeholders in braces, which are replaced with event data. The Alerts template uses, for example:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Placeholder</th><th>Replaced with</th></tr></thead>
+<tbody>
+<tr><td><code>{tier}</code></td><td>Sub tier (1, 2 or 3)</td></tr>
+<tr><td><code>{resub_month}</code></td><td>Months subscribed</td></tr>
+<tr><td><code>{gift_qty}</code></td><td>Number of gifted subs</td></tr>
+<tr><td><code>{recipient}</code></td><td>Gift recipient</td></tr>
+<tr><td><code>{amt_cheered}</code></td><td>Bits cheered</td></tr>
+<tr><td><code>{streak_count}</code></td><td>Watch-streak length</td></tr>
+<tr><td><code>{raider_count}</code></td><td>Viewers in a raid</td></tr>
+<tr><td><code>{title}</code> / <code>{point_cost}</code></td><td>Channel point reward name and cost</td></tr>
+</tbody>
+</table></div>
+
+<p>The username is shown on its own line, so it is not a placeholder in these texts. Each setting's description in Source Settings lists what it accepts.</p>
+
+<h2>Good habits</h2>
+
+<ul class="hx-checklist" data-checklist="templates_intro_habits">
+  <li>Set browser source Width and Height to the area the overlay needs, not more.</li>
+  <li>Keep <strong>Shutdown source when not visible</strong> on for overlays you only show in some scenes.</li>
+  <li>Check text is readable at your stream resolution, over real gameplay.</li>
+  <li>Test every overlay in the Source Settings preview or with a test alert before going live.</li>
+</ul>
+
+<div class="hx-callout hx-tip"><p>Overlays stop updating if Mycelian is closed. Start Mycelian before OBS, or see <a href="help:obs_setup">OBS Browser Source Setup</a> for what happens when OBS opens first.</p></div>

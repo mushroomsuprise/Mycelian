@@ -1,0 +1,207 @@
+<p class="hx-lead">Mycelian reads Streamlabs <strong>donations</strong> through <strong>your own Streamlabs app</strong>. You register the app once, paste its <strong>Client ID</strong> and <strong>Client Secret</strong> into Mycelian, then sign in.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 10 minutes</span>
+  <span>{{icon:person}} The Streamlabs account that receives donations</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Streamlabs</span></span></span>
+</div>
+
+<p>Only donations come from Streamlabs. Follows, subscriptions and bits stay on the <a href="help:twitch_setup">Twitch connection</a>. What happens with donations once they arrive is in <a href="help:integrations_streamlabs">Streamlabs Integration</a>.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="guide_streamlabs_prereqs">
+  <li>You can sign in at <a href="https://streamlabs.com/login">streamlabs.com/login</a> with the account that receives donations.</li>
+  <li>You know your Streamlabs username. You will add it to the app's whitelist.</li>
+  <li>Mycelian is open on this computer. The sign-in returns to <span class="hx-copy" data-copy="http://127.0.0.1:9975">http://127.0.0.1:9975</span>, which only works on the machine running Mycelian.</li>
+</ul>
+
+<h2>Connect Streamlabs</h2>
+
+<section class="hx-guide" data-guide="guide_streamlabs_setup" data-title="Streamlabs setup">
+
+  <div class="hx-step">
+    <h3>Register an application</h3>
+    <p>Open <a href="https://streamlabs.com/dashboard#/apps">Streamlabs apps</a> and register a new app. Streamlabs' own steps are in <a href="https://dev.streamlabs.com/docs/register-your-application">Register your application</a>. Fill it in like this:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-browser">
+        <div class="hm-browser-bar"><span class="hm-browser-url">streamlabs.com/dashboard#/apps/register</span></div>
+        <div class="hm-browser-body">
+          <div class="hm-h2">Register an App</div>
+          <div class="hm-field" data-label="App Name"><span class="hm-value">Mycelian</span></div>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow is-focused" data-label="Redirect URI"><span class="hm-value hm-mono">http://127.0.0.1:9975</span></div>
+            <span class="hm-marker" data-n="1"></span>
+          </div>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow" data-label="Whitelist Users"><span class="hm-value">YourStreamlabsName</span></div>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+          <div class="hm-row"><span class="hm-btn">Register</span></div>
+        </div>
+      </div>
+      <figcaption>Streamlabs' page, simplified. Other fields on the real form (description, website) can be anything.</figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1">Paste <span class="hx-copy" data-copy="http://127.0.0.1:9975">http://127.0.0.1:9975</span> exactly: <code>http</code>, <code>127.0.0.1</code> (not <code>localhost</code>), port <code>9975</code>, no trailing slash. A mismatch is why Connect lands on an error page.</li>
+      <li data-n="2">Until Streamlabs approves an app, only whitelisted users can authorize it. Add the account that receives donations. You do not need to submit the app for public review.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Copy the Client ID and Client Secret</h3>
+    <p>Open the app you just registered. Copy its <strong>Client ID</strong> and <strong>Client Secret</strong>.</p>
+    <div class="hx-callout hx-warning"><p>Treat the Client Secret like a password. Mycelian stores it encrypted.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Paste both values into Mycelian</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>Streamlabs</span></span>. Pick your <strong>Alert currency</strong>, paste the two values, and click <strong>Connect</strong>.</p>
+
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-tabs">
+          <span class="hm-tab">Activity Feed</span>
+          <span class="hm-tab">Alerts</span>
+          <span class="hm-tab">Source Settings</span>
+          <span class="hm-tab">Source Controls</span>
+          <span class="hm-tab">Connectors</span>
+          <span class="hm-tab">Chatbot</span>
+          <span class="hm-tab">Spore Studio</span>
+          <span class="hm-tab is-active">Settings</span>
+          <span class="hm-tabs-tail"><span class="hx-mi">help_outline</span><span class="hx-mi">notifications</span></span>
+        </div>
+        <div class="hm-frame">
+          <div class="hm-subtabs">
+            <span class="hm-subtab">{{brand:spotify}} Spotify</span>
+            <span class="hm-subtab">{{brand:youtube}} YouTube</span>
+            <span class="hm-subtab is-active">{{brand:streamlabs}} Streamlabs</span>
+            <span class="hm-subtab">{{brand:streamelements}} StreamElements</span>
+            <span class="hm-subtab">{{brand:discord}} Discord</span>
+          </div>
+          <div class="hm-frame">
+            <div class="hm-col">
+              <div class="hm-status-band">
+                <div class="hm-metric"><span>Status</span><span class="hm-warn">Disconnected</span></div>
+              </div>
+              <div class="hm-col hm-tight">
+                <span class="hm-h2">Donations</span>
+                <span class="hm-muted hm-sm">Cash tips from Streamlabs become donation alerts.</span>
+              </div>
+              <div class="hm-row hm-between">
+                <span class="hm-muted hm-xs">Alert amounts are matched in the currency below.</span>
+                <span class="hm-row"><span class="hm-btn hm-outline">How to connect</span><span class="hm-marker" data-n="1"></span><span class="hm-btn hm-flat hm-round hm-icon-only"><span class="hx-mi">help_outline</span></span></span>
+              </div>
+              <div class="hm-row hm-nowrap">
+                <div class="hm-field hm-select hm-grow" data-label="Alert currency"><span class="hm-value">USD</span></div>
+                <span class="hm-marker" data-n="2"></span>
+              </div>
+              <div class="hm-field is-focused" data-label="Client ID"><span class="hm-value hm-mono">aBcD1234eFgH5678</span></div>
+              <div class="hm-field" data-label="Client secret"><span class="hm-value hm-secret">••••••••••••••••</span><span class="hx-mi">visibility_off</span></div>
+              <div class="hm-row">
+                <span class="hm-btn hm-pulse">Connect</span>
+                <span class="hm-btn hm-outline">Disconnect</span>
+                <span class="hm-marker" data-n="3"></span>
+              </div>
+            </div>
+            <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Settings → Streamlabs.</figcaption>
+    </figure>
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>How to connect</strong> opens a short version of these steps with the redirect URI and a copy button.</li>
+      <li data-n="2"><strong>Alert currency</strong> is the currency your donation alert thresholds use. It is shared with StreamElements.</li>
+      <li data-n="3"><strong>Connect</strong> saves the fields first, then opens your browser. If either field is empty you see <em>"Enter a Streamlabs client id and secret first."</em></li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Approve access in the browser</h3>
+    <p>Streamlabs asks you to approve the app. Sign in as the donation account and approve the request. Mycelian asks for two scopes only:</p>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Scope</th><th>Used for</th></tr></thead>
+    <tbody>
+    <tr><td><code>donations.read</code></td><td>Reading donations</td></tr>
+    <tr><td><code>socket.token</code></td><td>Opening the live donation socket</td></tr>
+    </tbody>
+    </table></div>
+    <p>See Streamlabs' <a href="https://dev.streamlabs.com/docs/scopes">scope list</a>. Mycelian waits up to 3 minutes for you to approve. After that, click <strong>Connect</strong> again.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Check it worked</h3>
+    <p>A toast says <em>"Streamlabs connected."</em> and the status turns green:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-status-band">
+          <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected</span></div>
+        </div>
+        <div class="hm-toast hm-ok"><span class="hx-mi">check_circle</span><span>Streamlabs connected.</span></div>
+        <div class="hm-footer">
+          <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
+          <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+          <span class="hm-footer-item">{{brand:streamlabs}} Streamlabs <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+        </div>
+      </div>
+      <figcaption>Connected state. Streamlabs appears in the status footer once a Client ID is saved.</figcaption>
+    </figure>
+    <p>Mycelian refreshes the Streamlabs token on its own and reconnects when the app starts. The next donation shows in the Activity Feed and plays a donation alert.</p>
+  </div>
+
+</section>
+
+<h2>Connection status</h2>
+
+<p>The Streamlabs tab and the bottom status bar show these states. When there is extra detail, the tab adds it after a colon, for example <em>Connecting: Reconnecting to Streamlabs.</em> The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Footer</th><th>On the tab</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Connected</td><td>Donations are being received</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-info"></span> Connecting</td><td>Connecting</td><td>Waiting for you to approve, or opening the donation socket</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Disconnected</td><td>Not connected. Click <strong>Connect</strong></td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Expired</td><td>Token expired</td><td>The token could not be refreshed. Click <strong>Connect</strong> again</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Auth Failed</td><td>Authentication failed</td><td>Streamlabs rejected the sign-in, or you did not finish it</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>Error</td><td>Something else failed. The detail after the colon says what</td></tr>
+</tbody>
+</table></div>
+
+<h2>If something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>Connect opens an error page on Streamlabs</summary>
+  <p>The app's redirect URI does not match. Set it to <span class="hx-copy" data-copy="http://127.0.0.1:9975">http://127.0.0.1:9975</span> exactly, save the app, and click <strong>Connect</strong> again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Streamlabs says I am not allowed to authorize the app</summary>
+  <p>Your username is not on the app's whitelist. Add the account that receives donations and try again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"OAuth callback port 9975 is in use."</summary>
+  <p>Another program on this computer is listening on port <code>9975</code>. Close it (often another copy of Mycelian or another streaming tool) and click <strong>Connect</strong> again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Authorization was not completed."</summary>
+  <p>The browser did not come back within 3 minutes, or the window was closed before approving. Click <strong>Connect</strong> and approve the prompt.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Streamlabs rejected the authorization code."</summary>
+  <p>The Client Secret is wrong or belongs to another app. Paste both values again from the same app and connect.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Status says Token expired</summary>
+  <p>The saved token could not be refreshed. Click <strong>Connect</strong> to sign in again.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:integrations_streamlabs">{{brand:streamlabs}}<span><strong>Streamlabs Integration</strong><span class="hx-card-text">Donations, alert currency and amounts</span></span></a>
+  <a class="hx-card" href="help:alert_configuration">{{icon:notifications}}<span><strong>Alert Configuration</strong><span class="hx-card-text">Set up donation alerts and thresholds</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>All connection guides</strong><span class="hx-card-text">Twitch, OBS, Spotify, PSN, YouTube and more</span></span></a>
+</div>

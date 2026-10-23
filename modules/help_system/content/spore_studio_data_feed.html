@@ -1,0 +1,268 @@
+<p class="hx-lead">Every block in Spore Studio gets live data the same way: through its <strong>Data feed</strong> section. A feed listens for something, keeps the items you want, shapes the text, and tells the block what to do with each one. Only the last step differs between a list, a wheel, a counter or a timer.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Spore Studio</span><span>Properties</span><span>Data feed</span></span></span>
+</div>
+
+<figure class="hx-figure hx-static">
+  <div class="hm hm-ssb">
+    <div class="hm-ssb-timeline">
+      <span><b>1. When it runs</b><small>Event, live value or another template's output</small></span>
+      <span><b>2. Which ones to keep</b><small>Alert type, field rules, users, rate limits</small></span>
+      <span><b>3. What it says</b><small>Fields, token template, prefix, decimals</small></span>
+      <span><b>4. Timing</b><small>Delay before the block updates</small></span>
+      <span><b>5. Update this block</b><small>Add a row, spin, add to counter, show…</small></span>
+    </div>
+  </div>
+  <figcaption>The five parts of a feed card, in the order they run.</figcaption>
+</figure>
+
+<p>A block can have several feeds. Add one with <strong>+ Add feed</strong>. A new feed listens to <strong>Alert (instant)</strong> and <strong>Alert (queue)</strong>, except on a Poll (<strong>Poll update</strong>, <strong>Poll ended</strong>) and Now playing (<strong>Now playing (Spotify)</strong>). Nothing is sent to other blocks; each feed only changes its own block.</p>
+
+<h2>A feed card</h2>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-card">
+          <div class="hm-ssb-card-head">
+            <span class="hm-switch is-on"><i></i></span><span class="hm-marker" data-n="1"></span>
+            <span class="hm-ssb-in hm-ssb-title is-ph">Feed 1</span>
+            <span class="hm-ssb-btn is-sm">Copy</span><span class="hm-ssb-btn is-sm">Remove</span>
+          </div>
+          <span class="hm-ssb-summary">Alert (instant), Alert (queue)  →  Add a row</span>
+          <div class="hm-expansion hm-ssb-part">
+            <div class="hm-expansion-head">1. When it runs</div>
+            <div class="hm-expansion-body">
+              <div class="hm-ssb-fr"><label>Run when</label><span class="hm-ssb-in hm-ssb-sel">An event (alert, chat, giveaway...)</span></div>
+              <div class="hm-ssb-fr"><label>Events</label>
+                <div class="hm-ssb-checks">
+                  <span class="hm-switch is-on"><i></i>Alert (queue)</span>
+                  <span class="hm-switch is-on"><i></i>Alert (instant)</span>
+                  <span class="hm-switch"><i></i>Giveaway entry</span>
+                  <span class="hm-switch"><i></i>Chat message (Twitch)</span>
+                  <span class="hm-ssb-hint">… every registry event</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="hm-expansion hm-ssb-part">
+            <div class="hm-expansion-head">2. Which ones to keep</div>
+            <div class="hm-expansion-body">
+              <div class="hm-ssb-fr"><label>Alert type</label><span class="hm-ssb-in hm-ssb-sel">Bits</span></div>
+              <div class="hm-ssb-fr"><label>Sub tier</label><span class="hm-ssb-in hm-ssb-sel">Any</span></div>
+              <div class="hm-ssb-fr"><label>More filters</label>
+                <div class="hm-ssb-rule"><span class="hm-ssb-in hm-ssb-sel">amt_cheered</span><span class="hm-ssb-in hm-ssb-sel">is at least</span><span class="hm-ssb-in">100</span><span class="hm-ssb-btn is-sm">Remove</span></div>
+              </div>
+              <span class="hm-ssb-btn is-sm">+ Add filter</span>
+              <div class="hm-ssb-fr"><label>Only these users</label><span class="hm-ssb-in is-ph"></span></div>
+              <div class="hm-ssb-fr"><label>Ignore these users</label><span class="hm-ssb-in">nightbot, streamelements</span></div>
+              <div class="hm-ssb-pair">
+                <div class="hm-ssb-fr"><label>Cooldown (ms)</label><span class="hm-ssb-in">0</span></div>
+                <div class="hm-ssb-fr"><label>Max per minute</label><span class="hm-ssb-in">0</span></div>
+              </div>
+              <div class="hm-ssb-pair">
+                <div class="hm-ssb-fr"><label>Ignore repeats for (ms)</label><span class="hm-ssb-in">0</span></div>
+                <div class="hm-ssb-fr"><label>Skip the first</label><span class="hm-ssb-in">0</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="hm-expansion hm-ssb-part is-open">
+            <div class="hm-expansion-head">3. What it says</div>
+            <div class="hm-expansion-body">
+              <div class="hm-ssb-fr"><label>Main text field</label><span class="hm-ssb-in hm-ssb-sel">username</span></div>
+              <div class="hm-ssb-fr"><label>Number field</label><span class="hm-ssb-in hm-ssb-sel">amt_cheered</span></div>
+              <div class="hm-ssb-fr"><label>Template <span class="hm-marker" data-n="2"></span></label>
+                <span class="hm-ssb-in">{username} - {value|number} bits</span>
+                <div class="hm-ssb-pair"><span class="hm-ssb-in hm-ssb-sel is-ph">Insert a field...</span><span class="hm-ssb-in hm-ssb-sel is-ph">Insert a format...</span></div>
+              </div>
+              <div class="hm-ssb-pair">
+                <div class="hm-ssb-fr"><label>Prefix</label><span class="hm-ssb-in is-ph"></span></div>
+                <div class="hm-ssb-fr"><label>Suffix</label><span class="hm-ssb-in is-ph"></span></div>
+              </div>
+              <div class="hm-ssb-pair">
+                <div class="hm-ssb-fr"><label>Decimals</label><span class="hm-ssb-in is-ph"></span></div>
+                <div class="hm-ssb-fr"><label>If a field is missing</label><span class="hm-ssb-in is-ph"></span></div>
+              </div>
+              <span class="hm-ssb-preview">Looks like: sample - 42 bits</span>
+            </div>
+          </div>
+          <div class="hm-expansion hm-ssb-part">
+            <div class="hm-expansion-head">4. Timing</div>
+            <div class="hm-expansion-body"><div class="hm-ssb-fr"><label>Delay (ms)</label><span class="hm-ssb-in">0</span></div></div>
+          </div>
+          <div class="hm-expansion hm-ssb-part">
+            <div class="hm-expansion-head">5. Update this block <span class="hm-marker" data-n="3"></span></div>
+            <div class="hm-expansion-body">
+              <div class="hm-ssb-fr"><label>Update this block</label><span class="hm-ssb-in hm-ssb-sel">Add a row</span></div>
+              <span class="hm-ssb-hint">Adds one row for every matching item. Placement, row limit, lifetime and animations are set in the List section.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>A List block's feed. Click the numbered parts to open them.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <ol class="hx-annotations">
+      <li data-n="1">The switch turns the feed off without deleting it. The name box is optional. <strong>Copy</strong> duplicates the feed below itself.</li>
+      <li data-n="2">The template is built from payload fields. Empty uses the main text field. The <strong>Looks like</strong> line fills it with sample values.</li>
+      <li data-n="3">The only part that changes per block. See <strong>Targets</strong> below.</li>
+    </ol>
+    <p>The one-line summary under the name shows the source and the target, so you can read a block's feeds without opening them.</p>
+    <p>Fields in parts 2 and 3 follow the events you turned on in part 1. <strong>Alert type</strong> and <strong>Sub tier</strong> appear only for alert events. <strong>Split into rows</strong> appears only when a chosen event carries a list, such as giveaway winners.</p>
+  </div>
+</div>
+
+<h2>1. When it runs</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="ev" class="is-active">An event</button>
+    <button data-tab="val">A live value</button>
+    <button data-tab="out">Another template's output</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="ev">
+    <p><strong>Run when: An event (alert, chat, giveaway...)</strong>. Tick one or more events. The feed runs once per event. Events include <strong>Alert (queue)</strong>, <strong>Alert (instant)</strong>, <strong>Giveaway entry</strong>, <strong>Giveaway winner</strong>, <strong>Poll update</strong>, <strong>Poll ended</strong>, <strong>Now playing (Spotify)</strong>, <strong>Refresh alerts</strong>, <strong>Alerts paused</strong>, <strong>Alerts resumed</strong>, <strong>Pause status update</strong>, <strong>Chat message (Twitch)</strong>, <strong>Chat banner</strong>, <strong>Chat message (connector)</strong>, <strong>Chat moderation event</strong> and <strong>Twitch API call (response)</strong>.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="val">
+    <p><strong>Run when: A live value (a data source)</strong>. Pick a <strong>Data source</strong> such as a session statistic or another counter, then:</p>
+    <ul>
+      <li><strong>Re-read every (ms)</strong>: poll the value. <code>0</code> reads only when a checked event fires.</li>
+      <li><strong>Re-read on events</strong>: read again whenever a checked event fires.</li>
+    </ul>
+    <p>The sources are listed in <a href="help:spore_studio_data_sources">Data Sources</a>.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="out">
+    <p><strong>Run when: The output of another template</strong>. Pick from <strong>Template output</strong> (for example a roulette or wheel result). Save the other template first so it is listed. You can also type a <strong>Template name</strong> and <strong>Output event</strong>. <strong>Only when</strong> limits it to one field value, for example one wheel in that template.</p>
+  </div>
+</div>
+
+<h2>2. Filters</h2>
+
+<p>Besides alert type and tier, events with fixed values (such as chat <strong>Message type</strong>) get their own dropdown. <strong>+ Add filter</strong> adds a field rule. With two or more rules, <strong>Rules must match</strong> chooses <strong>All rules</strong> or <strong>Any rule</strong>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Text operators</th><th>Number operators</th><th>List and empty</th></tr></thead>
+<tbody>
+<tr><td>equals<br>does not equal<br>contains<br>does not contain<br>starts with<br>ends with<br>matches regex</td>
+<td>is greater than<br>is at least<br>is less than<br>is at most<br>is between (min,max)</td>
+<td>is one of (comma list)<br>is not one of (comma list)<br>is empty<br>is not empty</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Field</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><strong>Only these users</strong></td><td>Comma-separated names. Empty allows everyone.</td></tr>
+<tr><td><strong>Ignore these users</strong></td><td>Comma-separated names, such as bots</td></tr>
+<tr><td><strong>Cooldown (ms)</strong></td><td>Ignore events sooner than this after the last accepted one</td></tr>
+<tr><td><strong>Max per minute</strong></td><td>Stop accepting past this many per minute. <code>0</code> means no limit.</td></tr>
+<tr><td><strong>Ignore repeats for (ms)</strong></td><td>Drop an identical payload seen again within this time</td></tr>
+<tr><td><strong>Skip the first</strong></td><td>Ignore this many events before reacting</td></tr>
+</tbody>
+</table></div>
+
+<h2>3. Token formatting</h2>
+
+<p>In <strong>Template</strong>, write <code>{field}</code> or <code>{field|modifier}</code>. Chain modifiers with <code>|</code>. <code>{value}</code> is the <strong>Number field</strong>. <strong>Insert a format...</strong> adds these for you.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Modifier</th><th>Example</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><code>number</code></td><td><code>{amount|number}</code></td><td>1,234</td></tr>
+<tr><td><code>compact</code></td><td><code>{total|compact}</code></td><td>1.2K</td></tr>
+<tr><td><code>int</code></td><td><code>{amount|int}</code></td><td>12</td></tr>
+<tr><td><code>decimals:N</code></td><td><code>{amount|decimals:2}</code></td><td>12.00</td></tr>
+<tr><td><code>percent</code></td><td><code>{ratio|percent}</code></td><td>50%</td></tr>
+<tr><td><code>duration</code></td><td><code>{duration|duration}</code></td><td>1:05 (seconds as m:ss)</td></tr>
+<tr><td><code>ordinal</code></td><td><code>{index|ordinal}</code></td><td>1st</td></tr>
+<tr><td><code>upper</code> / <code>lower</code> / <code>title</code></td><td><code>{username|upper}</code></td><td>CASEY</td></tr>
+<tr><td><code>trim</code></td><td><code>{message|trim}</code></td><td>Spaces removed from the ends</td></tr>
+<tr><td><code>truncate:N</code></td><td><code>{message|truncate:40}</code></td><td>Cut to 40 characters with …</td></tr>
+<tr><td><code>default:text</code></td><td><code>{username|default:Anonymous}</code></td><td>Anonymous when empty</td></tr>
+</tbody>
+</table></div>
+
+<p><strong>Prefix</strong> and <strong>Suffix</strong> wrap the result. <strong>Decimals</strong> rounds numbers (0–10, empty keeps the value). <strong>If a field is missing</strong> is the text used when the payload has no value.</p>
+
+<h2>Targets</h2>
+
+<p><strong>Update this block</strong> lists the block's own targets, then the shared ones.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Block</th><th>Its own targets (default first)</th></tr></thead>
+<tbody>
+<tr><td>List</td><td>Add a row · Clear the list</td></tr>
+<tr><td>Wheel</td><td>Spin the wheel (optional <strong>Fill slices from field</strong>, <strong>Land on field</strong>) · Add a slice</td></tr>
+<tr><td>Counter</td><td>Add to this counter · Subtract from this counter · Set this counter · Reset this counter</td></tr>
+<tr><td>Progress bar</td><td>Set the current value · Set the goal (max)</td></tr>
+<tr><td>Stat card</td><td>Set the card value</td></tr>
+<tr><td>Text / Marquee</td><td>Replace this text / Replace this scrolling text</td></tr>
+<tr><td>Data display</td><td>Show this value</td></tr>
+<tr><td>Timer</td><td>Start the timer · Pause the timer · Reset the timer · Set the timer (seconds)</td></tr>
+<tr><td>Image</td><td>Set the image</td></tr>
+<tr><td>Video</td><td>Set the video / GIF · Play the audio</td></tr>
+<tr><td>Audio</td><td>Play the audio (default) · Set the audio file</td></tr>
+<tr><td>QR code</td><td>Set the QR text</td></tr>
+<tr><td>Embed</td><td>Set the page URL</td></tr>
+<tr><td>Poll / Now playing</td><td>Paint from the data</td></tr>
+</tbody>
+</table></div>
+
+<p>Shared targets on every block: <strong>Show this block</strong>, <strong>Hide this block</strong>, <strong>Toggle visibility</strong>, <strong>Show for a few seconds</strong> (<strong>Seconds</strong>, default 5), <strong>Play a CSS animation class</strong> (<strong>Class name</strong>, default <code>sporePop</code>; <strong>Hold (ms)</strong>, default 420) and <strong>Change a style property</strong> (background color, color, border color, opacity or font size, from the mapped value or a <strong>Fixed value</strong>).</p>
+
+<h2>Template outputs</h2>
+
+<p>Blocks can announce results that other overlays listen to. Spore Studio writes them into the template's JSON when you save. Each block with outputs has an <strong>Outputs</strong> section to switch one off or rename it.</p>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-insp">
+          <div class="hm-ssb-body">
+            <span class="hm-ssb-hint">These results are written into the template's JSON when you save. Other templates can use them as a feed source under "The output of another template".</span>
+            <div class="hm-ssb-card">
+              <div class="hm-ssb-card-head"><span class="hm-switch is-on"><i></i></span><span class="hm-ssb-summary">counter changed  (counter_changed)</span></div>
+              <div class="hm-ssb-fr"><label>Label</label><span class="hm-ssb-in is-ph">counter changed</span></div>
+              <span class="hm-ssb-hint">Sends: Template name, Block id, Counter id, Value, Change</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Outputs section of a Counter block.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Block</th><th>Event</th><th>When</th></tr></thead>
+    <tbody>
+    <tr><td>Wheel</td><td><code>wheel_result</code></td><td>The wheel stops</td></tr>
+    <tr><td>Poll</td><td><code>poll_result</code></td><td>The poll ends</td></tr>
+    <tr><td>Timer</td><td><code>timer_finished</code></td><td>Limit or countdown reached (not on pause)</td></tr>
+    <tr><td>Counter</td><td><code>counter_changed</code></td><td>The value changes</td></tr>
+    <tr><td>Counter</td><td><code>goal_reached</code></td><td>A progressive goal is reached</td></tr>
+    <tr><td>Progress bar</td><td><code>goal_reached</code></td><td>The bar reaches its goal</td></tr>
+    <tr><td>List</td><td><code>list_row_added</code> / <code>list_cleared</code></td><td>Off by default</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+</div>
+
+<p>Other templates are scanned too. Any <code>socket.emit('…')</code> in a template's HTML is listed automatically, and a template can describe its outputs in an <code>outputs</code> block of its config (the roulette template declares <code>roulette_result</code>). All of these appear under <strong>The output of another template</strong>.</p>
+
+<p>The server relays every output to every overlay as <code>template_output</code> with <code>{template, event, data}</code>. Preview has a mock button for each one.</p>
+
+<details class="hx-details">
+  <summary>My old list or stat card settings disappeared</summary>
+  <p>Before data feeds, lists, wheels, stat cards and data displays had their own source settings. Spore Studio converts them into an equivalent feed the first time you open the block, and the saved template uses the feed from then on.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_data_sources">{{icon:storage}}<span><strong>Data Sources</strong><span class="hx-card-text">Live values a feed can read</span></span></a>
+  <a class="hx-card" href="help:spore_studio_widgets">{{icon:widgets}}<span><strong>Widget reference</strong><span class="hx-card-text">Options that stay unique to each block</span></span></a>
+  <a class="hx-card" href="help:spore_studio_counters">{{icon:exposure_plus_1}}<span><strong>Counters</strong><span class="hx-card-text">Deltas, goals and persistence</span></span></a>
+  <a class="hx-card" href="help:spore_studio_bindings">{{icon:bolt}}<span><strong>Event bindings</strong><span class="hx-card-text">Per-element actions and chains</span></span></a>
+</div>

@@ -1,0 +1,116 @@
+<p class="hx-lead">Testing a template without going live, where custom JavaScript fits, and how Spore Studio handles older hand-written templates.</p>
+
+<h2>Live preview</h2>
+
+<p>Click <strong>Preview</strong> in the toolbar (<em>Open live preview window</em>). The <strong>Live preview</strong> window opens over the editor and shows your template with its <strong>unsaved</strong> changes, so you can test without saving. Drag it by its title bar and resize it from the bottom-right corner.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm hm-ss">
+    <div class="hm-ss-preview">
+      <div class="hm-ss-preview-head">Live preview<span class="hm-ss-spacer"></span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Reload</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Close</span></div>
+      <div class="hm-ss-preview-bar">
+        <b>Alerts:</b><span class="hm-marker" data-n="1"></span>
+        <span class="hm-ss-btn hm-ss-sm">Random queue alert</span>
+        <span class="hm-ss-btn hm-ss-sm">Follow</span>
+        <span class="hm-ss-btn hm-ss-sm">Sub</span>
+        <span class="hm-ss-btn hm-ss-sm">Resub</span>
+        <span class="hm-ss-btn hm-ss-sm">Gift sub</span>
+        <span class="hm-ss-btn hm-ss-sm">Bits</span>
+        <span class="hm-ss-btn hm-ss-sm">Raid</span>
+        <span class="hm-ss-btn hm-ss-sm">Donation</span>
+        <span class="hm-ss-btn hm-ss-sm">Points</span>
+        <span class="hm-ss-btn hm-ss-sm">Streak</span>
+        <span class="hm-ss-btn hm-ss-sm">Hype train</span>
+        <b>Other:</b><span class="hm-marker" data-n="2"></span>
+        <span class="hm-ss-btn hm-ss-sm">Chat message (Twitch)</span>
+        <b>SD:</b><span class="hm-marker" data-n="3"></span>
+        <span class="hm-ss-btn hm-ss-sm">Reset counter</span>
+      </div>
+      <div class="hm-ss-preview-bar">
+        <b>Size</b><span class="hm-ss-num">800</span>×<span class="hm-ss-num">200</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Reset</span><span class="hm-ss-hint">From OBS</span><span class="hm-marker" data-n="4"></span>
+        <b>Zoom</b><span class="hm-slider" style="--hm-val:40%;width:90px"></span><span class="hm-ss-hint">100%</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Reset</span>
+      </div>
+      <div class="hm-ss-preview-body">
+        <div class="hm-ss-overlay-card"><span class="hx-mi">favorite</span>CoolViewer just followed!</div>
+      </div>
+    </div>
+  </div>
+  <figcaption>The Live preview window for a Queue template with one Stream Deck action.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Alerts:</strong> a random alert, then one button per alert type with realistic random values. Queue templates send <code>next_alert</code>; Instant templates send <code>instant_alert</code> (<em>Random instant alert</em>).</li>
+  <li data-n="2"><strong>Other:</strong> one button for each non-alert event your bindings or data feeds listen to.</li>
+  <li data-n="3"><strong>SD:</strong> one button per Stream Deck action on this template. It sends the action's event with its default data.</li>
+  <li data-n="4"><strong>Size</strong> sets the preview's width and height (320–7680 by 240–4320). When OBS WebSocket is connected and a browser source uses this template's URL, Mycelian fills the size from OBS and shows <em>From OBS</em>. Otherwise it uses your last preview size or the design canvas. <strong>Reset</strong> clears the saved size and detects it again. <strong>Zoom</strong> scales the view from 25% to 200%.</li>
+</ol>
+
+<p>Each mock button sends one socket event into the preview only, shaped like the real event (demo usernames, alert presets). <strong>Reload</strong> reloads the preview; <strong>Close</strong> closes the window.</p>
+
+<p>On <strong>Save</strong>, the same mock list is written to <code>template_configs/{name}.json</code> as <code>preview_mocks</code>, so the preview toolbar in Custom Sources offers the same buttons.</p>
+
+<div class="hx-callout hx-tip"><p>Build bindings in <a href="help:spore_studio_bindings">Event bindings</a>, check them here with mocks, then add the browser source to OBS.</p></div>
+
+<h2>Advanced JS tab</h2>
+
+<p>Your own JavaScript is saved between the <code>SPORE_STUDIO:user-begin</code> and <code>SPORE_STUDIO:user-end</code> markers and kept across saves. The box on the tab fits a few lines. <strong>Expand editor</strong> opens a larger editor with line numbers, syntax coloring, find and replace, and a helper reference.</p>
+
+<p>Do not edit the generated block between <code>auto-begin</code> and <code>auto-end</code>; it is rebuilt on every save. The helper list, the queue handshake and examples are in <a href="help:spore_studio_advanced_js">Advanced JS reference</a>.</p>
+
+<h2>Stream Deck tab</h2>
+
+<p>Defines this template's Stream Deck actions. Each action has an id, a name, a socket event and optional <code>default_data</code> JSON. The full workflow is in <a href="help:spore_studio_streamdeck">Stream Deck actions</a>. Legacy templates show <em>Stream Deck actions are not edited here for legacy templates.</em></p>
+
+<h2>Legacy templates</h2>
+
+<p>Templates listed under <strong>Legacy (advanced mode)</strong> in the template dropdown have HTML but no <code>templates/_spore/{name}.spore.json</code>. Spore Studio opens them in a limited mode.</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list"><button data-tab="json" class="is-active">JSON-only</button><button data-tab="parsed">HTML-parsed</button></div>
+  <div class="hx-tab-panel" data-panel="json">
+    <ul>
+      <li>Properties show the template's Source Settings values with the note <em>Read-only legacy template. Edits to this value persist to the JSON config; HTML is not regenerated.</em></li>
+      <li><strong>Save</strong> updates <code>template_configs/{name}.json</code> only.</li>
+    </ul>
+  </div>
+  <div class="hx-tab-panel" data-panel="parsed">
+    <ul>
+      <li>Spore Studio reads elements out of the HTML. Position, size and some styles can be edited.</li>
+      <li>Bindings cannot be edited; they live in the hand-written HTML.</li>
+      <li><strong>Save</strong> updates JSON values mapped from the HTML. It does not rewrite the template's websocket code.</li>
+    </ul>
+  </div>
+</div>
+
+<p>You cannot drop new blocks into a legacy template. Trying shows <em>Legacy templates can't accept new blocks — create a new template via '+ New' to edit visually.</em> To get the full editor, create a template with <strong>+ New</strong> and rebuild it, or copy a similar Spore template.</p>
+
+<h2>What Save does</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Template kind</th><th>HTML</th><th>JSON config</th><th>Editor file</th></tr></thead>
+<tbody>
+<tr><td>Spore (<code>.spore.json</code>)</td><td>Rebuilt</td><td>Merged: values you tuned in Source Settings are kept by id</td><td>Updated</td></tr>
+<tr><td>Legacy</td><td>Unchanged</td><td>Updated</td><td>Not written</td></tr>
+</tbody>
+</table></div>
+
+<p>Rebuilt Spore overlays load Mycelian's template logger, so JavaScript errors and <code>console.warn</code> / <code>console.error</code> output from the overlay appear in <code>mycelian.log</code> under the template's name.</p>
+
+<h2>What Spore Studio does not do</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Feature</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>Export to zip or standalone HTML</td><td>Not available</td></tr>
+<tr><td>Import an external HTML project</td><td>Not available</td></tr>
+<tr><td>Full HTML/CSS source editing</td><td>Not available. Use bindings, data feeds and Advanced JS.</td></tr>
+<tr><td>OBS scene or source control</td><td>Not available. Add the saved URL as a browser source yourself.</td></tr>
+<tr><td>Device preview presets</td><td>Not available. Set the preview Size by hand.</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_advanced_js">{{icon:code}}<span><strong>Advanced JS reference</strong><span class="hx-card-text">Helpers, hooks and pitfalls</span></span></a>
+  <a class="hx-card" href="help:spore_studio_overview">{{icon:palette}}<span><strong>Spore Studio overview</strong><span class="hx-card-text">The editor and its files</span></span></a>
+  <a class="hx-card" href="help:spore_studio_examples">{{icon:menu_book}}<span><strong>Examples and recipes</strong><span class="hx-card-text">Step-by-step builds</span></span></a>
+</div>

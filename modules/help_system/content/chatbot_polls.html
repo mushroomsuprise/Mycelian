@@ -1,0 +1,188 @@
+<p class="hx-lead">Run a chat poll from <strong>Chatbot → Polls</strong>. Each poll belongs to one overlay template that contains a Spore Studio <strong>Poll</strong> widget. Viewers vote by typing a category's <code>#keyword</code> anywhere in their message.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 3 minutes</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Chatbot</span><span>Polls</span></span></span>
+  <span>{{brand:twitch}} {{brand:youtube}} Twitch and YouTube chat</span>
+</div>
+
+<h2>The Polls tab</h2>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-subtabs">
+      <span class="hm-subtab">Commands</span>
+      <span class="hm-subtab">Events</span>
+      <span class="hm-subtab">Quotes</span>
+      <span class="hm-subtab">Greetings</span>
+      <span class="hm-subtab">Giveaways</span>
+      <span class="hm-subtab is-active">Polls</span>
+    </div>
+    <div class="hm-frame hm-col" data-tabs>
+      <div class="hm-row">
+        <div class="hm-field hm-select hm-cb-fixed" data-label="Poll template"><span class="hm-value">poll</span></div>
+        <span class="hm-marker" data-n="1"></span>
+        <span class="hm-btn hm-success" data-tab="open"><span class="hx-mi">play_arrow</span>Start</span>
+        <span class="hm-btn hm-cb-secondary is-active" data-tab="edit"><span class="hx-mi">stop</span>Stop</span>
+        <span class="hm-btn hm-cb-secondary"><span class="hx-mi">refresh</span>Refresh</span>
+        <div class="hm-field hm-cb-fixed" data-label="Duration (seconds)"><span class="hm-value">120</span></div>
+        <span class="hm-switch is-on"><i></i>1 entry per user</span>
+        <span class="hm-switch"><i></i>Allow vote switching</span>
+        <span class="hm-switch"><i></i>Mods can start</span>
+        <div class="hm-field hm-cb-fixed" data-label="Start command"><span class="hm-placeholder">!startpoll</span></div>
+        <span class="hm-marker" data-n="2"></span>
+      </div>
+      <div class="hm-row">
+        <span class="hm-switch"><i></i>Send winner as a chat banner</span>
+        <span class="hm-switch"><i></i>Send winner in chat</span>
+        <div class="hm-field hm-grow" data-label="Banner message"><span class="hm-value">Poll winner: {option} ({votes})</span></div>
+        <div class="hm-field hm-cb-fixed-lg" data-label="Banner duration (seconds)"><span class="hm-value">10</span></div>
+        <span class="hm-marker" data-n="3"></span>
+      </div>
+
+      <div class="hm-cb-box is-active" data-panel="edit">
+        <div class="hm-cb-box-head">
+          <div class="hm-row"><span class="hm-h2">Categories</span><span class="hm-sm hm-muted">Not running</span></div>
+          <span class="hm-sm hm-bold">Pizza (14)</span>
+          <span class="hm-btn"><span class="hx-mi">add</span>Add category</span>
+        </div>
+        <div class="hm-cb-box-body hm-gap-lg">
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow" data-label="Name"><span class="hm-value">Pizza Time</span></div>
+            <div class="hm-field hm-cb-fixed" data-label="Keyword"><span class="hm-value">#PizzaTime</span></div>
+            <div class="hm-field hm-cb-fixed-sm" data-label="Votes"><span class="hm-value">0</span></div>
+            <span class="hm-btn hm-cb-secondary is-disabled"><span class="hx-mi">arrow_upward</span></span>
+            <span class="hm-btn hm-cb-secondary"><span class="hx-mi">arrow_downward</span></span>
+            <span class="hm-btn hm-danger"><span class="hx-mi">delete</span></span>
+          </div>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow" data-label="Name"><span class="hm-value">Tacos</span></div>
+            <div class="hm-field hm-cb-fixed" data-label="Keyword"><span class="hm-value">#Tacos</span></div>
+            <div class="hm-field hm-cb-fixed-sm" data-label="Votes"><span class="hm-value">0</span></div>
+            <span class="hm-btn hm-cb-secondary"><span class="hx-mi">arrow_upward</span></span>
+            <span class="hm-btn hm-cb-secondary is-disabled"><span class="hx-mi">arrow_downward</span></span>
+            <span class="hm-btn hm-danger"><span class="hx-mi">delete</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hm-cb-box" data-panel="open">
+        <div class="hm-cb-box-head">
+          <div class="hm-row"><span class="hm-h2">Categories</span><span class="hm-sm hm-ok">Open · 9 votes · 01:42 left</span></div>
+          <span class="hm-sm hm-bold">Pizza (14)</span>
+          <span class="hm-btn is-disabled"><span class="hx-mi">add</span>Add category</span>
+        </div>
+        <div class="hm-cb-box-body hm-gap-lg">
+          <div class="hm-cb-poll-row">
+            <div class="hm-row hm-between"><span><span class="hm-bold">Tacos</span> <span class="hm-muted">#Tacos</span></span><span>6 · 66.7%</span></div>
+            <div class="hm-cb-poll-bar"><span style="width: 100%"></span></div>
+          </div>
+          <div class="hm-cb-poll-row">
+            <div class="hm-row hm-between"><span><span class="hm-bold">Pizza Time</span> <span class="hm-muted">#PizzaTime</span></span><span>3 · 33.3%</span></div>
+            <div class="hm-cb-poll-bar"><span style="width: 50%"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Click <strong>Start</strong> and <strong>Stop</strong> in the mock to switch between the editor and the live results. The centered text in the header is the last winning result.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">Only templates with a Poll block are listed. If there are none, the tab says <em>"No templates with a Poll widget yet"</em>.</li>
+  <li data-n="2">Voting rules and moderator start. Hover a switch in the app for its tooltip.</li>
+  <li data-n="3">What happens when the poll ends.</li>
+</ol>
+
+<h2>Setup</h2>
+
+<section class="hx-guide" data-guide="chatbot_polls_setup" data-title="Poll setup">
+  <div class="hx-step">
+    <h3>Have a template with a Poll widget</h3>
+    <p>Add a Poll block in <a href="help:spore_studio_widgets">Spore Studio</a>, or start from the built-in <code>poll</code> template, and save.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Pick it and add categories</h3>
+    <p>Open <strong>Chatbot → Polls</strong> and choose it in <strong>Poll template</strong>. Click <strong>Add category</strong> at least twice. The keyword follows the name with spaces removed and a <code>#</code> in front (<code>Pizza Time</code> becomes <code>#PizzaTime</code>) until you edit the keyword yourself. It always keeps the <code>#</code>, and two categories cannot share one.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Set the duration</h3>
+    <p>Enter <strong>Duration (seconds)</strong>. <strong>0</strong> stays open until you press <strong>Stop</strong>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Start</h3>
+    <p>Press <strong>Start</strong>. Starting clears the vote counts. You need at least two categories, or you get <em>"Add at least two categories before starting."</em></p>
+  </div>
+</section>
+
+<h2>How a vote counts</h2>
+
+<figure class="hx-figure hx-static">
+  <div class="hm-chat">
+    <div class="hm-chat-title">{{brand:twitch}} Stream chat</div>
+    <div class="hm-chat-line"><b>pixelpat:</b> I vote #tacos obviously</div>
+    <div class="hm-chat-line"><b>night_owl:</b> #PizzaTime #Tacos</div>
+    <div class="hm-chat-line"><b>ModMika:</b> #tacostuesday</div>
+    <div class="hm-chat-line is-dim">pixelpat → Tacos. night_owl → Pizza Time (earliest keyword). ModMika does not count.</div>
+  </div>
+</figure>
+
+<p>Matching ignores capitals, and the keyword has to be its own word. <code>I vote #yes</code> counts. <code>#yesterday</code> does not. If one message has several keywords for the same poll, the earliest one wins.</p>
+
+<p><strong>1 entry per user</strong> is on by default, so the first vote sticks. <strong>Allow vote switching</strong> is off by default. Turn it on to let a later keyword move that person's vote. With 1 entry per user off, every matching message adds another vote.</p>
+
+<p>Twitch and YouTube chat both count. If polls on more than one template are running, one message can vote in each of them when the keywords match.</p>
+
+<h2>Ending and restarts</h2>
+
+<p><strong>Stop</strong> closes the poll and picks the option with the most votes. Every option tied for that count wins. A poll with no votes ends without a winner and without a banner or chat message.</p>
+
+<p>The status beside <strong>Categories</strong> is green while the poll is open, amber after it ends, and muted when it is not running. While the poll is open, the box shows live results: each option, its keyword, its votes, its share, and a bar measured against the leader. <strong>Add category</strong> is disabled. The name, keyword and vote editors come back when the poll ends. You can type a vote count by hand then.</p>
+
+<p>The last winning result stays centered in the header, including while the next poll runs and after a restart. A later poll replaces it only when that poll has a winner.</p>
+
+<p>Open polls are always saved. An open timed poll comes back after a restart when time is still left. A permanent poll (duration 0) comes back until you press Stop. A poll whose end time passed while the app was closed is dropped and not announced later. Category names, keywords, banner settings and the last winner are always saved.</p>
+
+<h2>Moderator start</h2>
+
+<p>Turn on <strong>Mods can start</strong> and set a <strong>Start command</strong> that begins with <code>!</code>. That command belongs to the poll you are editing. A Twitch moderator or broadcaster, or a YouTube chat moderator or owner, starts the poll when their message begins with the command.</p>
+
+<ul>
+  <li><code>!startpoll</code> and <code>!startpoll now</code> count. <code>please !startpoll</code> does not.</li>
+  <li>Leave the command blank and this poll ignores moderator start.</li>
+  <li>Give another poll the same command when you want one message to start both.</li>
+</ul>
+
+<h2>Winner banner</h2>
+
+<p>Turn on <strong>Send winner as a chat banner</strong> to post the result on the chat overlay. <strong>Send winner in chat</strong> posts the same message in Twitch and YouTube chat. The banner switch on this tab is the only switch for that overlay.</p>
+
+<div class="hx-table-wrap"><table>
+  <thead><tr><th>Placeholder</th><th>Becomes</th></tr></thead>
+  <tbody>
+    <tr><td><span class="hx-copy" data-copy="{option}">{option}</span></td><td>The winning option's name. With a tie, all tied names.</td></tr>
+    <tr><td><span class="hx-copy" data-copy="{options}">{options}</span></td><td>All winning names, comma-separated.</td></tr>
+    <tr><td><span class="hx-copy" data-copy="{keyword}">{keyword}</span></td><td>The winning keyword (or keywords).</td></tr>
+    <tr><td><span class="hx-copy" data-copy="{votes}">{votes}</span></td><td>The winning vote count.</td></tr>
+  </tbody>
+</table></div>
+
+<p>The default message is <code>Poll winner: {option} ({votes})</code>. <strong>Banner duration</strong> <code>0</code> stays up until another banner replaces it.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm-chat">
+    <div class="hm-chat-banner">Poll winner: Tacos (6)</div>
+  </div>
+  <figcaption>The banner on the chat overlay.</figcaption>
+</figure>
+
+<h2>Overlay</h2>
+
+<p>The Poll widget draws the live results: font, horizontal or vertical list, bars or text, timer text and timer bar, colors, winner highlight or winner-only, autohide, and a rotator for extra options. Options are always ordered by votes, highest first. With the rotator off, only the top items are shown. With it on, the widget pages through that same order.</p>
+
+<p>The stock <code>poll</code> template is a Spore Studio template, so you can rearrange it like any other.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_widgets">{{icon:widgets}}<span><strong>Spore Studio widgets</strong><span class="hx-card-text">Style the Poll widget</span></span></a>
+  <a class="hx-card" href="help:chatbot_giveaways">{{icon:redeem}}<span><strong>Giveaways</strong><span class="hx-card-text">Draw winners from chat entries</span></span></a>
+</div>

@@ -1,0 +1,223 @@
+<p class="hx-lead">PlayStation Network has no app keys to create. Mycelian signs in with your <strong>NPSSO token</strong>, a 64-character code Sony gives your browser after you sign in. <strong>Connect to PSN</strong> captures it for you.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 3 minutes</span>
+  <span>{{icon:person}} PlayStation Network account</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>PSN</span></span></span>
+</div>
+
+<p>After you connect, see <a href="help:integrations_psn">PlayStation Network Integration</a> for the trophy overlays and the game cache.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="guide_psn_prereqs">
+  <li>You know the email and password of your PlayStation Network account, and have your phone ready if two-step verification is on.</li>
+  <li>On your console, trophies and online status are visible to at least <strong>Friends</strong> (Settings → Users and Accounts → Privacy). Mycelian can only see what your privacy settings allow.</li>
+</ul>
+
+<h2>Connect your account</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list"><button data-tab="auto" class="is-active">Connect to PSN (recommended)</button><button data-tab="manual">Paste the token by hand</button></div>
+
+  <div class="hx-tab-panel" data-panel="auto">
+<section class="hx-guide" data-guide="guide_psn_setup" data-title="PSN sign-in">
+
+  <div class="hx-step">
+    <h3>Click Connect to PSN</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>PSN</span></span> and click <strong>Connect to PSN</strong>.</p>
+
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-subtabs">
+          <span class="hm-subtab">{{brand:twitch}} Twitch</span>
+          <span class="hm-subtab">{{brand:obs}} OBS</span>
+          <span class="hm-subtab is-active">{{brand:psn}} PSN</span>
+          <span class="hm-subtab">{{brand:spotify}} Spotify</span>
+          <span class="hm-subtab">{{brand:youtube}} YouTube</span>
+          <span class="hm-subtab">{{brand:streamlabs}} Streamlabs</span>
+        </div>
+        <div class="hm-frame">
+          <div class="hm-status-band">
+            <div class="hm-metric"><span>Status</span><span class="hm-err">Not Connected</span></div>
+            <div class="hm-metric"><span>Tracking</span><span>N/A</span></div>
+          </div>
+          <div class="hm-section">Configuration</div>
+          <span class="hm-muted hm-xs">Use Connect for automatic NPSSO, or enter credentials below.</span>
+          <div class="hm-grid-2">
+            <div class="hm-field" data-label="NPSSO code"><span class="hm-placeholder">Required for PSN API access</span></div>
+            <div class="hm-row hm-nowrap">
+              <div class="hm-field hm-grow" data-label="PSN username"><span class="hm-placeholder">Optional — leave empty for your own account</span></div>
+              <span class="hm-marker" data-n="1"></span>
+            </div>
+          </div>
+          <div class="hm-actions">
+            <span class="hm-btn hm-outline"><span class="hx-mi">help_outline</span>How to Connect</span>
+            <span class="hm-btn hm-outline">Discard</span>
+            <span class="hm-btn">Save</span>
+            <span class="hm-btn hm-pulse"><span class="hx-mi">login</span>Connect to PSN</span>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+        </div>
+      </div>
+      <figcaption>Settings → PSN, before connecting. The Game Cache section below it is covered in the integration page.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1">Leave <strong>PSN username</strong> empty to track your own account. Both fields are masked.</li>
+      <li data-n="2"><strong>Connect to PSN</strong> starts the automatic sign-in. <strong>How to Connect</strong> shows the manual steps.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Read the steps and click Continue</h3>
+    <p>A dialog explains what happens next. <strong>Continue</strong> unlocks after a 10-second countdown.</p>
+
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-ga-dialog">
+          <div class="hm-ga-dialog-title">Connect PlayStation Network</div>
+          <span>To connect your PlayStation Network account, follow these steps:</span>
+          <div class="hm-row hm-nowrap hm-top"><span class="hm-num">1</span><span class="hm-col hm-tight"><span class="hm-bold">Click Continue to open the dedicated PlayStation sign-in window</span><span class="hm-muted hm-sm">A separate window will open for PlayStation Network sign-in.</span></span></div>
+          <div class="hm-row hm-nowrap hm-top"><span class="hm-num">2</span><span class="hm-col hm-tight"><span class="hm-bold">Sign in to PlayStation Network in that window</span><span class="hm-muted hm-sm">Wait until you are fully signed in, then keep the window open.</span></span></div>
+          <div class="hm-row hm-nowrap hm-top"><span class="hm-num">3</span><span class="hm-col hm-tight"><span class="hm-bold">Use the menu: NPSSO → I am signed in — retrieve NPSSO token</span><span class="hm-muted hm-sm">The window closes and Mycelian saves your token and reconnects PSN.</span></span></div>
+          <div class="hm-divider"></div>
+          <div class="hm-row hm-end"><span class="hm-btn hm-flat">Cancel</span><span class="hm-btn is-disabled">Continue (7)</span></div>
+        </div>
+      </div>
+      <figcaption>The instruction dialog. Cancel puts the button back without changing anything.</figcaption>
+    </figure>
+  </div>
+
+  <div class="hx-step">
+    <h3>Sign in to PlayStation</h3>
+    <p>A window titled <strong>Mycelian — PlayStation sign-in</strong> opens on playstation.com. Click <strong>Sign In</strong>, enter your email and password, and finish two-step verification if asked. Wait until the page shows you signed in.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Use the NPSSO menu</h3>
+    <p>With the sign-in window in front, open the <strong>NPSSO</strong> menu and click <strong>I am signed in — retrieve NPSSO token</strong>. On macOS the menu is in the menu bar at the top of the screen; on Windows it is at the top of the window.</p>
+
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-titlebar"><span class="hm-sm">Mycelian — PlayStation sign-in</span></div>
+        <div class="hm-menubar">
+          <span class="is-open">NPSSO</span>
+          <div class="hm-menu"><span class="is-active">I am signed in — retrieve NPSSO token</span></div>
+          <span class="hm-marker hm-pin" data-n="1" style="top:34px;left:300px"></span>
+        </div>
+        <div class="hm-browser-body hm-col">
+          <div class="hm-row hm-end"><span class="hm-muted hm-sm">playstation.com</span><span class="hm-chip hm-plain">{{icon:person}} Signed in</span></div>
+          <span class="hm-muted hm-sm">&nbsp;</span>
+          <span class="hm-muted hm-sm">&nbsp;</span>
+        </div>
+      </div>
+      <figcaption>The sign-in window, simplified. Mycelian reads the token from Sony's account page and closes the window.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1">This menu only exists in the Mycelian sign-in window. If you close the window before using it, nothing is saved; click <strong>Connect to PSN</strong> again.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Check it worked</h3>
+    <p>Mycelian shows <em>"NPSSO token acquired successfully! PSN service will reconnect automatically."</em>, fills in <strong>NPSSO code</strong>, saves it, and connects. You do not need to click Save or restart. After a few seconds:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-status-band">
+          <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected as YourPSN_ID</span></div>
+          <div class="hm-metric"><span>Tracking</span><span>YourPSN_ID (own account)</span></div>
+        </div>
+        <div class="hm-footer">
+          <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
+          <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+          <span class="hm-footer-item">{{brand:psn}} PSN <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+        </div>
+      </div>
+      <figcaption>Status while you are online on PlayStation. The PSN item appears in the footer once an NPSSO code is saved.</figcaption>
+    </figure>
+    <p>When you are not online on a console, the status shows <span class="hx-badge hx-warn">Offline</span> in amber. That still means the sign-in worked.</p>
+  </div>
+
+</section>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="manual">
+    <p>Use this if the sign-in window does not work on your computer. It is the same as <strong>How to Connect</strong> on the PSN tab.</p>
+    <ol>
+      <li>In your normal browser, sign in at <a href="https://www.playstation.com">www.playstation.com</a>.</li>
+      <li>In the same browser, open <span class="hx-copy" data-copy="https://ca.account.sony.com/api/v1/ssocookie">https://ca.account.sony.com/api/v1/ssocookie</span>. The page shows one line of text:
+        <figure class="hx-figure hx-static">
+          <div class="hm hm-browser">
+            <div class="hm-browser-bar"><span class="hm-browser-url">ca.account.sony.com/api/v1/ssocookie</span></div>
+            <div class="hm-browser-body"><div class="hm-json">{ "npsso": "<span class="hm-accent">aBcD…64 characters…xYz9</span>" }</div></div>
+          </div>
+          <figcaption>Copy only the 64 characters between the quotes.</figcaption>
+        </figure>
+      </li>
+      <li>Paste it into <strong>NPSSO code</strong> on <span class="hx-path"><span>Settings</span><span>PSN</span></span>.</li>
+      <li>Optional: enter a <strong>PSN username</strong> to track someone else (see below).</li>
+      <li>Click <strong>Save</strong>. Mycelian reconnects PSN with the new token.</li>
+    </ol>
+    <div class="hx-callout hx-warning"><p>The NPSSO token gives full access to your PlayStation account. Do not show it on stream or share it.</p></div>
+  </div>
+</div>
+
+<h2>Track another player</h2>
+
+<p>Put a PSN online ID in <strong>PSN username</strong> and click <strong>Save</strong> to show that player's game and trophies instead of yours. You can only track your own profile or friends who have their status set to online. The status then reads <strong>Connected - Tracking</strong> <em>name</em>, and <strong>Tracking</strong> shows <em>name</em> (target).</p>
+
+<h2>Connection status</h2>
+
+<p>The bottom status bar uses these colors for PSN. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Footer</th><th>Tab shows</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Connected as …, Connected - Tracking …</td><td>Signed in, and the tracked player is online</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Offline</td><td>Offline, Offline - Tracking …</td><td>Signed in, and the tracked player is not online</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Idle</td><td>Not Connected</td><td>No NPSSO code yet</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Expired</td><td>Token Expired</td><td>Sony did not accept the token (expired or not valid). Connect again</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Auth Failed</td><td>Authentication Failed</td><td>PlayStation refused the request, or an unexpected error happened. Check the log</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> No Internet / Unreachable</td><td>No Internet, Service Unreachable</td><td>This computer is offline, or PlayStation cannot be reached</td></tr>
+</tbody>
+</table></div>
+
+<h2>If something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>"Window closed before NPSSO was retrieved"</summary>
+  <p>The sign-in window closed before you used <strong>NPSSO → I am signed in — retrieve NPSSO token</strong>. Click <strong>Connect to PSN</strong> again and use the menu while the window is still open.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"NPSSO could not be retrieved"</summary>
+  <p>You were not fully signed in when you used the menu. Finish signing in on playstation.com, then use the menu again. If it keeps failing, use <strong>Paste the token by hand</strong> above.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Status says Token Expired</summary>
+  <p>NPSSO tokens last about two months, and signing out of PlayStation everywhere ends them early. Mycelian shows <em>"PSN NPSSO token expired — open Settings → PSN and click Connect to update."</em> Click <strong>Connect to PSN</strong> to get a new one.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Status says Token Expired right after pasting a token</summary>
+  <p>Mycelian reports any token Sony refuses as <strong>Token Expired</strong>, including a mistyped one. Copy only the 64 characters inside the quotes, with no spaces or braces, or use <strong>Connect to PSN</strong> instead.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Status says Authentication Failed</summary>
+  <p>Sony answered with an error other than a bad token, for example a blocked request. Wait a few minutes and click <strong>Save</strong> to reconnect. The log has the details.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Connected, but no game or trophies show</summary>
+  <p>Check the console privacy settings from <strong>Before you start</strong>. When tracking another player, they must be your friend and appear online. PlayStation can take a few minutes to report new trophies.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:integrations_psn">{{brand:psn}}<span><strong>PlayStation Network Integration</strong><span class="hx-card-text">Trophy overlays, game cache and mismatches</span></span></a>
+  <a class="hx-card" href="help:obs_setup">{{brand:obs}}<span><strong>OBS Browser Sources</strong><span class="hx-card-text">Add a trophy overlay to a scene</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>All connection guides</strong><span class="hx-card-text">Twitch, OBS, Spotify, YouTube and more</span></span></a>
+</div>

@@ -1,0 +1,288 @@
+<p class="hx-lead">Variables are placeholders in curly braces. When the chatbot sends a message, it swaps each one for a real value: <code>{username}</code> becomes the viewer's name. Click any variable on this page to copy it.</p>
+
+<div class="hx-meta">
+  <span>{{icon:data_object}} Reference</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Chatbot</span><span>Commands / Events</span><span>Variables panel</span></span></span>
+</div>
+
+<p>Variables work in the <strong>Response Text</strong> of <a href="help:chatbot_commands">commands</a> and <a href="help:chatbot_events">events</a>. <a href="help:chatbot_greetings">Greetings</a>, <a href="help:chatbot_giveaways">giveaways</a> and <a href="help:chatbot_polls">polls</a> have their own short lists, shown in the last tab below.</p>
+
+<h2>Where to find them in the app</h2>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-row hm-between"><span class="hm-muted hm-bold">Variables</span><span class="hm-btn hm-dense"><span class="hx-mi">add</span>Custom Variable</span></div>
+        <div class="hm-col">
+          <div class="hm-expansion hm-cb-varcat is-open">
+            <div class="hm-expansion-head hm-info">Basic</div>
+            <div class="hm-expansion-body">
+              <span class="hm-cb-varitem"><code>{username}</code> - User who triggered</span>
+              <span class="hm-cb-varitem"><code>{timestamp}</code> - Current time</span>
+              <span class="hm-cb-varitem"><code>{date}</code> - Current date</span>
+            </div>
+          </div>
+          <div class="hm-expansion hm-cb-varcat"><div class="hm-expansion-head">Arguments</div><div class="hm-expansion-body"><span class="hm-cb-varitem"><code>{city}</code></span></div></div>
+          <div class="hm-expansion hm-cb-varcat"><div class="hm-expansion-head">Command/Event</div><div class="hm-expansion-body"><span class="hm-cb-varitem"><code>{command_message}</code> - Full message after command name</span></div></div>
+          <div class="hm-expansion hm-cb-varcat"><div class="hm-expansion-head hm-warn">Statistics</div><div class="hm-expansion-body"><span class="hm-cb-varitem"><code>{stats.alerts.raids}</code> - Total raids</span></div></div>
+          <div class="hm-expansion hm-cb-varcat"><div class="hm-expansion-head hm-err">YouTube</div><div class="hm-expansion-body"><span class="hm-cb-varitem"><code>{youtube.latest_video_url}</code></span></div></div>
+          <div class="hm-expansion hm-cb-varcat"><div class="hm-expansion-head">Custom</div><div class="hm-expansion-body"><span class="hm-cb-varitem"><code>{custom_level}</code></span></div></div>
+        </div>
+      </div>
+      <figcaption>The Variables panel on the right of the command and event editor, trimmed. Click a group to open it.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <p>In the editor, click a variable to add it to the end of <strong>Response Text</strong>. <strong>Preview</strong> above the text box shows the result with live or sample values in italics.</p>
+    <p>The list changes with the command type and event type you pick, so it only shows what fits.</p>
+    <div class="hx-callout hx-note"><p>Spelling must match exactly, including underscores. Unknown variables are left in the message as plain text.</p></div>
+  </div>
+</div>
+
+<h2>Variable reference</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="basic" class="is-active">Basic</button>
+    <button data-tab="time">Time</button>
+    <button data-tab="command">Commands</button>
+    <button data-tab="event">Events</button>
+    <button data-tab="stats">Statistics</button>
+    <button data-tab="youtube">YouTube</button>
+    <button data-tab="custom">Custom</button>
+    <button data-tab="api">API</button>
+    <button data-tab="other">Other features</button>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="basic">
+    <p>Work in every command and event.</p>
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Variable</th><th>Becomes</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><span class="hx-copy" data-copy="{username}">{username}</span></td><td>The viewer who triggered it. For events, the follower, subscriber, gifter, raider or cheerer. For Interval and Specific Time events, <em>System</em>.</td><td>night_owl</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{message}">{message}</span></td><td>For commands, the whole chat message including the command. For events, the viewer's message (sub message, cheer text, reward input).</td><td>!hug @friend</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{timestamp}">{timestamp}</span></td><td>Current date and time.</td><td>2026-10-22 19:30:45</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{date}">{date}</span></td><td>Current date.</td><td>2026-10-22</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{time}">{time}</span></td><td>Current local time, 24-hour with seconds. See the Time tab for formats.</td><td>19:30:45</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{source}">{source}</span></td><td>Events only. Where the event came from.</td><td>twitch</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{userid}">{userid}</span></td><td>Commands only. The chatter's Twitch user ID.</td><td>123456789</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="time">
+    <p>Add filters to <code>{time}</code> with dots, in any order. Capitals do not matter.</p>
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+      <tbody>
+        <tr><td><span class="hx-copy" data-copy="{time}">{time}</span></td><td>19:30:45</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{time.12.ampm}">{time.12.ampm}</span></td><td>07:30:45 PM</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{time.hh:mm.12.ampm}">{time.hh:mm.12.ampm}</span></td><td>07:30 PM</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{time.nosec.12.ampm}">{time.nosec.12.ampm}</span></td><td>07:30 PM</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{time.UTC.tz}">{time.UTC.tz}</span></td><td>00:30:45 UTC</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{time.hh:mm.EST.12.ampm.tz}">{time.hh:mm.EST.12.ampm.tz}</span></td><td>07:30 PM EST</td></tr>
+      </tbody>
+    </table></div>
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Filter</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>12</code> / <code>24</code></td><td>12-hour or 24-hour clock. 24 is the default.</td></tr>
+        <tr><td><code>ampm</code> / <code>noampm</code></td><td>Add or leave out AM/PM.</td></tr>
+        <tr><td><code>sec</code> / <code>nosec</code></td><td>Show or hide seconds. Ignored when a layout is given.</td></tr>
+        <tr><td><code>hh:mm</code>, <code>h:mm</code>, <code>hh:mm:ss</code>, <code>h:mm:ss</code></td><td>Exact layout. <code>h</code> drops the leading zero (on Windows the zero stays).</td></tr>
+        <tr><td><code>UTC</code> <code>EST</code> <code>EDT</code> <code>CST</code> <code>CDT</code> <code>MST</code> <code>MDT</code> <code>PST</code> <code>PDT</code></td><td>Convert to that zone.</td></tr>
+        <tr><td><code>tz</code></td><td>Add the zone name. Without a zone filter it shows your computer's zone.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="command">
+    <p>For <code>!hug @friend extra</code>:</p>
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Variable</th><th>Becomes</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><span class="hx-copy" data-copy="{command_message}">{command_message}</span></td><td>Everything after the command name.</td><td>@friend extra</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{command_first_word}">{command_first_word}</span></td><td>First word after the command.</td><td>@friend</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{command_last_word}">{command_last_word}</span></td><td>Last word.</td><td>extra</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{command_word_1}">{command_word_1}</span></td><td>Word by position. Any number works: <code>{command_word_2}</code>, <code>{command_word_3}</code>… Empty if the viewer typed fewer words.</td><td>@friend</td></tr>
+        <tr><td><code>{your_name}</code></td><td>An <strong>Argument Mapping</strong> from the command's Settings. Mapping <code>city</code> to Position 1 creates <code>{city}</code>.</td><td>Paris</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{count}">{count}</span></td><td>Counter commands only. The new count.</td><td>8</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{cooldown}">{cooldown}</span></td><td>The cooldown in seconds. Only when a cooldown is set.</td><td>30</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{usage_left}">{usage_left}</span></td><td>Uses remaining. Only when a usage limit is set.</td><td>4</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{target_command}">{target_command}</span></td><td>Reset commands only. The counter being reset.</td><td>deaths</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{target_count}">{target_count}</span></td><td>Reset commands only. Its value before the reset.</td><td>12</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="event">
+    <p>Which of these an event fills depends on its type. The per-type table is in <a href="help:chatbot_events">Chatbot Events</a>.</p>
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Variable</th><th>Becomes</th><th>Used by</th></tr></thead>
+      <tbody>
+        <tr><td><span class="hx-copy" data-copy="{amount}">{amount}</span></td><td>Bits, donation amount, number of gift subs, point cost, or hype train total</td><td>Bits, Donation, Gift Subscription, Channel Point Redemption, Hype Train End, YouTube Super Chat/Sticker</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{tier}">{tier}</span></td><td>Sub tier: 1, 2 or 3</td><td>Subscription, Resubscription, Gift Subscription</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{months}">{months}</span></td><td>Total months subscribed, or member milestone months</td><td>Subscription, Resubscription, YouTube Member Milestone</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{viewer_count}">{viewer_count}</span></td><td>Raid party size</td><td>Raid</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{reward_name}">{reward_name}</span></td><td>Channel point reward title</td><td>Channel Point Redemption</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{level}">{level}</span></td><td>Hype train level</td><td>Hype Train Start, Progress, End</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{progress}">{progress}</span> <span class="hx-copy" data-copy="{goal}">{goal}</span></td><td>Points toward the level, and the level goal</td><td>Hype Train Progress</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{currency}">{currency}</span></td><td>Currency code</td><td>Donation, YouTube Super Chat/Sticker</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{formatted_amount}">{formatted_amount}</span></td><td>Amount with currency symbol</td><td>Donation, YouTube Super Chat/Sticker</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{display_amount}">{display_amount}</span></td><td>YouTube's formatted amount</td><td>YouTube Super Chat/Sticker</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{member_level}">{member_level}</span></td><td>YouTube membership level name</td><td>YouTube membership events</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{total_gifts}">{total_gifts}</span></td><td>Number of memberships gifted</td><td>YouTube Gift Membership</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="stats">
+    <p>All-time totals from <span class="hx-path"><span>Settings</span><span>Statistics</span></span>. They work in commands, events and custom variables.</p>
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Variable</th><th>Total</th></tr></thead>
+      <tbody>
+        <tr><td><span class="hx-copy" data-copy="{stats.alerts.total_bits}">{stats.alerts.total_bits}</span></td><td>Bits given</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.alerts.bit_alerts_played}">{stats.alerts.bit_alerts_played}</span></td><td>Bit alerts played</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.alerts.new_subs_played}">{stats.alerts.new_subs_played}</span></td><td>New sub alerts played</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.alerts.resubs_played}">{stats.alerts.resubs_played}</span></td><td>Resub alerts played</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.alerts.gift_subs_played}">{stats.alerts.gift_subs_played}</span></td><td>Gift sub alerts played</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.alerts.total_gift_subs}">{stats.alerts.total_gift_subs}</span></td><td>Gift subs given</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.alerts.follow_alerts_played}">{stats.alerts.follow_alerts_played}</span></td><td>Follow alerts played</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.alerts.raids}">{stats.alerts.raids}</span></td><td>Raids</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.alerts.point_alerts_redeemed}">{stats.alerts.point_alerts_redeemed}</span></td><td>Channel point redemptions</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.hype_trains.total_completions}">{stats.hype_trains.total_completions}</span></td><td>Hype trains completed. Per level: <code>{stats.hype_trains.level_3_completions}</code></td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.chatbot.commands_triggered}">{stats.chatbot.commands_triggered}</span></td><td>Commands triggered</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.chatbot.commands_created}">{stats.chatbot.commands_created}</span></td><td>Commands created</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.chatbot.events_triggered}">{stats.chatbot.events_triggered}</span></td><td>Events triggered</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.chatbot.events_created}">{stats.chatbot.events_created}</span></td><td>Events created</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.chatbot.total_interactions}">{stats.chatbot.total_interactions}</span></td><td>Chatbot interactions</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.quotes.total_quotes_redeemed}">{stats.quotes.total_quotes_redeemed}</span></td><td>Quotes posted with !quote</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.quotes.quotes_created}">{stats.quotes.quotes_created}</span></td><td>Quotes created</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.connectors.connectors_triggered}">{stats.connectors.connectors_triggered}</span></td><td>Connectors triggered</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.connectors.connectors_created}">{stats.connectors.connectors_created}</span></td><td>Connectors created</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.connectors.total_triggers}">{stats.connectors.total_triggers}</span></td><td>Connector trigger events</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.chat.twitch_messages_received}">{stats.chat.twitch_messages_received}</span></td><td>Twitch chat messages received</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.chat.total_messages}">{stats.chat.total_messages}</span></td><td>Chat messages processed</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{stats.session.session_duration}">{stats.session.session_duration}</span></td><td>Current session length, in seconds</td></tr>
+      </tbody>
+    </table></div>
+    <p>A statistic that does not exist becomes <code>0</code>.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="youtube">
+    <p>Need <a href="help:guide_youtube">YouTube</a> set up with at least one channel.</p>
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Variable</th><th>Becomes</th></tr></thead>
+      <tbody>
+        <tr><td><span class="hx-copy" data-copy="{youtube.latest_video_url}">{youtube.latest_video_url}</span></td><td>Link to the newest video across all your channels</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{youtube.latest_video_title}">{youtube.latest_video_title}</span></td><td>Its title</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{youtube.latest_video_id}">{youtube.latest_video_id}</span></td><td>Its video ID</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{youtube.latest_video_channel}">{youtube.latest_video_channel}</span></td><td>The channel it is on</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{youtube.connection_status}">{youtube.connection_status}</span></td><td>YouTube connection status</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{youtube.channel_count}">{youtube.channel_count}</span></td><td>How many channels are set up</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>One channel:</strong> <code>{youtube.<em>channelname</em>_<em>field</em>}</code>, where <em>channelname</em> is the channel title in lower case without spaces, hyphens or underscores. Fields: <code>latest_video_url</code>, <code>latest_video_title</code>, <code>latest_video_id</code>, <code>channel_title</code>, <code>channel_url</code>, <code>last_updated</code>.</p>
+<pre><code>New video from My Cool Channel: {youtube.mycoolchannel_latest_video_url}</code></pre>
+    <div class="hx-callout hx-note"><p>The Variables panel lists per-channel variables without the <code>youtube.</code> prefix, for example <code>{mycoolchannel_latest_video_url}</code>. Add <code>youtube.</code> after the opening brace so it is filled in chat.</p></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="custom">
+    <p>A custom variable is a saved expression you can reuse in any command or event. Create one with <strong>Custom Variable</strong> in the Variables panel. Give it a <strong>Variable Name</strong> and an <strong>Expression</strong>, then click <strong>Create Variable</strong>. Mycelian adds <code>custom_</code> to the front of the name.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-cb-dialog">
+          <div class="hm-cb-dialog-head"><span>Create Custom Variable</span><span class="hm-row"><span class="hx-mi">help_outline</span><span class="hx-mi">close</span></span></div>
+          <div class="hm-cb-dialog-body">
+            <div class="hm-field" data-label="Variable Name"><span class="hm-value">bit_level</span></div>
+            <div class="hm-field hm-textarea" data-label="Expression"><span class="hm-value">math(round({stats.alerts.total_bits} / 1000))</span></div>
+            <div class="hm-row hm-end"><span class="hm-btn hm-flat">Cancel</span><span class="hm-btn"><span class="hx-mi">save</span>Create Variable</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Saved as <code>{custom_bit_level}</code>.</figcaption>
+    </figure>
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Function</th><th>What it does</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><span class="hx-copy" data-copy="math()">math(…)</span></td><td>Arithmetic with <code>+ - * / ** %</code> and <code>round</code>, <code>min</code>, <code>max</code>, <code>abs</code>, <code>int</code>, <code>float</code>. Errors give <code>0</code>.</td><td><code>math({stats.alerts.raids} * 2)</code></td></tr>
+        <tr><td><span class="hx-copy" data-copy="compare(, >, )">compare(a, op, b)</span></td><td><code>True</code> or <code>False</code>. Operators: <code>&gt; &lt; == != &gt;= &lt;=</code></td><td><code>compare({stats.chatbot.commands_triggered}, &gt;, 100)</code></td></tr>
+        <tr><td><span class="hx-copy" data-copy="date_to_age()">date_to_age(…)</span></td><td>Age of an ISO date as <em>N years, M days</em></td><td><code>date_to_age(2021-01-01T00:00:00Z)</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>Expressions can contain statistics, YouTube, time, other custom variables (up to 10 levels deep) and the command word variables (<code>{command_message}</code>, <code>{command_word_1}</code>…). Argument mappings such as <code>{city}</code> are not filled inside a custom variable; use them in the response text. Mycelian rejects an expression that uses a variable it does not know.</p>
+    <div class="hx-callout hx-warning"><p>Inside a custom variable, <code>{username}</code> is your own channel name, not the viewer, and <code>{date}</code> reads like <em>October 22, 2026</em>. Put <code>{username}</code> in the response text instead.</p></div>
+    <p>Custom variables are shared by all commands and events. Edit or delete them from the Custom group in the Variables panel.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="api">
+    <p>Available when <strong>Enable API Call</strong> is on in the command or event's <strong>API Integration</strong> section.</p>
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Variable</th><th>Becomes</th></tr></thead>
+      <tbody>
+        <tr><td><span class="hx-copy" data-copy="{api_status}">{api_status}</span></td><td>HTTP status code, such as 200</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{api_success}">{api_success}</span></td><td><code>True</code> when the status is below 400</td></tr>
+        <tr><td><code>{api_<em>field</em>}</code></td><td>A field from the response. The API Response group in the panel lists the fields for the chosen endpoint.</td></tr>
+        <tr><td><span class="hx-copy" data-copy="{account_age_years}">{account_age_years}</span> <span class="hx-copy" data-copy="{account_age_days}">{account_age_days}</span> <span class="hx-copy" data-copy="{account_age_remaining_days}">{account_age_remaining_days}</span> <span class="hx-copy" data-copy="{account_created_datetime}">{account_created_datetime}</span></td><td>Filled when the response has a <code>created_at</code> date, for example a Twitch user lookup.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="other">
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Feature</th><th>Variables</th></tr></thead>
+      <tbody>
+        <tr><td><a href="help:chatbot_greetings">Greetings</a></td><td><span class="hx-copy" data-copy="{username}">{username}</span> only</td></tr>
+        <tr><td><a href="help:chatbot_giveaways">Giveaway announcement</a></td><td><span class="hx-copy" data-copy="{winners}">{winners}</span> and <span class="hx-copy" data-copy="{winner}">{winner}</span>, both the winners' names</td></tr>
+        <tr><td><a href="help:chatbot_polls">Poll winner banner</a></td><td><span class="hx-copy" data-copy="{option}">{option}</span> <span class="hx-copy" data-copy="{options}">{options}</span> <span class="hx-copy" data-copy="{keyword}">{keyword}</span> <span class="hx-copy" data-copy="{votes}">{votes}</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<h2>Listed but not filled in chat</h2>
+
+<p>A few entries in the Variables panel only fill in on the <strong>Preview</strong>. In a real chat reply they stay as plain text:</p>
+
+<ul>
+  <li><code>{datetime}</code>. Use <code>{timestamp}</code>.</li>
+  <li><code>{command_name}</code> and <code>{last_used}</code>.</li>
+  <li>The <strong>Quotes</strong> group, such as <code>{quote.id.text}</code>. Use the built-in <a href="help:chatbot_quotes"><code>!quote</code></a> command.</li>
+  <li>Event extras such as <code>{tier_name}</code>, <code>{streak}</code>, <code>{follower_count}</code>, <code>{raider_name}</code>, <code>{gifter_name}</code>, <code>{reward_cost}</code> and <code>{user_input}</code>. Use the values in the Events tab above.</li>
+  <li><code>{account_age.days}</code> and the other dotted account-age names. Use the underscore names in the API tab.</li>
+</ul>
+
+<h2>Examples</h2>
+
+<pre><code>!so      → Go check out {command_word_1}! They were last seen streaming great things.
+!bits    → This channel has received {stats.alerts.total_bits} bits. Thank you!
+!time    → It is {time.hh:mm.12.ampm.tz} for the streamer.
+!video   → Latest video: {youtube.latest_video_title} {youtube.latest_video_url}
+Raid     → Welcome {username} and the {viewer_count} raiders!</code></pre>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>The variable shows up as {something} in chat</summary>
+  <ul>
+    <li>Check the spelling and use curly braces, not parentheses.</li>
+    <li>Check that it applies here: <code>{count}</code> only on Counter commands, event values only on the matching event type.</li>
+    <li>Check the "Listed but not filled in chat" list above.</li>
+  </ul>
+</details>
+
+<details class="hx-details">
+  <summary>The preview looks right but chat is different</summary>
+  <p>The preview uses sample values (for example <em>PreviewUser</em>, <em>100</em> bits) and your own name. Use <strong>Test</strong> on the card to send a real message.</p>
+</details>
+
+<details class="hx-details">
+  <summary>A statistic is always 0</summary>
+  <p>Statistics start counting from the moment the feature is used. Check the total on <span class="hx-path"><span>Settings</span><span>Statistics</span></span>, and check the name against the Statistics tab above.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:chatbot_commands">{{icon:terminal}}<span><strong>Commands</strong><span class="hx-card-text">Where most variables are used</span></span></a>
+  <a class="hx-card" href="help:chatbot_events">{{icon:celebration}}<span><strong>Events</strong><span class="hx-card-text">Values for each event type</span></span></a>
+</div>

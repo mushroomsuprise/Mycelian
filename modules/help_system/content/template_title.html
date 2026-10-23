@@ -1,0 +1,211 @@
+<p class="hx-lead">The Title overlay shows your current Twitch category, or a custom message, as plain text. The text fills the whole browser source and scales itself to fit, so the source's size in OBS decides how it looks.</p>
+
+<div class="hx-meta">
+  <span>{{icon:link}} <span class="hx-copy" data-copy="http://127.0.0.1:5000/title">http://127.0.0.1:5000/title</span></span>
+  <span>{{icon:place}} <span class="hx-path"><span>Source Settings</span><span>title</span></span></span>
+  <span>{{icon:stream}} Needs Twitch connected</span>
+</div>
+
+<h2>Set it up</h2>
+
+<section class="hx-guide" data-guide="template_title_setup" data-title="Title overlay setup">
+  <div class="hx-step">
+    <h3>Add the browser source</h3>
+    <p>In OBS, add a <strong>Browser</strong> source with the URL <span class="hx-copy" data-copy="http://127.0.0.1:5000/title">http://127.0.0.1:5000/title</span>. Or use the OBS button on the <strong>Title</strong> card in <span class="hx-path"><span>Settings</span><span>About</span></span>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Type Width and Height for the text area</h3>
+    <p><strong>This is the most important step.</strong> The overlay has no inner text box; the text uses the entire source. Set <strong>Width</strong> and <strong>Height</strong> in the source properties to the region where the text should appear. A lower-third strip is typically about 900 × 120. Tall, narrow or odd shapes work too.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Move it into place</h3>
+    <p>Drag the source to its spot on the canvas, but do not resize it with the corner handles. Change Width and Height in the properties instead.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Check the category</h3>
+    <p>The overlay should show your current category within a few seconds. If it still says <em>Stream Title</em>, see Troubleshooting at the end of this page.</p>
+  </div>
+</section>
+
+<h2>Why the source size matters</h2>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-subtabs">
+      <span class="hm-subtab is-active" data-tab="props">Width/Height in properties</span>
+      <span class="hm-subtab" data-tab="drag">Dragged with handles</span>
+    </div>
+    <div class="hm-frame">
+      <div data-panel="props" class="is-active hm-stack">
+        <div class="hm-canvas">
+          <div class="hm-canvas-src hm-ov-lg" style="left:6%; top:72%; width:47%; height:11%">Just Chatting</div>
+        </div>
+        <span class="hm-muted hm-xs">Source set to 900 × 120 in its properties. The text is drawn sharp at the size that fits.</span>
+      </div>
+      <div data-panel="drag" class="hm-stack">
+        <div class="hm-canvas">
+          <div class="hm-canvas-src hm-ov-md is-stretched" style="left:6%; top:62%; width:47%; height:11%">Just Chatting</div>
+        </div>
+        <span class="hm-muted hm-xs">The same source stretched with the mouse. OBS scales the rendered image, so the text blurs and Auto Fit cannot help.</span>
+      </div>
+    </div>
+  </div>
+  <figcaption>A simplified OBS canvas. Switch tabs to compare.</figcaption>
+</figure>
+
+<p>If you change Width or Height while the source is running, the text re-fits right away. You do not need to refresh.</p>
+
+<h2>Text scaling</h2>
+
+<p><strong>Auto Fit Text To Source</strong> (on by default) shrinks the text until it fits inside the source. <strong>Max Font Size</strong> (default 60) is the ceiling: text is drawn at that size when it fits, and only ever scales down. <strong>Min Font Size</strong> (default 12) is the floor.</p>
+
+<p><strong>Text Wrapping</strong> decides how it shrinks:</p>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-subtabs">
+      <span class="hm-subtab is-active" data-tab="wrap">wrap</span>
+      <span class="hm-subtab" data-tab="nowrap">nowrap</span>
+    </div>
+    <div class="hm-frame">
+      <div data-panel="wrap" class="is-active hm-stage-pair">
+        <div class="hm-stage hm-stage-square"><span class="hm-ov-title hm-ov-lg">Tom Clancy's Rainbow Six Siege</span></div>
+        <div class="hm-stage hm-stage-strip"><span class="hm-ov-title hm-ov-sm">Tom Clancy's Rainbow Six Siege</span></div>
+      </div>
+      <div data-panel="nowrap" class="hm-stage-pair">
+        <div class="hm-stage hm-stage-square"><span class="hm-ov-title hm-ov-sm hm-ov-nowrap">Tom Clancy's Rainbow Six Siege</span></div>
+        <div class="hm-stage hm-stage-strip"><span class="hm-ov-title hm-ov-lg hm-ov-nowrap">Tom Clancy's Rainbow Six Siege</span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption>A long category in a square source and in a strip. <code>wrap</code> suits the square; <code>nowrap</code> suits the strip.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Text Wrapping</th><th>Behavior</th><th>Use for</th></tr></thead>
+<tbody>
+<tr><td><code>wrap</code> (default)</td><td>Long text breaks onto more lines, then shrinks to fit the height</td><td>Roughly square areas</td></tr>
+<tr><td><code>nowrap</code></td><td>Text always stays on one line and shrinks to fit the width</td><td>Thin horizontal strips</td></tr>
+</tbody>
+</table></div>
+
+<ul>
+  <li>If text is clipped, the source is too small for your Min Font Size. Make the source bigger rather than lowering Min Font Size.</li>
+  <li>Turn Auto Fit off to draw at exactly Max Font Size. Long category names will then overflow and be cut off.</li>
+  <li><strong>Line Height</strong> only matters with <code>wrap</code> when the text uses more than one line.</li>
+</ul>
+
+<h2>Placement</h2>
+
+<p>Because the text fills the source, placement is just alignment inside it. There are no position or size settings in Source Settings; the OBS source handles that.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-grid-3">
+      <div class="hm-col hm-tight"><div class="hm-stage hm-al-start hm-va-start"><span class="hm-ov-title hm-ov-md">Just Chatting</span></div><span class="hm-xs hm-muted">flex-start / flex-start</span></div>
+      <div class="hm-col hm-tight"><div class="hm-stage"><span class="hm-ov-title hm-ov-md">Just Chatting</span></div><span class="hm-xs hm-muted">center / center (default)</span></div>
+      <div class="hm-col hm-tight"><div class="hm-stage hm-al-end hm-va-end"><span class="hm-ov-title hm-ov-md">Just Chatting</span></div><span class="hm-xs hm-muted">flex-end / flex-end</span></div>
+    </div>
+  </div>
+  <figcaption>Horizontal / Vertical Alignment. The checkerboard is the transparent source area.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>Horizontal Alignment</strong>: <code>flex-start</code> (left), <code>center</code>, <code>flex-end</code> (right).</li>
+  <li><strong>Vertical Alignment</strong>: <code>flex-start</code> (top), <code>center</code> (middle), <code>flex-end</code> (bottom).</li>
+  <li><strong>Edge Padding</strong>: a blank margin kept clear inside every edge. Auto Fit treats it as unusable space, so raising it makes the text smaller.</li>
+</ul>
+
+<h2>Keeping the category up to date</h2>
+
+<p><strong>Category Data Source</strong> (in the <strong>Stream Data</strong> group) controls how the overlay learns your category:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Mode</th><th>Behavior</th></tr></thead>
+<tbody>
+<tr><td><code>api_and_eventsub</code></td><td><strong>Recommended, default.</strong> Reads the Twitch API on load and on a timer, <em>and</em> accepts live push updates.</td></tr>
+<tr><td><code>eventsub_only</code></td><td>Live push updates only. It will not fill itself in after a source refresh.</td></tr>
+<tr><td><code>api_only</code></td><td>Timer polling only. Ignores push updates.</td></tr>
+</tbody>
+</table></div>
+
+<p>Live push updates (EventSub) only fire at the moment you <em>change</em> category, so they can never tell the overlay what your category already is. That is why <code>api_and_eventsub</code> is the default: the API read fills in the current value on load, and the timer is a safety net if push updates stop.</p>
+
+<p><strong>API Refresh Interval (seconds)</strong> sets how often the safety-net read happens. The default is 60; values below 15 are treated as 15. Set it to <code>0</code> to read only on source load and when you press <strong>Refresh</strong> in Source Controls. It is ignored with <code>eventsub_only</code>.</p>
+
+<h2>Custom titles and live controls</h2>
+
+<p>Turn <strong>Show Category</strong> off to show the <strong>Custom Title</strong> text instead. <strong>Category Prefix</strong> and <strong>Category Suffix</strong> add text around the category (for example <code>Now playing: </code>) while Show Category is on.</p>
+
+<p>During the stream, use the <strong>Title Controls</strong> card in <a href="help:source_controls">Source Controls</a>:</p>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-sc-card hm-sc-solo">
+      <div class="hm-sc-head"><span class="hm-sc-name">Title Controls</span><span class="hm-badge">4 controls</span></div>
+      <span class="hm-sc-group">Adjustments</span>
+      <div class="hm-sc-grid">
+        <div class="hm-sc-span"><span class="hm-sc-label">Show Category <span class="hm-marker" data-n="1"></span></span><span class="hm-switch is-on"><i></i></span></div>
+      </div>
+      <span class="hm-sc-group">Text Input</span>
+      <div class="hm-sc-grid">
+        <div class="hm-sc-span"><span class="hm-sc-label">Custom Title <span class="hm-marker" data-n="2"></span></span><div class="hm-field hm-nolabel"><span class="hm-placeholder">Enter custom title...</span></div></div>
+      </div>
+      <span class="hm-sc-group">Actions <span class="hm-marker" data-n="3"></span></span>
+      <div class="hm-sc-grid">
+        <span class="hm-btn">Clear</span>
+        <span class="hm-btn">Refresh</span>
+      </div>
+    </div>
+  </div>
+  <figcaption>Source Controls → Title Controls. Click the switch to see both states.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Show Category</strong> changes the same setting as in Source Settings and is saved, so it survives a source refresh.</li>
+  <li data-n="2">Text you type here is sent to the overlay as you type. It only shows while Show Category is off; typing does not turn Show Category off for you.</li>
+  <li data-n="3"><strong>Clear</strong> (Clear Custom Title) empties the text and turns Show Category back on. <strong>Refresh</strong> (Refresh Category) reads the category from Twitch right now.</li>
+</ol>
+
+<p>Connectors can also set a temporary title with the <strong>Change title</strong> action. See <a href="help:connector_actions">Connector Actions</a>.</p>
+
+<h2>Look and animation</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Group</th><th>Settings</th></tr></thead>
+<tbody>
+<tr><td>Text Appearance</td><td>Font Weight, Font Color, Text Shadow (a CSS <code>text-shadow</code> value, or <code>none</code>), Line Height. The font comes from <strong>Font File</strong> in Text Size; the file must be in <code>assets/default_assets/fonts/</code>.</td></tr>
+<tr><td>Background &amp; Border</td><td>Background Color (transparent by default), Border Width, Border Color, Corner Radius</td></tr>
+<tr><td>Animation Settings</td><td>Enable Animations, Transition Duration, Enable Pulse Effect, Pulse Speed, Pulse Opacity, Enable Glow Effect, Glow Color</td></tr>
+<tr><td>Wipe Animation Settings</td><td>Enable Wipe Animation (needs Enable Animations), Wipe Direction, Wipe Easing Strength</td></tr>
+</tbody>
+</table></div>
+
+<p>Category changes animate. Custom titles always change instantly so typed text is never dropped.</p>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>The overlay says "Stream Title" and never changes</summary>
+  <p>Twitch is not connected yet, or the category has not been read. Check the Twitch connection (<a href="help:twitch_setup">Twitch Setup</a>), then press <strong>Refresh</strong> on Title Controls. The overlay keeps retrying while it waits for Twitch to authenticate.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The category is stale after I switched games</summary>
+  <p>Check that Category Data Source is not <code>api_only</code> with a long refresh interval. With <code>api_and_eventsub</code> the change appears immediately.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Nothing shows at all</summary>
+  <p>Show Category is probably off with an empty Custom Title, which draws a blank overlay by design. Press <strong>Clear</strong> on Title Controls to switch back to the category.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The text is tiny</summary>
+  <p>The browser source is probably much larger than it looks, or Edge Padding is high. Text scales to the <em>source</em> size, not the canvas. Check Width and Height in the source properties.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The text is blurry</summary>
+  <p>The source was resized with the mouse handles. Right-click it in OBS, choose <strong>Transform → Reset Transform</strong>, then set Width and Height in its properties.</p>
+</details>

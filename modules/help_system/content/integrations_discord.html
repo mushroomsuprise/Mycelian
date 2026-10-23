@@ -1,0 +1,76 @@
+<p class="hx-lead">With your own Discord bot connected, Mycelian can post to the Discord channels you choose: automatic <strong>Stream is live</strong> announcements, <strong>Chatbot</strong> replies and <strong>Connector</strong> messages.</p>
+
+<div class="hx-meta">
+  <span>{{icon:send}} Send-only</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Discord</span></span></span>
+</div>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:guide_discord">{{brand:discord}}<span><strong>Connect Discord</strong><span class="hx-card-text">Create the bot, paste its token, invite it to your server</span></span></a>
+</div>
+
+<p>The bot uses a bot token, never your Discord password. The token is stored encrypted in the app database. It sends messages only, so privileged intents such as Server Members or Message Content are <strong>not</strong> needed.</p>
+
+<h2>Go-live announcements</h2>
+
+<p>Turn on <strong>Enable go-live Discord message</strong> under <strong>Stream is live</strong>, add one or more channels, and click <strong>Save</strong>. Mycelian then posts your message the first time <strong>Twitch</strong> or <strong>YouTube</strong> goes live in a session.</p>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-col">
+      <span class="hm-switch is-on"><i></i>Enable go-live Discord message</span>
+      <div class="hm-field hm-textarea" data-label="Message template"><span class="hm-value">Stream is live on {platform}! {url}</span></div>
+      <span class="hm-muted hm-xs">Placeholders: {platform}, {title}, {url}</span>
+      <span class="hm-bold hm-sm">Announcement channels</span>
+      <div class="hm-row">
+        <span class="hm-chip hm-plain">My Stream Server / #announcements <span class="hx-mi">close</span></span>
+        <span class="hm-chip hm-plain">Friends / #going-live <span class="hx-mi">close</span></span>
+      </div>
+    </div>
+  </div>
+  <figcaption>Settings → Discord → Stream is live. One message goes to every listed channel. The switch is only a picture.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Placeholder</th><th>Becomes</th></tr></thead>
+<tbody>
+<tr><td><code>{platform}</code></td><td><code>Twitch</code> or <code>YouTube</code>, whichever went live first</td></tr>
+<tr><td><code>{title}</code></td><td>For YouTube, the latest video title Mycelian knows. Twitch go-live posts leave it empty</td></tr>
+<tr><td><code>{url}</code></td><td>Your Twitch channel link or YouTube live link</td></tr>
+</tbody>
+</table></div>
+
+<p>The default message is <code>Stream is live on {platform}! {url}</code>.</p>
+
+<div class="hx-callout hx-note"><p>Multi-streaming sends only one message. When the second platform goes live, Discord is not posted again. The session resets once both Twitch and YouTube are offline, so the next stream announces again.</p></div>
+
+<h2>Chatbot and Connectors</h2>
+
+<p>The servers and channels your bot can see also appear in these places once the bot is connected:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Where</th><th>How</th></tr></thead>
+<tbody>
+<tr><td><strong>Chatbot</strong> commands and events</td><td><strong>Also send to Discord</strong> picks Discord channels for the reply. It is separate from the Twitch and YouTube reply targets. See <a href="help:chatbot_commands">Chatbot Commands</a>.</td></tr>
+<tr><td><strong>Connectors</strong></td><td>Use the <strong>Send Discord Message</strong> action, not the Twitch/YouTube chat action. See <a href="help:connector_actions">Connector Actions</a>.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Status</h2>
+
+<p>Discord appears in the status footer once a bot token is saved. The status colors and fixes are in <a href="help:guide_discord">Connect Discord</a>; the full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>Status says Auth Failed</summary>
+  <p>Reset the bot token in the Developer Portal, paste it, and click <strong>Connect</strong>.</p>
+</details>
+<details class="hx-details">
+  <summary>No servers are listed</summary>
+  <p>Invite the bot to at least one server, then click <strong>Refresh servers</strong>.</p>
+</details>
+<details class="hx-details">
+  <summary>Messages are not sent</summary>
+  <p>Make sure the bot's role can <strong>View Channel</strong> and <strong>Send Messages</strong> in that channel.</p>
+</details>

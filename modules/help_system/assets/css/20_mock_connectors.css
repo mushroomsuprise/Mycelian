@@ -1,0 +1,316 @@
+/* =========================================================================
+   Mycelian Help — Connectors tab mock pieces
+   Mirrors CUSTOM_CSS in modules/uiwindows/connectors.py: connector cards,
+   trigger/condition/action badges, the editor form sections, condition and
+   action containers, folder tiles, plus a simple pipeline diagram.
+   Theme variables only.
+   ========================================================================= */
+
+/* ---- Toolbar (search + New Connector + Refresh) ---------------------- */
+
+.help-doc .hm-cx-conn-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.help-doc .hm-cx-conn-toolbar > .hm-field { flex: 1 1 12rem; }
+
+/* "Drop a connector here to move it to the main grid" strip */
+.help-doc .hm-cx-conn-drop {
+    border: 1px dashed var(--color-border-default);
+    background: var(--color-bg-elevated);
+    border-radius: 8px;
+    padding: 8px 10px;
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--color-text-secondary);
+}
+
+.help-doc .hm-cx-conn-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: 12px;
+}
+
+/* ---- Connector card (.connector-card) -------------------------------- */
+
+.help-doc .hm-cx-conn-card {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-accent);
+    border-radius: 8px;
+    padding: 12px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.help-doc .hm-cx-conn-card.is-enabled { border-color: var(--color-success); }
+.help-doc .hm-cx-conn-card.is-disabled { border-color: var(--color-error); }
+
+.help-doc .hm-cx-conn-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.help-doc .hm-cx-conn-name { font-weight: 600; font-size: 0.95rem; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.help-doc .hm-cx-conn-desc { font-size: 0.72rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.help-doc .hm-cx-conn-tools { display: inline-flex; align-items: center; gap: 0; flex-shrink: 0; }
+.help-doc .hm-cx-conn-tools .hm-btn.hm-icon-only { padding: 3px 4px; }
+.help-doc .hm-cx-conn-tools .hm-switch { transform: scale(0.9); margin-right: 2px; }
+
+.help-doc .hm-cx-conn-stats {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-border-subtle);
+    font-size: 0.72rem;
+    color: var(--color-text-secondary);
+}
+
+/* ---- Trigger → Condition → Actions flow on the card ------------------ */
+
+.help-doc .hm-cx-flow { display: flex; flex-direction: column; gap: 0; }
+.help-doc .hm-cx-flow-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.help-doc .hm-cx-flow-row > .hx-mi { font-size: 16px; }
+.help-doc .hm-cx-flow-row.is-trigger > .hx-mi { color: var(--color-info); }
+.help-doc .hm-cx-flow-row.is-cond > .hx-mi { color: var(--color-text-primary); }
+.help-doc .hm-cx-flow-row.is-action > .hx-mi { color: var(--color-success); }
+
+.help-doc .hm-cx-flow-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--color-text-muted);
+}
+
+.help-doc .hm-cx-flow-arrow {
+    font-family: 'Material Icons';
+    font-size: 18px;
+    line-height: 1;
+    color: var(--color-text-muted);
+    opacity: 0.7;
+    margin: 2px 0 2px 0;
+    align-self: center;
+}
+
+.help-doc .hm-cx-tbadge,
+.help-doc .hm-cx-cbadge,
+.help-doc .hm-cx-abadge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.help-doc .hm-cx-tbadge {
+    color: var(--color-info);
+    background: color-mix(in srgb, var(--color-info) 22%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-info) 45%, transparent);
+}
+
+.help-doc .hm-cx-cbadge {
+    color: color-mix(in srgb, var(--color-primary) 60%, var(--color-text-primary));
+    background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
+
+.help-doc .hm-cx-abadge {
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 22%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-success) 45%, transparent);
+}
+
+/* ---- Folder tile ----------------------------------------------------- */
+
+.help-doc .hm-cx-folder-icon { color: var(--color-warning); font-size: 26px; }
+
+.help-doc .hm-cx-folder-preview {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(3.4rem, 1fr));
+    gap: 6px;
+}
+
+.help-doc .hm-cx-folder-tile {
+    aspect-ratio: 1;
+    max-height: 3.8rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 4px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border-accent);
+    background: var(--color-bg-elevated);
+    font-size: 0.62rem;
+    line-height: 1.15;
+    text-align: center;
+    overflow: hidden;
+}
+
+.help-doc .hm-cx-folder-tile > .hx-mi { color: var(--color-warning); font-size: 18px; }
+.help-doc .hm-cx-folder-tile.is-enabled { border-color: var(--color-success); }
+.help-doc .hm-cx-folder-tile.is-disabled { border-color: var(--color-error); color: var(--color-text-secondary); }
+.help-doc .hm-cx-folder-tile.is-disabled > .hx-mi { opacity: 0.4; }
+
+/* ---- Editor dialog ---------------------------------------------------- */
+
+.help-doc .hm-cx-dialog-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: -10px -10px 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-elevated);
+}
+
+.help-doc .hm-cx-dialog-title { font-size: 1.1rem; font-weight: 600; color: var(--color-text-primary); }
+
+.help-doc .hm-cx-form-section {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.help-doc .hm-cx-form-section-title {
+    color: var(--color-primary);
+    font-weight: 600;
+    font-size: 1rem;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--color-border-accent);
+}
+
+.help-doc .hm-cx-editor-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+
+.help-doc .hm-cx-dialog-foot {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+/* Tinted fields: trigger = info, condition = primary, action = success */
+.help-doc .hm-field.hm-cx-tint-trigger {
+    background: color-mix(in srgb, var(--color-info) 10%, var(--color-bg-surface));
+    border-color: color-mix(in srgb, var(--color-info) 45%, transparent);
+}
+
+.help-doc .hm-field.hm-cx-tint-cond {
+    background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-surface));
+    border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
+
+.help-doc .hm-field.hm-cx-tint-act {
+    background: color-mix(in srgb, var(--color-success) 10%, var(--color-bg-surface));
+    border-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+}
+
+/* Condition #N / Action #N boxes */
+.help-doc .hm-cx-cond-box,
+.help-doc .hm-cx-act-box {
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.help-doc .hm-cx-cond-box {
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
+.help-doc .hm-cx-act-box {
+    background: color-mix(in srgb, var(--color-success) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-success) 22%, transparent);
+}
+
+.help-doc .hm-cx-box-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 500; }
+.help-doc .hm-cx-box-head .hm-cx-del { color: var(--color-error); }
+
+.help-doc .hm-cx-cond-fields { display: flex; align-items: flex-end; gap: 6px; flex-wrap: nowrap; }
+.help-doc .hm-cx-cond-fields > .hm-field { flex: 0 1 auto; min-width: 5.5rem; }
+.help-doc .hm-cx-cond-fields > .hm-field.hm-cx-cond-value { flex: 1 1 5rem; }
+
+.help-doc .hm-cx-delay-row { display: flex; align-items: center; gap: 6px; justify-content: flex-end; flex: 1 1 auto; }
+.help-doc .hm-cx-delay-row > .hm-field { width: 6.5rem; flex: 0 0 auto; }
+
+/* Hint text under fields (Quasar hint / muted labels) */
+.help-doc .hm-cx-hint { font-size: 0.7rem; color: var(--color-text-muted); }
+.help-doc .hm-cx-hint-warn { font-size: 0.7rem; color: var(--color-warning); }
+
+/* Open select list (q-menu) */
+.help-doc .hm-cx-menu {
+    border: 1px solid var(--color-border-default);
+    background: var(--color-bg-elevated);
+    border-radius: 8px;
+    padding: 4px 0;
+    box-shadow: 0 6px 18px var(--color-bg-overlay);
+    max-height: 18rem;
+    overflow-y: auto;
+}
+
+.help-doc .hm-cx-menu > div { padding: 5px 12px; font-size: 0.82rem; }
+.help-doc .hm-cx-menu > div.is-selected { color: var(--color-primary); background: var(--color-active-overlay); }
+
+/* ---- Pipeline diagram: Trigger → Conditions → Actions ---------------- */
+
+.help-doc .hm-cx-pipeline { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+
+.help-doc .hm-cx-stage {
+    flex: 1 1 10rem;
+    min-width: 0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-top: 3px solid var(--color-border-accent);
+}
+
+.help-doc .hm-cx-stage.is-trigger { border-top-color: var(--color-info); }
+.help-doc .hm-cx-stage.is-cond { border-top-color: var(--color-primary); }
+.help-doc .hm-cx-stage.is-action { border-top-color: var(--color-success); }
+
+.help-doc .hm-cx-stage-title { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.help-doc .hm-cx-stage.is-trigger .hm-cx-stage-title > .hx-mi { color: var(--color-info); }
+.help-doc .hm-cx-stage.is-cond .hm-cx-stage-title > .hx-mi { color: var(--color-primary); }
+.help-doc .hm-cx-stage.is-action .hm-cx-stage-title > .hx-mi { color: var(--color-success); }
+.help-doc .hm-cx-stage-text { font-size: 0.78rem; color: var(--color-text-secondary); }
+
+.help-doc .hm-cx-stage-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    font-family: 'Material Icons';
+    font-size: 22px;
+    color: var(--color-text-muted);
+}
+
+.help-doc .hm-cx-stage-out {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+}
+
+@media (max-width: 640px) {
+    .help-doc .hm-cx-editor-cols { grid-template-columns: minmax(0, 1fr); }
+    .help-doc .hm-cx-pipeline { flex-direction: column; }
+    .help-doc .hm-cx-stage-arrow { transform: rotate(90deg); }
+    .help-doc .hm-cx-cond-fields { flex-wrap: wrap; }
+}
+
+.help-doc .hm-cx-box-head > span:first-child { white-space: nowrap; }

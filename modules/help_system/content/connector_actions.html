@@ -1,0 +1,201 @@
+<p class="hx-lead">Actions are what a connector does once its <a href="help:connector_triggers">trigger</a> fires and its <a href="help:connector_conditions">conditions</a> pass. A connector needs at least one action and can have as many as you like.</p>
+
+<h2>How actions run</h2>
+
+<ul>
+  <li>Actions run in order, <strong>Action #1</strong> first.</li>
+  <li>From Action #2 on, <strong>Delay (s)</strong> is how long to wait after the previous action before this one starts. Delays add up: 2 s then 5 s means the third action starts 7 s after the first.</li>
+  <li>If an action fails (for example OBS is not connected), the next actions still run. The failure is written to the log.</li>
+  <li>Text fields accept placeholders such as <code>{username}</code> (see <strong>Placeholders</strong> below).</li>
+</ul>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-cx-form-section">
+      <div class="hm-cx-form-section-title">Actions Configuration</div>
+      <div class="hm-cx-act-box">
+        <div class="hm-cx-box-head"><span>Action #1</span><span class="hx-mi hm-cx-del">delete</span></div>
+        <div class="hm-row hm-nowrap"><div class="hm-field hm-select hm-cx-tint-act hm-grow" data-label="Action Type"><span class="hm-value">Send Chat Message</span></div><span class="hm-marker" data-n="1"></span></div>
+        <div class="hm-field hm-textarea hm-cx-tint-act" data-label="Message"><span class="hm-value">Thanks {username} for the {amount} bits!</span></div>
+        <span class="hm-xs hm-muted">Send message to</span>
+        <div class="hm-row hm-gap-lg"><span class="hm-check is-on"><i></i>Twitch</span><span class="hm-check is-on"><i></i>YouTube</span><span class="hm-marker" data-n="2"></span></div>
+        <div class="hm-cx-hint">Use single-brace placeholders for event and connector data</div>
+      </div>
+      <div class="hm-cx-act-box">
+        <div class="hm-cx-box-head"><span>Action #2</span>
+          <span class="hm-cx-delay-row"><span class="hm-field" data-label="Delay (s)"><span class="hm-value">3</span></span><span class="hm-cx-hint">Delay in seconds from Action #1</span><span class="hm-marker" data-n="3"></span></span>
+          <span class="hx-mi hm-cx-del">delete</span></div>
+        <div class="hm-field hm-select hm-cx-tint-act" data-label="Action Type"><span class="hm-value">Display Banner</span></div>
+        <div class="hm-field hm-textarea hm-cx-tint-act" data-label="Banner message"><span class="hm-value">{username} just cheered {amount}!</span></div>
+        <div class="hm-field" data-label="Duration (seconds)"><span class="hm-value">10</span></div>
+        <span class="hm-switch"><i></i>Permanent</span>
+      </div>
+      <div class="hm-row"><span class="hm-btn hm-success"><span class="hx-mi">add</span>Add Action</span></div>
+    </div>
+  </div>
+  <figcaption><span>Two actions: a chat thank-you, then a banner 3 seconds later. The checkboxes and switch can be clicked to preview their states.</span></figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Action Type</strong> picks the action. The fields below change to match.</li>
+  <li data-n="2">Per-action settings. Here: which chats get the message.</li>
+  <li data-n="3"><strong>Delay (s)</strong> appears on every action after the first.</li>
+</ol>
+
+<h2>All action types</h2>
+
+<p>The <strong>Action Type</strong> list, grouped by what they do:</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="chat" class="is-active">Chat &amp; alerts</button>
+    <button data-tab="greet">Greetings</button>
+    <button data-tab="overlay">Overlays</button>
+    <button data-tab="obs">OBS</button>
+    <button data-tab="input">Keys &amp; audio</button>
+    <button data-tab="system">Files, commands, web</button>
+    <button data-tab="game">Game hook</button>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="chat">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action Type</th><th>Settings</th><th>Notes</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Send Chat Message</strong></td><td><strong>Message</strong>; <strong>Send message to</strong>: Twitch, YouTube</td><td>Posts through the chatbot (your bot account if connected, otherwise your main account). New actions have both boxes ticked.</td></tr>
+    <tr><td><strong>Send Announcement</strong></td><td><strong>Announcement text</strong>; <strong>Color</strong>: Primary, Blue, Green, Orange, Purple</td><td>A Twitch chat announcement. <em>Requires chatbot with moderator:manage:announcements scope.</em></td></tr>
+    <tr><td><strong>Display Banner</strong></td><td><strong>Banner message</strong>; <strong>Duration (seconds)</strong> (default 10, 0 = until replaced); <strong>Permanent</strong></td><td>Shows the message on the chat overlay banner. Permanent ignores the duration and stays up until the next banner or a clear.</td></tr>
+    <tr><td><strong>Send Discord Message</strong></td><td><strong>Message</strong>; <strong>Discord channels</strong>: pick <strong>Server</strong> and <strong>Channel</strong>, then <strong>Add channel</strong></td><td>Posts to every listed channel. Needs your Discord bot. See <a href="help:guide_discord">Connect Discord</a>.</td></tr>
+    <tr><td><strong>Trigger Alert</strong></td><td><strong>Alert Type</strong>: Follow, Subscription, Bits, Donation, Raid, Host or Custom Alert; <strong>Amount/Quantity</strong>; <strong>Custom Message (optional)</strong></td><td>Queues an alert in the alert system. See <a href="help:alerts_overview">Alert System Overview</a>.</td></tr>
+    </tbody>
+    </table></div>
+    <div class="hx-callout hx-note"><p><strong>Trigger Alert</strong> currently only uses <strong>Alert Type</strong>. The <strong>Amount/Quantity</strong> and <strong>Custom Message</strong> values are not passed to the alert.</p></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="greet">
+    <p>These work with the chatbot's per-viewer greetings. See <a href="help:chatbot_greetings">Chatbot Greetings</a>.</p>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action Type</th><th>Settings</th><th>Notes</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Add Greeting</strong></td><td><strong>User ID</strong> (<code>{user_id}</code>), <strong>Username</strong> (<code>{username}</code>), <strong>Greeting Text</strong>, <strong>Enabled</strong></td><td>Creates a greeting for a viewer, e.g. from a channel point redeem.</td></tr>
+    <tr><td><strong>Update Greeting</strong></td><td><strong>Greeting ID</strong>, <strong>New Greeting Text (optional)</strong>, <strong>Enabled</strong></td><td><em>Leave greeting text empty to only update enabled status.</em></td></tr>
+    <tr><td><strong>Send Greeting</strong></td><td><strong>User ID</strong>, <strong>Username</strong>, <strong>Force Send (ignore greeting cooldown)</strong></td><td>Sends that viewer's greeting now.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="overlay">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action Type</th><th>Settings</th><th>Notes</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Template Control</strong></td><td><strong>Template</strong>, then <strong>Action</strong>, then any settings that template action defines</td><td>Runs an action built into an overlay template, such as updating a counter or showing an element. The list comes from your installed templates. Some actions show <em>No additional configuration needed</em>. See <a href="help:templates_intro">Template System Overview</a>.</td></tr>
+    <tr><td><strong>WebSocket Event</strong></td><td><strong>Event Name</strong> (e.g. <code>custom_event</code>); <strong>Event Data (JSON)</strong></td><td>Sends a custom event to your overlays over the local WebSocket. See <a href="help:template_websocket">WebSocket Events</a>.</td></tr>
+    </tbody>
+    </table></div>
+    <div class="hx-callout hx-note"><p>Leave <strong>Event Data (JSON)</strong> empty for now. When it is filled in, the action currently fails to send. The event still includes <code>trigger_id</code> and <code>triggered_at</code>.</p></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="obs">
+    <p><strong>OBS Studio (WebSocket)</strong> controls OBS. Pick an <strong>OBS operation</strong>; scene, source and input lists load from OBS. Click <strong>Refresh OBS lists</strong> if a new scene is missing.</p>
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-cx-act-box">
+          <div class="hm-cx-box-head"><span>Action #1</span><span class="hx-mi hm-cx-del">delete</span></div>
+          <div class="hm-field hm-select hm-cx-tint-act" data-label="Action Type"><span class="hm-value">OBS Studio (WebSocket)</span></div>
+          <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh OBS lists</span></div>
+          <div class="hm-field hm-select hm-cx-tint-act" data-label="OBS operation"><span class="hm-value">OBS — Set program scene</span></div>
+          <div class="hm-field hm-select hm-cx-tint-act" data-label="Scene"><span class="hm-value">Raid Welcome</span></div>
+          <div class="hm-cx-hint">Requires OBS Studio running with WebSocket enabled (default port 4455). Password is saved encrypted in Settings → OBS.</div>
+        </div>
+      </div>
+      <figcaption><span>An OBS action that switches the live scene.</span></figcaption>
+    </figure>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>OBS operation</th><th>Settings</th></tr></thead>
+    <tbody>
+    <tr><td>OBS — Set program scene / Set preview scene</td><td>Scene</td></tr>
+    <tr><td>OBS — Show/hide scene item</td><td>Scene, Source, Visible, Item search offset</td></tr>
+    <tr><td>OBS — Toggle scene item visibility</td><td>Scene, Source, Item search offset</td></tr>
+    <tr><td>OBS — Set scene item transform</td><td>Scene, Source, Item search offset, position, rotation, scale, crop, bounds</td></tr>
+    <tr><td>OBS — Set input mute / Toggle input mute</td><td>Input (and Muted for Set)</td></tr>
+    <tr><td>OBS — Start / Stop / Toggle stream</td><td>—</td></tr>
+    <tr><td>OBS — Start / Stop / Toggle recording</td><td>—</td></tr>
+    </tbody>
+    </table></div>
+    <p>Set up the connection first: <a href="help:obs_websocket">Connect OBS (WebSocket)</a>.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="input">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action Type</th><th>Settings</th></tr></thead>
+    <tbody>
+    <tr><td rowspan="3"><strong>Key Press / Mouse Click</strong></td><td><strong>Input Type: Keyboard</strong>. <strong>Action Mode</strong>: Press &amp; Release, Press &amp; Hold (<strong>Hold Duration</strong>), Repeat (<strong>Repeat Count</strong>, <strong>Interval</strong>). <strong>Key Sequence</strong> such as <code>ctrl+c</code>, <code>alt+tab</code>, <code>up</code>, <code>f1</code>, <code>enter</code>.</td></tr>
+    <tr><td><strong>Input Type: Mouse</strong>. <strong>Mouse Button</strong>: Left, Right or Middle Click. <strong>Click Mode</strong>: Single Click, Press &amp; Hold, Multiple Clicks.</td></tr>
+    <tr><td><strong>Input Type: Macro Sequence</strong>. A list of steps (Keyboard, Mouse or Delay), each with its own delay. <strong>Add Step</strong> adds one.</td></tr>
+    <tr><td rowspan="2"><strong>Audio Control</strong></td><td><strong>Control Type: Device</strong>. Pick an <strong>Audio Device</strong>, then <strong>Action</strong>: Set Volume, Set Random Volume, Increase Volume, Decrease Volume, Mute, Unmute, Toggle Mute.</td></tr>
+    <tr><td><strong>Control Type: Application</strong>. Pick an <strong>Application</strong>, then <strong>Action</strong>: Set Volume, Mute Application, Unmute Application, Toggle Mute.</td></tr>
+    </tbody>
+    </table></div>
+    <p>Key presses go to whichever window has focus, so a game can receive them. <strong>Audio Control</strong> has <strong>Duration (seconds)</strong>: 0 makes a lasting change; more than 0 restores the old level afterwards. The form shows whether Mycelian has the system permission it needs. See <a href="help:troubleshooting_audio">Audio Troubleshooting</a> if nothing changes.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="system">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action Type</th><th>Settings</th><th>Notes</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Write to File</strong></td><td><strong>File Path</strong> (e.g. <code>logs/{event_type}.log</code>); <strong>Content</strong>; <strong>Append to file</strong></td><td>Creates missing folders. Without Append, the file is replaced each time. No line break is added, so end Content with a new line when appending.</td></tr>
+    <tr><td><strong>Execute Command</strong></td><td><strong>Command</strong>; <strong>Working Directory (optional)</strong>; <strong>Timeout (seconds)</strong></td><td>Runs the command in your system shell. <em>Be careful with command execution!</em> Placeholders such as <code>{message}</code> contain viewer text; do not pass chat text to a command.</td></tr>
+    <tr><td><strong>API Call</strong></td><td><strong>HTTP Method</strong>: GET, POST, PUT, DELETE, PATCH; <strong>URL</strong>; <strong>Headers (JSON)</strong>; <strong>Request Body (JSON)</strong></td><td>Sends a web request, for example to a webhook. A response code under 400 counts as success.</td></tr>
+    </tbody>
+    </table></div>
+    <div class="hx-callout hx-note"><p>Current limits: <strong>Execute Command</strong> always uses a 30-second timeout, whatever <strong>Timeout (seconds)</strong> says. <strong>API Call</strong> fails when <strong>Headers (JSON)</strong> or <strong>Request Body (JSON)</strong> is filled in; only requests with both empty work, such as a GET to a URL with placeholders in it.</p></div>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="game">
+    <p><strong>Game Hook (memory write)</strong> changes a running single-player game, for example adding gil when someone redeems channel points. Pick the <strong>Game</strong> (<em>Final Fantasy VII (2013)</em>) and an operation, then fill in its fields.</p>
+    <p>If an enabled Game Hook action's hook is off or not attached to the game, the <strong>whole connector</strong> is skipped, not only that action.</p>
+    <p>Supported games, operations and their extra placeholders (<code>{random_character}</code>, <code>{random_enemy}</code>, <code>{random_damage.1.9999}</code>…) are on <a href="help:game_hooks">Game Hooks</a>.</p>
+  </div>
+</div>
+
+<h2>Placeholders</h2>
+
+<p>Write a field name in single braces, with no spaces: <code>{username}</code>. Mycelian replaces it with the event's value when the action runs. The old double-brace form <code>{{username}}</code>, which some field hints still show, also works.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Placeholder</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td><code>{username}</code>, <code>{amount}</code>, <code>{message}</code>…</td><td>Any field of the trigger's event. The list per trigger is on <a href="help:connector_triggers">Connector Triggers</a>.</td></tr>
+<tr><td><code>{message.word.2}</code></td><td>The 2nd word of the message</td></tr>
+<tr><td><code>{message_after_conditions}</code></td><td>The message with the text matched by your Message conditions removed</td></tr>
+<tr><td><code>{message_after_word.1}</code></td><td>The 1st word of that remaining text</td></tr>
+<tr><td><code>{message_after_from_word.2}</code></td><td>The remaining text from its 2nd word to the end</td></tr>
+<tr><td><code>{event_type}</code>, <code>{source}</code>, <code>{timestamp}</code>, <code>{triggered_at}</code></td><td>Event details</td></tr>
+<tr><td><code>{connector_id}</code>, <code>{trigger_id}</code>, <code>{trigger_type}</code></td><td>Identifiers for this connector</td></tr>
+<tr><td><code>{action1.item_name}</code>, <code>{action1.quantity}</code>, <code>{action1.resolved_name}</code>, <code>{action1.error}</code></td><td>Results from an earlier action (game hook queries). The editor lists them as <em>Prior action outputs</em> from Action #2 on.</td></tr>
+</tbody>
+</table></div>
+
+<p>A placeholder with no value, or a misspelled one, becomes empty text. If a message comes out with gaps, check the spelling against the trigger's field list.</p>
+
+<pre><code>Thanks {username} for the {amount} bits!
+Go follow {message_after_word.1} at twitch.tv/{message_after_word.1}</code></pre>
+
+<h2>Card labels</h2>
+
+<p>The connector card names each action briefly, for example <span class="hm-cx-abadge">Send Chat Message → All</span>, <span class="hm-cx-abadge">Send Announcement (purple)</span>, <span class="hm-cx-abadge">OBS: set program scene</span>, <span class="hm-cx-abadge">Write to chat.log</span> or <span class="hm-cx-abadge">GET → example.com</span>. Search on the Connectors tab matches these labels.</p>
+
+<h2>Good practice</h2>
+
+<ul>
+  <li>Build one action, test it, then add the next.</li>
+  <li>Give overlays time: put a <strong>Delay (s)</strong> before an action that depends on a scene or banner from the previous one.</li>
+  <li>Keep chat replies short and rare. Add <a href="help:connector_conditions">conditions</a> so a busy chat does not trigger a flood.</li>
+  <li>Keep viewer text away from <strong>Execute Command</strong> and <strong>Key Press</strong>.</li>
+  <li>If actions cause lag, see <a href="help:troubleshooting_performance">Performance Optimization</a>.</li>
+</ul>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:connector_examples">{{icon:lightbulb}}<span><strong>Examples</strong><span class="hx-card-text">Complete connectors to copy</span></span></a>
+  <a class="hx-card" href="help:game_hooks">{{icon:sports_esports}}<span><strong>Game Hooks</strong><span class="hx-card-text">Game memory operations in detail</span></span></a>
+  <a class="hx-card" href="help:connectors_intro">{{icon:hub}}<span><strong>Connector basics</strong><span class="hx-card-text">The tab, the editor and testing</span></span></a>
+</div>

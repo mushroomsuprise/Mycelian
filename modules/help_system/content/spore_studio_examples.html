@@ -1,0 +1,314 @@
+<p class="hx-lead">Ten small overlays, each with what it looks like on stream and how it is built. Pick one from the tabs. Field details are in <a href="help:spore_studio_design">Designing Templates</a> and action arguments in <a href="help:spore_studio_bindings">Event Bindings &amp; Actions</a>.</p>
+
+<div class="hx-callout hx-note"><p>Every example starts with <strong>+ New</strong> in the Spore Studio toolbar. The <strong>New template</strong> dialog asks for <strong>Name</strong>, <strong>Alert system</strong>, <strong>Copy from existing</strong>, <strong>Width (px)</strong> and <strong>Height (px)</strong>. Add the finished overlay to OBS as a browser source at <span class="hx-copy" data-copy="http://127.0.0.1:5000/">http://127.0.0.1:5000/</span> followed by the template name.</p></div>
+
+<h2>Examples</h2>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="follow" class="is-active">Follow alert</button>
+    <button data-tab="subs">Sub counter</button>
+    <button data-tab="chat">Chat pop</button>
+    <button data-tab="gif">Cheer GIF</button>
+    <button data-tab="random">Random corner</button>
+    <button data-tab="sd">Stream Deck logo</button>
+    <button data-tab="api">Twitch API check</button>
+    <button data-tab="chain">Chained actions</button>
+    <button data-tab="bits">Bit counter</button>
+    <button data-tab="controls">Live controls</button>
+  </div>
+
+  <!-- 1. Follow alert -->
+  <div class="hx-tab-panel" data-panel="follow">
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-dims">follow_alert · 800 × 200 · Queue</div>
+        <div class="hm-ssb-stage" style="aspect-ratio:4/1">
+          <div class="hm-ssb-ov">
+            <span class="hm-ssb-ov-img"><span class="hx-mi">favorite</span></span>
+            <div class="hm-col hm-tight">
+              <span class="hm-ssb-ov-kicker">New follower!</span>
+              <span class="hm-ssb-ov-big">CaseyPlays</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>On stream: shows for 5 seconds on each follow, then fades out.</figcaption>
+    </figure>
+    <p><strong>How it's built</strong></p>
+    <ol>
+      <li><strong>+ New</strong> → Name <code>follow_alert</code>, Alert system <strong>Queue</strong>, 800 × 200.</li>
+      <li>Drag in a <strong>Container</strong>. Put the rest inside it.</li>
+      <li><strong>Text</strong> (category <code>label</code>) with Text <code>New follower!</code>.</li>
+      <li><strong>Text</strong> (category <code>username</code>), left empty. A binding fills it.</li>
+      <li><strong>Image</strong> (category <code>avatar</code>) pointing at a picture in <code>assets/follow_alert/</code>.</li>
+      <li>Select the username text → <strong>Bindings</strong> → <strong>+ Add binding</strong>:
+        <ul>
+          <li>Trigger <strong>Registry event</strong>, Event <strong>Alert (queue)</strong></li>
+          <li><strong>Filter: Alert type</strong> = <code>follow</code></li>
+          <li>Action <strong>Set text content</strong>, Payload field <code>username</code></li>
+        </ul></li>
+      <li>Select the container → binding on the same event and filter → Action <strong>Show for N seconds</strong>: Seconds <code>5</code>, Entrance and Exit <code>fade</code>.</li>
+      <li>The container starts hidden on its own because it has a Show binding (<strong>Visibility</strong> → <strong>Start hidden until shown</strong>).</li>
+      <li>Tick the <strong>Expose in Source Settings</strong> box next to any color or font you want to change later without the editor.</li>
+      <li><strong>Save</strong> → <strong>Preview</strong> → click the follow mock.</li>
+    </ol>
+    <p>Queue templates play in step with Mycelian's alert queue. Whether this overlay should also report completion is explained under <code>alert_complete</code> in <a href="help:spore_studio_advanced_js">Advanced JS</a>.</p>
+  </div>
+
+  <!-- 2. Sub counter -->
+  <div class="hx-tab-panel" data-panel="subs">
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-dims">sub_counter · 600 × 80 · Instant</div>
+        <div class="hm-ssb-stage" style="aspect-ratio:15/2;max-width:34rem">
+          <div class="hm-ssb-ov">
+            <span class="hm-ssb-ov-img is-sm"><span class="hx-mi">star</span></span>
+            <span class="hm-ssb-ov-num">Subs: 27</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>On stream: always visible, goes up by one on every new sub.</figcaption>
+    </figure>
+    <p><strong>How it's built</strong></p>
+    <ol>
+      <li><strong>+ New</strong> → <code>sub_counter</code>, Alert system <strong>Instant</strong>, 600 × 80. Instant does not hold the alert queue.</li>
+      <li>Drag in a <strong>Counter</strong> (Widgets group).</li>
+      <li>In <strong>Counter</strong>: Counter id <code>sub_count</code>, Initial value <code>0</code>, Format <code>Subs: {value}</code>.</li>
+      <li><strong>Data feed</strong> → <strong>+ Add feed</strong>:
+        <ul>
+          <li>1. When it runs: <strong>Alert (instant)</strong> only</li>
+          <li>2. Which ones to keep: Alert type <strong>New sub</strong></li>
+          <li>5. Update this block: <strong>Add to this counter</strong>, Delta kind <code>fixed</code>, Value <code>1</code></li>
+        </ul></li>
+      <li>Optional: turn on <strong>Persist (database)</strong> to keep the total between streams.</li>
+      <li><strong>Save</strong> → <strong>Preview</strong> → <strong>Sub</strong>.</li>
+    </ol>
+    <p>More in <a href="help:spore_studio_counters">Counters</a>.</p>
+  </div>
+
+  <!-- 3. Chat pop -->
+  <div class="hx-tab-panel" data-panel="chat">
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-dims">chat_pop · 800 × 120</div>
+        <div class="hm-ssb-stage" style="aspect-ratio:20/3">
+          <div class="hm-ssb-ov">
+            <span class="hm-ssb-ov-chat"><b>moss_mage</b>that boss fight was wild</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>On stream: each chat message shows for 4 seconds.</figcaption>
+    </figure>
+    <p><strong>How it's built</strong></p>
+    <ol>
+      <li>New template. Either alert system works; chat does not use the alert queue.</li>
+      <li>Add a <strong>Text</strong> block.</li>
+      <li>Binding: Event <strong>Chat message (Twitch)</strong>, Action <strong>Set text content</strong>, Payload field <code>message</code>.</li>
+      <li><strong>+ Add chained step</strong>: delay <code>0</code>, Action <strong>Show for N seconds</strong>, Seconds <code>4</code>.</li>
+      <li>Optional: <strong>Filter: Message type</strong> = <code>text</code> to skip <code>/me</code> actions.</li>
+    </ol>
+    <p>The same thing with feeds: one feed on <strong>Chat message (Twitch)</strong> with Main text field <code>message</code> and <strong>Replace this text</strong>, and a second feed on the same event with <strong>Show for a few seconds</strong>.</p>
+  </div>
+
+  <!-- 4. Cheer GIF -->
+  <div class="hx-tab-panel" data-panel="gif">
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-dims">cheer_gif · 400 × 400 · Queue</div>
+        <div class="hm-ssb-stage" style="aspect-ratio:1/1;max-width:14rem">
+          <div class="hm-ssb-ov is-bare hm-col hm-tight" style="align-items:center">
+            <span class="hm-ssb-ov-img" style="width:96px;height:96px"><span class="hx-mi" style="font-size:56px">diamond</span></span>
+            <span class="hm-ssb-ov-kicker"><span class="hx-mi" style="font-size:14px;vertical-align:-2px">volume_up</span> cheer.mp3</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>On stream: a cheer swaps in a GIF and plays a sound.</figcaption>
+    </figure>
+    <p><strong>How it's built</strong></p>
+    <ol>
+      <li>Add a <strong>Video</strong> block. Set <strong>Visual kind</strong> to <code>image</code> for a GIF, or <code>video</code> for a clip.</li>
+      <li>Drop the GIF and sound into the template's asset folder (<strong>Assets</strong> → <strong>Upload</strong>). Put the sound in <strong>Optional audio URL</strong>.</li>
+      <li>Binding: Event <strong>Alert (queue)</strong>, <strong>Filter: Alert type</strong> = <code>bit</code> (or <code>donation</code>), Action <strong>Set visual source (GIF/video)</strong> with <strong>Literal URL</strong> <code>/assets/cheer_gif/cheer.gif</code>.</li>
+      <li><strong>+ Add chained step</strong>: delay <code>0</code>, Action <strong>Play audio element</strong>. It plays this block's audio.</li>
+    </ol>
+  </div>
+
+  <!-- 5. Random corner -->
+  <div class="hx-tab-panel" data-panel="random">
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-dims">random_follow · 1920 × 1080 · Queue</div>
+        <div class="hm-ssb-stage" style="aspect-ratio:16/9;max-width:30rem">
+          <span class="hm-ssb-ghost" style="top:8%;left:4%">earlier</span>
+          <span class="hm-ssb-ghost" style="bottom:10%;left:8%">earlier</span>
+          <span class="hm-ssb-ghost" style="top:14%;right:6%">earlier</span>
+          <div class="hm-ssb-ov" style="position:absolute;bottom:14%;right:10%">
+            <span class="hm-ssb-ov-img is-sm"><span class="hx-mi">favorite</span></span>
+            <span class="hm-bold">CaseyPlays followed</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>On stream: each follow appears somewhere new inside the canvas.</figcaption>
+    </figure>
+    <p><strong>How it's built</strong></p>
+    <ol>
+      <li>Group the alert art in a <strong>Container</strong>.</li>
+      <li>Binding on the container: Event <strong>Alert (queue)</strong>, <strong>Filter: Alert type</strong> = <code>follow</code>, Action <strong>Randomize position within bounds</strong>: X min <code>0</code>, X max <code>-1</code>, Y min <code>0</code>, Y max <code>-1</code>. <code>-1</code> means the canvas edge.</li>
+      <li><strong>+ Add chained step</strong> → <strong>Show for N seconds</strong>.</li>
+    </ol>
+  </div>
+
+  <!-- 6. Stream Deck logo -->
+  <div class="hx-tab-panel" data-panel="sd">
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-row hm-gap-lg">
+          <div class="hm-ssb-deck">
+            <div class="hm-ssb-key is-set"><span class="hx-mi">visibility</span>Toggle logo</div>
+            <div class="hm-ssb-key"><span class="hx-mi">add</span></div>
+            <div class="hm-ssb-key"><span class="hx-mi">add</span></div>
+          </div>
+          <span class="hx-mi hm-muted">arrow_forward</span>
+          <div class="hm-ssb-stage hm-grow" style="aspect-ratio:16/9;max-width:18rem">
+            <div class="hm-ssb-ov is-bare" style="position:absolute;top:8%;right:6%">
+              <span class="hm-ssb-ov-img is-sm"><span class="hx-mi">spa</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>On stream: one key shows or hides the logo.</figcaption>
+    </figure>
+    <p><strong>How it's built</strong></p>
+    <ol>
+      <li><strong>Stream Deck</strong> tab → <strong>+ Add Stream Deck action</strong>: Action id <code>toggle_logo</code>, Display name <code>Toggle logo</code>, Socket event <code>toggle_logo</code>, default_data <code>{}</code>.</li>
+      <li>Select the logo <strong>Image</strong> → binding: Trigger <strong>Stream Deck action</strong> → <code>Toggle logo</code>, Action <strong>Toggle visibility</strong>.</li>
+      <li><strong>Preview</strong> → <strong>SD:</strong> <strong>Toggle logo</strong> to test.</li>
+      <li><strong>Save</strong>, then in the Stream Deck app add a <strong>Template Action</strong> key and pick this template and <strong>Toggle logo</strong>.</li>
+    </ol>
+    <p>Full walkthrough: <a href="help:spore_studio_streamdeck">Stream Deck Actions</a>.</p>
+  </div>
+
+  <!-- 7. Twitch API check -->
+  <div class="hx-tab-panel" data-panel="api">
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-dims">api_status · 300 × 60</div>
+        <div class="hm-ssb-stage" style="aspect-ratio:5/1;max-width:22rem">
+          <div class="hm-ssb-ov">
+            <span class="hm-ssb-ov-dot"></span><span class="hm-bold">Twitch API OK</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>On stream: the indicator appears only when the Helix call succeeds.</figcaption>
+    </figure>
+    <p><strong>How it's built</strong></p>
+    <ol>
+      <li>Add the indicator (a <strong>Shape</strong> and a <strong>Text</strong> in a <strong>Container</strong>).</li>
+      <li>Binding on the container: Event <strong>Twitch API call (response)</strong>.</li>
+      <li>Enter the Helix URL and method in the binding card. The overlay sends the request after it connects.</li>
+      <li>Response filter: <code>success</code> = <code>true</code>.</li>
+      <li>Action <strong>Show element</strong>.</li>
+    </ol>
+  </div>
+
+  <!-- 8. Chained actions -->
+  <div class="hx-tab-panel" data-panel="chain">
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-timeline">
+          <span><b>Show element</b><small>primary action, 0 ms</small></span>
+          <span><b>Play CSS class animation</b><small>+100 ms · sporePop · hold 400</small></span>
+          <span><b>Play CSS class animation</b><small>+450 ms · sporeShake · hold 420</small></span>
+          <span><b>Hide element</b><small>+3000 ms</small></span>
+        </div>
+      </div>
+      <figcaption>One binding: pop in, shake, then hide.</figcaption>
+    </figure>
+    <p><strong>How it's built</strong></p>
+    <p>Binding on <strong>Alert (queue)</strong> (any type), primary Action <strong>Show element</strong>, then <strong>+ Add chained step</strong> three times:</p>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Chain step</th><th>Delay before this step (ms)</th><th>Action</th><th>Args</th></tr></thead>
+    <tbody>
+    <tr><td>1</td><td>100</td><td>Play CSS class animation</td><td>Class name <code>sporePop</code>, Hold (ms) 400</td></tr>
+    <tr><td>2</td><td>450</td><td>Play CSS class animation</td><td>Class name <code>sporeShake</code>, Hold (ms) 420</td></tr>
+    <tr><td>3</td><td>3000</td><td>Hide element</td><td>—</td></tr>
+    </tbody>
+    </table></div>
+    <p>Each step waits its delay after the previous step, then runs. A binding can have at most 15 chained steps.</p>
+  </div>
+
+  <!-- 9. Bit counter -->
+  <div class="hx-tab-panel" data-panel="bits">
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ssb">
+        <div class="hm-ssb-dims">my_bits · 300 × 55 · Instant</div>
+        <div class="hm-ssb-stage" style="aspect-ratio:60/11;max-width:24rem">
+          <div class="hm-ssb-ov is-bare">
+            <span class="hm-ssb-ov-img is-sm"><span class="hx-mi">diamond</span></span>
+            <span class="hm-ssb-ov-num">1,250</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>On stream: a running bit total with a gem that grows at 100, 1000, 5000 and more.</figcaption>
+    </figure>
+    <p><strong>How it's built</strong></p>
+    <ol>
+      <li><strong>+ New</strong> → <code>my_bits</code>, Alert system <strong>Instant</strong>, 300 × 55. Or set <strong>Copy from existing</strong> to <code>bitcounter</code>.</li>
+      <li><strong>Counter</strong> block: Counter id <code>bit_count</code>, Format <code>{value}</code>, Initial value <code>0</code>.</li>
+      <li>Feed: <strong>Alert (instant)</strong>, Alert type <strong>Bits</strong>, <strong>Add to this counter</strong>, Delta kind <code>data_source</code> → <strong>Bits cheered</strong>.</li>
+      <li><strong>Image</strong> block → <strong>Image source mode</strong> <strong>From counter (ranges)</strong> → Counter <code>bit_count</code>. Ranges 0–99 <code>cheer1.gif</code>, 100–999 <code>cheer100.gif</code>, 1000–4999 <code>cheer1000.gif</code>, and so on, from <code>/assets/my_bits/</code>.</li>
+      <li><strong>Range change transition</strong>: <strong>Animate when image changes</strong>, <strong>Roll out, then roll in</strong>, 600 ms.</li>
+      <li><strong>Save</strong> → <strong>Preview</strong> → <strong>Bits</strong>.</li>
+    </ol>
+    <p>The built-in <code>bitcounter</code> also counts up with a 1000 ms tick-up. Copying it keeps that. Details in <a href="help:spore_studio_counters">Counters</a>.</p>
+  </div>
+
+  <!-- 10. Live controls -->
+  <div class="hx-tab-panel" data-panel="controls">
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-ssb-sc" style="max-width:22rem">
+          <div class="hm-row hm-between"><span class="hm-bold hm-sm">Game_Hud Controls</span><span class="hm-badge">2 controls</span></div>
+          <span class="hm-ssb-sc-group">Actions</span>
+          <div class="hm-ssb-sc-grid"><span class="hm-btn hm-dense">Pause alerts</span></div>
+          <span class="hm-ssb-sc-group">Counters &amp; Numbers</span>
+          <div class="hm-ssb-sc-counter">
+            <div class="hm-field hm-nolabel"><span class="hm-value">1</span></div>
+            <span class="hm-btn hm-danger hm-dense">-</span>
+            <span class="hm-btn hm-success hm-dense">+</span>
+            <span class="hm-btn hm-outline hm-dense">Reset</span>
+          </div>
+        </div>
+      </div>
+      <figcaption>In Mycelian: the template's card on the Source Controls tab.</figcaption>
+    </figure>
+    <p><strong>How it's built</strong></p>
+    <ol>
+      <li>Open a game HUD template with a <strong>Counter</strong> whose id is <code>game_score</code>.</li>
+      <li><strong>Source Controls</strong> inspector tab → <strong>+ Add control</strong>: Type <strong>Button</strong>, Label <code>Pause alerts</code>, Action <strong>Toggle alerts pause</strong>, Button text <code>Pause alerts</code>.</li>
+      <li><strong>+ Add control</strong>: Type <strong>Counter control</strong>, Label <code>Score</code>, Counter <code>game_score</code>, Default step <code>1</code>.</li>
+      <li><strong>Save</strong>.</li>
+      <li>During the stream: Mycelian → <strong>Source Controls</strong> tab → use the template's card.</li>
+    </ol>
+    <p>More in <a href="help:spore_studio_dynamic_controls">Dynamic Controls</a>.</p>
+  </div>
+</div>
+
+<h2>Before you go live</h2>
+
+<ul class="hx-checklist" data-checklist="spore_studio_examples_testing">
+  <li><strong>Preview</strong> each event you bound, using the mocks under <strong>Alerts:</strong>, <strong>Other:</strong> and <strong>SD:</strong>.</li>
+  <li><strong>Save</strong>, then refresh the browser source in OBS.</li>
+  <li>Queue templates behave with the alert queue. See <a href="help:spore_studio_advanced_js">Advanced JS</a>.</li>
+  <li>Counters keep or reset their value as you intended. See <a href="help:spore_studio_counters">Counters</a>.</li>
+  <li>Data displays update on the events you chose. See <a href="help:spore_studio_data_sources">Data Sources</a>.</li>
+  <li>Stream Deck keys do the same thing as the <strong>SD:</strong> buttons. See <a href="help:spore_studio_streamdeck">Stream Deck</a>.</li>
+  <li><a href="help:spore_studio_dynamic_controls">Dynamic controls</a> work from the <a href="help:source_controls">Source Controls</a> tab.</li>
+</ul>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_overview">{{icon:auto_awesome}}<span><strong>Spore Studio Overview</strong><span class="hx-card-text">The editor at a glance</span></span></a>
+  <a class="hx-card" href="help:first_alert_setup">{{icon:notifications}}<span><strong>Your First Alert</strong><span class="hx-card-text">Set up and test a follow alert</span></span></a>
+  <a class="hx-card" href="help:spore_studio_data_feed">{{icon:rss_feed}}<span><strong>Data feeds</strong><span class="hx-card-text">Drive any block from live data</span></span></a>
+</div>

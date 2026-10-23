@@ -1,0 +1,290 @@
+/* =========================================================================
+   Mycelian Help — Chatbot tab mock pieces (hm-cb-*) and chat transcripts.
+   Mirrors modules/uiwindows/chatbot.py CUSTOM_CSS (.chatbot-card, badges)
+   and polls_panel.py. Theme variables only.
+   ========================================================================= */
+
+/* Tab header row: action buttons left, search right */
+.help-doc .hm .hm-cb-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px 4px 10px;
+}
+
+.help-doc .hm .hm-cb-toolbar > .hm-field { flex: 1 1 220px; max-width: 360px; }
+
+/* Card grid (grid-cols-1 md:2 lg:3) */
+.help-doc .hm .hm-cb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+/* .chatbot-card */
+.help-doc .hm .hm-cb-card {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-accent);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.help-doc .hm .hm-cb-card.is-command { border-color: color-mix(in srgb, var(--color-success) 35%, transparent); }
+.help-doc .hm .hm-cb-card.is-event { border-color: color-mix(in srgb, var(--color-error) 35%, transparent); }
+.help-doc .hm .hm-cb-card.is-disabled { opacity: 0.6; border-color: var(--color-border-default); }
+
+.help-doc .hm .hm-cb-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.help-doc .hm .hm-cb-card-title { font-size: 0.95rem; font-weight: 600; color: var(--color-text-primary); }
+.help-doc .hm .hm-cb-sub { font-size: 0.75rem; color: var(--color-info); }
+.help-doc .hm .hm-cb-sub.is-event { color: var(--color-error); }
+.help-doc .hm .hm-cb-desc { font-size: 0.75rem; color: var(--color-text-secondary); }
+
+.help-doc .hm .hm-cb-status { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.help-doc .hm .hm-cb-status .hm-switch > i { transform: scale(0.8); }
+
+/* .status-badge */
+.help-doc .hm .hm-cb-state {
+    padding: 3px 8px;
+    border-radius: 8px;
+    font-size: 0.62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    background: color-mix(in srgb, var(--color-success) 18%, transparent);
+    color: var(--color-success);
+}
+
+.help-doc .hm .hm-cb-state.is-off {
+    background: color-mix(in srgb, var(--color-text-muted) 18%, transparent);
+    color: var(--color-text-muted);
+}
+
+/* .mod-only-badge / .counter-badge / .repeating-badge / .usage-display */
+.help-doc .hm .hm-cb-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border-radius: 12px;
+    font-size: 0.68rem;
+    font-weight: 500;
+    border: 1px solid currentColor;
+    background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.help-doc .hm .hm-cb-pill.is-mod { color: var(--color-error); }
+.help-doc .hm .hm-cb-pill.is-counter { color: var(--color-warning); }
+.help-doc .hm .hm-cb-pill.is-limit { color: var(--color-primary); border-radius: 4px; }
+
+/* Response preview with resolved variables (italic primary, like _wrap_variable_value) */
+.help-doc .hm .hm-cb-response { font-size: 0.75rem; color: var(--color-text-secondary); }
+.help-doc .hm .hm-cb-var { color: var(--color-primary); font-style: italic; }
+
+.help-doc .hm .hm-cb-quote {
+    font-size: 0.82rem;
+    font-style: italic;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-base);
+    border-left: 4px solid var(--color-primary);
+    border-radius: 4px;
+    padding: 8px 10px;
+}
+
+.help-doc .hm .hm-cb-quote.is-greeting { font-style: normal; border-left-color: var(--color-info); }
+
+.help-doc .hm .hm-cb-stats {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.72rem;
+    color: var(--color-text-secondary);
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: 8px;
+}
+
+.help-doc .hm .hm-cb-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.help-doc .hm .hm-cb-actions .hm-btn { flex: 1 1 auto; min-height: 26px; padding: 2px 8px; font-size: 0.72rem; gap: 4px; }
+.help-doc .hm .hm-cb-actions .hm-btn .hx-mi { font-size: 1.1em; margin: 0; }
+.help-doc .hm .hm-btn.hm-cb-secondary { background: var(--color-bg-elevated); color: var(--color-text-primary); border-color: var(--color-border-default); }
+.help-doc .hm .hm-btn.hm-cb-warn { background: transparent; color: var(--color-warning); border-color: currentColor; }
+
+/* Empty-state block */
+.help-doc .hm .hm-cb-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 20px 10px;
+    text-align: center;
+}
+
+.help-doc .hm .hm-cb-empty > .hx-mi { font-size: 48px; color: var(--color-text-muted); }
+
+/* Rounded bordered list box with an elevated header (Giveaway Entrants / Categories) */
+.help-doc .hm .hm-cb-box {
+    border: 1px solid var(--color-border-default);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.help-doc .hm .hm-cb-box-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    background: var(--color-bg-elevated);
+    border-bottom: 1px solid var(--color-border-default);
+}
+
+.help-doc .hm .hm-cb-box-body {
+    background: var(--color-bg-base);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 60px;
+}
+
+.help-doc .hm .hm-cb-entrant { font-size: 0.82rem; padding: 4px 10px; border-radius: 4px; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+.help-doc .hm .hm-cb-entrant:hover { background: var(--color-hover-overlay); }
+
+/* Poll live results row */
+.help-doc .hm .hm-cb-poll-row { display: flex; flex-direction: column; gap: 5px; padding: 4px 2px; }
+.help-doc .hm .hm-cb-poll-bar { height: 8px; border-radius: 4px; background: var(--color-border-default); overflow: hidden; }
+.help-doc .hm .hm-cb-poll-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--color-primary); }
+
+/* Dialog-style card (Quote Settings, Greeting Settings, Create New Command) */
+.help-doc .hm .hm-cb-dialog {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.help-doc .hm .hm-cb-dialog-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border-subtle);
+    font-weight: 600;
+}
+
+.help-doc .hm .hm-cb-dialog-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+.help-doc .hm .hm-cb-section-title { font-size: 0.9rem; font-weight: 600; color: var(--color-text-primary); }
+
+.help-doc .hm .hm-cb-hint {
+    font-size: 0.72rem;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+
+/* Variables picker panel (right column of the command/event editor) */
+.help-doc .hm .hm-cb-varcat {
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: var(--color-bg-surface);
+}
+
+.help-doc .hm .hm-cb-varcat > .hm-expansion-head { font-weight: 600; }
+.help-doc .hm .hm-cb-varitem { font-size: 0.72rem; color: var(--color-text-secondary); padding: 2px 4px; }
+.help-doc .hm .hm-cb-varitem code { color: var(--color-primary); background: transparent; padding: 0; }
+
+/* ---- Mock chat transcript (Twitch-style, theme colors only) ---------- */
+
+.help-doc .hm-chat {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.help-doc .hm-chat-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hm-chat-line { color: var(--color-text-primary); overflow-wrap: anywhere; }
+.help-doc .hm-chat-line > b { font-weight: 700; color: var(--color-info); margin-right: 2px; }
+.help-doc .hm-chat-line.is-bot > b { color: var(--color-primary); }
+.help-doc .hm-chat-line.is-mod > b { color: var(--color-success); }
+.help-doc .hm-chat-line.is-dim { color: var(--color-text-muted); font-style: italic; }
+
+.help-doc .hm-chat-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    vertical-align: -2px;
+    background: var(--color-primary);
+    color: #fff;
+}
+
+.help-doc .hm-chat-badge.is-mod { background: var(--color-success); }
+
+/* Twitch /announcement highlight */
+.help-doc .hm-chat-announce {
+    border-left: 4px solid var(--color-primary);
+    background: var(--color-primary-light);
+    border-radius: 4px;
+    padding: 6px 10px;
+}
+
+.help-doc .hm-chat-announce-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: 2px;
+}
+
+/* Chat overlay banner preview */
+.help-doc .hm-chat-banner {
+    align-self: center;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: var(--color-primary);
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.82rem;
+}
+
+/* Fixed-width fields (w-32 / w-36 / w-40 / w-44 in the real panels) */
+.help-doc .hm .hm-field.hm-cb-fixed { flex: 0 0 auto; width: 9.5rem; }
+.help-doc .hm .hm-field.hm-cb-fixed-sm { flex: 0 0 auto; width: 6.5rem; }
+.help-doc .hm .hm-cb-side { flex: 0 0 11rem; width: 11rem; }
+.help-doc .hm .hm-field.hm-cb-fixed-lg { flex: 0 0 auto; width: 12.5rem; }
