@@ -36,6 +36,11 @@ class DonationSettings:
 
 _lock = threading.RLock()
 _cache: DonationSettings | None = None
+# A failed read must not look like "no settings": writing the whole blob back
+# from defaults would wipe stored tokens. Until a read succeeds, remember which
+# fields were changed so they can be applied on top of the stored copy.
+_load_ok = True
+_changed_since_failed_load: set[str] = set()
 
 
 def _blank(value: object) -> bool:
@@ -51,17 +56,47 @@ def _from_raw(raw: dict) -> DonationSettings:
     return DonationSettings(**data)
 
 
-def _load() -> DonationSettings:
+def _read_raw() -> tuple[dict, bool]:
     try:
         from . import database_manager
 
-        raw = database_manager.get_data(PATH) or {}
+        raw, ok = database_manager.get_data_checked(PATH)
         if not isinstance(raw, dict):
             raw = {}
+        return raw, bool(ok)
     except Exception:
         logger.debug("Donation settings load failed", exc_info=True)
-        raw = {}
+        return {}, False
+
+
+def _load() -> DonationSettings:
+    global _load_ok
+    raw, ok = _read_raw()
+    _load_ok = ok
+    if not ok:
+        _changed_since_failed_load.clear()
     return _from_raw(raw)
+
+
+def _recover_before_write(current: DonationSettings) -> DonationSettings | None:
+    """After a failed load, re-read and apply this session's changes on the stored copy.
+
+    Returns the settings to write, or None while the stored copy is still unreadable.
+    Call with ``_lock`` held.
+    """
+    global _load_ok
+    if _load_ok:
+        return current
+    raw, ok = _read_raw()
+    if not ok:
+        logger.warning("Donation settings still unreadable; keeping changes pending instead of overwriting")
+        return None
+    stored = _from_raw(raw)
+    for name in _changed_since_failed_load:
+        setattr(stored, name, getattr(current, name))
+    _changed_since_failed_load.clear()
+    _load_ok = True
+    return stored
 
 
 def _persist(settings: DonationSettings) -> bool:
@@ -97,7 +132,12 @@ def update_settings(**changes: object) -> bool:
             if key in _SECRET_FIELDS and _blank(value) and getattr(current, key):
                 continue
             setattr(current, key, value if value is not None else "")
+            if not _load_ok:
+                _changed_since_failed_load.add(key)
+        current = _recover_before_write(current) or current
         _cache = current
+        if not _load_ok:
+            return False
         snapshot = copy.deepcopy(current)
     return _persist(snapshot)
 
@@ -115,7 +155,12 @@ def clear_secret(field: str) -> bool:
         current = _cache if _cache is not None else _load()
         if hasattr(current, field):
             setattr(current, field, "")
+            if not _load_ok:
+                _changed_since_failed_load.add(field)
+        current = _recover_before_write(current) or current
         _cache = current
+        if not _load_ok:
+            return False
         snapshot = copy.deepcopy(current)
     return _persist(snapshot)
 
