@@ -1736,12 +1736,44 @@ def poll_service_connection_changes() -> None:
     poll_service_status_changes()
 
 
+_connectivity_repoll_queued = False
+
+
+def _poll_after_connectivity_refresh() -> None:
+    global _connectivity_repoll_queued
+    _connectivity_repoll_queued = False
+    try:
+        poll_service_status_changes()
+    except Exception:
+        logger.debug("status poll after connectivity refresh failed", exc_info=True)
+
+
+def _on_connectivity_refreshed() -> None:
+    """Connectivity probes finished on the background worker: re-poll on the UI loop.
+
+    The status poll reads cached probe results and never probes inline; this runs the
+    poll (notifications + footer) as soon as fresh results land, which is when the
+    inline probe used to return.
+    """
+    global _connectivity_repoll_queued
+    if not _service_watcher_started or _connectivity_repoll_queued:
+        return
+    _connectivity_repoll_queued = True
+    _run_on_ui_loop(_poll_after_connectivity_refresh)
+
+
 def start_service_watcher_timer() -> None:
     """Start periodic polling for integration status changes (after UI exists)."""
     global _service_watcher_started
     if _service_watcher_started:
         return
     _service_watcher_started = True
+    try:
+        from .connection_monitor import add_background_refresh_listener
+
+        add_background_refresh_listener(_on_connectivity_refreshed)
+    except Exception:
+        logger.debug("connectivity refresh listener registration failed", exc_info=True)
     _app_schedule(2.0, poll_service_status_changes, active=True)
     start_alert_trim_footer_poll()
     flush_pending_toasts()

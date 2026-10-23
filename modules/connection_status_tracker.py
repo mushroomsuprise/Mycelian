@@ -208,16 +208,52 @@ def probe_configured_services(*, force: bool = False) -> None:
             logger.debug("connection status read failed for %s", key, exc_info=True)
 
 
+# Last overlay shown per service on the NiceGUI loop (kept while a probe is pending).
+_ui_last_overlay: Dict[str, Optional[str]] = {}
+
+
+def _ui_loop_connectivity_overlay(key: str) -> Optional[str]:
+    """Non-blocking overlay for the NiceGUI loop.
+
+    Reads cached probe results and queues background refreshes for stale ones. While a
+    needed result is not available yet, the previously shown overlay is kept, which is
+    what the UI used to show while it was blocked on the inline probe.
+    """
+    from . import connection_monitor as cm
+
+    cm.is_internet_available()
+    if cm.is_background_refresh_pending("internet"):
+        # Check the service right after the internet round, as the inline path did
+        # (the worker reuses a fresh cache and skips the probe while offline).
+        cm.request_background_refresh(key)
+    inet = cm.get_internet_status()
+    if inet == "Offline":
+        overlay: Optional[str] = "No Internet"
+    elif inet == "Checking":
+        overlay = "Checking Internet"
+    else:
+        reachable = cm.peek_service_reachable(key)
+        if reachable is None:
+            return _ui_last_overlay.get(key)
+        overlay = None if reachable else "Service Unreachable"
+    _ui_last_overlay[key] = overlay
+    return overlay
+
+
 def get_connectivity_overlay(key: str) -> Optional[str]:
     """Return a connectivity-based status override for remote services, if any."""
     if key not in REMOTE_SERVICE_KEYS:
         return None
     try:
         from .connection_monitor import (
+            _on_ui_loop_thread,
             get_internet_status,
             is_internet_available,
             is_service_reachable,
         )
+
+        if _on_ui_loop_thread():
+            return _ui_loop_connectivity_overlay(key)
 
         is_internet_available()
         inet = get_internet_status()
