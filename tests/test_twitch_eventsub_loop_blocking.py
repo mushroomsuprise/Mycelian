@@ -259,6 +259,38 @@ class LockWaitTests(unittest.TestCase):
 
         self.assertFalse(asyncio.run(main()))
 
+    def test_channel_point_fetches_on_one_loop_do_not_deadlock(self):
+        active = []
+        overlaps = []
+
+        async def generic_api_call(url, method):
+            active.append(1)
+            overlaps.append(len(active))
+            await asyncio.sleep(0.1)
+            active.pop()
+            return {"data": [{"id": "r1"}]}
+
+        fake_api = SimpleNamespace(
+            is_connected=True, user_id="42", generic_api_call=generic_api_call
+        )
+
+        async def main():
+            return await asyncio.wait_for(
+                asyncio.gather(
+                    *(twitch_module._fetch_channel_point_rewards_async() for _ in range(3))
+                ),
+                timeout=3,
+            )
+
+        with (
+            patch.object(twitch_module, "twitch_api", fake_api),
+            patch.object(twitch_module, "_channel_points_unlocked", None),
+        ):
+            results = asyncio.run(main())
+        self.assertEqual(results, [([{"id": "r1"}], "ok")] * 3)
+        self.assertEqual(overlaps, [1, 1, 1])
+        self.assertFalse(twitch_module._channel_points_fetch_lock.locked())
+
     def test_moderator_cache_waiters_share_one_fetch_without_threads(self):
         from modules.twitch_moderators import ModeratorCache
 
