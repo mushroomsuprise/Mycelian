@@ -22,12 +22,27 @@ LAYOUT_PATH = "connectors_layout"
 LAYOUT_VERSION = 1
 
 
+# True after a read of LAYOUT_PATH failed (a failed read looks like an empty
+# layout). save_layout re-reads it first so folders are never wiped.
+_layout_read_failed = False
+
+
 def default_layout() -> Dict[str, Any]:
     return {"version": LAYOUT_VERSION, "root_items": [], "folders": {}}
 
 
 def load_layout() -> Dict[str, Any]:
-    raw = database_manager.get_data(LAYOUT_PATH)
+    global _layout_read_failed
+    raw, ok = database_manager.get_data_checked(LAYOUT_PATH)
+    if not ok:
+        _layout_read_failed = True
+        logger.warning(
+            "%s could not be read; it will be re-read before it is saved", LAYOUT_PATH
+        )
+    return _parse_layout(raw)
+
+
+def _parse_layout(raw: Any) -> Dict[str, Any]:
     if not isinstance(raw, dict) or not raw:
         return default_layout()
     layout = default_layout()
@@ -48,7 +63,69 @@ def load_layout() -> Dict[str, Any]:
     return layout
 
 
+def _merge_into_stored(stored: Dict[str, Any], layout: Dict[str, Any]) -> Dict[str, Any]:
+    """Stored layout as the base, plus what ``layout`` added on top of an empty one.
+
+    ``layout`` was built from a failed (empty) read, so its folders and root rows
+    the stored copy lacks are the user's later changes. Connectors it put in a
+    new folder leave their stored spot; other new connectors go at the end.
+    """
+    merged = deepcopy(stored)
+    folders = merged.setdefault("folders", {})
+    root_items = merged.setdefault("root_items", [])
+    new_folders = {
+        fid: spec
+        for fid, spec in (layout.get("folders") or {}).items()
+        if fid not in folders and isinstance(spec, dict)
+    }
+    moved = {str(cid) for spec in new_folders.values() for cid in spec.get("connector_ids") or []}
+    if moved:
+
+        def _moved_row(item: Any) -> bool:
+            parsed = _normalize_root_item(item)
+            return bool(parsed) and parsed[0] == "connector" and parsed[1] in moved
+
+        root_items[:] = [item for item in root_items if not _moved_row(item)]
+        for spec in folders.values():
+            spec["connector_ids"] = [
+                cid for cid in spec.get("connector_ids") or [] if str(cid) not in moved
+            ]
+    folders.update(deepcopy(new_folders))
+    placed: Set[str] = set()
+    for item in root_items:
+        parsed = _normalize_root_item(item)
+        if parsed:
+            placed.add(parsed[1])
+    for spec in folders.values():
+        placed.update(str(cid) for cid in spec.get("connector_ids") or [])
+    for item in layout.get("root_items") or []:
+        parsed = _normalize_root_item(item)
+        if not parsed:
+            continue
+        kind, iid = parsed
+        if kind == "folder" and iid in new_folders and iid not in placed:
+            root_items.append({"kind": "folder", "id": iid})
+            placed.add(iid)
+        elif kind == "connector" and iid not in placed:
+            root_items.append({"kind": "connector", "id": iid})
+            placed.add(iid)
+    return merged
+
+
 def save_layout(layout: Dict[str, Any]) -> bool:
+    global _layout_read_failed
+    if _layout_read_failed:
+        raw, ok = database_manager.get_data_checked(LAYOUT_PATH)
+        if not ok:
+            logger.warning(
+                "Not saving %s: it could not be read from the database", LAYOUT_PATH
+            )
+            return False
+        stored = _parse_layout(raw)
+        if stored.get("root_items") or stored.get("folders"):
+            layout = _merge_into_stored(stored, layout)
+        _layout_read_failed = False
+        logger.info("Re-read %s after a failed load; local changes kept", LAYOUT_PATH)
     try:
         payload = {
             "version": LAYOUT_VERSION,

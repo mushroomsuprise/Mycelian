@@ -175,6 +175,14 @@ class ConnectorIntegration:
                 result = await original_handler(*args, **kwargs)
                 # Send to connector system
                 try:
+                    # Chatbot replies from this event may still be queued on the
+                    # chatbot lane; connectors run after them, as before (TH-07).
+                    from .twitch import wait_for_chatbot_lane
+
+                    await wait_for_chatbot_lane()
+                except Exception as e:
+                    logger.debug("Chatbot lane wait failed: %s", e)
+                try:
                     await connector_handler(*args, **kwargs)
                 except Exception as e:
                     logger.error(

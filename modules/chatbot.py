@@ -367,7 +367,11 @@ class Chatbot_API:
 
         if not self._refresh_lock.acquire(blocking=False):
             logger.info("Chatbot token refresh already in progress, waiting...")
-            with self._refresh_lock:
+            # Wait without blocking this loop: the refresh holding the lock may
+            # be running on this same loop (TH-10).
+            while not self._refresh_lock.acquire(blocking=False):
+                await asyncio.sleep(0.05)
+            try:
                 logger.info(
                     "Other chatbot token refresh completed, checking if we still need to refresh"
                 )
@@ -378,6 +382,8 @@ class Chatbot_API:
                         "Chatbot token was already refreshed by another process"
                     )
                     return True
+            finally:
+                self._refresh_lock.release()
             return False
 
         try:
@@ -1916,14 +1922,17 @@ def trigger_chatbot_oauth_reconnection():
                 logger.error(f"Error in chatbot OAuth thread: {str(e)}", exc_info=True)
                 return False
 
-        # Run in thread pool to avoid blocking
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(oauth_thread)
-            try:
-                return future.result(timeout=120)  # 2 minute timeout
-            except concurrent.futures.TimeoutError:
-                logger.error("Chatbot OAuth reconnection timed out")
-                return False
+        # Run in thread pool to avoid blocking. No ``with`` block: its exit waits
+        # for the worker, so the timeout never applied (TH-08). On timeout the
+        # flow keeps running in the background, as it did before.
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(oauth_thread)
+        executor.shutdown(wait=False)
+        try:
+            return future.result(timeout=120)  # 2 minute timeout
+        except concurrent.futures.TimeoutError:
+            logger.error("Chatbot OAuth reconnection timed out")
+            return False
 
     except Exception as e:
         logger.error(
@@ -1980,9 +1989,11 @@ def send_chatbot_announcement(message: str, color: str = "primary") -> bool:
                 logger.error(f"Error in async chatbot announcement thread: {str(e)}")
                 return False
 
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_async)
-            return future.result(timeout=10)  # 10 second timeout
+        # No ``with`` block: its exit would wait for the send, ignoring the timeout (TH-08).
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(run_async)
+        executor.shutdown(wait=False)
+        return future.result(timeout=10)  # 10 second timeout
 
     except Exception as e:
         logger.error(f"Error sending chatbot announcement: {str(e)}", exc_info=True)

@@ -15,6 +15,7 @@ import os
 import sqlite3
 import threading
 import time
+from collections import deque
 from typing import Optional, Set
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,36 @@ logger = logging.getLogger(__name__)
 _NEW_SUB_ALERT_DEDUP_SECONDS = 60.0
 _HELIX_PAGE_SIZE = 100
 _HELIX_PAGE_DELAY_SECONDS = 0.05
+
+_UPSERT_SUBSCRIBER_SQL = """
+    INSERT INTO known_subscribers
+    (user_id, user_login, first_seen_at, last_seen_at,
+     source, cumulative_months)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+        user_login = COALESCE(excluded.user_login, known_subscribers.user_login),
+        last_seen_at = excluded.last_seen_at,
+        source = CASE
+            WHEN excluded.source != '' THEN excluded.source
+            ELSE known_subscribers.source
+        END,
+        cumulative_months = COALESCE(
+            excluded.cumulative_months,
+            known_subscribers.cumulative_months
+        )
+"""
+
+_UPSERT_LOGIN_SQL = """
+    INSERT INTO known_subscriber_logins
+    (user_login, first_seen_at, last_seen_at, source)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_login) DO UPDATE SET
+        last_seen_at = excluded.last_seen_at,
+        source = CASE
+            WHEN excluded.source != '' THEN excluded.source
+            ELSE known_subscriber_logins.source
+        END
+"""
 
 
 class SubscriberRegistry:
@@ -36,6 +67,15 @@ class SubscriberRegistry:
         self._recent_new_sub_alerts: dict[str, float] = {}
         self._pending_tasks: dict[str, asyncio.Task] = {}
         self._sync_lock = threading.Lock()
+        # DB writes run in call order on one reused connection. Calls from an
+        # asyncio loop (EventSub chat) are queued for a writer thread so the
+        # loop never waits on SQLite; other callers write before returning.
+        self._write_lock = threading.Lock()
+        self._queue_lock = threading.Lock()
+        self._pending_writes: deque = deque()
+        self._write_conn: Optional[sqlite3.Connection] = None
+        self._writer_wake = threading.Event()
+        self._writer_thread: Optional[threading.Thread] = None
         self._db_path = db_path or self._default_db_path()
         self._ensure_db()
         self._load_from_db()
@@ -190,62 +230,7 @@ class SubscriberRegistry:
             if login:
                 self._user_logins.add(login)
 
-        try:
-            conn = self._connect()
-            try:
-                cur = conn.cursor()
-                if uid:
-                    cur.execute(
-                        """
-                        INSERT INTO known_subscribers
-                        (user_id, user_login, first_seen_at, last_seen_at,
-                         source, cumulative_months)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(user_id) DO UPDATE SET
-                            user_login = COALESCE(excluded.user_login, known_subscribers.user_login),
-                            last_seen_at = excluded.last_seen_at,
-                            source = CASE
-                                WHEN excluded.source != '' THEN excluded.source
-                                ELSE known_subscribers.source
-                            END,
-                            cumulative_months = COALESCE(
-                                excluded.cumulative_months,
-                                known_subscribers.cumulative_months
-                            )
-                        """,
-                        (uid, login, now, now, source, cumulative_months),
-                    )
-                    if login:
-                        cur.execute(
-                            "DELETE FROM known_subscriber_logins WHERE user_login = ?",
-                            (login,),
-                        )
-                elif login:
-                    cur.execute(
-                        """
-                        INSERT INTO known_subscriber_logins
-                        (user_login, first_seen_at, last_seen_at, source)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(user_login) DO UPDATE SET
-                            last_seen_at = excluded.last_seen_at,
-                            source = CASE
-                                WHEN excluded.source != '' THEN excluded.source
-                                ELSE known_subscriber_logins.source
-                            END
-                        """,
-                        (login, now, now, source),
-                    )
-                conn.commit()
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error(
-                "Failed to persist subscriber registry entry id=%s login=%s: %s",
-                uid,
-                login,
-                e,
-                exc_info=True,
-            )
+        self._submit_write(("one", (uid, login, source, cumulative_months), now))
 
     def record_many(self, entries) -> None:
         """Remember many subscribers in one transaction. Never deletes."""
@@ -265,57 +250,99 @@ class SubscriberRegistry:
                 prepared.append((uid, login, source or "", cumulative_months))
         if not prepared:
             return
+        self._submit_write(("many", prepared, now))
+
+    def _submit_write(self, entry) -> None:
+        with self._queue_lock:
+            self._pending_writes.append(entry)
         try:
-            conn = self._connect()
-            try:
-                cur = conn.cursor()
-                for uid, login, source, cumulative_months in prepared:
-                    if uid:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            self._drain_writes()
+            return
+        self._wake_writer()
+
+    def _wake_writer(self) -> None:
+        thread = self._writer_thread
+        if thread is None or not thread.is_alive():
+            with self._queue_lock:
+                thread = self._writer_thread
+                if thread is None or not thread.is_alive():
+                    thread = threading.Thread(
+                        target=self._writer_loop,
+                        name="SubscriberRegistryWriter",
+                        daemon=True,
+                    )
+                    self._writer_thread = thread
+                    thread.start()
+        self._writer_wake.set()
+
+    def _writer_loop(self) -> None:
+        while True:
+            self._writer_wake.wait()
+            self._writer_wake.clear()
+            self._drain_writes()
+
+    def _drain_writes(self) -> None:
+        with self._write_lock:
+            while True:
+                with self._queue_lock:
+                    if not self._pending_writes:
+                        return
+                    entry = self._pending_writes.popleft()
+                self._execute_write(entry)
+
+    def flush(self) -> None:
+        """Write everything queued so far and close the shared connection."""
+        self._drain_writes()
+        with self._write_lock:
+            conn = self._write_conn
+            self._write_conn = None
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def _execute_write(self, entry) -> None:
+        kind, rows, now = entry
+        try:
+            if self._write_conn is None:
+                self._write_conn = self._connect()
+            cur = self._write_conn.cursor()
+            for uid, login, source, cumulative_months in rows if kind == "many" else [rows]:
+                if uid:
+                    cur.execute(
+                        _UPSERT_SUBSCRIBER_SQL,
+                        (uid, login, now, now, source, cumulative_months),
+                    )
+                    if login:
                         cur.execute(
-                            """
-                            INSERT INTO known_subscribers
-                            (user_id, user_login, first_seen_at, last_seen_at,
-                             source, cumulative_months)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                            ON CONFLICT(user_id) DO UPDATE SET
-                                user_login = COALESCE(excluded.user_login, known_subscribers.user_login),
-                                last_seen_at = excluded.last_seen_at,
-                                source = CASE
-                                    WHEN excluded.source != '' THEN excluded.source
-                                    ELSE known_subscribers.source
-                                END,
-                                cumulative_months = COALESCE(
-                                    excluded.cumulative_months,
-                                    known_subscribers.cumulative_months
-                                )
-                            """,
-                            (uid, login, now, now, source, cumulative_months),
+                            "DELETE FROM known_subscriber_logins WHERE user_login = ?",
+                            (login,),
                         )
-                        if login:
-                            cur.execute(
-                                "DELETE FROM known_subscriber_logins WHERE user_login = ?",
-                                (login,),
-                            )
-                    elif login:
-                        cur.execute(
-                            """
-                            INSERT INTO known_subscriber_logins
-                            (user_login, first_seen_at, last_seen_at, source)
-                            VALUES (?, ?, ?, ?)
-                            ON CONFLICT(user_login) DO UPDATE SET
-                                last_seen_at = excluded.last_seen_at,
-                                source = CASE
-                                    WHEN excluded.source != '' THEN excluded.source
-                                    ELSE known_subscriber_logins.source
-                                END
-                            """,
-                            (login, now, now, source),
-                        )
-                conn.commit()
-            finally:
-                conn.close()
+                elif login:
+                    cur.execute(_UPSERT_LOGIN_SQL, (login, now, now, source))
+            self._write_conn.commit()
         except Exception as e:
-            logger.error("Failed to persist subscriber batch: %s", e, exc_info=True)
+            # Same outcome as a fresh connection per write: nothing partial stays.
+            conn = self._write_conn
+            self._write_conn = None
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            if kind == "many":
+                logger.error("Failed to persist subscriber batch: %s", e, exc_info=True)
+            else:
+                logger.error(
+                    "Failed to persist subscriber registry entry id=%s login=%s: %s",
+                    rows[0],
+                    rows[1],
+                    e,
+                    exc_info=True,
+                )
 
     def mark_new_sub_alerted(self, user_id: Optional[str]) -> None:
         uid = self._normalize_id(user_id)
@@ -450,8 +477,9 @@ class SubscriberRegistry:
 
         Sets session ready only on success.
         """
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._sync_lock.acquire)
+        # Poll instead of parking an executor thread on the lock (TH-10).
+        while not self._sync_lock.acquire(blocking=False):
+            await asyncio.sleep(0.05)
         try:
             ok = await self._fetch_helix_subscribers()
             if ok:
@@ -545,6 +573,17 @@ class SubscriberRegistry:
 
 
 _registry = SubscriberRegistry()
+
+
+def _register_registry_flush() -> None:
+    try:
+        from .shutdown import register_shutdown_flush
+    except ImportError:
+        return
+    register_shutdown_flush("subscriber_registry", _registry.flush)
+
+
+_register_registry_flush()
 
 
 def get_subscriber_registry() -> SubscriberRegistry:

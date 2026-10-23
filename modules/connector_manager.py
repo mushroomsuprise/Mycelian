@@ -100,6 +100,10 @@ class ConnectorManager:
         self.hotkey_listener = get_listener()
         self._loop_mismatch_errors = 0
         self._loop_mismatch_rebuild_at = 0.0
+        # Set when the stored connectors could not be read (a failed read looks
+        # like no connectors). They are re-read before the next save.
+        self._load_failed = False
+        self._save_blocked = False
 
         # Statistics
         self.stats = {
@@ -446,7 +450,12 @@ class ConnectorManager:
         try:
             with self._lock:
                 # Get connectors from database
-                connectors_data = database_manager.get_data("connectors", {})
+                connectors_data, ok = database_manager.get_data_checked("connectors")
+                self._load_failed = not ok
+                if not ok:
+                    logger.warning(
+                        "connectors could not be read; they will be re-read before they are saved"
+                    )
 
                 self.connectors.clear()
 
@@ -483,9 +492,56 @@ class ConnectorManager:
                 actions=nav_actions_main_tab("Connectors"),
             )
 
+    def _recover_after_failed_load(self) -> bool:
+        """Re-read stored connectors after a failed load and merge them in.
+
+        Nothing was loaded, so every in-memory connector is a later change and
+        wins over a stored one with the same id. Returns False while the path
+        still cannot be read; the save must then be skipped.
+        """
+        stored, ok = database_manager.get_data_checked("connectors")
+        if not ok:
+            logger.warning("Not saving connectors: they could not be read from the database")
+            return False
+        with self._lock:
+            if not self._load_failed:
+                return True
+            merged: Dict[str, Connector] = {}
+            for connector_id, connector_data in (stored or {}).items():
+                if connector_id in self.connectors:
+                    merged[connector_id] = self.connectors[connector_id]
+                    continue
+                try:
+                    connector = self._deserialize_connector(connector_data)
+                except Exception as e:
+                    logger.error(
+                        f"Error loading connector {connector_id}: {e}", exc_info=True
+                    )
+                    continue
+                if connector:
+                    merged[connector_id] = connector
+                    if connector.enabled:
+                        self._register_connector_hotkey(connector)
+            for connector_id, connector in self.connectors.items():
+                merged.setdefault(connector_id, connector)
+            self.connectors.clear()
+            self.connectors.update(merged)
+            self._load_failed = False
+        logger.info("Re-read connectors after a failed load; local changes kept")
+        return True
+
+    def flush_blocked_save(self) -> None:
+        """Retry a save that was held back because the load had failed."""
+        if self._save_blocked:
+            self.save_connectors()
+
     def save_connectors(self):
         """Save connectors to database"""
         try:
+            if self._load_failed:
+                self._save_blocked = not self._recover_after_failed_load()
+                if self._save_blocked:
+                    return
             with self._lock:
                 # Serialize all connectors
                 connectors_data = {}
@@ -1137,6 +1193,17 @@ async def cleanup():
 def get_manager() -> ConnectorManager:
     """Get the global connector manager instance"""
     return connector_manager
+
+
+def _register_connector_flush() -> None:
+    try:
+        from .shutdown import register_shutdown_flush
+    except ImportError:
+        return
+    register_shutdown_flush("connectors", connector_manager.flush_blocked_save)
+
+
+_register_connector_flush()
 
 
 def get_connector_loop() -> Optional[asyncio.AbstractEventLoop]:

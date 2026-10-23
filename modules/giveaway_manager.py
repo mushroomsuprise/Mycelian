@@ -47,6 +47,12 @@ def get_giveaway_manager() -> "GiveawayManager":
     with _giveaway_lock:
         if _giveaway_manager is None:
             _giveaway_manager = GiveawayManager()
+            try:
+                from .shutdown import register_shutdown_flush
+
+                register_shutdown_flush("giveaway_config", _giveaway_manager.flush)
+            except ImportError:
+                pass
         return _giveaway_manager
 
 
@@ -59,13 +65,28 @@ class GiveawayManager:
         self._pool: List[GiveawayEntry] = []
         self._config: Dict[str, Any] = dict(DEFAULT_CONFIG)
         self._last_error: str = ""
+        # Config writes run after the state lock is released so chat entries never
+        # wait on the DB. The sequence keeps the newest snapshot last (TH-06).
+        self._write_lock = threading.Lock()
+        self._save_seq = 0
+        self._written_seq = 0
+        # Config as loaded when the stored copy could not be read (a failed read
+        # looks like no config). The path is re-read before it is written.
+        self._failed_load_baseline: Optional[Dict[str, Any]] = None
+        self._save_blocked = False
         self._load_config()
 
     def _load_config(self) -> None:
         try:
-            from .database_manager import get_data
+            from .database_manager import get_data_checked
 
-            raw = get_data(DATA_PATH)
+            raw, ok = get_data_checked(DATA_PATH)
+            if not ok:
+                self._failed_load_baseline = dict(self._config)
+                logger.warning(
+                    "%s could not be read; it will be re-read before it is saved",
+                    DATA_PATH,
+                )
             if isinstance(raw, dict) and raw:
                 merged = dict(DEFAULT_CONFIG)
                 merged.update(raw)
@@ -100,11 +121,67 @@ class GiveawayManager:
             cfg.get("announce_winners_as_banner", False)
         )
 
-    def _save_config(self) -> None:
+    def _snapshot_config_locked(self) -> Tuple[int, Dict[str, Any]]:
+        self._save_seq += 1
+        return self._save_seq, dict(self._config)
+
+    def _save_config(self, pending: Optional[Tuple[int, Dict[str, Any]]]) -> None:
+        """Write a snapshot from ``_snapshot_config_locked``. Call without ``_lock``."""
+        if pending is None:
+            return
+        if self._failed_load_baseline is not None:
+            pending = self._recover_after_failed_load()
+            if pending is None:
+                self._save_blocked = True
+                return
+        self._save_blocked = False
+        seq, payload = pending
+        with self._write_lock:
+            if seq <= self._written_seq:
+                return
+            self._written_seq = seq
+            self._write_config(payload)
+
+    def _recover_after_failed_load(self) -> Optional[Tuple[int, Dict[str, Any]]]:
+        """Re-read the stored config; keep fields changed in memory since the failed load.
+
+        Returns a snapshot to write, or None while the path still cannot be read.
+        """
+        try:
+            from .database_manager import get_data_checked
+
+            raw, ok = get_data_checked(DATA_PATH)
+        except Exception as e:
+            logger.debug("Giveaway config re-read failed: %s", e)
+            ok = False
+        if not ok:
+            logger.warning(
+                "Not saving %s: it could not be read from the database", DATA_PATH
+            )
+            return None
+        with self._lock:
+            baseline = self._failed_load_baseline
+            if baseline is None:
+                return self._snapshot_config_locked()
+            merged = dict(DEFAULT_CONFIG)
+            if isinstance(raw, dict):
+                merged.update(raw)
+            for key, value in self._config.items():
+                if baseline.get(key) != value:
+                    merged[key] = value
+            self._normalize_config_in_place(merged)
+            self._config = merged
+            if not self._config["keyword"]:
+                self._accepting_entries = False
+            self._failed_load_baseline = None
+            logger.info("Re-read %s after a failed load; local changes kept", DATA_PATH)
+            return self._snapshot_config_locked()
+
+    def _write_config(self, payload: Dict[str, Any]) -> None:
         try:
             from .database_manager import set_data
 
-            set_data(DATA_PATH, dict(self._config))
+            set_data(DATA_PATH, payload)
         except Exception as e:
             logger.error("Giveaway config save failed: %s", e)
             try:
@@ -118,6 +195,14 @@ class GiveawayManager:
             except Exception:
                 pass
 
+    def flush(self) -> None:
+        """Retry a config write that was held back because the load had failed."""
+        if not self._save_blocked:
+            return
+        with self._lock:
+            pending = self._snapshot_config_locked()
+        self._save_config(pending)
+
     def get_config(self) -> Dict[str, Any]:
         with self._lock:
             return dict(self._config)
@@ -130,7 +215,8 @@ class GiveawayManager:
             self._normalize_config_in_place(self._config)
             if key == "keyword" and not self._config["keyword"]:
                 self._accepting_entries = False
-            self._save_config()
+            pending = self._snapshot_config_locked()
+        self._save_config(pending)
 
     def update_config(self, updates: Dict[str, Any]) -> None:
         with self._lock:
@@ -140,7 +226,8 @@ class GiveawayManager:
             self._normalize_config_in_place(self._config)
             if not self._config["keyword"]:
                 self._accepting_entries = False
-            self._save_config()
+            pending = self._snapshot_config_locked()
+        self._save_config(pending)
 
     def is_giveaway_active(self) -> bool:
         with self._lock:
@@ -208,7 +295,8 @@ class GiveawayManager:
             self._config["keyword"] = ""
             self._accepting_entries = False
             self._normalize_config_in_place(self._config)
-            self._save_config()
+            pending = self._snapshot_config_locked()
+        self._save_config(pending)
         self._emit_event("giveaway_clear", {})
 
     def _badges_str(self, msg_dict: Dict[str, Any]) -> str:
