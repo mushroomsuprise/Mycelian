@@ -30,6 +30,28 @@ _native_close_exit_started = False
 _protect_lock = threading.Lock()
 _protected_child_pids: set[int] = set()
 
+# Write-behind persistence (debounced saves) registers a flush here so the final
+# state reaches the database before exit. Flushes run after every producer stopped.
+_flush_lock = threading.Lock()
+_pending_flushes: list[tuple[str, Callable[[], None]]] = []
+
+
+def register_shutdown_flush(name: str, func: Callable[[], None]) -> None:
+    """Run ``func`` during shutdown, after services stop and before statistics save.
+
+    Registering the same name twice keeps only the latest callable.
+    """
+    with _flush_lock:
+        _pending_flushes[:] = [(n, f) for n, f in _pending_flushes if n != name]
+        _pending_flushes.append((name, func))
+
+
+def _run_registered_flushes() -> None:
+    with _flush_lock:
+        flushes = list(_pending_flushes)
+    for name, func in flushes:
+        _run_step(f"flush:{name}", func, timeout=5.0)
+
 
 def is_shutdown_in_progress() -> bool:
     return _shutdown_in_progress
@@ -783,6 +805,7 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
             timeout=_SHUTDOWN_INTEGRATION_PARALLEL_TIMEOUT,
         )
         _run_step("deferred_services", _stop_deferred_services, timeout=2.0)
+        _run_registered_flushes()
         _run_step("statistics", _save_statistics, timeout=8.0)
     finally:
         # Leave the watchdog armed until os._exit. Cancelling it here used to

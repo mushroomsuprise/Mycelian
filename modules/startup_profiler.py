@@ -59,6 +59,41 @@ def mark_process_start() -> None:
     global _process_start, _last_import_mark
     _process_start = time.perf_counter()
     _last_import_mark = 0.0
+    if _should_emit_startup_profile():
+        _print_process_age()
+
+
+def _print_process_age() -> None:
+    """Show time spent before main.py ran (interpreter start, onefile extraction)."""
+    try:
+        import sys
+
+        import psutil
+
+        now = time.time()
+        proc = psutil.Process()
+        print(f"[startup] OS process age at baseline: {now - proc.create_time():.3f}s")
+        if getattr(sys, "frozen", False):
+            # A onefile bootloader re-runs the same exe as a child after extracting.
+            parent = proc.parent()
+            if parent is not None and parent.exe() == sys.executable:
+                print(
+                    "[startup] bootloader process age at baseline: "
+                    f"{now - parent.create_time():.3f}s"
+                )
+    except Exception as exc:
+        print(f"[startup] process age unavailable: {exc}")
+
+
+_milestones_seen: set = set()
+
+
+def mark_startup_milestone(label: str) -> None:
+    """Print a one-time [startup] milestone (time since baseline) when profiling."""
+    if not _should_emit_startup_profile() or label in _milestones_seen:
+        return
+    _milestones_seen.add(label)
+    print(f"[startup] +{get_elapsed_since_baseline():.3f}s milestone: {label}")
 
 
 def get_elapsed_since_baseline() -> float:
