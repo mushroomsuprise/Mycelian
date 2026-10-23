@@ -29,6 +29,11 @@ _DISABLED_POLL_INTERVAL_SEC = 15.0
 _THREAD_ERROR_COOLDOWN_SEC = 10.0
 # Consecutive idle health-check failures (~queue_empty interval) → drop stale socket.
 _IDLE_HEALTH_DROP_AFTER_FAILS = 4
+# Idle worker tick: reconnect-wakeup and EventClient-death checks run every tick.
+_IDLE_TICK_SEC = 0.25
+# Idle health probe (GetStreamStatus + GetRecordStatus) spacing, measured from the
+# previous probe's start. Every second idle tick (was every 0.3 s tick).
+_IDLE_HEALTH_INTERVAL_SEC = 0.45
 # Socket timeouts (seconds) — keep connect/health probes short so the UI stays responsive.
 _CONNECT_TIMEOUT_SEC = 3.0
 _RPC_TIMEOUT_SEC = 5.0
@@ -228,6 +233,7 @@ class ObsServiceImpl:
         self._last_connect_attempt: float = 0.0
         self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
         self._idle_health_failures = 0
+        self._last_idle_health_mono = 0.0
         self._phase_lock = threading.Lock()
         self._phase = "disconnected"
         self._connect_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
@@ -405,6 +411,7 @@ class ObsServiceImpl:
 
                 self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
                 self._idle_health_failures = 0
+                self._last_idle_health_mono = 0.0
                 self._run_loop_iteration()
             except Exception as e:
                 logger.error("OBS service thread error: %s", e, exc_info=True)
@@ -468,13 +475,18 @@ class ObsServiceImpl:
         """Drain request queue until shutdown or disconnect."""
         while not self._stop.is_set():
             try:
-                item = self._req_queue.get(timeout=0.3)
+                item = self._req_queue.get(timeout=_IDLE_TICK_SEC)
             except queue.Empty:
                 if self._reconnect_wakeup.is_set():
                     self._reconnect_wakeup.clear()
                     return
                 # Keep snapshot fresh lightly (stream/record state)
-                if self._req_client:
+                now = time.monotonic()
+                if (
+                    self._req_client
+                    and now - self._last_idle_health_mono >= _IDLE_HEALTH_INTERVAL_SEC
+                ):
+                    self._last_idle_health_mono = now
                     try:
                         self._update_output_flags_only(use_health_timeout=True)
                         self._idle_health_failures = 0
