@@ -7,8 +7,10 @@ reachability, and coordinated auto-reconnect for remote integrations.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -41,6 +43,10 @@ _RECONNECT_COOLDOWN_SEC = 60.0
 _external_fail_streak = 0
 _internet_online = True
 _internet_status_label = "Online"
+# Label as of the last *completed* probe round. The NiceGUI loop reads this one so a
+# background refresh's transient "Checking" never shows (a UI-thread probe never
+# exposed it either: the loop was blocked until the round finished).
+_internet_settled_label = "Online"
 _last_external_probe_mono = 0.0
 _last_external_result_online = True
 _connectivity_lock = threading.Lock()
@@ -50,6 +56,89 @@ _last_reconnect_mono: Dict[str, float] = {}
 
 _monitor_thread: Optional[threading.Thread] = None
 _monitor_stop = threading.Event()
+
+# Background refresh for UI-loop readers: probes queued in request order and run
+# serially on one worker thread (the same order the UI loop used to run them inline).
+_bg_refresh_lock = threading.Lock()
+_bg_refresh_pending: List[str] = []
+_bg_refresh_thread: Optional[threading.Thread] = None
+_bg_refresh_active: Optional[str] = None
+_bg_refresh_listeners: List[Callable[[], None]] = []
+
+
+def _on_ui_loop_thread() -> bool:
+    """True when called on NiceGUI's asyncio loop, where probes must never block."""
+    core = sys.modules.get("nicegui.core")
+    loop = getattr(core, "loop", None) if core is not None else None
+    if loop is None:
+        return False
+    try:
+        return asyncio.get_running_loop() is loop
+    except RuntimeError:
+        return False
+
+
+def add_background_refresh_listener(callback: Callable[[], None]) -> None:
+    """Call ``callback`` (from the worker thread) after queued background probes finish."""
+    if callback not in _bg_refresh_listeners:
+        _bg_refresh_listeners.append(callback)
+
+
+def _background_refresh_worker() -> None:
+    global _bg_refresh_thread, _bg_refresh_active
+    while True:
+        with _bg_refresh_lock:
+            _bg_refresh_active = None
+            if not _bg_refresh_pending or is_shutdown_in_progress():
+                _bg_refresh_pending.clear()
+                _bg_refresh_thread = None
+                break
+            key = _bg_refresh_pending.pop(0)
+            _bg_refresh_active = key
+        try:
+            if key == "internet":
+                _update_internet_state()
+            else:
+                is_service_reachable(key, blocking=True)
+        except Exception:
+            logger.debug("background connectivity refresh failed for %s", key, exc_info=True)
+    for callback in list(_bg_refresh_listeners):
+        try:
+            callback()
+        except Exception:
+            logger.debug("background refresh listener failed", exc_info=True)
+
+
+def request_background_refresh(key: str) -> None:
+    """Queue one deduped background probe for ``key`` ("internet" or a service key)."""
+    global _bg_refresh_thread
+    if is_shutdown_in_progress():
+        return
+    with _bg_refresh_lock:
+        if key not in _bg_refresh_pending and key != _bg_refresh_active:
+            _bg_refresh_pending.append(key)
+        if _bg_refresh_thread is not None:
+            return
+        thread = threading.Thread(
+            target=_background_refresh_worker,
+            name="ConnectivityRefresh",
+            daemon=True,
+        )
+        _bg_refresh_thread = thread
+    thread.start()
+
+
+def is_background_refresh_pending(key: str) -> bool:
+    """True while a background probe for ``key`` is queued or running."""
+    with _bg_refresh_lock:
+        return key in _bg_refresh_pending or _bg_refresh_active == key
+
+
+def _internet_cache_stale(now: float) -> bool:
+    cache_ttl = (
+        _INTERNET_ONLINE_CACHE_SEC if _internet_online else _INTERNET_OFFLINE_CACHE_SEC
+    )
+    return now - _last_external_probe_mono >= cache_ttl
 
 
 def _http_probe(url: str) -> bool:
@@ -95,17 +184,12 @@ def _update_internet_state(*, force: bool = False) -> bool:
     """Run Tier 1 probes and update streak / online flag. Returns internet online."""
     global _external_fail_streak, _internet_online, _internet_status_label
     global _last_external_probe_mono, _last_external_result_online
+    global _internet_settled_label
 
     now = time.monotonic()
     with _connectivity_lock:
-        if not force:
-            cache_ttl = (
-                _INTERNET_ONLINE_CACHE_SEC
-                if _internet_online
-                else _INTERNET_OFFLINE_CACHE_SEC
-            )
-            if now - _last_external_probe_mono < cache_ttl:
-                return _internet_online
+        if not force and not _internet_cache_stale(now):
+            return _internet_online
         _internet_status_label = "Checking"
 
     round_ok = _run_external_probe_round()
@@ -150,18 +234,34 @@ def _update_internet_state(*, force: bool = False) -> bool:
                     _EXTERNAL_OFFLINE_STREAK_REQUIRED,
                 )
 
+        _internet_settled_label = _internet_status_label
         return _internet_online
 
 
-def is_internet_available(*, force: bool = False) -> bool:
-    """Tier 1: True when external connectivity probes report online."""
+def is_internet_available(
+    *, force: bool = False, blocking: Optional[bool] = None
+) -> bool:
+    """Tier 1: True when external connectivity probes report online.
+
+    On the NiceGUI loop (``blocking`` unset) a stale cache is never probed inline: the
+    cached value is returned and one background refresh is queued; listeners registered
+    with :func:`add_background_refresh_listener` repaint when it finishes.
+    """
     if is_shutdown_in_progress():
         return False
-    return _update_internet_state(force=force)
+    if blocking is None:
+        blocking = not _on_ui_loop_thread()
+    if blocking:
+        return _update_internet_state(force=force)
+    if force or _internet_cache_stale(time.monotonic()):
+        request_background_refresh("internet")
+    return _internet_online
 
 
 def get_internet_status() -> str:
     """Human-readable Tier 1 status: Online / Offline / Checking."""
+    if _on_ui_loop_thread():
+        return _internet_settled_label
     return _internet_status_label
 
 
@@ -203,12 +303,43 @@ _SERVICE_PROBE_URLS: Dict[str, str] = {
 }
 
 
-def is_service_reachable(key: str, *, force: bool = False) -> bool:
+def peek_service_reachable(key: str) -> Optional[bool]:
+    """Non-blocking Tier 2 read for the UI loop.
+
+    Returns the last probe result (``None`` when there is none yet) and queues one
+    background refresh when it is missing or older than the cache TTL.
+    """
+    if is_shutdown_in_progress():
+        return False
+    if not _internet_online:
+        return False
+    now = time.monotonic()
+    with _connectivity_lock:
+        cached = _service_probe_cache.get(key)
+    if cached is None or now - cached[1] >= _SERVICE_PROBE_CACHE_SEC:
+        request_background_refresh(key)
+    return cached[0] if cached is not None else None
+
+
+def is_service_reachable(
+    key: str, *, force: bool = False, blocking: Optional[bool] = None
+) -> bool:
     """Tier 2: True when the service host responds (only meaningful if internet is online)."""
     if key == "database":
         return _probe_database()
 
-    if not is_internet_available():
+    if blocking is None:
+        blocking = not _on_ui_loop_thread()
+    if not blocking:
+        if not is_internet_available(blocking=False):
+            return False
+        if force:
+            request_background_refresh(key)
+        result = peek_service_reachable(key)
+        # No result yet: the refresh is queued; report reachable until it lands.
+        return True if result is None else result
+
+    if not is_internet_available(blocking=True):
         return False
 
     now = time.monotonic()

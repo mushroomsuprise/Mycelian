@@ -213,7 +213,9 @@ class HotkeyListener:
                 while self.is_running:
                     if self._hotkeys_dirty:
                         _rebuild_hotkeys()
-                    self._wake.wait(timeout=0.1)
+                    # Every mutation and stop() sets _wake; dirty is re-checked after
+                    # clear(), so no change can be missed without a polling timeout.
+                    self._wake.wait()
                     self._wake.clear()
             finally:
                 listener.stop()
@@ -253,7 +255,7 @@ class HotkeyListener:
                                 f"Failed to register hotkey '{key_combination}': {e}"
                             )
                     last_combos = list(combos)
-                self._wake.wait(timeout=0.1)
+                self._wake.wait()
                 self._wake.clear()
 
             for key_combination in registered_hotkeys:

@@ -1795,10 +1795,17 @@ class ActivityFeedViewManager:
     A revision stops an older echo from rolling the display backward.
     """
 
+    _VIEW_FIELDS = ("filters", "condensed", "tab", "page")
+
     def __init__(self) -> None:
         self.revision = 0
         self._loaded = False
         self._view = normalize_view({})
+        # The stored view could not be read (not merely empty): saves must merge
+        # onto the stored copy instead of writing defaults over it.
+        self._read_failed = False
+        self._unsaved_fields: set = set()
+        self._restored_fields: set = set()
 
     def load(self) -> Dict[str, Any]:
         """Read ActivityFeedView once per process. Failures keep the defaults."""
@@ -1807,9 +1814,17 @@ class ActivityFeedViewManager:
             return self.snapshot()
         self._loaded = True
         try:
-            from ..database_manager import get_data
+            from ..database_manager import get_data, get_data_checked
 
-            raw = get_data(ACTIVITY_FEED_VIEW_PATH) or {}
+            raw = get_data(ACTIVITY_FEED_VIEW_PATH)
+            if not raw:
+                # get_data returns {} for a failed read too; ask once more in a
+                # way that tells the two apart.
+                raw, ok = get_data_checked(ACTIVITY_FEED_VIEW_PATH)
+                if not ok:
+                    self._read_failed = True
+                    raise RuntimeError("the read failed")
+            raw = raw or {}
             if not isinstance(raw, dict):
                 raise TypeError("ActivityFeedView document is not a dict")
             self._view = normalize_view(raw)
@@ -1832,8 +1847,39 @@ class ActivityFeedViewManager:
             "page": int(view["page"]),
         }
 
+    def _merge_onto_stored_view(self) -> bool:
+        """After a failed load: re-read and keep this session's changes on top.
+
+        Returns False while the stored view is still unreadable (nothing is saved).
+        """
+        from ..database_manager import get_data_checked
+
+        raw, ok = get_data_checked(ACTIVITY_FEED_VIEW_PATH)
+        if not ok:
+            logger.warning(
+                "activity_feed: saved view still unreadable; not saving over it"
+            )
+            return False
+        base = normalize_view(raw if isinstance(raw, dict) and raw else {})
+        for field in self._unsaved_fields:
+            base[field] = self._view[field]
+        self._restored_fields = {
+            f for f in self._VIEW_FIELDS if base[f] != self._view[f]
+        }
+        self._view = base
+        self._read_failed = False
+        self._unsaved_fields.clear()
+        return True
+
     def save(self) -> bool:
         """Persist filters, condensed mode, tab, and page. Revision stays in memory."""
+        if self._read_failed:
+            try:
+                if not self._merge_onto_stored_view():
+                    return False
+            except Exception as exc:
+                logger.warning("activity_feed: could not save view: %s", exc)
+                return False
         payload = {
             "filters": dict(self._view["filters"]),
             "condensed": bool(self._view["condensed"]),
@@ -1861,7 +1907,13 @@ class ActivityFeedViewManager:
         if not changed:
             return self.snapshot()
         self.revision += 1
+        if self._read_failed:
+            self._unsaved_fields |= changed & set(self._VIEW_FIELDS)
         self.save()
+        if self._restored_fields:
+            # Stored fields brought back by a late successful read repaint too.
+            changed = changed | self._restored_fields
+            self._restored_fields = set()
         self._sync_state()
         snapshot = self.snapshot()
         if apply_desktop:
@@ -1883,6 +1935,8 @@ class ActivityFeedViewManager:
             return False
         self._view = normalize_view(snapshot)
         self.revision = revision
+        if self._read_failed:
+            self._unsaved_fields |= set(self._VIEW_FIELDS)
         self.save()
         self._sync_state()
         return True

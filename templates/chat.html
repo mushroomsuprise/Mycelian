@@ -5546,18 +5546,34 @@
             });
         }
 
+        // url -> { text, signature }: raw body last applied and the list signature it
+        // left. A poll whose body is byte-identical while that signature is still
+        // current would apply the same list, so it skips the JSON parse and rebuild.
+        var ffzRawCache = {};
+
         function fetchFfzJson(url) {
             return fetch(url).then(function (response) {
                 if (response.status === 429) return { rateLimited: true };
                 if (response.status === 404) return { ok: true, missing: true };
                 if (!response.ok) return { ok: false, status: response.status };
-                return response.json().then(function (data) {
-                    return { ok: true, data: data };
+                return response.text().then(function (text) {
+                    var prev = ffzRawCache[url];
+                    if (prev && prev.text === text) return { ok: true, url: url, raw: text, cached: prev };
+                    return { ok: true, url: url, raw: text, data: JSON.parse(text) };
                 });
             }).catch(function (error) {
                 console.error('Error fetching FFZ emotes:', error);
                 return { ok: false, error: true };
             });
+        }
+
+        function ffzResultData(result) {
+            if (result.data === undefined) result.data = JSON.parse(result.raw);
+            return result.data;
+        }
+
+        function rememberFfzRaw(result, signature) {
+            ffzRawCache[result.url] = { text: result.raw, signature: signature };
         }
 
         function fetchFFZEmotesNow() {
@@ -5569,21 +5585,27 @@
                 var changed = false;
                 var globalResult = results[0] || {};
                 if (globalResult.rateLimited) rateLimited = true;
-                else if (globalResult.ok && globalResult.data) {
-                    changed = applyFfzList('global', ffzGlobalEmotes(globalResult.data)) || changed;
+                else if (globalResult.ok && globalResult.cached && globalResult.cached.signature === ffzGlobalSignature) {
+                    // Same body as the list already applied: nothing would change.
+                } else if (globalResult.ok && ffzResultData(globalResult)) {
+                    changed = applyFfzList('global', ffzGlobalEmotes(ffzResultData(globalResult))) || changed;
+                    rememberFfzRaw(globalResult, ffzGlobalSignature);
                 } else ok = false;
 
                 var roomResult = results[1];
                 if (roomResult) {
                     if (roomResult.rateLimited) rateLimited = true;
                     else if (roomResult.missing) changed = applyFfzList('user', []) || changed;
-                    else if (roomResult.ok && roomResult.data) {
-                        var data = roomResult.data;
+                    else if (roomResult.ok && roomResult.cached && roomResult.cached.signature === ffzUserSignature) {
+                        // Same body as the list already applied: nothing would change.
+                    } else if (roomResult.ok && ffzResultData(roomResult)) {
+                        var data = ffzResultData(roomResult);
                         var roomSet = null;
                         if (data.room && data.room.set != null && data.sets) {
                             roomSet = data.sets[data.room.set] || data.sets[String(data.room.set)];
                         }
                         if (roomSet) changed = applyFfzList('user', roomSet.emoticons || []) || changed;
+                        rememberFfzRaw(roomResult, ffzUserSignature);
                     } else ok = false;
                 }
                 if (changed) rebuildEmoteLookupMap();

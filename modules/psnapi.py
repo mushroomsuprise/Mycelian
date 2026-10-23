@@ -23,6 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import copy
 import difflib
 import logging
 import re
@@ -92,6 +93,15 @@ _game_cache_by_title_id: dict[str, dict] = {}
 _game_cache_by_name: dict[str, dict] = {}
 _game_cache_by_comm_id: dict[str, dict] = {}
 _game_cache_index_loaded = False
+
+# find_game_by_name fuzzy fallback memo: (game_name, platform) ->
+# (candidate docs, their name/platform fields, result). Reused only while the
+# candidate list is the same objects with the same fields, so the answer is the one
+# a fresh scan would give; titles with no trophy mapping (apps, demos) otherwise
+# rescore every cached game on every 6 s presence cycle.
+_FUZZY_NAME_MEMO_MAX = 32
+_fuzzy_name_memo: dict[tuple, tuple] = {}
+_fuzzy_name_memo_lock = threading.Lock()
 
 
 def _normalize_game_name_key(name: str | None) -> str:
@@ -224,6 +234,44 @@ def find_best_fuzzy_game_name_match(
         platform or "",
     )
     return best_cand
+
+
+def _fuzzy_candidate_fields(docs: list) -> tuple:
+    return tuple(
+        (
+            d.get("presence_name"),
+            d.get("trophy_name"),
+            d.get("name"),
+            d.get("platform"),
+        )
+        if isinstance(d, dict)
+        else None
+        for d in docs
+    )
+
+
+def _memoized_fuzzy_game_name_match(
+    query: str, docs: list, platform: str | None
+) -> dict | None:
+    """``find_best_fuzzy_game_name_match`` over ``docs``, memoized on identical input."""
+    key = (query, platform)
+    fields = _fuzzy_candidate_fields(docs)
+    with _fuzzy_name_memo_lock:
+        hit = _fuzzy_name_memo.get(key)
+    if hit is not None:
+        prev_docs, prev_fields, result = hit
+        if (
+            len(prev_docs) == len(docs)
+            and all(a is b for a, b in zip(prev_docs, docs))
+            and prev_fields == fields
+        ):
+            return result
+    result = find_best_fuzzy_game_name_match(query, docs, platform=platform)
+    with _fuzzy_name_memo_lock:
+        if key not in _fuzzy_name_memo and len(_fuzzy_name_memo) >= _FUZZY_NAME_MEMO_MAX:
+            _fuzzy_name_memo.pop(next(iter(_fuzzy_name_memo)))
+        _fuzzy_name_memo[key] = (docs, fields, result)
+    return result
 
 
 def _invalidate_game_cache_index() -> None:
@@ -433,35 +481,73 @@ def load_all_psn_game_cache_docs_from_db() -> list[dict]:
 
 def get_psn_game_cache_by_comm_id(np_communication_id: str) -> dict | None:
     """Read one cached game document from the database (any backend)."""
+    return get_psn_game_cache_by_comm_id_checked(np_communication_id)[0]
+
+
+def get_psn_game_cache_by_comm_id_checked(
+    np_communication_id: str,
+) -> tuple[dict | None, bool]:
+    """``(doc or None, read_ok)``. ``read_ok`` is False when the read itself failed,
+    so a caller does not mistake an unreadable document for a missing one and
+    write a fresh document over it."""
     if not np_communication_id:
-        return None
+        return None, True
     try:
         path = f"{PSN_GAME_DATA_PATH}/{np_communication_id}"
-        data = database_manager.get_data(path)
+        data, ok = database_manager.get_data_checked(path)
+        if not ok:
+            logger.warning(
+                f"Cached game data for {np_communication_id} could not be read"
+            )
+            return None, False
         if data and isinstance(data, dict) and data.get("np_communication_id"):
             logger.debug(f"Found cached game data for {np_communication_id}")
-            return data
+            return data, True
         logger.debug(f"No cached game data found for {np_communication_id}")
-        return None
+        return None, True
     except Exception as e:
         logger.error(
             f"Error retrieving cached game data for {np_communication_id}: {e}"
         )
-        return None
+        return None, False
 
 
 def update_psn_game_cache_in_db(np_communication_id: str, updates: dict) -> bool:
     """Update fields in one cached game document. Does not require a PSNClient instance."""
+    return _update_psn_game_cache(np_communication_id, updates) is not None
+
+
+def update_psn_game_cache_from_existing(
+    np_communication_id: str, updates: dict, existing: dict
+) -> dict | None:
+    """Like :func:`update_psn_game_cache_in_db`, starting from a document the caller
+    just read with :func:`get_psn_game_cache_by_comm_id` (saves re-reading it).
+
+    Returns the document as written (a copy; ``existing`` is not modified), or None
+    when the write failed.
+    """
+    return _update_psn_game_cache(
+        np_communication_id, updates, existing=copy.deepcopy(existing)
+    )
+
+
+def _update_psn_game_cache(
+    np_communication_id: str, updates: dict, *, existing: dict | None = None
+) -> dict | None:
     try:
         if not np_communication_id:
             logger.error("Cannot update game cache: missing np_communication_id")
-            return False
-        existing_data = get_psn_game_cache_by_comm_id(np_communication_id)
+            return None
+        existing_data = (
+            existing
+            if existing is not None
+            else get_psn_game_cache_by_comm_id(np_communication_id)
+        )
         if not existing_data:
             logger.error(
                 f"Cannot update game cache: game {np_communication_id} not found"
             )
-            return False
+            return None
         for key, value in updates.items():
             existing_data[key] = value
         existing_data["last_updated"] = datetime.now().isoformat()
@@ -476,10 +562,10 @@ def update_psn_game_cache_in_db(np_communication_id: str, updates: dict) -> bool
             )
         else:
             logger.error(f"Failed to update game cache for {np_communication_id}")
-        return result
+        return existing_data if result else None
     except Exception as e:
         logger.error(f"Error updating game cache for {np_communication_id}: {e}")
-        return False
+        return None
 
 
 def delete_psn_game_cache_in_db(np_communication_id: str) -> bool:
@@ -574,6 +660,12 @@ class PSNClient:
             Game data dict if found, None otherwise
         """
         return get_psn_game_cache_by_comm_id(np_communication_id)
+
+    def get_cached_game_data_checked(
+        self, np_communication_id: str
+    ) -> tuple[dict | None, bool]:
+        """Like :meth:`get_cached_game_data`, plus whether the read succeeded."""
+        return get_psn_game_cache_by_comm_id_checked(np_communication_id)
 
     def store_game_data(self, game_data: dict) -> bool:
         """
@@ -679,9 +771,7 @@ class PSNClient:
                         return game_data
                 cache_docs = list(_game_cache_by_comm_id.values())
 
-            fuzzy = find_best_fuzzy_game_name_match(
-                game_name, cache_docs, platform=platform
-            )
+            fuzzy = _memoized_fuzzy_game_name_match(game_name, cache_docs, platform)
             if fuzzy:
                 return fuzzy
 
@@ -712,6 +802,12 @@ class PSNClient:
             True if updated successfully, False otherwise
         """
         return update_psn_game_cache_in_db(np_communication_id, updates)
+
+    def update_game_cache_entry_from(
+        self, np_communication_id: str, updates: dict, existing: dict
+    ) -> dict | None:
+        """Update from a just-read document; returns the written document or None."""
+        return update_psn_game_cache_from_existing(np_communication_id, updates, existing)
 
     def delete_game_cache_entry(self, np_communication_id: str) -> bool:
         """Remove one cached game document. Next presence cycle may re-fetch and store it."""

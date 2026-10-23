@@ -71,7 +71,7 @@ class PSNTab:
         if self._mismatch_timer is not None:
             self._mismatch_timer.active = True
         layout_schedule(0.05, self._refresh_status, once=True)
-        layout_schedule(0.2, self.refresh_game_cache, once=True)
+        layout_schedule(0.2, self._refresh_game_cache_async, once=True)
 
     def on_exit(self) -> None:
         if self._status_timer is not None:
@@ -175,7 +175,8 @@ class PSNTab:
 
             settings_divider()
             self._build_game_cache_section()
-            self.refresh_game_cache()
+            # The section build just loaded the list from the database.
+            self.refresh_game_cache(reload=False)
 
             layout_schedule(0.1, self._refresh_status, once=True)
             layout_schedule(0.8, self._refresh_status, once=True)
@@ -669,7 +670,7 @@ class PSNTab:
                 ui.label("Search game").classes("text-sm secondary-text shrink-0 pb-2")
                 self._game_select_container = ui.column().classes("flex-1 min-w-0")
             with self._game_select_container:
-                self._rebuild_game_select()
+                self._rebuild_game_select(reload=False)
 
             self.ui_elements["game_details_container"] = ui.column().classes(
                 "w-full gap-2 mt-2"
@@ -728,12 +729,13 @@ class PSNTab:
 
         self.ui_elements["game_details_container"].set_visibility(False)
 
-    def _rebuild_game_select(self) -> None:
+    def _rebuild_game_select(self, *, reload: bool = True) -> None:
         """Rebuild the game dropdown or empty-state label inside the selector column."""
         if not self._game_select_container:
             return
         self._game_select_container.clear()
-        self._load_cached_games()
+        if reload:
+            self._load_cached_games()
         game_options = self._get_game_options()
         with self._game_select_container:
             if game_options:
@@ -799,14 +801,27 @@ class PSNTab:
                 self.ui_elements["game_details_container"].set_visibility(False)
         self.refresh_game_cache()
 
-    def _load_cached_games(self) -> None:
-        """Load all cached game documents from the app database (no live PSN client required)."""
+    @staticmethod
+    def _fetch_cached_games() -> List[dict]:
         try:
-            self._cached_games = load_all_psn_game_cache_docs_from_db()
-            logger.debug(f"Loaded {len(self._cached_games)} cached game(s) from database")
+            games = load_all_psn_game_cache_docs_from_db()
+            logger.debug(f"Loaded {len(games)} cached game(s) from database")
+            return games
         except Exception as e:
             logger.error(f"Error loading cached games: {str(e)}")
-            self._cached_games = []
+            return []
+
+    def _load_cached_games(self) -> None:
+        """Load all cached game documents from the app database (no live PSN client required)."""
+        self._cached_games = self._fetch_cached_games()
+
+    async def _refresh_game_cache_async(self) -> None:
+        """Tab-enter refresh: load the list on a worker thread, then rebuild on the loop."""
+        games = await run.io_bound(self._fetch_cached_games)
+        if games is None:
+            return
+        self._cached_games = games
+        self.refresh_game_cache(reload=False)
 
     def _get_game_options(self) -> dict:
         """Get game options for the dropdown as {np_communication_id: display_name}."""
@@ -961,9 +976,10 @@ class PSNTab:
             logger.error(f"Error saving game cache: {str(e)}")
             notify(f"Error saving: {str(e)}", type="negative")
 
-    def refresh_game_cache(self) -> None:
+    def refresh_game_cache(self, *, reload: bool = True) -> None:
         """Reload list from the database and rebuild selector, chips, and details sync."""
-        self._load_cached_games()
+        if reload:
+            self._load_cached_games()
         if self._cache_chip_container:
             self._rebuild_cache_chips()
         if not self._game_select_container:
@@ -971,7 +987,7 @@ class PSNTab:
         prev_id = None
         if self._selected_game:
             prev_id = self._selected_game.get("np_communication_id")
-        self._rebuild_game_select()
+        self._rebuild_game_select(reload=False)
         self._rebuild_cache_chips()
         if prev_id and any(
             g.get("np_communication_id") == prev_id for g in self._cached_games

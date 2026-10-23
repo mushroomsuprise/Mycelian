@@ -24,7 +24,7 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
-from nicegui import ui
+from nicegui import run, ui
 
 from ...build_info import resolve_build_number
 from ...ui_buttons import outline_button, primary_button
@@ -121,7 +121,7 @@ class AboutTab:
                 self._build_hero()
                 self._build_health()
                 self._build_sources()
-        layout_schedule(0.1, self.refresh_logs, once=True)
+        layout_schedule(0.1, self.refresh_logs_async, once=True)
         layout_schedule(0.1, self.refresh_sources, once=True)
         self._update_timer = layout_schedule(1.5, self._tick_update, active=True)
 
@@ -246,7 +246,7 @@ class AboutTab:
                     ui.button(icon="folder_open", on_click=self.host.open_logs_folder).props("flat round dense").tooltip(
                         "Open the logs folder"
                     )
-                    ui.button(icon="refresh", on_click=self.refresh_logs).props("flat round dense").tooltip("Check the log again")
+                    ui.button(icon="refresh", on_click=self.refresh_logs_async).props("flat round dense").tooltip("Check the log again")
             self.health_box = ui.element("div")
 
     def _summary(self):
@@ -262,11 +262,34 @@ class AboutTab:
         try:
             summary = self._summary()
         except Exception as e:
-            logger.error("Error reading log file: %s", e, exc_info=True)
-            with box:
-                ui.html(f'<span class="abt-pill is-error">{_icon("error")}Could not read the log file</span>', sanitize=False)
+            self._render_log_error(box, e)
             return
+        self._render_logs(box, summary)
 
+    async def refresh_logs_async(self) -> None:
+        """Same as :meth:`refresh_logs`, reading and parsing the log tail on a worker
+        thread; the card is cleared and rebuilt once the result is ready."""
+        box = self.health_box
+        if box is None:
+            return
+        try:
+            summary = await run.io_bound(self._summary)
+        except Exception as e:
+            box.clear()
+            self._render_log_error(box, e)
+            return
+        if summary is None or getattr(box, "is_deleted", False):
+            return
+        box.clear()
+        self._render_logs(box, summary)
+
+    @staticmethod
+    def _render_log_error(box, e: Exception) -> None:
+        logger.error("Error reading log file: %s", e, exc_info=True)
+        with box:
+            ui.html(f'<span class="abt-pill is-error">{_icon("error")}Could not read the log file</span>', sanitize=False)
+
+    def _render_logs(self, box, summary) -> None:
         with box:
             if summary.total_count == 0:
                 with ui.element("div").classes("abt-clean"):
