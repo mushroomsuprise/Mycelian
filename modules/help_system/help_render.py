@@ -160,6 +160,56 @@ def promote_color_importance(css: str) -> str:
 _promote_colors = promote_color_importance
 
 
+def scope_selectors(css: str, scope: str) -> str:
+    """Prefix every selector with ``scope`` (e.g. ``.abt``) unless it already starts with it.
+
+    Raises single-class rules above the app's ``body:not(.body--dark) div`` light-mode
+    rule. ``body…`` selectors keep their position: ``body:not(.x) .a`` becomes
+    ``body:not(.x) .abt .a``. @media blocks are scoped too; @keyframes are left alone.
+    """
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    out: List[str] = []
+    i, n = 0, len(css)
+    while i < n:
+        brace = css.find("{", i)
+        if brace == -1:
+            out.append(css[i:])
+            break
+        head = css[i:brace]
+        stripped = head.strip()
+        if stripped.startswith("@"):
+            depth, j = 1, brace + 1
+            while j < n and depth:
+                depth += {"{": 1, "}": -1}.get(css[j], 0)
+                j += 1
+            inner = css[brace + 1:j - 1]
+            if stripped.startswith("@media") or stripped.startswith("@supports"):
+                inner = scope_selectors(inner, scope)
+            out.append(f"{head}{{{inner}}}")
+            i = j
+            continue
+        end = css.find("}", brace)
+        selectors = []
+        for sel in stripped.split(","):
+            sel = sel.strip()
+            if not sel:
+                continue
+            if sel.startswith(scope) and (len(sel) == len(scope) or not (sel[len(scope)].isalnum() or sel[len(scope)] in "-_")):
+                selectors.append(sel)
+            elif sel.startswith("body"):
+                first, _, rest = sel.partition(" ")
+                if rest.startswith(scope + " ") or rest == scope:
+                    selectors.append(sel)
+                else:
+                    selectors.append(f"{first} {scope} {rest}".strip() if rest else f"{first} {scope}")
+            else:
+                selectors.append(f"{scope} {sel}")
+        lead = head[: len(head) - len(head.lstrip())]
+        out.append(f"{lead}{', '.join(selectors)} {css[brace:end + 1]}")
+        i = end + 1
+    return "".join(out)
+
+
 @lru_cache(maxsize=1)
 def help_page_css() -> str:
     css_dir = _package_path("assets", "css")

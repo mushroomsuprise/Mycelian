@@ -400,6 +400,31 @@ class UpdateManager:
         self._ui_ready_scheduled = False
         self._automatic_startup_check_done = False
         self._pending_prompt: Optional[Dict[str, Any]] = None
+        # Last check outcome, for the About tab: None (not checked this session),
+        # "up_to_date", "available" or "error".
+        self.last_check_result: Optional[str] = None
+        self.last_check_at: Optional[float] = None
+        self.last_check_error: str = ""
+        self.available_update: Optional[Dict[str, Any]] = None
+
+    @property
+    def is_checking(self) -> bool:
+        return self._check_running
+
+    def show_available_update(self) -> bool:
+        """Re-open the prompt for an update found by an earlier check. False if none."""
+        if not self.available_update or self._dialog_is_open():
+            return False
+        self._show_update_modal(self.available_update, manual=True)
+        return True
+
+    def _record_check(self, result: str, update_info: Optional[Dict[str, Any]] = None, error: str = "") -> None:
+        import time
+
+        self.last_check_result = result
+        self.last_check_at = time.time()
+        self.last_check_error = error
+        self.available_update = update_info if result == "available" else None
 
     def _dialog_is_open(self) -> bool:
         """Treat a missing/tray-unloaded client as the dialog no longer being open."""
@@ -557,6 +582,7 @@ class UpdateManager:
                     poll_counter["count"] += 1
                     if poll_counter["count"] >= max_polls:
                         logger.warning("UpdateManager: update check timed out")
+                        self._record_check("error", error="The update check timed out")
                         if not manual:
                             self._automatic_startup_check_done = True
                         self._check_running = False
@@ -566,6 +592,7 @@ class UpdateManager:
                         return True
 
                     if result_holder["error"]:
+                        self._record_check("error", error=str(result_holder["error"]))
                         if manual:
                             notify(f"Error checking for updates: {result_holder['error']}", type="negative")
                         elif not manual:
@@ -574,6 +601,7 @@ class UpdateManager:
                         return False
 
                     update_info = result_holder["update_info"]
+                    self._record_check("available" if update_info else "up_to_date", update_info)
                     if update_info and (manual or not self._session_suppressed):
                         self._show_update_modal(update_info, manual=manual)
                     else:

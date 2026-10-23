@@ -155,14 +155,14 @@
       <div data-panel="about" class="hm-col">
         <div class="hm-panel">
           <div class="hm-row"><span class="hm-panel-title">Mycelian</span>
-            <span class="hm-btn hm-dense"><span class="hx-mi">system_update</span>Check for Updates</span>
+            <span class="hm-btn hm-dense"><span class="hx-mi">system_update</span>Check for updates</span>
             <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">code</span>View on GitHub</span>
-            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">history</span>View Changelog</span>
+            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">history</span>What's new</span>
           </div>
           <span class="hm-muted hm-xs">Version · Build Number · Built on</span>
         </div>
-        <div class="hm-panel"><div class="hm-row hm-between"><span class="hm-panel-title">Application Logs</span><span class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">folder_open</span>Open Logs Folder</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh</span></span></div><span class="hm-muted hm-xs">No actionable errors</span></div>
-        <div class="hm-panel"><div class="hm-row hm-between"><span class="hm-panel-title">Available Source URLs</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh URLs</span></div><span class="hm-muted hm-xs">Copy these URLs to use as Browser Sources in OBS or other streaming software.</span></div>
+        <div class="hm-panel"><div class="hm-row hm-between"><span class="hm-panel-title">Health check</span><span class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">folder_open</span>Open the logs folder</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh</span></span></div><span class="hm-muted hm-xs">No actionable errors</span></div>
+        <div class="hm-panel"><div class="hm-row hm-between"><span class="hm-panel-title">Browser source URLs</span><span class="hm-btn hm-icon-only"><span class="hx-mi">refresh</span></span></div><span class="hm-muted hm-xs">Copy these URLs to use as Browser Sources in OBS or other streaming software.</span></div>
       </div>
 
     </div>
@@ -202,7 +202,7 @@
 <tr><td><strong>App font</strong>, <strong>UI scale</strong></td><td>Font and zoom (90% to 125%) for the whole window</td></tr>
 <tr><td><strong>Notifications</strong></td><td>Shows pop-up messages from Mycelian</td></tr>
 <tr><td><strong>Show connection status footer</strong>, <strong>Minimal status badges</strong></td><td>The bar at the bottom of the window. See <a href="help:status_footer">Status Footer</a></td></tr>
-<tr><td><strong>Auto update</strong>, <strong>Update check</strong></td><td>Check for new versions on a schedule; how often to check (5 to 120 minutes). With it off, use <strong>Check for Updates</strong> on the About tab</td></tr>
+<tr><td><strong>Auto update</strong>, <strong>Update check</strong></td><td>Check for new versions on a schedule; how often to check (5 to 120 minutes). With it off, use <strong>Check for updates</strong> on the About tab</td></tr>
 <tr><td><strong>Start maximized</strong></td><td>Opens the window maximized. Applies on next launch</td></tr>
 <tr><td><strong>Minimize to tray</strong>, <strong>Start minimized to tray</strong>, <strong>Run at login</strong></td><td>Keep Mycelian running in the background. <strong>Run at login</strong> only works in an installed build</td></tr>
 <tr><td><strong>History limit</strong>, <strong>Max pages</strong></td><td>How many Activity Feed items load per page and how many pages are kept</td></tr>
@@ -213,7 +213,11 @@
 
 <h3>About</h3>
 
-<p>Version and update check, recent errors from the log with <strong>Open Logs Folder</strong>, and <strong>Available Source URLs</strong>: every overlay URL you can add to OBS. See <a href="help:obs_setup">Setting Up Browser Sources in OBS</a>.</p>
+<ul>
+<li><strong>Header</strong>: version, build (click to copy) and build date, with <strong>Check for updates</strong> and <strong>What's new</strong>. The status line under it shows the result of the last check this session; when a newer version is found it offers <strong>Update now</strong>.</li>
+<li><strong>Health check</strong>: recent errors from <code>mycelian.log</code>, newest first, with where they came from and how often. Click one to see the full message and copy it. The clipboard button copies a diagnostics report (version, system and these errors) to paste into a bug report; the folder button opens the logs folder.</li>
+<li><strong>Browser source URLs</strong>: every overlay URL you can add to OBS. Type in <strong>Filter sources</strong> to narrow the list, click a URL to copy it, or use the OBS button to add it straight to a scene. See <a href="help:obs_setup">Setting Up Browser Sources in OBS</a>.</li>
+</ul>
 
 <h2>Saving changes</h2>
 

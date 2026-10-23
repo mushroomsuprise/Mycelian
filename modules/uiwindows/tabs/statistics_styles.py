@@ -5,6 +5,7 @@
 STATISTICS_CSS = """
 .mst { width: 100%; display: flex; flex-direction: column; gap: 14px; color: var(--color-text-primary); }
 .mst * { box-sizing: border-box; }
+.mst .material-icons { color: inherit; }  /* first: specific icon colors below override */
 
 /* ---- toolbar ------------------------------------------------------------ */
 .mst-toolbar {

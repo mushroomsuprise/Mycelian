@@ -42,7 +42,7 @@
     <details class="hx-details">
       <summary>Test does not show: wrong or missing browser source</summary>
       <p><strong>Cause:</strong> OBS is not loading the alerts page.</p>
-      <p><strong>Fix:</strong> In OBS, open the browser source's properties and check the URL is <span class="hx-copy" data-copy="http://127.0.0.1:5000/alerts">http://127.0.0.1:5000/alerts</span>. Make sure the source's eye icon is on and it is in the scene you are viewing. Click <strong>Refresh cache of current page</strong> in its properties. The exact URLs for every overlay are listed in <span class="hx-path"><span>Settings</span><span>About</span></span> under <strong>Available Source URLs</strong>. See <a href="help:obs_setup">OBS Setup</a>.</p>
+      <p><strong>Fix:</strong> In OBS, open the browser source's properties and check the URL is <span class="hx-copy" data-copy="http://127.0.0.1:5000/alerts">http://127.0.0.1:5000/alerts</span>. Make sure the source's eye icon is on and it is in the scene you are viewing. Click <strong>Refresh cache of current page</strong> in its properties. The exact URLs for every overlay are listed in <span class="hx-path"><span>Settings</span><span>About</span></span> under <strong>Browser source URLs</strong>. See <a href="help:obs_setup">OBS Setup</a>.</p>
     </details>
 
     <details class="hx-details">
@@ -162,10 +162,10 @@
   <div class="hm">
     <div class="hm-panel">
       <div class="hm-row hm-between hm-top">
-        <div class="hm-col hm-tight"><span class="hm-bold">Application Logs</span><span class="hm-xs hm-muted">Actionable errors from the application log file, excluding known noise such as expired tokens.</span></div>
-        <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">folder_open</span>Open Logs Folder</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh</span></div>
+        <div class="hm-col hm-tight"><span class="hm-bold">Health check</span><span class="hm-xs hm-muted">Recent errors from mycelian.log. Known harmless messages, like expired tokens, are skipped.</span></div>
+        <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">folder_open</span>Open the logs folder</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh</span></div>
       </div>
-      <span class="hm-sm hm-warn">2 actionable errors</span>
+      <span class="hm-sm hm-warn">2 errors in the log</span>
     </div>
   </div>
   <figcaption><span class="hx-path"><span>Settings</span><span>About</span></span>. Click <strong>Refresh</strong> after reproducing the problem.</figcaption>

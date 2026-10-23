@@ -34,6 +34,7 @@ _NOISE_SUBSTRINGS = (
 
 DEFAULT_TAIL_BYTES = 512 * 1024
 DEFAULT_MAX_UNIQUE = 5
+_MAX_DETAIL_LINES = 40
 
 
 @dataclass
@@ -50,6 +51,9 @@ class UniqueError:
     message: str
     count: int
     last_seen: str
+    level: str = "ERROR"
+    source: str = ""  # logger name, e.g. ``modules.twitch``
+    details: List[str] = field(default_factory=list)  # traceback lines of the latest occurrence
 
 
 @dataclass
@@ -135,14 +139,21 @@ def _dedupe_errors(entries: List[LogEntry]) -> List[UniqueError]:
 
     for entry in entries:
         key = _normalize_message(entry.message)
+        details = entry.raw_lines[1:_MAX_DETAIL_LINES + 1]
         if key in buckets:
             buckets[key].count += 1
             buckets[key].last_seen = entry.timestamp
+            buckets[key].details = details
+            if entry.level == "CRITICAL":
+                buckets[key].level = "CRITICAL"
         else:
             buckets[key] = UniqueError(
                 message=entry.message,
                 count=1,
                 last_seen=entry.timestamp,
+                level=entry.level,
+                source=entry.logger,
+                details=details,
             )
             order.append(key)
 

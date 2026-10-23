@@ -3390,136 +3390,10 @@ class SettingsUI:
         return f"{count} {noun}"
 
     def refresh_source_urls(self):
-        """Refresh the list of available source URLs"""
-        urls = []  # Initialize urls variable at the start
-        try:
-            # Get the source URLs container
-            container = self.ui_elements.get("source_urls_container")
-            if not container:
-                logger.warning("Source URLs container not found")
-                return
-
-            # Clear existing content
-            container.clear()
-
-            # Get available URLs from web engine
-            from .. import alert_processor, web_engine
-
-            # Check both locations for web engine instance
-            engine_instance = None
-            if web_engine.web_engine_instance:
-                engine_instance = web_engine.web_engine_instance
-            elif alert_processor.web_engine_instance:
-                engine_instance = alert_processor.web_engine_instance
-
-            if engine_instance:
-                urls = engine_instance.get_available_source_urls()
-
-                if urls:
-                    display_urls = [
-                        u
-                        for u in urls
-                        if u.get("type") != "system_info"
-                        and not str(u.get("name", "")).startswith("_")
-                    ]
-                    with container:
-                        with ui.element("div").classes("source-url-cards-grid"):
-                            for url_info in display_urls:
-                                description = url_info["description"]
-                                with ui.card().classes(
-                                    "w-full source-url-card settings-tab-card transition-colors"
-                                ):
-                                    with ui.column().classes("w-full gap-1"):
-                                        with ui.row().classes(
-                                            "items-center w-full source-url-card-header"
-                                        ):
-                                            with ui.element(
-                                                "div"
-                                            ).classes(
-                                                "source-url-card-header-info"
-                                            ).tooltip(description).classes(
-                                                "bg-theme-surface"
-                                            ):
-                                                ui.label(
-                                                    url_info.get("title")
-                                                    or self._format_source_url_title(
-                                                        url_info["name"]
-                                                    )
-                                                ).classes(
-                                                    "text-sm font-semibold source-url-card-title"
-                                                )
-                                                if url_info.get("type") == "container":
-                                                    ui.label("Container").classes(
-                                                        "source-url-card-badge source-url-card-badge--container text-xs"
-                                                    )
-                                                ui.label(
-                                                    self._format_source_url_control_badge(
-                                                        url_info
-                                                    )
-                                                ).classes(
-                                                    "source-url-card-badge text-xs"
-                                                )
-
-                                            copy_btn = ui.button(
-                                                "",
-                                                on_click=lambda _=None,
-                                                url=url_info[
-                                                    "url"
-                                                ]: self._copy_url_to_clipboard(
-                                                    url
-                                                ),
-                                            ).props(
-                                                "size=sm icon=content_copy outline color=primary"
-                                            ).classes("source-url-card-copy")
-                                            copy_btn.tooltip(
-                                                "Copy URL to clipboard"
-                                            )
-                                            obs_btn = ui.button(
-                                                "",
-                                                on_click=lambda _=None, info=url_info: self._prompt_add_source_to_obs(
-                                                    info
-                                                ),
-                                            ).props(
-                                                "size=sm outline color=primary"
-                                            ).classes("source-url-card-obs")
-                                            with obs_btn:
-                                                ui.html(
-                                                    SERVICE_BRAND_SVG["obs"],
-                                                    tag="span",
-                                                    sanitize=False,
-                                                ).classes("source-url-card-obs-icon")
-                                            obs_btn.tooltip("Add to OBS")
-
-                                        url_input = ui.input(
-                                            value=url_info["url"]
-                                        ).classes("w-full font-mono text-xs")
-                                        url_input.props("outlined dense readonly")
-                                        url_input.tooltip(
-                                            "Browser source URL for OBS"
-                                        ).classes("bg-theme-surface")
-                else:
-                    with container:
-                        ui.label(
-                            "No source URLs available. Make sure the web engine is running."
-                        ).classes("secondary-text text-center p-4")
-            else:
-                with container:
-                    ui.label(
-                        "Web engine not available. Please start the application properly."
-                    ).classes("text-red-400 text-center p-4")
-
-            logger.debug(f"Refreshed source URLs display with {len(urls)} URLs")
-
-        except Exception as e:
-            logger.error(f"Error refreshing source URLs: {str(e)}", exc_info=True)
-            # Show error in the container if possible
-            container = self.ui_elements.get("source_urls_container")
-            if container:
-                container.clear()
-                with container:
-                    ui.label(f"Error loading URLs: {str(e)}").classes(
-                        "text-red-400 text-center p-4"
-                    )
+        """Reload the source URL cards on the About tab."""
+        about = getattr(self, "_about_tab", None)
+        if about is not None:
+            about.refresh_sources()
 
     @staticmethod
     def _truncate_log_error_message(message: str, max_len: int = 120) -> str:
@@ -3529,40 +3403,10 @@ class SettingsUI:
         return text[: max_len - 1] + "…"
 
     def refresh_log_errors(self) -> None:
-        """Refresh actionable error summary from mycelian.log."""
-        count_label = self.ui_elements.get("log_error_count_label")
-        list_container = self.ui_elements.get("log_errors_list_container")
-        if not count_label or not list_container:
-            return
-
-        try:
-            summary = get_actionable_errors()
-            list_container.clear()
-
-            if summary.total_count == 0:
-                count_label.set_text("No actionable errors")
-                count_label.classes(remove="text-amber-400 text-red-400")
-                count_label.classes(add="secondary-text")
-                return
-
-            noun = "error" if summary.total_count == 1 else "errors"
-            count_label.set_text(f"{summary.total_count} actionable {noun}")
-            count_label.classes(remove="secondary-text")
-            count_label.classes(add="text-amber-400")
-
-            with list_container:
-                for item in summary.unique_errors:
-                    display = self._truncate_log_error_message(item.message)
-                    if item.count > 1:
-                        display = f"{display} (×{item.count})"
-                    ui.label(display).classes("secondary-text text-sm break-words")
-
-        except Exception as e:
-            logger.error(f"Error refreshing log errors: {e}", exc_info=True)
-            count_label.set_text("Unable to read log file")
-            count_label.classes(remove="secondary-text text-amber-400")
-            count_label.classes(add="text-red-400")
-            list_container.clear()
+        """Re-read actionable errors from mycelian.log on the About tab."""
+        about = getattr(self, "_about_tab", None)
+        if about is not None:
+            about.refresh_logs()
 
     def open_logs_folder(self) -> None:
         """Open the folder containing mycelian.log in the native file manager."""
@@ -3572,15 +3416,15 @@ class SettingsUI:
             logger.error(f"Error opening logs folder: {e}", exc_info=True)
             notify("Failed to open logs folder.", type="negative")
 
-    def _copy_url_to_clipboard(self, url: str):
-        """Copy URL to clipboard and show notification"""
+    def _copy_url_to_clipboard(self, url: str, notice: Optional[str] = None):
+        """Copy text (usually a URL) to the clipboard and show a notification."""
         try:
             # Use Python's native clipboard functionality for NiceGUI desktop app
             try:
                 import pyperclip
 
                 pyperclip.copy(url)
-                notify(f"Copied: {url}", type="positive", timeout=2000)
+                notify(notice or f"Copied: {url}", type="positive", timeout=2000)
                 logger.debug(f"Copied URL to clipboard using pyperclip: {url}")
                 return
             except ImportError:
@@ -3592,11 +3436,11 @@ class SettingsUI:
 
             if sys.platform == "darwin":  # macOS
                 subprocess.run(["pbcopy"], input=url.encode(), check=True)
-                notify(f"Copied: {url}", type="positive", timeout=2000)
+                notify(notice or f"Copied: {url}", type="positive", timeout=2000)
                 logger.debug(f"Copied URL to clipboard using pbcopy: {url}")
             elif sys.platform == "win32":  # Windows
                 subprocess.run(["clip"], input=url.encode(), shell=True, check=True)
-                notify(f"Copied: {url}", type="positive", timeout=2000)
+                notify(notice or f"Copied: {url}", type="positive", timeout=2000)
                 logger.debug(f"Copied URL to clipboard using clip: {url}")
             elif sys.platform.startswith("linux"):  # Linux
                 # Try xclip first, then xsel as fallback
@@ -3606,7 +3450,7 @@ class SettingsUI:
                         input=url.encode(),
                         check=True,
                     )
-                    notify(f"Copied: {url}", type="positive", timeout=2000)
+                    notify(notice or f"Copied: {url}", type="positive", timeout=2000)
                     logger.debug(f"Copied URL to clipboard using xclip: {url}")
                 except (subprocess.CalledProcessError, FileNotFoundError):
                     subprocess.run(
@@ -3614,7 +3458,7 @@ class SettingsUI:
                         input=url.encode(),
                         check=True,
                     )
-                    notify(f"Copied: {url}", type="positive", timeout=2000)
+                    notify(notice or f"Copied: {url}", type="positive", timeout=2000)
                     logger.debug(f"Copied URL to clipboard using xsel: {url}")
             else:
                 raise Exception(f"Unsupported platform: {sys.platform}")
@@ -5694,81 +5538,11 @@ class SettingsUI:
         # log_startup_summary()
 
     def _build_about_tab(self, container):
-        """Build the About tab content"""
-        with settings_surface(container):
-            with settings_header("Mycelian"):
-                ui.button(
-                    "Check for Updates",
-                    on_click=self.check_for_updates_manual,
-                ).props("icon=system_update color=primary dense")
-                outline_button(
-                    "View on GitHub",
-                    lambda: webbrowser.open(
-                        "https://github.com/mushroomsuprise/mycelian"
-                    ),
-                    icon="code",
-                    extra_classes="dense",
-                )
-                outline_button(
-                    "View Changelog",
-                    self.show_changelog_modal,
-                    icon="history",
-                    extra_classes="dense",
-                )
-            with ui.row().classes("gap-4 flex-wrap"):
-                ui.label(f"Version {self.app_settings.version}").classes(
-                    "secondary-text text-sm"
-                )
-                ui.label(
-                    f"Build Number {resolve_build_number(getattr(self.app_settings, 'build_number', 'dev'))}"
-                ).classes("secondary-text text-sm")
-                ui.label(f"Built on {self.app_settings.build_date}").classes(
-                    "secondary-text text-sm"
-                )
+        """Build the About tab content (see tabs/about_tab.py)."""
+        from .tabs.about_tab import AboutTab
 
-        with settings_surface(container):
-            with ui.row().classes("w-full items-start justify-between gap-3"):
-                with ui.column().classes("gap-1 min-w-0"):
-                    ui.label("Application Logs").classes("text-base font-semibold")
-                    ui.label(
-                        "Actionable errors from the application log file, "
-                        "excluding known noise such as expired tokens."
-                    ).classes("secondary-text text-sm")
-                with ui.row().classes("items-center gap-2 shrink-0"):
-                    outline_button(
-                        "Open Logs Folder",
-                        self.open_logs_folder,
-                        icon="folder_open",
-                        extra_classes="dense",
-                    )
-                    ui.button("Refresh", on_click=self.refresh_log_errors).props(
-                        "icon=refresh outline dense"
-                    )
-            self.ui_elements["log_error_count_label"] = ui.label(
-                "No actionable errors"
-            ).classes("secondary-text text-sm")
-            self.ui_elements["log_errors_list_container"] = ui.column().classes(
-                "w-full gap-1 mt-1"
-            )
-            layout_schedule(0.1, lambda: self.refresh_log_errors(), once=True)
-
-        with settings_surface(container):
-            with ui.row().classes("w-full items-start justify-between gap-3"):
-                with ui.column().classes("gap-1 min-w-0"):
-                    ui.label("Available Source URLs").classes(
-                        "text-base font-semibold"
-                    )
-                    ui.label(
-                        "Copy these URLs to use as Browser Sources in OBS "
-                        "or other streaming software."
-                    ).classes("secondary-text text-sm")
-                ui.button("Refresh URLs", on_click=self.refresh_source_urls).props(
-                    "icon=refresh outline dense"
-                )
-            self.ui_elements["source_urls_container"] = ui.column().classes(
-                "w-full gap-2 mt-2"
-            )
-            layout_schedule(0.1, lambda: self.refresh_source_urls(), once=True)
+        self._about_tab = AboutTab(self)
+        self._about_tab.build(container)
 
     def _note_settings_tab_loaded(self, tab_name: str) -> None:
         """Remember the field values just built so later edits can be detected."""
