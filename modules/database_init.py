@@ -40,6 +40,10 @@ from .notification_engine import nav_actions_settings, notify_critical
 
 logger = logging.getLogger(__name__)
 
+# The settings migration thread starts before the startup preload; it waits this
+# long for the preload's DatabaseSettings before reading the path itself.
+_MIGRATION_PRELOAD_WAIT_SEC = 120.0
+
 
 def _create_default_data():
     """Create default data for new database installations"""
@@ -325,7 +329,13 @@ def _migrate_old_database_settings_if_needed(config_data: dict) -> bool:
         from . import database_manager
 
         try:
-            raw = database_manager.get_data("DatabaseSettings") or {}
+            # Reuse the startup preload's copy (Phase 1 reads this path anyway);
+            # read it here only when the preload is missing, failed, or empty.
+            raw = database_manager.wait_for_startup_preload(
+                "DatabaseSettings", _MIGRATION_PRELOAD_WAIT_SEC
+            )
+            if not raw:
+                raw = database_manager.get_data("DatabaseSettings") or {}
             if not raw:
                 logger.debug("DatabaseSettings empty; skipping old-settings migration")
                 return True
