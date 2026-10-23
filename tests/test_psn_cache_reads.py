@@ -77,6 +77,10 @@ class _FakeDB:
         raw = self.store.get(path)
         return json.loads(raw) if raw is not None else None
 
+    def get_data_checked(self, path):
+        data = self.get_data(path)
+        return (data if data is not None else {}), True
+
     def set_data(self, path, value):
         self.sets.append((path, json.dumps(value, sort_keys=True)))
         self.store[path] = json.dumps(value)

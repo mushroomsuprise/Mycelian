@@ -1814,12 +1814,16 @@ class ActivityFeedViewManager:
             return self.snapshot()
         self._loaded = True
         try:
-            from ..database_manager import get_data_checked
+            from ..database_manager import get_data, get_data_checked
 
-            raw, ok = get_data_checked(ACTIVITY_FEED_VIEW_PATH)
-            if not ok:
-                self._read_failed = True
-                raise RuntimeError("the read failed")
+            raw = get_data(ACTIVITY_FEED_VIEW_PATH)
+            if not raw:
+                # get_data returns {} for a failed read too; ask once more in a
+                # way that tells the two apart.
+                raw, ok = get_data_checked(ACTIVITY_FEED_VIEW_PATH)
+                if not ok:
+                    self._read_failed = True
+                    raise RuntimeError("the read failed")
             raw = raw or {}
             if not isinstance(raw, dict):
                 raise TypeError("ActivityFeedView document is not a dict")
