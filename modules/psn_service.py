@@ -442,11 +442,14 @@ def psn_data_update_loop():
                                 "trophy_groups_updated_at"
                             ):
                                 mapping_updates.pop("has_trophy_groups", None)
-                            psn_client_instance.update_game_cache_entry(
-                                np_communication_id, mapping_updates
+                            # Update from the doc just read and reuse what was written,
+                            # instead of reading the same doc twice more.
+                            written = psn_client_instance.update_game_cache_entry_from(
+                                np_communication_id, mapping_updates, existing
                             )
                             cached_game = (
-                                psn_client_instance.get_cached_game_data(
+                                written
+                                or psn_client_instance.get_cached_game_data(
                                     np_communication_id
                                 )
                                 or existing
