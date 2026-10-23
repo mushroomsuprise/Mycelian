@@ -721,87 +721,108 @@ class DatabaseTab:
         # Tracks the last set of Firebase config issues we notified for, so the
         # periodic status timer does not spam the same toast every tick.
         self._last_firebase_issues_signature: Optional[str] = None
+        self._status_refresh_inflight: bool = False
 
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
-        layout_schedule(0.05, self._refresh_status, once=True)
+        layout_schedule(0.05, self._refresh_status_async, once=True)
 
     def _refresh_status(self) -> None:
         """Refresh Database status display."""
         try:
             # Get current status from the database manager
             status_info = database_manager.get_connection_status()
-
-            # Update status label and color
-            if "status_label" in self.ui_elements:
-                status_text = status_info.get("status", "Unknown")
-                is_connected = status_info.get("is_connected", False)
-
-                self.ui_elements["status_label"].set_text(status_text)
-
-                # Update color based on status
-                if is_connected:
-                    self.ui_elements["status_label"].classes(
-                        replace="font-semibold text-theme-success"
-                    )
-                else:
-                    self.ui_elements["status_label"].classes(
-                        replace="font-semibold text-theme-error"
-                    )
-
-            # Update database type label
-            if "type_label" in self.ui_elements:
-                db_type = status_info.get("database_type", "N/A")
-                self.ui_elements["type_label"].set_text(db_type)
-
-            # Update last check label
-            if "last_check_label" in self.ui_elements:
-                last_check = status_info.get("last_check", "Never")
-                # Format the timestamp if it's an ISO string
-                try:
-                    if last_check != "Never":
-                        from datetime import datetime
-
-                        dt = datetime.fromisoformat(last_check.replace("Z", "+00:00"))
-                        last_check = dt.strftime("%Y-%m-%d %H:%M:%S")
-                except (ValueError, TypeError):
-                    pass  # Keep original value if parsing fails
-
-                self.ui_elements["last_check_label"].set_text(last_check)
-
-            # Show specific Firebase configuration issues if present. Notify only
-            # when the issue set changes so the periodic status timer does not
-            # repeat the toast every tick.
-            if status_info.get("database_type") == "Firebase" and not status_info.get(
-                "is_connected", False
-            ):
-                firebase_issues = status_info.get("config_issues", [])
-                signature = "|".join(firebase_issues) if firebase_issues else ""
-                if (
-                    firebase_issues
-                    and signature != self._last_firebase_issues_signature
-                ):
-                    issue_text = "Firebase Configuration Issues:\n" + "\n".join(
-                        f"• {issue}"
-                        for issue in firebase_issues[:3]  # Limit to 3 issues
-                    )
-                    notify(issue_text, type="warning", timeout=8000)
-                self._last_firebase_issues_signature = signature
-            else:
-                self._last_firebase_issues_signature = None
-
+            self._apply_status_info(status_info)
         except Exception as e:
-            import logging
+            self._show_status_error(e)
 
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error refreshing database status: {str(e)}", exc_info=True)
-            # Set error status
-            if "status_label" in self.ui_elements:
-                self.ui_elements["status_label"].set_text("Status Error")
+    async def _refresh_status_async(self, *, force: bool = False) -> None:
+        """Same as :meth:`_refresh_status`, with the status probe (a database round
+        trip on Firebase / MongoDB) on a worker thread instead of the UI loop."""
+        if self._status_refresh_inflight and not force:
+            return
+        self._status_refresh_inflight = True
+        try:
+            status_info = await run.io_bound(database_manager.get_connection_status)
+            if status_info is None:  # app shutting down
+                return
+            self._apply_status_info(status_info)
+        except Exception as e:
+            self._show_status_error(e)
+        finally:
+            self._status_refresh_inflight = False
+
+    def _apply_status_info(self, status_info: Dict[str, Any]) -> None:
+        # Update status label and color
+        if "status_label" in self.ui_elements:
+            status_text = status_info.get("status", "Unknown")
+            is_connected = status_info.get("is_connected", False)
+
+            self.ui_elements["status_label"].set_text(status_text)
+
+            # Update color based on status
+            if is_connected:
+                self.ui_elements["status_label"].classes(
+                    replace="font-semibold text-theme-success"
+                )
+            else:
                 self.ui_elements["status_label"].classes(
                     replace="font-semibold text-theme-error"
                 )
+
+        # Update database type label
+        if "type_label" in self.ui_elements:
+            db_type = status_info.get("database_type", "N/A")
+            self.ui_elements["type_label"].set_text(db_type)
+
+        # Update last check label
+        if "last_check_label" in self.ui_elements:
+            last_check = status_info.get("last_check", "Never")
+            # Format the timestamp if it's an ISO string
+            try:
+                if last_check != "Never":
+                    from datetime import datetime
+
+                    dt = datetime.fromisoformat(last_check.replace("Z", "+00:00"))
+                    last_check = dt.strftime("%Y-%m-%d %H:%M:%S")
+            except (ValueError, TypeError):
+                pass  # Keep original value if parsing fails
+
+            self.ui_elements["last_check_label"].set_text(last_check)
+
+        # Show specific Firebase configuration issues if present. Notify only
+        # when the issue set changes so the periodic status timer does not
+        # repeat the toast every tick.
+        if status_info.get("database_type") == "Firebase" and not status_info.get(
+            "is_connected", False
+        ):
+            firebase_issues = status_info.get("config_issues", [])
+            signature = "|".join(firebase_issues) if firebase_issues else ""
+            if (
+                firebase_issues
+                and signature != self._last_firebase_issues_signature
+            ):
+                issue_text = "Firebase Configuration Issues:\n" + "\n".join(
+                    f"• {issue}"
+                    for issue in firebase_issues[:3]  # Limit to 3 issues
+                )
+                notify(issue_text, type="warning", timeout=8000)
+            self._last_firebase_issues_signature = signature
+        else:
+            self._last_firebase_issues_signature = None
+
+    def _show_status_error(self, e: Exception) -> None:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error refreshing database status: {str(e)}", exc_info=True)
+        # Set error status
+        if "status_label" in self.ui_elements:
+            self.ui_elements["status_label"].set_text("Status Error")
+            self.ui_elements["status_label"].classes(
+                replace="font-semibold text-theme-error"
+            )
 
     async def _test_connection(self) -> None:
         """Test database connection"""
@@ -818,7 +839,7 @@ class DatabaseTab:
                     timeout=5000,
                 )
 
-            self._refresh_status()
+            await self._refresh_status_async(force=True)
 
         except Exception as e:
             logger.error(f"Error testing database connection: {str(e)}", exc_info=True)
@@ -1272,7 +1293,7 @@ class DatabaseTab:
                 )
                 self.ui_elements["refresh_button"] = outline_button(
                     "Refresh",
-                    self._refresh_status,
+                    lambda: self._refresh_status_async(force=True),
                     icon="refresh",
                 )
                 self.ui_elements["view_data_button"] = outline_button(
@@ -1282,7 +1303,9 @@ class DatabaseTab:
                 )
                 outline_button("Discard", self.discard)
                 primary_button("Save", self.save)
-            self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
+            self._status_timer = layout_schedule(
+                3.0, self._refresh_status_async, active=True
+            )
 
     def _load_from_config(self) -> None:
         cfg = config_manager.get_database_config()
