@@ -160,6 +160,36 @@ def promote_color_importance(css: str) -> str:
 _promote_colors = promote_color_importance
 
 
+_shared_stylesheets: set = set()
+
+
+def inject_page_stylesheet(style_id: str, css: str) -> None:
+    """Make ``<style id=style_id>`` present on every page, including the one already open.
+
+    ``ui.add_head_html(shared=True)`` only reaches pages loaded after the call, so a
+    tab built inside an open window (the Settings subtabs are) would render unstyled
+    until a reload. Call this from the tab's build; it is cheap to repeat.
+    """
+    import json
+
+    from nicegui import context, ui
+
+    if style_id not in _shared_stylesheets:
+        ui.add_head_html(f"<style id='{style_id}'>{css}</style>", shared=True)
+        _shared_stylesheets.add(style_id)
+    try:
+        client = context.client
+    except Exception:
+        return
+    if client.has_socket_connection:
+        client.run_javascript(
+            f"if (!document.getElementById({json.dumps(style_id)})) {{"
+            "const s = document.createElement('style');"
+            f"s.id = {json.dumps(style_id)}; s.textContent = {json.dumps(css)};"
+            "document.head.appendChild(s); }"
+        )
+
+
 def scope_selectors(css: str, scope: str) -> str:
     """Prefix every selector with ``scope`` (e.g. ``.abt``) unless it already starts with it.
 

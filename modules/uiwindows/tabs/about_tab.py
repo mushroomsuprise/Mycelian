@@ -35,7 +35,6 @@ from .about_styles import ABOUT_CSS
 logger = logging.getLogger(__name__)
 
 GITHUB_URL = "https://github.com/mushroomsuprise/mycelian"
-_css_injected = False
 
 
 def _icon(name: str, extra: str = "") -> str:
@@ -110,12 +109,9 @@ class AboutTab:
     # ----- build ----------------------------------------------------------
 
     def build(self, container) -> None:
-        global _css_injected
-        if not _css_injected:
-            from ...help_system.help_render import promote_color_importance, scope_selectors
+        from ...help_system.help_render import inject_page_stylesheet, promote_color_importance, scope_selectors
 
-            ui.add_head_html(f"<style id='mycelian-about'>{promote_color_importance(scope_selectors(ABOUT_CSS, ".abt"))}</style>", shared=True)
-            _css_injected = True
+        inject_page_stylesheet("mycelian-about", promote_color_importance(scope_selectors(ABOUT_CSS, ".abt")))
         with container:
             with ui.element("div").classes("abt"):
                 self._build_hero()

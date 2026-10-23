@@ -84,3 +84,23 @@ def test_about_helpers():
     assert _friendly_date("") == "unknown"
     assert _log_ts("2026-10-22 18:01:02,100") is not None
     assert _log_ts("garbage") is None
+
+
+def test_page_stylesheet_reaches_an_already_open_page(monkeypatch):
+    """Tabs built inside an open window must still get their CSS (shared head only
+    reaches pages loaded later)."""
+    from types import SimpleNamespace
+
+    import nicegui
+    from modules.help_system import help_render
+
+    shared, scripts = [], []
+    monkeypatch.setattr(help_render, "_shared_stylesheets", set())
+    monkeypatch.setattr(nicegui.ui, "add_head_html", lambda code, **kw: shared.append((code, kw)))
+    client = SimpleNamespace(has_socket_connection=True, run_javascript=scripts.append)
+    monkeypatch.setattr(type(nicegui.context), "client", property(lambda self: client))
+
+    help_render.inject_page_stylesheet("x-style", ".a{color:red}")
+    help_render.inject_page_stylesheet("x-style", ".a{color:red}")
+    assert len(shared) == 1 and shared[0][1] == {"shared": True}
+    assert len(scripts) == 2 and all("x-style" in s and "getElementById" in s for s in scripts)

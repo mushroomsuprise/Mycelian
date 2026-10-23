@@ -50,7 +50,6 @@ from .statistics_styles import STATISTICS_CSS
 
 logger = logging.getLogger(__name__)
 
-_css_injected = False
 
 SECTIONS: Tuple[Tuple[str, str, str], ...] = (
     ("overview", "Overview", "insights"),
@@ -252,12 +251,9 @@ class StatisticsTab:
     # ----- building -----
 
     def build(self, parent_container) -> None:
-        global _css_injected
-        if not _css_injected:
-            from ...help_system.help_render import promote_color_importance, scope_selectors
+        from ...help_system.help_render import inject_page_stylesheet, promote_color_importance, scope_selectors
 
-            ui.add_head_html(f"<style id='mycelian-statistics'>{promote_color_importance(scope_selectors(STATISTICS_CSS, ".mst"))}</style>", shared=True)
-            _css_injected = True
+        inject_page_stylesheet("mycelian-statistics", promote_color_importance(scope_selectors(STATISTICS_CSS, ".mst")))
         try:
             self.mgr.ensure_periodic_saving()
         except Exception as e:
