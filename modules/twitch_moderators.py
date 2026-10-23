@@ -44,31 +44,13 @@ class ModeratorCache:
         if not force and not self._is_stale():
             return True
 
-        loop = asyncio.get_running_loop()
-        held = threading.Event()
-        acquired = False
-
-        def _acquire() -> None:
-            self._refresh_lock.acquire()
-            held.set()
-
-        try:
-            await loop.run_in_executor(None, _acquire)
-            acquired = True
-        except asyncio.CancelledError:
-            def _release_if_held() -> None:
-                held.wait()
-                try:
-                    self._refresh_lock.release()
-                except RuntimeError:
-                    pass
-
-            threading.Thread(
-                target=_release_if_held,
-                daemon=True,
-                name="ModCacheLockRelease",
-            ).start()
-            raise
+        # Poll the lock instead of parking a default-executor thread per chat
+        # message; those threads are also aiohttp's DNS resolver pool (TH-10).
+        while not self._refresh_lock.acquire(blocking=False):
+            if not force and not self._is_stale():
+                return True
+            await asyncio.sleep(0.05)
+        acquired = True
 
         try:
             if not force and not self._is_stale():

@@ -856,6 +856,33 @@ class ChatbotManager:
         """Get all events"""
         return self.events.copy()
 
+    def message_may_call_api(self, message_data: Dict[str, Any]) -> bool:
+        """True when the chat text names an enabled command that makes an API call.
+
+        Lock-free on purpose: EventSub calls this while another thread may hold
+        ``_lock`` across a slow API call. A wrong guess only picks another thread.
+        """
+        message = str((message_data or {}).get("message") or "").strip()
+        if not message.startswith("!"):
+            return False
+        parts = message[1:].split()
+        if not parts:
+            return False
+        command_name = parts[0].lower()
+        try:
+            commands = list(self.commands.values())
+        except RuntimeError:
+            return True
+        for command in commands:
+            if (
+                command.enabled
+                and getattr(command, "api_enabled", False)
+                and getattr(command, "api_endpoint", "")
+                and _command_matches_name(command, command_name)
+            ):
+                return True
+        return False
+
     # Command Processing
     def process_chat_message(
         self, message_data: Dict[str, Any]

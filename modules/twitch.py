@@ -346,11 +346,100 @@ def _chat_notification_message_text(ev: Any) -> Optional[str]:
     return str(text) if text else None
 
 
+class _ChatbotLane:
+    """One FIFO worker for chatbot work that would stall the EventSub loop (TH-07).
+
+    A chat command with an API call used to block the socket loop for the whole
+    Helix request. Such messages now run here instead, in arrival order. While
+    anything is queued, every later chatbot step from EventSub (chat blocks,
+    event replies, shoutouts) queues behind it, so replies keep today's order.
+    Jobs run inside this thread's own asyncio loop, so the chatbot code takes the
+    same "running loop" paths it takes on the socket loop (sends are queued, API
+    calls run on a helper thread with their timeout).
+    """
+
+    def __init__(self) -> None:
+        import collections
+
+        self._cond = threading.Condition()
+        self._jobs: "collections.deque" = collections.deque()
+        self._pending = 0
+        self._thread: Optional[threading.Thread] = None
+
+    def busy(self) -> bool:
+        with self._cond:
+            return self._pending > 0
+
+    def on_lane_thread(self) -> bool:
+        return threading.current_thread() is self._thread
+
+    def submit(self, fn):
+        import concurrent.futures
+
+        future: concurrent.futures.Future = concurrent.futures.Future()
+        with self._cond:
+            self._jobs.append((fn, future))
+            self._pending += 1
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(
+                    target=self._run, name="ChatbotLane", daemon=True
+                )
+                self._thread.start()
+            self._cond.notify()
+        return future
+
+    def _run(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def _call(fn):
+            return fn()
+
+        while True:
+            with self._cond:
+                while not self._jobs:
+                    self._cond.wait()
+                fn, future = self._jobs.popleft()
+            try:
+                future.set_result(loop.run_until_complete(_call(fn)))
+            except BaseException as exc:
+                logger.error("Chatbot lane job failed: %s", exc, exc_info=True)
+                future.set_exception(exc)
+            finally:
+                with self._cond:
+                    self._pending -= 1
+
+
+_chatbot_lane = _ChatbotLane()
+
+
+def _run_chatbot_in_order(fn) -> None:
+    """Run ``fn`` now, unless earlier chatbot work is still queued on the lane."""
+    if _chatbot_lane.on_lane_thread() or not _chatbot_lane.busy():
+        fn()
+        return
+    _chatbot_lane.submit(fn)
+
+
+async def wait_for_chatbot_lane() -> None:
+    """Return once chatbot work queued so far has finished (no-op when idle)."""
+    if _chatbot_lane.on_lane_thread() or not _chatbot_lane.busy():
+        return
+    await asyncio.wrap_future(_chatbot_lane.submit(lambda: None))
+
+
 def _dispatch_chatbot_event_response(result) -> None:
     """Handle process_event result (one or many (response, targets[, discord_channels]))."""
     from .chatbot import dispatch_process_event_result
 
-    dispatch_process_event_result(result)
+    _run_chatbot_in_order(lambda: dispatch_process_event_result(result))
+
+
+def _chat_message_may_call_api(msg_dict) -> bool:
+    try:
+        return get_chatbot_manager().message_may_call_api(msg_dict)
+    except Exception:
+        return False
 
 
 def _notify_chatbot_event(event_type, event_data) -> None:
@@ -1628,12 +1717,15 @@ class Twitch_API:
 
     async def refresh_auth_token(self):
         """Refresh the authentication token using the refresh token."""
-        loop = asyncio.get_running_loop()
         acquired = False
         attempted = False
         try:
-            # Acquire off the event-loop thread so waiters never block the socket loop.
-            acquired = await loop.run_in_executor(None, self._refresh_lock.acquire)
+            # Poll the lock instead of parking an executor thread on it: waiters never
+            # block the socket loop, and a cancelled waiter can never end up owning
+            # the lock with nobody to release it (TH-10).
+            while not self._refresh_lock.acquire(blocking=False):
+                await asyncio.sleep(0.05)
+            acquired = True
             if not self.is_token_expired():
                 logger.info(
                     "Token refresh skipped: still outside the proactive expiry buffer"
@@ -2126,163 +2218,178 @@ class Twitch_API:
             except Exception as badge_err:
                 logger.debug("Subscriber badge harvest failed: %s", badge_err)
 
-        # Process greetings for new users
-        try:
-            chatbot_manager = get_chatbot_manager()
-
-            greeting_message = chatbot_manager.process_greeting(user_id, username)
-
-            if greeting_message:
-                # Send greeting to chat
-                try:
-                    from .chatbot import send_chatbot_message
-
-                    send_chatbot_message(greeting_message)
-                    logger.debug(f"Sent greeting to {username}: {greeting_message}")
-                except Exception as send_error:
-                    logger.error(
-                        f"Error sending greeting to {username}: {str(send_error)}"
-                    )
-
-                logger.info(f"Greeting sent to {username} (ID: {user_id})")
-        except Exception as e:
-            logger.error(
-                f"Error processing greeting for {username}: {str(e)}", exc_info=True
-            )
-
-        # Process message through chatbot system
-        try:
-            chatbot_manager = get_chatbot_manager()
-            logger.debug(
-                "Processing chat message for commands: %s",
-                safe_console_str(message),
-            )
-            chatbot_response = chatbot_manager.process_chat_message(msg_dict)
-
-            if chatbot_response:
-                discord_channels = None
-                output_mode = "chat"
-                if len(chatbot_response) >= 4:
-                    (
-                        response_message,
-                        command_name,
-                        reply_targets,
-                        discord_channels,
-                    ) = (
-                        chatbot_response[0],
-                        chatbot_response[1],
-                        chatbot_response[2],
-                        chatbot_response[3],
-                    )
-                    if len(chatbot_response) >= 5:
-                        output_mode = chatbot_response[4]
-                elif len(chatbot_response) >= 3:
-                    response_message, command_name, reply_targets = (
-                        chatbot_response[0],
-                        chatbot_response[1],
-                        chatbot_response[2],
-                    )
-                else:
-                    response_message, command_name = chatbot_response
-                    reply_targets = ["twitch"]
-                logger.debug(
-                    "Command '%s' triggered, response: %s",
-                    command_name,
-                    safe_console_str(response_message),
-                )
-
-                # Send chatbot response back to chat targets
-                try:
-                    from .chatbot import deliver_chatbot_output
-
-                    deliver_chatbot_output(
-                        response_message,
-                        reply_targets,
-                        discord_channels=discord_channels,
-                        output_mode=output_mode,
-                    )
-                    logger.debug(
-                        f"Chatbot responded to command '{command_name}': {response_message}"
-                    )
-
-                    # Log command usage
-                    logger.info(
-                        f"Command '{command_name}' processed by {username}: {response_message}"
-                    )
-                except Exception as send_error:
-                    logger.error(f"Error sending chatbot response: {str(send_error)}")
-            else:
-                logger.debug(
-                    "No command matched for message: %s",
-                    safe_console_str(message),
-                )
-                try:
-                    from .giveaway_manager import get_giveaway_manager
-
-                    if get_giveaway_manager().try_register_entry(msg_dict):
-                        logger.debug(
-                            "Giveaway entry from %s",
-                            msg_dict.get("username", "?"),
-                        )
-                except Exception as ge:
-                    logger.error(
-                        "Giveaway entry handling failed: %s", ge, exc_info=True
-                    )
-
+        # Chatbot steps (greeting, command, giveaway, poll, chat events). A command
+        # that calls an API runs on the chatbot lane so the socket loop keeps
+        # reading; later chatbot work queues behind it in order (TH-07).
+        def _chatbot_block() -> None:
+            # Process greetings for new users
             try:
-                from .poll_manager import get_poll_manager
+                chatbot_manager = get_chatbot_manager()
 
-                poll_manager = get_poll_manager()
-                if poll_manager.try_moderator_start(msg_dict):
-                    logger.debug(
-                        "Poll started from chat by %s",
-                        msg_dict.get("username", "?"),
-                    )
-                if poll_manager.try_register_vote(msg_dict):
-                    logger.debug(
-                        "Poll vote from %s",
-                        msg_dict.get("username", "?"),
-                    )
-            except Exception as poll_error:
-                logger.error(
-                    "Poll vote handling failed: %s", poll_error, exc_info=True
-                )
+                greeting_message = chatbot_manager.process_greeting(user_id, username)
 
-            # Process chat message events (after commands)
-            try:
-                from .chatbot_core import EventType
-
-                chatbot_response = chatbot_manager.process_event(
-                    EventType.CHAT_MESSAGE, msg_dict
-                )
-
-                if chatbot_response:
-                    logger.debug(
-                        "Chat message event triggered, response: %s",
-                        safe_console_str(chatbot_response),
-                    )
-
-                    # Send chatbot response back to chat
+                if greeting_message:
+                    # Send greeting to chat
                     try:
-                        _dispatch_chatbot_event_response(chatbot_response)
-                        logger.debug(
-                            f"Chatbot responded to chat message event: {chatbot_response}"
-                        )
+                        from .chatbot import send_chatbot_message
+
+                        send_chatbot_message(greeting_message)
+                        logger.debug(f"Sent greeting to {username}: {greeting_message}")
                     except Exception as send_error:
                         logger.error(
-                            f"Error sending chatbot chat message event response: {str(send_error)}"
+                            f"Error sending greeting to {username}: {str(send_error)}"
                         )
-            except Exception as event_error:
+
+                    logger.info(f"Greeting sent to {username} (ID: {user_id})")
+            except Exception as e:
                 logger.error(
-                    f"Error processing chat message event: {str(event_error)}",
+                    f"Error processing greeting for {username}: {str(e)}", exc_info=True
+                )
+
+            # Process message through chatbot system
+            try:
+                chatbot_manager = get_chatbot_manager()
+                logger.debug(
+                    "Processing chat message for commands: %s",
+                    safe_console_str(message),
+                )
+                chatbot_response = chatbot_manager.process_chat_message(msg_dict)
+
+                if chatbot_response:
+                    discord_channels = None
+                    output_mode = "chat"
+                    if len(chatbot_response) >= 4:
+                        (
+                            response_message,
+                            command_name,
+                            reply_targets,
+                            discord_channels,
+                        ) = (
+                            chatbot_response[0],
+                            chatbot_response[1],
+                            chatbot_response[2],
+                            chatbot_response[3],
+                        )
+                        if len(chatbot_response) >= 5:
+                            output_mode = chatbot_response[4]
+                    elif len(chatbot_response) >= 3:
+                        response_message, command_name, reply_targets = (
+                            chatbot_response[0],
+                            chatbot_response[1],
+                            chatbot_response[2],
+                        )
+                    else:
+                        response_message, command_name = chatbot_response
+                        reply_targets = ["twitch"]
+                    logger.debug(
+                        "Command '%s' triggered, response: %s",
+                        command_name,
+                        safe_console_str(response_message),
+                    )
+
+                    # Send chatbot response back to chat targets
+                    try:
+                        from .chatbot import deliver_chatbot_output
+
+                        deliver_chatbot_output(
+                            response_message,
+                            reply_targets,
+                            discord_channels=discord_channels,
+                            output_mode=output_mode,
+                        )
+                        logger.debug(
+                            f"Chatbot responded to command '{command_name}': {response_message}"
+                        )
+
+                        # Log command usage
+                        logger.info(
+                            f"Command '{command_name}' processed by {username}: {response_message}"
+                        )
+                    except Exception as send_error:
+                        logger.error(f"Error sending chatbot response: {str(send_error)}")
+                else:
+                    logger.debug(
+                        "No command matched for message: %s",
+                        safe_console_str(message),
+                    )
+                    try:
+                        from .giveaway_manager import get_giveaway_manager
+
+                        if get_giveaway_manager().try_register_entry(msg_dict):
+                            logger.debug(
+                                "Giveaway entry from %s",
+                                msg_dict.get("username", "?"),
+                            )
+                    except Exception as ge:
+                        logger.error(
+                            "Giveaway entry handling failed: %s", ge, exc_info=True
+                        )
+
+                try:
+                    from .poll_manager import get_poll_manager
+
+                    poll_manager = get_poll_manager()
+                    if poll_manager.try_moderator_start(msg_dict):
+                        logger.debug(
+                            "Poll started from chat by %s",
+                            msg_dict.get("username", "?"),
+                        )
+                    if poll_manager.try_register_vote(msg_dict):
+                        logger.debug(
+                            "Poll vote from %s",
+                            msg_dict.get("username", "?"),
+                        )
+                except Exception as poll_error:
+                    logger.error(
+                        "Poll vote handling failed: %s", poll_error, exc_info=True
+                    )
+
+                # Process chat message events (after commands)
+                try:
+                    from .chatbot_core import EventType
+
+                    chatbot_response = chatbot_manager.process_event(
+                        EventType.CHAT_MESSAGE, msg_dict
+                    )
+
+                    if chatbot_response:
+                        logger.debug(
+                            "Chat message event triggered, response: %s",
+                            safe_console_str(chatbot_response),
+                        )
+
+                        # Send chatbot response back to chat
+                        try:
+                            _dispatch_chatbot_event_response(chatbot_response)
+                            logger.debug(
+                                f"Chatbot responded to chat message event: {chatbot_response}"
+                            )
+                        except Exception as send_error:
+                            logger.error(
+                                f"Error sending chatbot chat message event response: {str(send_error)}"
+                            )
+                except Exception as event_error:
+                    logger.error(
+                        f"Error processing chat message event: {str(event_error)}",
+                        exc_info=True,
+                    )
+
+            except Exception as e:
+                logger.error(
+                    f"Error processing chat message through chatbot: {str(e)}",
                     exc_info=True,
                 )
 
-        except Exception as e:
-            logger.error(
-                f"Error processing chat message through chatbot: {str(e)}",
-                exc_info=True,
-            )
+        if _chatbot_lane.busy() or _chat_message_may_call_api(msg_dict):
+            try:
+                await asyncio.wrap_future(_chatbot_lane.submit(_chatbot_block))
+            except Exception as e:
+                logger.error(
+                    f"Error processing chat message through chatbot: {str(e)}",
+                    exc_info=True,
+                )
+        else:
+            _chatbot_block()
 
     async def on_chat_notification(self, data: ChannelChatNotificationEvent):
         """Handle channel chat notifications.
@@ -3729,7 +3836,7 @@ class Twitch_API:
             if self._raid_shoutout_enabled("chat"):
                 from .chatbot import send_chatbot_message
 
-                send_chatbot_message(shoutout_message)
+                _run_chatbot_in_order(lambda: send_chatbot_message(shoutout_message))
             logger.debug(f"Sent shoutout to {alert.username}")
         except Exception as e:
             logger.error(
@@ -4600,8 +4707,15 @@ class Twitch_API:
             )
             return
         try:
-            _run_twitch_coro_sync(eventsub.stop(), timeout=15)
+            # Always bounded: stop() waits on the socket loop with no timeout,
+            # and a wedged loop used to leave reconnect stuck forever (TH-09).
+            _run_coro_in_thread(eventsub.stop(), timeout=_EVENTSUB_STOP_TIMEOUT)
             logger.debug("EventSub connection stopped")
+        except TimeoutError:
+            logger.warning(
+                "EventSub stop did not finish within %ss; continuing with reconnect",
+                _EVENTSUB_STOP_TIMEOUT,
+            )
         except AttributeError as e:
             if "close" in str(e).lower() or "none" in str(e).lower():
                 logger.debug("EventSub stop skipped (session already closed): %s", e)
@@ -5655,6 +5769,36 @@ def _is_channel_points_forbidden(exc: BaseException) -> bool:
     return False
 
 
+_EVENTSUB_STOP_TIMEOUT = 15
+
+
+def _run_coro_in_thread(coro, timeout: float = 30):
+    """Run ``coro`` on a fresh loop in a daemon thread and wait up to ``timeout``.
+
+    On timeout the caller gets ``TimeoutError`` right away and the coroutine keeps
+    running to completion in the background (TH-08). A ``with ThreadPoolExecutor``
+    block would wait for it on exit, so the timeout never applied.
+    """
+    import concurrent.futures
+
+    future: concurrent.futures.Future = concurrent.futures.Future()
+
+    def _run_in_thread():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            future.set_result(loop.run_until_complete(coro))
+        except BaseException as exc:
+            future.set_exception(exc)
+        finally:
+            loop.close()
+
+    threading.Thread(
+        target=_run_in_thread, daemon=True, name="TwitchCoroSync"
+    ).start()
+    return future.result(timeout=timeout)
+
+
 def _run_twitch_coro_sync(coro, timeout: float = 30):
     """Run a coroutine from sync code (safe when NiceGUI already has a loop running)."""
     try:
@@ -5662,18 +5806,7 @@ def _run_twitch_coro_sync(coro, timeout: float = 30):
     except RuntimeError:
         return asyncio.run(coro)
 
-    import concurrent.futures
-
-    def _run_in_thread():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(_run_in_thread).result(timeout=timeout)
+    return _run_coro_in_thread(coro, timeout=timeout)
 
 
 async def _fetch_channel_point_rewards_async():
@@ -5690,7 +5823,11 @@ async def _fetch_channel_point_rewards_async():
         logger.error("Twitch API not connected")
         return (None, "not_connected")
 
-    with _channel_points_fetch_lock:
+    # Held across an await, so never block on it: a second caller on the same
+    # loop would freeze the loop that has to finish the first one (TH-10).
+    while not _channel_points_fetch_lock.acquire(blocking=False):
+        await asyncio.sleep(0.05)
+    try:
         if _channel_points_unlocked is False:
             return (None, "not_unlocked")
 
@@ -5713,6 +5850,8 @@ async def _fetch_channel_point_rewards_async():
                 return (None, "not_unlocked")
             logger.error(f"Error getting point rewards: {str(e)}", exc_info=True)
             return (None, "error")
+    finally:
+        _channel_points_fetch_lock.release()
 
 
 async def get_point_rewards_async():
