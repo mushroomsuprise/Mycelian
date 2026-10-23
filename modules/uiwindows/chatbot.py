@@ -57,6 +57,7 @@ from ..chatbot_manager import get_manager as get_chatbot_manager
 from ..database_manager import get_data, set_data
 from ..giveaway_manager import get_giveaway_manager
 from .polls_panel import render_polls_tab
+from .tab_visibility import chatbot_subtab_hidden, on_chatbot_subtab_shown
 from ..statistics_manager import get_statistics_manager
 from ..twitch import get_twitch_api
 from ..twitch_api_reference import TwitchAPIReference
@@ -1729,6 +1730,10 @@ def render_giveaways_tab(container_el) -> None:
                                     return
                             except Exception:
                                 return
+                            # Hidden panel: skip the label rebuild; it runs as soon as
+                            # the Giveaways tab is shown (on_chatbot_subtab_shown).
+                            if chatbot_subtab_hidden("Giveaways"):
+                                return
                             names = get_giveaway_manager().get_pool_entries()
                             signature = tuple(names)
                             if signature == entrants_signature["value"]:
@@ -1766,6 +1771,7 @@ def render_giveaways_tab(container_el) -> None:
                                                 )
 
                         _build_entrants_list()
+                        on_chatbot_subtab_shown("Giveaways", _build_entrants_list)
                         _giveaway_entrants_timer = layout_schedule(
                             2.5, callback=_build_entrants_list
                         )

@@ -56,6 +56,7 @@ class TwitchTab:
         if self._token_timer is not None:
             self._token_timer.active = True
         layout_schedule(0.05, self._refresh_status, once=True)
+        layout_schedule(0.05, self._refresh_token_countdowns, once=True)
 
     def _refresh_main_status(self) -> None:
         """Refresh main Twitch account status display."""

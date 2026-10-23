@@ -19,6 +19,7 @@ from ..poll_manager import (
 from ..ui_buttons import themed_control_button
 from ..ui_form_controls import form_input, form_number, form_select
 from ..ui_timer import layout_schedule
+from .tab_visibility import chatbot_subtab_hidden, on_chatbot_subtab_shown
 
 _poll_votes_timer = None
 _poll_selected_template = ""
@@ -620,6 +621,9 @@ def render_polls_tab(container_el) -> None:
                         return
                 except Exception:
                     return
+                # Hidden panel: skip; it refreshes as soon as the Polls tab is shown.
+                if chatbot_subtab_hidden("Polls"):
+                    return
                 current = get_poll_manager().get_overlay_state(template)
                 try:
                     _apply_status(status_label, current, status_seen)
@@ -633,4 +637,5 @@ def render_polls_tab(container_el) -> None:
                     return
                 _set_live_markup(_live_feed_html(current))
 
+            on_chatbot_subtab_shown("Polls", _refresh_live)
             _poll_votes_timer = layout_schedule(1.0, callback=_refresh_live)

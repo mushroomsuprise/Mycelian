@@ -5793,8 +5793,23 @@ class SettingsUI:
             loader(name)
             if name not in loaded:
                 failed.add(name)
+            else:
+                self._pause_preloaded_tab(name)
             return True
         return False
+
+    def _pause_preloaded_tab(self, name: str) -> None:
+        """A subtab built in the background starts its status timers; stop them
+        until the user opens it (``on_enter`` restarts them and refreshes at once)."""
+        if name == getattr(self, "_active_tab_name", ""):
+            return
+        tab = (getattr(self, "_tabs_by_name", None) or {}).get(name)
+        if tab is None or not hasattr(tab, "on_exit"):
+            return
+        try:
+            tab.on_exit()
+        except Exception:
+            logger.debug("Settings preload pause failed for %s", name, exc_info=True)
 
     def pause_background_work(self) -> None:
         """Stop Settings polls and the visible service-tab timer."""
