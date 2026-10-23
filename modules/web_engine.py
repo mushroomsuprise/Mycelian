@@ -1160,6 +1160,12 @@ class WebEngine:
     _ALL_TEMPLATE_CONFIGS_RATE_LIMIT = 4  # requests per IP per 3s window
     _ALL_TEMPLATE_CONFIGS_RATE_WINDOW_SEC = 3.0
     _ALL_TEMPLATE_CONFIGS_CACHE_TTL = 120.0
+    # Within this window a cached body is served as-is (the old 3 s TTL); after
+    # it, a body is reused only if no template JSON changed on disk (WE-28).
+    _TEMPLATE_CONFIGS_VERIFY_SEC = 3.0
+    # /api/template-configs embeds live runtime DB values, which have no
+    # change signal of their own: keep its original 3 s freshness.
+    _DYNAMIC_CONTROLS_CACHE_TTL = 3.0
     _TEMPLATE_QUEUE_METADATA_CACHE_TTL = 30.0
     _RESTART_THREAD_JOIN_SEC = 15.0 if sys.platform == "win32" else 10.0
     _HTTP_LATENCY_WINDOW_SEC = 60.0
@@ -1214,6 +1220,8 @@ class WebEngine:
         # Custom Sources iframe preview: token -> {template, overrides, ts}
         self._preview_sessions_lock = threading.Lock()
         self._preview_sessions: Dict[str, Dict[str, Any]] = {}
+        # Bumped on every preview-session change; part of the config cache keys.
+        self._preview_sessions_rev = 0
         self._container_drafts: Dict[str, str] = {}
         # Custom Sources preview demo loops: sid -> stop flag (legacy —
         # the auto-demo loop has been removed in favour of manual mock
@@ -1248,13 +1256,10 @@ class WebEngine:
             os.environ.get("MYCELIAN_DEV") or not getattr(sys, "frozen", False)
         )
         self.app.config["TEMPLATES_AUTO_RELOAD"] = _jinja_auto_reload
-        # Dev: never cache overlay assets. Frozen builds: allow browser/OBS reuse.
-        self._overlay_http_cache = bool(getattr(sys, "frozen", False)) and not bool(
-            os.environ.get("MYCELIAN_DEV")
-        )
-        self.app.config["SEND_FILE_MAX_AGE_DEFAULT"] = (
-            86400 if self._overlay_http_cache else 0
-        )
+        # Overlay assets: ``no-cache`` plus ETag / Last-Modified in every build,
+        # so OBS revalidates with a cheap bodyless 304 and a replaced file
+        # (same name) shows up immediately instead of up to a day later (WE-29).
+        self.app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
         self.app.jinja_env.auto_reload = _jinja_auto_reload
 
         # Configure SocketIO with increased limits to prevent "Too many packets in payload" errors
@@ -1305,7 +1310,8 @@ class WebEngine:
         self._watchdog_thread: Optional[threading.Thread] = None
 
         # Short-TTL cache for GET /api/all-template-configs (OBS refresh storms)
-        self._all_template_configs_cache: Optional[Tuple[str, float, bytes]] = None
+        # (key, expires_at, payload, generation, fingerprint, verified_at)
+        self._all_template_configs_cache: Optional[tuple] = None
         self._all_template_configs_cache_lock = threading.Lock()
         self._all_template_configs_slow_log_at = 0.0
 
@@ -1376,11 +1382,6 @@ class WebEngine:
             response.headers["Access-Control-Allow-Headers"] = (
                 "Content-Type, Authorization"
             )
-            if self._overlay_http_cache:
-                path = request.path or ""
-                if path.startswith("/assets/") or path.startswith("/static/"):
-                    response.cache_control.public = True
-                    response.cache_control.max_age = 86400
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug("CORS headers added to response")
             return response
@@ -2243,6 +2244,7 @@ class WebEngine:
                     sess["draft_html"] = draft_html
                     sess["draft_config"] = copy.deepcopy(draft_config)
                     sess["ts"] = time.time()
+                    self._bump_preview_sessions_rev()
                 return (
                     {"ok": True},
                     200,
@@ -2271,6 +2273,7 @@ class WebEngine:
                 with self._preview_sessions_lock:
                     self._preview_sessions.pop(str(token), None)
                     self._preview_iframe_sids.pop(str(token), None)
+                    self._bump_preview_sessions_rev()
                 return (
                     {"ok": True},
                     200,
@@ -2318,8 +2321,9 @@ class WebEngine:
                         from .obs_service import obs_service
 
                         port = int(getattr(self, "port", 5000) or 5000)
-                        matched = obs_service.lookup_browser_source_size(
-                            route or key, port
+                        # Waits on the OBS worker (up to 8 s): off the hub.
+                        matched = self._run_off_hub(
+                            obs_service.lookup_browser_source_size, route or key, port
                         )
                         if isinstance(matched, dict):
                             width = int(matched["width"])
@@ -3561,21 +3565,62 @@ class WebEngine:
     _SINGLEFLIGHT_WAIT_SEC = 5.0
     _SINGLEFLIGHT_POLL_SEC = 0.05
 
+    def _template_configs_cache_key(self, preview_tok: Optional[str]) -> str:
+        """Cache key: preview token plus the preview-session revision.
+
+        Preview overrides are merged into the cached bodies, so a pushed
+        override must not be answered from a body built before it.
+        """
+        if not preview_tok:
+            return ""
+        return f"{preview_tok}#{getattr(self, '_preview_sessions_rev', 0)}"
+
+    def _bump_preview_sessions_rev(self) -> None:
+        """Call with ``_preview_sessions_lock`` held after changing a session."""
+        self._preview_sessions_rev = getattr(self, "_preview_sessions_rev", 0) + 1
+
+    def _template_configs_fingerprint(self) -> tuple:
+        """Config names plus their mtimes: what the cached bodies are built from."""
+        parser = self.template_config_parser
+        out = []
+        for name in parser.get_config_files():
+            try:
+                mtime = os.stat(parser.get_config_path(name)).st_mtime
+            except (OSError, ValueError):
+                mtime = 0.0
+            out.append((name, mtime))
+        return tuple(out)
+
     def _peek_all_template_configs_cache(self, preview_tok: str) -> Optional[bytes]:
         """Return the cached all-template-configs payload if fresh, else None."""
-        cache_key = preview_tok or ""
+        cache_key = self._template_configs_cache_key(preview_tok)
         with self._all_template_configs_cache_lock:
             cached = self._all_template_configs_cache
-        if cached is not None:
-            key, expires_at, payload_bytes = cached
-            if key == cache_key and time.time() < expires_at:
-                return payload_bytes
-        return None
+        if cached is None:
+            return None
+        key, expires_at, payload_bytes, generation, fingerprint, verified_at = cached
+        now = time.time()
+        if (
+            key != cache_key
+            or now >= expires_at
+            or generation != self._template_config_generation
+        ):
+            return None
+        if now - verified_at < self._TEMPLATE_CONFIGS_VERIFY_SEC:
+            return payload_bytes
+        try:
+            unchanged = self._template_configs_fingerprint() == fingerprint
+        except Exception:
+            unchanged = False
+        if not unchanged:
+            return None
+        with self._all_template_configs_cache_lock:
+            if self._all_template_configs_cache is cached:
+                self._all_template_configs_cache = cached[:5] + (now,)
+        return payload_bytes
 
     def _get_all_template_configs_cached(self, preview_tok: str) -> Tuple[bytes, bool]:
         """Return UTF-8 JSON bytes and whether the response came from TTL cache."""
-        cache_key = preview_tok or ""
-
         payload = self._peek_all_template_configs_cache(preview_tok)
         if payload is not None:
             return payload, True
@@ -3594,14 +3639,27 @@ class WebEngine:
                 return payload, True
 
         try:
+            # Captured before building: an invalidate (or file change) during
+            # the build must not leave the older body cached.
+            cache_key = self._template_configs_cache_key(preview_tok)
+            generation = self._template_config_generation
+            try:
+                fingerprint = self._template_configs_fingerprint()
+            except Exception:
+                fingerprint = None
+            built_at = time.time()
             configs = self._build_all_template_configs(preview_tok or None)
             payload_bytes = json.dumps(configs, separators=(",", ":")).encode("utf-8")
             with self._all_template_configs_cache_lock:
-                self._all_template_configs_cache = (
-                    cache_key,
-                    time.time() + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
-                    payload_bytes,
-                )
+                if generation == self._template_config_generation:
+                    self._all_template_configs_cache = (
+                        cache_key,
+                        built_at + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
+                        payload_bytes,
+                        generation,
+                        fingerprint,
+                        built_at,
+                    )
             return payload_bytes, False
         finally:
             with self._all_template_configs_cache_lock:
@@ -3679,7 +3737,7 @@ class WebEngine:
         return configs
 
     def _peek_dynamic_controls_cache(self, preview_tok: str) -> Optional[bytes]:
-        cache_key = preview_tok or ""
+        cache_key = self._template_configs_cache_key(preview_tok)
         with self._dynamic_controls_cache_lock:
             cached = self._dynamic_controls_cache
         if cached is not None:
@@ -3692,8 +3750,6 @@ class WebEngine:
         self, preview_tok: str
     ) -> Tuple[bytes, bool]:
         """TTL-cached /api/template-configs payload (same singleflight pattern)."""
-        cache_key = preview_tok or ""
-
         payload = self._peek_dynamic_controls_cache(preview_tok)
         if payload is not None:
             return payload, True
@@ -3712,14 +3768,18 @@ class WebEngine:
                 return payload, True
 
         try:
+            cache_key = self._template_configs_cache_key(preview_tok)
+            generation = self._template_config_generation
+            built_at = time.time()
             configs = self._build_dynamic_controls_configs(preview_tok or None)
             payload_bytes = json.dumps(configs, separators=(",", ":")).encode("utf-8")
             with self._dynamic_controls_cache_lock:
-                self._dynamic_controls_cache = (
-                    cache_key,
-                    time.time() + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
-                    payload_bytes,
-                )
+                if generation == self._template_config_generation:
+                    self._dynamic_controls_cache = (
+                        cache_key,
+                        built_at + self._DYNAMIC_CONTROLS_CACHE_TTL,
+                        payload_bytes,
+                    )
             return payload_bytes, False
         finally:
             with self._dynamic_controls_cache_lock:
@@ -4414,6 +4474,23 @@ class WebEngine:
                         return
             except Exception as e:
                 logger.debug("Could not log port holder hint: %s", e)
+
+    def _run_off_hub(self, fn, *args):
+        """Call a blocking ``fn`` without stalling the gevent hub (TH-04 / TH-05).
+
+        On the hub thread the call runs on gevent's native threadpool and only
+        the calling greenlet waits; the result (or exception) is the same. Off
+        the hub it is a plain call. ``fn`` must not need the request context.
+        """
+        if threading.get_ident() != self._server_thread_ident:
+            return fn(*args)
+        try:
+            from gevent import get_hub
+
+            pool = get_hub().threadpool
+        except Exception:
+            return fn(*args)
+        return pool.apply(fn, args)
 
     def _hub_run_generation(self) -> int:
         """Run generation owned by the calling (hub) thread."""
@@ -5673,12 +5750,20 @@ class WebEngine:
                                 draft_html = dh
                                 draft_config = dc
 
+                        html_cache_key = None
                         if (
                             draft_html is None
                             and not mycelian_preview_mode
                             and not overrides
                         ):
-                            cached_html = engine_self._cached_overlay_html(template)
+                            # Key from the files as they are before rendering, so
+                            # a save mid-render is not cached as current (WE-28).
+                            html_cache_key = engine_self._overlay_html_cache_key(
+                                template
+                            )
+                            cached_html = engine_self._cached_overlay_html(
+                                template, html_cache_key
+                            )
                             if cached_html is not None:
                                 return cached_html
 
@@ -5721,12 +5806,10 @@ class WebEngine:
                                 mycelian_preview_mode=mycelian_preview_mode,
                             )
                         html = _finalize_served_overlay_html(html)
-                        if (
-                            draft_html is None
-                            and not mycelian_preview_mode
-                            and not overrides
-                        ):
-                            engine_self._store_overlay_html(template, html)
+                        if html_cache_key is not None:
+                            engine_self._store_overlay_html(
+                                template, html, html_cache_key
+                            )
                         if mycelian_preview_mode and preview_token:
                             # Inject preview helper (force-show + mock-data
                             # MutationObserver). Try </body> first, then
@@ -5997,6 +6080,7 @@ class WebEngine:
                 "overrides": safe,
                 "ts": time.time(),
             }
+            self._bump_preview_sessions_rev()
 
     def emit_preview_mock(
         self,
@@ -6104,6 +6188,7 @@ class WebEngine:
                 "draft_config": draft_config,
                 "ts": time.time(),
             }
+            self._bump_preview_sessions_rev()
 
     @staticmethod
     def _apply_preview_config_layers(
@@ -7230,6 +7315,7 @@ class WebEngine:
             Retrieves the latest PSN data from StateManager and sends it to the client.
             """
             client_sid = request.sid
+            psn_debug = logger.isEnabledFor(logging.DEBUG)
             logger.debug(
                 f"=== WEB ENGINE: Received get_psn_data request from {client_sid} ==="
             )
@@ -7239,32 +7325,34 @@ class WebEngine:
             try:
                 logger.debug("Attempting to get live PSN data from state manager...")
                 live_psn_data = state_manager.get_live_psn_data()
-                logger.debug(f"Live PSN data retrieved: {live_psn_data}")
+                if psn_debug:
+                    logger.debug(f"Live PSN data retrieved: {live_psn_data}")
 
                 if live_psn_data:
                     from .psn_service import _public_psn_payload
 
                     psn_data_dict = _public_psn_payload(live_psn_data)
-                    logger.debug(f"PSN data converted to dict: {psn_data_dict}")
-                    logger.debug(f"PSN data dict keys: {list(psn_data_dict.keys())}")
+                    if psn_debug:
+                        logger.debug(f"PSN data converted to dict: {psn_data_dict}")
+                        logger.debug(f"PSN data dict keys: {list(psn_data_dict.keys())}")
 
-                    # Log specific fields that the template is looking for
-                    logger.debug("=== PSN Data Fields for Trophies Template ===")
-                    logger.debug(
-                        f"  - current_game_name: {psn_data_dict.get('current_game_name')}"
-                    )
-                    logger.debug(
-                        f"  - current_game_art_url: {psn_data_dict.get('current_game_art_url')}"
-                    )
-                    logger.debug(
-                        f"  - current_game_trophies: {psn_data_dict.get('current_game_trophies')}"
-                    )
-                    logger.debug(
-                        f"  - trophy_counts: {psn_data_dict.get('trophy_counts')}"
-                    )
-                    logger.debug(
-                        f"  - current_game_progress: {psn_data_dict.get('current_game_progress')}"
-                    )
+                        # Log specific fields that the template is looking for
+                        logger.debug("=== PSN Data Fields for Trophies Template ===")
+                        logger.debug(
+                            f"  - current_game_name: {psn_data_dict.get('current_game_name')}"
+                        )
+                        logger.debug(
+                            f"  - current_game_art_url: {psn_data_dict.get('current_game_art_url')}"
+                        )
+                        logger.debug(
+                            f"  - current_game_trophies: {psn_data_dict.get('current_game_trophies')}"
+                        )
+                        logger.debug(
+                            f"  - trophy_counts: {psn_data_dict.get('trophy_counts')}"
+                        )
+                        logger.debug(
+                            f"  - current_game_progress: {psn_data_dict.get('current_game_progress')}"
+                        )
 
                     self.socketio.emit("psn_data_update", psn_data_dict, to=client_sid)
                     logger.debug(f"Successfully sent psn_data_update to {client_sid}")
@@ -7277,7 +7365,8 @@ class WebEngine:
                     from .psn_service import _public_psn_payload
 
                     default_data_dict = _public_psn_payload(PSNData())
-                    logger.debug(f"Default PSN data dict: {default_data_dict}")
+                    if psn_debug:
+                        logger.debug(f"Default PSN data dict: {default_data_dict}")
                     self.socketio.emit(
                         "psn_data_update", default_data_dict, to=client_sid
                     )
@@ -7612,7 +7701,8 @@ class WebEngine:
             try:
                 from . import spotify
 
-                status = spotify.get_spotify_status()
+                # Connectivity probes can block for seconds: off the hub.
+                status = self._run_off_hub(spotify.get_spotify_status)
                 self.socketio.emit("spotify_status_update", status, to=request.sid)
                 logger.debug(
                     f"Sent Spotify status to {request.sid}: {status['status']}"
@@ -8130,8 +8220,11 @@ class WebEngine:
                     try:
                         from . import twitch as twitch_module
 
-                        icon_urls = twitch_module.fetch_channel_points_currency_icon(
-                            str(twitch_data.user_id)
+                        # GQL/Helix round trip (up to ~15 s offline): wait on a
+                        # native worker so other overlays keep being served.
+                        icon_urls = self._run_off_hub(
+                            twitch_module.fetch_channel_points_currency_icon,
+                            str(twitch_data.user_id),
                         )
                         if icon_urls:
                             streamer_info["channel_points_icon"] = icon_urls
@@ -8977,9 +9070,10 @@ class WebEngine:
 
             # Emit the event to all clients
             self.safe_emit(event_name, event_data)
-            logger.debug(
-                f"Emitted Stream Deck event: {event_name} with data: {event_data}"
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Emitted Stream Deck event: {event_name} with data: {event_data}"
+                )
 
         except Exception as e:
             logger.error(
@@ -9205,9 +9299,10 @@ class WebEngine:
         """Create a dynamic websocket handler function"""
 
         def handler(data=None):
-            logger.debug(
-                f"Dynamic control event: {template_name}_{action} (type: {element_type}) with data: {data}"
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Dynamic control event: {template_name}_{action} (type: {element_type}) with data: {data}"
+                )
 
             try:
                 # Durable controls (those with a "persist" block) write their new
@@ -9907,24 +10002,28 @@ class WebEngine:
             getattr(self, "_template_config_generation", 0),
         )
 
-    def _cached_overlay_html(self, template: str):
+    def _cached_overlay_html(self, template: str, key=None):
         cache = getattr(self, "_overlay_html_cache", None)
         if not isinstance(cache, dict):
             return None
         cached = cache.get(template)
         if not cached:
             return None
-        if cached[0] != self._overlay_html_cache_key(template):
+        if key is None:
+            key = self._overlay_html_cache_key(template)
+        if cached[0] != key:
             return None
         return cached[1]
 
-    def _store_overlay_html(self, template: str, html: str) -> None:
+    def _store_overlay_html(self, template: str, html: str, key=None) -> None:
         cache = getattr(self, "_overlay_html_cache", None)
         if not isinstance(cache, dict):
             return
+        if key is None:
+            key = self._overlay_html_cache_key(template)
         if len(cache) >= 24 and template not in cache:
             cache.pop(next(iter(cache)))
-        cache[template] = (self._overlay_html_cache_key(template), html)
+        cache[template] = (key, html)
 
     def _runtime_path_index(self) -> Dict[str, List[str]]:
         """Map runtime database paths to templates that mirror them."""
@@ -10001,6 +10100,10 @@ class WebEngine:
         template_names = self._source_control_templates_for_runtime_path(db_path)
         if not template_names:
             return
+        # /api/template-configs embeds these runtime values: drop it before
+        # telling Source Controls to reload.
+        with self._dynamic_controls_cache_lock:
+            self._dynamic_controls_cache = None
         self._emit_source_controls_state_update(
             reason="runtime_db_update",
             template_names=template_names,
@@ -10278,7 +10381,7 @@ class WebEngine:
             alert_data (dict): Alert data to send as JSON
         """
         ok = self.safe_emit("next_alert", alert_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent next_alert: {alert_data}")
         return ok
 
@@ -10290,7 +10393,7 @@ class WebEngine:
             alert_data (dict): Alert data to send as JSON to activity feed
         """
         ok = self.safe_emit("activity_feed_alert", alert_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent activity_feed_alert: {alert_data}")
         return ok
 
@@ -10302,7 +10405,7 @@ class WebEngine:
             alert_data (dict): Alert data to send as JSON for instant alerts
         """
         ok = self.safe_emit("instant_alert", alert_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent instant_alert: {alert_data}")
         return ok
 
@@ -10314,7 +10417,7 @@ class WebEngine:
             message_data (dict): Message data to send as JSON
         """
         ok = self.safe_emit("new-message", message_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent new-message: {message_data}")
         return ok
 
@@ -10336,7 +10439,7 @@ class WebEngine:
             moderation_data (dict): Moderation data to send as JSON
         """
         ok = self.safe_emit("message_moderation", moderation_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent message_moderation: {moderation_data}")
         return ok
 
@@ -10348,7 +10451,7 @@ class WebEngine:
             state_data (dict): State data to send as JSON
         """
         ok = self.safe_emit("state", state_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent state update: {state_data}")
         return ok
 
@@ -10662,9 +10765,10 @@ class WebEngine:
                 }
 
                 # Handle SocketIO client response format
-                logger.debug(
-                    f"Stream Deck: Sending template actions response to SID {request.sid}: {response}"
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Stream Deck: Sending template actions response to SID {request.sid}: {response}"
+                    )
                 if data and isinstance(data, dict) and "requestId" in data:
                     # Emit specific response event for template actions list
                     self.socketio.emit(
@@ -11212,7 +11316,7 @@ class WebEngine:
             message_ids (list): List of message IDs to remove
         """
         ok = self.safe_emit("remove-messages", message_ids)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent remove-messages: {message_ids}")
         return ok
 
