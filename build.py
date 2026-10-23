@@ -1031,6 +1031,9 @@ def get_excluded_modules():
         "PIL.ImageQt",  # Qt-specific PIL components
     ]
 
+    # Unused compiled codecs (see packaging/bundle_filter.py for the evidence).
+    excludes.extend(_load_bundle_filter_module().UNUSED_EXTENSION_MODULES)
+
     # Windows/macOS use WebView2/Cocoa; Qt is unused there. On Linux, pywebview
     # needs PyQt6 (+ WebEngine) for the native window — do not exclude it.
     if CURRENT_OS in ("windows", "macos"):
@@ -1044,6 +1047,19 @@ def get_excluded_modules():
         )
 
     return excludes
+
+
+def _load_bundle_filter_module():
+    """Load packaging/bundle_filter.py (same loader rules as payload.py)."""
+    import importlib.util
+
+    path = get_project_root() / "packaging" / "bundle_filter.py"
+    spec = importlib.util.spec_from_file_location("mycelian_bundle_filter", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load bundle filter: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def create_runtime_hook():
@@ -1250,6 +1266,20 @@ a = Analysis(
 
 # Remove duplicate entries
 a.datas = list(set(a.datas))
+
+# Drop data files nothing reads at runtime (source maps, pycountry gettext
+# catalogs, NiceGUI npm build inputs and __pycache__). Onefile builds extract
+# every data file on each launch. The filter fails the build if a file the app
+# needs would go missing. Rules and evidence: packaging/bundle_filter.py
+import importlib.util as _bf_util
+_bf_spec = _bf_util.spec_from_file_location(
+    "mycelian_bundle_filter", PROJECT_ROOT / "packaging" / "bundle_filter.py"
+)
+_bundle_filter = _bf_util.module_from_spec(_bf_spec)
+_bf_spec.loader.exec_module(_bundle_filter)
+a.datas, _bf_removed = _bundle_filter.filter_unused_data(a.datas)
+for _bf_rule, (_bf_count, _bf_bytes) in sorted(_bf_removed.items()):
+    print(f"bundle filter: dropped {{_bf_count}} {{_bf_rule}} files ({{_bf_bytes / 1048576:.1f}} MB)")
 
 # PYZ archive
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)

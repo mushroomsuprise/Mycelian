@@ -1238,7 +1238,7 @@ def build_root_ui() -> None:
     ``ui.run``.
     """
     global _ui_elements_created, _ui_client_id
-    from .startup_profiler import StartupTimer
+    from .startup_profiler import StartupTimer, mark_startup_milestone
     from nicegui import context
 
     client_id = context.client.id
@@ -1289,6 +1289,27 @@ def build_root_ui() -> None:
 
     register_client_lifecycle_hooks()
     arm_ui_health_monitor(context.client)
+    mark_startup_milestone("first build_root_ui done")
+
+
+def _register_startup_profile_marks() -> None:
+    """Profiling only: mark server start and the native window's first show/load."""
+    from .startup_profiler import is_startup_profiling_enabled, mark_startup_milestone
+
+    if not is_startup_profiling_enabled():
+        return
+    app.on_startup(lambda: mark_startup_milestone("UI server started"))
+    try:
+        from nicegui.native.event_manager import event_manager
+
+        event_manager.on(
+            "shown", lambda _e: mark_startup_milestone("native window shown")
+        )
+        event_manager.on(
+            "loaded", lambda _e: mark_startup_milestone("native page loaded")
+        )
+    except ImportError:
+        pass
 
 
 def _start_overlay_engine_background() -> None:
@@ -1427,6 +1448,7 @@ def start_ui():
         # Must be registered before ui.run so the webview child's startup events are
         # not dispatched before anyone is listening.
         tray_controller.register_native_event_handlers()
+        _register_startup_profile_marks()
 
         # Accidental pre-run access to ``context.client`` (e.g. overlay toasts)
         # flips NiceGUI into script mode and replaces ``root=build_root_ui`` with
@@ -1690,7 +1712,11 @@ def create_splash_screen():
 
 def update_splash_progress(value: float, text: str):
     """Update splash screen progress"""
-    global _splash_progress, _splash_status
+    # Called from DeferredInit; element updates belong on NiceGUI's loop.
+    run_on_ui_loop(lambda: _apply_splash_progress(value, text))
+
+
+def _apply_splash_progress(value: float, text: str) -> None:
     if _splash_progress and _splash_status:
         _splash_progress.set_value(value)
         _splash_status.text = text
@@ -1698,8 +1724,15 @@ def update_splash_progress(value: float, text: str):
 
 def close_splash_screen():
     """Close the splash screen"""
-    global _splash_dialog, _splash_close_requested
+    global _splash_close_requested
+    # Set the flag now so a splash built after this call is skipped; the close
+    # itself runs on NiceGUI's loop, after any build_root_ui already in progress.
     _splash_close_requested = True
+    run_on_ui_loop(_close_splash_dialog)
+
+
+def _close_splash_dialog() -> None:
+    global _splash_dialog
     if _splash_dialog:
         _splash_dialog.close()
         _splash_dialog = None
