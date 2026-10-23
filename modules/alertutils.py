@@ -27,8 +27,10 @@ import asyncio
 import copy
 import json
 import logging
+import queue
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -198,6 +200,307 @@ class AlertStateManager:
             "to_delete": 0,
             "deleted": 0,
         }
+        # Config collections whose last database read succeeded, empty ones
+        # included, so an empty collection is not re-read on every alert.
+        # Writes from outside this manager drop the affected keys (see
+        # _on_database_write), which brings back today's re-read for them.
+        self._loaded_lock = threading.Lock()
+        self._loaded_state_keys: set = set()
+        # Collections whose read failed: never written back until a read works.
+        self._unreadable_state_keys: set = set()
+        self._config_write_epoch = 0
+        self._config_writes_inflight = 0
+        self._own_write_paths: Dict[str, int] = {}
+        # One full AlertStorage download at a time; other callers wait for it.
+        self._storage_load_event: Optional[threading.Event] = None
+        # Config writes run in mutation order on one thread, after the alert
+        # lock is released, so readers never wait on database I/O.
+        self._write_queue: "queue.Queue" = queue.Queue()
+        self._writer_lock = threading.Lock()
+        self._writes_idle = threading.Condition(self._writer_lock)
+        self._pending_writes = 0
+        self._writer_thread: Optional[threading.Thread] = None
+        try:
+            database_manager.database_manager.add_write_listener(
+                self._on_database_write
+            )
+        except Exception as e:
+            logger.debug("Could not watch alert collection writes: %s", e)
+
+    # ------------------------------------------------------------------
+    # Config collection read tracking (DBX-02)
+    # ------------------------------------------------------------------
+    def _config_state_keys(self) -> List[str]:
+        return [key for key in self._alert_paths if key != "alert_storage"]
+
+    def _config_keys_for_path(self, path: str) -> List[str]:
+        if path == "":
+            return self._config_state_keys()
+        if path != "Alerts" and not path.startswith("Alerts/"):
+            return []
+        keys = []
+        for key, collection in self._alert_paths.items():
+            if key == "alert_storage":
+                continue
+            if (
+                path == collection
+                or collection.startswith(path + "/")
+                or path.startswith(collection + "/")
+            ):
+                keys.append(key)
+        return keys
+
+    def _on_database_write(self, path: str, done: bool) -> None:
+        """database_manager write hook. Must stay quick and lock-light."""
+        keys = self._config_keys_for_path(path)
+        if not keys:
+            return
+        with self._loaded_lock:
+            self._config_write_epoch += 1
+            self._config_writes_inflight += -1 if done else 1
+            if self._config_writes_inflight < 0:
+                self._config_writes_inflight = 0
+            if not self._own_write_paths.get(path):
+                self._loaded_state_keys.difference_update(keys)
+
+    def _config_read_token(self) -> Optional[int]:
+        """Write epoch before a read; None while an alert collection write runs."""
+        with self._loaded_lock:
+            if self._config_writes_inflight:
+                return None
+            return self._config_write_epoch
+
+    def _note_config_read(self, key: str, ok: bool, token: Optional[int]) -> None:
+        with self._loaded_lock:
+            if not ok:
+                self._unreadable_state_keys.add(key)
+                self._loaded_state_keys.discard(key)
+                return
+            self._unreadable_state_keys.discard(key)
+            if (
+                token is not None
+                and not self._config_writes_inflight
+                and token == self._config_write_epoch
+            ):
+                self._loaded_state_keys.add(key)
+
+    def _read_config_paths(
+        self, keys: List[str], *, parallel: bool = False
+    ) -> Dict[str, Tuple[dict, bool, Optional[int]]]:
+        """Read config collections (outside the alert lock): key -> (data, ok, token)."""
+
+        def _one(key: str):
+            token = self._config_read_token()
+            data, ok = database_manager.get_data_checked(self._alert_paths[key])
+            return key, (data or {}, bool(ok), token)
+
+        if parallel and len(keys) > 1 and not self._is_sql_backend():
+            with ThreadPoolExecutor(
+                max_workers=min(8, len(keys)), thread_name_prefix="AlertPathLoad"
+            ) as pool:
+                return dict(pool.map(_one, keys))
+        return dict(_one(key) for key in keys)
+
+    def _lazy_load_config_keys(self, state_keys: List[str]) -> bool:
+        """Load empty collections not yet read this session. True if state changed."""
+        with self._lock:
+            pending = [
+                key
+                for key in state_keys
+                if key in self._alert_paths
+                and key != "alert_storage"
+                and not self._alert_state.get(key)
+            ]
+        if not pending:
+            return False
+        with self._loaded_lock:
+            pending = [key for key in pending if key not in self._loaded_state_keys]
+        if not pending:
+            return False
+        results = self._read_config_paths(pending)
+        changed = False
+        with self._lock:
+            for key in pending:
+                data, ok, token = results[key]
+                if self._alert_state.get(key):
+                    continue  # filled meanwhile by a save or another load
+                if ok and data:
+                    self._alert_state[key] = data
+                    changed = True
+                    logger.debug(
+                        "Lazy-loaded %d alerts from %s",
+                        len(data),
+                        self._alert_paths[key],
+                    )
+                self._note_config_read(key, ok, token)
+            if changed:
+                self._update_global_collections()
+        return changed
+
+    def load_missing_alert_paths(self) -> None:
+        """Read the alert collections the startup preload did not load.
+
+        Overlay startup used to re-read every collection plus all stored
+        alerts. Collections the preload read successfully are already current;
+        only the others (range collections it skips, failed reads) are read.
+        """
+        with self._lock:
+            if not self._initialized:
+                self.initialize()
+                return
+        with self._loaded_lock:
+            missing = [
+                key
+                for key in self._config_state_keys()
+                if key not in self._loaded_state_keys
+            ]
+        if not missing:
+            return
+        results = self._read_config_paths(missing, parallel=True)
+        with self._lock:
+            for key in missing:
+                data, ok, token = results[key]
+                if ok and data and not self._alert_state.get(key):
+                    self._alert_state[key] = data
+                    logger.debug(
+                        f"Loaded {len(data)} alerts from {self._alert_paths[key]}"
+                    )
+                if ok or not self._alert_state.get(key):
+                    self._note_config_read(key, ok, token)
+            self._update_global_collections()
+
+    def _recover_unreadable_collection(self, state_key: str) -> bool:
+        """Before writing a whole collection whose load failed, read it again.
+
+        Returns False (do not write) while it still cannot be read, so a
+        failed load never replaces the stored collection with the in-memory
+        one. On success the stored alerts are merged under the in-memory ones.
+        """
+        with self._loaded_lock:
+            if state_key not in self._unreadable_state_keys:
+                return True
+        token = self._config_read_token()
+        data, ok = database_manager.get_data_checked(self._alert_paths[state_key])
+        if not ok:
+            logger.error(
+                "Not writing %s: it could not be read from the database",
+                self._alert_paths[state_key],
+            )
+            return False
+        with self._lock:
+            merged = dict(data or {}) if isinstance(data, dict) else {}
+            merged.update(self._alert_state.get(state_key) or {})
+            self._alert_state[state_key] = merged
+            self._update_global_collections()
+        self._note_config_read(state_key, True, token)
+        return True
+
+    # ------------------------------------------------------------------
+    # Ordered config writer (WE-25)
+    # ------------------------------------------------------------------
+    def _queue_config_writes(self, ops: List[tuple], state_key: str) -> dict:
+        """Queue (kind, path, data) writes. Call with ``self._lock`` held, so
+        queue order is mutation order. Returns a waiter for _wait_config_writes."""
+        waiter = {"done": threading.Event(), "error": None}
+        with self._writer_lock:
+            self._pending_writes += 1
+            self._write_queue.put((ops, state_key, waiter))
+            thread = self._writer_thread
+            start = thread is None or not thread.is_alive()
+            if start:
+                thread = threading.Thread(
+                    target=self._config_writer_loop,
+                    name="AlertConfigWriter",
+                    daemon=True,
+                )
+                self._writer_thread = thread
+        if start:
+            thread.start()
+            try:
+                from .shutdown import register_shutdown_flush
+
+                register_shutdown_flush("alert_config_writes", self.flush_config_writes)
+            except Exception as e:
+                logger.debug("Could not register alert write flush: %s", e)
+        return waiter
+
+    def _config_writer_loop(self) -> None:
+        while True:
+            ops, state_key, waiter = self._write_queue.get()
+            try:
+                for kind, path, data in ops:
+                    with self._loaded_lock:
+                        self._own_write_paths[path] = (
+                            self._own_write_paths.get(path, 0) + 1
+                        )
+                    try:
+                        if kind == "delete":
+                            ok = database_manager.delete_data(path)
+                        else:
+                            ok = database_manager.set_data(path, data)
+                    except Exception as e:
+                        waiter["error"] = e
+                        ok = False
+                    finally:
+                        with self._loaded_lock:
+                            left = self._own_write_paths.get(path, 1) - 1
+                            if left > 0:
+                                self._own_write_paths[path] = left
+                            else:
+                                self._own_write_paths.pop(path, None)
+                    if not ok:
+                        # The store may now differ from memory: re-read when empty.
+                        with self._loaded_lock:
+                            self._loaded_state_keys.discard(state_key)
+                    if waiter["error"] is not None:
+                        break
+            except Exception as e:
+                waiter["error"] = e
+            finally:
+                waiter["done"].set()
+                with self._writer_lock:
+                    self._pending_writes -= 1
+                    self._writes_idle.notify_all()
+
+    def _wait_config_writes(self, waiter: dict) -> Optional[BaseException]:
+        """Wait (hub-cooperatively on the overlay server) for queued writes."""
+        done = waiter["done"]
+        self._wait_event(done)
+        return waiter["error"]
+
+    @staticmethod
+    def _wait_event(event: threading.Event) -> None:
+        if database_manager._caller_is_overlay_hub():
+            try:
+                from gevent import sleep as _hub_sleep
+            except ImportError:
+                _hub_sleep = time.sleep
+            while not event.is_set():
+                _hub_sleep(0.01)
+            return
+        event.wait()
+
+    def flush_config_writes(self, timeout: float = 4.5) -> bool:
+        """Block until queued config writes finish (shutdown). True if idle."""
+        deadline = time.monotonic() + max(0.0, timeout)
+        with self._writer_lock:
+            while self._pending_writes > 0:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    logger.warning(
+                        "Alert config writes still pending at shutdown: %d",
+                        self._pending_writes,
+                    )
+                    return False
+                self._writes_idle.wait(remaining)
+        return True
+
+    def _is_sql_backend(self) -> bool:
+        try:
+            config = database_manager.database_manager.get_config()
+            return bool(config and config.database_type == "sql")
+        except Exception:
+            return False
 
     def initialize(self):
         """Initialize the alert state by loading all alerts from Firebase"""
@@ -260,6 +563,11 @@ class AlertStateManager:
                     data = all_data.get(firebase_path, {})
                     self._alert_state[state_key] = data
                     logger.debug(f"Loaded {len(data)} alerts from {firebase_path}")
+                    if firebase_path in all_data:
+                        failed = database_manager.startup_read_failed(firebase_path)
+                        self._note_config_read(
+                            state_key, not failed, self._config_read_token()
+                        )
 
             # Update the global alert collections
             self._update_global_collections()
@@ -278,7 +586,12 @@ class AlertStateManager:
             return self._resub_fallback_enabled
 
         try:
-            data = database_manager.get_data("Alerts/Settings/resub_fallback_enabled")
+            data, ok = database_manager.get_data_checked(
+                "Alerts/Settings/resub_fallback_enabled"
+            )
+            if not ok:
+                # Not cached, so the next call reads it again.
+                return False
             if isinstance(data, dict) and "enabled" in data:
                 self._resub_fallback_enabled = bool(data["enabled"])
             else:
@@ -333,8 +646,11 @@ class AlertStateManager:
                         f"Loaded {len(self._alert_storage)} stored alerts from individual records"
                     )
                 else:
-                    data = database_manager.get_data(firebase_path) or {}
+                    token = self._config_read_token()
+                    data, ok = database_manager.get_data_checked(firebase_path)
+                    data = data or {}
                     self._alert_state[state_key] = data
+                    self._note_config_read(state_key, ok, token)
                     logger.debug(f"Loaded {len(data)} alerts from {firebase_path}")
 
             # Update the global alert collections
@@ -351,25 +667,61 @@ class AlertStateManager:
 
     def _is_firebase_backend(self) -> bool:
         try:
-            config = database_manager.get_config()
+            config = database_manager.database_manager.get_config()
             return bool(config and config.database_type == "firebase")
         except Exception:
             return False
 
     def _ensure_alert_storage_loaded(self, max_alerts: Optional[int] = None) -> None:
-        """Load completed alerts once per session (or after invalidation)."""
+        """Load completed alerts once per session (or after invalidation).
+
+        Callers that arrive during the download wait for it instead of
+        starting another one.
+        """
+        leader = True
+        event = None
         with self._lock:
             if self._alert_storage_loaded:
                 return
-        fetched = self._fetch_alert_storage_from_database(max_alerts=max_alerts)
-        if not isinstance(fetched, dict):
-            fetched = {}
+            if max_alerts is None:
+                event = self._storage_load_event
+                leader = event is None
+                if leader:
+                    event = threading.Event()
+                    self._storage_load_event = event
+        if not leader:
+            self._wait_event(event)
+            return
+        try:
+            fetched = self._fetch_alert_storage_from_database(max_alerts=max_alerts)
+            if not isinstance(fetched, dict):
+                fetched = {}
+            with self._lock:
+                if self._alert_storage_loaded:
+                    return
+                fetched.update(self._alert_storage)
+                self._alert_storage = fetched
+                self._alert_storage_loaded = True
+        finally:
+            if event is not None:
+                with self._lock:
+                    if self._storage_load_event is event:
+                        self._storage_load_event = None
+                event.set()
+
+    def prefetch_alert_storage(self) -> None:
+        """Load stored alerts on a background thread (once)."""
         with self._lock:
-            if self._alert_storage_loaded:
+            if self._alert_storage_loaded or self._storage_load_event is not None:
                 return
-            fetched.update(self._alert_storage)
-            self._alert_storage = fetched
-            self._alert_storage_loaded = True
+
+        def _run() -> None:
+            try:
+                self._ensure_alert_storage_loaded()
+            except Exception as e:
+                logger.debug("Stored alert prefetch failed: %s", e)
+
+        threading.Thread(target=_run, name="AlertStoragePrefetch", daemon=True).start()
 
     def _fetch_alert_storage_from_database(
         self, max_alerts: Optional[int] = None
@@ -617,14 +969,14 @@ class AlertStateManager:
             if not self._initialized:
                 self.initialize()
 
-            try:
-                return self.get_alerts_by_type(alert_type)
-            except Exception as e:
-                logger.error(
-                    f"Error getting alerts for type {alert_type}: {str(e)}",
-                    exc_info=True,
-                )
-                return {}
+        try:
+            return self.get_alerts_by_type(alert_type)
+        except Exception as e:
+            logger.error(
+                f"Error getting alerts for type {alert_type}: {str(e)}",
+                exc_info=True,
+            )
+            return {}
 
     def get_alert_by_id(self, alert_type: str, alert_id: str) -> dict:
         """Get a specific alert from the state
@@ -677,13 +1029,16 @@ class AlertStateManager:
             if not self._initialized:
                 self.initialize()
 
-            try:
-                state_key, firebase_path, _ = self._get_state_and_firebase_keys(
-                    alert_type, alert_id
-                )
-                if not state_key or not firebase_path:
-                    return False
+        try:
+            state_key, firebase_path, _ = self._get_state_and_firebase_keys(
+                alert_type, alert_id
+            )
+            if not state_key or not firebase_path:
+                return False
+            if not self._recover_unreadable_collection(state_key):
+                return False
 
+            with self._lock:
                 # Generate and store the display name
                 alert_data_copy = copy.deepcopy(alert_data)
                 alert_data_copy["display_name"] = self.get_display_name(
@@ -693,27 +1048,40 @@ class AlertStateManager:
                 # Update the state
                 self._alert_state[state_key][alert_id] = alert_data_copy
 
-                # Sync with database - save individual alert
-                database_manager.set_data(firebase_path, alert_data_copy)
+                # Database writes run after the lock is released, in this order.
+                # On Firebase the collection write already contains the alert,
+                # so the separate child write is skipped (DBX-14).
+                ops = []
+                if not (update_collection and self._is_firebase_backend()):
+                    ops.append(("set", firebase_path, copy.deepcopy(alert_data_copy)))
 
                 # Update the collection with all alerts of this type (unless disabled for batch operations)
                 if update_collection:
                     collection_path = self._alert_paths[state_key]
-                    database_manager.set_data(
-                        collection_path, self._alert_state[state_key]
+                    ops.append(
+                        (
+                            "set",
+                            collection_path,
+                            copy.deepcopy(self._alert_state[state_key]),
+                        )
                     )
 
                     # Update the global collections
                     self._update_global_collections()
 
-                logger.debug(f"Saved alert {alert_id} for type {alert_type}")
-                return True
-            except Exception as e:
-                logger.error(
-                    f"Error saving alert {alert_id} for type {alert_type}: {str(e)}",
-                    exc_info=True,
-                )
-                return False
+                waiter = self._queue_config_writes(ops, state_key)
+
+            error = self._wait_config_writes(waiter)
+            if error is not None:
+                raise error
+            logger.debug(f"Saved alert {alert_id} for type {alert_type}")
+            return True
+        except Exception as e:
+            logger.error(
+                f"Error saving alert {alert_id} for type {alert_type}: {str(e)}",
+                exc_info=True,
+            )
+            return False
 
     def delete_alert(self, alert_type: str, alert_id: str) -> bool:
         """Delete an alert from the state and sync with Firebase
@@ -729,36 +1097,49 @@ class AlertStateManager:
             if not self._initialized:
                 self.initialize()
 
-            try:
-                state_key, firebase_path, _ = self._get_state_and_firebase_keys(
-                    alert_type, alert_id
-                )
-                if not state_key or not firebase_path:
-                    return False
+        try:
+            state_key, firebase_path, _ = self._get_state_and_firebase_keys(
+                alert_type, alert_id
+            )
+            if not state_key or not firebase_path:
+                return False
+            if not self._recover_unreadable_collection(state_key):
+                return False
 
+            with self._lock:
                 # Remove from state if it exists
                 if alert_id in self._alert_state[state_key]:
                     del self._alert_state[state_key][alert_id]
 
                 # Delete from database - remove both individual alert and update the collection
-                # Delete individual alert
-                database_manager.delete_data(firebase_path)
+                # (after the lock is released, in this order). On Firebase the
+                # collection write already drops the child (DBX-14).
+                ops = []
+                if not self._is_firebase_backend():
+                    ops.append(("delete", firebase_path, None))
 
                 # Also update the collection with remaining alerts of this type
                 collection_path = self._alert_paths[state_key]
-                database_manager.set_data(collection_path, self._alert_state[state_key])
+                ops.append(
+                    ("set", collection_path, copy.deepcopy(self._alert_state[state_key]))
+                )
 
                 # Update the global collections
                 self._update_global_collections()
 
-                logger.debug(f"Deleted alert {alert_id} for type {alert_type}")
-                return True
-            except Exception as e:
-                logger.error(
-                    f"Error deleting alert {alert_id} for type {alert_type}: {str(e)}",
-                    exc_info=True,
-                )
-                return False
+                waiter = self._queue_config_writes(ops, state_key)
+
+            error = self._wait_config_writes(waiter)
+            if error is not None:
+                raise error
+            logger.debug(f"Deleted alert {alert_id} for type {alert_type}")
+            return True
+        except Exception as e:
+            logger.error(
+                f"Error deleting alert {alert_id} for type {alert_type}: {str(e)}",
+                exc_info=True,
+            )
+            return False
 
     def get_default_alert_id(self, alert_type: str) -> str:
         """Get the default alert ID for a specific type
@@ -814,7 +1195,9 @@ class AlertStateManager:
         with self._lock:
             if not self._initialized:
                 self.initialize()
-
+        # Stored alerts load on first use (they are no longer fetched at startup).
+        self._ensure_alert_storage_loaded()
+        with self._lock:
             result = copy.deepcopy(self._alert_state)
             result["alert_storage"] = copy.deepcopy(self._alert_storage)
             return result
@@ -829,88 +1212,60 @@ class AlertStateManager:
         Returns:
             dict: Dictionary with alerts of the specified type
         """
-        with self._lock:
-            try:
+        try:
+            with self._lock:
                 if not self._initialized:
                     self.initialize()
 
-                # Map alert type to state keys
-                type_map = {
-                    "bits": ["bits", "bit_ranges"] if include_ranges else ["bits"],
-                    "subs": ["subs", "sub_ranges"] if include_ranges else ["subs"],
-                    "giftsubs": (
-                        ["giftsubs", "giftsub_ranges"]
-                        if include_ranges
-                        else ["giftsubs"]
-                    ),
-                    "donations": (
-                        ["donations", "donation_ranges"]
-                        if include_ranges
-                        else ["donations"]
-                    ),
-                    "raids": ["raids", "raid_ranges"] if include_ranges else ["raids"],
-                    "streaks": (
-                        ["streaks", "streak_ranges"] if include_ranges else ["streaks"]
-                    ),
-                    "follows": ["follows"],
-                    "points": ["points"],
-                }
+            # Map alert type to state keys
+            type_map = {
+                "bits": ["bits", "bit_ranges"] if include_ranges else ["bits"],
+                "subs": ["subs", "sub_ranges"] if include_ranges else ["subs"],
+                "giftsubs": (
+                    ["giftsubs", "giftsub_ranges"]
+                    if include_ranges
+                    else ["giftsubs"]
+                ),
+                "donations": (
+                    ["donations", "donation_ranges"]
+                    if include_ranges
+                    else ["donations"]
+                ),
+                "raids": ["raids", "raid_ranges"] if include_ranges else ["raids"],
+                "streaks": (
+                    ["streaks", "streak_ranges"] if include_ranges else ["streaks"]
+                ),
+                "follows": ["follows"],
+                "points": ["points"],
+            }
 
-                if alert_type not in type_map:
-                    logger.error(f"Invalid alert type: {alert_type}")
-                    return {}
+            if alert_type not in type_map:
+                logger.error(f"Invalid alert type: {alert_type}")
+                return {}
 
-                state_keys = type_map[alert_type]
+            state_keys = type_map[alert_type]
 
-                # Startup preload may omit range paths; load any empty collections now.
-                needs_collection_update = False
-                for key in state_keys:
-                    if key not in self._alert_paths:
-                        continue
-                    if self._alert_state.get(key):
-                        continue
-                    firebase_path = self._alert_paths[key]
-                    data = database_manager.get_data(firebase_path) or {}
-                    if data:
-                        self._alert_state[key] = data
-                        logger.debug(
-                            "Lazy-loaded %d alerts from %s",
-                            len(data),
-                            firebase_path,
-                        )
-                        needs_collection_update = True
-                if needs_collection_update:
-                    self._update_global_collections()
+            # Startup preload may omit range paths; load any empty collections
+            # not read yet this session (outside the alert lock).
+            self._lazy_load_config_keys(state_keys)
 
-                # Combine alerts from all relevant state keys
+            # Combine alerts from all relevant state keys
+            with self._lock:
                 result = {}
                 for key in state_keys:
                     result.update(copy.deepcopy(self._alert_state[key]))
 
-                return result
-            except Exception as e:
-                logger.error(
-                    f"Error getting alerts by type from state: {str(e)}", exc_info=True
-                )
-                return {}
+            return result
+        except Exception as e:
+            logger.error(
+                f"Error getting alerts by type from state: {str(e)}", exc_info=True
+            )
+            return {}
 
     def ensure_alert_paths_loaded(self, state_keys: List[str]) -> None:
         """Load specific alert collections from the database if they are empty."""
+        self._lazy_load_config_keys(list(state_keys))
         with self._lock:
-            for state_key in state_keys:
-                if state_key not in self._alert_paths:
-                    continue
-                if self._alert_state.get(state_key):
-                    continue
-                firebase_path = self._alert_paths[state_key]
-                data = database_manager.get_data(firebase_path) or {}
-                if data:
-                    self._alert_state[state_key] = data
-                    logger.debug(
-                        "Lazy-loaded %d alerts from %s",
-                        len(data),
-                        firebase_path,
-                    )
             self._update_global_collections()
 
     def reload_from_firebase(self):
@@ -954,32 +1309,55 @@ class AlertStateManager:
                 if state_key not in self._alert_paths:
                     continue
                 firebase_path = self._alert_paths[state_key]
-                data = database_manager.get_data(firebase_path) or {}
-                self._alert_state[state_key] = data
+                token = self._config_read_token()
+                data, ok = database_manager.get_data_checked(firebase_path)
+                if not ok and self._alert_state.get(state_key):
+                    # Keep what is in memory rather than blanking it on a failed read.
+                    continue
+                self._alert_state[state_key] = data or {}
+                self._note_config_read(state_key, ok, token)
             self._update_global_collections()
 
     def sync_to_firebase(self):
         """Force a sync of all alerts to Firebase"""
-        with self._lock:
-            try:
+        try:
+            # Never write collections that could not be read (or stored alerts
+            # that are not loaded) over the database copy.
+            for state_key in self._config_state_keys():
+                if not self._recover_unreadable_collection(state_key):
+                    return False
+            self._ensure_alert_storage_loaded()
+
+            with self._lock:
                 logger.debug("Syncing all alerts to Firebase")
 
+                ops = []
                 for state_key, firebase_path in self._alert_paths.items():
                     if state_key == "alert_storage":
-                        database_manager.set_data(firebase_path, self._alert_storage)
-                    else:
-                        database_manager.set_data(
-                            firebase_path, self._alert_state[state_key]
+                        ops.append(
+                            ("set", firebase_path, copy.deepcopy(self._alert_storage))
                         )
+                    else:
+                        ops.append(
+                            (
+                                "set",
+                                firebase_path,
+                                copy.deepcopy(self._alert_state[state_key]),
+                            )
+                        )
+                waiter = self._queue_config_writes(ops, "")
 
-                logger.debug("Sync completed")
-                self._changes_pending = False
-                return True
-            except Exception as e:
-                logger.error(
-                    f"Error syncing alerts to Firebase: {str(e)}", exc_info=True
-                )
-                return False
+            error = self._wait_config_writes(waiter)
+            if error is not None:
+                raise error
+            logger.debug("Sync completed")
+            self._changes_pending = False
+            return True
+        except Exception as e:
+            logger.error(
+                f"Error syncing alerts to Firebase: {str(e)}", exc_info=True
+            )
+            return False
 
     def update_alert_collections(self, alert_type: str) -> bool:
         """Update the alert collections for a specific alert type after batch operations
@@ -994,32 +1372,42 @@ class AlertStateManager:
             if not self._initialized:
                 self.initialize()
 
-            try:
-                # Find the state key for this alert type
-                state_key = None
-                for key, path in self._alert_paths.items():
-                    if key.replace("_alerts", "") == alert_type:
-                        state_key = key
-                        break
+        try:
+            # Find the state key for this alert type
+            state_key = None
+            for key, path in self._alert_paths.items():
+                if key.replace("_alerts", "") == alert_type:
+                    state_key = key
+                    break
 
-                if not state_key:
-                    return False
+            if not state_key:
+                return False
+            if not self._recover_unreadable_collection(state_key):
+                return False
 
+            with self._lock:
                 # Update the collection with all alerts of this type
                 collection_path = self._alert_paths[state_key]
-                database_manager.set_data(collection_path, self._alert_state[state_key])
+                snapshot = copy.deepcopy(self._alert_state[state_key])
 
                 # Update the global collections
                 self._update_global_collections()
 
-                logger.debug(f"Updated collections for alert type {alert_type}")
-                return True
-            except Exception as e:
-                logger.error(
-                    f"Error updating collections for {alert_type}: {str(e)}",
-                    exc_info=True,
+                waiter = self._queue_config_writes(
+                    [("set", collection_path, snapshot)], state_key
                 )
-                return False
+
+            error = self._wait_config_writes(waiter)
+            if error is not None:
+                raise error
+            logger.debug(f"Updated collections for alert type {alert_type}")
+            return True
+        except Exception as e:
+            logger.error(
+                f"Error updating collections for {alert_type}: {str(e)}",
+                exc_info=True,
+            )
+            return False
 
     def save_alert_by_id(self, alert_id: str) -> bool:
         """Save an alert by its ID to Firebase using the current data in state manager
@@ -1034,29 +1422,30 @@ class AlertStateManager:
             if not self._initialized:
                 self.initialize()
 
-            try:
-                # Parse alert_id to determine alert type and ID
-                alert_type, actual_alert_id = self._parse_alert_id(alert_id)
-                if not alert_type:
-                    logger.error(f"Could not parse alert_id: {alert_id}")
-                    return False
+        # save_alert takes the lock itself and writes after releasing it.
+        try:
+            # Parse alert_id to determine alert type and ID
+            alert_type, actual_alert_id = self._parse_alert_id(alert_id)
+            if not alert_type:
+                logger.error(f"Could not parse alert_id: {alert_id}")
+                return False
 
-                # Get the alert data from state
-                alert_data = self.get_alert_by_id(alert_type, actual_alert_id)
-                if not alert_data:
-                    logger.error(
-                        f"Alert {actual_alert_id} not found for type {alert_type}"
-                    )
-                    return False
-
-                # Save using existing save_alert method
-                return self.save_alert(alert_type, actual_alert_id, alert_data)
-
-            except Exception as e:
+            # Get the alert data from state
+            alert_data = self.get_alert_by_id(alert_type, actual_alert_id)
+            if not alert_data:
                 logger.error(
-                    f"Error saving alert by ID {alert_id}: {str(e)}", exc_info=True
+                    f"Alert {actual_alert_id} not found for type {alert_type}"
                 )
                 return False
+
+            # Save using existing save_alert method
+            return self.save_alert(alert_type, actual_alert_id, alert_data)
+
+        except Exception as e:
+            logger.error(
+                f"Error saving alert by ID {alert_id}: {str(e)}", exc_info=True
+            )
+            return False
 
     def update_alert_data(self, alert_id: str, alert_data: dict) -> bool:
         """Update alert data in the state manager and save to Firebase
@@ -1072,28 +1461,28 @@ class AlertStateManager:
             if not self._initialized:
                 self.initialize()
 
-            try:
-                # Parse alert_id to determine alert type and ID
-                alert_type, actual_alert_id = self._parse_alert_id(alert_id)
-                if not alert_type:
-                    logger.error(f"Could not parse alert_id: {alert_id}")
-                    return False
-
-                # Save the alert data using existing save_alert method
-                success = self.save_alert(alert_type, actual_alert_id, alert_data)
-
-                if success:
-                    logger.debug(f"Successfully updated alert {alert_id}")
-                    return True
-                else:
-                    logger.error(f"Failed to update alert {alert_id}")
-                    return False
-
-            except Exception as e:
-                logger.error(
-                    f"Error updating alert data for {alert_id}: {str(e)}", exc_info=True
-                )
+        try:
+            # Parse alert_id to determine alert type and ID
+            alert_type, actual_alert_id = self._parse_alert_id(alert_id)
+            if not alert_type:
+                logger.error(f"Could not parse alert_id: {alert_id}")
                 return False
+
+            # Save the alert data using existing save_alert method
+            success = self.save_alert(alert_type, actual_alert_id, alert_data)
+
+            if success:
+                logger.debug(f"Successfully updated alert {alert_id}")
+                return True
+            else:
+                logger.error(f"Failed to update alert {alert_id}")
+                return False
+
+        except Exception as e:
+            logger.error(
+                f"Error updating alert data for {alert_id}: {str(e)}", exc_info=True
+            )
+            return False
 
     def store_completed_alert(self, alert_id: str, alert_data: dict) -> bool:
         """Store a completed alert in the alert storage
@@ -1321,6 +1710,20 @@ class AlertStateManager:
                     (alert_id, safe_alert_timestamp((alert_data or {}).get("timestamp")))
                     for alert_id, alert_data in self._alert_storage.items()
                 ]
+        elif self._is_firebase_backend():
+            # Firebase's meta listing downloads every stored alert anyway; load
+            # them into memory once so later readers reuse the same download.
+            self._ensure_alert_storage_loaded()
+            with self._lock:
+                rows = [
+                    (
+                        str(alert_id),
+                        safe_alert_timestamp(alert_data.get("timestamp")),
+                    )
+                    for alert_id, alert_data in self._alert_storage.items()
+                    if isinstance(alert_data, dict)
+                ]
+            rows.sort(key=lambda item: item[1], reverse=True)
         else:
             meta = None
             try:
@@ -1540,6 +1943,26 @@ class AlertStateManager:
         }
 
     def _page_stored_alerts_memory(self, storage: dict, page: int, limit: int) -> dict:
+        start_index = (page - 1) * limit
+        end_index = start_index + limit
+        if all(isinstance(alert_data, dict) for alert_data in storage.values()):
+            # Same stable sort as below, but only the page is copied.
+            ordered_ids = sorted(
+                storage,
+                key=lambda alert_id: safe_alert_timestamp(
+                    storage[alert_id].get("timestamp", 0)
+                ),
+                reverse=True,
+            )
+            page_alerts = []
+            for alert_id in ordered_ids[start_index:end_index]:
+                alert_copy = copy.deepcopy(storage[alert_id])
+                alert_copy["alert_id"] = alert_id
+                page_alerts.append(alert_copy)
+            return self._stored_alerts_page_result(
+                page_alerts, len(ordered_ids), page, limit
+            )
+
         alerts_list = []
         for alert_id, alert_data in storage.items():
             alert_copy = copy.deepcopy(alert_data)
@@ -1567,14 +1990,6 @@ class AlertStateManager:
                 self.initialize()
             if self._alert_storage_loaded:
                 return copy.deepcopy(self._alert_storage)
-        fetched = None
-        try:
-            fetched = database_manager.database_manager.fetch_alert_storage(None)
-        except Exception as fetch_error:
-            logger.debug("Full alert storage fetch failed: %s", fetch_error)
-            fetched = None
-        if isinstance(fetched, dict):
-            return copy.deepcopy(fetched)
         self._ensure_alert_storage_loaded()
         with self._lock:
             return copy.deepcopy(self._alert_storage)
@@ -1608,16 +2023,7 @@ class AlertStateManager:
                 use_memory = self._alert_storage_loaded
                 memory_items = dict(self._alert_storage) if use_memory else None
             if not use_memory:
-                queried = database_manager.database_manager.query_alert_storage_page(
-                    page, limit
-                )
-                if isinstance(queried, dict) and "alerts" in queried:
-                    return self._stored_alerts_page_result(
-                        list(queried.get("alerts") or []),
-                        int(queried.get("total_count") or 0),
-                        page,
-                        limit,
-                    )
+                # One shared full load, so every page comes from the same data.
                 self._ensure_alert_storage_loaded()
                 with self._lock:
                     memory_items = dict(self._alert_storage)
@@ -1650,16 +2056,16 @@ class AlertStateManager:
             if not self._initialized:
                 self.initialize()
 
-            try:
-                # Get first page of stored alerts
-                paginated_result = self.get_stored_alerts_paginated(page=1, limit=limit)
-                return paginated_result.get("alerts", [])
+        try:
+            # Get first page of stored alerts
+            paginated_result = self.get_stored_alerts_paginated(page=1, limit=limit)
+            return paginated_result.get("alerts", [])
 
-            except Exception as e:
-                logger.error(
-                    f"Error getting recent stored alerts: {str(e)}", exc_info=True
-                )
-                return []
+        except Exception as e:
+            logger.error(
+                f"Error getting recent stored alerts: {str(e)}", exc_info=True
+            )
+            return []
 
     def get_stored_alert_by_id(self, alert_id: str) -> Optional[dict]:
         """Get a specific stored alert by its ID
@@ -1674,25 +2080,26 @@ class AlertStateManager:
             if not self._initialized:
                 self.initialize()
 
-            try:
+        try:
+            with self._lock:
                 stored_alert = self._alert_storage.get(alert_id)
                 if stored_alert is not None:
                     return copy.deepcopy(stored_alert)
 
-                single = database_manager.get_data(
-                    f"Alerts/AlertStorage/{alert_id}"
-                )
-                if isinstance(single, dict) and single:
+            # Read outside the alert lock.
+            single = database_manager.get_data(f"Alerts/AlertStorage/{alert_id}")
+            if isinstance(single, dict) and single:
+                with self._lock:
                     if not self._alert_storage_loaded:
                         self._alert_storage[alert_id] = single
-                    return copy.deepcopy(single)
-                return None
-            except Exception as e:
-                logger.error(
-                    f"Error getting stored alert by ID {alert_id}: {str(e)}",
-                    exc_info=True,
-                )
-                return None
+                return copy.deepcopy(single)
+            return None
+        except Exception as e:
+            logger.error(
+                f"Error getting stored alert by ID {alert_id}: {str(e)}",
+                exc_info=True,
+            )
+            return None
 
     def _limit_stored_alerts_dict(self, all_stored_alerts: dict, max_alerts: int) -> dict:
         """Return the newest max_alerts entries from a stored-alerts dict."""
@@ -1726,14 +2133,8 @@ class AlertStateManager:
             need_fetch = not self._alert_storage_loaded
 
         if need_fetch:
-            fetched = self._fetch_alert_storage_from_database(max_alerts=max_alerts)
-            with self._lock:
-                if not self._alert_storage_loaded:
-                    for alert_id, alert_data in self._alert_storage.items():
-                        fetched.setdefault(alert_id, alert_data)
-                    self._alert_storage = fetched
-                    if not max_alerts or len(fetched) < int(max_alerts):
-                        self._alert_storage_loaded = True
+            # One shared full load, so every caller sees the same stored alerts.
+            self._ensure_alert_storage_loaded()
 
         try:
             with self._lock:
@@ -1785,25 +2186,27 @@ class AlertStateManager:
                 max_total_alerts
             )
 
-            alerts_list = []
-            for alert_id, alert_data in limited_stored_alerts.items():
-                alert_copy = copy.deepcopy(alert_data)
-                alert_copy["alert_id"] = alert_id
-                alerts_list.append(alert_copy)
-
-            alerts_list.sort(
-                key=lambda x: safe_alert_timestamp(x.get("timestamp", 0)),
+            # Same stable sort as before, but only the requested page is copied.
+            ordered_ids = sorted(
+                limited_stored_alerts,
+                key=lambda alert_id: safe_alert_timestamp(
+                    limited_stored_alerts[alert_id].get("timestamp", 0)
+                ),
                 reverse=True,
             )
 
-            total_count = len(alerts_list)
+            total_count = len(ordered_ids)
             total_pages = (
                 (total_count + limit - 1) // limit if total_count > 0 else 1
             )
 
             start_index = (page - 1) * limit
             end_index = start_index + limit
-            page_alerts = alerts_list[start_index:end_index]
+            page_alerts = []
+            for alert_id in ordered_ids[start_index:end_index]:
+                alert_copy = copy.deepcopy(limited_stored_alerts[alert_id])
+                alert_copy["alert_id"] = alert_id
+                page_alerts.append(alert_copy)
 
             return {
                 "alerts": page_alerts,

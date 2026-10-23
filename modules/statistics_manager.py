@@ -25,6 +25,7 @@ SOFTWARE.
 
 import asyncio
 import copy
+import hashlib
 import json
 import logging
 import os
@@ -363,10 +364,17 @@ class StatisticsManager:
         self._event_batch_lock = threading.Lock()
         self._event_batch_stop = threading.Event()
         self._event_flush_wake = threading.Event()
+        # Set when a batch fills up so the flusher skips the rest of its 1 s wait.
+        self._event_flush_now = threading.Event()
         self._event_flush_thread: Optional[threading.Thread] = None
         self._username_backfill_stop = threading.Event()
         self._username_backfill_thread: Optional[threading.Thread] = None
         self._lifetime_resident: set = set()
+        # (category, username_lower) -> digest of the user_lifetime row this process
+        # last committed. _spill_raw_user_map is the only writer of that table, so a
+        # matching digest means the row already holds exactly this payload.
+        self._spilled_user_digests: Dict[Tuple[str, str], bytes] = {}
+        self._user_spill_lock = threading.Lock()
 
         # Initialize the separate statistics database
         self._init_statistics_db()
@@ -542,12 +550,34 @@ class StatisticsManager:
         """Write one category of per-user payloads. Does not keep them in memory."""
         if not users or not self._stats_db_initialized:
             return
-        rows = []
+        with self._user_spill_lock:
+            self._spill_changed_user_rows(category, users)
+
+    def _spill_changed_user_rows(self, category: str, users: Dict[str, Any]) -> None:
+        candidates = []
+        seen: Dict[str, int] = {}
         for username, payload in users.items():
             if not isinstance(payload, dict):
                 continue
             name = str(username)
-            rows.append((name.lower(), category, name, json.dumps(payload)))
+            lowered = name.lower()
+            data_json = json.dumps(payload)
+            digest = hashlib.blake2b(
+                f"{name}\0{data_json}".encode("utf-8"), digest_size=16
+            ).digest()
+            candidates.append((lowered, name, data_json, digest))
+            seen[lowered] = seen.get(lowered, 0) + 1
+        known = self._spilled_user_digests
+        rows = []
+        digests = {}
+        for lowered, name, data_json, digest in candidates:
+            key = (category, lowered)
+            # Skip a row that already holds this exact username + payload. Names that
+            # collide case-insensitively in one map are all written, in order, as before.
+            if seen[lowered] == 1 and known.get(key) == digest:
+                continue
+            digests[key] = digest
+            rows.append((lowered, category, name, data_json))
         if not rows:
             return
         conn = None
@@ -566,6 +596,7 @@ class StatisticsManager:
                 rows,
             )
             conn.commit()
+            known.update(digests)
         except Exception as e:
             logger.error("Error saving per-user lifetime rows: %s", e)
         finally:
@@ -833,6 +864,7 @@ class StatisticsManager:
     def _close_statistics_db(self):
         """Close all connections in the statistics database pool."""
         self._event_batch_stop.set()
+        self._event_flush_now.set()
         self._event_flush_wake.set()
         self._username_backfill_stop.set()
         self._flush_pending_events()
@@ -867,11 +899,18 @@ class StatisticsManager:
             return
         row = (username, event_type, amount, alert_name, time.time())
         pending: Optional[List[Tuple[Any, ...]]] = None
+        flusher = self._event_flush_thread
+        flusher_alive = flusher is not None and flusher.is_alive()
         with self._event_batch_lock:
             self._event_batch.append(row)
-            if len(self._event_batch) >= 50:
+            full = len(self._event_batch) >= 50
+            if full and not flusher_alive:
                 pending = self._event_batch
                 self._event_batch = []
+        if full and flusher_alive:
+            # Callers often hold _data_lock (e.g. per chat message on the EventSub
+            # loop); let the flusher thread do the SQLite write right away instead.
+            self._event_flush_now.set()
         self._event_flush_wake.set()
         if pending:
             self._flush_event_rows(pending)
@@ -889,7 +928,8 @@ class StatisticsManager:
             self._event_flush_wake.wait()
             if self._event_batch_stop.is_set():
                 break
-            self._event_batch_stop.wait(1.0)
+            self._event_flush_now.wait(1.0)
+            self._event_flush_now.clear()
             self._event_flush_wake.clear()
             self._flush_pending_events()
         self._flush_pending_events()
@@ -4022,6 +4062,9 @@ class StatisticsManager:
         """Save statistics on application close"""
         try:
             logger.info(" Saving statistics on application close...")
+            # Final save rewrites every resident user, as before the unchanged-row skip.
+            with self._user_spill_lock:
+                self._spilled_user_digests.clear()
             self._save_to_database()
             logger.info(" Statistics successfully saved on application close")
         except Exception as e:

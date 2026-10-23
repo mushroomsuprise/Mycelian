@@ -7,8 +7,13 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def trim_log_file(path: Path, max_bytes: int) -> None:
-    """Keep only the newest max_bytes of a log file (line-aligned, byte-safe)."""
+def trim_log_file(path: Path, max_bytes: int, keep_bytes: int | None = None) -> None:
+    """Once a log file exceeds max_bytes, keep only its newest keep_bytes.
+
+    keep_bytes defaults to max_bytes. A lower value leaves headroom so a log that
+    sits at its cap is rewritten once per (max_bytes - keep_bytes) of new output
+    instead of on every record. Line-aligned and byte-safe.
+    """
     if not path.is_file():
         return
     try:
@@ -17,6 +22,8 @@ def trim_log_file(path: Path, max_bytes: int) -> None:
         return
     if size <= max_bytes:
         return
+    if keep_bytes is not None:
+        max_bytes = min(max_bytes, keep_bytes)
 
     slack = 4096
     read_size = min(size, max_bytes + slack)

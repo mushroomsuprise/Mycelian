@@ -26,6 +26,7 @@ SOFTWARE.
 import base64
 import logging
 import os
+import re
 import threading
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -217,27 +218,59 @@ def decrypt_value(encrypted_value: str) -> str:
             pass
         return encrypted_value  # Return original value if decryption fails
 
+# Fernet token layout: version 0x80 | 8-byte timestamp | 16-byte IV |
+# AES-CBC ciphertext (n * 16 bytes, n >= 1) | 32-byte HMAC.
+_FERNET_VERSION = 0x80
+_FERNET_OVERHEAD = 1 + 8 + 16 + 32
+_URLSAFE_B64_RE = re.compile(r"^[A-Za-z0-9_-]+={0,2}$")
+
+
+def _strict_urlsafe_b64decode(text: str):
+    """Decode padded urlsafe base64, or None if ``text`` is not exactly that."""
+    if not text or len(text) % 4 or not _URLSAFE_B64_RE.match(text):
+        return None
+    try:
+        decoded = base64.urlsafe_b64decode(text.encode("ascii"))
+    except Exception:
+        return None
+    # Reject non-canonical encodings (stray bits in the last character).
+    if base64.urlsafe_b64encode(decoded).decode("ascii") != text:
+        return None
+    return decoded
+
+
+def _is_fernet_token(token: bytes) -> bool:
+    if len(token) < _FERNET_OVERHEAD + 16 or token[0] != _FERNET_VERSION:
+        return False
+    return (len(token) - _FERNET_OVERHEAD) % 16 == 0
+
+
 def is_encrypted(value: str) -> bool:
     """
-    Check if a value appears to be encrypted.
-    
+    Check if a value is ciphertext produced by ``encrypt_value``.
+
+    Stored values are urlsafe base64 of a Fernet token, which is itself urlsafe
+    base64. Both layers and the token layout are checked, so plaintext OAuth
+    tokens (also base64-like) are not mistaken for ciphertext.
+
     Args:
         value (str): The value to check
-        
+
     Returns:
-        bool: True if the value appears to be encrypted
+        bool: True if the value is encrypted
     """
     try:
-        if not value:
+        if not value or not isinstance(value, str):
             return False
-        
-        # Try to decode as base64 and check if it looks like encrypted data
-        decoded = base64.urlsafe_b64decode(value.encode())
-        
-        # Encrypted values should be at least a certain length
-        # and have specific characteristics
-        return len(decoded) >= 32 and len(value) > 50
-        
+        outer = _strict_urlsafe_b64decode(value)
+        if outer is None:
+            return False
+        try:
+            token_text = outer.decode("ascii")
+        except UnicodeDecodeError:
+            return False
+        token = _strict_urlsafe_b64decode(token_text)
+        return token is not None and _is_fernet_token(token)
     except Exception:
         return False
 
