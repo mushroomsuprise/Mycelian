@@ -24,7 +24,9 @@ SOFTWARE.
 """
 
 import asyncio
+import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -43,6 +45,30 @@ from .statistics_manager import get_statistics_manager
 from .notification_engine import nav_actions_main_tab, notify_critical
 
 logger = logging.getLogger(__name__)
+
+
+def _json_fingerprint(data: Any) -> Optional[str]:
+    """Stable text form of a blob for change detection; None means always write."""
+    try:
+        return json.dumps(data, sort_keys=True, default=str)
+    except Exception:
+        return None
+
+
+def _database_backend_token() -> tuple:
+    """Identify where set_data writes, so a backend switch rewrites every blob."""
+    try:
+        from . import database_manager as db_module
+
+        manager = db_module.database_manager
+        config = manager.get_config()
+        return (
+            getattr(manager, "_database", None),
+            getattr(config, "database_type", None),
+            getattr(config, "streamer_name", None),
+        )
+    except Exception:
+        return (object(),)
 
 
 def _command_matches_name(command: ChatCommand, command_name: str) -> bool:
@@ -85,6 +111,7 @@ class GreetingFlagManager:
         self.greeted_flags: Dict[str, bool] = {}  # user_id -> has_been_greeted
         self.last_reset_time: float = 0  # Global reset timestamp
         self._lock = threading.RLock()
+        self._file_lock = threading.Lock()
         self._dirty = False
         self._last_save = 0
         self._save_interval = 60  # Save every 60 seconds if dirty
@@ -110,10 +137,12 @@ class GreetingFlagManager:
                     # Handle migration from old timestamp format
                     if isinstance(data, dict):
                         if "greeted_flags" in data:
-                            # New format
+                            # New format. A False flag behaves like a missing one,
+                            # so only greeted users are kept (RT-12).
                             self.greeted_flags = {
-                                uid: bool(flag)
+                                uid: True
                                 for uid, flag in data["greeted_flags"].items()
+                                if flag
                             }
                             self.last_reset_time = data.get("last_reset_time", 0)
                         else:
@@ -144,21 +173,26 @@ class GreetingFlagManager:
     def _save_flags(self):
         """Save greeting flags to file"""
         try:
-            import json
+            # Snapshot under the lock: chat threads add flags while we write (TH-11).
+            with self._lock:
+                data = {
+                    "greeted_flags": dict(self.greeted_flags),
+                    "last_reset_time": self.last_reset_time,
+                }
+                self._dirty = False
 
-            data = {
-                "greeted_flags": self.greeted_flags,
-                "last_reset_time": self.last_reset_time,
-            }
-
-            with open(self.file_path, "w") as f:
-                json.dump(data, f, indent=2)
+            with self._file_lock:
+                tmp_path = self.file_path.with_name(self.file_path.name + ".tmp")
+                with open(tmp_path, "w") as f:
+                    json.dump(data, f, indent=2)
+                os.replace(tmp_path, self.file_path)
             self._last_save = time.time()
-            self._dirty = False
             logger.debug(
-                f"Saved {len(self.greeted_flags)} greeting flags to {self.file_path}"
+                f"Saved {len(data['greeted_flags'])} greeting flags to {self.file_path}"
             )
         except Exception as e:
+            with self._lock:
+                self._dirty = True
             logger.error(f"Failed to save greeting flags to {self.file_path}: {e}")
 
     def _background_save_loop(self):
@@ -191,7 +225,8 @@ class GreetingFlagManager:
         """Reset all greeting flags to False and update reset timestamp"""
         with self._lock:
             old_count = len([uid for uid, flag in self.greeted_flags.items() if flag])
-            self.greeted_flags = {uid: False for uid in self.greeted_flags.keys()}
+            # Every flag is now False, which is the same as no entry (RT-12).
+            self.greeted_flags = {}
             self.last_reset_time = time.time()
             self._dirty = True
             logger.info(f"Reset greeting flags for {old_count} users")
@@ -271,12 +306,19 @@ class ChatbotManager:
         self._save_lock = threading.Lock()
         self._save_dirty = False
         self._save_thread: Optional[threading.Thread] = None
+        # Last JSON written per BotData path; unchanged blobs are skipped (DBX-04).
+        self._save_write_lock = threading.Lock()
+        self._saved_json: Dict[str, str] = {}
+        self._saved_backend: Any = None
 
         # Command cooldown tracking
         self.command_cooldowns: Dict[str, float] = {}
 
         # Repeating command scheduler
         self.repeating_tasks: Dict[str, asyncio.Task] = {}
+        # Stop flag per running repeat thread, so a stopped thread never fires
+        # again after a quick re-enable starts its replacement (TH-12).
+        self._repeating_stops: Dict[str, threading.Event] = {}
         self._scheduler_lock = threading.Lock()
         self._deferred_interval_events: List[
             ChatEvent
@@ -299,7 +341,8 @@ class ChatbotManager:
             existing_db_data = get_data("BotData/Commands")
             if existing_db_data is not None:
                 logger.debug("Database already has data, skipping migration")
-                return
+                # _load_data reuses this read instead of fetching it again (DBX-12).
+                return existing_db_data
 
             # Migrate commands
             commands_file = os.path.join(data_dir, "chatbot_commands.json")
@@ -351,13 +394,16 @@ class ChatbotManager:
         """Load commands and events from database manager"""
         try:
             # First, check if we need to migrate legacy data
-            self._migrate_legacy_data()
+            preloaded_commands = self._migrate_legacy_data()
 
             # Import database manager here to avoid circular imports
             from .database_manager import get_data
 
             # Load commands
-            commands_data = get_data("BotData/Commands")
+            if preloaded_commands is not None:
+                commands_data = preloaded_commands
+            else:
+                commands_data = get_data("BotData/Commands")
             if commands_data and isinstance(commands_data, list):
                 for cmd_data in commands_data:
                     try:
@@ -526,29 +572,35 @@ class ChatbotManager:
             except Exception:
                 logger.error("Chatbot save failed", exc_info=True)
 
-    def _save_data_now(self):
-        """Save commands and events to database manager"""
-        try:
-            # Import database manager here to avoid circular imports
-            from .database_manager import set_data
+    def flush_pending_saves(self, timeout: float = 4.0) -> None:
+        """Finish any queued save now (shutdown). Also writes greeting flags."""
+        thread = self._save_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout)
+        with self._save_lock:
+            dirty = self._save_dirty
+            self._save_dirty = False
+        if dirty:
+            self._save_data_now()
+        if hasattr(self, "flag_manager"):
+            self.flag_manager.force_save()
 
+    def _build_save_payloads(self) -> List[tuple]:
+        """Serialize everything under the lock; UI and chat threads mutate it (TH-11)."""
+        with self._lock:
             # Save commands
             commands_data = [cmd.to_dict() for cmd in self.commands.values()]
-            set_data("BotData/Commands", commands_data)
 
             # Save events
             events_data = [evt.to_dict() for evt in self.events.values()]
-            set_data("BotData/Events", events_data)
 
             # Save quotes
             quotes_data = [quote.to_dict() for quote in self.quotes.values()]
-            set_data("BotData/Quotes", quotes_data)
 
             # Save greetings
             greetings_data = [
                 greeting.to_dict() for greeting in self.greetings.values()
             ]
-            set_data("BotData/Greetings", greetings_data)
 
             # Save settings - ensure all values are JSON-serializable primitives
             # This guards against NiceGUI event objects or UI components being stored
@@ -562,7 +614,34 @@ class ChatbotManager:
                 "greeting_reset_interval_hours": int(self.greeting_reset_interval_hours) if not isinstance(self.greeting_reset_interval_hours, int) else self.greeting_reset_interval_hours,
                 "quote_cooldown_seconds": int(self.quote_cooldown_seconds) if not isinstance(self.quote_cooldown_seconds, int) else self.quote_cooldown_seconds,
             }
-            set_data("BotData/Settings", settings_data)
+        return [
+            ("BotData/Commands", commands_data),
+            ("BotData/Events", events_data),
+            ("BotData/Quotes", quotes_data),
+            ("BotData/Greetings", greetings_data),
+            ("BotData/Settings", settings_data),
+        ]
+
+    def _save_data_now(self):
+        """Save commands and events to database manager"""
+        try:
+            # Import database manager here to avoid circular imports
+            from .database_manager import set_data
+
+            payloads = self._build_save_payloads()
+            with self._save_write_lock:
+                # A different backend (or streamer) has none of our blobs yet.
+                backend = _database_backend_token()
+                if backend != self._saved_backend:
+                    self._saved_json.clear()
+                    self._saved_backend = backend
+                for path, data in payloads:
+                    fingerprint = _json_fingerprint(data)
+                    if fingerprint is not None and self._saved_json.get(path) == fingerprint:
+                        continue
+                    self._saved_json.pop(path, None)
+                    if set_data(path, data) and fingerprint is not None:
+                        self._saved_json[path] = fingerprint
 
             logger.debug("Saved chatbot data")
 
@@ -1221,9 +1300,15 @@ class ChatbotManager:
                 )
                 return
 
+            stop = threading.Event()
+
             def repeating_thread():
                 try:
-                    while command.enabled and command.repeating_enabled:
+                    while (
+                        command.enabled
+                        and command.repeating_enabled
+                        and not stop.is_set()
+                    ):
                         # Create mock event data for repeating commands
                         event_data = {
                             "username": "System",
@@ -1264,7 +1349,7 @@ class ChatbotManager:
                             if command.repeat_interval > 0
                             else 60
                         )
-                        time.sleep(interval)
+                        stop.wait(interval)
 
                 except Exception as e:
                     logger.error(
@@ -1276,6 +1361,7 @@ class ChatbotManager:
                 daemon=True,
                 name=f"Command-{command.command_name}",
             )
+            self._repeating_stops[command.command_id] = stop
             thread.start()
             self.repeating_tasks[command.command_id] = thread
             logger.info(f"Started repeating thread for command: {command.command_name}")
@@ -1287,6 +1373,9 @@ class ChatbotManager:
             if command is not None:
                 command.enabled = False
                 command.repeating_enabled = False
+            stop = self._repeating_stops.pop(command_id, None)
+            if stop is not None:
+                stop.set()
             if command_id in self.repeating_tasks:
                 del self.repeating_tasks[command_id]
                 logger.info(
@@ -1338,6 +1427,8 @@ class ChatbotManager:
                 logger.info(f"Event {event.name} already has a running task, skipping")
                 return
 
+            stop = threading.Event()
+
             def repeating_thread():
                 try:
                     logger.debug(
@@ -1357,7 +1448,7 @@ class ChatbotManager:
                         logger.info(
                             f"Applying {initial_delay}s initial delay for event {event.name}"
                         )
-                        time.sleep(initial_delay)
+                        stop.wait(initial_delay)
 
                     logger.info(
                         f"Entering main loop for event {event.name} with interval {event.interval}s"
@@ -1366,7 +1457,7 @@ class ChatbotManager:
                     # Track if this is the first iteration to prevent double triggering
                     first_iteration = True
 
-                    while event.enabled and event.interval > 0:
+                    while event.enabled and event.interval > 0 and not stop.is_set():
                         logger.debug(
                             f"Loop iteration for event {event.name} - enabled: {event.enabled}, interval: {event.interval}"
                         )
@@ -1376,7 +1467,8 @@ class ChatbotManager:
                             logger.debug(
                                 f"Sleeping for {event.interval}s for event {event.name}"
                             )
-                            time.sleep(event.interval)
+                            if stop.wait(event.interval):
+                                break
                         else:
                             logger.debug(
                                 f"Skipping initial sleep for event {event.name} (already triggered immediately)"
@@ -1465,6 +1557,7 @@ class ChatbotManager:
                 target=repeating_thread, daemon=True, name=f"Event-{event.name}"
             )
             logger.debug("Thread created: %s", thread.name)
+            self._repeating_stops[event.event_id] = stop
             thread.start()
             logger.debug(
                 "Thread started: %s, is_alive: %s", thread.name, thread.is_alive()
@@ -1500,11 +1593,17 @@ class ChatbotManager:
                     return
                 del self.repeating_tasks[event.event_id]
 
+            stop = threading.Event()
+
             def specific_time_thread():
                 from datetime import datetime, timedelta
 
                 try:
-                    while event.enabled and event.event_type == EventType.SPECIFIC_TIME:
+                    while (
+                        event.enabled
+                        and event.event_type == EventType.SPECIFIC_TIME
+                        and not stop.is_set()
+                    ):
                         if not event.specific_time:
                             time.sleep(1.0)
                             continue
@@ -1540,10 +1639,10 @@ class ChatbotManager:
                         if target <= now:
                             target += timedelta(days=1)
                         remaining = (target - datetime.now()).total_seconds()
-                        while event.enabled and remaining > 0:
-                            time.sleep(min(1.0, remaining))
+                        while event.enabled and remaining > 0 and not stop.is_set():
+                            stop.wait(min(1.0, remaining))
                             remaining = (target - datetime.now()).total_seconds()
-                        if not event.enabled:
+                        if not event.enabled or stop.is_set():
                             break
 
                         current_time = datetime.now()
@@ -1609,6 +1708,7 @@ class ChatbotManager:
                 daemon=True,
                 name=f"SpecificTime-{event.name}",
             )
+            self._repeating_stops[event.event_id] = stop
             thread.start()
             self.repeating_tasks[event.event_id] = thread
             logger.info(
@@ -1623,6 +1723,9 @@ class ChatbotManager:
             event = self.events.get(event_id)
             if event is not None:
                 event.enabled = False
+            stop = self._repeating_stops.pop(event_id, None)
+            if stop is not None:
+                stop.set()
             if event_id in self.repeating_tasks:
                 del self.repeating_tasks[event_id]
                 logger.info(
@@ -2361,6 +2464,14 @@ _chatbot_manager = None
 _manager_lock = threading.Lock()
 
 
+def _register_shutdown_flush(name: str, func) -> None:
+    try:
+        from .shutdown import register_shutdown_flush
+    except ImportError:
+        return
+    register_shutdown_flush(name, func)
+
+
 def get_manager() -> ChatbotManager:
     """Get the global chatbot manager instance"""
     global _chatbot_manager
@@ -2372,6 +2483,9 @@ def get_manager() -> ChatbotManager:
                 _chatbot_manager = ChatbotManager()
                 logger.info(
                     f"ChatbotManager created with {len(_chatbot_manager.commands)} commands, {len(_chatbot_manager.events)} events, {len(_chatbot_manager.quotes)} quotes"
+                )
+                _register_shutdown_flush(
+                    "chatbot_data", _chatbot_manager.flush_pending_saves
                 )
 
     return _chatbot_manager
