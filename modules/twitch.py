@@ -444,6 +444,12 @@ def _chat_message_may_call_api(msg_dict) -> bool:
 
 def _notify_chatbot_event(event_type, event_data) -> None:
     """Dispatch a chatbot event; swallow errors so EventSub handlers stay alive."""
+    # Behind any queued chatbot lane work, so it neither overtakes those replies
+    # nor waits on the loop for the chatbot lock they hold.
+    _run_chatbot_in_order(lambda: _notify_chatbot_event_now(event_type, event_data))
+
+
+def _notify_chatbot_event_now(event_type, event_data) -> None:
     try:
         chatbot_manager = get_chatbot_manager()
         _dispatch_chatbot_event_response(
