@@ -105,15 +105,25 @@ def get_data_path(relative_path):
 
 
 LOG_MAX_BYTES = 15 * 1024 * 1024  # 15 MiB cap for mycelian.log
+# Past the cap, trim down to this so the next rewrite is ~3 MiB of logging away
+# (trimming back to the cap itself rewrote the whole file on every record).
+LOG_TRIM_KEEP_BYTES = 12 * 1024 * 1024
 
 
 class CappedFileHandler(logging.FileHandler):
     """File handler that trims oldest log content when the file exceeds max_bytes."""
 
-    def __init__(self, filename, max_bytes: int = LOG_MAX_BYTES, **kwargs):
+    def __init__(
+        self,
+        filename,
+        max_bytes: int = LOG_MAX_BYTES,
+        keep_bytes: int = LOG_TRIM_KEEP_BYTES,
+        **kwargs,
+    ):
         self.max_bytes = max_bytes
+        self.keep_bytes = min(keep_bytes, max_bytes)
         path = Path(filename)
-        _trim_log_file(path, max_bytes)
+        _trim_log_file(path, max_bytes, self.keep_bytes)
         super().__init__(filename, mode="a", **kwargs)
 
     def emit(self, record):
@@ -132,7 +142,9 @@ class CappedFileHandler(logging.FileHandler):
                     if self.stream:
                         self.stream.close()
                         self.stream = None
-                    _trim_log_file(Path(self.baseFilename), self.max_bytes)
+                    _trim_log_file(
+                        Path(self.baseFilename), self.max_bytes, self.keep_bytes
+                    )
                     if not self.delay:
                         self.stream = self._open()
             except RecursionError:
