@@ -5508,6 +5508,8 @@ class Ff7GameHook:
         self._last_attached: Optional[bool] = None
         self._last_inventory_query_ui: Optional[Dict[str, Any]] = None
         self._enqueue_write: Optional[Any] = None
+        # Connector overrides applied while the stored list was unreadable.
+        self._pending_override_rows: Dict[str, Dict[str, Any]] = {}
         self._load_boss_log()
 
     def set_write_enqueue(self, enqueue: Any) -> None:
@@ -5530,11 +5532,28 @@ class Ff7GameHook:
                     return False
         return is_process_running(self.process_names)
 
+    @staticmethod
+    def _stored_boss_log(raw: Any) -> Tuple[List[str], str]:
+        if not isinstance(raw, dict):
+            return [], ""
+        names = raw.get("names")
+        if not isinstance(names, list):
+            return [], ""
+        last = raw.get("last") if isinstance(raw.get("last"), str) else ""
+        return names, last
+
     def _load_boss_log(self) -> None:
+        # True while the stored log could not be read: saving the in-memory log
+        # then would replace the stored one with only this session's defeats.
+        self._boss_log_unread = False
         try:
             from ..database_manager import database_manager
 
-            raw = database_manager.get_data(_FF7_BOSS_LOG_PATH)
+            raw, ok = database_manager.get_data_checked(_FF7_BOSS_LOG_PATH)
+            if not ok:
+                self._boss_log_unread = True
+                logger.warning("FF7 boss log could not be read; will merge before saving")
+                return
             if not isinstance(raw, dict):
                 return
             names = raw.get("names")
@@ -5545,10 +5564,35 @@ class Ff7GameHook:
         except Exception as e:
             logger.warning("FF7 boss log load failed: %s", e, exc_info=True)
 
+    def _merge_unread_boss_log(self, database_manager: Any) -> bool:
+        """Re-read a log that failed to load and put this session's defeats on top.
+
+        Returns False (nothing should be written yet) while it is still unreadable.
+        """
+        raw, ok = database_manager.get_data_checked(_FF7_BOSS_LOG_PATH)
+        if not ok:
+            logger.warning(
+                "FF7 boss log still unreadable; keeping new defeats in memory "
+                "instead of saving over the stored log"
+            )
+            return False
+        stored_names, stored_last = self._stored_boss_log(raw)
+        current = self._boss_tracker.bosses_dict()
+        self._boss_tracker.restore(
+            list(current["names"]) + list(stored_names),
+            current["last"] or stored_last,
+        )
+        self._boss_log_unread = False
+        return True
+
     def _persist_boss_log(self) -> None:
         try:
             from ..database_manager import database_manager
 
+            if getattr(self, "_boss_log_unread", False) and not self._merge_unread_boss_log(
+                database_manager
+            ):
+                return
             database_manager.set_data(
                 _FF7_BOSS_LOG_PATH, self._boss_tracker.bosses_dict()
             )
@@ -5568,6 +5612,8 @@ class Ff7GameHook:
     def handle_command(self, action: str, data: Dict[str, Any]) -> None:
         if action == "clear_bosses":
             self._boss_tracker.clear()
+            # An explicit clear replaces the stored log, readable or not.
+            self._boss_log_unread = False
             self._persist_boss_log()
 
     def idle_snapshot(self, *, disabled: bool = False) -> Dict[str, Any]:
@@ -5658,14 +5704,14 @@ class Ff7GameHook:
         try:
             from ..database_manager import database_manager
 
-            raw = database_manager.get_data(_FF7_CONNECTOR_OVERRIDES_PATH)
+            key = _persist_override_key(op, kwargs)
+            raw, ok = database_manager.get_data_checked(_FF7_CONNECTOR_OVERRIDES_PATH)
             data: Dict[str, Any] = (
                 dict(raw) if isinstance(raw, dict) else {"version": 1, "entries": []}
             )
             entries = data.get("entries")
             if not isinstance(entries, list):
                 entries = []
-            key = _persist_override_key(op, kwargs)
             now_ms = int(time.time() * 1000)
             dur_raw = kwargs.get("duration_sec", 0)
             try:
@@ -5679,14 +5725,25 @@ class Ff7GameHook:
                 "kwargs": _json_safe_kwargs(dict(kwargs)),
                 "expires_at_ms": expires_at,
             }
-            replaced = False
-            for i, ent in enumerate(entries):
-                if isinstance(ent, dict) and ent.get("key") == key:
-                    entries[i] = row
-                    replaced = True
-                    break
-            if not replaced:
-                entries.append(row)
+            if not ok:
+                # Writing now would drop every stored override; keep this one and
+                # merge it into the next write that starts from a good read.
+                self._pending_override_rows[key] = row
+                logger.warning(
+                    "FF7 connector overrides could not be read; %s kept pending", key
+                )
+                return
+            pending = list(self._pending_override_rows.values())
+            self._pending_override_rows.clear()
+            for extra in pending + [row]:
+                replaced = False
+                for i, ent in enumerate(entries):
+                    if isinstance(ent, dict) and ent.get("key") == extra["key"]:
+                        entries[i] = extra
+                        replaced = True
+                        break
+                if not replaced:
+                    entries.append(extra)
             data["entries"] = entries
             database_manager.set_data(_FF7_CONNECTOR_OVERRIDES_PATH, data)
         except Exception as e:
@@ -5704,6 +5761,15 @@ class Ff7GameHook:
             entries = raw.get("entries")
             if not isinstance(entries, list):
                 return
+            if self._pending_override_rows:
+                # Overrides that could not be saved earlier replay like stored ones.
+                pending = dict(self._pending_override_rows)
+                self._pending_override_rows.clear()
+                entries = [
+                    e
+                    for e in entries
+                    if not (isinstance(e, dict) and e.get("key") in pending)
+                ] + list(pending.values())
             now_ms = int(time.time() * 1000)
             kept: List[Dict[str, Any]] = []
             for ent in entries:

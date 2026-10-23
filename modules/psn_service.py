@@ -433,10 +433,20 @@ def psn_data_update_loop():
                                 "has_trophy_groups", False
                             ),
                         }
-                        existing = psn_client_instance.get_cached_game_data(
-                            np_communication_id
+                        existing, read_ok = (
+                            psn_client_instance.get_cached_game_data_checked(
+                                np_communication_id
+                            )
                         )
-                        if existing:
+                        if not read_ok:
+                            # Unreadable is not missing: storing a fresh entry now
+                            # would replace the stored one (trophy groups included).
+                            logger.warning(
+                                "PSN game cache for %s unreadable; mapping update "
+                                "retried next refresh",
+                                np_communication_id,
+                            )
+                        elif existing:
                             # Keep richer group flag once trophy_groups have been seeded
                             if existing.get("trophy_groups") or existing.get(
                                 "trophy_groups_updated_at"
@@ -521,7 +531,15 @@ def psn_data_update_loop():
                         "has_trophy_groups": len(groups_list) > 1,
                         "trophy_groups_updated_at": groups_updated_at,
                     }
-                    if psn_client_instance.get_cached_game_data(np_communication_id):
+                    stored, read_ok = psn_client_instance.get_cached_game_data_checked(
+                        np_communication_id
+                    )
+                    if not read_ok:
+                        logger.warning(
+                            "PSN game cache for %s unreadable; trophy groups not saved",
+                            np_communication_id,
+                        )
+                    elif stored:
                         psn_client_instance.update_game_cache_entry(
                             np_communication_id, cache_updates
                         )

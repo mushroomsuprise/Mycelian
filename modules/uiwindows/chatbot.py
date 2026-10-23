@@ -54,7 +54,7 @@ from ..chatbot_core import (
     replace_time_variables,
 )
 from ..chatbot_manager import get_manager as get_chatbot_manager
-from ..database_manager import get_data, set_data
+from ..database_manager import get_data, get_data_checked, set_data
 from ..giveaway_manager import get_giveaway_manager
 from .polls_panel import render_polls_tab
 from .tab_visibility import chatbot_subtab_hidden, on_chatbot_subtab_shown
@@ -118,10 +118,30 @@ def load_custom_variables() -> dict:
         return {}
 
 
+def _load_custom_variables_for_write() -> Optional[dict]:
+    """Stored custom variables for a read-modify-write, or None when the read failed.
+
+    A failed read returns ``{}`` from ``get_data``; writing back from that would
+    replace every stored variable, so callers skip the write instead.
+    """
+    stored_data, ok = get_data_checked(CUSTOM_VARIABLES_PATH)
+    if not ok:
+        logger.warning(
+            "Custom variables could not be read from storage; not saving so the "
+            "stored variables are not overwritten"
+        )
+        return None
+    if stored_data and "data" in stored_data:
+        return stored_data["data"]
+    return {}
+
+
 def add_custom_variable(name: str, expression: str) -> bool:
     """Add a new custom variable to storage"""
     try:
-        custom_vars = load_custom_variables()
+        custom_vars = _load_custom_variables_for_write()
+        if custom_vars is None:
+            return False
         clean_name = name.strip()
         if not clean_name.startswith("custom_"):
             clean_name = f"custom_{clean_name}"
@@ -140,7 +160,9 @@ def add_custom_variable(name: str, expression: str) -> bool:
 def remove_custom_variable(name: str) -> bool:
     """Remove a custom variable from storage"""
     try:
-        custom_vars = load_custom_variables()
+        custom_vars = _load_custom_variables_for_write()
+        if custom_vars is None:
+            return False
         if name in custom_vars:
             del custom_vars[name]
             success = save_custom_variables(custom_vars)

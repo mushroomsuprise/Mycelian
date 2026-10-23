@@ -481,21 +481,35 @@ def load_all_psn_game_cache_docs_from_db() -> list[dict]:
 
 def get_psn_game_cache_by_comm_id(np_communication_id: str) -> dict | None:
     """Read one cached game document from the database (any backend)."""
+    return get_psn_game_cache_by_comm_id_checked(np_communication_id)[0]
+
+
+def get_psn_game_cache_by_comm_id_checked(
+    np_communication_id: str,
+) -> tuple[dict | None, bool]:
+    """``(doc or None, read_ok)``. ``read_ok`` is False when the read itself failed,
+    so a caller does not mistake an unreadable document for a missing one and
+    write a fresh document over it."""
     if not np_communication_id:
-        return None
+        return None, True
     try:
         path = f"{PSN_GAME_DATA_PATH}/{np_communication_id}"
-        data = database_manager.get_data(path)
+        data, ok = database_manager.get_data_checked(path)
+        if not ok:
+            logger.warning(
+                f"Cached game data for {np_communication_id} could not be read"
+            )
+            return None, False
         if data and isinstance(data, dict) and data.get("np_communication_id"):
             logger.debug(f"Found cached game data for {np_communication_id}")
-            return data
+            return data, True
         logger.debug(f"No cached game data found for {np_communication_id}")
-        return None
+        return None, True
     except Exception as e:
         logger.error(
             f"Error retrieving cached game data for {np_communication_id}: {e}"
         )
-        return None
+        return None, False
 
 
 def update_psn_game_cache_in_db(np_communication_id: str, updates: dict) -> bool:
@@ -646,6 +660,12 @@ class PSNClient:
             Game data dict if found, None otherwise
         """
         return get_psn_game_cache_by_comm_id(np_communication_id)
+
+    def get_cached_game_data_checked(
+        self, np_communication_id: str
+    ) -> tuple[dict | None, bool]:
+        """Like :meth:`get_cached_game_data`, plus whether the read succeeded."""
+        return get_psn_game_cache_by_comm_id_checked(np_communication_id)
 
     def store_game_data(self, game_data: dict) -> bool:
         """
