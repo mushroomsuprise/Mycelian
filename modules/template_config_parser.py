@@ -217,14 +217,15 @@ class TemplateConfigParser:
             cached = self._file_cache.get(config_name)
             if cached is not None and cached[0] == mtime:
                 return copy.deepcopy(cached[1]) if copy_result else cached[1]
+        # Freshly parsed, so nothing else holds it: cache it as-is and copy
+        # only for callers that may mutate (one deepcopy per miss, not two).
         raw = self._load_raw_config_from_disk(config_name, create=create)
         with self._cache_lock:
-            stored = copy.deepcopy(raw)
             self._file_cache[config_name] = (
                 self._config_mtime(config_name),
-                stored,
+                raw,
             )
-            return copy.deepcopy(stored) if copy_result else stored
+            return copy.deepcopy(raw) if copy_result else raw
 
     def config_file_exists(self, config_name: str) -> bool:
         try:

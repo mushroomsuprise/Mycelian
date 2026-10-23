@@ -24,10 +24,12 @@ SOFTWARE.
 """
 
 import asyncio
+import contextlib
 import copy
 import dataclasses  # Added for converting PSNData to dict
 import errno
 import faulthandler
+import functools
 import glob
 import ipaddress
 import json
@@ -71,7 +73,7 @@ from .streamdeck_template_dispatch import (
     resolve_streamdeck_options_action as _resolve_streamdeck_options_action_fn,
 )
 from .template_config_parser import (
-    TemplateConfigParser,
+    get_shared_parser,
     resolve_dynamic_control_values_from_elements,
 )
 from .template_log import (
@@ -733,6 +735,84 @@ _SAFE_EMIT_PRIORITY_EVENTS = frozenset(
     }
 )
 
+# Full-state snapshots: only the newest pending one is worth delivering, so a
+# newer emit replaces the queued payload (same event + room) instead of queueing
+# again. On a healthy hub at most one is ever pending, so nothing changes; with
+# no drain, the 4 Hz game-hook tick can no longer fill the queue.
+_SAFE_EMIT_LATEST_WINS_EVENTS = frozenset({"game_hook_payload"})
+
+# What a producer does when its safe_emit queue is full (see _SafeEmitQueue.put).
+_EMIT_FULL_WAIT = "wait"
+_EMIT_FULL_OVERFLOW = "overflow"
+_EMIT_FULL_DROP_OLDEST = "drop_oldest"
+_SAFE_EMIT_PUT_WAIT_SLICE_SEC = 1.0
+# The drain ticks at least once a second while alive; a full queue whose drain
+# has not ticked for this long is treated as undeliverable (the old put timeout).
+_SAFE_EMIT_DRAIN_STALL_SEC = 30.0
+
+
+class _SafeEmitQueue:
+    """FIFO for cross-thread emits waiting on the gevent drain (TH-01 / WE-21).
+
+    One deque for every producer, so delivery order is call order. ``maxsize``
+    is backpressure for producers that may block; an event-loop thread may
+    append past it instead (it must never stall). Latest-wins events keep one
+    slot per key: the queued entry stays where it is and its payload is
+    replaced by the newest one.
+    """
+
+    def __init__(self, maxsize: int) -> None:
+        self.maxsize = maxsize
+        self._items: Deque[Tuple[tuple, Optional[tuple]]] = deque()
+        self._latest: Dict[tuple, tuple] = {}
+        self._not_full = threading.Condition(threading.Lock())
+
+    def qsize(self) -> int:
+        return len(self._items)
+
+    def _pop_locked(self) -> tuple:
+        item, key = self._items.popleft()
+        if key is not None:
+            item = self._latest.pop(key, item)
+        return item
+
+    def put(self, item: tuple, *, key: Optional[tuple] = None, on_full) -> Optional[tuple]:
+        """Enqueue ``item``. ``on_full()`` picks wait / overflow / drop_oldest.
+
+        Returns the item dropped to make room, if any.
+        """
+        with self._not_full:
+            while True:
+                if key is not None and key in self._latest:
+                    self._latest[key] = item
+                    return None
+                if len(self._items) < self.maxsize:
+                    break
+                mode = on_full()
+                if mode == _EMIT_FULL_WAIT:
+                    self._not_full.wait(_SAFE_EMIT_PUT_WAIT_SLICE_SEC)
+                    continue
+                if mode == _EMIT_FULL_DROP_OLDEST:
+                    dropped = self._pop_locked()
+                    self._append_locked(item, key)
+                    return dropped
+                break  # overflow: append past maxsize
+            self._append_locked(item, key)
+            return None
+
+    def _append_locked(self, item: tuple, key: Optional[tuple]) -> None:
+        if key is not None:
+            self._latest[key] = item
+        self._items.append((item, key))
+
+    def get_nowait(self) -> tuple:
+        with self._not_full:
+            if not self._items:
+                raise queue.Empty
+            item = self._pop_locked()
+            self._not_full.notify()
+            return item
+
 
 def _notify_alert_processor(*, playing: Optional[bool] = None) -> None:
     """Wake the alert-queue thread (enqueue / pause / alert_complete)."""
@@ -1061,7 +1141,15 @@ def evaluate_bottleneck(
     }
 
 
+_RUN_GENERATION_LOCK = threading.Lock()
+
+
 class WebEngine:
+    # Bumped by every run(). Each run gets a fresh gevent hub on a new thread;
+    # loops and the run's finally only touch shared state for their own run, so
+    # a frozen hub that unblocks after a restart cannot clobber the new one.
+    _run_generation = 0
+
     # --- Health / bottleneck thresholds --------------------------------------
     _FREEZE_HEALTH_SEC = 60.0
     _STARTING_GRACE_SEC = 15.0
@@ -1074,6 +1162,12 @@ class WebEngine:
     _ALL_TEMPLATE_CONFIGS_RATE_LIMIT = 4  # requests per IP per 3s window
     _ALL_TEMPLATE_CONFIGS_RATE_WINDOW_SEC = 3.0
     _ALL_TEMPLATE_CONFIGS_CACHE_TTL = 120.0
+    # Within this window a cached body is served as-is (the old 3 s TTL); after
+    # it, a body is reused only if no template JSON changed on disk (WE-28).
+    _TEMPLATE_CONFIGS_VERIFY_SEC = 3.0
+    # /api/template-configs embeds live runtime DB values, which have no
+    # change signal of their own: keep its original 3 s freshness.
+    _DYNAMIC_CONTROLS_CACHE_TTL = 3.0
     _TEMPLATE_QUEUE_METADATA_CACHE_TTL = 30.0
     _RESTART_THREAD_JOIN_SEC = 15.0 if sys.platform == "win32" else 10.0
     _HTTP_LATENCY_WINDOW_SEC = 60.0
@@ -1128,6 +1222,8 @@ class WebEngine:
         # Custom Sources iframe preview: token -> {template, overrides, ts}
         self._preview_sessions_lock = threading.Lock()
         self._preview_sessions: Dict[str, Dict[str, Any]] = {}
+        # Bumped on every preview-session change; part of the config cache keys.
+        self._preview_sessions_rev = 0
         self._container_drafts: Dict[str, str] = {}
         # Custom Sources preview demo loops: sid -> stop flag (legacy —
         # the auto-demo loop has been removed in favour of manual mock
@@ -1162,13 +1258,10 @@ class WebEngine:
             os.environ.get("MYCELIAN_DEV") or not getattr(sys, "frozen", False)
         )
         self.app.config["TEMPLATES_AUTO_RELOAD"] = _jinja_auto_reload
-        # Dev: never cache overlay assets. Frozen builds: allow browser/OBS reuse.
-        self._overlay_http_cache = bool(getattr(sys, "frozen", False)) and not bool(
-            os.environ.get("MYCELIAN_DEV")
-        )
-        self.app.config["SEND_FILE_MAX_AGE_DEFAULT"] = (
-            86400 if self._overlay_http_cache else 0
-        )
+        # Overlay assets: ``no-cache`` plus ETag / Last-Modified in every build,
+        # so OBS revalidates with a cheap bodyless 304 and a replaced file
+        # (same name) shows up immediately instead of up to a day later (WE-29).
+        self.app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
         self.app.jinja_env.auto_reload = _jinja_auto_reload
 
         # Configure SocketIO with increased limits to prevent "Too many packets in payload" errors
@@ -1186,12 +1279,13 @@ class WebEngine:
         # go through hub.loop.run_callback, which may lose wakeups or corrupt
         # the hub), so foreign threads enqueue here and the gevent drain worker
         # performs the actual emit. Ordered, never coalesced (alerts must not
-        # be dropped/merged).
-        # High ceiling: a full queue waits instead of dropping chat or alerts.
-        self._safe_emit_priority_queue: queue.Queue = queue.Queue(
-            maxsize=_SAFE_EMIT_QUEUE_MAX
-        )
-        self._safe_emit_queue: queue.Queue = queue.Queue(maxsize=_SAFE_EMIT_QUEUE_MAX)
+        # be dropped/merged); only full-state game_hook_payload snapshots keep
+        # just their newest pending copy.
+        # High ceiling: a full queue waits instead of dropping chat or alerts
+        # (bounded: see safe_emit for event-loop threads and a dead drain).
+        self._safe_emit_priority_queue = _SafeEmitQueue(_SAFE_EMIT_QUEUE_MAX)
+        self._safe_emit_queue = _SafeEmitQueue(_SAFE_EMIT_QUEUE_MAX)
+        self._emit_drain_last_tick = 0.0
         self._open_emit_wake_pipe()
         self._persist_absence_cache: Dict[tuple, tuple] = {}
         self._runtime_path_index_cache = None
@@ -1218,7 +1312,8 @@ class WebEngine:
         self._watchdog_thread: Optional[threading.Thread] = None
 
         # Short-TTL cache for GET /api/all-template-configs (OBS refresh storms)
-        self._all_template_configs_cache: Optional[Tuple[str, float, bytes]] = None
+        # (key, expires_at, payload, generation, fingerprint, verified_at)
+        self._all_template_configs_cache: Optional[tuple] = None
         self._all_template_configs_cache_lock = threading.Lock()
         self._all_template_configs_slow_log_at = 0.0
 
@@ -1289,11 +1384,6 @@ class WebEngine:
             response.headers["Access-Control-Allow-Headers"] = (
                 "Content-Type, Authorization"
             )
-            if self._overlay_http_cache:
-                path = request.path or ""
-                if path.startswith("/assets/") or path.startswith("/static/"):
-                    response.cache_control.public = True
-                    response.cache_control.max_age = 86400
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug("CORS headers added to response")
             return response
@@ -2156,6 +2246,7 @@ class WebEngine:
                     sess["draft_html"] = draft_html
                     sess["draft_config"] = copy.deepcopy(draft_config)
                     sess["ts"] = time.time()
+                    self._bump_preview_sessions_rev()
                 return (
                     {"ok": True},
                     200,
@@ -2184,6 +2275,7 @@ class WebEngine:
                 with self._preview_sessions_lock:
                     self._preview_sessions.pop(str(token), None)
                     self._preview_iframe_sids.pop(str(token), None)
+                    self._bump_preview_sessions_rev()
                 return (
                     {"ok": True},
                     200,
@@ -2231,8 +2323,9 @@ class WebEngine:
                         from .obs_service import obs_service
 
                         port = int(getattr(self, "port", 5000) or 5000)
-                        matched = obs_service.lookup_browser_source_size(
-                            route or key, port
+                        # Waits on the OBS worker (up to 8 s): off the hub.
+                        matched = self._run_off_hub(
+                            obs_service.lookup_browser_source_size, route or key, port
                         )
                         if isinstance(matched, dict):
                             width = int(matched["width"])
@@ -3361,8 +3454,8 @@ class WebEngine:
         # WebSocket-based Stream Deck communication handlers
         self.register_streamdeck_websocket_handlers()
 
-        # Initialize template config parser
-        self.template_config_parser = TemplateConfigParser()
+        # Process-wide parser: same mtime-keyed results, one cached tree (WE-33)
+        self.template_config_parser = get_shared_parser()
 
         # Register dynamic routes based on HTML templates
         self.register_routes()
@@ -3474,21 +3567,62 @@ class WebEngine:
     _SINGLEFLIGHT_WAIT_SEC = 5.0
     _SINGLEFLIGHT_POLL_SEC = 0.05
 
+    def _template_configs_cache_key(self, preview_tok: Optional[str]) -> str:
+        """Cache key: preview token plus the preview-session revision.
+
+        Preview overrides are merged into the cached bodies, so a pushed
+        override must not be answered from a body built before it.
+        """
+        if not preview_tok:
+            return ""
+        return f"{preview_tok}#{getattr(self, '_preview_sessions_rev', 0)}"
+
+    def _bump_preview_sessions_rev(self) -> None:
+        """Call with ``_preview_sessions_lock`` held after changing a session."""
+        self._preview_sessions_rev = getattr(self, "_preview_sessions_rev", 0) + 1
+
+    def _template_configs_fingerprint(self) -> tuple:
+        """Config names plus their mtimes: what the cached bodies are built from."""
+        parser = self.template_config_parser
+        out = []
+        for name in parser.get_config_files():
+            try:
+                mtime = os.stat(parser.get_config_path(name)).st_mtime
+            except (OSError, ValueError):
+                mtime = 0.0
+            out.append((name, mtime))
+        return tuple(out)
+
     def _peek_all_template_configs_cache(self, preview_tok: str) -> Optional[bytes]:
         """Return the cached all-template-configs payload if fresh, else None."""
-        cache_key = preview_tok or ""
+        cache_key = self._template_configs_cache_key(preview_tok)
         with self._all_template_configs_cache_lock:
             cached = self._all_template_configs_cache
-        if cached is not None:
-            key, expires_at, payload_bytes = cached
-            if key == cache_key and time.time() < expires_at:
-                return payload_bytes
-        return None
+        if cached is None:
+            return None
+        key, expires_at, payload_bytes, generation, fingerprint, verified_at = cached
+        now = time.time()
+        if (
+            key != cache_key
+            or now >= expires_at
+            or generation != self._template_config_generation
+        ):
+            return None
+        if now - verified_at < self._TEMPLATE_CONFIGS_VERIFY_SEC:
+            return payload_bytes
+        try:
+            unchanged = self._template_configs_fingerprint() == fingerprint
+        except Exception:
+            unchanged = False
+        if not unchanged:
+            return None
+        with self._all_template_configs_cache_lock:
+            if self._all_template_configs_cache is cached:
+                self._all_template_configs_cache = cached[:5] + (now,)
+        return payload_bytes
 
     def _get_all_template_configs_cached(self, preview_tok: str) -> Tuple[bytes, bool]:
         """Return UTF-8 JSON bytes and whether the response came from TTL cache."""
-        cache_key = preview_tok or ""
-
         payload = self._peek_all_template_configs_cache(preview_tok)
         if payload is not None:
             return payload, True
@@ -3507,14 +3641,27 @@ class WebEngine:
                 return payload, True
 
         try:
+            # Captured before building: an invalidate (or file change) during
+            # the build must not leave the older body cached.
+            cache_key = self._template_configs_cache_key(preview_tok)
+            generation = self._template_config_generation
+            try:
+                fingerprint = self._template_configs_fingerprint()
+            except Exception:
+                fingerprint = None
+            built_at = time.time()
             configs = self._build_all_template_configs(preview_tok or None)
             payload_bytes = json.dumps(configs, separators=(",", ":")).encode("utf-8")
             with self._all_template_configs_cache_lock:
-                self._all_template_configs_cache = (
-                    cache_key,
-                    time.time() + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
-                    payload_bytes,
-                )
+                if generation == self._template_config_generation:
+                    self._all_template_configs_cache = (
+                        cache_key,
+                        built_at + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
+                        payload_bytes,
+                        generation,
+                        fingerprint,
+                        built_at,
+                    )
             return payload_bytes, False
         finally:
             with self._all_template_configs_cache_lock:
@@ -3592,7 +3739,7 @@ class WebEngine:
         return configs
 
     def _peek_dynamic_controls_cache(self, preview_tok: str) -> Optional[bytes]:
-        cache_key = preview_tok or ""
+        cache_key = self._template_configs_cache_key(preview_tok)
         with self._dynamic_controls_cache_lock:
             cached = self._dynamic_controls_cache
         if cached is not None:
@@ -3605,8 +3752,6 @@ class WebEngine:
         self, preview_tok: str
     ) -> Tuple[bytes, bool]:
         """TTL-cached /api/template-configs payload (same singleflight pattern)."""
-        cache_key = preview_tok or ""
-
         payload = self._peek_dynamic_controls_cache(preview_tok)
         if payload is not None:
             return payload, True
@@ -3625,14 +3770,18 @@ class WebEngine:
                 return payload, True
 
         try:
+            cache_key = self._template_configs_cache_key(preview_tok)
+            generation = self._template_config_generation
+            built_at = time.time()
             configs = self._build_dynamic_controls_configs(preview_tok or None)
             payload_bytes = json.dumps(configs, separators=(",", ":")).encode("utf-8")
             with self._dynamic_controls_cache_lock:
-                self._dynamic_controls_cache = (
-                    cache_key,
-                    time.time() + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
-                    payload_bytes,
-                )
+                if generation == self._template_config_generation:
+                    self._dynamic_controls_cache = (
+                        cache_key,
+                        built_at + self._DYNAMIC_CONTROLS_CACHE_TTL,
+                        payload_bytes,
+                    )
             return payload_bytes, False
         finally:
             with self._dynamic_controls_cache_lock:
@@ -4328,6 +4477,67 @@ class WebEngine:
             except Exception as e:
                 logger.debug("Could not log port holder hint: %s", e)
 
+    def _run_off_hub(self, fn, *args):
+        """Call a blocking ``fn`` without stalling the gevent hub (TH-04 / TH-05).
+
+        On the hub thread the call runs on gevent's native threadpool and only
+        the calling greenlet waits; the result (or exception) is the same. Off
+        the hub it is a plain call. ``fn`` must not need the request context.
+        """
+        if threading.get_ident() != self._server_thread_ident:
+            return fn(*args)
+        try:
+            from gevent import get_hub
+
+            pool = get_hub().threadpool
+        except Exception:
+            return fn(*args)
+        return pool.apply(fn, args)
+
+    def _hub_alert_state_serialized(self, handler):
+        """Let one hub greenlet at a time into AlertStateManager (TH-14).
+
+        Its RLock is re-entrant per OS thread and every hub greenlet shares one
+        thread, so when a handler yields while holding it (the remote-DB poll)
+        a second greenlet walks straight in. A gevent lock makes the second
+        one wait cooperatively instead; uncontended (SQLite never yields) it
+        changes nothing.
+        """
+
+        @functools.wraps(handler)
+        def wrapper(*args, **kwargs):
+            with self._hub_alert_state_guard():
+                return handler(*args, **kwargs)
+
+        return wrapper
+
+    def _hub_alert_state_guard(self):
+        if threading.get_ident() != self._server_thread_ident:
+            return contextlib.nullcontext()
+        try:
+            from gevent.lock import RLock as GeventRLock
+        except Exception:
+            return contextlib.nullcontext()
+        locks = self.__dict__.setdefault("_hub_alert_state_locks", {})
+        gen = self._hub_run_generation()
+        lock = locks.get(gen)
+        if lock is None:
+            locks.clear()  # locks of earlier hubs belong to dead loops
+            lock = locks[gen] = GeventRLock()
+        return lock
+
+    def _hub_run_generation(self) -> int:
+        """Run generation owned by the calling (hub) thread."""
+        gens = getattr(self, "_run_thread_generations", None)
+        if gens:
+            gen = gens.get(threading.get_ident())
+            if gen is not None:
+                return gen
+        return self._run_generation
+
+    def _run_is_current(self, gen: int) -> bool:
+        return bool(self.is_running) and gen == self._run_generation
+
     def ensure_web_engine_heartbeat(self) -> None:
         """Log connected client count periodically and arm the freeze watchdog."""
         with self._heartbeat_lock:
@@ -4511,17 +4721,18 @@ class WebEngine:
 
     def _startup_client_sync_loop(self) -> None:
         """After settle: overlay-recovery, optional OBS source refresh, dock wake."""
+        gen = self._hub_run_generation()
         try:
             self.socketio.sleep(self._STARTUP_CLIENT_SYNC_SETTLE_SEC)
         except Exception:
             return
-        if not self.is_running:
+        if not self._run_is_current(gen):
             return
 
         deadline = time.monotonic() + self._STARTUP_CLIENT_SYNC_OBS_WAIT_SEC
         obs_attempted = False
         dock_attempted = False
-        while self.is_running:
+        while self._run_is_current(gen):
             overlay_clients = self._overlay_socket_connected_count()
             if overlay_clients > 0:
                 self._emit_startup_overlay_recovery_once()
@@ -4557,57 +4768,114 @@ class WebEngine:
                 return
 
     def _web_engine_heartbeat_loop(self) -> None:
-        while self.is_running:
-            try:
-                self.socketio.sleep(self._HEARTBEAT_EXPECTED_INTERVAL_SEC)
-            except Exception:
-                break
-            if not self.is_running:
-                break
-            now_mono = time.monotonic()
-            if self._last_heartbeat_mono is not None:
-                drift_ms = max(
-                    0.0,
-                    (
-                        now_mono
-                        - self._last_heartbeat_mono
-                        - self._HEARTBEAT_EXPECTED_INTERVAL_SEC
-                    )
-                    * 1000.0,
+        gen = self._hub_run_generation()
+        try:
+            while self._run_is_current(gen):
+                try:
+                    self.socketio.sleep(self._HEARTBEAT_EXPECTED_INTERVAL_SEC)
+                except Exception:
+                    break
+                if not self._run_is_current(gen):
+                    break
+                # One bad tick (diagnostics, formatting) must not end the
+                # greenlet: a stalled heartbeat reads as a frozen hub and the
+                # supervisor would restart a healthy server (WE-27).
+                try:
+                    self._web_engine_heartbeat_tick()
+                except Exception as exc:
+                    self._last_gevent_heartbeat = time.time()
+                    logger.debug("WebEngine heartbeat tick failed: %s", exc, exc_info=True)
+        finally:
+            if gen == self._run_generation:
+                with self._heartbeat_lock:
+                    self._heartbeat_task_started = False
+
+    def _web_engine_heartbeat_tick(self) -> None:
+        now_mono = time.monotonic()
+        if self._last_heartbeat_mono is not None:
+            drift_ms = max(
+                0.0,
+                (
+                    now_mono
+                    - self._last_heartbeat_mono
+                    - self._HEARTBEAT_EXPECTED_INTERVAL_SEC
                 )
-            else:
-                drift_ms = 0.0
-            self._last_heartbeat_mono = now_mono
-            # Mark the gevent hub as alive for the watchdog.
-            self._last_gevent_heartbeat = time.time()
-            bottleneck_diag = self._get_bottleneck_diagnostics()
-            m = bottleneck_diag.get("metrics") or {}
-            status = "overloaded" if bottleneck_diag.get("bottlenecked") else "running"
-            _bottleneck_print(
-                f"heartbeat drift={drift_ms:.0f}ms p95={m.get('http_p95_ms', 0):.0f}ms "
-                f"tc_q={m.get('template_control_queue_depth', 0)} "
-                f"tc_age={m.get('template_control_oldest_age_ms', 0):.0f}ms "
-                f"drops={m.get('template_control_drops_60s', 0)} "
-                f"clients={m.get('connected_clients', 0)} -> {status}"
+                * 1000.0,
             )
-            if bottleneck_diag.get("bottlenecked"):
-                logger.debug(
-                    "WebEngine heartbeat: overloaded — %s; clients=%s "
-                    "template_control_queue=%s template_control_oldest_age_ms=%s "
-                    "http_p95_ms=%s",
-                    "; ".join(bottleneck_diag.get("reasons") or []),
-                    m.get("connected_clients"),
-                    m.get("template_control_queue_depth"),
-                    m.get("template_control_oldest_age_ms"),
-                    m.get("http_p95_ms"),
+        else:
+            drift_ms = 0.0
+        self._last_heartbeat_mono = now_mono
+        # Mark the gevent hub as alive for the watchdog.
+        self._last_gevent_heartbeat = time.time()
+        bottleneck_diag = self._get_bottleneck_diagnostics()
+        m = bottleneck_diag.get("metrics") or {}
+        status = "overloaded" if bottleneck_diag.get("bottlenecked") else "running"
+        _bottleneck_print(
+            f"heartbeat drift={drift_ms:.0f}ms p95={m.get('http_p95_ms', 0):.0f}ms "
+            f"tc_q={m.get('template_control_queue_depth', 0)} "
+            f"tc_age={m.get('template_control_oldest_age_ms', 0):.0f}ms "
+            f"drops={m.get('template_control_drops_60s', 0)} "
+            f"clients={m.get('connected_clients', 0)} -> {status}"
+        )
+        if bottleneck_diag.get("bottlenecked"):
+            logger.debug(
+                "WebEngine heartbeat: overloaded — %s; clients=%s "
+                "template_control_queue=%s template_control_oldest_age_ms=%s "
+                "http_p95_ms=%s",
+                "; ".join(bottleneck_diag.get("reasons") or []),
+                m.get("connected_clients"),
+                m.get("template_control_queue_depth"),
+                m.get("template_control_oldest_age_ms"),
+                m.get("http_p95_ms"),
+            )
+        else:
+            self._maybe_log_bottleneck_calibration_watch(m)
+            logger.debug(
+                "WebEngine heartbeat: connected_clients=%s is_running=%s",
+                self._get_socket_connected_count(),
+                self.is_running,
+            )
+
+    _GEVENT_MONITOR_ENV = "MYCELIAN_GEVENT_MONITOR"
+    _GEVENT_MONITOR_LOG_INTERVAL_SEC = 30.0
+
+    def _maybe_enable_gevent_blocking_monitor(self) -> None:
+        """Opt-in diagnostics (TH-13): log hub stalls >1s with the blocking stack.
+
+        Off unless ``MYCELIAN_GEVENT_MONITOR`` is set; it only logs. Must run on
+        the hub thread before ``socketio.run`` starts the loop.
+        """
+        if not os.environ.get(self._GEVENT_MONITOR_ENV):
+            return
+        try:
+            import gevent
+            import gevent.events as gevent_events
+
+            gevent.config.monitor_thread = True
+            gevent.config.max_blocking_time = 1.0
+            gevent.config.print_blocking_reports = False
+            if getattr(WebEngine, "_gevent_monitor_subscribed", False):
+                return
+            WebEngine._gevent_monitor_subscribed = True
+            last_log = [0.0]
+
+            def _on_gevent_event(event: Any) -> None:
+                if not isinstance(event, gevent_events.EventLoopBlocked):
+                    return
+                now = time.monotonic()
+                if now - last_log[0] < self._GEVENT_MONITOR_LOG_INTERVAL_SEC:
+                    return
+                last_log[0] = now
+                logger.warning(
+                    "WebEngine gevent hub blocked > %.1fs:\n%s",
+                    event.blocking_time,
+                    "\n".join(str(line) for line in (event.info or [])),
                 )
-            else:
-                self._maybe_log_bottleneck_calibration_watch(m)
-                logger.debug(
-                    "WebEngine heartbeat: connected_clients=%s is_running=%s",
-                    self._get_socket_connected_count(),
-                    self.is_running,
-                )
+
+            gevent_events.subscribers.append(_on_gevent_event)
+            logger.info("WebEngine gevent blocking monitor enabled")
+        except Exception as exc:
+            logger.debug("gevent blocking monitor unavailable: %s", exc)
 
     def _watchdog_loop(self) -> None:
         """Detect a frozen gevent hub and dump thread stacks for diagnosis.
@@ -5516,12 +5784,20 @@ class WebEngine:
                                 draft_html = dh
                                 draft_config = dc
 
+                        html_cache_key = None
                         if (
                             draft_html is None
                             and not mycelian_preview_mode
                             and not overrides
                         ):
-                            cached_html = engine_self._cached_overlay_html(template)
+                            # Key from the files as they are before rendering, so
+                            # a save mid-render is not cached as current (WE-28).
+                            html_cache_key = engine_self._overlay_html_cache_key(
+                                template
+                            )
+                            cached_html = engine_self._cached_overlay_html(
+                                template, html_cache_key
+                            )
                             if cached_html is not None:
                                 return cached_html
 
@@ -5564,12 +5840,10 @@ class WebEngine:
                                 mycelian_preview_mode=mycelian_preview_mode,
                             )
                         html = _finalize_served_overlay_html(html)
-                        if (
-                            draft_html is None
-                            and not mycelian_preview_mode
-                            and not overrides
-                        ):
-                            engine_self._store_overlay_html(template, html)
+                        if html_cache_key is not None:
+                            engine_self._store_overlay_html(
+                                template, html, html_cache_key
+                            )
                         if mycelian_preview_mode and preview_token:
                             # Inject preview helper (force-show + mock-data
                             # MutationObserver). Try </body> first, then
@@ -5840,6 +6114,7 @@ class WebEngine:
                 "overrides": safe,
                 "ts": time.time(),
             }
+            self._bump_preview_sessions_rev()
 
     def emit_preview_mock(
         self,
@@ -5947,6 +6222,7 @@ class WebEngine:
                 "draft_config": draft_config,
                 "ts": time.time(),
             }
+            self._bump_preview_sessions_rev()
 
     @staticmethod
     def _apply_preview_config_layers(
@@ -6710,6 +6986,7 @@ class WebEngine:
                 return False
 
         @self.socketio.on("get_alert_state")
+        @self._hub_alert_state_serialized
         def handle_get_alert_state(data=None):
             """
             Handle get_alert_state websocket event to retrieve the current alert configuration state
@@ -6758,6 +7035,7 @@ class WebEngine:
                 return error_result
 
         @self.socketio.on("update_alert_data")
+        @self._hub_alert_state_serialized
         def handle_update_alert_data(data):
             """
             Handle update_alert_data websocket event to update alert data through AlertStateManager
@@ -6809,6 +7087,7 @@ class WebEngine:
                 return {"success": False, "error": str(e)}
 
         @self.socketio.on("save_alert_by_id")
+        @self._hub_alert_state_serialized
         def handle_save_alert_by_id(data):
             """
             Handle save_alert_by_id websocket event to save current alert data to Firebase
@@ -6852,6 +7131,7 @@ class WebEngine:
                 return {"success": False, "error": str(e)}
 
         @self.socketio.on("get_stored_alerts")
+        @self._hub_alert_state_serialized
         def handle_get_stored_alerts(data=None):
             """
             Handle get_stored_alerts websocket event to retrieve completed/stored alerts
@@ -7073,6 +7353,7 @@ class WebEngine:
             Retrieves the latest PSN data from StateManager and sends it to the client.
             """
             client_sid = request.sid
+            psn_debug = logger.isEnabledFor(logging.DEBUG)
             logger.debug(
                 f"=== WEB ENGINE: Received get_psn_data request from {client_sid} ==="
             )
@@ -7082,32 +7363,34 @@ class WebEngine:
             try:
                 logger.debug("Attempting to get live PSN data from state manager...")
                 live_psn_data = state_manager.get_live_psn_data()
-                logger.debug(f"Live PSN data retrieved: {live_psn_data}")
+                if psn_debug:
+                    logger.debug(f"Live PSN data retrieved: {live_psn_data}")
 
                 if live_psn_data:
                     from .psn_service import _public_psn_payload
 
                     psn_data_dict = _public_psn_payload(live_psn_data)
-                    logger.debug(f"PSN data converted to dict: {psn_data_dict}")
-                    logger.debug(f"PSN data dict keys: {list(psn_data_dict.keys())}")
+                    if psn_debug:
+                        logger.debug(f"PSN data converted to dict: {psn_data_dict}")
+                        logger.debug(f"PSN data dict keys: {list(psn_data_dict.keys())}")
 
-                    # Log specific fields that the template is looking for
-                    logger.debug("=== PSN Data Fields for Trophies Template ===")
-                    logger.debug(
-                        f"  - current_game_name: {psn_data_dict.get('current_game_name')}"
-                    )
-                    logger.debug(
-                        f"  - current_game_art_url: {psn_data_dict.get('current_game_art_url')}"
-                    )
-                    logger.debug(
-                        f"  - current_game_trophies: {psn_data_dict.get('current_game_trophies')}"
-                    )
-                    logger.debug(
-                        f"  - trophy_counts: {psn_data_dict.get('trophy_counts')}"
-                    )
-                    logger.debug(
-                        f"  - current_game_progress: {psn_data_dict.get('current_game_progress')}"
-                    )
+                        # Log specific fields that the template is looking for
+                        logger.debug("=== PSN Data Fields for Trophies Template ===")
+                        logger.debug(
+                            f"  - current_game_name: {psn_data_dict.get('current_game_name')}"
+                        )
+                        logger.debug(
+                            f"  - current_game_art_url: {psn_data_dict.get('current_game_art_url')}"
+                        )
+                        logger.debug(
+                            f"  - current_game_trophies: {psn_data_dict.get('current_game_trophies')}"
+                        )
+                        logger.debug(
+                            f"  - trophy_counts: {psn_data_dict.get('trophy_counts')}"
+                        )
+                        logger.debug(
+                            f"  - current_game_progress: {psn_data_dict.get('current_game_progress')}"
+                        )
 
                     self.socketio.emit("psn_data_update", psn_data_dict, to=client_sid)
                     logger.debug(f"Successfully sent psn_data_update to {client_sid}")
@@ -7120,7 +7403,8 @@ class WebEngine:
                     from .psn_service import _public_psn_payload
 
                     default_data_dict = _public_psn_payload(PSNData())
-                    logger.debug(f"Default PSN data dict: {default_data_dict}")
+                    if psn_debug:
+                        logger.debug(f"Default PSN data dict: {default_data_dict}")
                     self.socketio.emit(
                         "psn_data_update", default_data_dict, to=client_sid
                     )
@@ -7455,7 +7739,8 @@ class WebEngine:
             try:
                 from . import spotify
 
-                status = spotify.get_spotify_status()
+                # Connectivity probes can block for seconds: off the hub.
+                status = self._run_off_hub(spotify.get_spotify_status)
                 self.socketio.emit("spotify_status_update", status, to=request.sid)
                 logger.debug(
                     f"Sent Spotify status to {request.sid}: {status['status']}"
@@ -7520,6 +7805,7 @@ class WebEngine:
                 return False
 
         @self.socketio.on("get_stored_alerts_paginated")
+        @self._hub_alert_state_serialized
         def handle_get_stored_alerts_paginated(data):
             """
             Handle get_stored_alerts_paginated websocket event.
@@ -7739,6 +8025,7 @@ class WebEngine:
                 return {"success": False, "error": str(exc)}
 
         @self.socketio.on("activity_feed_replay_alert")
+        @self._hub_alert_state_serialized
         def handle_activity_feed_replay_alert(data):
             """
             Handle activity_feed_replay_alert websocket event.
@@ -7973,8 +8260,11 @@ class WebEngine:
                     try:
                         from . import twitch as twitch_module
 
-                        icon_urls = twitch_module.fetch_channel_points_currency_icon(
-                            str(twitch_data.user_id)
+                        # GQL/Helix round trip (up to ~15 s offline): wait on a
+                        # native worker so other overlays keep being served.
+                        icon_urls = self._run_off_hub(
+                            twitch_module.fetch_channel_points_currency_icon,
+                            str(twitch_data.user_id),
                         )
                         if icon_urls:
                             streamer_info["channel_points_icon"] = icon_urls
@@ -8820,9 +9110,10 @@ class WebEngine:
 
             # Emit the event to all clients
             self.safe_emit(event_name, event_data)
-            logger.debug(
-                f"Emitted Stream Deck event: {event_name} with data: {event_data}"
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Emitted Stream Deck event: {event_name} with data: {event_data}"
+                )
 
         except Exception as e:
             logger.error(
@@ -8920,7 +9211,7 @@ class WebEngine:
 
             # Initialize template config parser with timeout protection
             try:
-                config_parser = template_config_parser.TemplateConfigParser()
+                config_parser = template_config_parser.get_shared_parser()
                 config_files = config_parser.get_config_files()
             except Exception as e:
                 logger.warning(f"Could not load template config files: {str(e)}")
@@ -8953,8 +9244,9 @@ class WebEngine:
                     break
 
                 try:
+                    # Read-only scan (handlers only read their element config).
                     config = config_parser.load_config(
-                        config_name, include_dynamic_controls=True
+                        config_name, include_dynamic_controls=True, copy_result=False
                     )
 
                     if isinstance(config, dict) and "dynamic_controls" in config:
@@ -9048,9 +9340,10 @@ class WebEngine:
         """Create a dynamic websocket handler function"""
 
         def handler(data=None):
-            logger.debug(
-                f"Dynamic control event: {template_name}_{action} (type: {element_type}) with data: {data}"
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Dynamic control event: {template_name}_{action} (type: {element_type}) with data: {data}"
+                )
 
             try:
                 # Durable controls (those with a "persist" block) write their new
@@ -9277,19 +9570,47 @@ class WebEngine:
             if event in _SAFE_EMIT_PRIORITY_EVENTS
             else self._safe_emit_queue
         )
-        try:
-            target_queue.put(item, timeout=30)
-        except queue.Full:
-            target_queue.put(item)
+        key = (event, to) if event in _SAFE_EMIT_LATEST_WINS_EVENTS else None
+        dropped = target_queue.put(item, key=key, on_full=self._safe_emit_full_mode)
+        if dropped is not None:
+            self._record_event_timestamp(self._socket_emit_error_times)
+            self._log_emit_queue_full(dropped[1], target_queue)
         self._signal_emit_wake()
         return True
+
+    def _safe_emit_drain_live(self) -> bool:
+        """True while the gevent drain worker is running and recently ticked."""
+        return bool(
+            self.is_running
+            and self._template_control_worker_alive
+            and (time.monotonic() - self._emit_drain_last_tick)
+            < _SAFE_EMIT_DRAIN_STALL_SEC
+        )
+
+    def _safe_emit_full_mode(self) -> str:
+        """Full-queue policy for the calling producer thread.
+
+        Plain threads wait for room while the drain is alive (backpressure, no
+        loss). Event-loop threads (NiceGUI, Twitch EventSub, ...) must never
+        stall, so they append past the soft limit; the drain is still
+        delivering. With no live drain nothing is deliverable now, so the
+        oldest entry makes room instead of hanging the caller forever.
+        """
+        if not self._safe_emit_drain_live():
+            return _EMIT_FULL_DROP_OLDEST
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return _EMIT_FULL_WAIT
+        return _EMIT_FULL_OVERFLOW
 
     # High-frequency producers (game hooks emit several times a second) mean a queue
     # that cannot drain — an unbound overlay port, say — would otherwise log this
     # thousands of times an hour and churn straight through the log size cap.
     _EMIT_QUEUE_FULL_LOG_INTERVAL_SEC = 30.0
 
-    def _log_emit_queue_full(self, event: str) -> None:
+    def _log_emit_queue_full(self, event: str, target_queue: Any = None) -> None:
+        depth = (target_queue or self._safe_emit_queue).qsize()
         now = time.monotonic()
         last = getattr(self, "_emit_queue_full_last_log", 0.0)
         suppressed = getattr(self, "_emit_queue_full_suppressed", 0)
@@ -9301,26 +9622,31 @@ class WebEngine:
         self._emit_queue_full_suppressed = 0
         if suppressed:
             logger.warning(
-                "safe_emit queue full (%s); dropping %s (%d more dropped in the last %.0fs)",
-                self._safe_emit_queue.qsize(),
+                "safe_emit queue full (%s) with no live drain; dropping oldest %s "
+                "(%d more dropped in the last %.0fs)",
+                depth,
                 event,
                 suppressed,
                 self._EMIT_QUEUE_FULL_LOG_INTERVAL_SEC,
             )
         else:
             logger.warning(
-                "safe_emit queue full (%s); dropping %s",
-                self._safe_emit_queue.qsize(),
+                "safe_emit queue full (%s) with no live drain; dropping oldest %s",
+                depth,
                 event,
             )
 
-    def _drain_safe_emit_queue(self) -> int:
+    def _drain_safe_emit_queue(self, gen: Optional[int] = None) -> int:
         """Emit everything foreign threads queued via safe_emit (gevent worker).
 
         Alert events drain before hooks/chat so a burst cannot stall next_alert.
+        A drain from a superseded run (``gen``) stops instead of emitting into
+        sockets owned by the new hub.
         """
         emitted = 0
         while True:
+            if gen is not None and gen != self._run_generation:
+                return emitted
             try:
                 enqueued_at, event_name, event_data, to = (
                     self._safe_emit_priority_queue.get_nowait()
@@ -9350,54 +9676,59 @@ class WebEngine:
                 )
 
     def _open_emit_wake_pipe(self) -> None:
-        """Self-pipe so a foreign thread can wake the gevent drain without polling."""
+        """Self-pipe so a foreign thread can wake the gevent drain without polling.
+
+        A socket pair rather than ``os.pipe()``: on Windows gevent (libuv) can
+        only poll sockets, and a pipe fd made every idle wait fall back to a
+        full 1 s sleep (WE-20).
+        """
         try:
-            read_fd, write_fd = os.pipe()
-            os.set_blocking(read_fd, False)
-            os.set_blocking(write_fd, False)
+            read_sock, write_sock = socket.socketpair()
+            read_sock.setblocking(False)
+            write_sock.setblocking(False)
         except OSError as exc:
             logger.debug("Emit wake pipe unavailable: %s", exc)
             self._emit_wake_read = None
             self._emit_wake_write = None
             return
-        self._emit_wake_read = read_fd
-        self._emit_wake_write = write_fd
+        self._emit_wake_read = read_sock
+        self._emit_wake_write = write_sock
 
     def _close_emit_wake_pipe(self) -> None:
         for name in ("_emit_wake_read", "_emit_wake_write"):
-            fd = getattr(self, name, None)
-            if not isinstance(fd, int):
+            sock = getattr(self, name, None)
+            if sock is None:
                 continue
             try:
-                os.close(fd)
+                sock.close()
             except OSError:
                 pass
             setattr(self, name, None)
 
     def _signal_emit_wake(self) -> None:
         """Ask the overlay drain to run. Safe from any thread. Never blocks."""
-        write_fd = getattr(self, "_emit_wake_write", None)
-        if write_fd is None:
+        write_sock = getattr(self, "_emit_wake_write", None)
+        if write_sock is None:
             return
         try:
-            os.write(write_fd, b"\x00")
+            write_sock.send(b"\x00")
         except (BlockingIOError, OSError):
             return
 
     def _drain_emit_wake_pipe(self) -> None:
-        read_fd = getattr(self, "_emit_wake_read", None)
-        if read_fd is None:
+        read_sock = getattr(self, "_emit_wake_read", None)
+        if read_sock is None:
             return
         try:
-            while os.read(read_fd, 1024):
+            while read_sock.recv(1024):
                 pass
         except (BlockingIOError, InterruptedError, OSError):
             return
 
     def _wait_for_emit_wake(self, timeout: float) -> bool:
         """Cooperative wait on the wake pipe. Returns True if a wake byte arrived."""
-        read_fd = getattr(self, "_emit_wake_read", None)
-        if read_fd is None:
+        read_sock = getattr(self, "_emit_wake_read", None)
+        if read_sock is None:
             self.socketio.sleep(timeout)
             return False
         try:
@@ -9408,8 +9739,15 @@ class WebEngine:
             self.socketio.sleep(timeout)
             return False
         try:
-            ready, _, _ = hub_select([read_fd], [], [], timeout)
-        except Exception:
+            ready, _, _ = hub_select([read_sock], [], [], timeout)
+        except Exception as exc:
+            if not getattr(self, "_emit_wake_fallback_logged", False):
+                self._emit_wake_fallback_logged = True
+                logger.warning(
+                    "Emit wake wait unavailable (%s); falling back to %.1fs polling",
+                    exc,
+                    timeout,
+                )
             self.socketio.sleep(timeout)
             return False
         if not ready:
@@ -9434,11 +9772,15 @@ class WebEngine:
 
     def _template_control_emit_loop(self) -> None:
         """Drain NiceGUI-thread enqueues and broadcast on the Socket.IO/gevent stack."""
+        gen = self._hub_run_generation()
+        if not self._run_is_current(gen):
+            return
         self._template_control_worker_alive = True
         q = self._template_control_queue
         try:
-            while self.is_running:
-                safe_emitted = self._drain_safe_emit_queue()
+            while self._run_is_current(gen):
+                self._emit_drain_last_tick = time.monotonic()
+                safe_emitted = self._drain_safe_emit_queue(gen)
 
                 batch: List[Tuple[float, str, Dict[str, Any]]] = []
                 try:
@@ -9505,7 +9847,7 @@ class WebEngine:
                     else:
                         self._wait_for_emit_wake(1.0)
                 except Exception as exc:
-                    if not self.is_running:
+                    if not self._run_is_current(gen):
                         break
                     logger.warning("template control emit loop sleep failed: %s", exc)
                     try:
@@ -9513,20 +9855,22 @@ class WebEngine:
                     except Exception:
                         break
         finally:
-            self._template_control_worker_alive = False
-            with self._template_control_emit_worker_lock:
-                self._template_control_emit_worker_started = False
-            if self.is_running:
-                logger.warning(
-                    "Template control emit worker exited unexpectedly; restarting"
-                )
-                try:
-                    self.ensure_template_control_emit_worker()
-                except Exception as restart_exc:
+            # A superseded run's worker must not clear the new run's state.
+            if gen == self._run_generation:
+                self._template_control_worker_alive = False
+                with self._template_control_emit_worker_lock:
+                    self._template_control_emit_worker_started = False
+                if self.is_running:
                     logger.warning(
-                        "Could not restart template control emit worker: %s",
-                        restart_exc,
+                        "Template control emit worker exited unexpectedly; restarting"
                     )
+                    try:
+                        self.ensure_template_control_emit_worker()
+                    except Exception as restart_exc:
+                        logger.warning(
+                            "Could not restart template control emit worker: %s",
+                            restart_exc,
+                        )
 
     def emit_template_control_event(
         self,
@@ -9699,24 +10043,28 @@ class WebEngine:
             getattr(self, "_template_config_generation", 0),
         )
 
-    def _cached_overlay_html(self, template: str):
+    def _cached_overlay_html(self, template: str, key=None):
         cache = getattr(self, "_overlay_html_cache", None)
         if not isinstance(cache, dict):
             return None
         cached = cache.get(template)
         if not cached:
             return None
-        if cached[0] != self._overlay_html_cache_key(template):
+        if key is None:
+            key = self._overlay_html_cache_key(template)
+        if cached[0] != key:
             return None
         return cached[1]
 
-    def _store_overlay_html(self, template: str, html: str) -> None:
+    def _store_overlay_html(self, template: str, html: str, key=None) -> None:
         cache = getattr(self, "_overlay_html_cache", None)
         if not isinstance(cache, dict):
             return
+        if key is None:
+            key = self._overlay_html_cache_key(template)
         if len(cache) >= 24 and template not in cache:
             cache.pop(next(iter(cache)))
-        cache[template] = (self._overlay_html_cache_key(template), html)
+        cache[template] = (key, html)
 
     def _runtime_path_index(self) -> Dict[str, List[str]]:
         """Map runtime database paths to templates that mirror them."""
@@ -9793,6 +10141,10 @@ class WebEngine:
         template_names = self._source_control_templates_for_runtime_path(db_path)
         if not template_names:
             return
+        # /api/template-configs embeds these runtime values: drop it before
+        # telling Source Controls to reload.
+        with self._dynamic_controls_cache_lock:
+            self._dynamic_controls_cache = None
         self._emit_source_controls_state_update(
             reason="runtime_db_update",
             template_names=template_names,
@@ -10070,7 +10422,7 @@ class WebEngine:
             alert_data (dict): Alert data to send as JSON
         """
         ok = self.safe_emit("next_alert", alert_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent next_alert: {alert_data}")
         return ok
 
@@ -10082,7 +10434,7 @@ class WebEngine:
             alert_data (dict): Alert data to send as JSON to activity feed
         """
         ok = self.safe_emit("activity_feed_alert", alert_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent activity_feed_alert: {alert_data}")
         return ok
 
@@ -10094,7 +10446,7 @@ class WebEngine:
             alert_data (dict): Alert data to send as JSON for instant alerts
         """
         ok = self.safe_emit("instant_alert", alert_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent instant_alert: {alert_data}")
         return ok
 
@@ -10106,7 +10458,7 @@ class WebEngine:
             message_data (dict): Message data to send as JSON
         """
         ok = self.safe_emit("new-message", message_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent new-message: {message_data}")
         return ok
 
@@ -10128,7 +10480,7 @@ class WebEngine:
             moderation_data (dict): Moderation data to send as JSON
         """
         ok = self.safe_emit("message_moderation", moderation_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent message_moderation: {moderation_data}")
         return ok
 
@@ -10140,7 +10492,7 @@ class WebEngine:
             state_data (dict): State data to send as JSON
         """
         ok = self.safe_emit("state", state_data)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent state update: {state_data}")
         return ok
 
@@ -10454,9 +10806,10 @@ class WebEngine:
                 }
 
                 # Handle SocketIO client response format
-                logger.debug(
-                    f"Stream Deck: Sending template actions response to SID {request.sid}: {response}"
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Stream Deck: Sending template actions response to SID {request.sid}: {response}"
+                    )
                 if data and isinstance(data, dict) and "requestId" in data:
                     # Emit specific response event for template actions list
                     self.socketio.emit(
@@ -10626,6 +10979,11 @@ class WebEngine:
         """Run the Flask server"""
         global web_engine_running
         run_error: Optional[BaseException] = None
+        with _RUN_GENERATION_LOCK:
+            gen = self._run_generation + 1
+            self._run_generation = gen
+            gens = self.__dict__.setdefault("_run_thread_generations", {})
+            gens[threading.get_ident()] = gen
         self._server_started_at = time.time()
         try:
             logger.info("Starting WebEngine server on %s:%s", self.host, self.port)
@@ -10633,6 +10991,26 @@ class WebEngine:
             web_engine_running = True
             self._last_run_error = None
             self._server_thread_ident = threading.get_ident()
+            # This thread gets a fresh gevent hub, so greenlets armed by an
+            # earlier run (e.g. one whose bind failed while a foreign process
+            # held the port) never run here: re-arm them for this hub (TH-02).
+            with self._heartbeat_lock:
+                self._heartbeat_task_started = False
+            with self._startup_client_sync_lock:
+                self._startup_client_sync_started = False
+            with self._template_control_emit_worker_lock:
+                self._template_control_emit_worker_started = False
+            self._template_control_worker_alive = False
+            if gen > 1:
+                # The Spore assets poller greenlet lived on the previous hub.
+                try:
+                    from .spore_studio import assets_watcher as _aw
+
+                    with _aw._poller_lock:
+                        _aw._poller_started = False
+                except Exception as exc:
+                    logger.debug("Spore assets poller re-arm skipped: %s", exc)
+            self._maybe_enable_gevent_blocking_monitor()
             # Arm the heartbeat/watchdog and emit drain worker now instead of on
             # the first request, so a freeze (or queued cross-thread emits)
             # before any client connects is still detected/serviced. The
@@ -10654,16 +11032,37 @@ class WebEngine:
             )
         except Exception as e:
             run_error = e
-            self._last_run_error = str(e)
             logger.error(f"Error running WebEngine server: {str(e)}", exc_info=True)
-            self.is_running = False
-            web_engine_running = False
-            if _is_addr_in_use(e):
-                self._log_port_holder_hint()
-                # Foreign holder (e.g. macOS AirPlay): wait/retry on 5000 without
-                # consuming auto-restart attempts. Own leftover with health still
-                # serving goes through the normal restart path.
-                if self._probe_health_endpoint():
+            # A superseded run (frozen hub that unblocked after a restart) must
+            # not mark the new server stopped or schedule another restart.
+            if gen == self._run_generation:
+                self._last_run_error = str(e)
+                self.is_running = False
+                web_engine_running = False
+                if _is_addr_in_use(e):
+                    self._log_port_holder_hint()
+                    # Foreign holder (e.g. macOS AirPlay): wait/retry on 5000 without
+                    # consuming auto-restart attempts. Own leftover with health still
+                    # serving goes through the normal restart path.
+                    if self._probe_health_endpoint():
+                        try:
+                            self.request_restart(f"server exited with error: {e}")
+                        except Exception as restart_exc:
+                            logger.debug(
+                                "WebEngine post-crash restart scheduling failed: %s",
+                                restart_exc,
+                            )
+                    else:
+                        try:
+                            self._schedule_foreign_port_wait()
+                        except Exception as wait_exc:
+                            logger.debug(
+                                "WebEngine foreign port wait scheduling failed: %s",
+                                wait_exc,
+                            )
+                else:
+                    # Schedule recovery immediately instead of waiting for the next
+                    # supervisor poll (cooldown/attempt-gated inside request_restart).
                     try:
                         self.request_restart(f"server exited with error: {e}")
                     except Exception as restart_exc:
@@ -10671,39 +11070,27 @@ class WebEngine:
                             "WebEngine post-crash restart scheduling failed: %s",
                             restart_exc,
                         )
-                else:
-                    try:
-                        self._schedule_foreign_port_wait()
-                    except Exception as wait_exc:
-                        logger.debug(
-                            "WebEngine foreign port wait scheduling failed: %s",
-                            wait_exc,
-                        )
-            else:
-                # Schedule recovery immediately instead of waiting for the next
-                # supervisor poll (cooldown/attempt-gated inside request_restart).
-                try:
-                    self.request_restart(f"server exited with error: {e}")
-                except Exception as restart_exc:
-                    logger.debug(
-                        "WebEngine post-crash restart scheduling failed: %s",
-                        restart_exc,
-                    )
         finally:
-            self.is_running = False
-            web_engine_running = False
-            self._server_thread_ident = None
-            if run_error is not None and self._last_run_error is None:
-                self._last_run_error = str(run_error)
+            gens = getattr(self, "_run_thread_generations", None)
+            if gens is not None:
+                gens.pop(threading.get_ident(), None)
+            superseded = gen != self._run_generation
+            if not superseded:
+                self.is_running = False
+                web_engine_running = False
+                self._server_thread_ident = None
+                if run_error is not None and self._last_run_error is None:
+                    self._last_run_error = str(run_error)
             thread_alive = self._thread_alive()
             logger.warning(
                 "WebEngine server stopped (host=%s port=%s connected_clients=%s "
-                "thread_alive=%s error=%s)",
+                "thread_alive=%s error=%s%s)",
                 self.host,
                 self.port,
                 self._get_socket_connected_count(),
                 thread_alive,
                 run_error,
+                "; superseded by a newer run" if superseded else "",
             )
 
     def start(self):
@@ -10970,7 +11357,7 @@ class WebEngine:
             message_ids (list): List of message IDs to remove
         """
         ok = self.safe_emit("remove-messages", message_ids)
-        if ok:
+        if ok and logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Sent remove-messages: {message_ids}")
         return ok
 
