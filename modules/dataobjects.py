@@ -73,7 +73,12 @@ def _write_discord_data_merged(payload: Dict[str, Any]) -> bool:
 
     path = "DiscordData"
     with _discord_db_write_lock:
-        existing = database_manager.get_data(path) or {}
+        existing, ok = database_manager.get_data_checked(path)
+        if not ok:
+            # Merging onto a failed read would drop every stored field.
+            logger.error("DiscordData write skipped: the stored copy could not be read")
+            return False
+        existing = existing or {}
         if not isinstance(existing, dict):
             existing = {}
         merged = dict(existing)
@@ -443,6 +448,12 @@ class StateManager:
         self._initialized = False
         self._changes_pending = False
         self._changed_fields = set()
+        # Blobs whose load failed: state_key -> state right after that load.
+        # They are re-read before any write so defaults never replace stored data.
+        self._unreadable_blobs: Dict[str, Dict[str, Any]] = {}
+        # A failed SpotifyData write keeps unchanged playback fields dirty, so
+        # the next save retries it as it did before (DBX-09).
+        self._spotify_write_failed = False
 
         # Initialize with default data
         self._twitch_data = TwitchData()
@@ -537,19 +548,80 @@ class StateManager:
             # Update the local objects
             self._update_local_objects()
 
+            from . import database_manager
+
+            for state_key, path in self._paths.items():
+                if path in all_data and database_manager.startup_read_failed(path):
+                    self._mark_blob_unreadable(state_key)
+
             self._initialized = True
             logger.debug("State manager initialized with pre-loaded data")
+
+    def _mark_blob_unreadable(self, state_key: str) -> None:
+        """Remember a blob whose load failed (call with ``_lock`` held, after
+        ``_update_local_objects``)."""
+        self._unreadable_blobs[state_key] = copy.deepcopy(
+            self._state.get(state_key) or {}
+        )
+        logger.warning(
+            "%s could not be read; it will be re-read before it is saved",
+            self._paths.get(state_key, state_key),
+        )
+
+    def _read_blob_checked(self, state_key: str, failed: List[str]) -> Dict[str, Any]:
+        from . import database_manager
+
+        data, ok = database_manager.get_data_checked(self._paths[state_key])
+        if not ok:
+            failed.append(state_key)
+        return data or {}
+
+    def _recover_unreadable_blobs(self, state_keys) -> set:
+        """Re-read blobs whose load failed, before writing them.
+
+        On success the stored copy becomes the base and the fields changed in
+        memory since the failed load are applied on top. Returns the keys that
+        still cannot be read; callers must not write those.
+        """
+        from . import database_manager
+
+        blocked = set()
+        for state_key in state_keys:
+            with self._lock:
+                if state_key not in self._unreadable_blobs:
+                    continue
+            data, ok = database_manager.get_data_checked(self._paths[state_key])
+            if not ok:
+                logger.warning(
+                    "Not saving %s: it could not be read from the database",
+                    self._paths[state_key],
+                )
+                blocked.add(state_key)
+                continue
+            with self._lock:
+                baseline = self._unreadable_blobs.pop(state_key, None)
+                if baseline is None:
+                    continue
+                merged = dict(data) if isinstance(data, dict) else {}
+                for key, value in (self._state.get(state_key) or {}).items():
+                    if key not in baseline or baseline[key] != value:
+                        merged[key] = value
+                self._state[state_key] = merged
+                self._update_local_objects()
+                logger.info(
+                    "Re-read %s after a failed load; local changes kept",
+                    self._paths[state_key],
+                )
+        return blocked
 
     def _load_from_firebase(self):
         """Load all data from Firebase and update the state"""
         try:
-            # Import database_manager here to avoid circular imports
-            from . import database_manager
-
             # First, try to load database settings to configure the database manager
+            failed: List[str] = []
             try:
-                database_settings_data = (
-                    database_manager.get_data(self._paths["database_settings"]) or {}
+                database_settings_data = self._read_blob_checked(
+                    "database_settings", failed
                 )
                 self._state["database_settings"] = database_settings_data
 
@@ -572,35 +644,33 @@ class StateManager:
                 logger.debug(f"Could not load database settings, using defaults: {e}")
 
             # Load Twitch data
-            twitch_data = database_manager.get_data(self._paths["twitch_data"]) or {}
+            twitch_data = self._read_blob_checked("twitch_data", failed)
             self._state["twitch_data"] = twitch_data
 
             # Load app settings
-            app_settings = database_manager.get_data(self._paths["app_settings"]) or {}
+            app_settings = self._read_blob_checked("app_settings", failed)
             self._state["app_settings"] = app_settings
 
             # Load PSN settings data
-            psn_settings_data = (
-                database_manager.get_data(self._paths["psn_settings_data"]) or {}
-            )
+            psn_settings_data = self._read_blob_checked("psn_settings_data", failed)
             self._state["psn_settings_data"] = psn_settings_data
 
             # Load Spotify data
-            spotify_data = database_manager.get_data(self._paths["spotify_data"]) or {}
+            spotify_data = self._read_blob_checked("spotify_data", failed)
             self._state["spotify_data"] = spotify_data
 
             # Load YouTube data
-            youtube_data = database_manager.get_data(self._paths["youtube_data"]) or {}
+            youtube_data = self._read_blob_checked("youtube_data", failed)
             self._state["youtube_data"] = youtube_data
 
             # Load Chatbot data
-            chatbot_data = database_manager.get_data(self._paths["chatbot_data"]) or {}
+            chatbot_data = self._read_blob_checked("chatbot_data", failed)
             self._state["chatbot_data"] = chatbot_data
 
-            obs_data = database_manager.get_data(self._paths["obs_data"]) or {}
+            obs_data = self._read_blob_checked("obs_data", failed)
             self._state["obs_data"] = obs_data
 
-            discord_data = database_manager.get_data(self._paths["discord_data"]) or {}
+            discord_data = self._read_blob_checked("discord_data", failed)
             self._state["discord_data"] = discord_data
             raw_tok = str((discord_data or {}).get("bot_token") or "")
             logger.info(
@@ -611,6 +681,8 @@ class StateManager:
 
             # Update the local objects
             self._update_local_objects()
+            for state_key in failed:
+                self._mark_blob_unreadable(state_key)
             logger.info(
                 "Discord bot_token after decrypt (len=%s)",
                 len((getattr(self._discord_data, "bot_token", "") or "").strip()),
@@ -1161,6 +1233,12 @@ class StateManager:
                 logger.error("Error updating Discord data: %s", e, exc_info=True)
                 return False
 
+        if "discord_data" in self._unreadable_blobs:
+            if self._recover_unreadable_blobs({"discord_data"}):
+                return False
+            # The merged state is written through the normal save path.
+            return bool(self.save_changes())
+
         if not _write_discord_data_merged(payload):
             logger.error("DiscordData immediate write failed")
             return False
@@ -1194,10 +1272,18 @@ class StateManager:
         gevent hub or the Twitch threads. On success the persisted changed-field
         entries are pruned under the lock.
         """
+        if changed_prefix in self._unreadable_blobs:
+            if self._recover_unreadable_blobs({changed_prefix}):
+                return False
+            # ``data`` was built before the stored copy was merged in.
+            return bool(self.save_changes())
+
         try:
             from . import database_manager
 
-            database_manager.set_data(path, data)
+            ok = database_manager.set_data(path, data)
+            if changed_prefix == "spotify_data":
+                self._spotify_write_failed = not ok
         except Exception as e:
             logger.error(
                 "Error writing %s to database: %s", changed_prefix, e, exc_info=True
@@ -1709,10 +1795,19 @@ class StateManager:
                 elif isinstance(current_value, float) and not isinstance(value, float):
                     value = float(value)
 
-                # Always update and mark as changed
-                self._state["spotify_data"][field] = value
-                self._changed_fields.add(f"spotify_data.{field}")
-                self._changes_pending = True
+                # Mark as changed unless the value is already in state (the
+                # playback poll re-sends unchanged fields every few seconds).
+                state = self._state["spotify_data"]
+                unchanged = (
+                    not self._spotify_write_failed
+                    and field in state
+                    and type(state[field]) is type(value)
+                    and state[field] == value
+                )
+                state[field] = value
+                if not unchanged:
+                    self._changed_fields.add(f"spotify_data.{field}")
+                    self._changes_pending = True
 
                 # Update the local object
                 self._update_local_objects()
@@ -1977,12 +2072,23 @@ class StateManager:
         with self._lock:
             if not self._initialized:
                 self.initialize()
+            unreadable = {
+                f.split(".", 1)[0] for f in self._changed_fields
+            } & set(self._unreadable_blobs)
+        # Blobs whose load failed are re-read first; ones still unreadable are
+        # not written (their changes stay pending).
+        blocked = self._recover_unreadable_blobs(unreadable) if unreadable else set()
 
+        with self._lock:
             # Snapshot exactly the fields we are about to persist so we can clear
             # only those after a successful write — any changes that arrive while
             # the unlocked write is in flight are preserved for the next save.
-            fields_being_saved = set(self._changed_fields)
+            fields_being_saved = {
+                f for f in self._changed_fields if f.split(".", 1)[0] not in blocked
+            }
             if not fields_being_saved:
+                if blocked:
+                    return False
                 self._changes_pending = False
                 return True
 
@@ -2147,7 +2253,9 @@ class StateManager:
                     if not _write_discord_data_merged(data):
                         raise RuntimeError("DiscordData merged write failed")
                 else:
-                    database_manager.set_data(path, data)
+                    ok = database_manager.set_data(path, data)
+                    if path == self._paths["spotify_data"]:
+                        self._spotify_write_failed = not ok
 
             if db_config_to_apply is not None:
                 try:
@@ -2177,7 +2285,7 @@ class StateManager:
             self._changes_pending = len(self._changed_fields) > 0
 
         logger.debug("Changes saved to database")
-        return True
+        return not blocked
 
     def discard_changes(self):
         """Discard all pending changes and reload from Firebase"""

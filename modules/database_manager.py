@@ -25,12 +25,14 @@ SOFTWARE.
 
 import asyncio
 import concurrent.futures
+import copy
 import logging
 import sqlite3
 import json
 import os
 import threading
 import time
+import weakref
 from abc import ABC, abstractmethod
 from urllib.parse import urlparse
 from typing import Any, Dict, Optional, List
@@ -133,6 +135,13 @@ def is_valid_firebase_rtdb_url(url: str) -> bool:
 
 class DatabaseReadError(Exception):
     """Raised when a database read fails (distinct from a missing path)."""
+
+
+# Firebase preload fan-out (firebase-admin's HTTP pool holds 10 connections).
+_FIREBASE_PRELOAD_CONCURRENCY = 8
+# Child read by the Firebase reachability probe. Shallow, so it costs a few
+# bytes whether or not the node exists (the admin SDK bypasses rules).
+_FIREBASE_PROBE_CHILD = "DatabaseSettings"
 
 
 @dataclass
@@ -619,9 +628,14 @@ class SQLDatabase(DatabaseInterface):
 
     def _get_multiple_data(self, paths: List[str]) -> Dict[str, Dict[str, Any]]:
         """Load many paths in chunked IN queries. Missing paths are {}."""
+        return self._get_multiple_data_checked(paths)[0]
+
+    def _get_multiple_data_checked(self, paths: List[str]):
+        """Like _get_multiple_data, plus the set of paths whose read failed."""
         output: Dict[str, Dict[str, Any]] = {path: {} for path in paths}
+        failed: set = set()
         if not paths:
-            return output
+            return output, failed
         if not self._initialized:
             self.initialize()
 
@@ -634,6 +648,7 @@ class SQLDatabase(DatabaseInterface):
             conn = self._get_connection()
             cursor = conn.cursor()
             found: Dict[str, Any] = {}
+            bad_norms: set = set()
             unique_norms = list(dict.fromkeys(norm for _, norm in normalized))
             for offset in range(0, len(unique_norms), _SQL_IN_CHUNK):
                 chunk = unique_norms[offset : offset + _SQL_IN_CHUNK]
@@ -655,12 +670,15 @@ class SQLDatabase(DatabaseInterface):
                             decode_error,
                         )
                         found[row["data_path"]] = {}
+                        bad_norms.add(row["data_path"])
             for original, norm in normalized:
                 output[original] = found.get(norm) or {}
-            return output
+                if norm in bad_norms:
+                    failed.add(original)
+            return output, failed
         except Exception as e:
             logger.error(f"Error fetching multiple SQLite paths: {e}", exc_info=True)
-            return output
+            return output, set(paths)
         finally:
             if conn:
                 self._return_connection(conn)
@@ -671,6 +689,11 @@ class SQLDatabase(DatabaseInterface):
         """Get data from multiple paths asynchronously"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._get_multiple_data, paths)
+
+    async def get_multiple_data_checked_async(self, paths: List[str]):
+        """Returns (output, failed_paths); failed reads are {} in output."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._get_multiple_data_checked, paths)
 
     def get_all_paths(self) -> List[str]:
         """Get all data paths stored in SQLite database"""
@@ -911,6 +934,9 @@ class FirebaseDatabase(DatabaseInterface):
         self._root_ref = None
         self._initialized = False
         self._connection_tested = False
+        # One probe at a time; concurrent callers share its outcome (SU-04).
+        self._probe_lock = threading.Lock()
+        self._probe_flight: Optional[Dict[str, Any]] = None
 
     def _http_timeout(self) -> int:
         """Per-request HTTP timeout (seconds) for the firebase-admin DB client."""
@@ -1043,32 +1069,58 @@ class FirebaseDatabase(DatabaseInterface):
         if self._root_ref is None:
             raise RuntimeError("Firebase database not initialized")
         # .info/* lives at the DB root; _root_ref is /{streamer} and cannot use .info children.
-        # Shallow read returns only child key names under the streamer node (no payloads).
-        self._root_ref.get(shallow=True)
+        # A shallow read of one small child is an authenticated round trip like a
+        # shallow read of the streamer node, without listing every top-level key.
+        self._root_ref.child(_FIREBASE_PROBE_CHILD).get(shallow=True)
 
     def _ensure_connection_tested(self):
-        """Ensure the Firebase connection has been tested before performing operations"""
-        if not self._connection_tested:
-            try:
-                self._probe_connection()
-                logger.debug("Firebase connection test passed")
-                self._connection_tested = True
-            except Exception as test_error:
-                logger.error(f"Firebase connection test failed: {str(test_error)}")
-                raise test_error
+        """Ensure the Firebase connection has been tested before performing operations.
+
+        Callers that arrive while a probe is running wait for it and share its
+        result instead of each sending their own probe.
+        """
+        if self._connection_tested:
+            return
+        with self._probe_lock:
+            if self._connection_tested:
+                return
+            flight = self._probe_flight
+            leader = flight is None
+            if leader:
+                flight = {"done": threading.Event(), "error": None}
+                self._probe_flight = flight
+        if not leader:
+            flight["done"].wait()
+            if flight["error"] is not None:
+                raise flight["error"]
+            return
+        try:
+            self._probe_connection()
+            logger.debug("Firebase connection test passed")
+            self._connection_tested = True
+        except Exception as test_error:
+            flight["error"] = test_error
+            logger.error(f"Firebase connection test failed: {str(test_error)}")
+            raise test_error
+        finally:
+            with self._probe_lock:
+                self._probe_flight = None
+            flight["done"].set()
 
     def get_data(self, path: str, request_etag: bool = False) -> Dict[str, Any]:
-        """Get data from Firebase database"""
+        """Get data from Firebase database.
+
+        Raises DatabaseReadError when the read fails, like the SQLite and MongoDB
+        backends, so a failed read is never mistaken for an empty node.
+        """
         if not self._initialized:
             self.initialize()
 
-        try:
-            if self._root_ref is None:
-                logger.error("Firebase database not initialized")
-                if request_etag:
-                    return {"data": {}, "etag": None}
-                return {}
+        if self._root_ref is None:
+            logger.error("Firebase database not initialized")
+            raise DatabaseReadError("Firebase database not initialized")
 
+        try:
             # Ensure connection is tested before first operation
             self._ensure_connection_tested()
 
@@ -1107,9 +1159,7 @@ class FirebaseDatabase(DatabaseInterface):
             logger.error(
                 f"Error getting data from Firebase at {path}: {str(e)}", exc_info=True
             )
-            if request_etag:
-                return {"data": {}, "etag": None}
-            return {}
+            raise DatabaseReadError(str(e)) from e
 
     def set_data(self, path: str, data: Dict[str, Any]) -> bool:
         """Set data in Firebase database"""
@@ -1260,39 +1310,41 @@ class FirebaseDatabase(DatabaseInterface):
     async def get_multiple_data_async(
         self, paths: List[str]
     ) -> Dict[str, Dict[str, Any]]:
-        """Get data from multiple Firebase paths asynchronously in batches"""
+        """Get data from multiple Firebase paths asynchronously"""
+        output, _failed = await self.get_multiple_data_checked_async(paths)
+        return output
 
-        # Process in smaller batches to avoid overwhelming Firebase connection pool
-        batch_size = 3  # Process 3 requests at a time
-        output = {}
+    async def get_multiple_data_checked_async(self, paths: List[str]):
+        """Read many paths with bounded concurrency. Returns (output, failed_paths).
 
-        for i in range(0, len(paths), batch_size):
-            batch_paths = paths[i : i + batch_size]
-            logger.debug(
-                f"Processing Firebase batch {i//batch_size + 1}: {batch_paths}"
-            )
+        Failed reads are {} in ``output``, as before, and also listed in
+        ``failed_paths`` so callers can tell them apart from empty nodes.
+        """
+        output: Dict[str, Dict[str, Any]] = {}
+        failed: set = set()
+        if not paths:
+            return output, failed
 
-            loop = asyncio.get_event_loop()
+        loop = asyncio.get_event_loop()
+        # Within the HTTP pool size; the first wave shares one connection probe.
+        gate = asyncio.Semaphore(_FIREBASE_PRELOAD_CONCURRENCY)
 
-            async def get_single_path(path):
+        async def get_single_path(path):
+            async with gate:
                 return await loop.run_in_executor(None, self.get_data, path)
 
-            tasks = [get_single_path(path) for path in batch_paths]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(
+            *(get_single_path(path) for path in paths), return_exceptions=True
+        )
+        for path, result in zip(paths, results):
+            if isinstance(result, BaseException):
+                logger.error(f"Error fetching data from {path}: {str(result)}")
+                output[path] = {}
+                failed.add(path)
+            else:
+                output[path] = result or {}
 
-            for j, path in enumerate(batch_paths):
-                result = results[j]
-                if isinstance(result, Exception):
-                    logger.error(f"Error fetching data from {path}: {str(result)}")
-                    output[path] = {}
-                else:
-                    output[path] = result or {}
-
-            # Small delay between batches to give connection pool time to recover
-            if i + batch_size < len(paths):
-                await asyncio.sleep(0.05)  # 50ms delay between batches
-
-        return output
+        return output, failed
 
     def get_all_paths(self) -> List[str]:
         """Get all data paths from Firebase by traversing the tree"""
@@ -1558,13 +1610,11 @@ class MongoDatabase(DatabaseInterface):
         if not self._initialized:
             self.initialize()
 
-        try:
-            if self._collection is None:
-                logger.error("MongoDB database not initialized")
-                if request_etag:
-                    return {"data": {}, "etag": None}
-                return {}
+        if self._collection is None:
+            logger.error("MongoDB database not initialized")
+            raise DatabaseReadError("MongoDB database not initialized")
 
+        try:
             # Remove leading slash if present
             if path.startswith("/"):
                 path = path[1:]
@@ -1726,13 +1776,17 @@ class MongoDatabase(DatabaseInterface):
 
     def _get_multiple_data(self, paths: List[str]) -> Dict[str, Dict[str, Any]]:
         """Load many paths with one $in query per chunk. Missing paths are {}."""
+        return self._get_multiple_data_checked(paths)[0]
+
+    def _get_multiple_data_checked(self, paths: List[str]):
+        """Like _get_multiple_data, plus the set of paths whose read failed."""
         output: Dict[str, Dict[str, Any]] = {path: {} for path in paths}
         if not paths:
-            return output
+            return output, set()
         if not self._initialized:
             self.initialize()
         if self._collection is None:
-            return output
+            return output, set(paths)
         try:
             normalized = [(original, _strip_db_path(original)) for original in paths]
             unique_norms = list(dict.fromkeys(norm for _, norm in normalized))
@@ -1743,10 +1797,10 @@ class MongoDatabase(DatabaseInterface):
                     found[doc.get("data_path", "")] = doc.get("data", {}) or {}
             for original, norm in normalized:
                 output[original] = found.get(norm) or {}
-            return output
+            return output, set()
         except Exception as e:
             logger.error(f"Error fetching multiple MongoDB paths: {e}", exc_info=True)
-            return output
+            return output, set(paths)
 
     async def get_multiple_data_async(
         self, paths: List[str]
@@ -1754,6 +1808,11 @@ class MongoDatabase(DatabaseInterface):
         """Get data from multiple MongoDB paths asynchronously"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._get_multiple_data, paths)
+
+    async def get_multiple_data_checked_async(self, paths: List[str]):
+        """Returns (output, failed_paths); failed reads are {} in output."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._get_multiple_data_checked, paths)
 
     def get_all_paths(self) -> List[str]:
         """Get all data paths stored in MongoDB"""
@@ -1954,9 +2013,56 @@ class DatabaseManager:
         self._write_gen_lock = threading.Lock()
         self._write_generation: Dict[str, int] = {}
         self._path_write_locks: Dict[str, threading.Lock] = {}
+        self._listener_lock = threading.Lock()
+        self._write_listeners: List[Any] = []
+
+    def add_write_listener(self, callback) -> None:
+        """Call ``callback(path, done)`` around every write.
+
+        ``done`` is False before the write starts and True once the backend call
+        has returned (even when the caller already gave up on a timeout). The
+        path "" means the whole database may have changed (backend switch or
+        migration). Bound methods are held weakly. Callbacks must be quick and
+        must not take locks that are held across database calls.
+        """
+        if hasattr(callback, "__self__"):
+            ref = weakref.WeakMethod(callback)
+        else:
+            ref = lambda cb=callback: cb  # noqa: E731
+        with self._listener_lock:
+            self._write_listeners.append(ref)
+
+    def _notify_write(self, path: str, done: bool) -> None:
+        with self._listener_lock:
+            refs = list(self._write_listeners)
+        if not refs:
+            return
+        path = _strip_db_path(path or "")
+        alive = 0
+        for ref in refs:
+            callback = ref()
+            if callback is None:
+                continue
+            alive += 1
+            try:
+                callback(path, done)
+            except Exception as e:
+                logger.debug("Database write listener failed for %s: %s", path, e)
+        if alive != len(refs):
+            with self._listener_lock:
+                self._write_listeners = [
+                    ref for ref in self._write_listeners if ref() is not None
+                ]
 
     def initialize(self, config: Optional[DatabaseConfig] = None) -> bool:
         """Initialize the database manager with the specified configuration"""
+        self._notify_write("", False)
+        try:
+            return self._initialize(config)
+        finally:
+            self._notify_write("", True)
+
+    def _initialize(self, config: Optional[DatabaseConfig] = None) -> bool:
         with self._lock:
             if config:
                 self._config = config
@@ -2046,6 +2152,31 @@ class DatabaseManager:
             path=path,
         )
 
+    def get_data_checked(self, path: str):
+        """Like get_data, plus whether the read succeeded: ``(data, ok)``.
+
+        A failed or timed-out read returns ``({}, False)``; get_data returns
+        ``{}`` for those too, which looks the same as an empty path. Callers
+        that later write the whole path back use this to avoid replacing good
+        remote data with defaults.
+        """
+        if not self._initialized:
+            self.initialize()
+
+        if not self._database:
+            logger.error("Database not initialized")
+            return {}, False
+
+        outcome = self._run_db_op_with_timeout(
+            "Get",
+            lambda: (self._database.get_data(path), True),
+            None,
+            path=path,
+        )
+        if outcome is None:
+            return {}, False
+        return outcome
+
     def set_data(self, path: str, data: Dict[str, Any]) -> bool:
         """Set data in the database with a hard timeout.
 
@@ -2099,6 +2230,7 @@ class DatabaseManager:
                 self._write_generation[path] = self._write_generation.get(path, 0) + 1
                 my_gen = self._write_generation[path]
             path_lock = self._path_write_lock(path)
+            self._notify_write(path, False)
 
         def _worker() -> None:
             try:
@@ -2123,6 +2255,9 @@ class DatabaseManager:
                     exc_info=True,
                 )
                 result["value"] = default
+            finally:
+                if invalidate_on_timeout:
+                    self._notify_write(path, True)
 
         is_sql = str(getattr(self._config, "database_type", "sql") or "sql") == "sql"
         if is_sql:
@@ -2203,23 +2338,45 @@ class DatabaseManager:
             return None
         return self._database
 
-    def fetch_alert_storage(self, max_alerts: Optional[int] = None):
+    def _run_alert_storage_op(self, op_name: str, method_name: str, *args):
+        """Run a stored-alert backend call under the usual timeout / hub-safe wait.
+
+        Backend exceptions reach the caller unchanged, as when it was called
+        directly. A timeout returns None, which callers treat as "unavailable".
+        """
         backend = self._alert_backend()
-        if backend is None or not hasattr(backend, "fetch_alert_storage"):
+        if backend is None or not hasattr(backend, method_name):
             return None
-        return backend.fetch_alert_storage(max_alerts)
+        method = getattr(backend, method_name)
+
+        def _call():
+            try:
+                return True, method(*args)
+            except Exception as e:
+                return False, e
+
+        outcome = self._run_db_op_with_timeout(
+            op_name, _call, None, path="Alerts/AlertStorage"
+        )
+        if outcome is None:
+            return None
+        ok, value = outcome
+        if not ok:
+            raise value
+        return value
+
+    def fetch_alert_storage(self, max_alerts: Optional[int] = None):
+        return self._run_alert_storage_op(
+            "AlertStorage", "fetch_alert_storage", max_alerts
+        )
 
     def list_alert_storage_meta(self):
-        backend = self._alert_backend()
-        if backend is None or not hasattr(backend, "list_alert_storage_meta"):
-            return None
-        return backend.list_alert_storage_meta()
+        return self._run_alert_storage_op("AlertStorageMeta", "list_alert_storage_meta")
 
     def query_alert_storage_page(self, page: int, limit: int):
-        backend = self._alert_backend()
-        if backend is None or not hasattr(backend, "query_alert_storage_page"):
-            return None
-        return backend.query_alert_storage_page(page, limit)
+        return self._run_alert_storage_op(
+            "AlertStoragePage", "query_alert_storage_page", page, limit
+        )
 
     def delete_paths(self, paths: List[str]) -> bool:
         """Batch-delete paths on the active backend."""
@@ -2227,7 +2384,13 @@ class DatabaseManager:
             return True
         backend = self._alert_backend()
         if backend is not None and hasattr(backend, "delete_paths"):
-            return bool(backend.delete_paths(paths))
+            for path in paths:
+                self._notify_write(path, False)
+            try:
+                return bool(backend.delete_paths(paths))
+            finally:
+                for path in paths:
+                    self._notify_write(path, True)
         ok = True
         for path in paths:
             if not self.delete_data(path):
@@ -2265,6 +2428,18 @@ class DatabaseManager:
         else:
             logger.error("Database not initialized")
             return {path: {} for path in paths}
+
+    async def get_multiple_data_checked_async(self, paths: List[str]):
+        """Like get_multiple_data_async, plus the set of paths whose read failed."""
+        if not self._initialized:
+            self.initialize()
+
+        if self._database and hasattr(self._database, "get_multiple_data_checked_async"):
+            return await self._database.get_multiple_data_checked_async(paths)
+        if self._database:
+            return await self._database.get_multiple_data_async(paths), set()
+        logger.error("Database not initialized")
+        return {path: {} for path in paths}, set(paths)
 
     def get_available_databases(self) -> List[str]:
         """Get list of available database types"""
@@ -2326,13 +2501,28 @@ class DatabaseManager:
         if not self._initialized:
             self.initialize()
         if self._database and hasattr(self._database, "get_alert_storage_limited"):
-            return self._database.get_alert_storage_limited(max_alerts)
+            return (
+                self._run_alert_storage_op(
+                    "AlertStorage", "get_alert_storage_limited", max_alerts
+                )
+                or {}
+            )
         return self.get_data("Alerts/AlertStorage") or {}
 
     def migrate_data(
         self, source_config: DatabaseConfig, target_config: DatabaseConfig
     ) -> bool:
         """Migrate data from one database to another"""
+        # The target may be the live database; its writes bypass set_data.
+        self._notify_write("", False)
+        try:
+            return self._migrate_data(source_config, target_config)
+        finally:
+            self._notify_write("", True)
+
+    def _migrate_data(
+        self, source_config: DatabaseConfig, target_config: DatabaseConfig
+    ) -> bool:
         try:
             # Create source and target database instances
             if source_config.database_type == "sql":
@@ -2466,9 +2656,40 @@ def delete_data(path: str) -> bool:
     return database_manager.delete_data(path)
 
 
+def get_data_checked(path: str):
+    """Get data plus whether the read succeeded: ``(data, ok)``."""
+    return database_manager.get_data_checked(path)
+
+
 async def get_multiple_data_async(paths: List[str]) -> Dict[str, Dict[str, Any]]:
     """Get data from multiple paths asynchronously"""
     return await database_manager.get_multiple_data_async(paths)
+
+
+# Startup preload bookkeeping: which paths failed to read, plus copies of
+# paths other startup code would otherwise read again (SU-06).
+_STARTUP_SHARED_PATHS = ("DatabaseSettings",)
+_startup_preload_done = threading.Event()
+_startup_failed_paths: set = set()
+_startup_shared_data: Dict[str, Any] = {}
+
+
+def startup_read_failed(path: str) -> bool:
+    """True when the startup preload could not read ``path``."""
+    return path in _startup_failed_paths
+
+
+def wait_for_startup_preload(path: str, timeout: float) -> Optional[Dict[str, Any]]:
+    """Copy of ``path`` as read by the startup preload.
+
+    Returns None when the preload has not finished within ``timeout`` seconds,
+    when the read failed, or when the path was not kept.
+    """
+    if not _startup_preload_done.wait(timeout):
+        return None
+    if path in _startup_failed_paths or path not in _startup_shared_data:
+        return None
+    return copy.deepcopy(_startup_shared_data[path])
 
 
 async def load_all_initial_data() -> Dict[str, Any]:
@@ -2504,7 +2725,21 @@ async def load_all_initial_data() -> Dict[str, Any]:
     logger.info(f"Loading {len(startup_paths)} essential startup data paths...")
 
     # Load all data in parallel (the original working approach)
-    path_to_data = await get_multiple_data_async(startup_paths)
+    path_to_data, failed_paths = await database_manager.get_multiple_data_checked_async(
+        startup_paths
+    )
+    _startup_failed_paths.clear()
+    _startup_failed_paths.update(failed_paths)
+    for path in _STARTUP_SHARED_PATHS:
+        if path in path_to_data:
+            _startup_shared_data[path] = copy.deepcopy(path_to_data[path])
+    _startup_preload_done.set()
+    if failed_paths:
+        logger.warning(
+            "Startup could not read %d path(s): %s",
+            len(failed_paths),
+            sorted(failed_paths),
+        )
 
     # Convert from {path: data} to a flat dict with path keys
     # Include all paths, even if empty, so modules can initialize with defaults
