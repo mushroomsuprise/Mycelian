@@ -513,8 +513,8 @@ class DatabaseViewer:
             notify(f"Invalid JSON: {e}", type="negative")
             return
 
-        # Save to database
-        if database_manager.set_data(self.current_path, data):
+        # Save to database (worker thread; this handler already awaits)
+        if await run.io_bound(database_manager.set_data, self.current_path, data):
             notify(f"Saved: {self.current_path}", type="positive")
             db_type = database_manager.get_config().database_type
             if db_type in ("sql", "mongodb"):
@@ -570,7 +570,7 @@ class DatabaseViewer:
 
     async def _execute_delete(self, path: str, dialog: ui.dialog) -> None:
         """Execute path deletion"""
-        if database_manager.delete_data(path):
+        if await run.io_bound(database_manager.delete_data, path):
             notify(f"Deleted: {path}", type="positive")
             # Refresh snapshot
             await self._load_snapshot()
@@ -641,7 +641,7 @@ class DatabaseViewer:
             notify(f"Invalid JSON: {e}", type="negative")
             return
 
-        if database_manager.set_data(path, data):
+        if await run.io_bound(database_manager.set_data, path, data):
             notify(f"Created: {path}", type="positive")
             # Refresh snapshot
             await self._load_snapshot()
