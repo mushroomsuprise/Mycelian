@@ -33,11 +33,18 @@ import threading
 import time
 from pathlib import Path
 
-# python.org 3.14 on macOS has no default CA file unless the user ran
-# Install Certificates.command. Do this before any aiohttp import.
+from modules.app_startup import is_spawn_child
 from modules.ssl_certs import ensure_ssl_certificates
 
-ensure_ssl_certificates()
+# Frozen spawn children (webview, tray) run this file as __main__ until
+# freeze_support() diverts them; dev children are already renamed by spawn.
+_IS_SPAWN_CHILD = is_spawn_child()
+
+# python.org 3.14 on macOS has no default CA file unless the user ran
+# Install Certificates.command. Do this before any aiohttp import.
+# Children inherit the parent's SSL_CERT_FILE env, so they skip the probe.
+if not _IS_SPAWN_CHILD:
+    ensure_ssl_certificates()
 
 _NPSSO_HELPER_FLAG = "--mycelian-npsso-capture"
 
@@ -252,7 +259,8 @@ def emergency_stats_save():
 # Spawn children re-import this module (NiceGUI's webview process is SpawnProcess-N).
 # They must not install these handlers: a SIGTERM during their atexit import of
 # modules.shutdown raises "cannot import name ... from partially initialized module".
-if multiprocessing.current_process().name == "MainProcess":
+# Frozen children still report "MainProcess" here, hence _IS_SPAWN_CHILD.
+if not _IS_SPAWN_CHILD:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     atexit.register(emergency_stats_save)
