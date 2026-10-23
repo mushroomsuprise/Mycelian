@@ -81,6 +81,7 @@ class PollWriteBehindTests(unittest.TestCase):
         self.db = _FakeDB()
         self._patches = [
             patch("modules.database_manager.get_data", self.db.get_data),
+            patch("modules.database_manager.get_data_checked", lambda path: (self.db.get_data(path), True)),
             patch("modules.database_manager.set_data", self.db.set_data),
             patch.object(poll_module, "_register_shutdown_flush", lambda *_a: None),
             patch.object(PollManager, "_emit", lambda *_a, **_k: None),
@@ -181,6 +182,7 @@ class GiveawayConfigWriteTests(unittest.TestCase):
         db.gate = threading.Event()
         with (
             patch("modules.database_manager.get_data", lambda *_a, **_k: {}),
+            patch("modules.database_manager.get_data_checked", lambda *_a, **_k: ({}, True)),
             patch("modules.database_manager.set_data", db.set_data),
             patch.object(GiveawayManager, "_emit_event", lambda *_a, **_k: None),
             patch("modules.statistics_manager.get_statistics_manager", MagicMock()),

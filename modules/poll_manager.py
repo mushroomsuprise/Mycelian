@@ -277,6 +277,10 @@ class PollManager:
         self._vote_dirty = False
         self._vote_wake = threading.Event()
         self._vote_writer: Optional[threading.Thread] = None
+        # Set when the stored polls could not be read (a failed read looks like
+        # no polls). The path is re-read before any write; see _recover_locked.
+        self._load_failed = False
+        self._failed_load_baselines: Dict[str, Dict[str, Any]] = {}
         if persist:
             self._load()
             _register_shutdown_flush("poll_votes", self.flush)
@@ -286,17 +290,31 @@ class PollManager:
 
     def _load(self) -> None:
         try:
-            from .database_manager import get_data
+            from .database_manager import get_data_checked
 
-            raw = get_data(DATA_PATH)
+            raw, ok = get_data_checked(DATA_PATH)
         except Exception as exc:
             logger.warning("Poll config load failed: %s", exc)
-            raw = None
+            raw, ok = None, False
+        if not ok:
+            self._load_failed = True
+            logger.warning(
+                "%s could not be read; it will be re-read before it is saved", DATA_PATH
+            )
         with self._lock:
             self._apply_stored(raw if isinstance(raw, dict) else {}, self._now())
 
     def _apply_stored(self, raw: Dict[str, Any], now: float, *, schedule: bool = True) -> None:
         """Restore configs and still-open polls. Drops polls that already expired."""
+        restored, pending_timers = self._parse_stored(raw, now, schedule=schedule)
+        self._templates = restored
+        if schedule:
+            for template, delay in pending_timers:
+                self._schedule_locked(template, delay)
+
+    def _parse_stored(
+        self, raw: Dict[str, Any], now: float, *, schedule: bool = True
+    ) -> Tuple[Dict[str, Dict[str, Any]], List[Tuple[str, float]]]:
         templates = raw.get("templates") if isinstance(raw, dict) else None
         if not isinstance(templates, dict):
             templates = {}
@@ -319,10 +337,40 @@ class PollManager:
                         if delay > 0:
                             pending_timers.append((template, delay))
             restored[template] = {"config": config, "runtime": runtime}
-        self._templates = restored
-        if schedule:
-            for template, delay in pending_timers:
-                self._schedule_locked(template, delay)
+        return restored, pending_timers
+
+    def _recover_locked(self) -> bool:
+        """Re-read the stored polls after a failed load. Caller holds ``_lock``.
+
+        On success the stored templates are restored, except ones changed in
+        memory since (those keep the in-memory state). Returns False while the
+        path still cannot be read; callers must not write then.
+        """
+        try:
+            from .database_manager import get_data_checked
+
+            raw, ok = get_data_checked(DATA_PATH)
+        except Exception as exc:
+            logger.debug("Poll re-read failed: %s", exc)
+            ok = False
+        if not ok:
+            logger.warning("Not saving %s: it could not be read from the database", DATA_PATH)
+            return False
+        restored, pending_timers = self._parse_stored(
+            raw if isinstance(raw, dict) else {}, self._now()
+        )
+        delays = dict(pending_timers)
+        for name, entry in restored.items():
+            current = self._templates.get(name)
+            baseline = self._failed_load_baselines.get(name)
+            if current is None or (baseline is not None and current == baseline):
+                self._templates[name] = entry
+                if name in delays:
+                    self._schedule_locked(name, delays[name])
+        self._load_failed = False
+        self._failed_load_baselines.clear()
+        logger.info("Re-read %s after a failed load; local changes kept", DATA_PATH)
+        return True
 
     def _is_expired(self, config: Dict[str, Any], runtime: Dict[str, Any], now: float) -> bool:
         if int(config.get("duration_seconds") or 0) <= 0:
@@ -428,6 +476,10 @@ class PollManager:
         """Write the current state now. Caller holds ``self._lock``."""
         if not self._persist_enabled:
             return
+        if self._load_failed and not self._recover_locked():
+            # Keep the change pending; the next write or the shutdown flush retries.
+            self._vote_dirty = True
+            return
         self._vote_dirty = False
         seq, payload = self._build_payload_locked()
         self._write_payload(seq, payload)
@@ -490,6 +542,8 @@ class PollManager:
         with self._lock:
             if not self._vote_dirty:
                 return
+            if self._load_failed and not self._recover_locked():
+                return
             self._vote_dirty = False
             seq, payload = self._build_payload_locked()
         self._write_payload(seq, payload)
@@ -534,6 +588,8 @@ class PollManager:
             if entry is None:
                 config = self._normalize_config({})
                 self._templates[name] = {"config": config, "runtime": _idle_runtime()}
+                if self._load_failed:
+                    self._failed_load_baselines[name] = copy.deepcopy(self._templates[name])
                 self._persist()
             return copy.deepcopy(self._templates[name]["config"])
 

@@ -310,6 +310,11 @@ class ChatbotManager:
         self._save_write_lock = threading.Lock()
         self._saved_json: Dict[str, str] = {}
         self._saved_backend: Any = None
+        # BotData paths whose load failed (a failed read looks like empty data).
+        # They are re-read before they are written so defaults never replace
+        # good stored data. Value: baseline for Settings, else None.
+        self._unreadable_paths: Dict[str, Any] = {}
+        self._blocked_save_pending = False
 
         # Command cooldown tracking
         self.command_cooldowns: Dict[str, float] = {}
@@ -333,12 +338,12 @@ class ChatbotManager:
             import json
             import os
 
-            from .database_manager import get_data, set_data
+            from .database_manager import set_data
 
             data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
 
             # Check if migration is needed (if database is empty but JSON files exist)
-            existing_db_data = get_data("BotData/Commands")
+            existing_db_data = self._read_checked("BotData/Commands")
             if existing_db_data is not None:
                 logger.debug("Database already has data, skipping migration")
                 # _load_data reuses this read instead of fetching it again (DBX-12).
@@ -396,14 +401,11 @@ class ChatbotManager:
             # First, check if we need to migrate legacy data
             preloaded_commands = self._migrate_legacy_data()
 
-            # Import database manager here to avoid circular imports
-            from .database_manager import get_data
-
             # Load commands
             if preloaded_commands is not None:
                 commands_data = preloaded_commands
             else:
-                commands_data = get_data("BotData/Commands")
+                commands_data = self._read_checked("BotData/Commands")
             if commands_data and isinstance(commands_data, list):
                 for cmd_data in commands_data:
                     try:
@@ -415,7 +417,7 @@ class ChatbotManager:
                         )
 
             # Load events
-            events_data = get_data("BotData/Events")
+            events_data = self._read_checked("BotData/Events")
             if events_data and isinstance(events_data, list):
                 for event_data in events_data:
                     try:
@@ -481,7 +483,7 @@ class ChatbotManager:
                         )
 
             # Load quotes
-            quotes_data = get_data("BotData/Quotes")
+            quotes_data = self._read_checked("BotData/Quotes")
             if quotes_data and isinstance(quotes_data, list):
                 for quote_data in quotes_data:
                     try:
@@ -493,36 +495,16 @@ class ChatbotManager:
                         )
 
             # Load settings with defensive type validation
-            settings_data = get_data("BotData/Settings")
+            settings_data = self._read_checked("BotData/Settings")
             if settings_data and isinstance(settings_data, dict):
-                # Ensure boolean values are actually booleans (guard against corrupted data)
-                quotes_val = settings_data.get("quotes_enabled", True)
-                self.quotes_enabled = bool(quotes_val) if not isinstance(quotes_val, bool) else quotes_val
-                
-                greetings_val = settings_data.get("greetings_enabled", True)
-                self.greetings_enabled = bool(greetings_val) if not isinstance(greetings_val, bool) else greetings_val
-                
-                # New separate toggle settings with backwards compatibility
-                default_greet_val = settings_data.get("default_greeting_enabled", self.greetings_enabled)
-                self.default_greeting_enabled = bool(default_greet_val) if not isinstance(default_greet_val, bool) else default_greet_val
-                
-                custom_greet_val = settings_data.get("custom_greeting_enabled", self.greetings_enabled)
-                self.custom_greeting_enabled = bool(custom_greet_val) if not isinstance(custom_greet_val, bool) else custom_greet_val
-                
-                greeting_text_val = settings_data.get("default_greeting_text", "@{username} welcome to the stream!")
-                self.default_greeting_text = str(greeting_text_val) if greeting_text_val else "@{username} welcome to the stream!"
-                
-                cooldown_val = settings_data.get("greeting_cooldown_hours", 24)
-                self.greeting_cooldown_hours = int(cooldown_val) if not isinstance(cooldown_val, int) else cooldown_val
-                
-                reset_val = settings_data.get("greeting_reset_interval_hours", 24)
-                self.greeting_reset_interval_hours = int(reset_val) if not isinstance(reset_val, int) else reset_val
-                
-                quote_cd_val = settings_data.get("quote_cooldown_seconds", 30)
-                self.quote_cooldown_seconds = int(quote_cd_val) if not isinstance(quote_cd_val, int) else quote_cd_val
+                self._apply_settings(settings_data)
+            if "BotData/Settings" in self._unreadable_paths:
+                # Defaults are the baseline; later edits are applied over the
+                # stored copy once it can be read.
+                self._unreadable_paths["BotData/Settings"] = self._settings_payload()
 
             # Load greetings
-            greetings_data = get_data("BotData/Greetings")
+            greetings_data = self._read_checked("BotData/Greetings")
             if greetings_data and isinstance(greetings_data, list):
                 for greeting_data in greetings_data:
                     try:
@@ -545,6 +527,134 @@ class ChatbotManager:
                 dedupe_key="chatbot:load_failed",
                 actions=nav_actions_main_tab("Chatbot"),
             )
+
+    def _read_checked(self, path: str):
+        from .database_manager import get_data_checked
+
+        data, ok = get_data_checked(path)
+        if not ok:
+            self._unreadable_paths[path] = None
+            logger.warning(
+                "%s could not be read; it will be re-read before it is saved", path
+            )
+        return data
+
+    def _recover_unreadable_paths(self) -> set:
+        """Re-read paths whose load failed. Returns paths that must not be written."""
+        from .database_manager import get_data_checked
+
+        blocked = set()
+        for path in list(self._unreadable_paths):
+            data, ok = get_data_checked(path)
+            if not ok:
+                logger.warning(
+                    "Not saving %s: it could not be read from the database", path
+                )
+                blocked.add(path)
+                continue
+            with self._lock:
+                if path not in self._unreadable_paths:
+                    continue
+                baseline = self._unreadable_paths.pop(path)
+                self._merge_stored_path(path, data, baseline)
+            logger.info("Re-read %s after a failed load; local changes kept", path)
+        return blocked
+
+    def _merge_stored_path(self, path: str, data: Any, baseline: Any) -> None:
+        """Use the stored copy as the base; keep what changed in memory since.
+
+        Call with ``_lock`` held. Nothing was loaded for this path, so every
+        in-memory item is a later change and wins over a stored one with its id.
+        """
+        if path == "BotData/Settings":
+            current = self._settings_payload()
+            changed = {
+                key: value
+                for key, value in current.items()
+                if not isinstance(baseline, dict) or baseline.get(key) != value
+            }
+            if data and isinstance(data, dict):
+                self._apply_settings(data)
+            for key, value in changed.items():
+                setattr(self, key, value)
+            return
+
+        specs = {
+            "BotData/Commands": (self.commands, ChatCommand, "command_id"),
+            "BotData/Events": (self.events, ChatEvent, "event_id"),
+            "BotData/Quotes": (self.quotes, Quote, "quote_id"),
+            "BotData/Greetings": (self.greetings, Greeting, "greeting_id"),
+        }
+        target, cls, id_attr = specs[path]
+        merged: Dict[str, Any] = {}
+        added: List[Any] = []
+        for item in data if isinstance(data, list) else []:
+            try:
+                obj = cls.from_dict(item)
+            except Exception as e:
+                logger.error(f"Error loading {path} item: {e}")
+                continue
+            item_id = getattr(obj, id_attr)
+            if item_id in target:
+                merged[item_id] = target[item_id]
+            else:
+                merged[item_id] = obj
+                added.append(obj)
+        stored_numbers = {
+            getattr(obj, "quote_number", None) for obj in merged.values()
+        }
+        for item_id, obj in target.items():
+            if item_id in merged:
+                continue
+            if path == "BotData/Quotes" and obj.quote_number in stored_numbers:
+                # Numbered while the stored quotes were unknown: renumber after them.
+                obj.quote_number = max(
+                    n for n in stored_numbers if isinstance(n, int)
+                ) + 1
+                stored_numbers.add(obj.quote_number)
+            merged[item_id] = obj
+        target.clear()
+        target.update(merged)
+        for obj in added:
+            if path == "BotData/Greetings":
+                self.greetings_by_user_id.setdefault(obj.user_id, obj)
+            elif path == "BotData/Events" and obj.enabled:
+                # Same start rules as _load_data.
+                if obj.event_type == EventType.SPECIFIC_TIME:
+                    self._start_specific_time_event(obj)
+                elif obj.interval > 0:
+                    if obj.event_type == EventType.INTERVAL:
+                        self._deferred_interval_events.append(obj)
+                    else:
+                        self._start_repeating_event(obj)
+
+    def _apply_settings(self, settings_data: Dict[str, Any]) -> None:
+        """Apply a stored BotData/Settings dict to this manager."""
+        # Ensure boolean values are actually booleans (guard against corrupted data)
+        quotes_val = settings_data.get("quotes_enabled", True)
+        self.quotes_enabled = bool(quotes_val) if not isinstance(quotes_val, bool) else quotes_val
+        
+        greetings_val = settings_data.get("greetings_enabled", True)
+        self.greetings_enabled = bool(greetings_val) if not isinstance(greetings_val, bool) else greetings_val
+        
+        # New separate toggle settings with backwards compatibility
+        default_greet_val = settings_data.get("default_greeting_enabled", self.greetings_enabled)
+        self.default_greeting_enabled = bool(default_greet_val) if not isinstance(default_greet_val, bool) else default_greet_val
+        
+        custom_greet_val = settings_data.get("custom_greeting_enabled", self.greetings_enabled)
+        self.custom_greeting_enabled = bool(custom_greet_val) if not isinstance(custom_greet_val, bool) else custom_greet_val
+        
+        greeting_text_val = settings_data.get("default_greeting_text", "@{username} welcome to the stream!")
+        self.default_greeting_text = str(greeting_text_val) if greeting_text_val else "@{username} welcome to the stream!"
+        
+        cooldown_val = settings_data.get("greeting_cooldown_hours", 24)
+        self.greeting_cooldown_hours = int(cooldown_val) if not isinstance(cooldown_val, int) else cooldown_val
+        
+        reset_val = settings_data.get("greeting_reset_interval_hours", 24)
+        self.greeting_reset_interval_hours = int(reset_val) if not isinstance(reset_val, int) else reset_val
+        
+        quote_cd_val = settings_data.get("quote_cooldown_seconds", 30)
+        self.quote_cooldown_seconds = int(quote_cd_val) if not isinstance(quote_cd_val, int) else quote_cd_val
 
     def _save_data(self) -> None:
         """Queue a save of commands and events. The latest snapshot is written."""
@@ -578,12 +688,26 @@ class ChatbotManager:
         if thread is not None and thread.is_alive():
             thread.join(timeout)
         with self._save_lock:
-            dirty = self._save_dirty
+            dirty = self._save_dirty or self._blocked_save_pending
             self._save_dirty = False
         if dirty:
             self._save_data_now()
         if hasattr(self, "flag_manager"):
             self.flag_manager.force_save()
+
+    def _settings_payload(self) -> Dict[str, Any]:
+        # Save settings - ensure all values are JSON-serializable primitives
+        # This guards against NiceGUI event objects or UI components being stored
+        return {
+            "quotes_enabled": bool(self.quotes_enabled) if not isinstance(self.quotes_enabled, bool) else self.quotes_enabled,
+            "greetings_enabled": bool(self.greetings_enabled) if not isinstance(self.greetings_enabled, bool) else self.greetings_enabled,
+            "default_greeting_enabled": bool(self.default_greeting_enabled) if not isinstance(self.default_greeting_enabled, bool) else self.default_greeting_enabled,
+            "custom_greeting_enabled": bool(self.custom_greeting_enabled) if not isinstance(self.custom_greeting_enabled, bool) else self.custom_greeting_enabled,
+            "default_greeting_text": str(self.default_greeting_text) if self.default_greeting_text else "@{username} welcome to the stream!",
+            "greeting_cooldown_hours": int(self.greeting_cooldown_hours) if not isinstance(self.greeting_cooldown_hours, int) else self.greeting_cooldown_hours,
+            "greeting_reset_interval_hours": int(self.greeting_reset_interval_hours) if not isinstance(self.greeting_reset_interval_hours, int) else self.greeting_reset_interval_hours,
+            "quote_cooldown_seconds": int(self.quote_cooldown_seconds) if not isinstance(self.quote_cooldown_seconds, int) else self.quote_cooldown_seconds,
+        }
 
     def _build_save_payloads(self) -> List[tuple]:
         """Serialize everything under the lock; UI and chat threads mutate it (TH-11)."""
@@ -602,18 +726,7 @@ class ChatbotManager:
                 greeting.to_dict() for greeting in self.greetings.values()
             ]
 
-            # Save settings - ensure all values are JSON-serializable primitives
-            # This guards against NiceGUI event objects or UI components being stored
-            settings_data = {
-                "quotes_enabled": bool(self.quotes_enabled) if not isinstance(self.quotes_enabled, bool) else self.quotes_enabled,
-                "greetings_enabled": bool(self.greetings_enabled) if not isinstance(self.greetings_enabled, bool) else self.greetings_enabled,
-                "default_greeting_enabled": bool(self.default_greeting_enabled) if not isinstance(self.default_greeting_enabled, bool) else self.default_greeting_enabled,
-                "custom_greeting_enabled": bool(self.custom_greeting_enabled) if not isinstance(self.custom_greeting_enabled, bool) else self.custom_greeting_enabled,
-                "default_greeting_text": str(self.default_greeting_text) if self.default_greeting_text else "@{username} welcome to the stream!",
-                "greeting_cooldown_hours": int(self.greeting_cooldown_hours) if not isinstance(self.greeting_cooldown_hours, int) else self.greeting_cooldown_hours,
-                "greeting_reset_interval_hours": int(self.greeting_reset_interval_hours) if not isinstance(self.greeting_reset_interval_hours, int) else self.greeting_reset_interval_hours,
-                "quote_cooldown_seconds": int(self.quote_cooldown_seconds) if not isinstance(self.quote_cooldown_seconds, int) else self.quote_cooldown_seconds,
-            }
+            settings_data = self._settings_payload()
         return [
             ("BotData/Commands", commands_data),
             ("BotData/Events", events_data),
@@ -628,6 +741,8 @@ class ChatbotManager:
             # Import database manager here to avoid circular imports
             from .database_manager import set_data
 
+            blocked = self._recover_unreadable_paths() if self._unreadable_paths else set()
+            self._blocked_save_pending = bool(blocked)
             payloads = self._build_save_payloads()
             with self._save_write_lock:
                 # A different backend (or streamer) has none of our blobs yet.
@@ -636,6 +751,8 @@ class ChatbotManager:
                     self._saved_json.clear()
                     self._saved_backend = backend
                 for path, data in payloads:
+                    if path in blocked:
+                        continue
                     fingerprint = _json_fingerprint(data)
                     if fingerprint is not None and self._saved_json.get(path) == fingerprint:
                         continue

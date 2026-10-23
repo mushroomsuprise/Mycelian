@@ -38,6 +38,9 @@ class _DB:
             self.reads.append(path)
             return json.loads(json.dumps(self.store.get(path, {})))
 
+    def get_data_checked(self, path):
+        return self.get_data(path), True
+
     def set_data(self, path, data):
         with self.lock:
             self.writes.append(path)
@@ -57,6 +60,7 @@ class _ManagerCase(unittest.TestCase):
         flag_path = os.path.join(self.tmp.name, "greeting_flags.json")
         self._patches = [
             patch("modules.database_manager.get_data", self.db.get_data),
+            patch("modules.database_manager.get_data_checked", self.db.get_data_checked),
             patch("modules.database_manager.set_data", self.db.set_data),
             patch("modules.statistics_manager.get_statistics_manager", MagicMock()),
             patch.object(cm, "GreetingFlagManager", lambda: _REAL_FLAG_MANAGER(flag_path)),
