@@ -169,6 +169,162 @@ def _suppress_esm_warning(window) -> None:
                 handlers.remove(handler)
 
 
+# ----- Help window -----
+#
+# The help docs open in a second native window owned by this same webview process, so
+# it shares the app's Dock icon and quits with it. It is created with the original
+# ``create_window`` (no close veto: closing help never goes to the tray). Geometry is
+# reported back to the main process, which stores it in AppSettings and hands it back
+# the next time the window opens.
+
+_HELP_MIN_SIZE = (720, 480)
+_HELP_GEOMETRY_DEBOUNCE_SEC = 0.6
+
+_help_window = None
+_help_geometry: dict = {}
+_help_geometry_timer = None
+
+
+def _help_geometry_on_screen(geometry: dict) -> bool:
+    """True when the saved top-left corner lands on a connected screen.
+
+    A monitor that was unplugged since the last session would otherwise open the help
+    window somewhere the user cannot see or reach it.
+    """
+    try:
+        import webview
+
+        x, y = int(geometry["x"]), int(geometry["y"])
+        width = int(geometry.get("width") or 0)
+        for screen in webview.screens:
+            sx, sy = int(screen.x), int(screen.y)
+            if sx <= x + max(width // 2, 1) < sx + int(screen.width) and sy <= y + 20 < sy + int(screen.height):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _flush_help_geometry() -> None:
+    if _help_geometry:
+        _send_native_event("mycelian_help_geometry", **_help_geometry)
+
+
+def _schedule_help_geometry(**changes) -> None:
+    global _help_geometry_timer
+    import threading
+
+    _help_geometry.update({k: int(v) for k, v in changes.items() if v is not None})
+    if _help_geometry_timer is not None:
+        _help_geometry_timer.cancel()
+    _help_geometry_timer = threading.Timer(_HELP_GEOMETRY_DEBOUNCE_SEC, _flush_help_geometry)
+    _help_geometry_timer.daemon = True
+    _help_geometry_timer.start()
+
+
+def _bring_to_front(window) -> None:
+    try:
+        window.restore()
+    except Exception:
+        pass
+    try:
+        window.show()
+    except Exception:
+        pass
+    if sys.platform == "darwin":
+        try:
+            import AppKit
+            from PyObjCTools import AppHelper
+
+            AppHelper.callAfter(
+                lambda: AppKit.NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+            )
+        except Exception:
+            pass
+
+
+def _on_help_closed() -> None:
+    global _help_window, _help_geometry_timer
+    if _help_geometry_timer is not None:
+        _help_geometry_timer.cancel()
+        _help_geometry_timer = None
+    _flush_help_geometry()
+    _help_window = None
+    _send_native_event("mycelian_help_closed")
+
+
+def open_help_window(url: str, options: dict | None = None) -> None:
+    """Open the help window at ``url``, or bring the existing one forward and load it.
+
+    ``options`` may carry ``title``, ``width``, ``height``, ``x``, ``y`` and
+    ``background_color`` (hex). Missing or off-screen positions let the OS place it.
+    """
+    global _help_window
+    import webview
+
+    options = dict(options or {})
+    if _help_window is not None:
+        try:
+            if url:
+                _help_window.load_url(url)
+            _bring_to_front(_help_window)
+            return
+        except Exception as e:
+            logger.debug("native_window_bridge: help window reuse failed, recreating: %s", e)
+            _help_window = None
+
+    width = max(int(options.get("width") or 1100), _HELP_MIN_SIZE[0])
+    height = max(int(options.get("height") or 800), _HELP_MIN_SIZE[1])
+    kwargs = {
+        "title": options.get("title") or "Mycelian Help",
+        "url": url,
+        "width": width,
+        "height": height,
+        "resizable": True,
+        "min_size": _HELP_MIN_SIZE,
+        "text_select": True,
+    }
+    if options.get("background_color"):
+        kwargs["background_color"] = options["background_color"]
+    if options.get("x") is not None and options.get("y") is not None:
+        geometry = {"x": options["x"], "y": options["y"], "width": width}
+        if _help_geometry_on_screen(geometry):
+            kwargs["x"] = int(options["x"])
+            kwargs["y"] = int(options["y"])
+
+    create = getattr(webview, _ORIG_CREATE_ATTR, None) or webview.create_window
+    window = create(**kwargs)
+    if window is None:
+        return
+    _help_window = window
+    _help_geometry.clear()
+    _help_geometry.update(width=width, height=height)
+    if "x" in kwargs:
+        _help_geometry.update(x=kwargs["x"], y=kwargs["y"])
+
+    try:
+        window.events.resized += lambda w, h: _schedule_help_geometry(width=w, height=h)
+        window.events.moved += lambda x, y: _schedule_help_geometry(x=x, y=y)
+        window.events.closed += _on_help_closed
+    except Exception as e:
+        logger.debug("native_window_bridge: could not attach help window events: %s", e)
+
+
+def focus_help_window() -> None:
+    if _help_window is not None:
+        _bring_to_front(_help_window)
+
+
+def close_help_window() -> None:
+    window = _help_window
+    if window is None:
+        return
+    try:
+        window.destroy()
+    except Exception:
+        pass
+
+
 def _attach_tray_hooks(window) -> None:
     """Wire the close veto and the main-process control helpers onto the window."""
 
@@ -197,6 +353,7 @@ def _attach_tray_hooks(window) -> None:
         global _allow_close, _tray_mode
         _allow_close = True
         _tray_mode = False
+        close_help_window()
         try:
             window.hide()
         except Exception:
@@ -213,9 +370,20 @@ def _attach_tray_hooks(window) -> None:
         window.mycelian_set_dock_visible = mycelian_set_dock_visible
         window.mycelian_prepare_for_blank = mycelian_prepare_for_blank
         window.mycelian_force_quit = mycelian_force_quit
+        # Help window lives in this process too; the main window is only the mailbox.
+        window.mycelian_open_help_window = open_help_window
+        window.mycelian_focus_help_window = focus_help_window
+        window.mycelian_close_help_window = close_help_window
     except Exception as e:
         logger.error("native_window_bridge: could not attach tray hooks: %s", e)
         return
+
+    # webview.start() only returns once every window is gone, so an open help window
+    # would keep the app alive after the main window closed.
+    try:
+        window.events.closed += close_help_window
+    except Exception as e:
+        logger.debug("native_window_bridge: could not attach help close hook: %s", e)
 
     def _on_shown_or_restored() -> None:
         # Dock / taskbar / Alt-Tab can order a hidden start-minimized window on

@@ -185,6 +185,13 @@ class AppSettings:
     window_height: int = 0
     window_x: int = -1
     window_y: int = -1
+    # Help window geometry. Position can be negative on multi-monitor setups, so a
+    # separate flag marks whether one was saved.
+    help_window_width: int = 0
+    help_window_height: int = 0
+    help_window_x: int = 0
+    help_window_y: int = 0
+    help_window_has_position: bool = False
 
     def __post_init__(self):
         """Log when a new AppSettings instance is created"""

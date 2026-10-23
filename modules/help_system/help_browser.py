@@ -72,9 +72,10 @@ class HelpBrowser:
         self.forward_btn = None
         self._nav_bridge = None
         self._help_click_installed = False
+        self._page_mode = False
 
     def show(self, initial_topic: str = None, category: str = None):
-        """Show help browser in a dialog
+        """Show help browser in a maximized dialog over the app (fallback when no help window).
 
         Args:
             initial_topic: Specific topic ID to open
@@ -90,17 +91,7 @@ class HelpBrowser:
                 with ui.card().classes("w-full h-full p-0 m-0 help-card-root").style(
                     "border-radius: 0; max-width: 100%; max-height: 100%;"
                 ):
-                    with ui.row().classes("w-full h-full").style("display: flex; height: 100%;"):
-                        self._build_sidebar()
-                        self._build_content_area()
-
-                    self._nav_bridge = ui.element('div').style('display:none')
-                    self._nav_bridge.on('helpnav',
-                        lambda e: self._handle_help_link(e),
-                        js_handler='(e) => emit(e.detail)')
-                    self._nav_bridge.on('externallink',
-                        lambda e: self._handle_external_link(e),
-                        js_handler='(e) => emit(e.detail)')
+                    self._build_shell()
 
             self._setup_help_link_handler()
             try:
@@ -108,19 +99,48 @@ class HelpBrowser:
             except Exception:
                 pass
 
-            if initial_topic:
-                self.navigate_to(initial_topic)
-            elif category:
-                self._navigate_to_category(category)
-            else:
-                self._show_welcome()
-
+            self.open_initial(initial_topic, category)
             self.dialog.open()
             logger.debug(f"Help browser opened with topic={initial_topic}, category={category}")
 
         except Exception as e:
             logger.error(f"Error opening help browser: {e}")
             notify(f"Error opening help: {e}", type="negative")
+
+    def build_page(self, initial_topic: str = None, category: str = None):
+        """Build the help browser as the whole page (the separate help window)."""
+        self._page_mode = True
+        ensure_help_system_styles()
+        with ui.element("div").classes("help-card-root help-window-root"):
+            self._build_shell()
+        self._setup_help_link_handler()
+        self.open_initial(initial_topic, category)
+
+    def open_initial(self, initial_topic: str = None, category: str = None):
+        """Navigate to a topic, a category, or the welcome page."""
+        if initial_topic:
+            self.navigate_to(initial_topic)
+        elif category:
+            self._navigate_to_category(category)
+        else:
+            self._show_welcome()
+
+    def _close(self):
+        if self.dialog is not None:
+            self.dialog.close()
+
+    def _build_shell(self):
+        with ui.row().classes("w-full h-full no-wrap").style("display: flex; height: 100%;"):
+            self._build_sidebar()
+            self._build_content_area()
+
+        self._nav_bridge = ui.element('div').style('display:none')
+        self._nav_bridge.on('helpnav',
+            lambda e: self._handle_help_link(e),
+            js_handler='(e) => emit(e.detail)')
+        self._nav_bridge.on('externallink',
+            lambda e: self._handle_external_link(e),
+            js_handler='(e) => emit(e.detail)')
 
     def _handle_help_link(self, e):
         """Handle a help: protocol link click from JavaScript."""
@@ -352,9 +372,10 @@ class HelpBrowser:
                     with self.breadcrumb_container:
                         ui.label("Home").classes("help-breadcrumb-item text-sm")
 
-                    ui.button(icon="close").props("flat dense").classes(
-                        "help-close-btn"
-                    ).style("min-width: 36px;").on("click", lambda: self.dialog.close()).tooltip("Close")
+                    if not self._page_mode:
+                        ui.button(icon="close").props("flat dense").classes(
+                            "help-close-btn"
+                        ).style("min-width: 36px;").on("click", self._close).tooltip("Close")
 
                 with ui.scroll_area().classes("help-scroll grow").style("flex: 1;"):
                     with ui.row().classes("w-full").style(
@@ -995,12 +1016,19 @@ class HelpBrowser:
 
 
 def show_help_browser(topic_id: str = None, category: str = None):
-    """Show the help browser
+    """Show the help browser: in the separate help window, else as a dialog.
 
     Args:
         topic_id: Specific topic ID to open
         category: Help category to navigate to (will show first topic in category)
     """
+    try:
+        from .help_window import open_help_window
+
+        if open_help_window(topic_id, category):
+            return
+    except Exception as e:
+        logger.error(f"Error opening help window, using dialog: {e}")
     try:
         browser = HelpBrowser()
         browser.show(initial_topic=topic_id, category=category)

@@ -591,8 +591,16 @@ def test_bridge_helpers_attach_to_a_pywebview_window(monkeypatch):
         "mycelian_set_dock_visible",
         "mycelian_prepare_for_blank",
         "mycelian_force_quit",
+        "mycelian_open_help_window",
+        "mycelian_focus_help_window",
+        "mycelian_close_help_window",
     ):
         assert callable(getattr(window, name)), name
+
+    # No help window open: focus/close are harmless no-ops returning None.
+    monkeypatch.setattr(bridge, "_help_window", None, raising=False)
+    assert window.mycelian_focus_help_window() is None
+    assert window.mycelian_close_help_window() is None
 
     # Must all return None, or NiceGUI's executor would push a stray response and
     # desynchronise every later window round-trip.

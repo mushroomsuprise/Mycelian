@@ -282,6 +282,11 @@ def apply_theme(theme_name: str):
     # until OverlayInit constructs WebEngine from start_ui().
     import sys
 
+    # An open help window is a separate client; update it too.
+    help_window = sys.modules.get("modules.help_system.help_window")
+    if help_window is not None:
+        help_window.push_theme()
+
     web_engine = sys.modules.get("modules.web_engine")
     if (
         web_engine is not None
@@ -1338,6 +1343,11 @@ def start_ui():
 
         with StartupTimer("native_window_bridge.install"):
             install_native_window_bridge()
+
+        # /help route for the separate help window (light import; content loads on open).
+        from .help_system.help_window import register_help_page
+
+        register_help_page()
 
         # Configure WebView2 data directory for long-running native sessions
         _configure_webview2()
