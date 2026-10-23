@@ -208,5 +208,60 @@ class OverlayHtmlCacheKeyTests(unittest.TestCase):
         self.assertEqual(eng._cached_overlay_html("alerts", ("pre",)), "<html>")
 
 
+class HubAlertStateGuardTests(unittest.TestCase):
+    def test_second_hub_greenlet_waits_for_the_first_to_leave(self) -> None:
+        import gevent
+
+        eng = object.__new__(WebEngine)
+        manager_lock = threading.RLock()  # stands in for AlertStateManager._lock
+        trace = []
+
+        def handler(name):
+            with manager_lock:
+                trace.append(f"{name} in")
+                gevent.sleep(0.05)  # remote-DB poll yields while holding it
+                trace.append(f"{name} out")
+            return name
+
+        wrapped = eng._hub_alert_state_serialized(handler)
+        results = []
+
+        def hub_thread() -> None:
+            eng._server_thread_ident = threading.get_ident()
+            jobs = [gevent.spawn(lambda n=n: results.append(wrapped(n))) for n in "AB"]
+            gevent.joinall(jobs)
+
+        t = threading.Thread(target=hub_thread, daemon=True)
+        t.start()
+        t.join(5)
+        self.assertEqual(trace, ["A in", "A out", "B in", "B out"])
+        self.assertEqual(results, ["A", "B"])
+
+    def test_off_hub_calls_are_not_wrapped_in_a_lock(self) -> None:
+        eng = object.__new__(WebEngine)
+        eng._server_thread_ident = None
+
+        def handle(data=None):
+            return {"ok": data}
+
+        wrapped = eng._hub_alert_state_serialized(handle)
+        self.assertEqual(wrapped(3), {"ok": 3})
+        self.assertEqual(wrapped.__name__, "handle")
+
+
+class ParserCacheCopyTests(unittest.TestCase):
+    def test_miss_and_hit_return_independent_copies(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            _write_config(d, "follow", "disk", 1_000_000.0)
+            parser = TemplateConfigParser(config_dir=d)
+            first = parser.load_config("follow")
+            first["elements"][0]["value"] = "mutated"
+            second = parser.load_config("follow")
+            self.assertEqual(second["elements"][0]["value"], "disk")
+            shared = parser.load_config("follow", copy_result=False)
+            self.assertIs(shared, parser.load_config("follow", copy_result=False))
+            self.assertIsNot(shared, second)
+
+
 if __name__ == "__main__":
     unittest.main()

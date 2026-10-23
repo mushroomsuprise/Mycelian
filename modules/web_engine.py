@@ -24,10 +24,12 @@ SOFTWARE.
 """
 
 import asyncio
+import contextlib
 import copy
 import dataclasses  # Added for converting PSNData to dict
 import errno
 import faulthandler
+import functools
 import glob
 import ipaddress
 import json
@@ -71,7 +73,7 @@ from .streamdeck_template_dispatch import (
     resolve_streamdeck_options_action as _resolve_streamdeck_options_action_fn,
 )
 from .template_config_parser import (
-    TemplateConfigParser,
+    get_shared_parser,
     resolve_dynamic_control_values_from_elements,
 )
 from .template_log import (
@@ -3452,8 +3454,8 @@ class WebEngine:
         # WebSocket-based Stream Deck communication handlers
         self.register_streamdeck_websocket_handlers()
 
-        # Initialize template config parser
-        self.template_config_parser = TemplateConfigParser()
+        # Process-wide parser: same mtime-keyed results, one cached tree (WE-33)
+        self.template_config_parser = get_shared_parser()
 
         # Register dynamic routes based on HTML templates
         self.register_routes()
@@ -4491,6 +4493,38 @@ class WebEngine:
         except Exception:
             return fn(*args)
         return pool.apply(fn, args)
+
+    def _hub_alert_state_serialized(self, handler):
+        """Let one hub greenlet at a time into AlertStateManager (TH-14).
+
+        Its RLock is re-entrant per OS thread and every hub greenlet shares one
+        thread, so when a handler yields while holding it (the remote-DB poll)
+        a second greenlet walks straight in. A gevent lock makes the second
+        one wait cooperatively instead; uncontended (SQLite never yields) it
+        changes nothing.
+        """
+
+        @functools.wraps(handler)
+        def wrapper(*args, **kwargs):
+            with self._hub_alert_state_guard():
+                return handler(*args, **kwargs)
+
+        return wrapper
+
+    def _hub_alert_state_guard(self):
+        if threading.get_ident() != self._server_thread_ident:
+            return contextlib.nullcontext()
+        try:
+            from gevent.lock import RLock as GeventRLock
+        except Exception:
+            return contextlib.nullcontext()
+        locks = self.__dict__.setdefault("_hub_alert_state_locks", {})
+        gen = self._hub_run_generation()
+        lock = locks.get(gen)
+        if lock is None:
+            locks.clear()  # locks of earlier hubs belong to dead loops
+            lock = locks[gen] = GeventRLock()
+        return lock
 
     def _hub_run_generation(self) -> int:
         """Run generation owned by the calling (hub) thread."""
@@ -6952,6 +6986,7 @@ class WebEngine:
                 return False
 
         @self.socketio.on("get_alert_state")
+        @self._hub_alert_state_serialized
         def handle_get_alert_state(data=None):
             """
             Handle get_alert_state websocket event to retrieve the current alert configuration state
@@ -7000,6 +7035,7 @@ class WebEngine:
                 return error_result
 
         @self.socketio.on("update_alert_data")
+        @self._hub_alert_state_serialized
         def handle_update_alert_data(data):
             """
             Handle update_alert_data websocket event to update alert data through AlertStateManager
@@ -7051,6 +7087,7 @@ class WebEngine:
                 return {"success": False, "error": str(e)}
 
         @self.socketio.on("save_alert_by_id")
+        @self._hub_alert_state_serialized
         def handle_save_alert_by_id(data):
             """
             Handle save_alert_by_id websocket event to save current alert data to Firebase
@@ -7094,6 +7131,7 @@ class WebEngine:
                 return {"success": False, "error": str(e)}
 
         @self.socketio.on("get_stored_alerts")
+        @self._hub_alert_state_serialized
         def handle_get_stored_alerts(data=None):
             """
             Handle get_stored_alerts websocket event to retrieve completed/stored alerts
@@ -7767,6 +7805,7 @@ class WebEngine:
                 return False
 
         @self.socketio.on("get_stored_alerts_paginated")
+        @self._hub_alert_state_serialized
         def handle_get_stored_alerts_paginated(data):
             """
             Handle get_stored_alerts_paginated websocket event.
@@ -7986,6 +8025,7 @@ class WebEngine:
                 return {"success": False, "error": str(exc)}
 
         @self.socketio.on("activity_feed_replay_alert")
+        @self._hub_alert_state_serialized
         def handle_activity_feed_replay_alert(data):
             """
             Handle activity_feed_replay_alert websocket event.
@@ -9171,7 +9211,7 @@ class WebEngine:
 
             # Initialize template config parser with timeout protection
             try:
-                config_parser = template_config_parser.TemplateConfigParser()
+                config_parser = template_config_parser.get_shared_parser()
                 config_files = config_parser.get_config_files()
             except Exception as e:
                 logger.warning(f"Could not load template config files: {str(e)}")
@@ -9204,8 +9244,9 @@ class WebEngine:
                     break
 
                 try:
+                    # Read-only scan (handlers only read their element config).
                     config = config_parser.load_config(
-                        config_name, include_dynamic_controls=True
+                        config_name, include_dynamic_controls=True, copy_result=False
                     )
 
                     if isinstance(config, dict) and "dynamic_controls" in config:
