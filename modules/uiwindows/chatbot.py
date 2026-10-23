@@ -68,6 +68,20 @@ logger = logging.getLogger(__name__)
 CUSTOM_VARIABLES_PATH = "chatbot_custom_variables"
 _giveaway_entrants_timer = None
 
+# Template-preview patterns (compiled once; were compiled per call).
+_PREVIEW_STATS_PATTERN = re.compile(r"\{stats\.([^}]+)\}")
+_PREVIEW_YOUTUBE_PATTERN = re.compile(r"\{youtube\.([^}]+)\}")
+_PREVIEW_CUSTOM_PATTERN = re.compile(r"\{custom_([^}]+)\}")
+_PREVIEW_WORD_PATTERN = re.compile(r"\{command_word_(\d+)\}")
+_PREVIEW_DATE_TO_AGE_PATTERN = re.compile(r"date_to_age\(([^)]+)\)")
+_PREVIEW_MATH_PATTERN = re.compile(r"math\(([^)]+)\)")
+_PREVIEW_COMPARE_PATTERN = re.compile(r"compare\(([^)]+)\)")
+_PREVIEW_VAR_PATTERN = re.compile(r"\{([^}]+)\}")
+_PREVIEW_USERNAME_PATTERN = re.compile(re.escape("{username}"))
+_PREVIEW_QUOTE_PATTERN = re.compile(r"\{quote\.([^.]+)\.([^}]+)\}")
+_PREVIEW_API_PATTERN = re.compile(r"\{api_([^}]+)\}")
+_PREVIEW_DOT_PATTERN = re.compile(r"\{([^}]+\.([^}]+))\}")
+
 
 def save_custom_variables(custom_variables: dict) -> bool:
     """Save custom variables to persistent storage"""
@@ -191,21 +205,21 @@ def evaluate_custom_variable_expression(
 
         # Process nested variables in the expression first
         # Replace stats variables
-        stats_pattern = re.compile(r"\{stats\.([^}]+)\}")
+        stats_pattern = _PREVIEW_STATS_PATTERN
         processed_expr = stats_pattern.sub(
             lambda m: get_statistics_value(m.group(1)) or f"{{stats.{m.group(1)}}}",
             expression,
         )
 
         # Replace YouTube variables
-        youtube_pattern = re.compile(r"\{youtube\.([^}]+)\}")
+        youtube_pattern = _PREVIEW_YOUTUBE_PATTERN
         processed_expr = youtube_pattern.sub(
             lambda m: get_youtube_value(m.group(1)) or f"{{youtube.{m.group(1)}}}",
             processed_expr,
         )
 
         # Replace other custom variables recursively
-        custom_pattern = re.compile(r"\{custom_([^}]+)\}")
+        custom_pattern = _PREVIEW_CUSTOM_PATTERN
         max_depth = 10  # Prevent infinite recursion
         depth = 0
 
@@ -251,7 +265,7 @@ def evaluate_custom_variable_expression(
                     processed_expr = processed_expr.replace("{command_last_word}", "")
 
                 # Handle {command_word_N} variables
-                word_pattern = re.compile(r"\{command_word_(\d+)\}")
+                word_pattern = _PREVIEW_WORD_PATTERN
 
                 def replace_word_var(match):
                     index = int(match.group(1)) - 1  # Convert to 0-based indexing
@@ -294,21 +308,21 @@ def evaluate_custom_variable_expression(
         # Evaluate special functions
         # Handle date_to_age()
         if "date_to_age(" in processed_expr:
-            date_to_age_pattern = re.compile(r"date_to_age\(([^)]+)\)")
+            date_to_age_pattern = _PREVIEW_DATE_TO_AGE_PATTERN
             processed_expr = date_to_age_pattern.sub(
                 lambda m: _evaluate_date_to_age(m.group(1)), processed_expr
             )
 
         # Handle math()
         if "math(" in processed_expr:
-            math_pattern = re.compile(r"math\(([^)]+)\)")
+            math_pattern = _PREVIEW_MATH_PATTERN
             processed_expr = math_pattern.sub(
                 lambda m: str(_evaluate_math(m.group(1))), processed_expr
             )
 
         # Handle compare()
         if "compare(" in processed_expr:
-            compare_pattern = re.compile(r"compare\(([^)]+)\)")
+            compare_pattern = _PREVIEW_COMPARE_PATTERN
             processed_expr = compare_pattern.sub(
                 lambda m: str(_evaluate_compare(m.group(1))), processed_expr
             )
@@ -400,7 +414,7 @@ def validate_expression_variables(expression: str) -> list:
         invalid_vars = []
 
         # Extract all variables from the expression (things in curly braces)
-        var_pattern = re.compile(r"\{([^}]+)\}")
+        var_pattern = _PREVIEW_VAR_PATTERN
         variables = var_pattern.findall(expression)
 
         # Get available variable sets
@@ -621,13 +635,13 @@ def resolve_variables_for_preview(
 
     # 2.5. Handle greeting-specific variables (override username)
     if item_type == "greeting" and "username" in context_data:
-        pattern = re.compile(re.escape("{username}"))
+        pattern = _PREVIEW_USERNAME_PATTERN
         processed = pattern.sub(
             lambda m: _wrap_variable_value(context_data["username"]), processed
         )
 
     # 3. Replace statistics variables
-    stats_pattern = re.compile(r"\{stats\.([^}]+)\}")
+    stats_pattern = _PREVIEW_STATS_PATTERN
 
     def replace_stats(match):
         stat_name = match.group(1)
@@ -644,7 +658,7 @@ def resolve_variables_for_preview(
     processed = stats_pattern.sub(replace_stats, processed)
 
     # 4. Replace YouTube variables
-    youtube_pattern = re.compile(r"\{youtube\.([^}]+)\}")
+    youtube_pattern = _PREVIEW_YOUTUBE_PATTERN
 
     def replace_youtube(match):
         youtube_var = match.group(1)
@@ -664,7 +678,7 @@ def resolve_variables_for_preview(
     processed = youtube_pattern.sub(replace_youtube, processed)
 
     # 5. Replace custom variables
-    custom_pattern = re.compile(r"\{custom_([^}]+)\}")
+    custom_pattern = _PREVIEW_CUSTOM_PATTERN
 
     def replace_custom(match):
         custom_var_name = f"custom_{match.group(1)}"
@@ -680,7 +694,7 @@ def resolve_variables_for_preview(
     processed = custom_pattern.sub(replace_custom, processed)
 
     # 6. Replace quote variables
-    quote_pattern = re.compile(r"\{quote\.([^.]+)\.([^}]+)\}")
+    quote_pattern = _PREVIEW_QUOTE_PATTERN
 
     def replace_quote(match):
         quote_id_str = match.group(1)
@@ -730,14 +744,14 @@ def resolve_variables_for_preview(
     processed = quote_pattern.sub(replace_quote, processed)
 
     # 7. Handle API variables (show variable name since API call isn't executed in preview)
-    api_pattern = re.compile(r"\{api_([^}]+)\}")
+    api_pattern = _PREVIEW_API_PATTERN
     processed = api_pattern.sub(
         lambda m: _wrap_variable_value(f"{{api_{m.group(1)}}}"), processed
     )
 
     # 7. Handle processed variables with dot notation (e.g., {account_age.days})
     # These are typically from API variable processing, so show variable name
-    dot_pattern = re.compile(r"\{([^}]+\.([^}]+))\}")
+    dot_pattern = _PREVIEW_DOT_PATTERN
     processed = dot_pattern.sub(
         lambda m: _wrap_variable_value(f"{{{m.group(1)}}}"), processed
     )
