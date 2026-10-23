@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 DATA_PATH = "BotData/Polls"
+# Vote bursts coalesce into one background write of the latest state (DBX-05).
+_VOTE_WRITE_COALESCE_SECONDS = 0.25
 DEFAULT_BANNER_MESSAGE = "Poll winner: {option} ({votes})"
 _KEYWORD_BODY = re.compile(r"[^\w\-]+", re.UNICODE)
 
@@ -241,6 +243,14 @@ _poll_manager: Optional["PollManager"] = None
 _poll_lock = threading.Lock()
 
 
+def _register_shutdown_flush(name: str, func) -> None:
+    try:
+        from .shutdown import register_shutdown_flush
+    except ImportError:
+        return
+    register_shutdown_flush(name, func)
+
+
 def get_poll_manager() -> "PollManager":
     global _poll_manager
     with _poll_lock:
@@ -259,8 +269,17 @@ class PollManager:
         self._timers: Dict[str, threading.Timer] = {}
         self._generations: Dict[str, int] = {}
         self._last_error: Dict[str, str] = {}
+        # Votes persist through one writer thread so chat never waits on the DB.
+        # Writes are ordered by sequence, so an older payload never lands last.
+        self._write_lock = threading.Lock()
+        self._payload_seq = 0
+        self._written_seq = 0
+        self._vote_dirty = False
+        self._vote_wake = threading.Event()
+        self._vote_writer: Optional[threading.Thread] = None
         if persist:
             self._load()
+            _register_shutdown_flush("poll_votes", self.flush)
 
     def _now(self) -> float:
         return time.time()
@@ -406,8 +425,14 @@ class PollManager:
         return runtime
 
     def _persist(self) -> None:
+        """Write the current state now. Caller holds ``self._lock``."""
         if not self._persist_enabled:
             return
+        self._vote_dirty = False
+        seq, payload = self._build_payload_locked()
+        self._write_payload(seq, payload)
+
+    def _build_payload_locked(self) -> Tuple[int, Dict[str, Any]]:
         payload = {"templates": {}}
         for name, entry in self._templates.items():
             config = self._normalize_config(entry.get("config"))
@@ -423,12 +448,59 @@ class PollManager:
                     "winners": [],
                 }
             payload["templates"][name] = stored
-        try:
-            from .database_manager import set_data
+        self._payload_seq += 1
+        return self._payload_seq, payload
 
-            set_data(DATA_PATH, payload)
-        except Exception as exc:
-            logger.error("Poll config save failed: %s", exc)
+    def _write_payload(self, seq: int, payload: Dict[str, Any]) -> None:
+        with self._write_lock:
+            if seq <= self._written_seq:
+                return
+            self._written_seq = seq
+            try:
+                from .database_manager import set_data
+
+                set_data(DATA_PATH, payload)
+            except Exception as exc:
+                logger.error("Poll config save failed: %s", exc)
+
+    def _schedule_vote_persist_locked(self) -> None:
+        if not self._persist_enabled:
+            return
+        self._vote_dirty = True
+        writer = self._vote_writer
+        if writer is None or not writer.is_alive():
+            writer = threading.Thread(
+                target=self._vote_writer_loop, name="PollVoteWriter", daemon=True
+            )
+            self._vote_writer = writer
+            writer.start()
+        self._vote_wake.set()
+
+    def _vote_writer_loop(self) -> None:
+        while True:
+            self._vote_wake.wait()
+            time.sleep(_VOTE_WRITE_COALESCE_SECONDS)
+            self._vote_wake.clear()
+            try:
+                self._write_pending_votes()
+            except Exception as exc:
+                logger.error("Poll vote save failed: %s", exc)
+
+    def _write_pending_votes(self) -> None:
+        with self._lock:
+            if not self._vote_dirty:
+                return
+            self._vote_dirty = False
+            seq, payload = self._build_payload_locked()
+        self._write_payload(seq, payload)
+
+    def flush(self) -> None:
+        """Write any pending vote state and wait for an in-flight write."""
+        if not self._persist_enabled:
+            return
+        self._write_pending_votes()
+        with self._write_lock:
+            pass
 
     def _cancel_timer(self, template: str) -> None:
         timer = self._timers.pop(template, None)
@@ -742,7 +814,7 @@ class PollManager:
                     accepted = True
                     snapshots.append(self._snapshot_locked(template, self._now()))
             if accepted:
-                self._persist()
+                self._schedule_vote_persist_locked()
         for snapshot in snapshots:
             self._emit("poll_state", snapshot)
         return accepted
