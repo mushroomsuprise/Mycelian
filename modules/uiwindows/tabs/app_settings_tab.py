@@ -251,7 +251,7 @@ class AppSettingsTab:
                 self.ui_elements["ui_scale_percent"].on_value_change(on_scale_change)
             with ui.element("div").classes("aps-preview") as preview:
                 ui.label("Mycelian streaming toolkit").classes("aps-preview-big")
-                ui.label("Alerts, overlays and chat in one place · 0123456789").classes("aps-preview-small")
+                ui.label("Alerts, overlays and chat in one place").classes("aps-preview-small")
             self._font_preview = preview
 
     def _build_notifications(self) -> None:
