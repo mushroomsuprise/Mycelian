@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import html
 import re
 from typing import Dict, Any, Optional, Callable, List, Tuple
 
@@ -15,753 +16,162 @@ from ...theme_manager import (
     generate_preview_css_variables,
     ThemeColors,
 )
-from ..service_brand_icons import SERVICE_BRAND_SVG
 from ...notification_engine import notify
-from ...ui_buttons import apply_flat_btn_props, outline_button, primary_button
+from ...ui_buttons import destructive_button, outline_button, primary_button
 from ...ui_form_controls import form_input, form_select
-from .base import TabBase
+from .theme_mock import build_mock_html
+from .theme_styles import THEME_CSS
 
 
-# ---------------------------------------------------------------------------
-#  Preview CSS - scoped overrides that beat global ui_styles.py selectors
-# ---------------------------------------------------------------------------
-THEME_PREVIEW_CSS = """
-/* ============================================
-   Theme Preview - Container Isolation
-   ============================================ */
-
-body .theme-preview-container,
-body.body--dark .theme-preview-container,
-body:not(.body--dark) .theme-preview-container {
-    background: var(--preview-color-bg-base) !important;
-    color: var(--preview-color-text-primary) !important;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-    font-size: 13px !important;
-    line-height: 1.5 !important;
-    box-sizing: border-box !important;
-    width: 100% !important;
-    border-radius: 6px !important;
-    border: 1px solid var(--preview-color-border-default) !important;
-    overflow: hidden !important;
-}
-
-/* --- Override ALL text elements inside preview --- */
-body .theme-preview-container p,
-body .theme-preview-container span,
-body .theme-preview-container div,
-body .theme-preview-container label,
-body:not(.body--dark) .theme-preview-container p,
-body:not(.body--dark) .theme-preview-container span,
-body:not(.body--dark) .theme-preview-container div,
-body:not(.body--dark) .theme-preview-container label,
-body.body--dark .theme-preview-container p,
-body.body--dark .theme-preview-container span,
-body.body--dark .theme-preview-container div,
-body.body--dark .theme-preview-container label {
-    color: var(--preview-color-text-primary) !important;
-}
-
-/* ============================================
-   Quasar Component Overrides (scoped)
-   ============================================ */
-
-/* Cards */
-body .theme-preview-container .q-card,
-body.body--dark .theme-preview-container .q-card,
-body:not(.body--dark) .theme-preview-container .q-card {
-    background: var(--preview-color-bg-surface) !important;
-    color: var(--preview-color-text-primary) !important;
-    border: 1px solid var(--preview-color-border-subtle) !important;
-    box-shadow: none !important;
-}
-
-/* Input field controls */
-body .theme-preview-container .q-field__control,
-body:not(.body--dark) .theme-preview-container .q-field__control {
-    background: var(--preview-color-bg-surface) !important;
-    color: var(--preview-color-text-primary) !important;
-}
-
-body .theme-preview-container .q-field__native,
-body .theme-preview-container .q-field__input,
-body:not(.body--dark) .theme-preview-container .q-field__native,
-body:not(.body--dark) .theme-preview-container .q-field__input {
-    color: var(--preview-color-text-primary) !important;
-}
-
-body .theme-preview-container .q-field__label,
-body:not(.body--dark) .theme-preview-container .q-field__label {
-    color: var(--preview-color-text-muted) !important;
-}
-
-body .theme-preview-container .q-field__control::before {
-    border-color: var(--preview-color-border-default) !important;
-}
-
-body .theme-preview-container .q-field__control::after {
-    border-color: var(--preview-color-primary) !important;
-}
-
-/* Buttons - base */
-body .theme-preview-container .q-btn,
-body:not(.body--dark) .theme-preview-container .q-btn {
-    color: var(--preview-color-text-primary) !important;
-}
-
-body .theme-preview-container .q-btn--flat,
-body:not(.body--dark) .theme-preview-container .q-btn--flat {
-    color: var(--preview-color-text-primary) !important;
-    background: transparent !important;
-}
-
-/* Toggle / Switch */
-body .theme-preview-container .q-toggle__inner--truthy .q-toggle__track,
-body:not(.body--dark) .theme-preview-container .q-toggle__inner--truthy .q-toggle__track {
-    background-color: var(--preview-color-primary) !important;
-    opacity: 0.8 !important;
-}
-
-body .theme-preview-container .q-toggle__inner--falsy .q-toggle__track,
-body:not(.body--dark) .theme-preview-container .q-toggle__inner--falsy .q-toggle__track {
-    background-color: var(--preview-color-border-default) !important;
-    opacity: 0.5 !important;
-}
-
-body .theme-preview-container .q-toggle__inner--truthy .q-toggle__thumb:after {
-    background-color: var(--preview-color-primary) !important;
-}
-
-/* Checkbox */
-body .theme-preview-container .q-checkbox__bg,
-body:not(.body--dark) .theme-preview-container .q-checkbox__bg {
-    border-color: var(--preview-color-border-default) !important;
-}
-
-body .theme-preview-container .q-checkbox__inner--truthy .q-checkbox__bg {
-    background: var(--preview-color-primary) !important;
-    border-color: var(--preview-color-primary) !important;
-}
-
-/* Select dropdown icon */
-body .theme-preview-container .q-select__dropdown-icon,
-body:not(.body--dark) .theme-preview-container .q-select__dropdown-icon {
-    color: var(--preview-color-text-muted) !important;
-}
-
-/* Icons */
-body .theme-preview-container .q-icon,
-body:not(.body--dark) .theme-preview-container .q-icon {
-    color: var(--preview-color-text-secondary) !important;
-}
-
-/* Separator */
-body .theme-preview-container .q-separator {
-    background: var(--preview-color-border-subtle) !important;
-}
-
-/* Spinner */
-body .theme-preview-container .q-spinner {
-    color: var(--preview-color-primary) !important;
-}
-
-/* ============================================
-   Mock UI - Tab Bar
-   ============================================ */
-
-.mock-main-tab-shell {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-}
-
-.mock-tab-bar-row {
-    display: flex;
-    align-items: flex-end;
-    gap: 4px;
-    background: transparent;
-    padding: 0;
-}
-
-.mock-tab-bar {
-    display: flex;
-    gap: 2px;
-    flex: 1;
-    min-width: 0;
-    align-items: flex-end;
-    overflow: hidden;
-    flex-wrap: wrap;
-    background: transparent;
-    border: none;
-    padding: 0;
-}
-
-.mock-notification-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 32px;
-    margin-bottom: 4px;
-    border-radius: 50%;
-    background: var(--preview-color-bg-surface);
-    border: 1px solid var(--preview-color-border-subtle);
-    color: var(--preview-color-text-secondary) !important;
-    cursor: default;
-    user-select: none;
-}
-
-.mock-notification-btn .icon {
-    font-family: 'Material Icons';
-    font-size: 16px;
-    font-weight: normal;
-    font-style: normal;
-}
-
-.mock-tab {
-    padding: 7px 10px;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--preview-color-text-muted, var(--preview-color-text-secondary)) !important;
-    border-radius: 8px 8px 0 0;
-    border: none;
-    border-bottom: 1px solid var(--preview-color-border-subtle);
-    background: var(--preview-color-bg-surface);
-    white-space: nowrap;
-    cursor: default;
-    user-select: none;
-    position: relative;
-    z-index: 1;
-}
-
-.mock-tab.active {
-    background: var(--preview-color-bg-elevated);
-    border-top: 1px solid var(--preview-color-border-accent);
-    border-left: 1px solid var(--preview-color-border-accent);
-    border-right: 1px solid var(--preview-color-border-accent);
-    border-bottom: none;
-    color: var(--preview-color-primary) !important;
-    font-weight: 600;
-    z-index: 6;
-    margin-bottom: -1px;
-}
-
-.mock-sub-tab-shell {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-}
-
-.mock-sub-tab-bar {
-    display: flex;
-    gap: 2px;
-    align-items: flex-end;
-    flex-wrap: wrap;
-    background: transparent;
-    border-bottom: none;
-    padding: 0;
-    overflow: hidden;
-}
-
-.mock-sub-tab {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    padding: 5px 10px;
-    font-size: 10px;
-    font-weight: 500;
-    color: var(--preview-color-text-muted, var(--preview-color-text-secondary)) !important;
-    border-radius: 6px 6px 0 0;
-    border: none;
-    border-bottom: 1px solid var(--preview-color-border-subtle);
-    background: var(--preview-color-bg-surface);
-    margin-bottom: 0;
-    white-space: nowrap;
-    cursor: default;
-    user-select: none;
-    position: relative;
-    z-index: 1;
-}
-
-.mock-sub-tab.active {
-    background: var(--preview-color-bg-elevated);
-    border-top: 1px solid var(--preview-color-border-accent);
-    border-left: 1px solid var(--preview-color-border-accent);
-    border-right: 1px solid var(--preview-color-border-accent);
-    border-bottom: none;
-    color: var(--preview-color-primary) !important;
-    font-weight: 600;
-    z-index: 6;
-    margin-bottom: -1px;
-}
-
-.mock-sub-tab-content {
-    border: 1px solid var(--preview-color-border-accent);
-    border-radius: 8px;
-    background: var(--preview-color-bg-elevated);
-    padding: 10px;
-    position: relative;
-    z-index: 2;
-    margin-top: -1px;
-    box-sizing: border-box;
-    overflow: hidden;
-}
-
-/* Theme preview: mask top border under active mock tab (Theme is ~8th tab) */
-.mock-sub-tab-shell .mock-sub-tab-content::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 42%;
-    width: 14%;
-    height: 2px;
-    background: var(--preview-color-bg-elevated);
-    z-index: 5;
-    pointer-events: none;
-}
-
-.mock-sub-tab .icon {
-    font-family: 'Material Icons';
-    font-size: 13px;
-    font-weight: normal;
-    font-style: normal;
-}
-
-.mock-sub-tab .brand-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 1.25em;
-    height: 1.25em;
-}
-
-.mock-sub-tab .brand-icon svg {
-    width: 1.25em;
-    height: 1.25em;
-    display: block;
-}
-
-/* ============================================
-   Mock UI - Content Area
-   ============================================ */
-
-.mock-content-area {
-    border: 1px solid var(--preview-color-border-accent);
-    border-radius: 10px;
-    background: var(--preview-color-bg-elevated);
-    padding: 10px;
-    position: relative;
-    z-index: 2;
-    margin-top: -1px;
-    box-sizing: border-box;
-}
-
-/* Theme preview: mask top border under active main tab (Settings is last) */
-.mock-main-tab-shell > .mock-content-area::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 78%;
-    width: 14%;
-    height: 2px;
-    background: var(--preview-color-bg-elevated);
-    z-index: 5;
-    pointer-events: none;
-}
-
-.mock-settings-card {
-    background: var(--preview-color-bg-surface);
-    border: 1px solid var(--preview-color-border-subtle);
-    border-radius: 6px;
-    padding: 10px;
-}
-
-.mock-header-section {
-    background: var(--preview-color-primary-light);
-    border-left: 3px solid var(--preview-color-primary);
-    border-radius: 4px;
-    padding: 8px 10px;
-    margin-bottom: 8px;
-}
-
-.mock-connector-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 5px 0;
-    border-bottom: 1px solid var(--preview-color-border-subtle);
-}
-
-.mock-connector-row:last-child {
-    border-bottom: none;
-}
-
-.mock-status-dot {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    margin-right: 5px;
-}
-
-.mock-status-dot.connected {
-    background: var(--preview-color-success);
-}
-
-.mock-status-dot.idle {
-    background: var(--preview-color-warning);
-}
-
-.mock-status-dot.disconnected {
-    background: var(--preview-color-text-muted);
-}
-
-.mock-nc-preview-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 6px;
-    flex-wrap: wrap;
-}
-
-.mock-nc-chip {
-    font-size: 10px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    border: 1px solid var(--preview-color-border-subtle);
-    background: var(--preview-color-bg-surface);
-    color: var(--preview-color-text-primary);
-    border-left-width: 3px;
-}
-
-.mock-nc-chip.success {
-    border-left-color: var(--preview-color-notify-success);
-}
-
-.mock-nc-chip.warning {
-    border-left-color: var(--preview-color-notify-warning);
-}
-
-.mock-nc-chip.error {
-    border-left-color: var(--preview-color-notify-error);
-}
-
-.mock-nc-chip.info {
-    border-left-color: var(--preview-color-notify-info);
-}
-
-.mock-button-preview-row {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-top: 8px;
-}
-
-body .theme-preview-container .service-status-footer {
-    margin-top: 8px;
-}
-
-/* ============================================
-   Preview Button Styles
-   ============================================ */
-
-/* Neutralize Quasar semantic fills so preview vars win over applied --q-* */
-body .theme-preview-container .q-btn.bg-primary,
-body .theme-preview-container .q-btn.bg-positive,
-body .theme-preview-container .q-btn.bg-negative,
-body .theme-preview-container .q-btn.bg-warning,
-body .theme-preview-container .q-btn.bg-info {
-    background: unset !important;
-}
-
-body .theme-preview-container .q-btn .q-focus-helper {
-    background: transparent !important;
-}
-
-body .theme-preview-container .theme-button-primary,
-body .theme-preview-container .q-btn.theme-button-primary {
-    background: var(--preview-color-primary) !important;
-    color: var(--preview-color-text-inverse) !important;
-    border: none !important;
-    border-radius: 4px !important;
-}
-
-body .theme-preview-container .theme-button-primary .q-btn__content {
-    background: transparent !important;
-    color: var(--preview-color-text-inverse) !important;
-}
-
-body .theme-preview-container .theme-button-secondary,
-body .theme-preview-container .q-btn.theme-button-secondary {
-    background: transparent !important;
-    color: var(--preview-color-primary) !important;
-    border: 1px solid var(--preview-color-border-accent) !important;
-    border-radius: 4px !important;
-}
-
-body .theme-preview-container .theme-button-secondary .q-btn__content {
-    background: transparent !important;
-    color: var(--preview-color-primary) !important;
-}
-
-body .theme-preview-container .theme-button-success,
-body .theme-preview-container .q-btn.theme-button-success {
-    background: var(--preview-color-success) !important;
-    color: var(--preview-color-text-inverse) !important;
-    border: none !important;
-}
-
-body .theme-preview-container .theme-button-success .q-btn__content {
-    background: transparent !important;
-    color: var(--preview-color-text-inverse) !important;
-}
-
-body .theme-preview-container .theme-button-warning,
-body .theme-preview-container .q-btn.theme-button-warning {
-    background: var(--preview-color-warning) !important;
-    color: var(--preview-color-text-inverse) !important;
-    border: none !important;
-}
-
-body .theme-preview-container .theme-button-warning .q-btn__content {
-    background: transparent !important;
-    color: var(--preview-color-text-inverse) !important;
-}
-
-body .theme-preview-container .theme-button-error,
-body .theme-preview-container .q-btn.theme-button-error {
-    background: var(--preview-color-error) !important;
-    color: var(--preview-color-text-inverse) !important;
-    border: none !important;
-}
-
-body .theme-preview-container .theme-button-error .q-btn__content {
-    background: transparent !important;
-    color: var(--preview-color-text-inverse) !important;
-}
-
-/* ============================================
-   Status Badges
-   ============================================ */
-
-.status-badge-preview {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 7px;
-    border-radius: 10px;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.status-badge-preview.success {
-    background: rgba(76, 175, 80, 0.15);
-    color: var(--preview-color-success) !important;
-    border: 1px solid rgba(76, 175, 80, 0.25);
-}
-
-.status-badge-preview.warning {
-    background: rgba(255, 152, 0, 0.15);
-    color: var(--preview-color-warning) !important;
-    border: 1px solid rgba(255, 152, 0, 0.25);
-}
-
-.status-badge-preview.error {
-    background: rgba(244, 67, 54, 0.15);
-    color: var(--preview-color-error) !important;
-    border: 1px solid rgba(244, 67, 54, 0.25);
-}
-
-.status-badge-preview.info {
-    background: rgba(33, 150, 243, 0.15);
-    color: var(--preview-color-info) !important;
-    border: 1px solid rgba(33, 150, 243, 0.25);
-}
-
-/* ============================================
-   Typography Classes
-   ============================================ */
-
-body .theme-preview-container .typography-primary {
-    color: var(--preview-color-text-primary) !important;
-    font-weight: 600;
-}
-
-body .theme-preview-container .typography-secondary {
-    color: var(--preview-color-text-secondary) !important;
-    font-weight: 400;
-}
-
-body .theme-preview-container .typography-muted {
-    color: var(--preview-color-text-muted) !important;
-    font-weight: 400;
-}
-
-/* ============================================
-   Color Swatch Classes (CSS-variable driven)
-   ============================================ */
-
-.preview-swatch {
-    border-radius: 4px;
-    cursor: pointer;
-}
-.theme-preview-container .preview-swatch:hover,
-.theme-editor-panel .preview-swatch:hover {
-    outline: 2px solid var(--preview-color-primary);
-    outline-offset: 1px;
-}
-.preview-swatch-primary { background: var(--preview-color-primary) !important; }
-.preview-swatch-primary-hover { background: var(--preview-color-primary-hover) !important; }
-.preview-swatch-primary-light { background: var(--preview-color-primary-light) !important; }
-.preview-swatch-success { background: var(--preview-color-success) !important; }
-.preview-swatch-warning { background: var(--preview-color-warning) !important; }
-.preview-swatch-error { background: var(--preview-color-error) !important; }
-.preview-swatch-info { background: var(--preview-color-info) !important; }
-.preview-swatch-notify-success { background: var(--preview-color-notify-success) !important; }
-.preview-swatch-notify-warning { background: var(--preview-color-notify-warning) !important; }
-.preview-swatch-notify-error { background: var(--preview-color-notify-error) !important; }
-.preview-swatch-notify-info { background: var(--preview-color-notify-info) !important; }
-.preview-swatch-bg-base { background: var(--preview-color-bg-base) !important; }
-.preview-swatch-bg-elevated { background: var(--preview-color-bg-elevated) !important; }
-.preview-swatch-bg-surface { background: var(--preview-color-bg-surface) !important; }
-.preview-swatch-bg-overlay { background: var(--preview-color-bg-overlay) !important; }
-.preview-swatch-text-primary { background: var(--preview-color-text-primary) !important; }
-.preview-swatch-text-secondary { background: var(--preview-color-text-secondary) !important; }
-.preview-swatch-text-muted { background: var(--preview-color-text-muted) !important; }
-.preview-swatch-text-inverse { background: var(--preview-color-text-inverse) !important; }
-.preview-swatch-border-default { background: var(--preview-color-border-default) !important; }
-.preview-swatch-border-subtle { background: var(--preview-color-border-subtle) !important; }
-.preview-swatch-border-accent { background: var(--preview-color-border-accent) !important; }
-.preview-swatch-hover-overlay { background: var(--preview-color-hover-overlay) !important; }
-.preview-swatch-active-overlay { background: var(--preview-color-active-overlay) !important; }
-.preview-swatch-focus-ring { background: var(--preview-color-focus-ring) !important; }
-
-/* ============================================
-   Grid Helpers
-   ============================================ */
-
-.preview-grid-2col {
-    display: grid;
-    grid-template-columns: 3fr 2fr;
-    gap: 8px;
-}
-
-.preview-color-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
-    gap: 6px;
-}
-
-/* Editor chrome below mock preview — uses live app theme, not preview vars */
-.theme-editor-panel {
-    background: var(--color-bg-surface);
-    border: 1px solid var(--color-border-accent);
-    border-radius: 8px;
-    margin-top: 12px;
-    padding: 12px 14px;
-}
-
-.theme-editor-panel .typography-secondary,
-.theme-editor-panel .typography-muted {
-    color: var(--color-text-secondary) !important;
-}
-
-.theme-editor-panel .editor-section-title {
-    color: var(--color-text-primary);
-    font-size: 0.875rem;
-    font-weight: 600;
-    margin-bottom: 8px;
-}
-
-.palette-toolbar {
-    display: flex;
-    gap: 6px;
-    margin-top: 8px;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-}
-"""
-
-# Color field definitions for the palette editor
-_COLOR_SECTIONS: List[Tuple[str, List[Tuple[str, str]]]] = [
+# Color fields shown in the editor: (group, [(field, label, what it colors)])
+_COLOR_SECTIONS: List[Tuple[str, List[Tuple[str, str, str]]]] = [
     (
-        "Primary Colors",
+        "Primary",
         [
-            ("primary", "Primary"),
-            ("primary_hover", "P-Hover"),
-            ("primary_light", "P-Light"),
+            ("primary", "Primary", "Buttons, switches, active tabs and links"),
+            ("primary_hover", "Hover", "Primary buttons under the pointer"),
+            ("primary_light", "Tint", "Soft highlight behind icons and selected items"),
         ],
     ),
     (
-        "Background Colors",
+        "Backgrounds",
         [
-            ("bg_base", "Base"),
-            ("bg_elevated", "Elevated"),
-            ("bg_surface", "Surface"),
-            ("bg_overlay", "Overlay"),
+            ("bg_base", "Base", "Window background"),
+            ("bg_elevated", "Elevated", "Panels, tab content and the status bar"),
+            ("bg_surface", "Surface", "Cards and inactive tabs"),
+            ("bg_overlay", "Overlay", "Dimmed backdrop behind dialogs"),
         ],
     ),
     (
-        "Text Colors",
+        "Text",
         [
-            ("text_primary", "Text"),
-            ("text_secondary", "Secondary"),
-            ("text_muted", "Muted"),
-            ("text_inverse", "Inverse"),
+            ("text_primary", "Primary", "Headings and main text"),
+            ("text_secondary", "Secondary", "Body text and descriptions"),
+            ("text_muted", "Muted", "Hints, units and timestamps"),
+            ("text_inverse", "Inverse", "Text on some filled buttons and badges"),
         ],
     ),
     (
-        "Border Colors",
+        "Borders",
         [
-            ("border_default", "Border"),
-            ("border_subtle", "B-Subtle"),
-            ("border_accent", "B-Accent"),
+            ("border_default", "Default", "Inputs and outlines"),
+            ("border_subtle", "Subtle", "Card edges and row dividers"),
+            ("border_accent", "Accent", "Active tabs and outlined buttons"),
         ],
     ),
     (
-        "Status Colors",
+        "Status",
         [
-            ("success", "Success"),
-            ("warning", "Warning"),
-            ("error", "Error"),
-            ("info", "Info"),
+            ("success", "Success", "Connected, saved and positive values"),
+            ("warning", "Warning", "Reconnecting and needs attention"),
+            ("error", "Error", "Failures and destructive actions"),
+            ("info", "Info", "Connecting and neutral notices"),
         ],
     ),
     (
-        "Notification Colors",
+        "Notifications",
         [
-            ("notify_success", "N-Success"),
-            ("notify_warning", "N-Warn"),
-            ("notify_error", "N-Err"),
-            ("notify_info", "N-Info"),
+            ("notify_success", "Success", "Pop-up accent for successes"),
+            ("notify_warning", "Warning", "Pop-up accent for warnings"),
+            ("notify_error", "Error", "Pop-up accent for errors"),
+            ("notify_info", "Info", "Pop-up accent for notices"),
         ],
     ),
     (
-        "Interactive States",
+        "Interaction",
         [
-            ("hover_overlay", "Hover"),
-            ("active_overlay", "Active"),
-            ("focus_ring", "Focus"),
+            ("hover_overlay", "Hover", "Rows and items under the pointer"),
+            ("active_overlay", "Pressed", "Selected or pressed items"),
+            ("focus_ring", "Focus ring", "Glow around the focused input"),
         ],
     ),
-]
-
-PALETTE_SWATCHES: List[Tuple[str, str, str]] = [
-    (
-        field_name,
-        label,
-        f"preview-swatch-{field_name.replace('_', '-')}",
-    )
-    for _section_label, fields in _COLOR_SECTIONS
-    for field_name, label in fields
 ]
 
 _PALETTE_COLOR_FIELDS: Tuple[str, ...] = tuple(
-    field_name for field_name, _label, _css in PALETTE_SWATCHES
+    field_name for _group, fields in _COLOR_SECTIONS for field_name, _label, _desc in fields
 )
 
 _MAX_PALETTE_HISTORY = 50
+
+_COLOR_RE = re.compile(
+    r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)(%?)\s*)?\)", re.I
+)
+
+
+def _parse_color(value: str) -> Optional[Tuple[float, float, float, float]]:
+    """Parse ``#rgb``, ``#rrggbb[aa]``, ``rgb()`` or ``rgba()`` into (r, g, b, alpha)."""
+    value = (value or "").strip()
+    if value.startswith("#"):
+        hc = value[1:]
+        if len(hc) in (3, 4):
+            hc = "".join(c * 2 for c in hc)
+        try:
+            r, g, b = int(hc[0:2], 16), int(hc[2:4], 16), int(hc[4:6], 16)
+            a = int(hc[6:8], 16) / 255 if len(hc) == 8 else 1.0
+            return float(r), float(g), float(b), a
+        except ValueError:
+            return None
+    m = _COLOR_RE.fullmatch(value)
+    if not m:
+        return None
+    r, g, b = (max(0.0, min(255.0, float(m.group(i)))) for i in (1, 2, 3))
+    a = 1.0
+    if m.group(4) is not None:
+        a = float(m.group(4)) / (100 if m.group(5) else 1)
+    return r, g, b, max(0.0, min(1.0, a))
+
+
+def _over(fg: Tuple[float, ...], bg: Tuple[float, ...]) -> Tuple[float, float, float, float]:
+    """Composite ``fg`` (with alpha) over an opaque ``bg``."""
+    a = fg[3]
+    return tuple(fg[i] * a + bg[i] * (1 - a) for i in range(3)) + (1.0,)  # type: ignore[return-value]
+
+
+def _luminance(c: Tuple[float, ...]) -> float:
+    def ch(v: float) -> float:
+        v /= 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * ch(c[0]) + 0.7152 * ch(c[1]) + 0.0722 * ch(c[2])
+
+
+def contrast_ratio(fg: Tuple[float, ...], bg: Tuple[float, ...]) -> float:
+    """WCAG contrast ratio between two opaque colors."""
+    hi, lo = sorted((_luminance(fg), _luminance(bg)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def readability_checks(theme: ThemeColors) -> List[Tuple[str, str, str, float, str]]:
+    """(label, fg css, bg css, ratio, rating) for the theme's key text/background pairs.
+
+    Rating is ``ok`` (meets the target), ``low`` (readable but weak) or ``bad``.
+    """
+    dark = (theme.theme_type or "dark") != "light"
+    canvas = (0.0, 0.0, 0.0, 1.0) if dark else (255.0, 255.0, 255.0, 1.0)
+
+    def solid(value: str, under: Tuple[float, ...]) -> Optional[Tuple[float, ...]]:
+        parsed = _parse_color(value)
+        return _over(parsed, under) if parsed else None
+
+    base = solid(theme.bg_base, canvas)
+    surface = solid(theme.bg_surface, base) if base else None
+    primary = solid(theme.primary, surface) if surface else None
+    pairs = (
+        ("Text", theme.text_primary, surface, theme.bg_surface, 4.5),
+        ("Secondary", theme.text_secondary, surface, theme.bg_surface, 4.5),
+        ("Hints", theme.text_muted, surface, theme.bg_surface, 3.0),
+        # Filled buttons (Quasar color=primary) draw white text.
+        ("Buttons", "#ffffff", primary, theme.primary, 4.5),
+    )
+    out = []
+    for label, fg_css, bg, bg_css, target in pairs:
+        fg = solid(fg_css, bg) if bg else None
+        if not fg or not bg:
+            continue
+        ratio = contrast_ratio(fg, bg)
+        rating = "ok" if ratio >= target else ("low" if ratio >= target - 1.5 else "bad")
+        out.append((label, fg_css, bg_css, ratio, rating))
+    return out
 
 
 class ThemeTab:
@@ -774,12 +184,14 @@ class ThemeTab:
         self.preview_container = None
         self.preview_elements = {}
         self._themes_loaded = False
-        self._preview_css_injected: bool = False
         self._working_theme: Optional[ThemeColors] = None
         self._palette_dirty: bool = False
         self.palette_container = None
         self._undo_stack: List[ThemeColors] = []
         self._redo_stack: List[ThemeColors] = []
+        self._vars_el = None
+        self._gallery = None
+        self._chips: Dict[str, Any] = {}
 
     # ----- helper methods -----
     def _get_theme_manager(self):
@@ -787,8 +199,6 @@ class ThemeTab:
         try:
             return get_theme_manager()
         except Exception as e:
-            from nicegui import ui
-
             notify(f"Error accessing theme manager: {str(e)}", type="negative")
             return None
 
@@ -797,8 +207,6 @@ class ThemeTab:
         try:
             return theme_manager.get_available_themes() if theme_manager else []
         except Exception as e:
-            from nicegui import ui
-
             notify(f"Error loading themes: {str(e)}", type="negative")
             return []
 
@@ -810,8 +218,6 @@ class ThemeTab:
                 return None
             return theme_manager.get_theme_by_name(theme_name or self.buffer or "dark")
         except Exception as e:
-            from nicegui import ui
-
             notify(f"Error loading theme: {str(e)}", type="negative")
             return None
 
@@ -823,6 +229,15 @@ class ThemeTab:
             return getattr(theme, attribute, default)
         except Exception:
             return default
+
+    def _applied_theme_name(self) -> str:
+        return getattr(state_manager.get_app_settings(), "current_theme", "dark")
+
+    def _display_name(self, name: Optional[str]) -> str:
+        theme_manager = self._get_theme_manager()
+        if theme_manager and name:
+            return theme_manager.get_theme_display_name(name)
+        return name or "Unknown"
 
     def _sync_working_theme(self) -> None:
         """Copy the selected theme into the in-memory working editor state."""
@@ -864,30 +279,22 @@ class ThemeTab:
     def _refresh_dirty_from_palette(self) -> None:
         """Sync dirty flags from whether the palette differs from disk / app state."""
         self._palette_dirty = not self._palette_matches_disk()
-        app_settings = state_manager.get_app_settings()
-        saved_theme = getattr(app_settings, "current_theme", "dark")
-        self.dirty = self._palette_dirty or self.buffer != saved_theme
+        self.dirty = self._palette_dirty or self.buffer != self._applied_theme_name()
 
     def _update_palette_toolbar_state(self) -> None:
         """Enable or disable undo, redo, and discard palette controls."""
-        undo_btn = self.ui_elements.get("palette_undo_btn")
-        redo_btn = self.ui_elements.get("palette_redo_btn")
-        discard_btn = self.ui_elements.get("palette_discard_btn")
-        if undo_btn is not None:
-            if self._undo_stack:
-                undo_btn.props(remove="disable")
+        for key, enabled in (
+            ("palette_undo_btn", bool(self._undo_stack)),
+            ("palette_redo_btn", bool(self._redo_stack)),
+            ("palette_discard_btn", self._palette_dirty),
+        ):
+            btn = self.ui_elements.get(key)
+            if btn is None:
+                continue
+            if enabled:
+                btn.props(remove="disable")
             else:
-                undo_btn.props("disable")
-        if redo_btn is not None:
-            if self._redo_stack:
-                redo_btn.props(remove="disable")
-            else:
-                redo_btn.props("disable")
-        if discard_btn is not None:
-            if self._palette_dirty:
-                discard_btn.props(remove="disable")
-            else:
-                discard_btn.props("disable")
+                btn.props("disable")
 
     def _undo_palette(self) -> None:
         """Revert the last palette color change."""
@@ -925,26 +332,6 @@ class ThemeTab:
     def _mark_palette_dirty(self) -> None:
         self._refresh_dirty_from_palette()
 
-    def _update_theme_type_label(self) -> None:
-        """Refresh the theme type badge next to the combobox."""
-        if "theme_type_label" not in self.ui_elements:
-            return
-        theme = self._get_preview_theme()
-        theme_type = "Unknown"
-        display_name = "Unknown"
-        if theme:
-            if hasattr(theme, "theme_type") and theme.theme_type:
-                theme_type = theme.theme_type.capitalize()
-            display_name = (
-                theme.display_name
-                or theme.name
-                or self.buffer
-                or "Unknown"
-            )
-        self.ui_elements["theme_type_label"].text = (
-            f"{theme_type} ({display_name})"
-        )
-
     def _build_theme_select_options(self, available_themes):
         """Build {internal_name: display_label} dict for the theme dropdown."""
         return {
@@ -952,46 +339,12 @@ class ThemeTab:
             for name, display_name in available_themes
         }
 
-    def _update_theme_select_options(self, available_themes=None):
-        """Update theme select dropdown options safely"""
-        try:
-            theme_manager = self._get_theme_manager()
-            if not theme_manager:
-                return False
-
-            available_themes = available_themes or self._get_available_themes(
-                theme_manager
-            )
-
-            if "theme_select" not in self.ui_elements:
-                return False
-
-            select_options = self._build_theme_select_options(available_themes)
-            self.ui_elements["theme_select"].options = select_options
-
-            # Safely set current value if valid
-            available_values = list(select_options)
-            if self.buffer and self.buffer in available_values:
-                self.ui_elements["theme_select"].value = self.buffer
-            elif available_values:
-                # Set to first available theme if current buffer is invalid
-                self.ui_elements["theme_select"].value = available_values[0]
-
-            return True
-        except Exception as e:
-            from nicegui import ui
-
-            notify(f"Error updating theme options: {str(e)}", type="negative")
-            return False
-
     # ----- lifecycle -----
     def on_enter(self) -> None:
         """Refresh themes list and apply preview when tab is entered"""
         self._load_from_state()
         self._refresh_theme_list()
         self._sync_working_theme()
-        self._update_delete_button_state()
-        self._update_theme_type_label()
         self._themes_loaded = True
         self._apply_preview()
 
@@ -1000,384 +353,306 @@ class ThemeTab:
         pass
 
     # ------------------------------------------------------------------ #
-    #  Build - theme selection controls                                    #
+    #  Build                                                               #
     # ------------------------------------------------------------------ #
     def build(self, parent_container) -> None:
-        """Build theme selection UI with live preview"""
+        """Build theme picker, live mock preview and color editor."""
+        from ...help_system.help_render import (
+            inject_page_stylesheet,
+            promote_color_importance,
+            scope_selectors,
+        )
+
+        inject_page_stylesheet(
+            "mycelian-theme-tab", promote_color_importance(scope_selectors(THEME_CSS, ".thm"))
+        )
         self._load_from_state()
 
-        # Inject static preview CSS once
-        ui.add_head_html(f"<style>{THEME_PREVIEW_CSS}</style>")
-
-        # Inject initial preview CSS variables so the first render has correct colors
-        initial_theme = self._get_current_theme()
-        if initial_theme:
-            initial_vars = generate_preview_css_variables(initial_theme)
-            ui.add_head_html(
-                f'<style id="theme-preview-vars">{initial_vars}</style>'
-            )
+        theme_manager = self._get_theme_manager()
+        available_themes = self._get_available_themes(theme_manager)
+        select_options = self._build_theme_select_options(available_themes)
+        if not (self.buffer and self.buffer in select_options) and select_options:
+            self.buffer = next(iter(select_options))
+        self._sync_working_theme()
 
         with parent_container:
-            with ui.column().classes("w-full gap-3 settings-tab-content p-3"):
-                # Theme selection row - compact
-                with ui.card().classes("w-full p-3 mb-2 settings-tab-card"):
-                    with ui.row().classes("w-full items-center gap-3"):
-                        # Load themes and create select element
-                        theme_manager = self._get_theme_manager()
-                        available_themes = self._get_available_themes(theme_manager)
-                        select_options = self._build_theme_select_options(
-                            available_themes
-                        )
+            with ui.element("div").classes("thm"):
+                self._build_picker_card(select_options, available_themes)
+                self._build_preview_card()
+                self._build_colors_card()
+                with ui.element("div").classes("thm-actions"):
+                    self.ui_elements["_status_label"] = ui.html("", sanitize=False).classes("thm-status")
+                    outline_button("Discard", self.discard, icon="undo")
+                    primary_button("Apply", self.save, icon="check")
 
-                        # Determine valid initial value
-                        valid_value = None
-                        if self.buffer and self.buffer in select_options:
-                            valid_value = self.buffer
-                        elif select_options:
-                            valid_value = next(iter(select_options))
-                            self.buffer = valid_value
+        self._apply_preview()
 
-                        # Theme selector
-                        self.ui_elements["theme_select"] = form_select(
-                            tooltip="Color theme applied across the Mycelian interface",
-                            options=select_options,
-                            value=valid_value,
-                            classes="flex-1",
-                            on_change=lambda e: self._on_theme_change(e.value),
-                        )
+    @staticmethod
+    def _card_head(icon: str, title: str, subtitle: str):
+        head = ui.element("div").classes("thm-card-head")
+        with head:
+            ui.html(f'<span class="thm-icon">{icon}</span>', sanitize=False).classes("thm-card-icon")
+            with ui.element("div").classes("thm-card-text"):
+                ui.label(title).classes("thm-card-title")
+                ui.label(subtitle).classes("thm-card-sub")
+        return head
 
-                        # Theme type badge (inline)
-                        current_theme = self._get_current_theme()
-                        theme_type = "Unknown"
-                        display_name = "Unknown"
-                        if current_theme:
-                            if (
-                                hasattr(current_theme, "theme_type")
-                                and current_theme.theme_type
-                            ):
-                                theme_type = current_theme.theme_type.capitalize()
-                            if (
-                                hasattr(current_theme, "display_name")
-                                and current_theme.display_name
-                            ):
-                                display_name = current_theme.display_name
-                            elif (
-                                hasattr(current_theme, "name")
-                                and current_theme.name
-                            ):
-                                for name, disp in available_themes:
-                                    if name == current_theme.name:
-                                        display_name = disp
-                                        break
-
-                        self.ui_elements["theme_type_label"] = ui.label(
-                            f"{theme_type} ({display_name})"
-                        ).classes("text-sm font-medium")
-
-                        # Action buttons
-                        ui.button(
-                            "Apply", on_click=self.save, icon="check"
-                        ).props("color=primary dense").classes("px-3")
-
-                        outline_button(
-                            "Save as",
-                            self._open_save_as_dialog,
-                            icon="drive_file_rename_outline",
-                            extra_classes="px-3 dense",
-                        )
-
-                        delete_btn = ui.button(
-                            "Delete",
-                            on_click=self._confirm_delete_theme,
-                            icon="delete",
-                        ).props("color=negative outline dense").classes("px-3")
-                        if self.buffer in PROTECTED_THEMES:
-                            delete_btn.props("disable")
-                        self.ui_elements["delete_btn"] = delete_btn
-
-                self._sync_working_theme()
-
-                with ui.element("div").classes("w-full theme-preview-container"):
-                    self.preview_container = ui.element("div").classes("w-full")
-                    self._build_preview_ui(self.preview_container)
-
-                self.palette_container = ui.element("div").classes(
-                    "w-full theme-editor-panel"
+    def _build_picker_card(self, select_options, available_themes) -> None:
+        with ui.element("div").classes("thm-card"):
+            self._card_head(
+                "palette",
+                "Theme",
+                "Pick a theme to preview it below. Nothing changes until you click Apply.",
+            )
+            with ui.element("div").classes("thm-picker"):
+                self.ui_elements["theme_select"] = form_select(
+                    tooltip="Color theme applied across the Mycelian interface",
+                    options=select_options,
+                    value=self.buffer if self.buffer in select_options else None,
+                    classes="w-72",
+                    on_change=lambda e: self._on_theme_change(e.value),
                 )
-                self._build_palette_section()
+                self.ui_elements["theme_type_label"] = ui.html("", sanitize=False).classes(
+                    "flex items-center gap-2"
+                )
+                ui.element("div").classes("thm-spacer")
+                outline_button(
+                    "Save as",
+                    self._open_save_as_dialog,
+                    icon="drive_file_rename_outline",
+                )
+                self.ui_elements["delete_btn"] = destructive_button(
+                    "Delete", self._confirm_delete_theme, icon="delete"
+                )
+            self._gallery = ui.element("div").classes("thm-gallery")
+            self._render_gallery(available_themes)
 
-    # ------------------------------------------------------------------ #
-    #  Mock UI Preview                                                     #
-    # ------------------------------------------------------------------ #
-    def _build_preview_ui(self, container):
-        """Build a mock UI preview that mirrors the actual app layout"""
-        if not self.buffer:
+    def _render_gallery(self, available_themes=None) -> None:
+        """One clickable thumbnail per theme; clicking selects it in the dropdown."""
+        if self._gallery is None:
             return
+        theme_manager = self._get_theme_manager()
+        if available_themes is None:
+            available_themes = self._get_available_themes(theme_manager)
+        applied = self._applied_theme_name()
+        self._gallery.clear()
+        self._chips = {}
+        with self._gallery:
+            for name, display_name in available_themes:
+                theme = theme_manager.get_theme_by_name(name) if theme_manager else None
+                if not theme:
+                    continue
+                chip = ui.element("div").on("click", lambda _, n=name: self._select_theme(n))
+                chip.classes("thm-chip")
+                with chip:
+                    ui.html(self._chip_html(theme, display_name, name == applied), sanitize=False).classes(
+                        "contents"
+                    )
+                self._chips[name] = chip
+        self._update_gallery_selection()
 
-        current_theme = self._get_preview_theme()
-        if not current_theme:
-            return
+    @staticmethod
+    def _chip_html(theme: ThemeColors, display_name: str, applied: bool) -> str:
+        c = {k: html.escape(getattr(theme, k, "") or "", quote=True) for k in (
+            "bg_base", "bg_surface", "bg_elevated", "text_primary", "text_muted", "primary", "border_subtle"
+        )}
+        mode = "light_mode" if theme.theme_type == "light" else "dark_mode"
+        tick = '<span class="thm-icon thm-chip-applied" title="Current theme">check_circle</span>' if applied else ""
+        return (
+            f'<div class="thm-chip-thumb" style="background:{c["bg_base"]}">'
+            f'<div class="thm-chip-side" style="background:{c["bg_surface"]}"></div>'
+            f'<div class="thm-chip-main" style="background:{c["bg_elevated"]};border:1px solid {c["border_subtle"]}">'
+            f'<div class="thm-chip-line" style="background:{c["text_primary"]};width:70%"></div>'
+            f'<div class="thm-chip-line" style="background:{c["text_muted"]};width:50%"></div>'
+            f'<div class="thm-chip-btn" style="background:{c["primary"]}"></div></div></div>'
+            f'<div class="thm-chip-foot"><span class="thm-icon thm-chip-mode">{mode}</span>'
+            f'<span class="thm-chip-name">{html.escape(display_name or theme.name)}</span>{tick}</div>'
+        )
 
-        with container:
-            with ui.element("div").classes("mock-main-tab-shell"):
-                # 1. Mock app tab bar
-                self._build_mock_tab_bar()
+    def _update_gallery_selection(self) -> None:
+        for name, chip in self._chips.items():
+            if name == self.buffer:
+                chip.classes(add="is-selected")
+            else:
+                chip.classes(remove="is-selected")
 
-                # 2. Mock content area with settings sub-tabs and content
-                with ui.element("div").classes("mock-content-area"):
-                    with ui.element("div").classes("mock-sub-tab-shell"):
-                        self._build_mock_sub_tabs()
+    def _select_theme(self, name: str) -> None:
+        select = self.ui_elements.get("theme_select")
+        if select is not None and select.value != name:
+            select.value = name  # fires on_change → _on_theme_change
 
-                        with ui.element("div").classes("mock-sub-tab-content"):
-                            with ui.element("div").classes("preview-grid-2col"):
-                                self._build_mock_settings_card()
-                                self._build_mock_showcase_card()
+    def _build_preview_card(self) -> None:
+        with ui.element("div").classes("thm-card"):
+            with self._card_head("visibility", "Preview", "How Mycelian looks with the selected theme and color edits."):
+                self.ui_elements["_preview_badge"] = ui.html("", sanitize=False)
+            with ui.element("div").classes("thm-mock-wrap"):
+                minimal = False
+                try:
+                    minimal = bool(getattr(state_manager.get_app_settings(), "status_footer_minimal", False))
+                except Exception:
+                    minimal = False
+                with ui.element("div").classes("thm-mock theme-preview-container") as mock:
+                    self._vars_el = ui.html("", sanitize=False).classes("hidden")
+                    ui.html(build_mock_html(minimal), sanitize=False).classes("contents")
+                self.preview_container = mock
 
-                    self._build_mock_status_footer()
+    def _build_colors_card(self) -> None:
+        with ui.element("div").classes("thm-card"):
+            self._card_head(
+                "format_color_fill",
+                "Colors",
+                "Click a color to change it. Edits show in the preview right away.",
+            )
+            self.ui_elements["_readability"] = ui.html("", sanitize=False).classes("thm-read")
+            with ui.element("div").classes("thm-card-body").style("padding-bottom: 12px"):
+                self.ui_elements["_palette_note"] = ui.html("", sanitize=False).classes("thm-note")
+            self.palette_container = ui.element("div").classes("thm-groups")
+            with ui.element("div").classes("thm-toolbar"):
+                self.ui_elements["palette_undo_btn"] = outline_button("Undo", self._undo_palette, icon="undo")
+                self.ui_elements["palette_redo_btn"] = outline_button("Redo", self._redo_palette, icon="redo")
+                self.ui_elements["palette_discard_btn"] = outline_button(
+                    "Reset colors", self._discard_palette_edits, icon="restore"
+                )
+            self._update_palette_toolbar_state()
 
     def _build_palette_section(self) -> None:
-        """Build the color palette and editor toolbar below the mock preview."""
-        if not self.palette_container:
+        """(Re)build the grouped color swatches from the working theme."""
+        if self.palette_container is None:
             return
-        current_theme = self._get_preview_theme()
-        if not current_theme:
+        theme = self._get_preview_theme()
+        if not theme:
             return
+        disk = self._get_current_theme(self.buffer)
         self.palette_container.clear()
         with self.palette_container:
-            ui.label("Edit theme colors").classes("editor-section-title")
-            ui.label(
-                "Click a swatch to change a color. Changes preview above until you Apply."
-            ).classes("text-xs typography-secondary mb-2")
-            self._build_color_palette(current_theme)
-            self._build_palette_toolbar()
+            for group, fields in _COLOR_SECTIONS:
+                with ui.element("div").classes("thm-group"):
+                    ui.label(group).classes("thm-group-title")
+                    with ui.element("div").classes("thm-swatches"):
+                        for field_name, label, desc in fields:
+                            self._build_swatch(theme, disk, group, field_name, label, desc)
 
-    def _build_mock_tab_bar(self):
-        """Build mock top-level tab bar matching the real app"""
-        tabs = [
-            "Activity Feed",
-            "Alerts",
-            "Source Settings",
-            "Source Controls",
-            "Connectors",
-            "Chatbot",
-            "Spore Studio",
-            "Settings",
-        ]
-        with ui.element("div").classes("mock-tab-bar-row"):
-            with ui.element("div").classes("mock-tab-bar"):
-                for tab_name in tabs:
-                    active = "active" if tab_name == "Settings" else ""
-                    with ui.element("div").classes(f"mock-tab {active}"):
-                        ui.html(tab_name)
-            with ui.element("div").classes("mock-notification-btn"):
-                ui.html(
-                    '<span class="icon">notifications</span>', sanitize=False
+    def _build_swatch(self, theme, disk, group, field_name, label, desc) -> None:
+        raw = getattr(theme, field_name, "") or ""
+        edited = disk is not None and raw != (getattr(disk, field_name, "") or "")
+        # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
+        swatch = ui.element("div").on(
+            "click", lambda _, fn=field_name, g=group, lb=label: self._open_palette_color_picker(fn, f"{g} · {lb}")
+        )
+        swatch.classes("thm-swatch is-edited" if edited else "thm-swatch")
+        swatch.tooltip(desc + (" (edited)" if edited else ""))
+        safe = html.escape(raw, quote=True)
+        with swatch:
+            ui.html(
+                f'<span class="thm-swatch-chip"><span class="thm-swatch-fill" style="background:{safe}"></span></span>'
+                f'<span class="thm-swatch-text"><span class="thm-swatch-label">{html.escape(label)}'
+                f'<span class="thm-swatch-dot"></span></span>'
+                f'<span class="thm-swatch-value">{html.escape(self._describe_color(raw))}</span></span>',
+                sanitize=False,
+            ).classes("contents")
+
+    def _describe_color(self, raw: str) -> str:
+        parsed = _parse_color(raw)
+        if not parsed:
+            return raw or "not set"
+        hex_value = self._convert_to_hex(raw).upper()
+        alpha = parsed[3]
+        return hex_value if alpha >= 0.999 else f"{hex_value} · {round(alpha * 100)}%"
+
+    # ------------------------------------------------------------------ #
+    #  Derived view state                                                  #
+    # ------------------------------------------------------------------ #
+    def _refresh_view(self) -> None:
+        """Tags, badges, notes and status text that follow the selection and edits."""
+        theme = self._get_preview_theme()
+        applied = self._applied_theme_name()
+        name = self._display_name(self.buffer)
+        safe_name = html.escape(name)
+        protected = self.buffer in PROTECTED_THEMES
+        is_current = self.buffer == applied and not self._palette_dirty
+
+        type_el = self.ui_elements.get("theme_type_label")
+        if type_el is not None and theme:
+            light = theme.theme_type == "light"
+            mode = (
+                f'<span class="thm-tag"><span class="thm-icon">{"light_mode" if light else "dark_mode"}</span>'
+                f'{"Light" if light else "Dark"}</span>'
+            )
+            origin = (
+                '<span class="thm-tag"><span class="thm-icon">lock</span>Built-in</span>'
+                if protected
+                else '<span class="thm-tag is-accent"><span class="thm-icon">brush</span>Editable</span>'
+            )
+            type_el.set_content(mode + origin)
+
+        badge = self.ui_elements.get("_preview_badge")
+        if badge is not None:
+            if is_current:
+                badge.set_content(
+                    '<span class="thm-state is-ok"><span class="thm-icon">check_circle</span>Current theme</span>'
+                )
+            else:
+                badge.set_content(
+                    '<span class="thm-state is-warn"><span class="thm-icon">visibility</span>Preview only</span>'
                 )
 
-    def _build_mock_sub_tabs(self):
-        """Build mock settings sub-tab bar matching build_ui_v2 order and icons."""
-        sub_tabs = [
-            ("brand", "twitch", "Twitch"),
-            ("brand", "obs", "OBS"),
-            ("brand", "psn", "PSN"),
-            ("brand", "spotify", "Spotify"),
-            ("brand", "youtube", "YouTube"),
-            ("brand", "streamlabs", "Streamlabs"),
-            ("brand", "streamelements", "StreamElements"),
-            ("material", "memory", "Game Hooks"),
-            ("material", "storage", "Database"),
-            ("material", "analytics", "Statistics"),
-            ("material", "palette", "Theme"),
-            ("material", "tune", "App Settings"),
-            ("material", "info", "About"),
-        ]
-        with ui.element("div").classes("mock-sub-tab-bar"):
-            for icon_kind, icon_key, tab_label in sub_tabs:
-                active = "active" if tab_label == "Theme" else ""
-                with ui.element("div").classes(f"mock-sub-tab {active}"):
-                    if icon_kind == "brand":
-                        svg = SERVICE_BRAND_SVG[icon_key]
-                        ui.html(
-                            f'<span class="brand-icon">{svg}</span>{tab_label}',
-                            sanitize=False,
-                        )
-                    else:
-                        ui.html(
-                            f'<span class="icon">{icon_key}</span>{tab_label}',
-                            sanitize=False,
-                        )
-
-    def _build_mock_settings_card(self):
-        """Build mock settings card with form elements"""
-        with ui.element("div").classes("mock-settings-card"):
-            # Header section (mimics real app header-section)
-            with ui.element("div").classes("mock-header-section"):
-                ui.label("Application Settings").classes(
-                    "text-sm font-semibold typography-primary"
+        note = self.ui_elements.get("_palette_note")
+        if note is not None:
+            if protected:
+                if self._palette_dirty:
+                    note.classes(add="is-warn")
+                else:
+                    note.classes(remove="is-warn")
+                note.set_content(
+                    f'<span class="thm-icon">{"warning" if self._palette_dirty else "lock"}</span><span>'
+                    f"<b>{safe_name}</b> is built in, so its colors can't be overwritten. "
+                    "Edit freely, then use <b>Save as</b> to keep your colors as a new theme.</span>"
                 )
-                ui.label("Configure your app preferences").classes(
-                    "text-xs typography-secondary"
-                ).style("margin-top: 2px;")
+            else:
+                note.classes(remove="is-warn")
+                note.set_content(
+                    f'<span class="thm-icon">info</span><span>Color edits to <b>{safe_name}</b> are saved '
+                    "to the theme when you click <b>Apply</b>.</span>"
+                )
 
-            # Form elements
-            with ui.column().classes("gap-2 w-full"):
-                ui.input(
-                    label="Stream Title",
-                    placeholder="Enter stream title...",
-                ).classes("form-input-preview w-full").props("dense")
+        read = self.ui_elements.get("_readability")
+        if read is not None and theme:
+            read.set_content(self._readability_html(theme))
 
-                ui.select(
-                    options=["English", "Spanish", "French"],
-                    label="Language",
-                    value="English",
-                ).classes("form-input-preview w-full").props("dense")
+        status = self.ui_elements.get("_status_label")
+        if status is not None:
+            if self._palette_dirty and protected:
+                text = "Unsaved color changes. Use <b>Save as</b> to keep them."
+            elif self._palette_dirty:
+                text = f"Unsaved color changes to <b>{safe_name}</b>. Apply saves them."
+            elif self.buffer != applied:
+                text = f"Previewing <b>{safe_name}</b>. Click Apply to use it."
+            else:
+                text = f"<b>{safe_name}</b> is your current theme."
+            status.set_content(f'<span class="thm-dot"></span><span>{text}</span>')
+            if is_current:
+                status.classes(remove="is-dirty")
+            else:
+                status.classes(add="is-dirty")
 
-                with ui.row().classes("items-center gap-4"):
-                    ui.switch("Auto-connect", value=True)
-                    ui.checkbox("Enable notifications", value=True)
-
-    def _build_mock_showcase_card(self):
-        """Mock card for notification chips and button variants."""
-        with ui.element("div").classes("mock-settings-card"):
-            ui.label("UI samples").classes(
-                "text-sm font-semibold typography-primary"
-            ).style("margin-bottom: 6px;")
-            with ui.element("div").classes("mock-nc-preview-row"):
-                for cls, label in (
-                    ("success", "Saved"),
-                    ("info", "Info"),
-                    ("warning", "Warning"),
-                    ("error", "Error"),
-                ):
-                    with ui.element("div").classes(f"mock-nc-chip {cls}"):
-                        ui.html(label)
-            with ui.element("div").classes("mock-button-preview-row"):
-                for label, cls in (
-                    ("Primary", "theme-button-primary"),
-                    ("Secondary", "theme-button-secondary"),
-                    ("Success", "theme-button-success"),
-                    ("Warning", "theme-button-warning"),
-                    ("Error", "theme-button-error"),
-                ):
-                    btn = ui.button(label).classes(cls).props("dense size=sm")
-                    apply_flat_btn_props(btn, dense=True)
-
-    def _build_mock_status_footer(self):
-        """Mock connection status footer matching the real app footer."""
-        from ...dataobjects import state_manager
-        from ...notification_engine import (
-            _SERVICE_LABELS,
-            footer_status_display,
-            footer_status_tier,
-        )
-
-        minimal = False
-        try:
-            settings = state_manager.get_app_settings()
-            minimal = bool(getattr(settings, "status_footer_minimal", False))
-        except Exception:
-            minimal = False
-        footer_classes = "service-status-footer w-full"
-        if minimal:
-            footer_classes += " service-status-footer--minimal"
-
-        # Raw statuses, so the preview uses the same labels and colors as the live footer.
-        footer_samples = (
-            ("internet", "Online"),
-            ("webengine", "Running"),
-            ("twitch", "Connected"),
-            ("obs", "Connecting"),
-            ("psn", "Offline"),
-            ("spotify", "Disconnected"),
-            ("youtube", "Partial (1/2 channels)"),
-            ("streamlabs", "Connected"),
-            ("streamelements", "Token expired"),
-        )
-        with ui.element("div").classes(footer_classes):
-            with ui.element("div").classes("service-status-footer-inner w-full"):
-                for key, status_raw in footer_samples:
-                    badge_label = footer_status_display(key, status_raw)
-                    tier = footer_status_tier(key, status_raw)
-                    svg = SERVICE_BRAND_SVG.get(key, "")
-                    with ui.element("div").classes(
-                        f"service-status-item service-status-tier-{tier}"
-                    ):
-                        if svg:
-                            ui.html(svg, tag="span", sanitize=False).classes(
-                                "service-status-brand-icon"
-                            )
-                        ui.html(
-                            _SERVICE_LABELS.get(key, key),
-                            tag="span",
-                            sanitize=False,
-                        ).classes("service-status-name")
-                        with ui.element("div").classes(
-                            "service-status-status-cluster"
-                        ):
-                            ui.element("span").classes(
-                                f"service-status-dot {tier}"
-                            )
-                            with ui.element("div").classes(
-                                f"service-status-badge {tier}"
-                            ):
-                                ui.html(
-                                    badge_label,
-                                    tag="span",
-                                    sanitize=False,
-                                ).classes("service-status-badge-label")
-
-    def _build_color_palette(self, current_theme):
-        """Build clickable color palette swatches."""
-        ui.label("Color swatches").classes(
-            "text-xs font-semibold typography-secondary"
-        ).style("margin-bottom: 6px;")
-
-        with ui.element("div").classes("preview-color-grid"):
-            for field_name, label, swatch_class in PALETTE_SWATCHES:
-                raw_color = getattr(current_theme, field_name, "") or ""
-                hex_color = self._convert_to_hex(raw_color)
-                border = self._get_contrast_border_color(hex_color)
-                with ui.column().classes("items-center gap-0"):
-                    # Register click before style so NiceGUI 3.x does not treat it as a late listener.
-                    swatch = ui.element("div").on(
-                        "click",
-                        lambda _, fn=field_name: self._open_palette_color_picker(fn),
-                    )
-                    swatch.classes(f"preview-swatch {swatch_class}")
-                    swatch.style(
-                        f"width: 100%; height: 24px; border-radius: 3px;"
-                        f"background: {raw_color or hex_color};"
-                        f"border: 1px solid {border};"
-                    )
-                    ui.label(label).classes("typography-muted").style(
-                        "font-size: 9px; margin-top: 2px;"
-                    )
-
-    def _build_palette_toolbar(self) -> None:
-        """Undo, redo, and discard controls below the color palette."""
-        with ui.row().classes("palette-toolbar w-full"):
-            undo_btn = outline_button(
-                "Undo",
-                self._undo_palette,
-                icon="undo",
-                extra_classes="px-3 py-1",
-            )
-            redo_btn = outline_button(
-                "Redo",
-                self._redo_palette,
-                icon="redo",
-                extra_classes="px-3 py-1",
-            )
-            discard_btn = outline_button(
-                "Discard",
-                self._discard_palette_edits,
-                icon="restore",
-                extra_classes="px-3 py-1",
-            )
-            self.ui_elements["palette_undo_btn"] = undo_btn
-            self.ui_elements["palette_redo_btn"] = redo_btn
-            self.ui_elements["palette_discard_btn"] = discard_btn
+        self._update_gallery_selection()
+        self._update_delete_button_state()
         self._update_palette_toolbar_state()
+
+    @staticmethod
+    def _readability_html(theme: ThemeColors) -> str:
+        icons = {"ok": "check_circle", "low": "error_outline", "bad": "cancel"}
+        words = {"ok": "Easy to read", "low": "Low contrast", "bad": "Hard to read"}
+        parts = []
+        for label, fg, bg, ratio, rating in readability_checks(theme):
+            parts.append(
+                f'<span class="thm-read-item is-{rating}" title="{words[rating]}">'
+                f'<span class="thm-read-sample" style="color:{html.escape(fg, quote=True)};'
+                f'background:{html.escape(bg, quote=True)}">Aa</span>{label}'
+                f'<span class="thm-read-ratio">{ratio:.1f}:1</span>'
+                f'<span class="thm-icon">{icons[rating]}</span></span>'
+            )
+        return "".join(parts)
 
     # ------------------------------------------------------------------ #
     #  Theme list & change handling                                        #
@@ -1387,57 +662,27 @@ class ThemeTab:
         self._refresh_theme_list_after_change(select_name=self.buffer)
 
     def _on_theme_change(self, new_value):
-        """Handle theme selection change with enhanced live preview"""
+        """Handle theme selection change with live preview"""
         if new_value and new_value != self.buffer:
             self.buffer = new_value
             self._sync_working_theme()
             self._refresh_dirty_from_palette()
-            self._update_delete_button_state()
-            self._update_theme_type_label()
             self._apply_preview()
 
-    # ------------------------------------------------------------------ #
-    #  Preview CSS injection                                               #
-    # ------------------------------------------------------------------ #
     def _apply_preview(self):
-        """Apply live preview by updating CSS variables and rebuilding the mock UI.
+        """Point the mock at the working theme's colors and refresh the editor.
 
-        Uses a single <style> element updated via JavaScript to avoid
-        accumulating style tags.  The mock UI is then cleared and rebuilt
-        so all elements pick up the new CSS variable values.
+        The mock's markup never changes; only the ``--preview-color-*`` variables do.
         """
-        if not self.buffer or not self.preview_container:
+        if not self.buffer:
             return
-
         theme = self._get_preview_theme()
         if not theme:
             return
-
-        # Generate preview CSS variables scoped to .theme-preview-container
-        preview_css = generate_preview_css_variables(theme)
-
-        # Escape for JS template literal
-        escaped_css = preview_css.replace("\\", "\\\\").replace(
-            "`", "\\`"
-        ).replace("${", "\\${")
-
-        # Update (or create) a single style element for preview variables
-        ui.run_javascript(f"""
-            (function() {{
-                var s = document.getElementById('theme-preview-vars');
-                if (!s) {{
-                    s = document.createElement('style');
-                    s.id = 'theme-preview-vars';
-                    document.head.appendChild(s);
-                }}
-                s.textContent = `{escaped_css}`;
-            }})();
-        """)
-
-        # Rebuild mock preview and refresh palette swatches
-        self.preview_container.clear()
-        self._build_preview_ui(self.preview_container)
+        if self._vars_el is not None:
+            self._vars_el.set_content(f"<style>{generate_preview_css_variables(theme)}</style>")
         self._build_palette_section()
+        self._refresh_view()
 
     # ----- buffer helpers -----
     def _load_from_state(self) -> None:
@@ -1494,6 +739,9 @@ class ThemeTab:
                 timeout=3000,
             )
             self.dirty = False
+            self._render_gallery()
+            self._build_palette_section()
+            self._refresh_view()
         except Exception as e:
             notify(f"Error applying theme: {str(e)}", type="negative")
 
@@ -1506,8 +754,6 @@ class ThemeTab:
                 self.ui_elements["theme_select"].value = self.buffer
 
             self._sync_working_theme()
-            self._update_delete_button_state()
-            self._update_theme_type_label()
             self._apply_preview()
             self.dirty = False
         except Exception as e:
@@ -1542,8 +788,8 @@ class ThemeTab:
             self.ui_elements["theme_select"].value = first
             self.buffer = first
         self.ui_elements["theme_select"].update()
+        self._render_gallery(available_themes)
         self._update_delete_button_state()
-        self._update_theme_type_label()
 
     # ------------------------------------------------------------------ #
     #  Save as / Delete                                                    #
@@ -1706,15 +952,20 @@ class ThemeTab:
     # ------------------------------------------------------------------ #
     #  Palette color picker                                                #
     # ------------------------------------------------------------------ #
-    def _open_palette_color_picker(self, field_name: str) -> None:
+    def _open_palette_color_picker(self, field_name: str, title: Optional[str] = None) -> None:
         """Open a color picker for a palette swatch field."""
         if not self._working_theme:
             return
         current = getattr(self._working_theme, field_name, "") or ""
         current_hex = self._convert_to_hex(current)
-        display_name = field_name.replace("_", " ").title()
+        display_name = title or field_name.replace("_", " ").title()
+        parsed = _parse_color(current)
+        alpha = parsed[3] if parsed else 1.0
 
         def on_apply(rgb_value: str) -> None:
+            if alpha < 0.999:
+                # The picker has no alpha channel; keep the color's transparency.
+                rgb_value = "rgba(" + rgb_value[4:-1] + f", {round(alpha, 3):g})"
             current = getattr(self._working_theme, field_name, "") or ""
             if current == rgb_value:
                 return
@@ -1723,27 +974,14 @@ class ThemeTab:
             self._mark_palette_dirty()
             self._apply_preview()
 
+        note = f"Keeps its {round(alpha * 100)}% opacity." if alpha < 0.999 else ""
         self._show_color_picker_dialog(
-            display_name, current_hex, on_apply=on_apply
+            display_name, current_hex, on_apply=on_apply, note=note
         )
 
     # ------------------------------------------------------------------ #
     #  Colour helpers                                                      #
     # ------------------------------------------------------------------ #
-    def _get_contrast_border_color(self, hex_color: str) -> str:
-        """Calculate a contrasting border color based on the background color."""
-        if not hex_color or not hex_color.startswith("#"):
-            return "#cccccc"
-        try:
-            hc = hex_color.lstrip("#")
-            if len(hc) == 3:
-                hc = "".join(c * 2 for c in hc)
-            r, g, b = int(hc[0:2], 16), int(hc[2:4], 16), int(hc[4:6], 16)
-            brightness = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-            return "#666666" if brightness > 0.5 else "#cccccc"
-        except Exception:
-            return "#cccccc"
-
     def _convert_to_hex(self, color_str: str) -> str:
         """Convert RGB/RGBA color strings to hex format for NiceGUI color input.
 
@@ -1819,17 +1057,18 @@ class ThemeTab:
         current_hex: str,
         *,
         on_apply: Callable[[str], None],
+        note: str = "",
     ) -> None:
         """Show a color picker dialog and invoke *on_apply* with the chosen RGB value."""
         with ui.dialog() as picker_dlg, ui.card().classes("p-4"):
-            ui.label(f"Select {display_name} Color").classes(
-                "text-lg font-semibold mb-4"
-            )
+            ui.label(display_name).classes("text-lg font-semibold mb-4")
             color_input = (
                 ui.color_input(value=current_hex)
                 .props("outlined")
                 .classes("w-full")
             )
+            if note:
+                ui.label(note).classes("text-xs secondary-text mt-1")
 
             with ui.row().classes("gap-2 mt-4 justify-end"):
                 ui.button("Cancel", on_click=picker_dlg.close).props("flat")
