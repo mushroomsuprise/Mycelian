@@ -1,119 +1,121 @@
-<p class="hx-lead">Conditions decide whether a connector's actions run. When the <a href="help:connector_triggers">trigger</a> fires, Mycelian checks each condition against the event. If <strong>all</strong> of them pass, the <a href="help:connector_actions">actions</a> run. If any fails, nothing happens.</p>
+<p class="hx-lead">Conditions decide whether a connector's actions run. When the <a href="help:connector_triggers">trigger</a> fires, Mycelian checks the conditions against the event. If they match, the <a href="help:connector_actions">actions</a> run; if not, nothing happens.</p>
 
-<p>Conditions are optional. A connector with none runs on every event of its trigger type.</p>
+<p>Conditions are optional. A connector with none runs on every event of its trigger type. You set them in the editor's second step, <strong>If · Conditions</strong>.</p>
 
-<h2>Adding a condition</h2>
+<h2>Adding conditions</h2>
 
 <figure class="hx-figure hx-static">
-  <div class="hm">
-    <div class="hm-cx-form-section">
-      <div class="hm-cx-form-section-title">Trigger Configuration</div>
-      <div class="hm-field hm-select hm-cx-tint-trigger" data-label="Trigger Type"><span class="hm-value">Twitch Chat Message</span></div>
-      <div class="hm-bold hm-sm">Conditions (optional)</div>
-      <div class="hm-cx-hint">Add conditions to make the trigger more specific</div>
-      <div class="hm-cx-cond-box">
-        <div class="hm-cx-box-head"><span>Condition #1</span><span class="hx-mi hm-cx-del">delete</span></div>
-        <div class="hm-cx-cond-fields">
-          <div class="hm-field hm-select hm-cx-tint-cond" data-label="Field"><span class="hm-value">Message</span></div>
-          <span class="hm-marker" data-n="1"></span>
-          <div class="hm-field hm-select hm-cx-tint-cond" data-label="Operator"><span class="hm-value">^</span></div>
-          <span class="hm-marker" data-n="2"></span>
-          <div class="hm-field hm-cx-tint-cond hm-cx-cond-value" data-label="Value"><span class="hm-value">!scene</span></div>
-          <span class="hm-marker" data-n="3"></span>
-        </div>
-      </div>
-      <div class="hm-cx-cond-box">
-        <div class="hm-cx-box-head"><span>Condition #2</span><span class="hx-mi hm-cx-del">delete</span></div>
-        <div class="hm-cx-cond-fields">
-          <div class="hm-field hm-select hm-cx-tint-cond" data-label="Field"><span class="hm-value">Is Moderator</span></div>
-          <div class="hm-field hm-select hm-cx-tint-cond" data-label="Operator"><span class="hm-value">=</span></div>
-          <div class="hm-field hm-select hm-cx-tint-cond hm-cx-cond-value" data-label="Value"><span class="hm-value">True</span></div>
-          <span class="hm-marker" data-n="4"></span>
-        </div>
-      </div>
-      <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">add</span>Add Condition</span></div>
+  <div class="hm hm-stack">
+    <div class="hm-cxe-conds">
+      <div class="hm-cxe-cond is-head"><span><span class="hm-marker" data-n="1"></span></span><span>Field <span class="hm-marker" data-n="2"></span></span><span>Is <span class="hm-marker" data-n="3"></span></span><span>Value <span class="hm-marker" data-n="4"></span></span><span></span></div>
+      <div class="hm-cxe-cond"><span class="hm-cxe-where">where</span><span class="hm-cxe-in is-select">Message</span><span class="hm-cxe-in is-select">first word is</span><span class="hm-cxe-inline"><span class="hm-cxe-in">!hype</span><span class="hm-cxe-case is-on">Aa</span></span><span class="hx-mi">close</span></div>
+      <div class="hm-cxe-cond"><span class="hm-cxe-join"><span class="is-on">AND</span><span>OR</span></span><span class="hm-cxe-in is-select">Is a moderator</span><span class="hm-cxe-in is-select">is</span><span class="hm-cxe-in is-select">true</span><span class="hx-mi">close</span></div>
+      <div class="hm-cxe-or">or</div>
+      <div class="hm-cxe-cond"><span class="hm-cxe-join"><span>AND</span><span class="is-on">OR</span></span><span class="hm-cxe-in is-select">Username</span><span class="hm-cxe-in is-select">is</span><span class="hm-cxe-inline"><span class="hm-cxe-in">TrustedViewer</span><span class="hm-cxe-case is-on">Aa</span></span><span class="hx-mi">close</span></div>
+      <div class="hm-cxe-summary"><span class="hx-mi">info</span><span>Runs when <b>Message first word is “!hype” and Is a moderator is true</b>, or when <b>Username is “TrustedViewer”</b>.</span><span class="hm-marker" data-n="5"></span></div>
     </div>
+    <div class="hm-cxe-add"><span class="hx-mi">add</span>Add condition</div>
   </div>
-  <figcaption><span>Two conditions on a chat trigger: the message starts with the word <code>!scene</code>, and the sender is a moderator. Both must pass.</span></figcaption>
+  <figcaption><span>Three conditions on a Twitch <strong>Chat message</strong> trigger: <code>!hype</code> from a moderator, or anything from <em>TrustedViewer</em>.</span></figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1"><strong>Field</strong>: which part of the event to check. The choices depend on the trigger (see <a href="help:connector_triggers">Connector Triggers</a>).</li>
-  <li data-n="2"><strong>Operator</strong>: shown as a symbol. Hover it in the app to see its name. New conditions start with <strong>=</strong>.</li>
-  <li data-n="3"><strong>Value</strong>: what to compare against. Type plain text or a number.</li>
-  <li data-n="4"><strong>Is Moderator</strong> is a true/false field. It only offers <strong>=</strong> and <strong>≠</strong>, and Value becomes a <strong>True</strong>/<strong>False</strong> list.</li>
+  <li data-n="1">The first row starts with <em>where</em>. Every other row has an <strong>AND</strong>/<strong>OR</strong> pill; click it to switch. An OR row starts a new group, marked by the <em>or</em> line above it. See <strong>AND and OR</strong> below.</li>
+  <li data-n="2"><strong>Field</strong>: which detail of the event to check. The choices depend on the trigger (see <a href="help:connector_triggers">Connector Triggers</a>). Changing the field resets <strong>Is</strong> and <strong>Value</strong>.</li>
+  <li data-n="3"><strong>Is</strong>: how to compare. The list depends on whether the field is a number, text or true/false (see the table below).</li>
+  <li data-n="4"><strong>Value</strong>: what to compare against. True/false fields offer a <em>true</em>/<em>false</em> list instead. On text fields, <strong>Aa</strong> means <em>ignore upper/lower case</em>; it is highlighted when on.</li>
+  <li data-n="5">The summary spells out the rule in plain English, so you can check it reads the way you mean. {{icon:close}} at the end of a row removes it.</li>
 </ol>
 
-<p>On the connector card, these show as chips: <code>Message ^ !scene</code> and <code>Is Moderator = True</code>.</p>
+<p>Click <strong>Add condition</strong> for a new row. It starts with the trigger's first field, the first choice in <strong>Is</strong>, and <strong>Aa</strong> on. Before you pick a trigger the step says <em>Conditions depend on the trigger.</em> Triggers with nothing to check (hotkeys, Stream Deck buttons, timers, set times, <em>Stream ended</em>) say <em>This trigger has nothing to check, so it always runs.</em></p>
 
-<h2>Operators</h2>
+<p>On the connector card, conditions show as short chips, such as <code>Message first word !hype</code> or <code>Bits ≥ 500</code>.</p>
+
+<h2>Comparisons</h2>
 
 <div class="hx-table-wrap"><table>
-<thead><tr><th>Symbol</th><th>Name</th><th>Passes when</th><th>Example</th></tr></thead>
+<thead><tr><th>Field type</th><th>Is</th><th>Passes when</th><th>On the card</th></tr></thead>
 <tbody>
-<tr><td><code>=</code></td><td>Equals</td><td>The field equals the value. Numbers compare as numbers (<code>100</code> equals <code>100.0</code>). <code>true</code>/<code>false</code>, <code>yes</code>/<code>no</code>, <code>on</code>/<code>off</code>, <code>1</code>/<code>0</code> compare as true/false.</td><td>Reward Name = Hydrate</td></tr>
-<tr><td><code>≠</code></td><td>Does not equal</td><td>The opposite of Equals.</td><td>Username ≠ Nightbot</td></tr>
-<tr><td><code>≥</code></td><td>Greater than or equal</td><td rowspan="4">Both sides are numbers and the comparison holds. If either side is not a number, the condition fails.</td><td>Amount ≥ 500</td></tr>
-<tr><td><code>≤</code></td><td>Less than or equal</td><td>Amount ≤ 99</td></tr>
-<tr><td><code>&gt;</code></td><td>Greater than</td><td>Viewer Count &gt; 9</td></tr>
-<tr><td><code>&lt;</code></td><td>Less than</td><td>Months &lt; 12</td></tr>
-<tr><td><code>∋</code></td><td>Contains</td><td>The value appears anywhere in the field.</td><td>Message ∋ hype</td></tr>
-<tr><td><code>^</code></td><td>First word</td><td>The field's first word is exactly the value.</td><td>Message ^ !lurk</td></tr>
-<tr><td><code>^…</code></td><td>Begins with</td><td>The field starts with the value, even mid-word.</td><td>Message ^… !so</td></tr>
-<tr><td><code>$</code></td><td>Ends with</td><td>The field ends with the value.</td><td>Message $ ?</td></tr>
+<tr><td rowspan="6">Number<br><span class="hm-xs hm-muted">Bits, Viewers, Amount…</span></td><td>is / is not</td><td>The numbers are (not) equal. <code>100</code> equals <code>100.0</code>.</td><td>= / ≠</td></tr>
+<tr><td>more than (&gt;)</td><td rowspan="4">The comparison holds. If either side is not a number, the condition fails.</td><td>&gt;</td></tr>
+<tr><td>at least (≥)</td><td>≥</td></tr>
+<tr><td>less than (&lt;)</td><td>&lt;</td></tr>
+<tr><td>at most (≤)</td><td>≤</td></tr>
+<tr><td colspan="3" class="hm-xs hm-muted">The editor checks the value: <em>Condition 1: enter a number.</em></td></tr>
+<tr><td rowspan="8">Text<br><span class="hm-xs hm-muted">Message, Username, Reward name…</span></td><td>is / is not</td><td>The whole text is (not) the value.</td><td>= / ≠</td></tr>
+<tr><td>contains</td><td>The value appears anywhere in the text.</td><td>contains</td></tr>
+<tr><td>does not contain</td><td>The value appears nowhere in the text.</td><td>doesn't contain</td></tr>
+<tr><td>starts with</td><td>The text starts with the value, even mid-word.</td><td>starts with</td></tr>
+<tr><td>ends with</td><td>The text ends with the value.</td><td>ends with</td></tr>
+<tr><td>first word is</td><td>The first word is exactly the value. Best for chat commands.</td><td>first word</td></tr>
+<tr><td>matches pattern</td><td>The text matches a regular expression, such as <code>^!(so|shoutout)\b</code>. An invalid pattern never matches.</td><td>matches</td></tr>
+<tr><td colspan="3" class="hm-xs hm-muted"><strong>Aa</strong> applies to every text comparison, patterns included.</td></tr>
+<tr><td>True/false<br><span class="hm-xs hm-muted">Is a moderator, Was gifted…</span></td><td>is / is not</td><td>The field is (not) <em>true</em> or <em>false</em>.</td><td>= true / ≠ true</td></tr>
 </tbody>
 </table></div>
 
-<div class="hx-callout hx-important"><p><strong>Text matching is case-sensitive.</strong> <em>Message ^ !lurk</em> does not match <code>!Lurk</code>. Add a second connector for other spellings if you need them.</p></div>
+<p>If the event doesn't carry the field at all (possible with <strong>Any event</strong> or a webhook), the condition fails, except <em>is not</em> and <em>does not contain</em>, which pass.</p>
 
 <details class="hx-details">
-  <summary>First word vs Begins with</summary>
+  <summary>"first word is" vs "starts with"</summary>
   <p>For the message <code>!sound airhorn</code>:</p>
   <ul>
-    <li><em>Message ^ !sound</em> passes. The first word is exactly <code>!sound</code>.</li>
-    <li><em>Message ^ !so</em> fails. The first word is <code>!sound</code>, not <code>!so</code>.</li>
-    <li><em>Message ^… !so</em> passes. The text begins with <code>!so</code>.</li>
+    <li><em>Message first word is !sound</em> passes. The first word is exactly <code>!sound</code>.</li>
+    <li><em>Message first word is !so</em> fails. The first word is <code>!sound</code>, not <code>!so</code>.</li>
+    <li><em>Message starts with !so</em> passes. The text begins with <code>!so</code>.</li>
   </ul>
-  <p>Use <strong>First word</strong> for chat commands so <code>!so</code> does not also fire on <code>!sound</code>.</p>
+  <p>Use <strong>first word is</strong> for chat commands so <code>!so</code> does not also fire on <code>!sound</code>.</p>
 </details>
 
-<h2>Combining conditions</h2>
+<details class="hx-details">
+  <summary>Upper and lower case (Aa)</summary>
+  <p>With <strong>Aa</strong> on, <em>Message first word is !lurk</em> also matches <code>!Lurk</code> and <code>!LURK</code>. Turn it off when case matters, for example to match an exact reward ID. Conditions made in older versions of Mycelian open with <strong>Aa</strong> off, because they used to match case exactly.</p>
+</details>
 
-<p>All conditions on a connector must pass (AND). There is no OR.</p>
+<h2>AND and OR</h2>
+
+<p>Rows joined by <strong>AND</strong> must all match. <strong>OR</strong> starts a new group, and the connector runs when <strong>any one group</strong> matches. AND binds tighter than OR, so <em>A and B, or C</em> means <em>(A and B) or C</em>. The summary line always shows the grouping.</p>
 
 <div class="hx-split">
   <div>
-    <p><strong>AND</strong>: one connector, two conditions.</p>
+    <p><strong>AND</strong>: a range.</p>
     <figure class="hx-figure hx-static">
       <div class="hm">
-        <div class="hm-cx2-flow">
-          <div class="hm-cx2-row"><span class="hm-cx2-key">When</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-trigger"><span class="hx-mi">bolt</span>Twitch Bits</span></span></div>
-          <div class="hm-cx2-row"><span class="hm-cx2-key">If</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Amount ≥ 100</span><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Amount &lt; 1000</span></span></div>
+        <div class="hm-cxe-conds">
+          <div class="hm-cxe-cond"><span class="hm-cxe-where">where</span><span class="hm-cxe-in is-select">Bits</span><span class="hm-cxe-in is-select">at least (≥)</span><span class="hm-cxe-in">100</span><span class="hx-mi">close</span></div>
+          <div class="hm-cxe-cond"><span class="hm-cxe-join"><span class="is-on">AND</span><span>OR</span></span><span class="hm-cxe-in is-select">Bits</span><span class="hm-cxe-in is-select">less than (&lt;)</span><span class="hm-cxe-in">1000</span><span class="hx-mi">close</span></div>
+          <div class="hm-cxe-summary"><span class="hx-mi">info</span><span>Runs when <b>Bits at least (≥) 100 and Bits less than (&lt;) 1000</b>.</span></div>
         </div>
       </div>
       <figcaption><span>Runs for cheers from 100 to 999 bits.</span></figcaption>
     </figure>
   </div>
   <div>
-    <p><strong>OR</strong>: make one connector per case. Duplicate the first ({{icon:more_horiz}} → <strong>Duplicate</strong>) and change its condition.</p>
+    <p><strong>OR</strong>: either case.</p>
     <figure class="hx-figure hx-static">
-      <div class="hm hm-stack">
-        <div class="hm-cx2-flow"><div class="hm-cx2-row"><span class="hm-cx2-key">If</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Tier = 2000</span></span></div></div>
-        <div class="hm-cx2-flow"><div class="hm-cx2-row"><span class="hm-cx2-key">If</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Tier = 3000</span></span></div></div>
+      <div class="hm">
+        <div class="hm-cxe-conds">
+          <div class="hm-cxe-cond"><span class="hm-cxe-where">where</span><span class="hm-cxe-in is-select">Tier (1-3)</span><span class="hm-cxe-in is-select">is</span><span class="hm-cxe-in">2</span><span class="hx-mi">close</span></div>
+          <div class="hm-cxe-or">or</div>
+          <div class="hm-cxe-cond"><span class="hm-cxe-join"><span>AND</span><span class="is-on">OR</span></span><span class="hm-cxe-in is-select">Tier (1-3)</span><span class="hm-cxe-in is-select">is</span><span class="hm-cxe-in">3</span><span class="hx-mi">close</span></div>
+          <div class="hm-cxe-summary"><span class="hx-mi">info</span><span>Runs when <b>Tier (1-3) is 2</b>, or when <b>Tier (1-3) is 3</b>.</span></div>
+        </div>
       </div>
-      <figcaption><span>Two connectors with the same actions cover Tier 2 or Tier 3.</span></figcaption>
+      <figcaption><span>Runs for Tier 2 or Tier 3 subs.</span></figcaption>
     </figure>
   </div>
 </div>
 
+<p>To say <em>A and (B or C)</em>, repeat A in each group: <em>A and B, or A and C</em>. Removing the first row turns the next one into the new <em>where</em> row.</p>
+
 <h2>Using the rest of the message</h2>
 
-<p>When a condition on <strong>Message</strong> uses Contains, First word, Begins with or Ends with, Mycelian removes the matched text and keeps the rest in <code>{message_after_conditions}</code>. This turns a chat trigger into a command with arguments.</p>
+<p>When a condition on <strong>Message</strong> uses <em>contains</em>, <em>first word is</em>, <em>starts with</em> or <em>ends with</em>, Mycelian removes the matched text and keeps the rest in <code>{message_after_conditions}</code>. This turns a chat trigger into a command with arguments.</p>
 
 <div class="hx-table-wrap"><table>
-<thead><tr><th>Condition</th><th>Chat message</th><th>Placeholder</th><th>Becomes</th></tr></thead>
+<thead><tr><th>Condition</th><th>Chat message</th><th>Variable</th><th>Becomes</th></tr></thead>
 <tbody>
-<tr><td rowspan="4">Message ^ !so</td><td rowspan="4"><code>!so CoolStreamer thanks for the raid</code></td><td><code>{message_after_conditions}</code></td><td><code>CoolStreamer thanks for the raid</code></td></tr>
+<tr><td rowspan="4">Message first word is !so</td><td rowspan="4"><code>!so CoolStreamer thanks for the raid</code></td><td><code>{message_after_conditions}</code></td><td><code>CoolStreamer thanks for the raid</code></td></tr>
 <tr><td><code>{message_after_word.1}</code></td><td><code>CoolStreamer</code></td></tr>
 <tr><td><code>{message_after_from_word.2}</code></td><td><code>thanks for the raid</code></td></tr>
 <tr><td><code>{message.word.1}</code></td><td><code>!so</code> (from the original message)</td></tr>
@@ -122,36 +124,35 @@
 
 <h2>What conditions cannot do</h2>
 
-<p>Conditions only compare fields that the event carries. These are not available:</p>
+<p>Conditions only compare details that the event carries. These are not available:</p>
 <ul>
-  <li>Subscriber or VIP checks. Chat events only carry <strong>Is Moderator</strong> (true for mods and the broadcaster).</li>
-  <li>Time of day, day of week, or stream uptime.</li>
-  <li>A cooldown between runs.</li>
+  <li>Subscriber or VIP checks. Chat events offer <strong>Is a moderator</strong> (true for mods and the broadcaster); badges are only a variable, <code>{badges}</code>.</li>
+  <li>Time of day or day of week. To run at a time, use the <strong>At a set time</strong> trigger.</li>
   <li>"First time" checks such as a viewer's first message. For that, see <a href="help:chatbot_greetings">Chatbot Greetings</a>.</li>
-  <li>"Does not contain" and regular-expression matching. The Operator list does not offer them.</li>
 </ul>
+<p>To stop a connector running too often, use <strong>Cooldown</strong> on the trigger card rather than a condition.</p>
 
 <h2>Troubleshooting</h2>
 
 <details class="hx-details">
   <summary>The condition never passes</summary>
   <ul>
-    <li>Check capitals. Text matching is case-sensitive.</li>
-    <li>Check the value Twitch sends. Sub tiers are <code>1000</code>, <code>2000</code>, <code>3000</code>, not 1, 2, 3.</li>
-    <li>Number operators (≥ ≤ &gt; &lt;) fail when either side is not a number, such as <code>$5</code>. Use <strong>Amount</strong>, not <strong>Display Amount</strong>.</li>
-    <li>The field must exist in the event. On <strong>Twitch Gift Sub</strong>, <em>Gifter Username</em> and <em>Quantity</em> are not sent, so they never match.</li>
-    <li>With <strong>First word</strong>, the value must be the whole first word. Use <strong>Begins with</strong> to match part of it.</li>
+    <li>Check <strong>Aa</strong>. With it off, capitals must match exactly.</li>
+    <li>Read the summary line: an OR in the wrong place changes the meaning.</li>
+    <li>Sub tiers are <code>1</code>, <code>2</code> or <code>3</code>.</li>
+    <li>Number comparisons fail when either side is not a number, such as <code>$5</code>. Use <strong>Amount</strong>, not <strong>Amount as shown</strong>.</li>
+    <li>With <strong>first word is</strong>, the value must be the whole first word. Use <strong>starts with</strong> to match part of it.</li>
   </ul>
 </details>
 
 <details class="hx-details">
-  <summary>Test says "did not trigger" but real events work</summary>
-  <p>The Test button uses fixed sample data, for example 100 bits or the chat message <code>Hello test!</code>. If your conditions exclude those values, the test reports <em>Connector did not trigger (conditions not met)</em>. See <a href="help:connectors_intro">Connector System Introduction</a> for the full list of sample values.</p>
+  <summary>Test says nothing ran, but real events work</summary>
+  <p>Test uses fixed sample data, for example 100 bits or the chat message <code>!hello there</code>. If your conditions exclude those values, it reports <em>Test event didn't pass the conditions, so nothing ran.</em> See <a href="help:connectors_intro">Connector System Introduction</a> for the sample values.</p>
 </details>
 
 <details class="hx-details">
   <summary>The connector fires too often</summary>
-  <p>Add a narrower condition, for example a minimum <strong>Amount</strong>, or <strong>First word</strong> instead of <strong>Contains</strong> on chat. On <strong>Any (all events)</strong>, always add at least one condition.</p>
+  <p>Add a narrower condition, for example a minimum <strong>Amount</strong>, or <strong>first word is</strong> instead of <strong>contains</strong> on chat, or set a <strong>Cooldown</strong>. On <strong>Any event</strong>, always add a condition on <strong>Event type</strong>.</p>
 </details>
 
 <div class="hx-cards">

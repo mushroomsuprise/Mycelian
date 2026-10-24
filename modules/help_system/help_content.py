@@ -280,7 +280,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Connector Triggers',
         category=HelpCategory.CONNECTORS,
         summary='Available trigger types and how to configure them',
-        keywords=['triggers', 'events', 'twitch', 'chat', 'hotkey', 'obs', 'youtube', 'stream deck'],
+        keywords=['triggers', 'events', 'twitch', 'chat', 'hotkey', 'obs', 'youtube', 'stream deck', 'webhook', 'timer', 'schedule', 'cooldown'],
         related_topics=['connectors_intro', 'connector_actions'],
     ),
     'connector_actions': HelpTopic(
@@ -288,7 +288,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Connector Actions',
         category=HelpCategory.CONNECTORS,
         summary='Available actions and how to configure them',
-        keywords=['actions', 'responses', 'automation', 'effects', 'controls'],
+        keywords=['actions', 'responses', 'automation', 'effects', 'controls', 'variables', 'placeholders', 'date format'],
         related_topics=['connectors_intro', 'connector_triggers', 'game_hooks', 'obs_websocket'],
     ),
     'connector_conditions': HelpTopic(
@@ -296,7 +296,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Connector Conditions',
         category=HelpCategory.CONNECTORS,
         summary='Add conditional logic to your connector workflows',
-        keywords=['conditions', 'logic', 'filter', 'if', 'when', 'compare'],
+        keywords=['conditions', 'logic', 'filter', 'if', 'when', 'compare', 'and', 'or', 'regex', 'case'],
         related_topics=['connectors_intro', 'connector_triggers', 'connector_actions'],
     ),
     'connector_examples': HelpTopic(

@@ -357,3 +357,212 @@
 .help-doc .hm-cx2-member.is-off i { background: var(--color-border-default); }
 .help-doc .hm-cx2-member.is-off { color: var(--color-text-muted); }
 .help-doc .hm-cx2-member em { margin-left: auto; font-style: normal; color: var(--color-text-muted); font-size: .6rem; }
+
+/* ---- Connector editor (connector_editor.py / connector_editor_styles.py) ----
+   Header, When/If/Then step rail, trigger card + settings, condition rows with
+   the AND/OR pill and Aa, numbered action cards with the { } button and
+   preview, the Variables side panel, pickers and the footer. */
+.help-doc .hm.hm-cxe { padding: 0; overflow: hidden; background: var(--color-bg-surface); border-color: var(--color-border-accent); }
+.help-doc .hm-cxe-head { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--color-border-subtle); position: relative; }
+.help-doc .hm-cxe-tile { width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    background: var(--color-primary-light); color: var(--color-primary); border: 1px solid var(--color-border-accent); }
+.help-doc .hm-cxe-tile .hx-mi { font-size: 16px; }
+.help-doc .hm-cxe-tile .hx-brand { font-size: 16px; }
+.help-doc .hm-cxe-tile.is-action { width: 22px; height: 22px; border-radius: 6px; color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 12%, transparent); border-color: color-mix(in srgb, var(--color-success) 30%, transparent); }
+.help-doc .hm-cxe-tile.is-action .hx-mi { font-size: 13px; }
+.help-doc .hm-cxe-headtext { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.help-doc .hm-cxe-namerow { display: flex; align-items: center; gap: 8px; }
+.help-doc .hm-cxe-kicker { font-size: .56rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--color-primary);
+    padding: 1px 6px; border-radius: 5px; background: var(--color-primary-light); }
+.help-doc .hm-cxe-name { font-size: .95rem; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm-cxe-desc { font-size: .7rem; color: var(--color-text-secondary); }
+.help-doc .hm-cxe-onoff { display: inline-flex; align-items: center; gap: 6px; font-size: .74rem; font-weight: 600; color: var(--color-text-secondary); }
+.help-doc .hm-cxe-head > .hx-mi { font-size: 18px; color: var(--color-text-secondary); }
+
+.help-doc .hm-cxe-body { display: grid; grid-template-columns: minmax(0, 1fr) 190px; }
+.help-doc .hm-cxe-flow { padding: 10px; background: var(--color-bg-base); min-width: 0; }
+.help-doc .hm-cxe-step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
+.help-doc .hm-cxe-rail { display: flex; flex-direction: column; align-items: center; }
+.help-doc .hm-cxe-rail::after { content: ''; flex: 1; width: 2px; background: var(--color-border-subtle); margin: 4px 0; }
+.help-doc .hm-cxe-step:last-child .hm-cxe-rail::after { display: none; }
+.help-doc .hm-cxe-n { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .66rem; font-weight: 700;
+    color: var(--color-primary); background: var(--color-primary-light); border: 1px solid var(--color-border-accent); }
+.help-doc .hm-cxe-main { padding-bottom: 10px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.help-doc .hm-cxe-stephead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-height: 20px; }
+.help-doc .hm-cxe-key { font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--color-primary); }
+.help-doc .hm-cxe-title { font-size: .84rem; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm-cxe-sub { font-size: .7rem; color: var(--color-text-muted); }
+.help-doc .hm-cxe-tag { margin-left: auto; font-size: .62rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+    color: var(--color-text-secondary); background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); }
+
+/* OBS mark is drawn dark; follow the text color like the app's .ce-brand.is-obs */
+.help-doc .hm-cxe-obs { display: inline-flex; color: var(--color-text-primary); }
+.help-doc .hm-cxe-tile.is-action .hm-cxe-obs { color: var(--color-success); }
+.help-doc .hm-cxe-obs .hx-brand path { fill: currentColor; }
+
+/* Trigger card, per-trigger settings, notes */
+.help-doc .hm-cxe-trig { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border-radius: 9px;
+    background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); position: relative; }
+.help-doc .hm-cxe-trigtext { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; }
+.help-doc .hm-cxe-trigname { font-size: .8rem; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm-cxe-trighint { font-size: .66rem; color: var(--color-text-muted); }
+.help-doc .hm-cxe-opt { display: inline-flex; align-items: center; gap: 5px; font-size: .7rem; color: var(--color-text-secondary); white-space: nowrap; }
+.help-doc .hm-cxe-opt > .hx-mi { font-size: 14px; color: var(--color-text-muted); }
+.help-doc .hm-cxe-in { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 8px; border-radius: 6px; font-size: .72rem; min-width: 0;
+    color: var(--color-text-primary); background: var(--color-bg-surface); border: 1px solid var(--color-border-default); }
+.help-doc .hm-cxe-in.is-select::after { content: 'arrow_drop_down'; font-family: 'Material Icons'; font-size: 16px; margin-left: auto; padding-left: 4px; color: var(--color-text-muted); }
+.help-doc .hm-cxe-in.is-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.help-doc .hm-cxe-in .hm-placeholder { color: var(--color-text-muted); }
+.help-doc .hm-cxe-unit { font-size: .68rem; color: var(--color-text-muted); white-space: nowrap; }
+.help-doc .hm-cxe-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 9px; border-radius: 9px;
+    background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); position: relative; }
+.help-doc .hm-cxe-label { font-size: .64rem; font-weight: 600; color: var(--color-text-muted); }
+.help-doc .hm-cxe-note,
+.help-doc .hm-cxe-warn { display: flex; align-items: flex-start; gap: 5px; font-size: .68rem; line-height: 1.4; color: var(--color-text-muted); }
+.help-doc .hm-cxe-note > .hx-mi { font-size: 14px; color: var(--color-primary); margin-top: 1px; }
+.help-doc .hm-cxe-warn { color: var(--color-warning); }
+.help-doc .hm-cxe-warn > .hx-mi { font-size: 14px; margin-top: 1px; }
+.help-doc .hm-cxe-code { flex: 1 1 220px; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .68rem; padding: 3px 7px;
+    border-radius: 6px; color: var(--color-text-primary); background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); word-break: break-all; }
+.help-doc .hm-cxe-days { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+.help-doc .hm-cxe-day { font-size: .64rem; font-weight: 700; width: 30px; text-align: center; padding: 3px 0; border-radius: 6px;
+    color: var(--color-text-muted); border: 1px solid var(--color-border-default); }
+.help-doc .hm-cxe-day.is-on { color: #fff; background: var(--color-primary); border-color: var(--color-primary); }
+
+/* Conditions */
+.help-doc .hm-cxe-conds { border-radius: 9px; background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); padding: 4px 8px 6px; position: relative; }
+.help-doc .hm-cxe-cond { display: grid; grid-template-columns: 46px minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.2fr) 18px; gap: 5px; align-items: center; padding: 2px 0; }
+.help-doc .hm-cxe-cond.is-head { font-size: .6rem; font-weight: 600; color: var(--color-text-muted); }
+.help-doc .hm-cxe-cond > .hx-mi { font-size: 15px; color: var(--color-error); }
+.help-doc .hm-cxe-where { font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--color-warning); }
+.help-doc .hm-cxe-join { display: inline-flex; padding: 2px; gap: 1px; border-radius: 6px; width: fit-content;
+    border: 1px solid var(--color-border-default); background: var(--color-bg-base); }
+.help-doc .hm-cxe-join > span { font-size: .54rem; font-weight: 800; letter-spacing: .04em; padding: 1px 3px; border-radius: 4px; color: var(--color-text-muted); }
+.help-doc .hm-cxe-join > span.is-on { color: #fff; background: var(--color-warning); }
+.help-doc .hm-cxe-or { display: flex; align-items: center; gap: 8px; margin: 2px 0; font-size: .56rem; font-weight: 800; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--color-warning); }
+.help-doc .hm-cxe-or::before,
+.help-doc .hm-cxe-or::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--color-warning) 40%, transparent); }
+.help-doc .hm-cxe-inline { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.help-doc .hm-cxe-inline > .hm-cxe-in { flex: 1 1 auto; }
+.help-doc .hm-cxe-case { font-size: .64rem; font-weight: 700; padding: 3px 5px; border-radius: 6px; flex: 0 0 auto;
+    color: var(--color-text-muted); border: 1px solid var(--color-border-default); }
+.help-doc .hm-cxe-case.is-on { color: var(--color-primary); border-color: var(--color-border-accent); background: var(--color-primary-light); }
+.help-doc .hm-cxe-summary { display: flex; align-items: flex-start; gap: 5px; margin-top: 4px; padding: 5px 7px; border-radius: 7px; font-size: .68rem;
+    line-height: 1.4; color: var(--color-text-secondary); background: var(--color-bg-base); }
+.help-doc .hm-cxe-summary > .hx-mi { font-size: 14px; color: var(--color-primary); margin-top: 1px; }
+.help-doc .hm-cxe-summary b { color: var(--color-text-primary); font-weight: 600; }
+
+/* Actions */
+.help-doc .hm-cxe-action { border-radius: 9px; background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); min-width: 0; position: relative; }
+.help-doc .hm-cxe-action.is-open { border-color: var(--color-border-accent); }
+.help-doc .hm-cxe-action.is-invalid { border-color: color-mix(in srgb, var(--color-warning) 60%, transparent); }
+.help-doc .hm-cxe-actionhead { display: flex; align-items: center; gap: 5px; padding: 4px 6px; min-width: 0; }
+.help-doc .hm-cxe-actionn { width: 16px; font-size: .68rem; font-weight: 700; color: var(--color-text-muted); text-align: center; flex: 0 0 auto; }
+.help-doc .hm-cxe-actiontext { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
+.help-doc .hm-cxe-actiontitle { font-size: .76rem; font-weight: 650; white-space: nowrap; color: var(--color-text-primary); }
+.help-doc .hm-cxe-actionsum { font-size: .66rem; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.help-doc .hm-cxe-actionsum.is-warn { color: var(--color-warning); }
+.help-doc .hm-cxe-delay { display: inline-flex; align-items: center; gap: 2px; font-size: .62rem; font-weight: 600; padding: 1px 6px; border-radius: 999px; white-space: nowrap;
+    color: var(--color-info); background: color-mix(in srgb, var(--color-info) 12%, transparent); flex: 0 0 auto; }
+.help-doc .hm-cxe-delay .hx-mi { font-size: 12px; }
+.help-doc .hm-cxe-tools { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+.help-doc .hm-cxe-tools > .hx-mi { font-size: 15px; color: var(--color-text-secondary); }
+.help-doc .hm-cxe-tools > .hx-mi.is-danger { color: var(--color-error); }
+.help-doc .hm-cxe-tools > .hx-mi.is-disabled { opacity: .38; }
+.help-doc .hm-cxe-tools .hm-switch { margin-right: 6px; }
+.help-doc .hm-cxe-actionbody { padding: 7px 9px 9px 28px; display: flex; flex-direction: column; gap: 7px; border-top: 1px solid var(--color-border-subtle); }
+.help-doc .hm-cxe-fields { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px 9px; }
+.help-doc .hm-cxe-f { display: flex; flex-direction: column; gap: 3px; min-width: 0; grid-column: span 6; position: relative; }
+.help-doc .hm-cxe-f.is-half { grid-column: span 3; }
+.help-doc .hm-cxe-f.is-third { grid-column: span 2; }
+.help-doc .hm-cxe-f .hm-switch { font-size: .74rem; }
+.help-doc .hm-cxe-help { font-size: .64rem; color: var(--color-text-muted); line-height: 1.35; }
+.help-doc .hm-cxe-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.help-doc .hm-cxe-box { position: relative; min-height: 26px; padding: 4px 42px 4px 8px; border-radius: 6px; font-size: .72rem; line-height: 1.5;
+    color: var(--color-text-primary); background: var(--color-bg-surface); border: 1px solid var(--color-border-default); }
+.help-doc .hm-cxe-box.is-area { min-height: 44px; }
+.help-doc .hm-cxe-box.is-focused { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+.help-doc .hm-cxe-varbtn { position: absolute; right: 4px; top: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .66rem;
+    font-weight: 700; padding: 0 6px; line-height: 18px; border-radius: 5px; color: var(--color-primary); background: var(--color-primary-light); border: 1px solid var(--color-border-accent); }
+.help-doc .hm-cxe-preview { display: flex; align-items: flex-start; gap: 5px; font-size: .68rem; line-height: 1.4; padding: 3px 7px; border-radius: 6px;
+    color: var(--color-text-secondary); background: var(--color-bg-base); border: 1px dashed var(--color-border-default); }
+.help-doc .hm-cxe-preview > .hx-mi { font-size: 13px; color: var(--color-text-muted); margin-top: 1px; }
+.help-doc .hm-cxe-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.help-doc .hm-cxe-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: .68rem; font-weight: 600;
+    color: var(--color-text-muted); border: 1px solid var(--color-border-default); }
+.help-doc .hm-cxe-pill.is-on { color: var(--color-text-primary); border-color: var(--color-primary); background: var(--color-primary-light); }
+.help-doc .hm-cxe-pill .hx-brand { font-size: 12px; }
+.help-doc .hm-cxe-add { display: flex; align-items: center; justify-content: center; gap: 5px; height: 28px; border-radius: 9px; font-size: .76rem; font-weight: 600;
+    color: var(--color-primary); border: 1px dashed var(--color-border-accent); background: var(--color-primary-light); position: relative; }
+.help-doc .hm-cxe-add > .hx-mi { font-size: 15px; }
+
+/* Trigger / action picker */
+.help-doc .hm-cxe-picker { display: flex; flex-direction: column; gap: 7px; padding: 8px 9px; border-radius: 9px;
+    background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); }
+.help-doc .hm-cxe-pickerhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.help-doc .hm-cxe-pickerhead > .hm-cxe-in { margin-left: auto; width: 13rem; max-width: 100%; color: var(--color-text-muted); }
+.help-doc .hm-cxe-pickerhead > .hm-cxe-in > .hx-mi { font-size: 14px; margin-right: 5px; }
+.help-doc .hm-cxe-pgroup { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 6px; }
+.help-doc .hm-cxe-pgrouphead { display: flex; align-items: center; gap: 5px; font-size: .68rem; font-weight: 700; color: var(--color-text-secondary); padding-top: 5px; }
+.help-doc .hm-cxe-pgrouphead > .hx-mi,
+.help-doc .hm-cxe-pgrouphead > .hx-brand { font-size: 14px; }
+.help-doc .hm-cxe-pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 4px; }
+.help-doc .hm-cxe-popt { display: flex; flex-direction: column; padding: 4px 7px; border-radius: 7px; min-width: 0;
+    background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); }
+.help-doc .hm-cxe-popt.is-selected { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+.help-doc .hm-cxe-popt > b { font-size: .72rem; font-weight: 650; color: var(--color-text-primary); }
+.help-doc .hm-cxe-popt > span { font-size: .6rem; line-height: 1.3; color: var(--color-text-muted); }
+.help-doc .hm-cxe-popt > em { font-size: .58rem; font-style: normal; color: var(--color-warning); }
+
+/* Variables side panel and the { } insert menu */
+.help-doc .hm-cxe-vars { border-left: 1px solid var(--color-border-subtle); padding: 9px; display: flex; flex-direction: column; gap: 2px; min-width: 0; position: relative; }
+.help-doc .hm-cxe-varshead { display: flex; align-items: center; gap: 5px; font-size: .8rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 4px; }
+.help-doc .hm-cxe-varshead > .hx-mi { font-size: 16px; color: var(--color-primary); }
+.help-doc .hm-cxe-varshead > .hm-cxe-tag { font-weight: 600; }
+.help-doc .hm-cxe-vars > .hm-cxe-in { color: var(--color-text-muted); margin-bottom: 2px; }
+.help-doc .hm-cxe-vars > .hm-cxe-in > .hx-mi { font-size: 14px; margin-right: 5px; }
+.help-doc .hm-cxe-vgroup { font-size: .56rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--color-text-muted); margin: 5px 0 1px; }
+.help-doc .hm-cxe-var { display: flex; align-items: center; gap: 5px; padding: 2px 5px; border-radius: 5px; min-width: 0; }
+.help-doc .hm-cxe-var code,
+.help-doc .hm-cxe-vmrow code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .66rem; font-weight: 600; color: var(--color-primary);
+    background: transparent; border: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.help-doc .hm-cxe-var > span { margin-left: auto; font-size: .62rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+.help-doc .hm-cxe-var > .hx-mi { font-size: 13px; color: var(--color-text-muted); }
+.help-doc .hm-cxe-varstip { font-size: .62rem; color: var(--color-text-muted); line-height: 1.4; margin-top: 6px; }
+.help-doc .hm-cxe-vmenu { display: flex; flex-direction: column; gap: 1px; padding: 6px; border-radius: 9px; min-width: 0;
+    background: var(--color-bg-elevated); border: 1px solid var(--color-border-default); box-shadow: 0 6px 18px var(--color-bg-overlay); }
+.help-doc .hm-cxe-vmenu > .hm-cxe-in { color: var(--color-text-muted); margin-bottom: 3px; }
+.help-doc .hm-cxe-vmenu > .hm-cxe-in > .hx-mi { font-size: 14px; margin-right: 5px; }
+.help-doc .hm-cxe-vmrow { display: grid; grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr) auto; gap: 7px; align-items: center; padding: 3px 7px;
+    border-radius: 5px; font-size: .68rem; color: var(--color-text-secondary); }
+.help-doc .hm-cxe-vmrow.is-fmt { grid-template-columns: minmax(0, 1fr) auto; }
+.help-doc .hm-cxe-vmrow.is-hover { background: var(--color-primary-light); }
+.help-doc .hm-cxe-vmrow > em { font-style: normal; font-size: .64rem; color: var(--color-text-muted); white-space: nowrap; }
+.help-doc .hm-cxe-vmhead { display: flex; align-items: center; gap: 5px; padding: 2px 4px 4px; font-size: .68rem; color: var(--color-text-secondary); }
+.help-doc .hm-cxe-vmhead > .hx-mi { font-size: 15px; }
+.help-doc .hm-cxe-vmhead code { color: var(--color-primary); background: transparent; border: 0; padding: 0; font-size: .66rem; }
+
+/* Plain text spans take their parent's color (the app's text rule would otherwise win) */
+.help-doc .hm-cxe-note > span:not([class]),
+.help-doc .hm-cxe-warn > span:not([class]),
+.help-doc .hm-cxe-summary > span:not([class]),
+.help-doc .hm-cxe-preview > span:not([class]) { color: inherit; }
+
+/* Footer */
+.help-doc .hm-cxe-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 7px 10px; border-top: 1px solid var(--color-border-subtle); position: relative; }
+.help-doc .hm-cxe-status { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 600; margin-right: auto; }
+.help-doc .hm-cxe-status > .hx-mi { font-size: 16px; }
+.help-doc .hm-cxe-status.is-ok { color: var(--color-success); }
+.help-doc .hm-cxe-status.is-warn { color: var(--color-warning); }
+
+@media (max-width: 640px) {
+    .help-doc .hm-cxe-body { grid-template-columns: minmax(0, 1fr); }
+    .help-doc .hm-cxe-vars { border-left: 0; border-top: 1px solid var(--color-border-subtle); }
+    .help-doc .hm-cxe-cond { grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1fr); }
+    .help-doc .hm-cxe-cond > :nth-child(4) { grid-column: 2 / span 2; }
+    .help-doc .hm-cxe-cond > :nth-child(5) { grid-row: 2; grid-column: 1; }
+    .help-doc .hm-cxe-f.is-half, .help-doc .hm-cxe-f.is-third { grid-column: span 6; }
+    .help-doc .hm-cxe-pgroup { grid-template-columns: minmax(0, 1fr); }
+}

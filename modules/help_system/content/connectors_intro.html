@@ -11,21 +11,21 @@
   <div class="hm">
     <div class="hm-cx-pipeline">
       <div class="hm-cx-stage is-trigger">
-        <div class="hm-cx-stage-title"><span class="hx-mi">flash_on</span>Trigger</div>
-        <div class="hm-cx-stage-text">One event type starts it: a cheer, a chat message, a raid, a hotkey, an OBS scene change…</div>
-        <div><span class="hm-cx-tbadge">Twitch Raid</span></div>
+        <div class="hm-cx-stage-title"><span class="hx-mi">flash_on</span>When · Trigger</div>
+        <div class="hm-cx-stage-text">One event starts it: a cheer, a chat message, a raid, a hotkey, a timer, a webhook, an OBS scene change…</div>
+        <div><span class="hm-cx-tbadge">Raid</span></div>
       </div>
       <div class="hm-cx-stage-arrow">arrow_forward</div>
       <div class="hm-cx-stage is-cond">
-        <div class="hm-cx-stage-title"><span class="hx-mi">filter_list</span>Conditions <span class="hm-muted hm-xs">optional</span></div>
-        <div class="hm-cx-stage-text">Compare event fields to values. Every condition must pass, or nothing happens.</div>
-        <div><span class="hm-cx-cbadge">Viewer Count ≥ 10</span></div>
+        <div class="hm-cx-stage-title"><span class="hx-mi">filter_list</span>If · Conditions <span class="hm-muted hm-xs">optional</span></div>
+        <div class="hm-cx-stage-text">Compare details of the event to values. Join them with AND or OR. If they don't match, nothing happens.</div>
+        <div><span class="hm-cx-cbadge">Viewers at least (≥) 10</span></div>
       </div>
       <div class="hm-cx-stage-arrow">arrow_forward</div>
       <div class="hm-cx-stage is-action">
-        <div class="hm-cx-stage-title"><span class="hx-mi">play_arrow</span>Actions</div>
-        <div class="hm-cx-stage-text">Run top to bottom. Each action after the first can wait a few seconds first.</div>
-        <div class="hm-row"><span class="hm-cx-abadge">Send Chat Message → Twitch</span><span class="hm-cx-abadge">OBS: set program scene</span></div>
+        <div class="hm-cx-stage-title"><span class="hx-mi">play_arrow</span>Then · Actions</div>
+        <div class="hm-cx-stage-text">Run top to bottom. Any action can wait a few seconds before it runs.</div>
+        <div class="hm-row"><span class="hm-cx-abadge">Send chat message → Twitch</span><span class="hm-cx-abadge">OBS — Set program scene</span></div>
       </div>
     </div>
   </div>
@@ -33,12 +33,12 @@
 </figure>
 
 <ul>
-  <li><strong><a href="help:connector_triggers">Triggers</a></strong>: Twitch, YouTube, donations, OBS, hotkeys, Stream Deck buttons, or any event.</li>
-  <li><strong><a href="help:connector_conditions">Conditions</a></strong>: filters such as <em>Amount ≥ 500</em> or <em>Message ^ !lurk</em>.</li>
-  <li><strong><a href="help:connector_actions">Actions</a></strong>: chat messages, announcements, banners, Discord posts, alerts, overlay controls, OBS, key presses, audio, files, commands, web requests and game hooks.</li>
+  <li><strong><a href="help:connector_triggers">Triggers</a></strong>: Twitch, YouTube, tips, OBS, hotkeys, Stream Deck buttons, webhooks, timers, set times, or any event.</li>
+  <li><strong><a href="help:connector_conditions">Conditions</a></strong>: filters such as <em>Bits at least (≥) 500</em> or <em>Message first word is !lurk</em>.</li>
+  <li><strong><a href="help:connector_actions">Actions</a></strong>: chat messages, announcements, banners, Discord posts, alerts, overlay controls, OBS, key presses, volume, files, commands, web requests and game hooks.</li>
 </ul>
 
-<p>Event details flow into the actions as placeholders. <code>{username}</code> in a chat message becomes the name of the person who raided, cheered or typed.</p>
+<p>Details of the event flow into the actions as <strong>variables</strong>. <code>{username}</code> in a chat message becomes the name of the person who raided, cheered or typed. The editor lists every variable you can use and shows a live preview with example values.</p>
 
 <h2>The Connectors tab</h2>
 
@@ -68,9 +68,9 @@
         <div class="hm-cx2-card">
           <div class="hm-cx2-head"><span class="hm-cx2-tile"><span class="hx-mi">groups</span></span><span class="hm-cx2-title"><span class="hm-cx2-name">Raid welcome</span><span class="hm-cx2-desc">Thank big raids in chat</span></span><span class="hm-switch is-on"><i></i></span></div>
           <div class="hm-cx2-flow">
-            <div class="hm-cx2-row"><span class="hm-cx2-key">When</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-trigger"><span class="hx-mi">bolt</span>Twitch Raid</span></span></div>
-            <div class="hm-cx2-row"><span class="hm-cx2-key">If</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Viewer Count ≥ 10</span></span></div>
-            <div class="hm-cx2-row"><span class="hm-cx2-key">Then</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-action"><span class="hx-mi">chat</span>Send Chat Message → Twitch</span></span></div>
+            <div class="hm-cx2-row"><span class="hm-cx2-key">When</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-trigger"><span class="hx-mi">bolt</span>Raid</span></span></div>
+            <div class="hm-cx2-row"><span class="hm-cx2-key">If</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Viewers ≥ 10</span></span></div>
+            <div class="hm-cx2-row"><span class="hm-cx2-key">Then</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-action"><span class="hx-mi">chat</span>Send chat message → Twitch</span></span></div>
             <span class="hm-marker" data-n="2"></span>
           </div>
           <div class="hm-cx2-foot"><span class="hx-mi hm-cx2-bolt">bolt</span><b>4</b>&nbsp;runs · 2 days ago<span class="hm-grow"></span><span class="hx-mi">play_arrow</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span><span class="hm-marker" data-n="3"></span></div>
@@ -78,17 +78,17 @@
         <div class="hm-cx2-card is-off">
           <div class="hm-cx2-head"><span class="hm-cx2-tile"><span class="hx-mi">chat</span></span><span class="hm-cx2-title"><span class="hm-cx2-name">Lurk reply</span><span class="hm-cx2-desc"><em>No description</em></span></span><span class="hm-switch"><i></i></span></div>
           <div class="hm-cx2-flow">
-            <div class="hm-cx2-row"><span class="hm-cx2-key">When</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-trigger"><span class="hx-mi">bolt</span>Chat Message</span></span></div>
-            <div class="hm-cx2-row"><span class="hm-cx2-key">If</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Message ^ !lurk</span></span></div>
-            <div class="hm-cx2-row"><span class="hm-cx2-key">Then</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-action"><span class="hx-mi">chat</span>Send Chat Message → All</span></span></div>
+            <div class="hm-cx2-row"><span class="hm-cx2-key">When</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-trigger"><span class="hx-mi">bolt</span>Chat message</span></span></div>
+            <div class="hm-cx2-row"><span class="hm-cx2-key">If</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Message first word !lurk</span></span></div>
+            <div class="hm-cx2-row"><span class="hm-cx2-key">Then</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-action"><span class="hx-mi">chat</span>Send chat message → Twitch + YouTube</span></span></div>
           </div>
           <div class="hm-cx2-foot"><span class="hx-mi">schedule</span>Never run<span class="hm-grow"></span><span class="hx-mi">play_arrow</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
         </div>
         <div class="hm-cx2-card is-folder">
           <div class="hm-cx2-head"><span class="hm-cx2-tile is-folder"><span class="hx-mi">folder</span></span><span class="hm-cx2-title"><span class="hm-cx2-name">OBS helpers</span><span class="hm-cx2-desc">3 connectors · 2 on</span></span><span class="hm-switch is-on"><i></i></span><span class="hm-marker" data-n="4"></span></div>
           <div class="hm-cx2-member"><i></i>BRB scene<em>Hotkey</em></div>
-          <div class="hm-cx2-member"><i></i>Mute mic<em>OBS Scene</em></div>
-          <div class="hm-cx2-member is-off"><i></i>Start recording<em>Stream Online</em></div>
+          <div class="hm-cx2-member"><i></i>Mute mic<em>Scene changed</em></div>
+          <div class="hm-cx2-member is-off"><i></i>Start recording<em>Stream went live</em></div>
           <div class="hm-cx2-foot"><span class="hx-mi">drag_indicator</span>Drop connectors here<span class="hm-grow"></span><span class="hx-mi">open_in_new</span>Open<span class="hx-mi">more_horiz</span></div>
         </div>
       </div>
@@ -111,95 +111,153 @@
 <section class="hx-guide" data-guide="connectors_intro_create" data-title="First connector">
   <div class="hx-step">
     <h3>Open the editor</h3>
-    <p>Click <strong>New Connector</strong> (or <strong>Create First Connector</strong>). The <strong>Create New Connector</strong> dialog opens.</p>
+    <p>Click <strong>New connector</strong> (or <strong>Create your first connector</strong>). The editor opens with three steps down the left: <strong>When · Trigger</strong>, <strong>If · Conditions</strong> and <strong>Then · Actions</strong>.</p>
   </div>
   <div class="hx-step">
     <h3>Name it</h3>
-    <p>Under <strong>Basic Information</strong>, type a <strong>Connector Name</strong>. It is required. <strong>Description (optional)</strong> shows under the name on the card.</p>
+    <p>Click <em>Name this connector</em> at the top and type a name. <em>Add a short description (optional)</em> shows under the name on the card. The <strong>On</strong> switch next to it decides whether the connector runs once saved.</p>
   </div>
   <div class="hx-step">
     <h3>Pick a trigger</h3>
-    <p>In <strong>Trigger Configuration</strong>, choose a <strong>Trigger Type</strong>. Hotkey and Stream Deck triggers show extra settings below it. See <a href="help:connector_triggers">Connector Triggers</a>.</p>
+    <p>A new connector opens on <strong>Choose a trigger</strong>. Click one, or type in <em>Search triggers</em>. Hotkey, timer, set-time and webhook triggers show a few settings under the trigger. See <a href="help:connector_triggers">Connector Triggers</a>.</p>
   </div>
   <div class="hx-step">
     <h3>Add conditions if you need them</h3>
-    <p>Click <strong>Add Condition</strong> and set <strong>Field</strong>, <strong>Operator</strong> and <strong>Value</strong>. Skip this step to run on every event of that type. See <a href="help:connector_conditions">Connector Conditions</a>.</p>
+    <p>Click <strong>Add condition</strong> and set <strong>Field</strong>, <strong>Is</strong> and <strong>Value</strong>. Skip this step to run on every event of that type. See <a href="help:connector_conditions">Connector Conditions</a>.</p>
   </div>
   <div class="hx-step">
     <h3>Add actions</h3>
-    <p>In <strong>Actions Configuration</strong>, click <strong>Add Action</strong> and choose an <strong>Action Type</strong>. Add more actions for a sequence; from Action #2 on, <strong>Delay (s)</strong> sets the wait after the previous action. See <a href="help:connector_actions">Connector Actions</a>.</p>
+    <p>Click <strong>Add action</strong> and pick one from the list. Fill in its fields; the <code>{ }</code> button on a text field inserts a variable such as <code>{username}</code>. Add more actions for a sequence. See <a href="help:connector_actions">Connector Actions</a>.</p>
   </div>
   <div class="hx-step">
     <h3>Save and test</h3>
-    <p>Click <strong>Create Connector</strong>. New connectors start enabled. Click {{icon:play_arrow}} <strong>Test</strong> on the card to try it with sample data (see <strong>Testing a connector</strong> below).</p>
+    <p>The bottom left says <em>Ready to save</em>, or names the first thing still missing. Click <strong>Create connector</strong>, or <strong>Save &amp; test</strong> to save and run it once with sample data (see <strong>Testing a connector</strong> below).</p>
   </div>
 </section>
 
 <h2>The connector editor</h2>
 
 <figure class="hx-figure">
-  <div class="hm">
-    <div class="hm-cx-dialog-head"><span class="hm-cx-dialog-title">Create New Connector</span><span class="hm-btn hm-icon-only"><span class="hx-mi">close</span></span></div>
-    <div class="hm-stack">
-      <div class="hm-cx-form-section">
-        <div class="hm-cx-form-section-title">Basic Information</div>
-        <div class="hm-row hm-nowrap">
-          <div class="hm-grid-2 hm-grow">
-            <div class="hm-field is-focused" data-label="Connector Name"><span class="hm-value">Raid welcome</span></div>
-            <div class="hm-field" data-label="Description (optional)"><span class="hm-placeholder">What does this connector do?</span></div>
-          </div>
-          <span class="hm-marker" data-n="1"></span>
-        </div>
+  <div class="hm hm-cxe">
+    <div class="hm-cxe-head">
+      <span class="hm-cxe-tile"><span class="hx-mi">hub</span></span>
+      <div class="hm-cxe-headtext">
+        <div class="hm-cxe-namerow"><span class="hm-cxe-kicker">New</span><span class="hm-cxe-name">Raid welcome</span></div>
+        <span class="hm-cxe-desc">Thank big raids, and every raid from my best friend</span>
       </div>
-      <div class="hm-cx-editor-cols">
-        <div class="hm-cx-form-section">
-          <div class="hm-cx-form-section-title">Trigger Configuration</div>
-          <div class="hm-row hm-nowrap"><div class="hm-field hm-select hm-cx-tint-trigger hm-grow" data-label="Trigger Type"><span class="hm-value">Twitch Raid</span></div><span class="hm-marker" data-n="2"></span></div>
-          <div class="hm-bold hm-sm">Conditions (optional)</div>
-          <div class="hm-cx-hint">Add conditions to make the trigger more specific</div>
-          <div class="hm-cx-cond-box">
-            <div class="hm-cx-box-head"><span>Condition #1</span><span class="hx-mi hm-cx-del">delete</span></div>
-            <div class="hm-cx-cond-fields">
-              <div class="hm-field hm-select hm-cx-tint-cond" data-label="Field"><span class="hm-value">Viewer Count</span></div>
-              <div class="hm-field hm-select hm-cx-tint-cond" data-label="Operator"><span class="hm-value">≥</span></div>
-              <div class="hm-field hm-cx-tint-cond hm-cx-cond-value" data-label="Value"><span class="hm-value">10</span></div>
+      <span class="hm-cxe-onoff">On<span class="hm-switch is-on"><i></i></span></span>
+      <span class="hx-mi">close</span>
+      <span class="hm-marker" data-n="1"></span>
+    </div>
+    <div class="hm-cxe-body">
+      <div class="hm-cxe-flow">
+        <div class="hm-cxe-step">
+          <div class="hm-cxe-rail"><span class="hm-cxe-n">1</span></div>
+          <div class="hm-cxe-main">
+            <div class="hm-cxe-stephead"><span class="hm-cxe-key">When</span><span class="hm-cxe-title">Trigger</span><span class="hm-cxe-sub">What starts this connector</span></div>
+            <div class="hm-cxe-trig">
+              <span class="hm-cxe-tile">{{brand:twitch}}</span>
+              <div class="hm-cxe-trigtext"><span class="hm-cxe-trigname">Raid</span><span class="hm-cxe-trighint">Another streamer raids your channel.</span></div>
+              <span class="hm-cxe-opt"><span class="hx-mi">timer</span>Cooldown<span class="hm-cxe-in">0</span><span class="hm-cxe-unit">sec</span></span>
+              <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">swap_horiz</span>Change</span>
+              <span class="hm-marker" data-n="2"></span>
             </div>
           </div>
-          <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">add</span>Add Condition</span><span class="hm-marker" data-n="3"></span></div>
         </div>
-        <div class="hm-cx-form-section">
-          <div class="hm-cx-form-section-title">Actions Configuration</div>
-          <div class="hm-cx-act-box">
-            <div class="hm-cx-box-head"><span>Action #1</span><span class="hx-mi hm-cx-del">delete</span></div>
-            <div class="hm-field hm-select hm-cx-tint-act" data-label="Action Type"><span class="hm-value">Send Chat Message</span></div>
-            <div class="hm-field hm-textarea hm-cx-tint-act" data-label="Message"><span class="hm-value">Welcome raiders from {username}!</span></div>
-            <span class="hm-xs hm-muted">Send message to</span>
-            <div class="hm-row hm-gap-lg"><span class="hm-check is-on"><i></i>Twitch</span><span class="hm-check"><i></i>YouTube</span></div>
+        <div class="hm-cxe-step">
+          <div class="hm-cxe-rail"><span class="hm-cxe-n">2</span></div>
+          <div class="hm-cxe-main">
+            <div class="hm-cxe-stephead"><span class="hm-cxe-key">If</span><span class="hm-cxe-title">Conditions</span><span class="hm-cxe-sub">Optional. Leave empty to run every time.</span><span class="hm-cxe-tag">2 conditions</span></div>
+            <div class="hm-cxe-conds">
+              <div class="hm-cxe-cond is-head"><span></span><span>Field</span><span>Is</span><span>Value</span><span></span></div>
+              <div class="hm-cxe-cond"><span class="hm-cxe-where">where</span><span class="hm-cxe-in is-select">Viewers</span><span class="hm-cxe-in is-select">at least (≥)</span><span class="hm-cxe-in">10</span><span class="hx-mi">close</span></div>
+              <div class="hm-cxe-or">or</div>
+              <div class="hm-cxe-cond"><span class="hm-cxe-join"><span>AND</span><span class="is-on">OR</span></span><span class="hm-cxe-in is-select">Raider</span><span class="hm-cxe-in is-select">is</span><span class="hm-cxe-inline"><span class="hm-cxe-in">BestFriend</span><span class="hm-cxe-case is-on">Aa</span></span><span class="hx-mi">close</span></div>
+              <div class="hm-cxe-summary"><span class="hx-mi">info</span><span>Runs when <b>Viewers at least (≥) 10</b>, or when <b>Raider is “BestFriend”</b>.</span></div>
+              <span class="hm-marker" data-n="3"></span>
+            </div>
+            <div class="hm-cxe-add"><span class="hx-mi">add</span>Add condition</div>
           </div>
-          <div class="hm-cx-act-box">
-            <div class="hm-cx-box-head"><span>Action #2</span>
-              <span class="hm-cx-delay-row"><span class="hm-field" data-label="Delay (s)"><span class="hm-value">2</span></span><span class="hm-cx-hint">Delay in seconds from Action #1</span><span class="hm-marker" data-n="4"></span></span>
-              <span class="hx-mi hm-cx-del">delete</span></div>
-            <div class="hm-field hm-select hm-cx-tint-act" data-label="Action Type"><span class="hm-value">OBS Studio (WebSocket)</span></div>
+        </div>
+        <div class="hm-cxe-step">
+          <div class="hm-cxe-rail"><span class="hm-cxe-n">3</span></div>
+          <div class="hm-cxe-main">
+            <div class="hm-cxe-stephead"><span class="hm-cxe-key">Then</span><span class="hm-cxe-title">Actions</span><span class="hm-cxe-sub">Run top to bottom</span><span class="hm-cxe-tag">2 actions</span></div>
+            <div class="hm-cxe-action is-open">
+              <div class="hm-cxe-actionhead">
+                <span class="hm-cxe-actionn">1</span>
+                <span class="hm-cxe-tile is-action"><span class="hx-mi">chat</span></span>
+                <span class="hm-cxe-actiontext"><span class="hm-cxe-actiontitle">Send chat message</span><span class="hm-cxe-actionsum">Twitch · “Welcome raiders from FriendlyStreamer! All 42 of you, make yourselves at home.”</span></span>
+                <span class="hm-cxe-tools"><span class="hm-switch is-on"><i></i></span><span class="hx-mi is-disabled">arrow_upward</span><span class="hx-mi">arrow_downward</span><span class="hx-mi">content_copy</span><span class="hx-mi is-danger">delete</span><span class="hx-mi">expand_less</span></span>
+                <span class="hm-marker" data-n="4"></span>
+              </div>
+              <div class="hm-cxe-actionbody">
+                <div class="hm-cxe-fields">
+                  <div class="hm-cxe-f">
+                    <span class="hm-cxe-label">Message</span>
+                    <div class="hm-cxe-box is-area is-focused">Welcome raiders from {username}! All {viewer_count} of you, make yourselves at home.<span class="hm-cxe-varbtn">{ }</span></div>
+                    <div class="hm-cxe-preview"><span class="hx-mi">visibility</span><span>Welcome raiders from FriendlyStreamer! All 42 of you, make yourselves at home.</span></div>
+                  </div>
+                  <div class="hm-cxe-f">
+                    <span class="hm-cxe-label">Send to</span>
+                    <div class="hm-cxe-pills"><span class="hm-cxe-pill is-on">{{brand:twitch}}Twitch</span><span class="hm-cxe-pill">{{brand:youtube}}YouTube</span></div>
+                  </div>
+                </div>
+                <div class="hm-cxe-row"><span class="hm-cxe-label">Wait</span><span class="hm-cxe-in">0</span><span class="hm-cxe-unit">seconds before this action runs</span><span class="hm-marker" data-n="5"></span></div>
+              </div>
+            </div>
+            <div class="hm-cxe-action">
+              <div class="hm-cxe-actionhead">
+                <span class="hm-cxe-actionn">2</span>
+                <span class="hm-cxe-tile is-action"><span class="hm-cxe-obs">{{brand:obs}}</span></span>
+                <span class="hm-cxe-actiontext"><span class="hm-cxe-actiontitle">OBS action</span><span class="hm-cxe-actionsum">OBS — Set program scene · “Raid Welcome”</span></span>
+                <span class="hm-cxe-delay"><span class="hx-mi">schedule</span>wait 2 s</span>
+                <span class="hm-cxe-tools"><span class="hm-switch is-on"><i></i></span><span class="hx-mi">arrow_upward</span><span class="hx-mi is-disabled">arrow_downward</span><span class="hx-mi">content_copy</span><span class="hx-mi is-danger">delete</span><span class="hx-mi">expand_more</span></span>
+              </div>
+            </div>
+            <div class="hm-cxe-add"><span class="hx-mi">add</span>Add action</div>
           </div>
-          <div class="hm-row"><span class="hm-btn hm-success"><span class="hx-mi">add</span>Add Action</span></div>
         </div>
       </div>
-      <div class="hm-cx-dialog-foot"><span class="hm-btn hm-flat">Cancel</span><span class="hm-btn"><span class="hx-mi">save</span>Create Connector</span><span class="hm-marker" data-n="5"></span></div>
+      <div class="hm-cxe-vars">
+        <div class="hm-cxe-varshead"><span class="hx-mi">data_object</span>Variables<span class="hm-cxe-tag">Raid</span></div>
+        <span class="hm-cxe-in"><span class="hx-mi">search</span>Search variables</span>
+        <span class="hm-cxe-vgroup">Event</span>
+        <div class="hm-cxe-var"><code>{username}</code><span>FriendlyStreamer</span></div>
+        <div class="hm-cxe-var"><code>{viewer_count}</code><span>42</span></div>
+        <div class="hm-cxe-var"><code>{from_user_id}</code><span>987654321</span></div>
+        <span class="hm-cxe-vgroup">Connector</span>
+        <div class="hm-cxe-var"><code>{connector_name}</code><span>Raid welcome</span></div>
+        <div class="hm-cxe-var"><code>{trigger_count}</code><span>1</span></div>
+        <span class="hm-cxe-vgroup">Time</span>
+        <div class="hm-cxe-var"><code>{time}</code><span>19:30</span><span class="hx-mi">tune</span></div>
+        <div class="hm-cxe-var"><code>{date}</code><span>2026-03-14</span><span class="hx-mi">tune</span></div>
+        <div class="hm-cxe-varstip">Click a variable to insert it where the cursor was. Date and time variables can be formatted with the tune button.</div>
+        <span class="hm-marker" data-n="6"></span>
+      </div>
+    </div>
+    <div class="hm-cxe-foot">
+      <span class="hm-cxe-status is-ok"><span class="hx-mi">check_circle</span>Ready to save</span>
+      <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">play_arrow</span>Save &amp; test</span>
+      <span class="hm-btn hm-outline hm-dense">Cancel</span>
+      <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Create connector</span>
+      <span class="hm-marker" data-n="7"></span>
     </div>
   </div>
-  <figcaption><span>The editor, filled in for a raid welcome. When you edit an existing connector the title reads <strong>Edit Connector</strong> and the save button reads <strong>Update Connector</strong>. Click the Twitch/YouTube boxes to see them toggle.</span></figcaption>
+  <figcaption><span>The editor, filled in for a raid welcome. When you edit an existing connector the tag reads <strong>Edit</strong> and the save button reads <strong>Save</strong>. The switches here only flip the picture.</span></figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1"><strong>Connector Name</strong> is required. Saving without it shows <em>Connector name is required</em>.</li>
-  <li data-n="2">Pick the trigger before adding conditions. Each trigger offers its own condition fields.</li>
-  <li data-n="3">Each condition has a {{icon:delete}} button to remove it.</li>
-  <li data-n="4">Actions after the first have <strong>Delay (s)</strong>: seconds to wait after the previous action finishes.</li>
-  <li data-n="5">Saving needs a trigger and at least one action, or you see <em>Trigger type is required</em> or <em>At least one action is required</em>.</li>
+  <li data-n="1">The name (required) and a short description. The <strong>On</strong> switch turns the connector on or off when you save. {{icon:close}} closes the editor.</li>
+  <li data-n="2">The trigger, with a one-line hint. <strong>Cooldown</strong> ignores new events for that many seconds after the connector runs. <strong>Change</strong> opens the trigger list again; conditions that don't fit the new trigger are removed.</li>
+  <li data-n="3">Conditions as rows of <strong>Field</strong>, <strong>Is</strong> and <strong>Value</strong>. The <strong>AND</strong>/<strong>OR</strong> pill joins a row to the one above, <strong>Aa</strong> ignores upper and lower case, and the line underneath says in plain English when the connector runs.</li>
+  <li data-n="4">Each action is a numbered card. The header shows what it does, filled in with example values. On the right: a switch to skip the action without deleting it, {{icon:arrow_upward}} {{icon:arrow_downward}} to reorder, {{icon:content_copy}} duplicate, {{icon:delete}} remove, and {{icon:expand_less}} to fold the card. Click the title to open or fold it.</li>
+  <li data-n="5">Fields that accept variables have a <code>{ }</code> button, and a preview line shows the text with example values. Every action, the first one too, has <strong>Wait … seconds before this action runs</strong>; a folded card shows it as <em>wait 2 s</em>.</li>
+  <li data-n="6"><strong>Variables</strong> lists everything the trigger gives you, with example values. Click one to insert it where your cursor was. The panel is hidden when the window is narrow; use the <code>{ }</code> button instead.</li>
+  <li data-n="7">The status says <em>Ready to save</em> or names the first problem, such as <em>Name this connector.</em>, <em>Choose a trigger.</em> or <em>Action 1: Message is empty.</em> <strong>Save &amp; test</strong> saves and runs the connector once with sample data.</li>
 </ol>
 
-<p>If you click <strong>Cancel</strong> or {{icon:close}} after changing something, Mycelian asks <em>Close this connector without saving? Your edits will be lost.</em> Choose <strong>Stay</strong> or <strong>Discard</strong>.</p>
+<p>If you try to save with something missing, Mycelian shows the first problem and opens the action cards that need attention. If you close the editor with unsaved changes, it asks <em>Close this connector without saving? Your edits will be lost.</em> Choose <strong>Keep editing</strong> or <strong>Discard</strong>.</p>
 
 <h2>Managing connectors</h2>
 
@@ -226,13 +284,13 @@
 
 <h2>Testing a connector</h2>
 
-<p>{{icon:play_arrow}} <strong>Test</strong> sends a fake event to the connector. The sample user is <code>TestUser</code>. Conditions are checked as usual, and <strong>the actions really run</strong>: chat messages are posted, OBS switches scenes, commands execute.</p>
+<p>{{icon:play_arrow}} <strong>Test</strong> on a card, or <strong>Save &amp; test</strong> in the editor, sends the connector a realistic sample event for its trigger: a 100-bit cheer, a raid of 42 viewers, a $5 tip and so on. Conditions are checked as usual, and <strong>the actions really run</strong>: chat messages are posted, OBS switches scenes, commands execute.</p>
 
 <figure class="hx-figure hx-static">
   <div class="hm">
     <div class="hm-col">
-      <div class="hm-toast hm-ok"><span class="hx-mi">check_circle</span>Test successful: Connector triggered and executed 2 actions</div>
-      <div class="hm-toast"><span class="hx-mi">info</span>Test completed: Connector did not trigger (conditions not met)</div>
+      <div class="hm-toast hm-ok"><span class="hx-mi">check_circle</span>Test ran 2 actions with sample data.</div>
+      <div class="hm-toast"><span class="hx-mi">info</span>Test event didn't pass the conditions, so nothing ran.</div>
     </div>
   </div>
   <figcaption><span>The two results you will usually see after a test.</span></figcaption>
@@ -243,26 +301,30 @@
   <div class="hx-table-wrap"><table>
   <thead><tr><th>Trigger</th><th>Sample event</th></tr></thead>
   <tbody>
-  <tr><td>Twitch Bits</td><td>amount 100, message <code>Test bits!</code></td></tr>
-  <tr><td>Twitch Subscription</td><td>tier 1, months 1, message <code>Test sub!</code></td></tr>
-  <tr><td>Twitch Follow</td><td>username only</td></tr>
-  <tr><td>Twitch Chat Message</td><td>message <code>Hello test!</code>, not a moderator</td></tr>
-  <tr><td>Donation</td><td>amount 5.0 USD, message <code>Test donation!</code></td></tr>
-  <tr><td>YouTube triggers</td><td>e.g. Super Chat $5.00, Member Milestone 6 months, Gift Membership 5</td></tr>
-  <tr><td>Hotkey</td><td><kbd>Ctrl</kbd>+<kbd>F12</kbd>, global</td></tr>
-  <tr><td>OBS triggers</td><td>scene <code>Test Scene</code>; stream/record stopped; input <code>Mic/Aux</code> unmuted</td></tr>
-  <tr><td>Any (all events)</td><td>a chat message <code>Hello test!</code> with amount 100</td></tr>
+  <tr><td>Bits cheered</td><td><code>TestUser</code>, 100 bits, message <code>Take my bits!</code></td></tr>
+  <tr><td>New subscriber / Resubscription</td><td><code>TestUser</code>, tier 1; a resub has 12 months (6 in a row)</td></tr>
+  <tr><td>Gifted subs</td><td><code>GenerousViewer</code>, 5 gifts, tier 1</td></tr>
+  <tr><td>Raid</td><td><code>FriendlyStreamer</code> with 42 viewers</td></tr>
+  <tr><td>Channel points reward</td><td><code>TestUser</code> redeems <code>Hydrate!</code> (500 points) with the text <code>Drink some water</code></td></tr>
+  <tr><td>Chat message (Twitch)</td><td><code>TestUser</code>: <code>!hello there</code>, not a moderator</td></tr>
+  <tr><td>YouTube triggers</td><td>e.g. Super Chat $5.00 USD, Membership milestone 6 months, Gifted memberships 5</td></tr>
+  <tr><td>Tip / donation</td><td><code>KindViewer</code>, 5 USD, message <code>Keep it up!</code>, from Streamlabs</td></tr>
+  <tr><td>OBS triggers</td><td>scene <code>Gameplay</code> (from <code>Starting Soon</code>); streaming or recording started; <code>Mic/Aux</code> muted</td></tr>
+  <tr><td>Hotkey, Stream Deck button, Every few minutes, At a set time</td><td>The connector's own keys, button, interval or time, so the trigger always matches</td></tr>
+  <tr><td>Webhook</td><td><code>username</code> TestUser, <code>message</code> Hello from a webhook, <code>amount</code> 5</td></tr>
+  <tr><td>Any event</td><td>A Twitch chat event, with sample values from every trigger filled in (for example amount 100)</td></tr>
   </tbody>
   </table></div>
 </details>
 
 <details class="hx-details">
-  <summary>Test always says "did not trigger"</summary>
+  <summary>Test says nothing ran</summary>
   <ul>
-    <li>Your conditions do not match the sample values above (for example <em>Amount ≥ 500</em> against the sample 100 bits).</li>
-    <li>The connector is disabled. Test respects the switch.</li>
-    <li>There is no sample event for <strong>Twitch Resubscription</strong>, <strong>Twitch Gift Sub</strong>, <strong>Twitch Raid</strong>, <strong>Channel Points</strong>, <strong>Twitch Stream Online</strong> or <strong>Twitch Stream Offline</strong>, so Test cannot fire them. Use the real event, or temporarily switch the trigger to one that has sample data.</li>
-    <li>A Hotkey connector only matches the sample if its combination is <code>ctrl+f12</code> with <strong>Global hotkey</strong> on.</li>
+    <li>Your conditions do not match the sample values above (for example <em>Bits at least (≥) 500</em> against the sample 100 bits).</li>
+    <li>The connector is off. Test then says <em>Turn the connector on to test it.</em></li>
+    <li>The <strong>Cooldown</strong> from the last run has not finished yet.</li>
+    <li>Every action failed, for example because OBS or the chatbot is not connected. Check the log.</li>
+    <li>The connector has a <strong>Game hook</strong> action and that game hook is off or not attached.</li>
   </ul>
 </details>
 
@@ -270,14 +332,14 @@
 
 <ul>
   <li>Start with one trigger and one action. Add conditions and more actions once it works.</li>
-  <li>Use conditions to stop a connector firing on every chat line or every tiny cheer.</li>
+  <li>Use conditions to stop a connector firing on every chat line or every tiny cheer, and <strong>Cooldown</strong> to stop it firing again too soon.</li>
   <li>Several connectors can share a trigger. Each one checks its own conditions.</li>
-  <li>Connectors with a <strong>Game Hook</strong> action are skipped while that game hook is off or not attached.</li>
+  <li>Connectors with a <strong>Game hook</strong> action are skipped while that game hook is off or not attached.</li>
 </ul>
 
 <div class="hx-cards">
   <a class="hx-card" href="help:connector_examples">{{icon:lightbulb}}<span><strong>Connector Examples</strong><span class="hx-card-text">Complete connectors you can copy</span></span></a>
-  <a class="hx-card" href="help:connector_triggers">{{icon:flash_on}}<span><strong>Triggers</strong><span class="hx-card-text">Every trigger and its fields</span></span></a>
-  <a class="hx-card" href="help:connector_conditions">{{icon:filter_list}}<span><strong>Conditions</strong><span class="hx-card-text">Operators and matching rules</span></span></a>
-  <a class="hx-card" href="help:connector_actions">{{icon:play_arrow}}<span><strong>Actions</strong><span class="hx-card-text">Every action and its settings</span></span></a>
+  <a class="hx-card" href="help:connector_triggers">{{icon:flash_on}}<span><strong>Triggers</strong><span class="hx-card-text">Every trigger and its settings</span></span></a>
+  <a class="hx-card" href="help:connector_conditions">{{icon:filter_list}}<span><strong>Conditions</strong><span class="hx-card-text">Fields, AND/OR and matching rules</span></span></a>
+  <a class="hx-card" href="help:connector_actions">{{icon:play_arrow}}<span><strong>Actions</strong><span class="hx-card-text">Every action and the variables you can use</span></span></a>
 </div>

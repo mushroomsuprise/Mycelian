@@ -32,7 +32,7 @@ def _connector(conditions=(), actions=None):
 def test_flow_rows_and_limits():
     html = cx._connector_flow_html(_connector())
     assert ">When<" in html and ">Then<" in html and ">If<" not in html
-    assert "Twitch Bits" in html and "Send Chat Message → Twitch" in html
+    assert "Bits cheered" in html and "Send chat message → Twitch" in html
 
     conds = [TriggerCondition("amount", ComparisonOperator.GREATER_THAN, n) for n in (1, 2, 3)]
     acts = [NS(action_type=ActionType.DISPLAY_BANNER, permanent=False) for _ in range(5)]
@@ -64,3 +64,14 @@ def test_connectors_stylesheet_is_well_formed():
     assert out.count("{") == out.count("}")
     assert ".cnx .cnx " not in out
     assert "body.cx-dragging .cnx .cx-root-drop" in out
+
+
+def test_card_names_match_the_editor():
+    assert cx.format_trigger_name(TriggerType.TWITCH_RAID) == "Raid"
+    assert cx.format_trigger_name(TriggerType.DONATION) == "Tip / donation"
+    both = NS(action_type=ActionType.SEND_CHAT_MESSAGE, reply_targets=["twitch", "youtube"])
+    assert cx.get_action_display_name(both) == "Send chat message → Twitch + YouTube"
+    alert = NS(action_type=ActionType.TRIGGER_ALERT, alert_type="raids")
+    assert cx.get_action_display_name(alert) == "Play an alert: Raid"
+    obs = NS(action_type=ActionType.OBS_CONTROL, operation="set_program_scene")
+    assert "scene" in cx.get_action_display_name(obs).lower()
