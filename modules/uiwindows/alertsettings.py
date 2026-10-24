@@ -23,7 +23,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import html as html_lib
 import logging
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -31,13 +33,14 @@ from types import SimpleNamespace
 
 from nicegui import ui
 from ..notification_engine import notify
-from ..ui_buttons import outline_button
+from ..ui_buttons import destructive_button, outline_button, primary_button
 from ..ui_form_controls import form_input, form_number, form_select
 from ..ui_timer import app_schedule, layout_schedule, run_on_ui_loop
 
 from ..help_system.contextual_help import set_alerts_ui_references
 
 from .. import alert_processor, alertutils
+from .alerts_styles import ALERTS_CSS, ALERTS_TAB_CSS
 
 logger = logging.getLogger(__name__)
 
@@ -69,57 +72,6 @@ def _path_under_assets(path) -> bool:
         return True
     except (ValueError, OSError):
         return False
-
-
-# Basic CSS for styling - uses theme CSS variables
-CSS = """
-/* Basic styling elements */
-.q-switch {
-    border-radius: 16px;
-}
-
-/* Custom button styling to override any conflicting styles */
-/* Using maximum specificity to override NiceGUI and other styles */
-.q-btn.alert-delete-btn,
-button.alert-delete-btn,
-.alert-delete-btn.q-btn,
-.alert-delete-btn {
-    background-color: var(--color-error) !important;
-    background: var(--color-error) !important;
-    color: white !important;
-    font-weight: 500 !important;
-    box-shadow: 0 4px 6px -1px var(--color-bg-overlay) !important;
-    border: none !important;
-}
-
-.q-btn.alert-delete-btn:hover,
-button.alert-delete-btn:hover,
-.alert-delete-btn.q-btn:hover,
-.alert-delete-btn:hover {
-    background-color: rgb(185, 28, 28) !important;
-    background: rgb(185, 28, 28) !important;
-}
-
-.q-btn.alert-save-btn,
-button.alert-save-btn,
-.alert-save-btn.q-btn,
-.alert-save-btn {
-    background-color: var(--color-success) !important;
-    background: var(--color-success) !important;
-    color: white !important;
-    font-weight: 500 !important;
-    box-shadow: 0 4px 6px -1px var(--color-bg-overlay) !important;
-    border: none !important;
-}
-
-.q-btn.alert-save-btn:hover,
-button.alert-save-btn:hover,
-.alert-save-btn.q-btn:hover,
-.alert-save-btn:hover {
-    background-color: rgb(21, 128, 61) !important;
-    background: rgb(21, 128, 61) !important;
-}
-"""
 
 
 class AlertSettingsState:
@@ -281,8 +233,9 @@ def _refresh_alert_dirty_label(tab_type: str) -> None:
 
 
 def _mount_unsaved_label(alert_type: str) -> None:
-    label = ui.label("Unsaved changes").classes("text-sm self-center mr-auto")
-    label.style("color: var(--color-warning, #e6a817);")
+    label = ui.html(
+        '<span class="alr-pill"><span class="alr-icon">edit</span>Unsaved changes</span>', sanitize=False
+    )
     label.visible = False
     label.tooltip("These alert settings are not saved yet")
     alert_settings_state.get_elements(alert_type)["unsaved_label"] = label
@@ -594,103 +547,719 @@ def update_tts_custom_message_visibility(alert_type: str):
     return
 
 
-_ALERT_EXPANSION_CLASSES = "content-card mb-1 w-full"
-_ALERT_FIELD_GROUP_CLASSES = "w-full gap-px form-group py-2 px-1 rounded"
+# ---------------------------------------------------------------------------
+#  Layout: alert list (left) + detail with compact sections (right)
+# ---------------------------------------------------------------------------
+
+# Sub-tab icons, in tab order.
+_ALERT_TAB_ICONS = {
+    "Bits": "diamond",
+    "Subscriptions": "star",
+    "Streaks": "local_fire_department",
+    "Gift Subs": "redeem",
+    "Donations": "volunteer_activism",
+    "Raids": "groups",
+    "Follows": "favorite",
+    "Channel Points": "toll",
+}
+
+# Unit shown after the trigger amount.
+_TRIGGER_UNITS = {
+    "bits": "bits",
+    "subs": "months",
+    "streaks": "streams",
+    "giftsubs": "gifts",
+    "donations": "",
+    "raids": "viewers",
+}
+
+# Per-type view state that is not a form field (kept out of the elements dict so
+# dirty tracking never sees it).
+_ALERT_VIEW: dict = {}
+_TAB_COUNT_LABELS: dict = {}
 
 
-def _alert_expansion(title: str, *, icon: str | None = None):
-    """Section expansion matching Source Settings category style."""
-    if icon:
-        return ui.expansion(title, icon=icon).classes(_ALERT_EXPANSION_CLASSES)
-    return ui.expansion(title).classes(_ALERT_EXPANSION_CLASSES)
+def _view(alert_type: str) -> dict:
+    return _ALERT_VIEW.setdefault(alert_type, {})
+
+
+def _el(alert_type: str) -> dict:
+    return alert_settings_state.get_elements(alert_type)
+
+
+def _tracker(alert_type: str, name: str):
+    """on_change / "change" handler that feeds track_field_change for one field."""
+    return lambda e, at=alert_type, n=name: track_field_change(n, _el(at)[n], e, at)
+
+
+def _icon_html(name: str, cls: str = "") -> str:
+    return f'<span class="alr-icon {cls}">{name}</span>'
+
+
+def _section(icon: str, title: str, right_html: str = ""):
+    sec = ui.element("div").classes("alr-sec")
+    with sec:
+        ui.html(
+            f'{_icon_html(icon)}<span>{html_lib.escape(title)}</span><span class="alr-spacer"></span>{right_html}',
+            sanitize=False,
+        ).classes("alr-sec-head")
+    return sec
+
+
+def _label_with_help(label: str, tip: str = "", tag: str = "") -> None:
+    with ui.element("div").classes("alr-label"):
+        ui.label(label)
+        if tag:
+            ui.label(tag).classes("alr-tag")
+        if tip:
+            ui.html(_icon_html("help_outline"), sanitize=False).classes("alr-help").tooltip(tip)
+
+
+@contextmanager
+def _row(label: str, tip: str = "", *, tag: str = "", grow: bool = False):
+    """One line: label (+ hover help) on the left, the control on the right."""
+    row = ui.element("div").classes("alr-row")
+    with row:
+        _label_with_help(label, tip, tag)
+        with ui.element("div").classes("alr-ctrl is-grow" if grow else "alr-ctrl"):
+            yield row
+
+
+@contextmanager
+def _stack(label: str, tip: str = ""):
+    """Label above a full-width control."""
+    stack = ui.element("div").classes("alr-stack")
+    with stack:
+        _label_with_help(label, tip)
+        yield stack
+
+
+def _switch_field(alert_type: str, name: str):
+    """Dense switch registered under ``name``; change tracking as before."""
+    sw = ui.switch().props("dense")
+    _el(alert_type)[name] = sw
+    sw.on("change", _tracker(alert_type, name))
+    return sw
+
+
+def _number_field(alert_type: str, name: str, tooltip: str, *, value=None, min=None, max=None, step=None, wide=False):
+    kwargs = {"tooltip": tooltip, "classes": "alr-num-wide" if wide else "alr-num", "on_change": _tracker(alert_type, name)}
+    for key, val in (("value", value), ("min", min), ("max", max), ("step", step)):
+        if val is not None:
+            kwargs[key] = val
+    field = form_number(**kwargs)
+    _el(alert_type)[name] = field
+    return field
+
+
+def _unit(text: str) -> None:
+    if text:
+        ui.label(text).classes("alr-unit")
+
+
+# ----- file cards -----------------------------------------------------------
+
+_IMAGE_EXTS = (".gif", ".png", ".jpg", ".jpeg", ".webp", ".apng", ".avif")
+
+
+def _overlay_media_url(directory: str, filename: str) -> str:
+    """URL the overlay server uses for an /assets/ file, or '' when unavailable."""
+    if not directory or not filename or not filename.lower().endswith(_IMAGE_EXTS):
+        return ""
+    web_dir = directory.replace("\\", "/")
+    if not web_dir.startswith("/assets/"):
+        return ""
+    try:
+        from .. import web_engine as web_engine_module
+
+        inst = getattr(web_engine_module, "web_engine_instance", None)
+        if not inst or not getattr(inst, "is_running", False):
+            return ""
+        port = getattr(inst, "port", 5000) or 5000
+    except Exception:
+        return ""
+    from urllib.parse import quote
+
+    base = web_dir if web_dir.endswith("/") else web_dir + "/"
+    return f"http://127.0.0.1:{port}{quote(base + filename)}"
+
+
+def _media_card(alert_type: str, *, icon: str, browse: str, dir_key: str, file_key: str | None,
+                empty: str, browse_tip: str, dir_tip: str, file_tip: str = "", dir_label: str = "Folder"):
+    """File card: name + folder, Browse, and ✎ to type the folder/file by hand.
+
+    The real inputs (``dir_key`` / ``file_key``) live in the collapsible edit area,
+    so loading, saving, dirty tracking and Browse keep using them unchanged.
+    """
+    card = ui.element("div").classes("alr-media")
+    with card:
+        with ui.element("div").classes("alr-media-main"):
+            thumb = ui.html(_icon_html(icon), sanitize=False).classes("alr-thumb")
+            with ui.element("div").classes("alr-media-text"):
+                name_label = ui.label(empty).classes("alr-media-name is-empty")
+                path_label = ui.label("Not set").classes("alr-media-path")
+            edit_btn = ui.button(icon="edit").props("flat round dense size=sm")
+            edit_btn.tooltip("Type the path")
+            outline_button("Browse", lambda at=alert_type, b=browse: handle_browse(b, at), icon="folder_open").props(
+                "dense"
+            ).classes("px-2").tooltip(browse_tip)
+        edit = ui.element("div").classes("alr-edit")
+        edit.visible = False
+        with edit:
+            dir_input = form_input(tooltip=dir_tip, label=dir_label, classes="w-full", on_change=_tracker(alert_type, dir_key))
+            _el(alert_type)[dir_key] = dir_input
+            file_input = None
+            if file_key:
+                file_input = form_input(tooltip=file_tip, label="File", classes="w-full", on_change=_tracker(alert_type, file_key))
+                _el(alert_type)[file_key] = file_input
+
+    def refresh(_=None) -> None:
+        directory = str(dir_input.value or "")
+        filename = str(file_input.value or "") if file_input is not None else ""
+        if file_input is not None:
+            title = filename
+        else:
+            parts = [p for p in directory.replace("\\", "/").split("/") if p]
+            title = f"{parts[-1]} folder" if parts else ""
+        if title:
+            name_label.set_text(title)
+            name_label.classes(remove="is-empty")
+            path_label.set_text(directory or "No folder set")
+        else:
+            name_label.set_text(empty)
+            name_label.classes(add="is-empty")
+            path_label.set_text("Not set")
+        url = _overlay_media_url(directory, filename)
+        thumb.set_content(
+            f'<img src="{html_lib.escape(url, quote=True)}" alt="">' if url else _icon_html(icon)
+        )
+
+    def toggle_edit() -> None:
+        edit.visible = not edit.visible
+
+    edit_btn.on_click(toggle_edit)
+    dir_input.on_value_change(refresh)
+    if file_input is not None:
+        file_input.on_value_change(refresh)
+    refresh()
+    return card
+
+
+# ----- dependent dimming ----------------------------------------------------
+
+
+def _refresh_alert_dims(alert_type: str) -> None:
+    """Dim settings that do nothing with the current switches."""
+    view = _view(alert_type)
+    elements = _el(alert_type)
+
+    def on(name: str) -> bool:
+        el = elements.get(name)
+        return bool(getattr(el, "value", False)) if el is not None else False
+
+    tts = on("tts_enabled_switch")
+    custom = tts and getattr(elements.get("tts_source_select"), "value", "") == "custom_message"
+    rules = {
+        "tts_source": not tts,
+        "tts_custom": not custom,
+        "random": not on("randomized_switch"),
+        "extra": not on("randomized_extra_switch"),
+        "per_stream": not on("twitch_max_per_stream_switch"),
+        "per_user": not on("twitch_max_per_user_switch"),
+        "cooldown": not on("twitch_cooldown_switch"),
+        "prompt": not on("twitch_user_input_switch"),
+    }
+    for key, dim in rules.items():
+        for el in view.get(f"dim_{key}", ()):
+            if dim:
+                el.classes(add="is-dim")
+            else:
+                el.classes(remove="is-dim")
+
+
+def _dim_on(alert_type: str, key: str, element) -> None:
+    _view(alert_type).setdefault(f"dim_{key}", []).append(element)
+
+
+def _watch_dims(alert_type: str, *names: str) -> None:
+    for name in names:
+        el = _el(alert_type).get(name)
+        if el is not None:
+            el.on_value_change(lambda _e, at=alert_type: _refresh_alert_dims(at))
+
+
+# ----- sections -------------------------------------------------------------
+
+
+def _build_playback_section(alert_type: str) -> None:
+    with _section("tune", "Playback"):
+        with _row("Duration", "How long the alert stays on screen"):
+            _number_field(alert_type, "duration_input", "How long the alert will display (seconds)", value=3.0, min=0.1, step=0.1)
+            _unit("sec")
+        with _row("Stackable", "Allow multiple alerts of this type to stack"):
+            _switch_field(alert_type, "stackable_switch")
+        if alert_type == "points":
+            with _row("Audio only", "Play only audio without any visual elements (useful for channel points)"):
+                _switch_field(alert_type, "audio_only_switch")
+
+
+def create_visual_settings_section(alert_type: str):
+    """GIF / image file card."""
+    with _section("image", "Visual"):
+        _media_card(
+            alert_type, icon="gif_box", browse="gif", dir_key="gif_dir_input", file_key="gif_file_input",
+            empty="No GIF or image", browse_tip="Browse for GIF/image file",
+            dir_tip="Directory containing the GIF file", file_tip="Name of the GIF file",
+        )
+
+
+def create_audio_settings_section(alert_type: str):
+    """Primary sound card, volume and fades."""
+    with _section("volume_up", "Sound"):
+        _media_card(
+            alert_type, icon="music_note", browse="primary", dir_key="primary_dir_input", file_key="primary_file_input",
+            empty="No sound", browse_tip="Browse for the primary sound file",
+            dir_tip="Directory containing the primary sound file", file_tip="Name of the primary sound file",
+        )
+        with _row("Volume", "Volume level for the alert sound (0-100%)", grow=True):
+            slider = ui.slider(min=0, max=100, value=100).classes("alr-slider")
+            _el(alert_type)["volume_input"] = slider
+            _el(alert_type)["volume_value_label"] = ui.label("100%").classes("alr-pct")
+
+            def handle_volume_change(e, at=alert_type):
+                track_field_change("volume_input", _el(at)["volume_input"], e, at)
+                slider_element = _el(at)["volume_input"]
+                value = int(slider_element.value) if slider_element.value is not None else 100
+                _el(at)["volume_value_label"].set_text(f"{value}%")
+
+            slider.on("change", handle_volume_change)
+        with ui.element("div").classes("alr-row is-pair"):
+            _label_with_help("Fade in", "Time in milliseconds for the audio to fade in")
+            with ui.element("div").classes("alr-ctrl"):
+                _number_field(alert_type, "fade_in_input", "Time in milliseconds for the audio to fade in", value=0, min=0)
+                _unit("ms")
+            with ui.element("div").classes("alr-label alr-label-r"):
+                ui.label("Fade out")
+            with ui.element("div").classes("alr-ctrl"):
+                _number_field(alert_type, "fade_out_input", "Time in milliseconds for the audio to fade out", value=0, min=0)
+                _unit("ms")
 
 
 def create_tts_settings_section(alert_type: str):
-    """Create the text-to-speech settings section for alerts."""
-    with _alert_expansion("TTS", icon="record_voice_over"):
-        with ui.grid(columns=1).classes("w-full gap-x-2 gap-y-px"):
-            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                ui.label("Speech Playback").classes("font-medium mb-2 text-sm")
-                alert_settings_state.get_elements(alert_type)["tts_enabled_switch"] = (
-                    ui.switch(
-                        "Enable Text-to-Speech", value=False
-                    ).classes("w-full q-switch")
-                )
-                alert_settings_state.get_elements(alert_type)["tts_enabled_switch"].on(
-                    "change",
-                    lambda e, at=alert_type: track_field_change(
-                        "tts_enabled_switch",
-                        alert_settings_state.get_elements(at)["tts_enabled_switch"],
-                        e,
-                        at,
-                    ),
-                )
-                ui.tooltip(
-                    "Speak this alert using the browser text-to-speech system"
-                ).classes("bg-theme-surface")
+    """Text-to-speech settings."""
+    with _section("record_voice_over", "Text-to-speech"):
+        with _row("Speak this alert", "Speak this alert using the browser text-to-speech system"):
+            _switch_field(alert_type, "tts_enabled_switch")
+        with _row("Speak", "Choose whether TTS should speak the alert message or a custom static message") as source_row:
 
-            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                ui.label("Speech Source").classes("font-medium mb-2 text-sm")
+            def handle_tts_source_change(e, at=alert_type):
+                update_tts_custom_message_visibility(at)
+                track_field_change("tts_source_select", _el(at)["tts_source_select"], e, at)
 
-                def handle_tts_source_change(e, at=alert_type):
-                    update_tts_custom_message_visibility(at)
-                    track_field_change(
-                        "tts_source_select",
-                        alert_settings_state.get_elements(at)["tts_source_select"],
-                        e,
-                        at,
-                    )
+            _el(alert_type)["tts_source_select"] = form_select(
+                tooltip="Choose whether TTS should speak the alert message or a custom static message",
+                options=TTS_SOURCE_OPTIONS,
+                value="alert_message",
+                classes="w-40",
+                on_change=handle_tts_source_change,
+            )
+        _dim_on(alert_type, "tts_source", source_row)
+        with _stack("Custom message", "Static message to speak when Custom Message is selected") as custom_stack:
+            _el(alert_type)["tts_custom_message_input"] = form_input(
+                tooltip="Static message to speak when Custom Message is selected",
+                classes="w-full",
+                placeholder="Thanks for the support!",
+                on_change=_tracker(alert_type, "tts_custom_message_input"),
+            )
+        _dim_on(alert_type, "tts_custom", custom_stack)
+    _watch_dims(alert_type, "tts_enabled_switch", "tts_source_select")
 
-                alert_settings_state.get_elements(alert_type)["tts_source_select"] = (
-                    form_select(
-                        tooltip=(
-                            "Choose whether TTS should speak the alert message or a "
-                            "custom static message"
-                        ),
-                        options=TTS_SOURCE_OPTIONS,
-                        label="TTS Text Source",
-                        value="alert_message",
-                        classes="w-full bg-theme-base",
-                        on_change=handle_tts_source_change,
-                    )
+
+def create_randomizer_settings_section(alert_type: str):
+    """Random and extra random sounds."""
+    with _section("shuffle", "Randomizer"):
+        with _row("Random sounds", "Enable random sound playback instead of primary sound"):
+            _switch_field(alert_type, "randomized_switch")
+        with _row("Chance", "Percentage chance to play a random sound instead of the primary sound") as row:
+            _number_field(alert_type, "random_chance_input",
+                          "Percentage chance to play a random sound instead of the primary sound", value=0, min=0, max=100)
+            _unit("%")
+        _dim_on(alert_type, "random", row)
+        card = _media_card(
+            alert_type, icon="folder", browse="random", dir_key="random_dir_input", file_key=None,
+            empty="No folder", browse_tip="Browse for directory containing random sound files",
+            dir_tip="Directory containing random sound files", dir_label="Directory",
+        )
+        _dim_on(alert_type, "random", card)
+        ui.element("div").classes("alr-div")
+        with _row("Extra random sound", "Enable extra random sounds to play after the main sound"):
+            _switch_field(alert_type, "randomized_extra_switch")
+        with _row("Chance", "Percentage chance to play an additional random sound after the primary/random sound") as row:
+            _number_field(alert_type, "extra_chance_input",
+                          "Percentage chance to play an additional random sound after the primary/random sound",
+                          value=0, min=0, max=100)
+            _unit("%")
+        _dim_on(alert_type, "extra", row)
+        card = _media_card(
+            alert_type, icon="folder", browse="extra", dir_key="extra_dir_input", file_key=None,
+            empty="No folder", browse_tip="Browse for directory containing extra sound files",
+            dir_tip="Directory containing extra random sound files", dir_label="Directory",
+        )
+        _dim_on(alert_type, "extra", card)
+    _watch_dims(alert_type, "randomized_switch", "randomized_extra_switch")
+
+
+def create_twitch_options_section(alert_type: str):
+    """Twitch reward fields (Channel Points only)."""
+    with _section("api", "Twitch reward", '<span class="alr-tag">Synced to Twitch</span>'):
+        with _stack("Reward title", "The title of the Twitch point reward"):
+            _el(alert_type)["twitch_title_input"] = form_input(
+                tooltip="The title of the Twitch point reward", classes="w-full",
+                on_change=_tracker(alert_type, "twitch_title_input"),
+            )
+        with _row("Cost", "How many channel points this reward costs"):
+            _number_field(alert_type, "twitch_cost_input", "How many channel points this reward costs", value=100, min=1, wide=True)
+            _unit("points")
+        with _row("Enabled on Twitch", "Whether the reward is enabled on Twitch"):
+            _switch_field(alert_type, "twitch_enabled_switch")
+        with _row("Viewer must type a message", "Whether users must provide text input when redeeming"):
+            _switch_field(alert_type, "twitch_user_input_switch")
+        with _stack("Prompt", "Prompt text shown to users when they redeem (if user input is required)") as prompt:
+            _el(alert_type)["twitch_user_input_prompt"] = form_input(
+                tooltip="Prompt text shown to users when they redeem (if user input is required)", classes="w-full",
+                on_change=_tracker(alert_type, "twitch_user_input_prompt"),
+            )
+        _dim_on(alert_type, "prompt", prompt)
+        for switch_name, input_name, label, switch_tip, input_tip, default, unit, dim_key in (
+            ("twitch_max_per_stream_switch", "twitch_max_per_stream_input", "Limit per stream",
+             "Enable limit on total redemptions per stream", "Maximum number of redemptions allowed per stream", 1, "", "per_stream"),
+            ("twitch_max_per_user_switch", "twitch_max_per_user_input", "Limit per viewer",
+             "Enable limit on redemptions per user per stream", "Maximum number of redemptions per user per stream", 1, "", "per_user"),
+            ("twitch_cooldown_switch", "twitch_cooldown_input", "Global cooldown",
+             "Enable global cooldown between redemptions", "Cooldown time in seconds between redemptions", 60, "sec", "cooldown"),
+        ):
+            with _row(label, switch_tip):
+                _switch_field(alert_type, switch_name)
+                with ui.element("div").classes("alr-dimc") as amount:
+                    _number_field(alert_type, input_name, input_tip, value=default, min=1)
+                    _unit(unit)
+                _dim_on(alert_type, dim_key, amount)
+        with _row("Skip request queue", "Skip the request queue and auto-fulfill redemptions"):
+            _switch_field(alert_type, "twitch_skip_queue_switch")
+    _watch_dims(alert_type, "twitch_user_input_switch", "twitch_max_per_stream_switch",
+                "twitch_max_per_user_switch", "twitch_cooldown_switch")
+
+
+# ----- alert list -----------------------------------------------------------
+
+_POINTS_LABEL_RE = re.compile(r"^(?P<title>.*) \((?P<cost>\d+) points\)$")
+
+
+def _item_flags(data: dict) -> list:
+    if not isinstance(data, dict):
+        return []
+    flags = []
+    if data.get("single_audio_name"):
+        flags.append(("volume_up", "Sound"))
+    if data.get("gif_name"):
+        flags.append(("image", "GIF or image"))
+    if data.get("randomized") or data.get("randomized_extra"):
+        flags.append(("shuffle", "Randomizer"))
+    if data.get("tts_enabled"):
+        flags.append(("record_voice_over", "Text-to-speech"))
+    return flags
+
+
+def _alert_list_entries(alert_type: str):
+    """(id, name, meta_html, flags_html, off) for each list entry, from the select's options."""
+    select = _el(alert_type).get("alert_select")
+    options = dict(getattr(select, "options", None) or {}) if select is not None else {}
+    saved = get_alerts_for_type(alert_type)
+    fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
+    entries = []
+    for alert_id, label in options.items():
+        if alert_id == "new" or alert_id in POINTS_REWARD_SELECT_PLACEHOLDERS:
+            continue
+        data = saved.get(alert_id) or {}
+        flags = "".join(
+            f'<span class="alr-icon alr-flag" title="{tip}">{icon}</span>' for icon, tip in _item_flags(data)
+        )
+        off = False
+        if alert_type == "points":
+            match = _POINTS_LABEL_RE.match(str(label))
+            name = match.group("title") if match else str(label)
+            cost = f"{int(match.group('cost')):,}" if match else ""
+            meta = f'<span class="alr-cost">{_icon_html("toll")}{cost}</span>' if cost else ""
+            off = not data.get("enable_alert", False)
+            if off:
+                flags = '<span class="alr-off">Not an alert</span>'
+        else:
+            name = str(label)
+            numeric = alert_id[len(alert_type):] if alert_id.startswith(alert_type) else alert_id
+            if alert_id == fallback_id:
+                meta = '<span class="alr-kind is-fb">Fallback</span>'
+            elif "-" in numeric:
+                meta = '<span class="alr-kind">Range</span>'
+            else:
+                meta = ""
+        entries.append((alert_id, name, meta, flags, off))
+    return entries, options
+
+
+def _placeholder_message(options: dict) -> str:
+    for key in ("loading", "not_connected", "no_channel_points", "error", "no_rewards"):
+        if key in options:
+            return str(options[key])
+    return ""
+
+
+def _refresh_tab_count(alert_type: str, count: int) -> None:
+    tab_name = next((n for n, t in ALERT_TAB_TO_TYPE.items() if t == alert_type), None)
+    label = _TAB_COUNT_LABELS.get(tab_name)
+    if label is not None:
+        label.set_text(str(count))
+        label.visible = count > 0
+
+
+def _render_alert_list(alert_type: str) -> None:
+    """Redraw the alert list and the header title from the selector's options/value."""
+    view = _view(alert_type)
+    container = view.get("list")
+    select = _el(alert_type).get("alert_select")
+    if container is None or select is None:
+        return
+    entries, options = _alert_list_entries(alert_type)
+    current = select.value
+    query = str(view.get("query") or "").strip().lower()
+    _refresh_tab_count(alert_type, len(entries))
+
+    new_btn = view.get("new")
+    if new_btn is not None:
+        if current == "new":
+            new_btn.classes(add="is-active")
+        else:
+            new_btn.classes(remove="is-active")
+
+    container.clear()
+    with container:
+        shown = 0
+        for alert_id, name, meta, flags, off in entries:
+            if query and query not in name.lower():
+                continue
+            shown += 1
+            classes = "alr-item"
+            if alert_id == current:
+                classes += " is-active"
+            if off:
+                classes += " is-off"
+            item = ui.element("div").on("click", lambda _e, at=alert_type, aid=alert_id: _pick_alert(at, aid))
+            item.classes(classes)
+            with item:
+                ui.html(
+                    f'<div class="alr-item-top"><span class="alr-item-name">{html_lib.escape(name)}</span>{meta}</div>'
+                    f'<div class="alr-item-flags">{flags}</div>',
+                    sanitize=False,
+                ).classes("contents")
+        if not shown:
+            message = _placeholder_message(options) if alert_type == "points" else ""
+            if not message:
+                message = "No alerts match your search." if query else "No alerts yet. Click New alert to make one."
+            ui.label(message).classes("alr-empty")
+
+    title = view.get("title")
+    if title is not None:
+        if current is None:
+            text = "Choose a reward" if alert_type == "points" else "Choose an alert"
+        elif current == "new":
+            text = "New reward" if alert_type == "points" else "New alert"
+        else:
+            text = next((name for aid, name, *_rest in entries if aid == current), str(options.get(current, "")))
+        title.set_text(text or ("Channel Points" if alert_type == "points" else "Alert"))
+
+
+def _pick_alert(alert_type: str, alert_id: str) -> None:
+    """List click: same path as choosing in the old dropdown (unsaved prompt included)."""
+    select = _el(alert_type).get("alert_select")
+    if select is None or select.value == alert_id:
+        return
+    select.value = alert_id
+
+
+def _build_alert_list(alert_type: str, select) -> None:
+    view = _view(alert_type)
+    with ui.element("div").classes("alr-rail"):
+        with ui.element("div").classes("alr-rail-head"):
+            search = ui.input(placeholder="Search").props("dense outlined clearable")
+            with search.add_slot("prepend"):
+                ui.icon("search").classes("text-base")
+
+            def on_search(e, at=alert_type):
+                _view(at)["query"] = e.value or ""
+                _render_alert_list(at)
+
+            search.on_value_change(on_search)
+            if alert_type == "points":
+                refresh_btn = ui.button(icon="refresh", on_click=lambda: load_twitch_point_rewards()).props(
+                    "flat round dense size=sm"
                 )
+                refresh_btn.tooltip("Refresh the list of Twitch point rewards")
+        new_btn = ui.element("div").on("click", lambda _e, at=alert_type: _pick_alert(at, "new"))
+        new_btn.classes("alr-new")
+        with new_btn:
+            ui.html(
+                f'{_icon_html("add")}<span>{"New reward" if alert_type == "points" else "New alert"}</span>',
+                sanitize=False,
+            ).classes("contents")
+        view["new"] = new_btn
+        view["list"] = ui.element("div").classes("alr-list")
+        if alert_type == "subs":
+            with ui.element("div").classes("alr-rail-foot"):
+                with _row("Resub fallback", "When enabled, the Resub Fallback alert plays for resubs that don't match any configured month alert"):
+                    _el(alert_type)["fallback_toggle"] = ui.switch(
+                        value=alertutils.alert_state_manager.get_resub_fallback_enabled(),
+                        on_change=lambda e: alertutils.alert_state_manager.set_resub_fallback_enabled(e.value),
+                    ).props("dense")
+    select.on_value_change(lambda _e, at=alert_type: _render_alert_list(at))
 
-                alert_settings_state.get_elements(alert_type)[
-                    "tts_custom_message_input"
-                ] = form_input(
-                    tooltip="Static message to speak when Custom Message is selected",
-                    label="Custom TTS Message",
-                    classes="w-full mt-3 bg-theme-base",
-                    placeholder="Thanks for the support!",
-                    on_change=lambda e, at=alert_type: track_field_change(
-                        "tts_custom_message_input",
-                        alert_settings_state.get_elements(at)[
-                            "tts_custom_message_input"
-                        ],
-                        e,
-                        at,
-                    ),
-                )
+
+# ----- header ---------------------------------------------------------------
+
+
+def _build_trigger(alert_type: str) -> None:
+    """Exact/Range switch with amount or min–max (amount-based types)."""
+    elements = _el(alert_type)
+    unit = _TRIGGER_UNITS.get(alert_type, "")
+    with ui.element("div").classes("alr-trigger") as trigger:
+        ui.label("Triggers on").classes("alr-trig-label")
+        range_toggle = ui.toggle({False: "Exact", True: "Range"}, value=False).props(
+            "dense no-caps unelevated toggle-color=primary"
+        )
+        range_toggle.tooltip("Toggle between exact amount and range mode")
+        elements["range_toggle"] = range_toggle
+        exact_row = ui.row().classes("items-center gap-1 no-wrap")
+        elements["exact_input_row"] = exact_row
+        exact_tips = {
+            "subs": "Set the subscription month for this alert (1 for new sub, 2+ for resub months)",
+            "streaks": "Watch streak count (consecutive streams) that triggers this alert",
+        }
+        with exact_row:
+            _number_field(alert_type, "amount_input",
+                          exact_tips.get(alert_type, "Set the exact amount for this alert to trigger"), wide=True)
+            _unit(unit)
+        range_row = ui.row().classes("items-center gap-1 no-wrap")
+        range_row.visible = False
+        elements["range_input_row"] = range_row
+        noun = {"subs": "subscription month", "streaks": "streak count"}.get(alert_type, "amount")
+        with range_row:
+            _number_field(alert_type, "min_input", f"Minimum {noun} for this alert range")
+            ui.label("to").classes("alr-dash")
+            _number_field(alert_type, "max_input", f"Maximum {noun} for this alert range")
+            _unit(unit)
+        range_toggle.on_value_change(lambda e: toggle_range_inputs(e, exact_row, range_row))
+    _view(alert_type)["trigger"] = trigger
+
+
+def _build_detail_header(alert_type: str, save_handler) -> None:
+    view = _view(alert_type)
+    with ui.element("div").classes("alr-dhead"):
+        with ui.element("div").classes("alr-dtitle"):
+            view["title"] = ui.label("").classes("alr-h")
+            if alert_type in _QUANTITY_ALERT_TYPES:
+                _build_trigger(alert_type)
+            elif alert_type == "follows":
+                with ui.element("div").classes("alr-trigger"):
+                    ui.label("Plays for every new follower").classes("alr-trig-label")
+            elif alert_type == "points":
+                with ui.element("div").classes("alr-trigger"):
+                    with _row("Use as alert", "Enable this point reward as an alert in the app"):
+                        _switch_field(alert_type, "enable_alert_switch")
+        _mount_unsaved_label(alert_type)
+        ui.element("div").classes("alr-spacer")
+        _create_test_alert_button(alert_type).props("dense").classes("px-3")
+        duplicate_btn = outline_button("", lambda at=alert_type: duplicate_current_alert(at), icon="content_copy")
+        duplicate_btn.props("dense").classes("px-2").tooltip(
+            "Copy this reward into a new unsaved reward" if alert_type == "points" else "Copy this alert into a new unsaved alert"
+        )
+        delete_btn = destructive_button("", lambda at=alert_type: show_delete_confirmation(at), icon="delete")
+        delete_btn.props("dense").classes("px-2").tooltip("Delete this alert permanently")
+        delete_btn.visible = False
+        _el(alert_type)["delete_btn"] = delete_btn
+        save_btn = primary_button("Save", save_handler, icon="check").props("dense").classes("px-4")
+        save_btn.tooltip("Save your alert settings")
+        if alert_type == "points":
+            _el(alert_type)["save_btn"] = save_btn
+
+
+def _build_alert_shell(alert_type: str, select, save_handler) -> None:
+    """List + detail for one alert type (the selector itself stays hidden)."""
+    from ..help_system.help_render import inject_page_stylesheet, promote_color_importance, scope_selectors
+
+    inject_page_stylesheet("mycelian-alerts", promote_color_importance(scope_selectors(ALERTS_CSS, ".alr")))
+    with ui.element("div").classes("alr-shell"):
+        _build_alert_list(alert_type, select)
+        with ui.element("div").classes("alr-detail"):
+            _build_detail_header(alert_type, save_handler)
+            if alert_type == "points":
+                banner = ui.html(
+                    f'{_icon_html("lock")}<span>Custom Channel Point rewards require Twitch Affiliate or Partner. '
+                    "This account does not have Channel Points unlocked yet.</span>",
+                    sanitize=False,
+                ).classes("alr-banner")
+                banner.visible = False
+                _el(alert_type)["channel_points_locked_banner"] = banner
+            with ui.element("div").classes("alr-dbody"):
+                if alert_type == "points":
+                    with ui.element("div").classes("alr-col"):
+                        _build_playback_section(alert_type)
+                        create_visual_settings_section(alert_type)
+                        create_tts_settings_section(alert_type)
+                    with ui.element("div").classes("alr-col"):
+                        create_audio_settings_section(alert_type)
+                        create_randomizer_settings_section(alert_type)
+                    with ui.element("div").classes("alr-col"):
+                        create_twitch_options_section(alert_type)
+                else:
+                    with ui.element("div").classes("alr-col"):
+                        _build_playback_section(alert_type)
+                        create_visual_settings_section(alert_type)
+                    with ui.element("div").classes("alr-col"):
+                        create_audio_settings_section(alert_type)
+                        create_tts_settings_section(alert_type)
+                    with ui.element("div").classes("alr-col"):
+                        create_randomizer_settings_section(alert_type)
+    _refresh_alert_dims(alert_type)
+    _render_alert_list(alert_type)
 
 
 def create_alert_settings_tab():
     """Create the alert settings tab content"""
 
-    # Add the CSS for basic styling - no animations
-    ui.add_head_html(f"<style>{CSS}</style>")
+    from ..help_system.help_render import inject_page_stylesheet
+
+    inject_page_stylesheet("mycelian-alerts-tabs", ALERTS_TAB_CSS)
 
     with ui.element("div").classes("tab-surface w-full flex-1 min-h-0 flex flex-col p-4"):
         with ui.element("div").classes("mycelian-sub-tab-shell w-full flex-1 min-h-0 flex flex-col"):
             # Create tabs for different alert types
-            with ui.tabs().classes("w-full settings-tabs mycelian-sub-tabs") as alert_tabs:
-                bits_tab = ui.tab("Bits")
-                subs_tab = ui.tab("Subscriptions")
-                streaks_tab = ui.tab("Streaks")
-                giftsubs_tab = ui.tab("Gift Subs")
-                donations_tab = ui.tab("Donations")
-                raids_tab = ui.tab("Raids")
-                follows_tab = ui.tab("Follows")
-                points_tab = ui.tab("Channel Points")
+            with ui.tabs().classes("w-full settings-tabs mycelian-sub-tabs").props("inline-label") as alert_tabs:
+                tab_refs = {}
+                for tab_name, tab_type in ALERT_TAB_TO_TYPE.items():
+                    tab = ui.tab(tab_name, icon=_ALERT_TAB_ICONS[tab_name])
+                    with tab:
+                        count_label = ui.label("").classes("alr-tab-count")
+                        count_label.visible = False
+                    _TAB_COUNT_LABELS[tab_name] = count_label
+                    tab_refs[tab_name] = tab
+                    if tab_type != "points":
+                        _refresh_tab_count(tab_type, _initial_alert_count(tab_type))
+                bits_tab = tab_refs["Bits"]
+                subs_tab = tab_refs["Subscriptions"]
+                streaks_tab = tab_refs["Streaks"]
+                giftsubs_tab = tab_refs["Gift Subs"]
+                donations_tab = tab_refs["Donations"]
+                raids_tab = tab_refs["Raids"]
+                follows_tab = tab_refs["Follows"]
+                points_tab = tab_refs["Channel Points"]
 
             set_alerts_ui_references(alert_tabs)
             alert_settings_state.tabs_component = alert_tabs
@@ -914,353 +1483,61 @@ def initialize_tab_values(tab_name):
             logger.error(f"Error initializing tab values: {str(e)}", exc_info=True)
 
 
-def create_alert_type_panel(alert_type: str):
-    """Create a panel for a specific alert type with all settings
+def _initial_alert_count(alert_type: str) -> int:
+    alerts = get_alerts_for_type(alert_type)
+    count = len(alerts)
+    if alert_type == "subs" and alertutils.AlertSettings.FALLBACK_ALERT_ID not in alerts:
+        count += 1
+    return count
 
-    Args:
-        alert_type (str): The type of alert (bits, subs, etc.)
-    """
+
+def create_alert_type_panel(alert_type: str):
+    """Build the list + detail form for one alert type (bits, subs, ...)."""
     # Set the current tab in the state manager
     alert_settings_state.set_current_tab(alert_type)
 
-    with ui.scroll_area().classes("w-full h-full"):
-        with ui.column().classes("w-full gap-4 p-4"):
-            # Alert selector section with improved styling
-            with ui.row().classes("w-full items-center gap-2 mb-4"):
-                with ui.row().classes("items-center"):
-                    # Get existing alerts from AlertStateManager
-                    alerts = get_alerts_for_type(alert_type)
-                    alert_options = {
-                        "new": "+ Create New Alert",
-                    }
-                    # Sort alerts and add to options
-                    sorted_alerts = sort_alert_ids(alert_type, list(alerts.items()))
-                    for alert_id, alert_data in sorted_alerts:
-                        # Use the centralized display name method from AlertStateManager
-                        display_name = alertutils.alert_state_manager.get_display_name(
-                            alert_type, alert_id, alert_data
-                        )
-                        alert_options[alert_id] = display_name
+    # Get existing alerts from AlertStateManager
+    alerts = get_alerts_for_type(alert_type)
+    alert_options = {
+        "new": "+ Create New Alert",
+    }
+    # Sort alerts and add to options
+    sorted_alerts = sort_alert_ids(alert_type, list(alerts.items()))
+    for alert_id, alert_data in sorted_alerts:
+        # Use the centralized display name method from AlertStateManager
+        display_name = alertutils.alert_state_manager.get_display_name(
+            alert_type, alert_id, alert_data
+        )
+        alert_options[alert_id] = display_name
 
-                    # For subs tab, always ensure the fallback alert entry is present
-                    if alert_type == "subs":
-                        fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
-                        if fallback_id not in alert_options:
-                            alert_options[fallback_id] = "Resub Fallback"
+    # For subs tab, always ensure the fallback alert entry is present
+    if alert_type == "subs":
+        fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
+        if fallback_id not in alert_options:
+            alert_options[fallback_id] = "Resub Fallback"
 
-                    alert_settings_state.get_elements(alert_type)["alert_select"] = (
-                        form_select(
-                            tooltip="Choose an existing alert or create a new one",
-                            options=alert_options,
-                            label="Select Alert",
-                            classes="w-64 bg-theme-base",
-                            with_input=True,
-                            on_change=lambda e: handle_alert_selection(e, alert_type),
-                        )
-                    )
-                    duplicate_btn = outline_button(
-                        "Duplicate",
-                        lambda at=alert_type: duplicate_current_alert(at),
-                        icon="content_copy",
-                        extra_classes="alert-duplicate-btn text-sm",
-                    )
-                    duplicate_btn.tooltip(
-                        "Copy this alert into a new unsaved alert"
-                    )
+    with ui.element("div").classes("alr"):
+        # The selector drives loading, the unsaved prompt and saving; the list on the
+        # left sets its value, so it stays (hidden) as the single source of truth.
+        select = form_select(
+            tooltip="Choose an existing alert or create a new one",
+            options=alert_options,
+            classes="hidden",
+            on_change=lambda e: handle_alert_selection(e, alert_type),
+        )
+        alert_settings_state.get_elements(alert_type)["alert_select"] = select
+        _build_alert_shell(alert_type, select, lambda _e=None, at=alert_type: save_alert(at))
 
-                # Alert type specific settings
-                if alert_type in [
-                    "bits",
-                    "subs",
-                    "streaks",
-                    "giftsubs",
-                    "donations",
-                    "raids",
-                ]:
-                    with ui.row().classes("items-center gap-2"):
-                        # Alert type toggle
-                        with ui.row().classes("items-center"):
-                            ui.label("Range Mode").classes("text-sm mr-2")
-                            alert_settings_state.get_elements(alert_type)[
-                                "range_toggle"
-                            ] = ui.switch(
-                                on_change=lambda e: toggle_range_inputs(
-                                    e, exact_input_row, range_input_row
-                                )
-                            ).classes("mr-2 q-switch")
-                            ui.tooltip(
-                                "Toggle between exact amount and range mode"
-                            ).classes("bg-theme-surface")
+    # At the end of building the tab, trigger the default alert to load or store original values
+    layout_schedule(0.5, lambda: initialize_alert_values(alert_type), once=True)
 
-                        # Exact amount input
-                        exact_input_row = ui.row().classes(
-                            "items-center range-input exact-input"
-                        )
-                        alert_settings_state.get_elements(alert_type)[
-                            "exact_input_row"
-                        ] = exact_input_row
-                        with exact_input_row:
-                            # Determine label and suffix based on alert type
-                            if alert_type == "subs":
-                                input_label = "Month"
-                                input_suffix = None
-                                tooltip_text = "Set the subscription month for this alert (1 for new sub, 2+ for resub months)"
-                            elif alert_type == "streaks":
-                                input_label = "Streak count"
-                                input_suffix = None
-                                tooltip_text = "Watch streak count (consecutive streams) that triggers this alert"
-                            elif alert_type == "bits":
-                                input_label = "Amount"
-                                input_suffix = " bits"
-                                tooltip_text = (
-                                    "Set the exact amount for this alert to trigger"
-                                )
-                            else:
-                                input_label = "Amount"
-                                input_suffix = None
-                                tooltip_text = (
-                                    "Set the exact amount for this alert to trigger"
-                                )
+    # Register all UI elements for tracking
+    layout_schedule(1.0, register_ui_elements, once=True)
 
-                            alert_settings_state.get_elements(alert_type)[
-                                "amount_input"
-                            ] = form_number(
-                                tooltip=tooltip_text,
-                                label=input_label,
-                                suffix=input_suffix,
-                                classes="w-32 bg-theme-base",
-                                on_change=lambda e, at=alert_type: track_field_change(
-                                    "amount_input",
-                                    alert_settings_state.get_elements(at)[
-                                        "amount_input"
-                                    ],
-                                    e,
-                                    at,
-                                ),
-                            )
-
-                        # Range inputs (hidden by default)
-                        range_input_row = ui.row().classes(
-                            "items-center gap-2 range-input range-inputs"
-                        )
-                        range_input_row.visible = False
-                        alert_settings_state.get_elements(alert_type)[
-                            "range_input_row"
-                        ] = range_input_row
-                        with range_input_row:
-                            with ui.row().classes("items-center"):
-                                # Determine tooltip text for range based on alert type
-                                if alert_type == "subs":
-                                    min_tooltip = "Minimum subscription month for this alert range"
-                                    max_tooltip = "Maximum subscription month for this alert range"
-                                    range_suffix = None
-                                elif alert_type == "streaks":
-                                    min_tooltip = (
-                                        "Minimum streak count for this alert range"
-                                    )
-                                    max_tooltip = (
-                                        "Maximum streak count for this alert range"
-                                    )
-                                    range_suffix = None
-                                elif alert_type == "bits":
-                                    min_tooltip = "Minimum amount for this alert range"
-                                    max_tooltip = "Maximum amount for this alert range"
-                                    range_suffix = " bits"
-                                else:
-                                    min_tooltip = "Minimum amount for this alert range"
-                                    max_tooltip = "Maximum amount for this alert range"
-                                    range_suffix = None
-
-                                alert_settings_state.get_elements(alert_type)[
-                                    "min_input"
-                                ] = form_number(
-                                    tooltip=min_tooltip,
-                                    label="Min",
-                                    suffix=range_suffix,
-                                    classes="w-24 bg-theme-base",
-                                    on_change=lambda e, at=alert_type: track_field_change(
-                                        "min_input",
-                                        alert_settings_state.get_elements(at)[
-                                            "min_input"
-                                        ],
-                                        e,
-                                        at,
-                                    ),
-                                )
-
-                            with ui.row().classes("items-center"):
-                                alert_settings_state.get_elements(alert_type)[
-                                    "max_input"
-                                ] = form_number(
-                                    tooltip=max_tooltip,
-                                    label="Max",
-                                    suffix=range_suffix,
-                                    classes="w-24 bg-theme-base",
-                                    on_change=lambda e, at=alert_type: track_field_change(
-                                        "max_input",
-                                        alert_settings_state.get_elements(at)[
-                                            "max_input"
-                                        ],
-                                        e,
-                                        at,
-                                    ),
-                                )
-
-                # Resub fallback toggle (subs tab only, top-right corner)
-                if alert_type == "subs":
-                    ui.space()
-                    with ui.row().classes("items-center"):
-                        ui.label("Resub Fallback").classes("text-sm mr-2")
-                        fallback_enabled = (
-                            alertutils.alert_state_manager.get_resub_fallback_enabled()
-                        )
-                        alert_settings_state.get_elements(alert_type)[
-                            "fallback_toggle"
-                        ] = ui.switch(
-                            value=fallback_enabled,
-                            on_change=lambda e: alertutils.alert_state_manager.set_resub_fallback_enabled(
-                                e.value
-                            ),
-                        ).classes("q-switch")
-                        ui.tooltip(
-                            "When enabled, the Resub Fallback alert plays for resubs "
-                            "that don't match any configured month alert"
-                        ).classes("bg-theme-surface")
-
-            with ui.grid(columns=2).classes("w-full gap-4"):
-                with ui.column().classes("w-full gap-2"):
-                    with _alert_expansion("General", icon="settings"):
-                        with ui.grid(columns=2).classes("w-full gap-x-2 gap-y-px"):
-                            # For points tab, add enable alert toggle
-                            if alert_type == "points":
-                                with ui.column().classes(
-                                    f"{_ALERT_FIELD_GROUP_CLASSES} col-span-2"
-                                ):
-                                    ui.label("Alert Configuration").classes(
-                                        "font-medium mb-2 text-sm"
-                                    )
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "enable_alert_switch"
-                                    ] = ui.switch("Enable as Alert").classes(
-                                        "w-full q-switch"
-                                    )
-                                    alert_settings_state.get_elements(alert_type)[
-                                        "enable_alert_switch"
-                                    ].on(
-                                        "change",
-                                        lambda e, at=alert_type: track_field_change(
-                                            "enable_alert_switch",
-                                            alert_settings_state.get_elements(at)[
-                                                "enable_alert_switch"
-                                            ],
-                                            e,
-                                            at,
-                                        ),
-                                    )
-                                    ui.tooltip(
-                                        "Enable this point reward as an alert in the app"
-                                    ).classes("bg-theme-surface")
-
-                            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                                ui.label("Timing").classes("font-medium mb-2 text-sm")
-                                alert_settings_state.get_elements(alert_type)[
-                                    "duration_input"
-                                ] = form_number(
-                                    tooltip="How long the alert will display (seconds)",
-                                    label="Duration",
-                                    value=3.0,
-                                    min=0.1,
-                                    step=0.1,
-                                    classes="w-full bg-theme-base",
-                                    on_change=lambda e, at=alert_type: track_field_change(
-                                        "duration_input",
-                                        alert_settings_state.get_elements(at)[
-                                            "duration_input"
-                                        ],
-                                        e,
-                                        at,
-                                    ),
-                                )
-
-                            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                                ui.label("Behavior").classes("font-medium mb-2 text-sm")
-                                alert_settings_state.get_elements(alert_type)[
-                                    "stackable_switch"
-                                ] = ui.switch("Stackable").classes("w-full q-switch")
-                                # Add change tracking - fixed to use element's current value
-                                alert_settings_state.get_elements(alert_type)[
-                                    "stackable_switch"
-                                ].on(
-                                    "change",
-                                    lambda e, at=alert_type: track_field_change(
-                                        "stackable_switch",
-                                        alert_settings_state.get_elements(at)[
-                                            "stackable_switch"
-                                        ],
-                                        e,
-                                        at,
-                                    ),
-                                )
-                                ui.tooltip(
-                                    "Allow multiple alerts of this type to stack"
-                                ).classes("bg-theme-surface")
-
-                    # Audio Settings
-                    create_audio_settings_section(alert_type)
-                    create_tts_settings_section(alert_type)
-
-                with ui.column().classes("w-full gap-2"):
-                    create_visual_settings_section(alert_type)
-                    create_randomizer_settings_section(alert_type)
-                    if alert_type == "points":
-                        create_twitch_options_section(alert_type)
-
-            # Save and Test buttons at the bottom
-            with ui.row().classes("w-full justify-end items-center mt-2 gap-2"):
-                _mount_unsaved_label(alert_type)
-                with ui.row().classes("items-center"):
-                    _create_test_alert_button(alert_type)
-
-                with ui.row().classes("items-center"):
-                    delete_btn = ui.button(
-                        "Delete Alert",
-                        icon="delete",
-                        on_click=lambda _e=None, at=alert_type: show_delete_confirmation(
-                            at
-                        ),
-                    ).classes(
-                        "alert-delete-btn transition-colors duration-200 text-sm"
-                    )
-                    alert_settings_state.get_elements(alert_type)[
-                        "delete_btn"
-                    ] = delete_btn
-                    delete_btn.visible = False
-                    delete_btn.tooltip("Delete this alert permanently").classes(
-                        "bg-theme-surface"
-                    )
-
-                with ui.row().classes("items-center"):
-                    save_btn = ui.button(
-                        "Save Alert",
-                        icon="save",
-                        on_click=lambda _e=None, at=alert_type: save_alert(at),
-                    ).classes("alert-save-btn transition-colors duration-200 text-sm")
-                    save_btn.tooltip("Save your alert settings").classes(
-                        "bg-theme-surface"
-                    )
-
-            # At the end of building the tab, trigger the default alert to load or store original values
-            layout_schedule(0.5, lambda: initialize_alert_values(alert_type), once=True)
-
-            # Register all UI elements for tracking
-            layout_schedule(1.0, register_ui_elements, once=True)
-
-            # Log to verify that the panel was created
-            logger.debug(f"Created alert panel for {alert_type}")
-            # Also log which UI elements were registered
-            logger.debug(
-                f"Registered UI elements: {list(alert_settings_state.get_elements(alert_type).keys())}"
-            )
+    logger.debug(f"Created alert panel for {alert_type}")
+    logger.debug(
+        f"Registered UI elements: {list(alert_settings_state.get_elements(alert_type).keys())}"
+    )
 
 
 def sort_alert_ids(alert_type: str, alert_items: list) -> list:
@@ -1485,7 +1762,7 @@ def duplicate_current_alert(alert_type: str) -> None:
         )
     elif alert_type == "points":
         notify(
-            "Copied into a new reward. Review the title and cost, then Save Alert.",
+            "Copied into a new reward. Review the title and cost, then click Save.",
             type="info",
         )
     else:
@@ -1591,6 +1868,10 @@ def _update_amount_inputs_visibility(alert_type: str, hide: bool):
             range_toggle.visible = not hide
         except Exception:
             pass
+
+    trigger = _view(alert_type).get("trigger")
+    if trigger is not None:
+        trigger.visible = not hide
 
 
 def set_default_values_for_new_alert(alert_type: str):
@@ -3336,6 +3617,7 @@ def save_alert(alert_type: str):
                                 f"Updated alert selector with options: {alert_options}"
                             )
                             logger.debug(f"Selected alert: {alert_id}")
+                            _render_alert_list(alert_type)
             except Exception as dropdown_err:
                 logger.error(
                     f"Error updating alert dropdown: {str(dropdown_err)}", exc_info=True
@@ -3530,775 +3812,36 @@ def refresh_ui_from_current_values(tab_type: str):
 
 
 def create_points_alert_panel():
-    """Create a specialized panel for points alerts with Twitch integration"""
+    """Build the list + detail form for Channel Points (Twitch rewards)."""
     alert_type = "points"
 
     # Set the current tab in the state manager
     alert_settings_state.set_current_tab(alert_type)
 
-    with ui.scroll_area().classes("w-full h-full"):
-        with ui.column().classes("w-full gap-4 p-4"):
-            # Special alert selector for Twitch point rewards
-            with ui.row().classes("w-full items-center gap-2 mb-4"):
-                with ui.row().classes("items-center"):
-                    alert_settings_state.get_elements(alert_type)["alert_select"] = (
-                        form_select(
-                            tooltip="Choose a Twitch point reward to configure as an alert",
-                            options={"loading": "Loading Twitch rewards..."},
-                            label="Select Point Reward",
-                            classes="w-64 bg-theme-base",
-                            with_input=True,
-                            on_change=lambda e: handle_point_reward_selection(
-                                e, alert_type
-                            ),
-                        )
-                    )
-                    duplicate_btn = outline_button(
-                        "Duplicate",
-                        lambda at=alert_type: duplicate_current_alert(at),
-                        icon="content_copy",
-                        extra_classes="alert-duplicate-btn text-sm",
-                    )
-                    duplicate_btn.tooltip(
-                        "Copy this reward into a new unsaved reward"
-                    )
+    with ui.element("div").classes("alr"):
+        select = form_select(
+            tooltip="Choose a Twitch point reward to configure as an alert",
+            options={"loading": "Loading Twitch rewards..."},
+            classes="hidden",
+            on_change=lambda e: handle_point_reward_selection(e, alert_type),
+        )
+        alert_settings_state.get_elements(alert_type)["alert_select"] = select
+        _build_alert_shell(alert_type, select, lambda _e=None: save_point_alert())
 
-                with ui.row().classes("items-center gap-2"):
-                    refresh_btn = ui.button(
-                        "Refresh Rewards",
-                        icon="refresh",
-                        on_click=lambda: load_twitch_point_rewards(),
-                    ).classes("btn-secondary transition-colors duration-200 text-sm")
-                    ui.tooltip("Refresh the list of Twitch point rewards").classes(
-                        "bg-theme-surface"
-                    )
+    # Auto-load Twitch rewards when this panel is created
+    def auto_load_rewards():
+        try:
+            logger.debug("Auto-loading Twitch rewards for points panel")
+            # Check if we're currently on the points tab before loading
+            if alert_settings_state.current_tab == "points":
+                load_twitch_point_rewards()
+            else:
+                logger.debug("Not on points tab, skipping auto-load")
+        except Exception as auto_load_err:
+            logger.error(f"Error in auto-load rewards: {str(auto_load_err)}")
 
-            channel_points_banner = (
-                ui.card()
-                .props("flat")
-                .classes("w-full p-3 rounded-lg hint-error")
-            )
-            with channel_points_banner:
-                ui.label(
-                    "Custom Channel Point rewards require Twitch Affiliate or Partner. "
-                    "This account does not have Channel Points unlocked yet."
-                ).classes("text-sm")
-            channel_points_banner.visible = False
-            alert_settings_state.get_elements(alert_type)[
-                "channel_points_locked_banner"
-            ] = channel_points_banner
-
-            with ui.grid(columns=2).classes("w-full gap-4"):
-                with ui.column().classes("w-full gap-2"):
-                    with _alert_expansion("General", icon="settings"):
-                        with ui.grid(columns=2).classes("w-full gap-x-2 gap-y-px"):
-                            with ui.column().classes(
-                                f"{_ALERT_FIELD_GROUP_CLASSES} col-span-2"
-                            ):
-                                alert_settings_state.get_elements(alert_type)[
-                                    "enable_alert_switch"
-                                ] = ui.switch("Enable as Alert").classes(
-                                    "w-full q-switch"
-                                )
-                                alert_settings_state.get_elements(alert_type)[
-                                    "enable_alert_switch"
-                                ].on(
-                                    "change",
-                                    lambda e, at=alert_type: track_field_change(
-                                        "enable_alert_switch",
-                                        alert_settings_state.get_elements(at)[
-                                            "enable_alert_switch"
-                                        ],
-                                        e,
-                                        at,
-                                    ),
-                                )
-                                ui.tooltip(
-                                    "Enable this point reward as an alert in the app"
-                                ).classes("bg-theme-surface")
-
-                            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                                ui.label("Timing").classes("font-medium mb-2 text-sm")
-                                alert_settings_state.get_elements(alert_type)[
-                                    "duration_input"
-                                ] = form_number(
-                                    tooltip="How long the alert will display (seconds)",
-                                    label="Duration",
-                                    value=3.0,
-                                    min=0.1,
-                                    step=0.1,
-                                    classes="w-full bg-theme-base",
-                                    on_change=lambda e, at=alert_type: track_field_change(
-                                        "duration_input",
-                                        alert_settings_state.get_elements(at)[
-                                            "duration_input"
-                                        ],
-                                        e,
-                                        at,
-                                    ),
-                                )
-
-                            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                                ui.label("Behavior").classes("font-medium mb-2 text-sm")
-                                alert_settings_state.get_elements(alert_type)[
-                                    "stackable_switch"
-                                ] = ui.switch("Stackable").classes("w-full q-switch")
-                                alert_settings_state.get_elements(alert_type)[
-                                    "stackable_switch"
-                                ].on(
-                                    "change",
-                                    lambda e, at=alert_type: track_field_change(
-                                        "stackable_switch",
-                                        alert_settings_state.get_elements(at)[
-                                            "stackable_switch"
-                                        ],
-                                        e,
-                                        at,
-                                    ),
-                                )
-                                ui.tooltip(
-                                    "Allow multiple alerts of this type to stack"
-                                ).classes("bg-theme-surface")
-
-                    create_audio_settings_section(alert_type)
-                    create_tts_settings_section(alert_type)
-
-                with ui.column().classes("w-full gap-2"):
-                    create_visual_settings_section(alert_type)
-                    create_randomizer_settings_section(alert_type)
-                    create_twitch_options_section(alert_type)
-
-            # Save and Test buttons at the bottom
-            with ui.row().classes("w-full justify-end items-center mt-2 gap-2"):
-                _mount_unsaved_label(alert_type)
-                with ui.row().classes("items-center"):
-                    _create_test_alert_button(alert_type)
-
-                with ui.row().classes("items-center"):
-                    delete_btn = ui.button(
-                        "Delete Alert",
-                        icon="delete",
-                        on_click=lambda _e=None, at=alert_type: show_delete_confirmation(
-                            at
-                        ),
-                    ).classes(
-                        "alert-delete-btn transition-colors duration-200 text-sm"
-                    )
-                    alert_settings_state.get_elements(alert_type)[
-                        "delete_btn"
-                    ] = delete_btn
-                    delete_btn.visible = False
-                    delete_btn.tooltip("Delete this alert permanently").classes(
-                        "bg-theme-surface"
-                    )
-
-                with ui.row().classes("items-center"):
-                    save_btn = ui.button(
-                        "Save Alert",
-                        icon="save",
-                        on_click=lambda _e=None: save_point_alert(),
-                    ).classes("alert-save-btn transition-colors duration-200 text-sm")
-                    alert_settings_state.get_elements(alert_type)["save_btn"] = save_btn
-                    save_btn.tooltip("Save your alert settings").classes(
-                        "bg-theme-surface"
-                    )
-
-            # Auto-load Twitch rewards when this panel is created
-            def auto_load_rewards():
-                try:
-                    logger.debug("Auto-loading Twitch rewards for points panel")
-                    # Check if we're currently on the points tab before loading
-                    if alert_settings_state.current_tab == "points":
-                        load_twitch_point_rewards()
-                    else:
-                        logger.debug("Not on points tab, skipping auto-load")
-                except Exception as auto_load_err:
-                    logger.error(f"Error in auto-load rewards: {str(auto_load_err)}")
-
-            # Schedule auto-load with a delay to ensure UI is fully rendered
-            layout_schedule(1.0, auto_load_rewards, once=True)
-
-
-def create_audio_settings_section(alert_type: str):
-    """Create the audio settings section for alerts"""
-    with _alert_expansion("Audio", icon="volume_up"):
-        with ui.column().classes("w-full gap-x-2 gap-y-px"):
-            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                ui.label("Audio Controls").classes("font-medium mb-3 text-sm")
-                with ui.row().classes("w-full items-center gap-4"):
-                    # Fade In
-                    alert_settings_state.get_elements(alert_type)["fade_in_input"] = (
-                        form_number(
-                            tooltip="Time in milliseconds for the audio to fade in",
-                            label="Fade In",
-                            value=0,
-                            min=0,
-                            classes="w-24 bg-theme-base",
-                            on_change=lambda e, at=alert_type: track_field_change(
-                                "fade_in_input",
-                                alert_settings_state.get_elements(at)["fade_in_input"],
-                                e,
-                                at,
-                            ),
-                        )
-                    )
-
-                    # Fade Out
-                    alert_settings_state.get_elements(alert_type)["fade_out_input"] = (
-                        form_number(
-                            tooltip="Time in milliseconds for the audio to fade out",
-                            label="Fade Out",
-                            value=0,
-                            min=0,
-                            classes="w-24 bg-theme-base",
-                            on_change=lambda e, at=alert_type: track_field_change(
-                                "fade_out_input",
-                                alert_settings_state.get_elements(at)["fade_out_input"],
-                                e,
-                                at,
-                            ),
-                        )
-                    )
-
-                    # Volume slider with label
-                    ui.label("Volume").classes("text-sm font-medium")
-                    alert_settings_state.get_elements(alert_type)["volume_input"] = (
-                        ui.slider(min=0, max=100, value=100).classes("flex-1")
-                    )
-                    alert_settings_state.get_elements(alert_type)[
-                        "volume_value_label"
-                    ] = ui.label("100%").classes(
-                        "text-sm font-medium min-w-[40px] text-right"
-                    )
-
-                    # Create a combined change handler for both tracking and label update
-                    def handle_volume_change(e, at=alert_type):
-                        track_field_change(
-                            "volume_input",
-                            alert_settings_state.get_elements(at)["volume_input"],
-                            e,
-                            at,
-                        )
-                        # Update the value label - get value directly from the slider element
-                        slider_element = alert_settings_state.get_elements(at)[
-                            "volume_input"
-                        ]
-                        value = (
-                            int(slider_element.value)
-                            if slider_element.value is not None
-                            else 100
-                        )
-                        alert_settings_state.get_elements(at)[
-                            "volume_value_label"
-                        ].set_text(f"{value}%")
-
-                    alert_settings_state.get_elements(alert_type)["volume_input"].on(
-                        "change", handle_volume_change
-                    )
-                    ui.tooltip("Volume level for the alert sound (0-100%)").classes(
-                        "bg-theme-surface"
-                    )
-
-            # Only show audio_only toggle for points alerts
-            if alert_type == "points":
-                with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                    ui.label("Playback Mode").classes("font-medium mb-2 text-sm")
-                    alert_settings_state.get_elements(alert_type)[
-                        "audio_only_switch"
-                    ] = ui.switch("Audio Only").classes("w-full q-switch")
-                    alert_settings_state.get_elements(alert_type)[
-                        "audio_only_switch"
-                    ].on(
-                        "change",
-                        lambda e, at=alert_type: track_field_change(
-                            "audio_only_switch",
-                            alert_settings_state.get_elements(at)["audio_only_switch"],
-                            e,
-                            at,
-                        ),
-                    )
-                    ui.tooltip(
-                        "Play only audio without any visual elements (useful for channel points)"
-                    ).classes("bg-theme-surface")
-
-            # Primary Sound
-            with ui.column().classes(f"{_ALERT_FIELD_GROUP_CLASSES} col-span-2"):
-                ui.label("Primary Sound").classes("font-medium mb-1 text-sm")
-                with ui.row().classes("w-full items-center"):
-                    alert_settings_state.get_elements(alert_type)[
-                        "primary_dir_input"
-                    ] = form_input(
-                        tooltip="Directory containing the primary sound file",
-                        label="Directory",
-                        classes="w-full mb-1 bg-theme-base",
-                        on_change=lambda e, at=alert_type: track_field_change(
-                            "primary_dir_input",
-                            alert_settings_state.get_elements(at)["primary_dir_input"],
-                            e,
-                            at,
-                        ),
-                    )
-
-                with ui.row().classes("w-full items-center"):
-                    alert_settings_state.get_elements(alert_type)[
-                        "primary_file_input"
-                    ] = form_input(
-                        tooltip="Name of the primary sound file",
-                        label="File",
-                        classes="w-full mb-1 bg-theme-base",
-                        on_change=lambda e, at=alert_type: track_field_change(
-                            "primary_file_input",
-                            alert_settings_state.get_elements(at)["primary_file_input"],
-                            e,
-                            at,
-                        ),
-                    )
-
-                with ui.row().classes("w-full items-center"):
-                    primary_browse_btn = ui.button(
-                        "Browse",
-                        icon="folder",
-                        on_click=lambda at=alert_type: handle_browse("primary", at),
-                    ).classes(
-                        "control-button bg-theme-surface hover-theme-overlay transition-colors duration-200 text-sm"
-                    )
-                    ui.tooltip("Browse for the primary sound file").classes(
-                        "bg-theme-surface"
-                    )
-
-
-def create_randomizer_settings_section(alert_type: str):
-    """Create the randomizer settings section for random and extra random sounds"""
-    with _alert_expansion("Randomizer", icon="shuffle"):
-        with ui.grid(columns=1).classes("w-full gap-x-2 gap-y-px"):
-            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                ui.label("Random Sound").classes("font-medium mb-1 text-sm")
-                with ui.row().classes("w-full items-center"):
-                    alert_settings_state.get_elements(alert_type)[
-                        "randomized_switch"
-                    ] = ui.switch("Enable Random Sounds").classes("w-full q-switch")
-                    alert_settings_state.get_elements(alert_type)[
-                        "randomized_switch"
-                    ].on(
-                        "change",
-                        lambda e, at=alert_type: track_field_change(
-                            "randomized_switch",
-                            alert_settings_state.get_elements(at)["randomized_switch"],
-                            e,
-                            at,
-                        ),
-                    )
-                    ui.tooltip(
-                        "Enable random sound playback instead of primary sound"
-                    ).classes("bg-theme-surface")
-
-                with ui.row().classes("w-full items-center"):
-                    alert_settings_state.get_elements(alert_type)[
-                        "random_dir_input"
-                    ] = form_input(
-                        tooltip="Directory containing random sound files",
-                        label="Directory",
-                        classes="w-full mb-1 bg-theme-base",
-                        on_change=lambda e, at=alert_type: track_field_change(
-                            "random_dir_input",
-                            alert_settings_state.get_elements(at)["random_dir_input"],
-                            e,
-                            at,
-                        ),
-                    )
-
-                with ui.row().classes("w-full items-center"):
-                    alert_settings_state.get_elements(alert_type)[
-                        "random_chance_input"
-                    ] = form_number(
-                        tooltip=(
-                            "Percentage chance to play a random sound instead of "
-                            "the primary sound"
-                        ),
-                        label="Chance (%)",
-                        value=0,
-                        min=0,
-                        max=100,
-                        classes="w-full mb-1 bg-theme-base",
-                        on_change=lambda e, at=alert_type: track_field_change(
-                            "random_chance_input",
-                            alert_settings_state.get_elements(at)[
-                                "random_chance_input"
-                            ],
-                            e,
-                            at,
-                        ),
-                    )
-
-                with ui.row().classes("w-full items-center"):
-                    random_browse_btn = ui.button(
-                        "Browse",
-                        icon="folder",
-                        on_click=lambda at=alert_type: handle_browse("random", at),
-                    ).classes(
-                        "control-button bg-theme-surface hover-theme-overlay transition-colors duration-200 text-sm"
-                    )
-                    ui.tooltip(
-                        "Browse for directory containing random sound files"
-                    ).classes("bg-theme-surface")
-
-            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                ui.label("Extra Random Sound").classes("font-medium mb-1 text-sm")
-                with ui.row().classes("w-full items-center"):
-                    alert_settings_state.get_elements(alert_type)[
-                        "randomized_extra_switch"
-                    ] = ui.switch("Enable Extra Random Sounds").classes(
-                        "w-full q-switch"
-                    )
-                    alert_settings_state.get_elements(alert_type)[
-                        "randomized_extra_switch"
-                    ].on(
-                        "change",
-                        lambda e, at=alert_type: track_field_change(
-                            "randomized_extra_switch",
-                            alert_settings_state.get_elements(at)[
-                                "randomized_extra_switch"
-                            ],
-                            e,
-                            at,
-                        ),
-                    )
-                    ui.tooltip(
-                        "Enable extra random sounds to play after the main sound"
-                    ).classes("bg-theme-surface")
-
-                with ui.row().classes("w-full items-center"):
-                    alert_settings_state.get_elements(alert_type)["extra_dir_input"] = (
-                        form_input(
-                            tooltip="Directory containing extra random sound files",
-                            label="Directory",
-                            classes="w-full mb-1 bg-theme-base",
-                            on_change=lambda e, at=alert_type: track_field_change(
-                                "extra_dir_input",
-                                alert_settings_state.get_elements(at)["extra_dir_input"],
-                                e,
-                                at,
-                            ),
-                        )
-                    )
-
-                with ui.row().classes("w-full items-center"):
-                    alert_settings_state.get_elements(alert_type)[
-                        "extra_chance_input"
-                    ] = form_number(
-                        tooltip=(
-                            "Percentage chance to play an additional random sound "
-                            "after the primary/random sound"
-                        ),
-                        label="Chance (%)",
-                        value=0,
-                        min=0,
-                        max=100,
-                        classes="w-full mb-1 bg-theme-base",
-                        on_change=lambda e, at=alert_type: track_field_change(
-                            "extra_chance_input",
-                            alert_settings_state.get_elements(at)["extra_chance_input"],
-                            e,
-                            at,
-                        ),
-                    )
-
-                with ui.row().classes("w-full items-center"):
-                    extra_browse_btn = ui.button(
-                        "Browse", icon="folder", on_click=lambda at=alert_type: handle_browse("extra", at)
-                    ).classes(
-                        "control-button bg-theme-surface hover-theme-overlay transition-colors duration-200 text-sm"
-                    )
-                    ui.tooltip(
-                        "Browse for directory containing extra sound files"
-                    ).classes("bg-theme-surface")
-
-
-def create_visual_settings_section(alert_type: str):
-    """Create the visual settings section for alerts"""
-    with _alert_expansion("Visual", icon="image"):
-        with ui.grid(columns=1).classes("w-full gap-x-2 gap-y-px"):
-            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                ui.label("GIF Directory").classes("font-medium mb-2 text-sm")
-                alert_settings_state.get_elements(alert_type)["gif_dir_input"] = (
-                    form_input(
-                        tooltip="Directory containing the GIF file",
-                        label="GIF Directory",
-                        classes="w-full bg-theme-base",
-                        on_change=lambda e, at=alert_type: track_field_change(
-                            "gif_dir_input",
-                            alert_settings_state.get_elements(at)["gif_dir_input"],
-                            e,
-                            at,
-                        ),
-                    )
-                )
-
-            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                ui.label("GIF File").classes("font-medium mb-2 text-sm")
-                alert_settings_state.get_elements(alert_type)["gif_file_input"] = (
-                    form_input(
-                        tooltip="Name of the GIF file",
-                        label="GIF File",
-                        classes="w-full bg-theme-base",
-                        on_change=lambda e, at=alert_type: track_field_change(
-                            "gif_file_input",
-                            alert_settings_state.get_elements(at)["gif_file_input"],
-                            e,
-                            at,
-                        ),
-                    )
-                )
-
-            with ui.column().classes(_ALERT_FIELD_GROUP_CLASSES):
-                ui.label("File Selection").classes("font-medium mb-2 text-sm")
-                gif_browse_btn = ui.button(
-                    "Browse", icon="folder", on_click=lambda at=alert_type: handle_browse("gif", at)
-                ).classes(
-                    "control-button bg-theme-surface hover-theme-overlay transition-colors duration-200 text-sm"
-                )
-                ui.tooltip("Browse for GIF/image file").classes("bg-theme-surface")
-
-
-def create_twitch_options_section(alert_type: str):
-    """Create the Twitch options section for point rewards"""
-    with _alert_expansion("Twitch Options", icon="api"):
-        with ui.grid(columns=2).classes("w-full gap-2 p-2"):
-            # Basic reward info
-            with ui.row().classes("w-full items-center"):
-                alert_settings_state.get_elements(alert_type)["twitch_title_input"] = (
-                    form_input(
-                        tooltip="The title of the Twitch point reward",
-                        label="Reward Title",
-                        classes="w-full bg-theme-surface",
-                        on_change=lambda e, at=alert_type: track_field_change(
-                            "twitch_title_input",
-                            alert_settings_state.get_elements(at)["twitch_title_input"],
-                            e,
-                            at,
-                        ),
-                    )
-                )
-
-            with ui.row().classes("w-full items-center"):
-                alert_settings_state.get_elements(alert_type)["twitch_cost_input"] = (
-                    form_number(
-                        tooltip="How many channel points this reward costs",
-                        label="Point Cost",
-                        value=100,
-                        min=1,
-                        classes="w-full bg-theme-surface",
-                        on_change=lambda e, at=alert_type: track_field_change(
-                            "twitch_cost_input",
-                            alert_settings_state.get_elements(at)["twitch_cost_input"],
-                            e,
-                            at,
-                        ),
-                    )
-                )
-
-            # Toggle switches
-            with ui.row().classes("w-full items-center"):
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_enabled_switch"
-                ] = ui.switch("Reward Enabled").classes("w-full q-switch")
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_enabled_switch"
-                ].on(
-                    "change",
-                    lambda e, at=alert_type: track_field_change(
-                        "twitch_enabled_switch",
-                        alert_settings_state.get_elements(at)["twitch_enabled_switch"],
-                        e,
-                        at,
-                    ),
-                )
-                ui.tooltip("Whether the reward is enabled on Twitch").classes(
-                    "bg-theme-surface"
-                )
-
-            with ui.row().classes("w-full items-center"):
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_user_input_switch"
-                ] = ui.switch("Require User Input").classes("w-full q-switch")
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_user_input_switch"
-                ].on(
-                    "change",
-                    lambda e, at=alert_type: track_field_change(
-                        "twitch_user_input_switch",
-                        alert_settings_state.get_elements(at)[
-                            "twitch_user_input_switch"
-                        ],
-                        e,
-                        at,
-                    ),
-                )
-                ui.tooltip(
-                    "Whether users must provide text input when redeeming"
-                ).classes("bg-theme-surface")
-
-            # User input prompt (shown when user input is required)
-            with ui.row().classes("w-full items-center col-span-2"):
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_user_input_prompt"
-                ] = form_input(
-                    tooltip=(
-                        "Prompt text shown to users when they redeem "
-                        "(if user input is required)"
-                    ),
-                    label="User Input Prompt",
-                    classes="w-full bg-theme-surface",
-                    on_change=lambda e, at=alert_type: track_field_change(
-                        "twitch_user_input_prompt",
-                        alert_settings_state.get_elements(at)[
-                            "twitch_user_input_prompt"
-                        ],
-                        e,
-                        at,
-                    ),
-                )
-
-            # Stream limits
-            with ui.row().classes("w-full items-center"):
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_max_per_stream_switch"
-                ] = ui.switch("Limit Per Stream").classes("w-full q-switch")
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_max_per_stream_switch"
-                ].on(
-                    "change",
-                    lambda e, at=alert_type: track_field_change(
-                        "twitch_max_per_stream_switch",
-                        alert_settings_state.get_elements(at)[
-                            "twitch_max_per_stream_switch"
-                        ],
-                        e,
-                        at,
-                    ),
-                )
-                ui.tooltip("Enable limit on total redemptions per stream").classes(
-                    "bg-theme-surface"
-                )
-
-            with ui.row().classes("w-full items-center"):
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_max_per_stream_input"
-                ] = form_number(
-                    tooltip="Maximum number of redemptions allowed per stream",
-                    label="Max Per Stream",
-                    value=1,
-                    min=1,
-                    classes="w-full bg-theme-surface",
-                    on_change=lambda e, at=alert_type: track_field_change(
-                        "twitch_max_per_stream_input",
-                        alert_settings_state.get_elements(at)[
-                            "twitch_max_per_stream_input"
-                        ],
-                        e,
-                        at,
-                    ),
-                )
-
-            # User limits
-            with ui.row().classes("w-full items-center"):
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_max_per_user_switch"
-                ] = ui.switch("Limit Per User").classes("w-full q-switch")
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_max_per_user_switch"
-                ].on(
-                    "change",
-                    lambda e, at=alert_type: track_field_change(
-                        "twitch_max_per_user_switch",
-                        alert_settings_state.get_elements(at)[
-                            "twitch_max_per_user_switch"
-                        ],
-                        e,
-                        at,
-                    ),
-                )
-                ui.tooltip("Enable limit on redemptions per user per stream").classes(
-                    "bg-theme-surface"
-                )
-
-            with ui.row().classes("w-full items-center"):
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_max_per_user_input"
-                ] = form_number(
-                    tooltip="Maximum number of redemptions per user per stream",
-                    label="Max Per User",
-                    value=1,
-                    min=1,
-                    classes="w-full bg-theme-surface",
-                    on_change=lambda e, at=alert_type: track_field_change(
-                        "twitch_max_per_user_input",
-                        alert_settings_state.get_elements(at)[
-                            "twitch_max_per_user_input"
-                        ],
-                        e,
-                        at,
-                    ),
-                )
-
-            # Cooldown settings
-            with ui.row().classes("w-full items-center"):
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_cooldown_switch"
-                ] = ui.switch("Global Cooldown").classes("w-full q-switch")
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_cooldown_switch"
-                ].on(
-                    "change",
-                    lambda e, at=alert_type: track_field_change(
-                        "twitch_cooldown_switch",
-                        alert_settings_state.get_elements(at)["twitch_cooldown_switch"],
-                        e,
-                        at,
-                    ),
-                )
-                ui.tooltip("Enable global cooldown between redemptions").classes(
-                    "bg-theme-surface"
-                )
-
-            with ui.row().classes("w-full items-center"):
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_cooldown_input"
-                ] = form_number(
-                    tooltip="Cooldown time in seconds between redemptions",
-                    label="Cooldown (seconds)",
-                    value=60,
-                    min=1,
-                    classes="w-full bg-theme-surface",
-                    on_change=lambda e, at=alert_type: track_field_change(
-                        "twitch_cooldown_input",
-                        alert_settings_state.get_elements(at)["twitch_cooldown_input"],
-                        e,
-                        at,
-                    ),
-                )
-
-            # Other options
-            with ui.row().classes("w-full items-center col-span-2"):
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_skip_queue_switch"
-                ] = ui.switch("Skip Request Queue").classes("w-full q-switch")
-                alert_settings_state.get_elements(alert_type)[
-                    "twitch_skip_queue_switch"
-                ].on(
-                    "change",
-                    lambda e, at=alert_type: track_field_change(
-                        "twitch_skip_queue_switch",
-                        alert_settings_state.get_elements(at)[
-                            "twitch_skip_queue_switch"
-                        ],
-                        e,
-                        at,
-                    ),
-                )
-                ui.tooltip(
-                    "Skip the request queue and auto-fulfill redemptions"
-                ).classes("bg-theme-surface")
+    # Schedule auto-load with a delay to ensure UI is fully rendered
+    layout_schedule(1.0, auto_load_rewards, once=True)
 
 
 def register_ui_elements():
@@ -4346,7 +3889,7 @@ def handle_point_reward_selection(e, alert_type: str):
 
         if e.value == "new":
             notify(
-                "New reward: set Twitch Options and alert settings, then Save Alert.",
+                "New reward: fill in the Twitch reward and alert settings, then click Save.",
                 type="info",
             )
             set_default_values_for_new_point_reward(alert_type)
@@ -4377,6 +3920,7 @@ def _schedule_point_reward_select_refresh(select_element):
 
     if not select_element:
         return
+    _render_alert_list("points")
 
     def force_refresh():
         try:
@@ -4413,6 +3957,7 @@ def load_twitch_point_rewards():
             select_element.options = {"loading": "Loading Twitch rewards..."}
             if hasattr(select_element, "update"):
                 select_element.update()
+            _render_alert_list(alert_type)
 
             def _apply_result(result) -> None:
                 with suppress_alert_selection_handler():
@@ -4499,10 +4044,10 @@ def load_twitch_point_rewards():
                         )
                     else:
                         reward_options["no_rewards"] = (
-                            "No rewards yet — choose + Create New Reward and click Save Alert"
+                            "No rewards yet. Click New reward, fill in the Twitch reward section, then click Save."
                         )
                         notify(
-                            "No point rewards on Twitch yet. Use + Create New Reward, set Twitch Options, then Save Alert.",
+                            "No point rewards on Twitch yet. Click New reward, fill in the Twitch reward section, then click Save.",
                             type="info",
                         )
 
@@ -5025,7 +4570,7 @@ def save_point_alert(on_complete=None):
             title = (elements["twitch_title_input"].value or "").strip()
             if not title:
                 notify(
-                    "Please enter a reward title in Twitch Options.",
+                    "Please enter a reward title in the Twitch reward section.",
                     type="warning",
                 )
                 finish(False)
@@ -5336,6 +4881,7 @@ def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
                         logger.debug(
                             f"Updated alert selector after deletion. New options: {alert_options}"
                         )
+                        _render_alert_list(alert_type)
 
             except Exception as dropdown_err:
                 logger.error(
@@ -5401,6 +4947,7 @@ def refresh_alert_dropdowns():
                     # If the current selection is no longer valid, reset to "new"
                     if alert_select.value not in alert_options:
                         alert_select.value = "new"
+                    _render_alert_list(alert_type)
 
         except Exception as e:
             logger.error(f"Error refreshing alert dropdowns: {e}", exc_info=True)
