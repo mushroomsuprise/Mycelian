@@ -33,9 +33,10 @@ details.abt-err > summary { list-style: none; }
 
 def test_scoped_and_promoted_stylesheets_are_well_formed():
     from modules.uiwindows.tabs.about_styles import ABOUT_CSS
+    from modules.uiwindows.tabs.app_settings_styles import APP_SETTINGS_CSS
     from modules.uiwindows.tabs.statistics_styles import STATISTICS_CSS
 
-    for css, scope in ((ABOUT_CSS, ".abt"), (STATISTICS_CSS, ".mst")):
+    for css, scope in ((ABOUT_CSS, ".abt"), (STATISTICS_CSS, ".mst"), (APP_SETTINGS_CSS, ".aps")):
         out = promote_color_importance(scope_selectors(css, scope))
         assert out.count("{") == out.count("}")
         assert "!important !important" not in out
