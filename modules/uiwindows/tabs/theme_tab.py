@@ -20,7 +20,7 @@ from ...notification_engine import notify
 from ...ui_buttons import destructive_button, outline_button, primary_button
 from ...ui_form_controls import form_input, form_select
 from .theme_mock import build_mock_html
-from .theme_styles import THEME_CSS
+from .theme_styles import THEME_CSS, THEME_MENU_CSS
 
 
 # Color fields shown in the editor: (group, [(field, label, what it colors)])
@@ -190,8 +190,9 @@ class ThemeTab:
         self._undo_stack: List[ThemeColors] = []
         self._redo_stack: List[ThemeColors] = []
         self._vars_el = None
-        self._gallery = None
-        self._chips: Dict[str, Any] = {}
+        self._option_dots_el = None
+        self._select_dots = None
+        self._focus_field: str = "primary"
 
     # ----- helper methods -----
     def _get_theme_manager(self):
@@ -356,7 +357,7 @@ class ThemeTab:
     #  Build                                                               #
     # ------------------------------------------------------------------ #
     def build(self, parent_container) -> None:
-        """Build theme picker, live mock preview and color editor."""
+        """Build the header (picker + actions), live mock preview and colors panel."""
         from ...help_system.help_render import (
             inject_page_stylesheet,
             promote_color_importance,
@@ -366,6 +367,7 @@ class ThemeTab:
         inject_page_stylesheet(
             "mycelian-theme-tab", promote_color_importance(scope_selectors(THEME_CSS, ".thm"))
         )
+        inject_page_stylesheet("mycelian-theme-menu", THEME_MENU_CSS)
         self._load_from_state()
 
         theme_manager = self._get_theme_manager()
@@ -377,146 +379,88 @@ class ThemeTab:
 
         with parent_container:
             with ui.element("div").classes("thm"):
-                self._build_picker_card(select_options, available_themes)
-                self._build_preview_card()
-                self._build_colors_card()
-                with ui.element("div").classes("thm-actions"):
-                    self.ui_elements["_status_label"] = ui.html("", sanitize=False).classes("thm-status")
-                    outline_button("Discard", self.discard, icon="undo")
-                    primary_button("Apply", self.save, icon="check")
+                with ui.element("div").classes("thm-shell"):
+                    self._build_header(select_options)
+                    with ui.element("div").classes("thm-body"):
+                        self._build_stage()
+                        self._build_side()
+                # <style> blocks live in the page body so they also reach the dropdown menu.
+                self._vars_el = ui.html("", sanitize=False).classes("hidden")
+                self._option_dots_el = ui.html("", sanitize=False).classes("hidden")
 
+        self._render_option_dots(available_themes)
         self._apply_preview()
 
-    @staticmethod
-    def _card_head(icon: str, title: str, subtitle: str):
-        head = ui.element("div").classes("thm-card-head")
-        with head:
-            ui.html(f'<span class="thm-icon">{icon}</span>', sanitize=False).classes("thm-card-icon")
-            with ui.element("div").classes("thm-card-text"):
-                ui.label(title).classes("thm-card-title")
-                ui.label(subtitle).classes("thm-card-sub")
-        return head
-
-    def _build_picker_card(self, select_options, available_themes) -> None:
-        with ui.element("div").classes("thm-card"):
-            self._card_head(
-                "palette",
-                "Theme",
-                "Pick a theme to preview it below. Nothing changes until you click Apply.",
+    def _build_header(self, select_options) -> None:
+        with ui.element("div").classes("thm-head"):
+            ui.html(
+                '<span class="thm-title-icon"><span class="thm-icon">palette</span></span>'
+                '<span><div class="thm-title-name">Theme</div>'
+                '<div class="thm-title-sub">Preview a theme before you apply it</div></span>',
+                sanitize=False,
+            ).classes("thm-title")
+            select = form_select(
+                tooltip="Color theme applied across the Mycelian interface",
+                options=select_options,
+                value=self.buffer if self.buffer in select_options else None,
+                classes="thm-select",
+                on_change=lambda e: self._on_theme_change(e.value),
             )
-            with ui.element("div").classes("thm-picker"):
-                self.ui_elements["theme_select"] = form_select(
-                    tooltip="Color theme applied across the Mycelian interface",
-                    options=select_options,
-                    value=self.buffer if self.buffer in select_options else None,
-                    classes="w-72",
-                    on_change=lambda e: self._on_theme_change(e.value),
-                )
-                self.ui_elements["theme_type_label"] = ui.html("", sanitize=False).classes(
-                    "flex items-center gap-2"
-                )
+            with select.add_slot("prepend"):
+                self._select_dots = ui.html("", sanitize=False)
+            select.add_slot(
+                "option",
+                '<q-item v-bind="props.itemProps"><q-item-section side>'
+                '<span class="thm-optdots" :data-thm="props.opt.label"><i></i><i></i><i></i></span>'
+                "</q-item-section><q-item-section><q-item-label>{{ props.opt.label }}</q-item-label>"
+                "</q-item-section></q-item>",
+            )
+            self.ui_elements["theme_select"] = select
+            self.ui_elements["theme_type_label"] = ui.html("", sanitize=False).classes("thm-tags")
+            self.ui_elements["_preview_badge"] = ui.html("", sanitize=False)
+            ui.element("div").classes("thm-spacer")
+            outline_button("Save as", self._open_save_as_dialog, icon="content_copy").props("dense").classes("px-3")
+            delete_btn = destructive_button("", self._confirm_delete_theme, icon="delete").props("dense")
+            delete_btn.classes("px-2").tooltip("Delete this theme")
+            self.ui_elements["delete_btn"] = delete_btn
+            ui.element("div").classes("thm-divider")
+            self.ui_elements["_discard_btn"] = outline_button("Discard", self.discard).props("dense").classes("px-3")
+            primary_button("Apply", self.save, icon="check").props("dense").classes("px-4")
+
+    def _build_stage(self) -> None:
+        minimal = False
+        try:
+            minimal = bool(getattr(state_manager.get_app_settings(), "status_footer_minimal", False))
+        except Exception:
+            minimal = False
+        with ui.element("div").classes("thm-stage"):
+            with ui.element("div").classes("thm-mock theme-preview-container") as mock:
+                ui.html(build_mock_html(minimal), sanitize=False).classes("contents")
+            self.preview_container = mock
+
+    def _build_side(self) -> None:
+        with ui.element("div").classes("thm-side"):
+            with ui.element("div").classes("thm-side-head"):
+                ui.label("Colors")
                 ui.element("div").classes("thm-spacer")
-                outline_button(
-                    "Save as",
-                    self._open_save_as_dialog,
-                    icon="drive_file_rename_outline",
-                )
-                self.ui_elements["delete_btn"] = destructive_button(
-                    "Delete", self._confirm_delete_theme, icon="delete"
-                )
-            self._gallery = ui.element("div").classes("thm-gallery")
-            self._render_gallery(available_themes)
-
-    def _render_gallery(self, available_themes=None) -> None:
-        """One clickable thumbnail per theme; clicking selects it in the dropdown."""
-        if self._gallery is None:
-            return
-        theme_manager = self._get_theme_manager()
-        if available_themes is None:
-            available_themes = self._get_available_themes(theme_manager)
-        applied = self._applied_theme_name()
-        self._gallery.clear()
-        self._chips = {}
-        with self._gallery:
-            for name, display_name in available_themes:
-                theme = theme_manager.get_theme_by_name(name) if theme_manager else None
-                if not theme:
-                    continue
-                chip = ui.element("div").on("click", lambda _, n=name: self._select_theme(n))
-                chip.classes("thm-chip")
-                with chip:
-                    ui.html(self._chip_html(theme, display_name, name == applied), sanitize=False).classes(
-                        "contents"
-                    )
-                self._chips[name] = chip
-        self._update_gallery_selection()
-
-    @staticmethod
-    def _chip_html(theme: ThemeColors, display_name: str, applied: bool) -> str:
-        c = {k: html.escape(getattr(theme, k, "") or "", quote=True) for k in (
-            "bg_base", "bg_surface", "bg_elevated", "text_primary", "text_muted", "primary", "border_subtle"
-        )}
-        mode = "light_mode" if theme.theme_type == "light" else "dark_mode"
-        tick = '<span class="thm-icon thm-chip-applied" title="Current theme">check_circle</span>' if applied else ""
-        return (
-            f'<div class="thm-chip-thumb" style="background:{c["bg_base"]}">'
-            f'<div class="thm-chip-side" style="background:{c["bg_surface"]}"></div>'
-            f'<div class="thm-chip-main" style="background:{c["bg_elevated"]};border:1px solid {c["border_subtle"]}">'
-            f'<div class="thm-chip-line" style="background:{c["text_primary"]};width:70%"></div>'
-            f'<div class="thm-chip-line" style="background:{c["text_muted"]};width:50%"></div>'
-            f'<div class="thm-chip-btn" style="background:{c["primary"]}"></div></div></div>'
-            f'<div class="thm-chip-foot"><span class="thm-icon thm-chip-mode">{mode}</span>'
-            f'<span class="thm-chip-name">{html.escape(display_name or theme.name)}</span>{tick}</div>'
-        )
-
-    def _update_gallery_selection(self) -> None:
-        for name, chip in self._chips.items():
-            if name == self.buffer:
-                chip.classes(add="is-selected")
-            else:
-                chip.classes(remove="is-selected")
-
-    def _select_theme(self, name: str) -> None:
-        select = self.ui_elements.get("theme_select")
-        if select is not None and select.value != name:
-            select.value = name  # fires on_change → _on_theme_change
-
-    def _build_preview_card(self) -> None:
-        with ui.element("div").classes("thm-card"):
-            with self._card_head("visibility", "Preview", "How Mycelian looks with the selected theme and color edits."):
-                self.ui_elements["_preview_badge"] = ui.html("", sanitize=False)
-            with ui.element("div").classes("thm-mock-wrap"):
-                minimal = False
-                try:
-                    minimal = bool(getattr(state_manager.get_app_settings(), "status_footer_minimal", False))
-                except Exception:
-                    minimal = False
-                with ui.element("div").classes("thm-mock theme-preview-container") as mock:
-                    self._vars_el = ui.html("", sanitize=False).classes("hidden")
-                    ui.html(build_mock_html(minimal), sanitize=False).classes("contents")
-                self.preview_container = mock
-
-    def _build_colors_card(self) -> None:
-        with ui.element("div").classes("thm-card"):
-            self._card_head(
-                "format_color_fill",
-                "Colors",
-                "Click a color to change it. Edits show in the preview right away.",
-            )
-            self.ui_elements["_readability"] = ui.html("", sanitize=False).classes("thm-read")
-            with ui.element("div").classes("thm-card-body").style("padding-bottom: 12px"):
-                self.ui_elements["_palette_note"] = ui.html("", sanitize=False).classes("thm-note")
+                for key, icon, tip, handler in (
+                    ("palette_undo_btn", "undo", "Undo", self._undo_palette),
+                    ("palette_redo_btn", "redo", "Redo", self._redo_palette),
+                    ("palette_discard_btn", "restart_alt", "Reset colors", self._discard_palette_edits),
+                ):
+                    btn = ui.button(icon=icon).props("flat round dense size=sm")
+                    btn.on_click(handler)
+                    btn.tooltip(tip)
+                    self.ui_elements[key] = btn
             self.palette_container = ui.element("div").classes("thm-groups")
-            with ui.element("div").classes("thm-toolbar"):
-                self.ui_elements["palette_undo_btn"] = outline_button("Undo", self._undo_palette, icon="undo")
-                self.ui_elements["palette_redo_btn"] = outline_button("Redo", self._redo_palette, icon="redo")
-                self.ui_elements["palette_discard_btn"] = outline_button(
-                    "Reset colors", self._discard_palette_edits, icon="restore"
-                )
-            self._update_palette_toolbar_state()
+            self.ui_elements["_focus"] = ui.html("", sanitize=False).classes("thm-focus")
+            with ui.element("div").classes("thm-side-head is-sub"):
+                ui.label("Readability")
+            self.ui_elements["_readability"] = ui.html("", sanitize=False).classes("thm-reads")
+        self._update_palette_toolbar_state()
 
     def _build_palette_section(self) -> None:
-        """(Re)build the grouped color swatches from the working theme."""
+        """(Re)build the swatch rows from the working theme."""
         if self.palette_container is None:
             return
         theme = self._get_preview_theme()
@@ -526,30 +470,36 @@ class ThemeTab:
         self.palette_container.clear()
         with self.palette_container:
             for group, fields in _COLOR_SECTIONS:
-                with ui.element("div").classes("thm-group"):
-                    ui.label(group).classes("thm-group-title")
-                    with ui.element("div").classes("thm-swatches"):
+                with ui.element("div").classes("thm-grp"):
+                    ui.label(group).classes("thm-grp-name")
+                    with ui.element("div").classes("thm-grp-sw"):
                         for field_name, label, desc in fields:
                             self._build_swatch(theme, disk, group, field_name, label, desc)
 
     def _build_swatch(self, theme, disk, group, field_name, label, desc) -> None:
         raw = getattr(theme, field_name, "") or ""
-        edited = disk is not None and raw != (getattr(disk, field_name, "") or "")
+        classes = ["thm-sw"]
+        if disk is not None and raw != (getattr(disk, field_name, "") or ""):
+            classes.append("is-edited")
+        if field_name == self._focus_field:
+            classes.append("is-active")
         # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
         swatch = ui.element("div").on(
-            "click", lambda _, fn=field_name, g=group, lb=label: self._open_palette_color_picker(fn, f"{g} · {lb}")
+            "click", lambda _, fn=field_name, g=group, lb=label: self._on_swatch_click(fn, f"{g} · {lb}")
         )
-        swatch.classes("thm-swatch is-edited" if edited else "thm-swatch")
-        swatch.tooltip(desc + (" (edited)" if edited else ""))
-        safe = html.escape(raw, quote=True)
+        swatch.classes(" ".join(classes))
+        swatch.tooltip(f"{group} · {label}")
         with swatch:
             ui.html(
-                f'<span class="thm-swatch-chip"><span class="thm-swatch-fill" style="background:{safe}"></span></span>'
-                f'<span class="thm-swatch-text"><span class="thm-swatch-label">{html.escape(label)}'
-                f'<span class="thm-swatch-dot"></span></span>'
-                f'<span class="thm-swatch-value">{html.escape(self._describe_color(raw))}</span></span>',
+                f'<span class="thm-sw-fill" style="background:{html.escape(raw, quote=True)}"></span>',
                 sanitize=False,
             ).classes("contents")
+
+    def _on_swatch_click(self, field_name: str, title: str) -> None:
+        self._focus_field = field_name
+        self._build_palette_section()
+        self._refresh_focus()
+        self._open_palette_color_picker(field_name, title)
 
     def _describe_color(self, raw: str) -> str:
         parsed = _parse_color(raw)
@@ -559,100 +509,120 @@ class ThemeTab:
         alpha = parsed[3]
         return hex_value if alpha >= 0.999 else f"{hex_value} · {round(alpha * 100)}%"
 
+    def _render_option_dots(self, available_themes=None) -> None:
+        """Per-theme dot colors for the dropdown's options (matched by label)."""
+        if self._option_dots_el is None:
+            return
+        theme_manager = self._get_theme_manager()
+        if not theme_manager:
+            return
+        if available_themes is None:
+            available_themes = self._get_available_themes(theme_manager)
+        rules = []
+        for name, label in self._build_theme_select_options(available_themes).items():
+            theme = theme_manager.get_theme_by_name(name)
+            if not theme:
+                continue
+            key = label.replace("\\", "\\\\").replace('"', '\\"')
+            for i, color in enumerate(self._dot_colors(theme), start=1):
+                safe = re.sub(r"[^#\w\s(),.%-]", "", color)
+                rules.append(f'.thm-optdots[data-thm="{key}"] i:nth-child({i}){{background:{safe}}}')
+        self._option_dots_el.set_content(f"<style>{''.join(rules)}</style>")
+
+    @staticmethod
+    def _dot_colors(theme: ThemeColors) -> Tuple[str, str, str]:
+        return (theme.bg_base or "", theme.bg_surface or "", theme.primary or "")
+
     # ------------------------------------------------------------------ #
     #  Derived view state                                                  #
     # ------------------------------------------------------------------ #
+    def _refresh_focus(self) -> None:
+        focus = self.ui_elements.get("_focus")
+        theme = self._get_preview_theme()
+        if focus is None or not theme:
+            return
+        label, desc, group = self._focus_field, "", ""
+        for g, fields in _COLOR_SECTIONS:
+            for field_name, field_label, field_desc in fields:
+                if field_name == self._focus_field:
+                    label, desc, group = field_label, field_desc, g
+        raw = getattr(theme, self._focus_field, "") or ""
+        disk = self._get_current_theme(self.buffer)
+        edited = disk is not None and raw != (getattr(disk, self._focus_field, "") or "")
+        dot = '<span class="thm-focus-dot" title="Edited"></span>' if edited else ""
+        name = label if label == group else f"{group} · {label}"
+        focus.set_content(
+            f'<span class="thm-focus-chip"><span class="thm-sw-fill" style="background:{html.escape(raw, quote=True)}"></span></span>'
+            f'<span><div class="thm-focus-name">{html.escape(name)}{dot}</div>'
+            f'<div class="thm-focus-val">{html.escape(self._describe_color(raw))} · {html.escape(desc)}</div></span>'
+        )
+
     def _refresh_view(self) -> None:
-        """Tags, badges, notes and status text that follow the selection and edits."""
+        """Tags, state pill, focus box, readability and button states."""
         theme = self._get_preview_theme()
         applied = self._applied_theme_name()
-        name = self._display_name(self.buffer)
-        safe_name = html.escape(name)
         protected = self.buffer in PROTECTED_THEMES
         is_current = self.buffer == applied and not self._palette_dirty
+
+        if self._select_dots is not None and theme:
+            dots = "".join(f'<i style="background:{html.escape(c, quote=True)}"></i>' for c in self._dot_colors(theme))
+            self._select_dots.set_content(f'<span class="thm-dots">{dots}</span>')
 
         type_el = self.ui_elements.get("theme_type_label")
         if type_el is not None and theme:
             light = theme.theme_type == "light"
-            mode = (
+            tags = (
                 f'<span class="thm-tag"><span class="thm-icon">{"light_mode" if light else "dark_mode"}</span>'
                 f'{"Light" if light else "Dark"}</span>'
             )
-            origin = (
-                '<span class="thm-tag"><span class="thm-icon">lock</span>Built-in</span>'
-                if protected
-                else '<span class="thm-tag is-accent"><span class="thm-icon">brush</span>Editable</span>'
-            )
-            type_el.set_content(mode + origin)
+            if protected:
+                tags += (
+                    '<span class="thm-tag" title="Built-in themes can\'t be changed or deleted. '
+                    'Use Save as to keep edited colors."><span class="thm-icon">lock</span>Built-in</span>'
+                )
+            type_el.set_content(tags)
 
         badge = self.ui_elements.get("_preview_badge")
         if badge is not None:
             if is_current:
                 badge.set_content(
-                    '<span class="thm-state is-ok"><span class="thm-icon">check_circle</span>Current theme</span>'
+                    '<span class="thm-pill is-ok"><span class="thm-icon">check_circle</span>Current theme</span>'
+                )
+            elif self._palette_dirty:
+                tip = "Use Save as to keep these colors" if protected else "Apply saves these colors to the theme"
+                badge.set_content(
+                    f'<span class="thm-pill is-warn" title="{tip}"><span class="thm-icon">edit</span>Unsaved colors</span>'
                 )
             else:
                 badge.set_content(
-                    '<span class="thm-state is-warn"><span class="thm-icon">visibility</span>Preview only</span>'
+                    '<span class="thm-pill is-warn" title="Click Apply to use this theme">'
+                    '<span class="thm-icon">visibility</span>Previewing</span>'
                 )
 
-        note = self.ui_elements.get("_palette_note")
-        if note is not None:
-            if protected:
-                if self._palette_dirty:
-                    note.classes(add="is-warn")
-                else:
-                    note.classes(remove="is-warn")
-                note.set_content(
-                    f'<span class="thm-icon">{"warning" if self._palette_dirty else "lock"}</span><span>'
-                    f"<b>{safe_name}</b> is built in, so its colors can't be overwritten. "
-                    "Edit freely, then use <b>Save as</b> to keep your colors as a new theme.</span>"
-                )
+        discard = self.ui_elements.get("_discard_btn")
+        if discard is not None:
+            if is_current:
+                discard.props("disable")
             else:
-                note.classes(remove="is-warn")
-                note.set_content(
-                    f'<span class="thm-icon">info</span><span>Color edits to <b>{safe_name}</b> are saved '
-                    "to the theme when you click <b>Apply</b>.</span>"
-                )
+                discard.props(remove="disable")
 
         read = self.ui_elements.get("_readability")
         if read is not None and theme:
             read.set_content(self._readability_html(theme))
 
-        status = self.ui_elements.get("_status_label")
-        if status is not None:
-            if self._palette_dirty and protected:
-                text = "Unsaved color changes. Use <b>Save as</b> to keep them."
-            elif self._palette_dirty:
-                text = f"Unsaved color changes to <b>{safe_name}</b>. Apply saves them."
-            elif self.buffer != applied:
-                text = f"Previewing <b>{safe_name}</b>. Click Apply to use it."
-            else:
-                text = f"<b>{safe_name}</b> is your current theme."
-            status.set_content(f'<span class="thm-dot"></span><span>{text}</span>')
-            if is_current:
-                status.classes(remove="is-dirty")
-            else:
-                status.classes(add="is-dirty")
-
-        self._update_gallery_selection()
+        self._refresh_focus()
         self._update_delete_button_state()
         self._update_palette_toolbar_state()
 
     @staticmethod
     def _readability_html(theme: ThemeColors) -> str:
-        icons = {"ok": "check_circle", "low": "error_outline", "bad": "cancel"}
+        icons = {"ok": "check", "low": "priority_high", "bad": "close"}
         words = {"ok": "Easy to read", "low": "Low contrast", "bad": "Hard to read"}
-        parts = []
-        for label, fg, bg, ratio, rating in readability_checks(theme):
-            parts.append(
-                f'<span class="thm-read-item is-{rating}" title="{words[rating]}">'
-                f'<span class="thm-read-sample" style="color:{html.escape(fg, quote=True)};'
-                f'background:{html.escape(bg, quote=True)}">Aa</span>{label}'
-                f'<span class="thm-read-ratio">{ratio:.1f}:1</span>'
-                f'<span class="thm-icon">{icons[rating]}</span></span>'
-            )
-        return "".join(parts)
+        return "".join(
+            f'<span class="thm-read is-{rating}" title="{words[rating]} ({ratio:.1f}:1)">'
+            f'<span class="thm-icon">{icons[rating]}</span>{label}<b>{ratio:.1f}</b></span>'
+            for label, _fg, _bg, ratio, rating in readability_checks(theme)
+        )
 
     # ------------------------------------------------------------------ #
     #  Theme list & change handling                                        #
@@ -739,7 +709,7 @@ class ThemeTab:
                 timeout=3000,
             )
             self.dirty = False
-            self._render_gallery()
+            self._render_option_dots()
             self._build_palette_section()
             self._refresh_view()
         except Exception as e:
@@ -788,7 +758,7 @@ class ThemeTab:
             self.ui_elements["theme_select"].value = first
             self.buffer = first
         self.ui_elements["theme_select"].update()
-        self._render_gallery(available_themes)
+        self._render_option_dots(available_themes)
         self._update_delete_button_state()
 
     # ------------------------------------------------------------------ #

@@ -89,8 +89,7 @@ def _settings_card() -> str:
         + _row("Notifications", "Pop-up messages in the corner of the window.", on)
         + _row("Minimal badges", "Only icons with a colored ring.", off)
         + _row("App font", "Used everywhere in this window.", select)
-        + f'<div class="thm-m-note">{_icon("info")}<span>Changes apply when you click Save.</span></div>'
-        "</div>"
+        + "</div>"
     )
 
 
@@ -99,7 +98,6 @@ def _feed_card() -> str:
         ("", "favorite", "var(--color-primary)", "<b>MossyMika</b> followed", "just now"),
         (" is-hover", "diamond", "var(--color-info)", "<b>SporeLord</b> cheered 500 bits", "2m ago"),
         (" is-active", "star", "var(--color-warning)", "<b>Fungi_Fan</b> subscribed for 6 months", "5m ago"),
-        ("", "volunteer_activism", "var(--color-success)", "<b>CapCrew</b> tipped $10.00", "12m ago"),
     )
     rows = "".join(
         f'<div class="thm-m-event{cls}"><div class="thm-m-event-icon" style="--thm-ev:{color}">{_icon(icon)}</div>'

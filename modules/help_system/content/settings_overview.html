@@ -79,21 +79,18 @@
       <div data-panel="theme" class="hm-col">
         <div class="hm-card">
           <div class="hm-row">
+            <span class="hm-bold hm-sm">Theme</span>
             <div class="hm-field hm-select hm-nolabel hm-grow"><span class="hm-value">Dark Theme</span></div>
             <span class="hm-chip hm-plain"><span class="hx-mi">dark_mode</span>Dark</span>
-            <span class="hm-chip hm-plain"><span class="hx-mi">lock</span>Built-in</span>
-            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">drive_file_rename_outline</span>Save as</span>
-            <span class="hm-btn hm-danger hm-dense is-disabled"><span class="hx-mi">delete</span>Delete</span>
+            <span class="hm-chip hm-plain"><span class="hx-mi">check_circle</span>Current theme</span>
+            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span>Save as</span>
+            <span class="hm-btn hm-danger hm-dense is-disabled"><span class="hx-mi">delete</span></span>
+            <span class="hm-btn hm-outline hm-dense is-disabled">Discard</span>
+            <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Apply</span>
           </div>
-          <span class="hm-muted hm-xs">Below the picker, a thumbnail of every theme. Click one to preview it.</span>
         </div>
-        <span class="hm-muted hm-xs">Preview: the app drawn in the selected theme, including your color edits.</span>
+        <span class="hm-muted hm-xs">Left: the app drawn in the selected theme. Right: the Colors panel.</span>
         <div class="hm-bold hm-sm">Colors</div>
-        <div class="hm-row">
-          <span class="hm-chip hm-plain">Text 13.8:1 <span class="hx-mi">check_circle</span></span>
-          <span class="hm-chip hm-plain">Hints 4.3:1 <span class="hx-mi">check_circle</span></span>
-          <span class="hm-chip hm-plain">Buttons 5.0:1 <span class="hx-mi">check_circle</span></span>
-        </div>
         <div class="hm-swatches">
           <span class="hm-gn-swatch hm-swatch-primary"><i></i>Primary</span>
           <span class="hm-gn-swatch hm-swatch-base"><i></i>Base</span>
@@ -107,12 +104,9 @@
           <span class="hm-gn-swatch hm-swatch-info"><i></i>Info</span>
         </div>
         <div class="hm-row">
-          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">undo</span>Undo</span>
-          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">redo</span>Redo</span>
-          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">restore</span>Reset colors</span>
-          <span class="hm-grow"></span>
-          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">undo</span>Discard</span>
-          <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Apply</span>
+          <span class="hm-chip hm-plain">Text 13.8 <span class="hx-mi">check_circle</span></span>
+          <span class="hm-chip hm-plain">Hints 4.3 <span class="hx-mi">check_circle</span></span>
+          <span class="hm-chip hm-plain">Buttons 6.6 <span class="hx-mi">check_circle</span></span>
         </div>
       </div>
 
@@ -200,9 +194,9 @@
 
 <h3>Theme</h3>
 
-<p>Pick a theme from the drop-down or click its thumbnail. The <strong>Preview</strong> draws the app in that theme, so you can see it before you click <strong>Apply</strong>. The bar at the bottom shows whether you are previewing or using the theme.</p>
+<p>Pick a theme from the drop-down; each option shows a few of its colors. The preview on the left draws the app in that theme, so you can see it before you click <strong>Apply</strong>. The pill next to the drop-down says <strong>Current theme</strong>, <strong>Previewing</strong> or <strong>Unsaved colors</strong>; <strong>Discard</strong> goes back to your current theme.</p>
 
-<p>To change a color, click it under <strong>Colors</strong>. The preview updates right away, and edited colors get a dot. A color with transparency keeps its transparency when you pick a new one. The readability checks show the contrast of text, hints and button text against their backgrounds; green is easy to read, amber is low and red is hard to read. Undo, Redo and Reset colors work on your edits.</p>
+<p>To change a color, click its swatch under <strong>Colors</strong>. The box below the swatches shows the color's name, value and what it colors, the preview updates right away, and edited colors get a dot. A color with transparency keeps its transparency when you pick a new one. The undo, redo and reset buttons next to <strong>Colors</strong> work on your edits. <strong>Readability</strong> shows the contrast of text, hints and button text against their backgrounds: green is easy to read, amber is low and red is hard to read.</p>
 
 <p>Apply saves color edits into the selected theme. The built-in Dark and Light themes cannot be changed or deleted: edit them, then use <strong>Save as</strong> to keep the colors as a new theme. These help pages use the same theme colors.</p>
 

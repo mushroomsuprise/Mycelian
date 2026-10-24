@@ -78,6 +78,12 @@ def test_mock_markup_is_balanced_and_has_footer():
     assert 'class="thm-m-subtab is-active"' in markup
 
 
+def test_theme_menu_css_is_unscoped():
+    from modules.uiwindows.tabs.theme_styles import THEME_MENU_CSS
+
+    assert ".thm-optdots" in THEME_MENU_CSS and ".thm " not in THEME_MENU_CSS
+
+
 def test_theme_stylesheet_maps_every_preview_color():
     from modules.uiwindows.tabs.theme_styles import THEME_CSS
 
