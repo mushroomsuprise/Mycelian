@@ -24,7 +24,7 @@
 
 <h2>The Alerts tab</h2>
 
-<p>Each alert type has its own sub-tab. The selector row at the top changes per type; the settings form below it is the same everywhere.</p>
+<p>Each alert type has its own sub-tab. Each sub-tab is one card: the list of alerts on the left, and the alert you picked on the right. The header row changes per type; the settings below it are the same everywhere.</p>
 
 <figure class="hx-figure">
   <div class="hm" data-tabs>
@@ -41,115 +41,165 @@
     </div>
     <div class="hm-frame">
       <div class="hm-subtabs hma-alert-subtabs">
-        <span class="hm-subtab is-active" data-tab="bits">Bits</span>
-        <span class="hm-subtab" data-tab="subs">Subscriptions</span>
-        <span class="hm-subtab" data-tab="streaks">Streaks</span>
-        <span class="hm-subtab" data-tab="giftsubs">Gift Subs</span>
-        <span class="hm-subtab" data-tab="donations">Donations</span>
-        <span class="hm-subtab" data-tab="raids">Raids</span>
-        <span class="hm-subtab" data-tab="follows">Follows</span>
-        <span class="hm-subtab" data-tab="points">Channel Points</span>
+        <span class="hm-subtab is-active" data-tab="bits"><span class="hx-mi">diamond</span>Bits<span class="hma-tabcount">3</span></span>
+        <span class="hm-subtab" data-tab="subs"><span class="hx-mi">star</span>Subscriptions<span class="hma-tabcount">4</span></span>
+        <span class="hm-subtab" data-tab="streaks"><span class="hx-mi">local_fire_department</span>Streaks<span class="hma-tabcount">2</span></span>
+        <span class="hm-subtab" data-tab="giftsubs"><span class="hx-mi">redeem</span>Gift Subs<span class="hma-tabcount">2</span></span>
+        <span class="hm-subtab" data-tab="donations"><span class="hx-mi">volunteer_activism</span>Donations<span class="hma-tabcount">2</span></span>
+        <span class="hm-subtab" data-tab="raids"><span class="hx-mi">groups</span>Raids<span class="hma-tabcount">1</span></span>
+        <span class="hm-subtab" data-tab="follows"><span class="hx-mi">favorite</span>Follows<span class="hma-tabcount">1</span></span>
+        <span class="hm-subtab" data-tab="points"><span class="hx-mi">toll</span>Channel Points<span class="hma-tabcount">3</span></span>
         <span class="hm-marker" data-n="1"></span>
       </div>
       <div class="hm-frame">
-        <div data-panel="bits">
-          <div class="hma-alert-bar">
-            <div class="hm-field hm-select hm-base hma-w-select" data-label="Select Alert"><span class="hm-value">100-999 Bits</span></div>
-            <span class="hm-marker" data-n="2"></span>
-            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
-            <span class="hm-sm">Range Mode</span><span class="hm-switch is-on"><i></i></span>
-            <div class="hm-field hm-base hma-w-num-sm" data-label="Min"><span class="hm-value">100 bits</span></div>
-            <div class="hm-field hm-base hma-w-num-sm" data-label="Max"><span class="hm-value">999 bits</span></div>
-            <span class="hm-marker" data-n="3"></span>
+        <div class="hma-shell">
+          <div class="hma-rail">
+            <div class="hma-rail-head">
+              <span class="hma-search"><span class="hx-mi">search</span>Search</span>
+              <span class="hx-mi" data-panel="points">refresh</span>
+              <span class="hm-marker" data-n="2"></span>
+            </div>
+            <div data-panel="bits">
+              <div class="hma-new"><span class="hx-mi">add</span>New alert</div>
+              <div class="hma-list">
+                <div class="hma-item"><div class="hma-item-top"><span class="hma-item-name">1-99 Bits</span><span class="hma-kind">Range</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span></div></div>
+                <div class="hma-item is-active"><div class="hma-item-top"><span class="hma-item-name">100-999 Bits</span><span class="hma-kind">Range</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span><span class="hx-mi">shuffle</span></div></div>
+                <div class="hma-item"><div class="hma-item-top"><span class="hma-item-name">1000 Bits</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span><span class="hx-mi">record_voice_over</span></div></div>
+              </div>
+            </div>
+            <div data-panel="subs">
+              <div class="hma-new"><span class="hx-mi">add</span>New alert</div>
+              <div class="hma-list">
+                <div class="hma-item is-active"><div class="hma-item-top"><span class="hma-item-name">1 Month</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span></div></div>
+                <div class="hma-item"><div class="hma-item-top"><span class="hma-item-name">2-5 Months</span><span class="hma-kind">Range</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span></div></div>
+                <div class="hma-item"><div class="hma-item-top"><span class="hma-item-name">6-12 Months</span><span class="hma-kind">Range</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span><span class="hx-mi">record_voice_over</span></div></div>
+                <div class="hma-item"><div class="hma-item-top"><span class="hma-item-name">Resub Fallback</span><span class="hma-kind is-fb">Fallback</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span></div></div>
+              </div>
+              <div class="hma-rail-foot"><div class="hma-row"><span class="hma-label">Resub fallback<span class="hma-help">help_outline</span></span><span class="hm-switch is-on"><i></i></span></div></div>
+            </div>
+            <div data-panel="streaks">
+              <div class="hma-new"><span class="hx-mi">add</span>New alert</div>
+              <div class="hma-list">
+                <div class="hma-item is-active"><div class="hma-item-top"><span class="hma-item-name">2 Streaks</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span></div></div>
+                <div class="hma-item"><div class="hma-item-top"><span class="hma-item-name">3-10 Streak</span><span class="hma-kind">Range</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span></div></div>
+              </div>
+            </div>
+            <div data-panel="giftsubs">
+              <div class="hma-new"><span class="hx-mi">add</span>New alert</div>
+              <div class="hma-list">
+                <div class="hma-item"><div class="hma-item-top"><span class="hma-item-name">1 Giftsubs</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span></div></div>
+                <div class="hma-item is-active"><div class="hma-item-top"><span class="hma-item-name">5 Giftsubs</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span></div></div>
+              </div>
+            </div>
+            <div data-panel="donations">
+              <div class="hma-new"><span class="hx-mi">add</span>New alert</div>
+              <div class="hma-list">
+                <div class="hma-item"><div class="hma-item-top"><span class="hma-item-name">$1-$4 Donation</span><span class="hma-kind">Range</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span></div></div>
+                <div class="hma-item is-active"><div class="hma-item-top"><span class="hma-item-name">$5-$19 Donation</span><span class="hma-kind">Range</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span><span class="hx-mi">record_voice_over</span></div></div>
+              </div>
+            </div>
+            <div data-panel="raids">
+              <div class="hma-new"><span class="hx-mi">add</span>New alert</div>
+              <div class="hma-list">
+                <div class="hma-item is-active"><div class="hma-item-top"><span class="hma-item-name">10 Raiders</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span></div></div>
+              </div>
+            </div>
+            <div data-panel="follows">
+              <div class="hma-new"><span class="hx-mi">add</span>New alert</div>
+              <div class="hma-list">
+                <div class="hma-item is-active"><div class="hma-item-top"><span class="hma-item-name">Follow</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span></div></div>
+              </div>
+            </div>
+            <div data-panel="points">
+              <div class="hma-new"><span class="hx-mi">add</span>New reward</div>
+              <div class="hma-list">
+                <div class="hma-item is-active"><div class="hma-item-top"><span class="hma-item-name">Hydrate!</span><span class="hma-cost"><span class="hx-mi">toll</span>100</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span><span class="hx-mi">image</span></div></div>
+                <div class="hma-item"><div class="hma-item-top"><span class="hma-item-name">Airhorn</span><span class="hma-cost"><span class="hx-mi">toll</span>500</span></div><div class="hma-item-flags"><span class="hx-mi">volume_up</span></div></div>
+                <div class="hma-item is-off"><div class="hma-item-top"><span class="hma-item-name">Posture check</span><span class="hma-cost"><span class="hx-mi">toll</span>250</span></div><div class="hma-item-flags"><span class="hma-off">Not an alert</span></div></div>
+              </div>
+            </div>
           </div>
-        </div>
-        <div data-panel="subs">
-          <div class="hma-alert-bar">
-            <div class="hm-field hm-select hm-base hma-w-select" data-label="Select Alert"><span class="hm-value">1 Month</span></div>
-            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
-            <span class="hm-sm">Range Mode</span><span class="hm-switch"><i></i></span>
-            <div class="hm-field hm-base hma-w-num" data-label="Month"><span class="hm-value">1</span></div>
-            <span class="hma-spacer"></span>
-            <span class="hm-sm">Resub Fallback</span><span class="hm-switch"><i></i></span>
-          </div>
-        </div>
-        <div data-panel="streaks">
-          <div class="hma-alert-bar">
-            <div class="hm-field hm-select hm-base hma-w-select" data-label="Select Alert"><span class="hm-value">2 Streaks</span></div>
-            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
-            <span class="hm-sm">Range Mode</span><span class="hm-switch"><i></i></span>
-            <div class="hm-field hm-base hma-w-num" data-label="Streak count"><span class="hm-value">2</span></div>
-          </div>
-        </div>
-        <div data-panel="giftsubs">
-          <div class="hma-alert-bar">
-            <div class="hm-field hm-select hm-base hma-w-select" data-label="Select Alert"><span class="hm-value">5 Giftsubs</span></div>
-            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
-            <span class="hm-sm">Range Mode</span><span class="hm-switch"><i></i></span>
-            <div class="hm-field hm-base hma-w-num" data-label="Amount"><span class="hm-value">5</span></div>
-          </div>
-        </div>
-        <div data-panel="donations">
-          <div class="hma-alert-bar">
-            <div class="hm-field hm-select hm-base hma-w-select" data-label="Select Alert"><span class="hm-value">$5-$19 Donation</span></div>
-            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
-            <span class="hm-sm">Range Mode</span><span class="hm-switch is-on"><i></i></span>
-            <div class="hm-field hm-base hma-w-num-sm" data-label="Min"><span class="hm-value">5</span></div>
-            <div class="hm-field hm-base hma-w-num-sm" data-label="Max"><span class="hm-value">19</span></div>
-          </div>
-        </div>
-        <div data-panel="raids">
-          <div class="hma-alert-bar">
-            <div class="hm-field hm-select hm-base hma-w-select" data-label="Select Alert"><span class="hm-value">10 Raiders</span></div>
-            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
-            <span class="hm-sm">Range Mode</span><span class="hm-switch"><i></i></span>
-            <div class="hm-field hm-base hma-w-num" data-label="Amount"><span class="hm-value">10</span></div>
-          </div>
-        </div>
-        <div data-panel="follows">
-          <div class="hma-alert-bar">
-            <div class="hm-field hm-select hm-base hma-w-select" data-label="Select Alert"><span class="hm-value">Follow</span></div>
-            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
-            <span class="hm-muted hm-xs">No amount: there is one follow alert.</span>
-          </div>
-        </div>
-        <div data-panel="points">
-          <div class="hma-alert-bar">
-            <div class="hm-field hm-select hm-base hma-w-select" data-label="Select Point Reward"><span class="hm-value">Hydrate!</span></div>
-            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
-            <span class="hm-btn hm-flat hm-dense"><span class="hx-mi">refresh</span>Refresh Rewards</span>
-          </div>
-        </div>
 
-        <div class="hma-alert-form">
-          <div class="hm-col">
-            <div class="hm-expansion"><div class="hm-expansion-head"><span class="hx-mi">settings</span>General</div><div class="hm-expansion-body"><span class="hm-xs hm-muted">Duration, Stackable</span></div></div>
-            <div class="hm-expansion"><div class="hm-expansion-head"><span class="hx-mi">volume_up</span>Audio</div><div class="hm-expansion-body"><span class="hm-xs hm-muted">Fade In, Fade Out, Volume, Primary Sound</span></div></div>
-            <div class="hm-expansion"><div class="hm-expansion-head"><span class="hx-mi">record_voice_over</span>TTS</div><div class="hm-expansion-body"><span class="hm-xs hm-muted">Enable Text-to-Speech, TTS Text Source, Custom TTS Message</span></div></div>
+          <div class="hma-detail">
+            <div class="hma-dhead">
+              <div class="hma-dtitle">
+                <span class="hma-h" data-panel="bits">100-999 Bits</span>
+                <span class="hma-h" data-panel="subs">1 Month</span>
+                <span class="hma-h" data-panel="streaks">2 Streaks</span>
+                <span class="hma-h" data-panel="giftsubs">5 Giftsubs</span>
+                <span class="hma-h" data-panel="donations">$5-$19 Donation</span>
+                <span class="hma-h" data-panel="raids">10 Raiders</span>
+                <span class="hma-h" data-panel="follows">Follow</span>
+                <span class="hma-h" data-panel="points">Hydrate!</span>
+                <div class="hma-trigger" data-panel="bits"><span class="hma-trig-label">Triggers on</span><span class="hma-seg"><span>Exact</span><span class="is-on">Range</span></span><span class="hma-input">100</span><span class="hma-dash">to</span><span class="hma-input">999</span><span class="hma-unit">bits</span></div>
+                <div class="hma-trigger" data-panel="subs"><span class="hma-trig-label">Triggers on</span><span class="hma-seg"><span class="is-on">Exact</span><span>Range</span></span><span class="hma-input hma-wide">1</span><span class="hma-unit">months</span></div>
+                <div class="hma-trigger" data-panel="streaks"><span class="hma-trig-label">Triggers on</span><span class="hma-seg"><span class="is-on">Exact</span><span>Range</span></span><span class="hma-input hma-wide">2</span><span class="hma-unit">streams</span></div>
+                <div class="hma-trigger" data-panel="giftsubs"><span class="hma-trig-label">Triggers on</span><span class="hma-seg"><span class="is-on">Exact</span><span>Range</span></span><span class="hma-input hma-wide">5</span><span class="hma-unit">gifts</span></div>
+                <div class="hma-trigger" data-panel="donations"><span class="hma-trig-label">Triggers on</span><span class="hma-seg"><span>Exact</span><span class="is-on">Range</span></span><span class="hma-input">5</span><span class="hma-dash">to</span><span class="hma-input">19</span></div>
+                <div class="hma-trigger" data-panel="raids"><span class="hma-trig-label">Triggers on</span><span class="hma-seg"><span class="is-on">Exact</span><span>Range</span></span><span class="hma-input hma-wide">10</span><span class="hma-unit">viewers</span></div>
+                <div class="hma-trigger" data-panel="follows"><span class="hma-trig-label">Plays for every new follower</span></div>
+                <div class="hma-trigger" data-panel="points"><div class="hma-row"><span class="hma-label">Use as alert<span class="hma-help">help_outline</span></span><span class="hm-switch is-on"><i></i></span></div></div>
+                <span class="hm-marker" data-n="3"></span>
+              </div>
+              <span class="hma-spacer"></span>
+              <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">play_arrow</span>Test Alert</span>
+              <span class="hm-btn hm-outline hm-dense hma-iconbtn"><span class="hx-mi">content_copy</span></span>
+              <span class="hm-btn hm-danger hm-dense hma-iconbtn"><span class="hx-mi">delete</span></span>
+              <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span>
+              <span class="hm-marker" data-n="5"></span>
+            </div>
+            <div class="hma-dbody">
+              <div class="hma-col">
+                <div class="hma-sec">
+                  <div class="hma-sec-head"><span class="hx-mi">tune</span>Playback<span class="hm-marker" data-n="4"></span></div>
+                  <div class="hma-row"><span class="hma-label">Duration<span class="hma-help">help_outline</span></span><span class="hma-ctrl"><span class="hma-input">5</span><span class="hma-unit">sec</span></span></div>
+                  <div class="hma-row"><span class="hma-label">Stackable<span class="hma-help">help_outline</span></span><span class="hm-switch"><i></i></span></div>
+                  <div class="hma-row" data-panel="points"><span class="hma-label">Audio only<span class="hma-help">help_outline</span></span><span class="hm-switch"><i></i></span></div>
+                </div>
+                <div class="hma-sec">
+                  <div class="hma-sec-head"><span class="hx-mi">image</span>Visual</div>
+                  <div class="hma-media"><div class="hma-media-main"><span class="hma-thumb"><span class="hx-mi">gif_box</span></span><span class="hma-media-text"><span class="hma-media-name">medium_cheer.gif</span><span class="hma-media-path">/assets/alerts/bits/</span></span><span class="hma-pencil">edit</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">folder_open</span>Browse</span></div></div>
+                </div>
+              </div>
+              <div class="hma-col">
+                <div class="hma-sec">
+                  <div class="hma-sec-head"><span class="hx-mi">volume_up</span>Sound</div>
+                  <div class="hma-media"><div class="hma-media-main"><span class="hma-thumb"><span class="hx-mi">music_note</span></span><span class="hma-media-text"><span class="hma-media-name">cheer.mp3</span><span class="hma-media-path">/assets/alerts/bits/</span></span><span class="hma-pencil">edit</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">folder_open</span>Browse</span></div></div>
+                  <div class="hma-row"><span class="hma-label">Volume<span class="hma-help">help_outline</span></span><span class="hma-ctrl is-grow"><span class="hm-slider" style="--hm-val:80%"></span><span class="hma-pct">80%</span></span></div>
+                </div>
+                <div class="hma-sec">
+                  <div class="hma-sec-head"><span class="hx-mi">record_voice_over</span>Text-to-speech</div>
+                  <div class="hma-row"><span class="hma-label">Speak this alert<span class="hma-help">help_outline</span></span><span class="hm-switch"><i></i></span></div>
+                </div>
+              </div>
+              <div class="hma-col">
+                <div class="hma-sec">
+                  <div class="hma-sec-head"><span class="hx-mi">shuffle</span>Randomizer</div>
+                  <div class="hma-row"><span class="hma-label">Random sounds<span class="hma-help">help_outline</span></span><span class="hm-switch is-on"><i></i></span></div>
+                  <div class="hma-row"><span class="hma-label">Chance<span class="hma-help">help_outline</span></span><span class="hma-ctrl"><span class="hma-input">30</span><span class="hma-unit">%</span></span></div>
+                  <div class="hma-row is-dim"><span class="hma-label">Extra random sound<span class="hma-help">help_outline</span></span><span class="hm-switch"><i></i></span></div>
+                </div>
+                <div class="hma-sec" data-panel="points">
+                  <div class="hma-sec-head"><span class="hx-mi">api</span>Twitch reward<span class="hma-tag">Synced to Twitch</span></div>
+                  <div class="hma-row"><span class="hma-label">Cost<span class="hma-help">help_outline</span></span><span class="hma-ctrl"><span class="hma-input hma-wide">100</span><span class="hma-unit">points</span></span></div>
+                  <div class="hma-row"><span class="hma-label">Enabled on Twitch<span class="hma-help">help_outline</span></span><span class="hm-switch is-on"><i></i></span></div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="hm-col">
-            <div class="hm-expansion"><div class="hm-expansion-head"><span class="hx-mi">image</span>Visual<span class="hm-marker" data-n="4"></span></div><div class="hm-expansion-body"><span class="hm-xs hm-muted">GIF Directory, GIF File, Browse</span></div></div>
-            <div class="hm-expansion"><div class="hm-expansion-head"><span class="hx-mi">shuffle</span>Randomizer</div><div class="hm-expansion-body"><span class="hm-xs hm-muted">Random Sound, Extra Random Sound</span></div></div>
-          </div>
-        </div>
-        <div class="hma-alert-foot">
-          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">play_arrow</span>Test Alert</span>
-          <span class="hm-btn hma-solid-danger hm-dense"><span class="hx-mi">delete</span>Delete Alert</span>
-          <span class="hm-btn hm-success hm-dense"><span class="hx-mi">save</span>Save Alert</span>
-          <span class="hm-marker" data-n="5"></span>
         </div>
       </div>
     </div>
   </div>
-  <figcaption>Click the sub-tabs to see how the selector row changes. Click a section header to open it. This is a picture; nothing here saves.</figcaption>
+  <figcaption>Click the sub-tabs to see how the list and the header change. Click a switch to flip it. This is a picture; nothing here saves.</figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1">One sub-tab per alert type.</li>
-  <li data-n="2"><strong>Select Alert</strong> lists the alerts you have saved for this type, plus <strong>+ Create New Alert</strong>. Names are made from the amount, for example <em>100 Bits</em>, <em>1-99 Bits</em>, <em>3 Months</em> or <em>$5 Donation</em>.</li>
-  <li data-n="3"><strong>Range Mode</strong> switches between one exact amount and a <strong>Min</strong>/<strong>Max</strong> range. Follows and Channel Points have no amount.</li>
-  <li data-n="4">Five sections hold the settings. See <a href="help:alert_configuration">Configuring Alert Settings</a> and <a href="help:alert_media">Alert Media Configuration</a>.</li>
-  <li data-n="5"><strong>Test Alert</strong> plays the form as it is now, even unsaved. <strong>Delete Alert</strong> only shows for a saved alert.</li>
+  <li data-n="1">One sub-tab per alert type. The number shows how many alerts it has.</li>
+  <li data-n="2">The alert list. Type in <strong>Search</strong> to filter it. <strong>New alert</strong> (<strong>New reward</strong> on Channel Points) starts a blank one. Each entry shows the alert's name, made from the amount, for example <em>100 Bits</em>, <em>1-99 Bits</em>, <em>3 Months</em> or <em>$5 Donation</em>. <strong>RANGE</strong> marks a range alert and <strong>FALLBACK</strong> marks the Resub Fallback alert. Small icons show what the alert uses: sound, GIF or image, randomizer, text-to-speech. On Subscriptions, the <strong>Resub fallback</strong> switch sits at the bottom of the list.</li>
+  <li data-n="3">The alert name and what it triggers on. The <strong>Exact</strong> / <strong>Range</strong> switch picks one amount or a min <strong>to</strong> max range. Follows plays for every new follower. Channel Points has a <strong>Use as alert</strong> switch instead.</li>
+  <li data-n="4">Compact sections hold the settings, one per line. Hover the <span class="hx-mi">help_outline</span> next to a label for help. See <a href="help:alert_configuration">Configuring Alert Settings</a> and <a href="help:alert_media">Alert Media Configuration</a>.</li>
+  <li data-n="5"><strong>Test Alert</strong> plays the alert as it is now, even unsaved. <span class="hx-mi">content_copy</span> duplicates it. The <span class="hx-mi">delete</span> Delete button only shows for a saved alert. <strong>Save</strong> stores it.</li>
 </ol>
 
 <h2>Alert types</h2>
@@ -157,14 +207,14 @@
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Sub-tab</th><th>Plays when</th><th>Matched by</th></tr></thead>
 <tbody>
-<tr><td><strong>Bits</strong></td><td>A viewer cheers bits</td><td><strong>Amount</strong> (bits)</td></tr>
-<tr><td><strong>Subscriptions</strong></td><td>A new sub or a resub</td><td><strong>Month</strong>. <code>1</code> is a new sub; <code>2</code> and up are resub months. Optional <strong>Resub Fallback</strong> alert.</td></tr>
-<tr><td><strong>Streaks</strong></td><td>A viewer shares a watch streak</td><td><strong>Streak count</strong> (consecutive streams)</td></tr>
-<tr><td><strong>Gift Subs</strong></td><td>Someone gifts subs</td><td><strong>Amount</strong> (number of subs gifted)</td></tr>
-<tr><td><strong>Donations</strong></td><td>A Streamlabs or StreamElements tip, or a YouTube Super Chat</td><td><strong>Amount</strong> in your alert currency, rounded to a whole number</td></tr>
-<tr><td><strong>Raids</strong></td><td>Another channel raids you</td><td><strong>Amount</strong> (raiders)</td></tr>
+<tr><td><strong>Bits</strong></td><td>A viewer cheers bits</td><td>Number of bits</td></tr>
+<tr><td><strong>Subscriptions</strong></td><td>A new sub or a resub</td><td>Months. <code>1</code> is a new sub; <code>2</code> and up are resub months. Optional <strong>Resub Fallback</strong> alert.</td></tr>
+<tr><td><strong>Streaks</strong></td><td>A viewer shares a watch streak</td><td>Streak count (consecutive streams)</td></tr>
+<tr><td><strong>Gift Subs</strong></td><td>Someone gifts subs</td><td>Number of subs gifted</td></tr>
+<tr><td><strong>Donations</strong></td><td>A Streamlabs or StreamElements tip, or a YouTube Super Chat</td><td>Amount in your alert currency, rounded to a whole number</td></tr>
+<tr><td><strong>Raids</strong></td><td>Another channel raids you</td><td>Number of raiders (viewers)</td></tr>
 <tr><td><strong>Follows</strong></td><td>A new follower</td><td>Nothing. There is one follow alert.</td></tr>
-<tr><td><strong>Channel Points</strong></td><td>A viewer redeems a reward</td><td>The Twitch reward chosen in <strong>Select Point Reward</strong>. Only plays when <strong>Enable as Alert</strong> is on.</td></tr>
+<tr><td><strong>Channel Points</strong></td><td>A viewer redeems a reward</td><td>The Twitch reward picked in the reward list. Only plays when <strong>Use as alert</strong> is on.</td></tr>
 </tbody>
 </table></div>
 
@@ -176,15 +226,15 @@
 
 <ol>
 <li><strong>Exact amount.</strong> A 500-bit cheer plays the <em>500 Bits</em> alert if you have one.</li>
-<li><strong>Range.</strong> Otherwise the first range that contains the amount, such as <em>100-999 Bits</em>. Min and Max are both included.</li>
-<li><strong>Fallback.</strong> Otherwise another alert of the same type. For resubs, the <strong>Resub Fallback</strong> alert is used first when its switch is on.</li>
+<li><strong>Range.</strong> Otherwise the first range that contains the amount, such as <em>100-999 Bits</em>. Both ends of the range count.</li>
+<li><strong>Fallback.</strong> Otherwise another alert of the same type. For resubs, the <strong>Resub Fallback</strong> alert is used first when the <strong>Resub fallback</strong> switch is on.</li>
 </ol>
 
 <div class="hx-callout hx-tip"><p>Cover every amount with ranges (for example <code>1-99</code>, <code>100-999</code>, <code>1000-1000000</code>) so you always know which alert will play. Do not let ranges overlap: when two ranges contain the same amount, which one wins is not defined.</p></div>
 
 <h2>Turning alerts on and off</h2>
 
-<p>There is no on/off switch on the Alerts tab itself. Use these instead:</p>
+<p>There is no on/off switch for a whole alert type on the Alerts tab. Use these instead:</p>
 
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Where</th><th>What it does</th></tr></thead>
@@ -192,7 +242,7 @@
 <tr><td><span class="hx-path"><span>Source Settings</span><span>alerts</span></span>: <strong>Enable Follow Alerts</strong>, <strong>Enable Bit Alerts</strong>, … </td><td>Turns one alert type on or off in the alerts overlay. <strong>Enable Watch Streak Alerts</strong> is off by default.</td></tr>
 <tr><td><span class="hx-path"><span>Settings</span><span>Twitch</span></span>: <strong>Process Twitch alerts</strong></td><td>Stops all Twitch events from becoming alerts, but keeps the connection.</td></tr>
 <tr><td><span class="hx-path"><span>Activity Feed</span></span>: <strong>PAUSE ALERTS</strong> / <strong>MUTE ALERTS</strong></td><td>Holds the queue, or plays alerts without sound, until you click again.</td></tr>
-<tr><td>Channel Points: <strong>Enable as Alert</strong></td><td>Per reward. Off means the redemption is logged but no alert plays.</td></tr>
+<tr><td>Channel Points: <strong>Use as alert</strong></td><td>Per reward. Off means the redemption is logged but no alert plays.</td></tr>
 </tbody>
 </table></div>
 
@@ -201,7 +251,7 @@
 <ul>
 <li>Keep frequent alerts short (3-5 seconds) and save long ones for big moments.</li>
 <li>Click <strong>Test Alert</strong> before you go live. See <a href="help:alert_testing">Testing Your Alerts</a>.</li>
-<li>Use <strong>Duplicate</strong> to copy a finished alert, then change only its amount.</li>
+<li>Use Duplicate (<span class="hx-mi">content_copy</span>) to copy a finished alert, then change only its amount.</li>
 </ul>
 
 <div class="hx-cards">

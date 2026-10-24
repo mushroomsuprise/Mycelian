@@ -7,7 +7,7 @@
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Tool</th><th>Where</th><th>Uses</th><th>Good for</th></tr></thead>
 <tbody>
-<tr><td><strong>Test Alert</strong></td><td><span class="hx-path"><span>Alerts</span><span>any sub-tab</span></span></td><td>The form as it is now, saved or not</td><td>Checking the GIF, sound, volume, duration and TTS of one alert while you edit</td></tr>
+<tr><td><strong>Test Alert</strong></td><td><span class="hx-path"><span>Alerts</span><span>any sub-tab</span></span></td><td>The alert as it is now, saved or not</td><td>Checking the GIF, sound, volume, duration and TTS of one alert while you edit</td></tr>
 <tr><td><strong>Replay Alert</strong></td><td><span class="hx-path"><span>Activity Feed</span></span>, on a past event</td><td>Your saved alerts, matched again for that event's amount</td><td>Checking which alert a real amount picks after you change ranges</td></tr>
 <tr><td><strong>Queue alert</strong> / <strong>Play alert</strong></td><td><span class="hx-path"><span>Source Settings</span><span>alerts</span></span> preview toolbar</td><td>A sample alert in the preview pane only</td><td>Checking layout, fonts and colors of the alerts template without touching OBS</td></tr>
 </tbody>
@@ -18,22 +18,32 @@
 <section class="hx-guide" data-guide="alert_testing_test" data-title="Test one alert">
   <div class="hx-step">
     <h3>Open the alert</h3>
-    <p>Go to the <strong>Alerts</strong> tab, pick the sub-tab, and choose the alert in <strong>Select Alert</strong>. You can also test a new alert before saving it.</p>
+    <p>Go to the <strong>Alerts</strong> tab, pick the sub-tab, and click the alert in the alert list on the left. You can also test a new alert before saving it.</p>
   </div>
   <div class="hx-step">
     <h3>Click Test Alert</h3>
-    <p>The button is at the bottom of the form. A toast says <em>Testing bits alert...</em> (or the type you are on), and the alert joins the queue.</p>
+    <p>The button is in the header row, next to the alert name and its trigger. A toast says <em>Testing bits alert...</em> (or the type you are on), and the alert joins the queue.</p>
     <figure class="hx-figure hx-static">
       <div class="hm">
-        <div class="hma-alert-foot">
-          <span class="hma-unsaved">Unsaved changes</span>
-          <span class="hm-btn hm-outline hm-dense hm-pulse"><span class="hx-mi">play_arrow</span>Test Alert</span>
-          <span class="hm-btn hma-solid-danger hm-dense"><span class="hx-mi">delete</span>Delete Alert</span>
-          <span class="hm-btn hm-success hm-dense"><span class="hx-mi">save</span>Save Alert</span>
+        <div class="hma-shell hma-solo">
+          <div class="hma-detail">
+            <div class="hma-dhead">
+              <div class="hma-dtitle">
+                <span class="hma-h">100-999 Bits</span>
+                <div class="hma-trigger"><span class="hma-trig-label">Triggers on</span><span class="hma-seg"><span>Exact</span><span class="is-on">Range</span></span><span class="hma-input">100</span><span class="hma-dash">to</span><span class="hma-input">999</span><span class="hma-unit">bits</span></div>
+              </div>
+              <span class="hma-pill"><span class="hx-mi">edit</span>Unsaved changes</span>
+              <span class="hma-spacer"></span>
+              <span class="hm-btn hm-outline hm-dense hm-pulse"><span class="hx-mi">play_arrow</span>Test Alert</span>
+              <span class="hm-btn hm-outline hm-dense hma-iconbtn"><span class="hx-mi">content_copy</span></span>
+              <span class="hm-btn hm-danger hm-dense hma-iconbtn"><span class="hx-mi">delete</span></span>
+              <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span>
+            </div>
+          </div>
         </div>
         <div class="hm-row hm-end"><span class="hm-toast"><span class="hx-mi">info</span>Testing bits alert...</span></div>
       </div>
-      <figcaption>Test Alert plays the current form, including unsaved changes.</figcaption>
+      <figcaption>Test Alert plays the current settings, including unsaved changes.</figcaption>
     </figure>
   </div>
   <div class="hx-step">
@@ -56,18 +66,18 @@
   </div>
   <div class="hx-step">
     <h3>Adjust and repeat</h3>
-    <p>Change the volume, file or duration and test again. Click <strong>Save Alert</strong> when you are happy.</p>
+    <p>Change the volume, file or duration and test again. Click <strong>Save</strong> when you are happy.</p>
   </div>
 </section>
 
 <p>What the test sends:</p>
 
 <ul>
-<li>The amount is the <strong>Amount</strong> field, or <strong>Min</strong> in Range Mode. A 100-999 range tests as 100 bits.</li>
+<li>The amount is the trigger amount, or the lowest amount when the switch is on <strong>Range</strong>. A 100-999 range tests as 100 bits.</li>
 <li>Subscriptions and Gift Subs test as Tier 1. A one-sub gift shows the recipient <strong>TestRecipient</strong>.</li>
 <li>Channel Points test as <em>Test Point Redemption</em> for 1000 points.</li>
 <li>Test alerts do <strong>not</strong> appear in the Activity Feed and are not stored.</li>
-<li>Test Alert does <strong>not</strong> check range matching. It always plays the form you have open. Use Replay for that.</li>
+<li>Test Alert does <strong>not</strong> check range matching. It always plays the alert you have open. Use Replay for that.</li>
 <li>Tests are always stackable, so they do not wait behind other test alerts.</li>
 </ul>
 
@@ -165,7 +175,7 @@
 
 <details class="hx-details">
   <summary>The wrong alert plays for a real event</summary>
-  <p>Test Alert always plays the open form, so it cannot show this. Replay the event from the Activity Feed, then look for overlapping ranges or a missing range. See <a href="help:alert_configuration">Configuring Alert Settings</a>.</p>
+  <p>Test Alert always plays the open alert, so it cannot show this. Replay the event from the Activity Feed, then look for overlapping ranges or a missing range. See <a href="help:alert_configuration">Configuring Alert Settings</a>.</p>
 </details>
 
 <details class="hx-details">

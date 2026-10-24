@@ -25,7 +25,7 @@
 
 <ul class="hx-checklist" data-checklist="troubleshooting_audio_chain">
   <li><strong>Test Alert</strong> on the alert shows the image. (If not, the problem is not audio: see <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.)</li>
-  <li>The alert's <strong>Audio</strong> section has a <strong>Directory</strong> and <strong>File</strong>, and <strong>Volume</strong> is above 0%.</li>
+  <li>The sound card in the alert's <strong>Sound</strong> section shows a file name, and <strong>Volume</strong> is above 0%.</li>
   <li>The Activity Feed button reads <strong>MUTE ALERTS</strong> and is not highlighted.</li>
   <li>The browser source has <strong>Control audio via OBS</strong> on and shows in the OBS <strong>Audio Mixer</strong>.</li>
   <li>The source is not muted in the mixer and its fader is up.</li>
@@ -57,12 +57,12 @@
     </details>
     <details class="hx-details">
       <summary>No sound file, or the file moved</summary>
-      <p><strong>Cause:</strong> <strong>Primary Sound</strong> is empty, or points at a file that was renamed or moved out of <code>assets</code>.</p>
-      <p><strong>Fix:</strong> Open the alert's <strong>Audio</strong> section, click <strong>Browse</strong>, and pick the file again. Check it plays by opening its address in a browser, for example <span class="hx-copy" data-copy="http://127.0.0.1:5000/assets/alerts/bits/cheer.mp3">http://127.0.0.1:5000/assets/alerts/bits/cheer.mp3</span>.</p>
+      <p><strong>Cause:</strong> The sound card says <em>No sound</em>, or points at a file that was renamed or moved out of <code>assets</code>.</p>
+      <p><strong>Fix:</strong> In the alert's <strong>Sound</strong> section, click <strong>Browse</strong> on the file card and pick the file again. Check it plays by opening its address in a browser, for example <span class="hx-copy" data-copy="http://127.0.0.1:5000/assets/alerts/bits/cheer.mp3">http://127.0.0.1:5000/assets/alerts/bits/cheer.mp3</span>.</p>
     </details>
     <details class="hx-details">
       <summary>Random sounds never play</summary>
-      <p><strong>Cause:</strong> <strong>Enable Random Sounds</strong> is off, the chance is 0, or the folder is not inside <code>assets/alerts/</code>. The log then shows <code>Audio folder not found</code>.</p>
+      <p><strong>Cause:</strong> <strong>Random sounds</strong> is off, the <strong>Chance</strong> is 0, or the folder is not inside <code>assets/alerts/</code>. The log then shows <code>Audio folder not found</code>.</p>
       <p><strong>Fix:</strong> Move the folder under <code>assets/alerts/</code>, browse to it again, and set a chance above 0. See <a href="help:alert_media">Alert Media</a>.</p>
     </details>
     <details class="hx-details">
@@ -75,14 +75,14 @@
   <div class="hx-tab-panel" data-panel="level">
     <p>Set levels in this order, testing after each:</p>
     <ol>
-      <li>Per alert: the <strong>Volume</strong> slider in the alert's <strong>Audio</strong> section, then <strong>Test Alert</strong>.</li>
+      <li>Per alert: the <strong>Volume</strong> slider in the alert's <strong>Sound</strong> section, then <strong>Test Alert</strong>.</li>
       <li>All alerts at once: the browser source's fader in the OBS <strong>Audio Mixer</strong>.</li>
       <li>Speech: <strong>TTS Volume</strong> in <span class="hx-path"><span>Source Settings</span><span>alerts</span></span>.</li>
     </ol>
     <details class="hx-details">
       <summary>The sound drops very low when an alert has TTS</summary>
       <p><strong>Cause:</strong> This is on purpose. While text-to-speech is on, the alert sound plays at a quarter of its <strong>Volume</strong> so the voice is clear.</p>
-      <p><strong>Fix:</strong> Raise the alert's <strong>Volume</strong>, or turn off <strong>Enable Text-to-Speech</strong> for that alert.</p>
+      <p><strong>Fix:</strong> Raise the alert's <strong>Volume</strong>, or turn off <strong>Speak this alert</strong> for that alert.</p>
     </details>
     <details class="hx-details">
       <summary>Some files are much louder than others</summary>
@@ -105,7 +105,7 @@
     </details>
     <details class="hx-details">
       <summary>The sound starts or ends with a click</summary>
-      <p><strong>Fix:</strong> Set <strong>Fade In</strong> and <strong>Fade Out</strong> to 20-100 ms in the alert's <strong>Audio</strong> section.</p>
+      <p><strong>Fix:</strong> Set <strong>Fade in</strong> and <strong>Fade out</strong> to 20-100 ms in the alert's <strong>Sound</strong> section.</p>
     </details>
   </div>
 
@@ -126,7 +126,7 @@
     <details class="hx-details">
       <summary>An unexpected sound plays</summary>
       <p><strong>Cause:</strong> A different alert matched (overlapping ranges), or the randomizer picked a file.</p>
-      <p><strong>Fix:</strong> Replay the event from the Activity Feed to see which alert it picks. Check the alert's <strong>Randomizer</strong> section; the Extra Random roll comes first. See <a href="help:alert_configuration">Configuring Alert Settings</a>.</p>
+      <p><strong>Fix:</strong> Replay the event from the Activity Feed to see which alert it picks. Check the alert's <strong>Randomizer</strong> section; the <strong>Extra random sound</strong> roll comes first. See <a href="help:alert_configuration">Configuring Alert Settings</a>.</p>
     </details>
     <details class="hx-details">
       <summary>Sound plays twice</summary>

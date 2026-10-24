@@ -70,8 +70,8 @@
       <ul class="hx-checklist" data-checklist="troubleshooting_alerts_off">
         <li><span class="hx-path"><span>Settings</span><span>Twitch</span></span>: <strong>Process Twitch alerts</strong> is on.</li>
         <li><span class="hx-path"><span>Source Settings</span><span>alerts</span></span>: the matching <strong>Enable … Alerts</strong> box is on. <strong>Enable Watch Streak Alerts</strong> is off by default.</li>
-        <li>Channel Points: the reward has <strong>Enable as Alert</strong> on and was saved.</li>
-        <li>The alert sub-tab has at least one saved alert.</li>
+        <li>Channel Points: the reward has <strong>Use as alert</strong> on and was saved. The list shows <em>Not an alert</em> when it is off.</li>
+        <li>The alert sub-tab has at least one saved alert. The count on the sub-tab shows how many.</li>
       </ul>
     </details>
   </div>
@@ -89,8 +89,8 @@
     </details>
     <details class="hx-details">
       <summary>No sound file, or volume at 0</summary>
-      <p><strong>Cause:</strong> <strong>Primary Sound</strong> is empty, the file was moved, or <strong>Volume</strong> is 0%.</p>
-      <p><strong>Fix:</strong> Open <strong>Audio</strong> on the alert, click <strong>Browse</strong> and pick the file again. Supported formats are MP3, WAV, OGG, M4A and FLAC. See <a href="help:troubleshooting_audio">Audio Troubleshooting</a> for more.</p>
+      <p><strong>Cause:</strong> The sound card in <strong>Sound</strong> says <em>No sound</em>, the file was moved, or <strong>Volume</strong> is 0%.</p>
+      <p><strong>Fix:</strong> In the alert's <strong>Sound</strong> section, click <strong>Browse</strong> on the file card and pick the file again. Supported formats are MP3, WAV, OGG, M4A and FLAC. See <a href="help:troubleshooting_audio">Audio Troubleshooting</a> for more.</p>
     </details>
   </div>
 
@@ -98,12 +98,12 @@
     <details class="hx-details">
       <summary>Ranges overlap or leave gaps</summary>
       <p><strong>Cause:</strong> An exact amount wins first, then the first range that contains the amount. Overlapping ranges make the choice unpredictable; gaps fall back to another alert of the same type.</p>
-      <p><strong>Fix:</strong> Open <strong>Select Alert</strong> and read the list; it is sorted by amount, so overlaps and gaps are easy to spot. Make ranges meet end to end (<code>1-99</code>, <code>100-999</code>, …).</p>
+      <p><strong>Fix:</strong> Read the alert list on the left of the sub-tab; it is sorted by amount, and range alerts are tagged <strong>RANGE</strong>, so overlaps and gaps are easy to spot. Make ranges meet end to end (<code>1-99</code>, <code>100-999</code>, …).</p>
     </details>
     <details class="hx-details">
       <summary>Resubs play the wrong sub alert</summary>
-      <p><strong>Cause:</strong> No alert exists for that month and <strong>Resub Fallback</strong> is off.</p>
-      <p><strong>Fix:</strong> On <strong>Subscriptions</strong>, turn on <strong>Resub Fallback</strong> and set up the <strong>Resub Fallback</strong> alert, or add a month range.</p>
+      <p><strong>Cause:</strong> No alert exists for that month and the <strong>Resub fallback</strong> switch is off.</p>
+      <p><strong>Fix:</strong> On <strong>Subscriptions</strong>, turn on <strong>Resub fallback</strong> at the bottom of the alert list and set up the <strong>Resub Fallback</strong> alert, or add a month range.</p>
     </details>
     <details class="hx-details">
       <summary>Donations pick an unexpected tier</summary>
@@ -116,8 +116,8 @@
   <div class="hx-tab-panel" data-panel="gif">
     <details class="hx-details">
       <summary>The image is missing</summary>
-      <p><strong>Cause:</strong> The file is outside the <code>assets</code> folder, was renamed, or <strong>GIF Directory</strong>/<strong>GIF File</strong> is empty.</p>
-      <p><strong>Fix:</strong> Move the file under <code>assets/alerts/</code> and pick it again with <strong>Browse</strong>. To check the file is served, open <code>http://127.0.0.1:5000</code> plus the directory and file name in a normal browser, for example <span class="hx-copy" data-copy="http://127.0.0.1:5000/assets/alerts/bits/medium_cheer.gif">http://127.0.0.1:5000/assets/alerts/bits/medium_cheer.gif</span>.</p>
+      <p><strong>Cause:</strong> The file is outside the <code>assets</code> folder, was renamed, or the card in <strong>Visual</strong> says <em>No GIF or image</em>.</p>
+      <p><strong>Fix:</strong> Move the file under <code>assets/alerts/</code> and pick it again with <strong>Browse</strong> on the file card. To check the file is served, open <code>http://127.0.0.1:5000</code> plus the folder and file name (shown on the card) in a normal browser, for example <span class="hx-copy" data-copy="http://127.0.0.1:5000/assets/alerts/bits/medium_cheer.gif">http://127.0.0.1:5000/assets/alerts/bits/medium_cheer.gif</span>.</p>
     </details>
     <details class="hx-details">
       <summary>The GIF does not animate</summary>
