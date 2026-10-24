@@ -53,8 +53,14 @@ class AppSettingsTab:
                 css, icon = "is-ok", "check_circle"
             else:
                 css, icon = "is-muted", "extension_off"
+            versions = []
+            if display.installed_version:
+                versions.append(f"Installed: v{display.installed_version}")
+            if display.new_version_available:
+                versions.append(f"New version available: v{display.new_version_available}")
+            title = html.escape(" · ".join(versions), quote=True)
             badge.set_content(
-                f'<span class="aps-plugin-badge {css}"><span class="aps-icon">{icon}</span>'
+                f'<span class="aps-plugin-badge {css}" title="{title}"><span class="aps-icon">{icon}</span>'
                 f"{html.escape(display.status_text)}</span>"
             )
 
@@ -154,53 +160,62 @@ class AppSettingsTab:
 
         with parent_container:
             with ui.element("div").classes("aps"):
-                with ui.element("div").classes("aps-grid"):
-                    with ui.element("div").classes("aps-col"):
-                        self._build_appearance()
-                        self._build_notifications()
-                        self._build_updates()
-                    with ui.element("div").classes("aps-col"):
-                        self._build_window()
-                        self._build_storage()
-                        self._build_streamdeck(initial_status)
-                with ui.element("div").classes("aps-actions"):
-                    self.ui_elements["_dirty_label"] = ui.html("", sanitize=False).classes("aps-dirty")
-                    outline_button("Discard", self.discard)
-                    primary_button("Save", self.save)
+                with ui.element("div").classes("aps-shell"):
+                    self._build_header()
+                    with ui.element("div").classes("aps-body"):
+                        with ui.element("div").classes("aps-col"):
+                            self._build_appearance()
+                            self._build_notifications()
+                            self._build_streamdeck(initial_status)
+                        with ui.element("div").classes("aps-col"):
+                            self._build_window()
+                            self._build_updates()
+                        with ui.element("div").classes("aps-col"):
+                            self._build_storage()
         self._apply_plugin_status_display(initial_status)
         self._refresh_derived()
 
-    # Rows are "title + description" on the left and the control on the right.
+    def _build_header(self) -> None:
+        with ui.element("div").classes("aps-head"):
+            ui.html(
+                '<span class="aps-title-icon"><span class="aps-icon">tune</span></span>'
+                '<span><div class="aps-title-name">App Settings</div>'
+                '<div class="aps-title-sub">How Mycelian looks, starts and stores history</div></span>',
+                sanitize=False,
+            ).classes("aps-title")
+            self.ui_elements["_dirty_label"] = ui.html("", sanitize=False)
+            ui.element("div").classes("aps-spacer")
+            self.ui_elements["_discard_btn"] = outline_button("Discard", self.discard).props("dense").classes("px-3")
+            primary_button("Save", self.save, icon="check").props("dense").classes("px-4")
+
     @staticmethod
-    def _card(icon: str, title: str, subtitle: str):
-        card = ui.element("div").classes("aps-card")
-        with card:
-            with ui.element("div").classes("aps-card-head"):
-                ui.html(f'<div class="aps-card-icon"><span class="aps-icon">{icon}</span></div>', sanitize=False)
-                with ui.column().classes("gap-0"):
-                    ui.label(title).classes("aps-card-title")
-                    ui.label(subtitle).classes("aps-card-sub")
-        return card
+    def _section(icon: str, title: str):
+        sec = ui.element("div").classes("aps-sec")
+        with sec:
+            ui.html(f'<span class="aps-icon">{icon}</span>{html.escape(title)}', sanitize=False).classes("aps-sec-head")
+        return sec
 
     @contextmanager
-    def _row(self, title: str, description: str = "", *, key: Optional[str] = None, tag: str = ""):
+    def _row(self, title: str, description: str = "", *, key: Optional[str] = None, tag: str = "", help_topic: str = ""):
+        """One line: label with hover help (or a help link) on the left, the control on the right."""
         row = ui.element("div").classes("aps-row")
         if key:
             self._dims[key] = row
         with row:
-            with ui.element("div").classes("min-w-0"):
-                with ui.element("div").classes("aps-row-title"):
-                    ui.label(title)
-                    if tag:
-                        ui.label(tag).classes("aps-tag")
-                if description:
-                    ui.label(description).classes("aps-row-desc")
-            with ui.element("div").classes("aps-control"):
+            with ui.element("div").classes("aps-label"):
+                ui.label(title)
+                if tag:
+                    ui.label(tag).classes("aps-tag")
+                if help_topic:
+                    help_button(topic_id=help_topic, tooltip=description, size="sm")
+                elif description:
+                    ui.html('<span class="aps-icon">help_outline</span>', sanitize=False).classes("aps-help").tooltip(description)
+            with ui.element("div").classes("aps-ctrl"):
                 yield
 
     def _switch(self, field: str, setter=None) -> Any:
         setter = setter or self._set
-        el = ui.switch(value=bool(getattr(self.buffer, field, False))).classes("q-switch")
+        el = ui.switch(value=bool(getattr(self.buffer, field, False))).props("dense")
         el.on_value_change(lambda e, f=field: setter(f, bool(e.value)))
         self.ui_elements[field] = el
         return el
@@ -212,7 +227,7 @@ class AppSettingsTab:
             min=lo,
             max=hi,
             step=step,
-            classes="w-24",
+            classes="aps-num",
             on_change=lambda e, f=field, d=default: self._set(f, int(e.value or d)),
         )
         self.ui_elements[field] = el
@@ -220,13 +235,13 @@ class AppSettingsTab:
         return el
 
     def _build_appearance(self) -> None:
-        with self._card("palette", "Appearance", "How the Mycelian window looks"):
+        with self._section("palette", "Appearance"):
             with self._row("App font", "Used everywhere in this window. Overlays keep their own fonts."):
                 self.ui_elements["ui_font_family"] = form_select(
                     tooltip="Font used across the Mycelian interface",
                     options=get_available_font_families(),
                     value=self.buffer.ui_font_family or SYSTEM_DEFAULT_LABEL,
-                    classes="w-56",
+                    classes="w-44",
                 )
                 self.ui_elements["ui_font_family"].on_value_change(
                     lambda e: self._set("ui_font_family", self._font_from_value(e.value))
@@ -240,7 +255,7 @@ class AppSettingsTab:
                     tooltip="Zoom the Mycelian window between 90% and 125%",
                     options=scale_options,
                     value=current_scale,
-                    classes="w-28",
+                    classes="w-24",
                 )
 
                 def on_scale_change(event) -> None:
@@ -249,65 +264,63 @@ class AppSettingsTab:
                     apply_ui_scale(percent)
 
                 self.ui_elements["ui_scale_percent"].on_value_change(on_scale_change)
-            with ui.element("div").classes("aps-preview") as preview:
-                ui.label("Mycelian streaming toolkit").classes("aps-preview-big")
-                ui.label("Alerts, overlays and chat in one place").classes("aps-preview-small")
-            self._font_preview = preview
+            self._font_preview = ui.html("<b>Aa</b><span>Mycelian streaming toolkit</span>", sanitize=False).classes("aps-sample")
 
     def _build_notifications(self) -> None:
-        with self._card("notifications", "Notifications and status bar", "What Mycelian tells you while it runs"):
-            with self._row("Notifications", "Pop-up messages in the corner of the window, such as \"Settings saved\"."):
+        with self._section("notifications", "Notifications"):
+            with self._row("Pop-up notifications", "Messages in the corner of the window, such as \"Settings saved\"."):
                 self._switch("notifications_enabled")
-            with self._row("Connection status bar", "The bar along the bottom that shows each service's connection."):
-                help_button(topic_id="status_footer", tooltip="Status footer colors", size="sm")
+            with self._row(
+                "Connection status bar",
+                "The bar along the bottom that shows each service's connection. Click for what the colors mean.",
+                help_topic="status_footer",
+            ):
                 self._switch("status_footer_enabled")
             with self._row("Minimal badges", "Only icons with a colored ring; hover a badge for its status.", key="status_footer_minimal"):
                 self._switch("status_footer_minimal")
 
     def _build_window(self) -> None:
-        with self._card("desktop_windows", "Window and startup", "How Mycelian opens and keeps running"):
+        with self._section("desktop_windows", "Window and startup"):
             with self._row("Start maximized", "Open the window full size.", tag="Next launch"):
                 self._switch("start_maximized")
             with self._row("Run at login", self._login_description(), key="run_at_startup"):
                 startup_switch = self._switch("run_at_startup", self._set_tray_option)
-                if not self._autostart_supported():
+                if not self._autostart_ok:
                     startup_switch.disable()
-                    ui.tooltip("Only available in an installed build of Mycelian")
             with self._row("Minimize to tray", "Closing or minimizing the window keeps Mycelian running in the system tray."):
                 self._switch("minimize_to_tray", self._set_tray_option)
             with self._row("Start minimized to tray", "Launch straight into the tray without showing the window."):
                 self._switch("start_minimized", self._set_tray_option)
-            self._tray_note = ui.html("", sanitize=False)
+            self._tray_note = ui.html("", sanitize=False).classes("aps-foot")
 
     def _login_description(self) -> str:
-        if self._autostart_supported():
+        if self._autostart_ok:
             return "Start Mycelian when you sign in to this computer."
         return "Only available in an installed build of Mycelian."
 
     def _build_updates(self) -> None:
-        with self._card("system_update", "Updates", "Keeping Mycelian current"):
+        with self._section("system_update", "Updates"):
             with self._row("Check for updates automatically", "Look for a new version in the background and offer to install it."):
                 self._switch("auto_update")
             with self._row("Check every", "How often the automatic check runs.", key="update_check_interval_minutes"):
                 self._number(
                     "update_check_interval_minutes",
                     "How often Mycelian checks for application updates (minutes)",
-                    lo=5, hi=120, step=5, default=30, unit="minutes",
+                    lo=5, hi=120, step=5, default=30, unit="min",
                 )
 
     def _build_storage(self) -> None:
-        with self._card("inventory_2", "Activity feed and alert storage", "How much history is shown and kept"):
+        with self._section("inventory_2", "Activity feed and storage"):
             with self._row("Items per page", "How many events the Activity Feed shows at a time."):
                 self._number(
                     "activity_feed_limit", "Number of activity items shown per page",
-                    lo=5, hi=100, step=5, default=5, unit="per page",
+                    lo=5, hi=100, step=5, default=5, unit="items",
                 )
             with self._row("Pages to load", "How many pages of history the feed can page back through."):
                 self._number(
                     "activity_feed_max_pages", "Maximum pages of history kept in the activity feed",
                     lo=1, hi=50, step=1, default=1, unit="pages",
                 )
-            self._feed_note = ui.html("", sanitize=False)
             with self._row("Auto-trim stored alerts", "Delete old alerts from storage automatically after saving and at startup."):
                 self._switch("alert_storage_auto_trim")
             with self._row("Trim by", "Which rule decides what gets deleted.", key="alert_storage_trim_mode"):
@@ -330,28 +343,29 @@ class AppSettingsTab:
                     "Delete stored alerts older than this many days when age trim is enabled",
                     lo=1, hi=3650, step=1, default=1, unit="days",
                 )
-            self._trim_note = ui.html("", sanitize=False)
+            self._storage_note = ui.html("", sanitize=False).classes("aps-foot")
 
     def _build_streamdeck(self, initial_status) -> None:
-        with self._card("grid_view", "Stream Deck plugin", "Control Mycelian from Elgato Stream Deck keys"):
+        with self._section("grid_view", "Stream Deck plugin"):
             with ui.element("div").classes("aps-plugin"):
                 self.ui_elements["plugin_badge"] = ui.html("", sanitize=False)
-                with ui.element("div").classes("aps-plugin-meta grow"):
-                    # Kept as labels: _apply_plugin_status_display updates these by key.
-                    self.ui_elements["plugin_status_primary"] = ui.label(
-                        get_plugin_status_display(initial_status).status_text
-                    ).classes("hidden")
-                    self.ui_elements["plugin_installed_version"] = ui.label("")
-                    self.ui_elements["plugin_new_version"] = ui.label("").classes("is-new")
+                # Kept as (hidden) labels: _apply_plugin_status_display updates these by key;
+                # the badge's hover text shows the versions.
+                self.ui_elements["plugin_status_primary"] = ui.label(
+                    get_plugin_status_display(initial_status).status_text
+                ).classes("hidden")
+                self.ui_elements["plugin_installed_version"] = ui.label("").classes("hidden")
+                self.ui_elements["plugin_new_version"] = ui.label("").classes("hidden")
+                ui.element("div").classes("aps-spacer")
                 self.ui_elements["install_plugin_button"] = primary_button(
                     get_install_button_label(initial_status),
                     self._install_streamdeck_plugin,
                     icon="download",
-                )
+                ).props("dense").classes("px-3")
 
     # ----- live summaries -----
     def _refresh_derived(self) -> None:
-        """Dim rows that don't apply, and update the summary notes and preview."""
+        """Dim rows that don't apply, and update the summary lines, font sample and header."""
         if not self.buffer or not getattr(self, "_dims", None):
             return
         b = self.buffer
@@ -367,30 +381,32 @@ class AppSettingsTab:
         }
         for key, off in dim.items():
             row = self._dims.get(key)
-            if row is not None:
-                row.classes(add="is-dim") if off else row.classes(remove="is-dim")
+            if row is None:
+                continue
+            if off:
+                row.classes(add="is-dim")
+            else:
+                row.classes(remove="is-dim")
 
         per_page = int(b.activity_feed_limit or 0)
         pages = int(b.activity_feed_max_pages or 0)
-        self._set_note(self._feed_note, "view_list",
-                       f"The feed can show up to <b>{per_page * pages:,}</b> events ({per_page} × {pages} pages).")
-
+        feed = f"Feed shows up to <b>{per_page * pages:,}</b> events."
         if not trim_on:
-            self._set_note(self._trim_note, "all_inclusive", "Stored alerts are <b>kept forever</b>. Turn on auto-trim to limit storage.")
+            storage = "Stored alerts are <b>kept forever</b>."
         else:
             count, days = int(b.alert_storage_keep_count or 0), int(b.alert_storage_keep_days or 0)
-            rules = {
-                "quantity": f"keeps the newest <b>{count:,}</b> alerts",
-                "time": f"deletes alerts older than <b>{days:,} day{'s' if days != 1 else ''}</b>",
-                "both": f"keeps the newest <b>{count:,}</b> alerts and deletes any older than <b>{days:,} day{'s' if days != 1 else ''}</b>",
-            }
-            self._set_note(self._trim_note, "auto_delete", f"Auto-trim {rules.get(mode, rules['both'])}.")
+            age = f"<b>{days:,} day{'s' if days != 1 else ''}</b>"
+            storage = {
+                "quantity": f"Keeps the newest <b>{count:,}</b> alerts.",
+                "time": f"Deletes alerts older than {age}.",
+            }.get(mode, f"Keeps the newest <b>{count:,}</b> alerts, none older than {age}.")
+        self._set_note(getattr(self, "_storage_note", None), f"{feed} {storage}")
 
-        if b.minimize_to_tray or b.start_minimized:
-            self._set_note(self._tray_note, "info",
-                           "Mycelian keeps running in the tray: alerts, chat and overlays stay live while the window is closed.")
-        else:
-            self._set_note(self._tray_note, "", "")
+        tray = b.minimize_to_tray or b.start_minimized
+        self._set_note(
+            getattr(self, "_tray_note", None),
+            "Alerts, chat and overlays stay live while the window is in the tray." if tray else "",
+        )
 
         family = self._font_from_value(getattr(b, "ui_font_family", ""))
         if getattr(self, "_font_preview", None) is not None:
@@ -399,11 +415,15 @@ class AppSettingsTab:
         label = self.ui_elements.get("_dirty_label")
         if label is not None:
             if self.dirty:
-                label.set_content('<span class="aps-dot"></span>Unsaved changes')
-                label.classes(add="is-dirty")
+                label.set_content('<span class="aps-pill is-warn"><span class="aps-icon">edit</span>Unsaved changes</span>')
             else:
-                label.set_content('<span class="aps-dot"></span>All changes saved')
-                label.classes(remove="is-dirty")
+                label.set_content('<span class="aps-pill is-ok"><span class="aps-icon">check_circle</span>All changes saved</span>')
+        discard = self.ui_elements.get("_discard_btn")
+        if discard is not None:
+            if self.dirty:
+                discard.props(remove="disable")
+            else:
+                discard.props("disable")
 
     @staticmethod
     def _css_font(family: str) -> str:
@@ -412,13 +432,10 @@ class AppSettingsTab:
         return "'" + family.replace("\\", "").replace("'", "") + "', sans-serif"
 
     @staticmethod
-    def _set_note(element, icon: str, text: str) -> None:
+    def _set_note(element, text: str) -> None:
         if element is None:
             return
-        if not text:
-            element.set_content("")
-            return
-        element.set_content(f'<div class="aps-note"><span class="aps-icon">{icon}</span><div>{text}</div></div>')
+        element.set_content(f'<span class="aps-icon">info</span><span>{text}</span>' if text else "")
 
     # ----- buffer helpers -----
     def _load_from_state(self) -> None:

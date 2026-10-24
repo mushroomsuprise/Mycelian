@@ -1,4 +1,4 @@
-<p class="hx-lead">The <strong>Settings</strong> tab holds service connections, the theme and app-wide options. Each sub-tab has its own <strong>Discard</strong> and <strong>Save</strong> buttons; nothing changes until you save.</p>
+<p class="hx-lead">The <strong>Settings</strong> tab holds service connections, the theme and app-wide options. Each sub-tab has its own <strong>Discard</strong> and <strong>Save</strong> (or <strong>Apply</strong>) buttons; nothing changes until you save.</p>
 
 <div class="hx-meta">
   <span>{{icon:place}} <span class="hx-path"><span>Settings</span></span> (last main tab)</span>
@@ -111,47 +111,42 @@
       </div>
 
       <div data-panel="app" class="hm-col">
-        <div class="hm-grid-2">
+        <div class="hm-row hm-between">
+          <span class="hm-row"><span class="hm-bold hm-sm">App Settings</span><span class="hm-chip hm-plain"><span class="hx-mi">check_circle</span>All changes saved</span></span>
+          <span class="hm-row"><span class="hm-btn hm-outline hm-dense is-disabled">Discard</span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span></span>
+        </div>
+        <div class="hm-grid-3">
           <div class="hm-panel">
-            <div class="hm-panel-title">General</div>
-            <div class="hm-grid-2">
-              <div class="hm-field hm-select" data-label="App font"><span class="hm-value">System default</span></div>
-              <div class="hm-field hm-select" data-label="UI scale"><span class="hm-value">100%</span></div>
-            </div>
-            <div class="hm-col hm-tight">
-              <span class="hm-switch is-on"><i></i>Notifications</span>
-              <span class="hm-row"><span class="hm-switch is-on"><i></i>Show connection status footer</span><span class="hx-mi hm-muted">help_outline</span></span>
-              <span class="hm-switch"><i></i>Minimal status badges</span>
-              <span class="hm-switch is-on"><i></i>Auto update</span>
-              <span class="hm-row"><span class="hm-switch"><i></i>Start maximized</span><span class="hm-muted hm-xs">Applies on next launch</span></span>
-            </div>
-            <span class="hm-sm hm-bold">Background</span>
-            <div class="hm-col hm-tight">
-              <span class="hm-switch"><i></i>Minimize to tray</span>
-              <span class="hm-switch"><i></i>Start minimized to tray</span>
-              <span class="hm-switch"><i></i>Run at login</span>
-            </div>
-            <div class="hm-row"><span class="hm-sm">Update check</span><div class="hm-field hm-nolabel"><span class="hm-value">30</span></div><span class="hm-muted">minutes (5–120)</span></div>
+            <div class="hm-panel-title">Appearance</div>
+            <div class="hm-row hm-between"><span class="hm-sm">App font</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">System default</span></div></div>
+            <div class="hm-row hm-between"><span class="hm-sm">Interface scale</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">100%</span></div></div>
+            <div class="hm-panel-title">Notifications</div>
+            <span class="hm-switch is-on"><i></i>Pop-up notifications</span>
+            <span class="hm-row"><span class="hm-switch is-on"><i></i>Connection status bar</span><span class="hx-mi hm-muted">help_outline</span></span>
+            <span class="hm-switch"><i></i>Minimal badges</span>
+            <div class="hm-panel-title">Stream Deck plugin</div>
+            <div class="hm-row hm-between"><span class="hm-chip hm-plain">Not detected</span><span class="hm-btn hm-dense">Install Plugin</span></div>
           </div>
           <div class="hm-panel">
-            <div class="hm-panel-title">Storage</div>
-            <span class="hm-muted hm-xs">Activity feed paging and stored-alert retention.</span>
-            <div class="hm-row"><span class="hm-sm">History limit</span><div class="hm-field hm-nolabel"><span class="hm-value">20</span></div><span class="hm-muted">per page</span></div>
-            <div class="hm-row"><span class="hm-sm">Max pages</span><div class="hm-field hm-nolabel"><span class="hm-value">5</span></div><span class="hm-muted">to load</span></div>
-            <span class="hm-switch"><i></i>Auto-trim stored alerts</span>
-            <div class="hm-field hm-select" data-label="Trim using"><span class="hm-value">Number and age</span></div>
-            <div class="hm-row"><span class="hm-sm">Keep</span><div class="hm-field hm-nolabel"><span class="hm-value">500</span></div><span class="hm-muted">alerts</span></div>
-            <div class="hm-row"><span class="hm-sm">Keep</span><div class="hm-field hm-nolabel"><span class="hm-value">30</span></div><span class="hm-muted">days</span></div>
+            <div class="hm-panel-title">Window and startup</div>
+            <span class="hm-row"><span class="hm-switch"><i></i>Start maximized</span><span class="hm-muted hm-xs">Next launch</span></span>
+            <span class="hm-switch"><i></i>Run at login</span>
+            <span class="hm-switch"><i></i>Minimize to tray</span>
+            <span class="hm-switch"><i></i>Start minimized to tray</span>
+            <div class="hm-panel-title">Updates</div>
+            <span class="hm-switch is-on"><i></i>Check for updates automatically</span>
+            <div class="hm-row hm-between"><span class="hm-sm">Check every</span><span class="hm-row"><div class="hm-field hm-nolabel"><span class="hm-value">30</span></div><span class="hm-muted">min</span></span></div>
+          </div>
+          <div class="hm-panel">
+            <div class="hm-panel-title">Activity feed and storage</div>
+            <div class="hm-row hm-between"><span class="hm-sm">Items per page</span><span class="hm-row"><div class="hm-field hm-nolabel"><span class="hm-value">20</span></div><span class="hm-muted">items</span></span></div>
+            <div class="hm-row hm-between"><span class="hm-sm">Pages to load</span><span class="hm-row"><div class="hm-field hm-nolabel"><span class="hm-value">5</span></div><span class="hm-muted">pages</span></span></div>
+            <span class="hm-switch is-on"><i></i>Auto-trim stored alerts</span>
+            <div class="hm-row hm-between"><span class="hm-sm">Trim by</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Number and age</span></div></div>
+            <div class="hm-row hm-between"><span class="hm-sm">Keep the newest</span><span class="hm-row"><div class="hm-field hm-nolabel"><span class="hm-value">500</span></div><span class="hm-muted">alerts</span></span></div>
+            <div class="hm-row hm-between"><span class="hm-sm">Delete alerts older than</span><span class="hm-row"><div class="hm-field hm-nolabel"><span class="hm-value">30</span></div><span class="hm-muted">days</span></span></div>
           </div>
         </div>
-        <div class="hm-panel">
-          <div class="hm-panel-title">Stream Deck plugin</div>
-          <div class="hm-row hm-between">
-            <span class="hm-row"><span class="hm-muted">Status</span><span class="hm-bold hm-sm">Not installed</span></span>
-            <span class="hm-btn">Install Plugin</span>
-          </div>
-        </div>
-        <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
       </div>
 
       <div data-panel="about" class="hm-col">
@@ -205,15 +200,15 @@
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><strong>App font</strong>, <strong>UI scale</strong></td><td>Font and zoom (90% to 125%) for the whole window</td></tr>
-<tr><td><strong>Notifications</strong></td><td>Shows pop-up messages from Mycelian</td></tr>
-<tr><td><strong>Show connection status footer</strong>, <strong>Minimal status badges</strong></td><td>The bar at the bottom of the window. See <a href="help:status_footer">Status Footer</a></td></tr>
-<tr><td><strong>Auto update</strong>, <strong>Update check</strong></td><td>Check for new versions on a schedule; how often to check (5 to 120 minutes). With it off, use <strong>Check for updates</strong> on the About tab</td></tr>
+<tr><td><strong>App font</strong>, <strong>Interface scale</strong></td><td>Font and zoom (90% to 125%) for the whole window. The sample line below them shows the chosen font</td></tr>
+<tr><td><strong>Pop-up notifications</strong></td><td>Shows pop-up messages from Mycelian</td></tr>
+<tr><td><strong>Connection status bar</strong>, <strong>Minimal badges</strong></td><td>The bar at the bottom of the window. Click the help icon next to it, or see <a href="help:status_footer">Status Footer</a></td></tr>
 <tr><td><strong>Start maximized</strong></td><td>Opens the window maximized. Applies on next launch</td></tr>
-<tr><td><strong>Minimize to tray</strong>, <strong>Start minimized to tray</strong>, <strong>Run at login</strong></td><td>Keep Mycelian running in the background. <strong>Run at login</strong> only works in an installed build</td></tr>
-<tr><td><strong>History limit</strong>, <strong>Max pages</strong></td><td>How many Activity Feed items load per page and how many pages are kept</td></tr>
-<tr><td><strong>Auto-trim stored alerts</strong>, <strong>Trim using</strong>, <strong>Keep</strong></td><td>Delete old stored alerts by number, age, or both</td></tr>
-<tr><td><strong>Stream Deck plugin</strong></td><td>Installs or reinstalls the bundled plugin. See <a href="help:guide_streamdeck">Connect Stream Deck</a></td></tr>
+<tr><td><strong>Run at login</strong>, <strong>Minimize to tray</strong>, <strong>Start minimized to tray</strong></td><td>Keep Mycelian running in the background. <strong>Run at login</strong> only works in an installed build</td></tr>
+<tr><td><strong>Check for updates automatically</strong>, <strong>Check every</strong></td><td>Check for new versions on a schedule; how often to check (5 to 120 minutes). With it off, use <strong>Check for updates</strong> on the About tab</td></tr>
+<tr><td><strong>Items per page</strong>, <strong>Pages to load</strong></td><td>How many Activity Feed items load per page and how many pages you can go back. The line under the section shows the total</td></tr>
+<tr><td><strong>Auto-trim stored alerts</strong>, <strong>Trim by</strong>, <strong>Keep the newest</strong>, <strong>Delete alerts older than</strong></td><td>Delete old stored alerts by number, age, or both</td></tr>
+<tr><td><strong>Stream Deck plugin</strong></td><td>Shows whether the plugin is installed and current (hover the badge for versions), and installs or reinstalls the bundled plugin. See <a href="help:guide_streamdeck">Connect Stream Deck</a></td></tr>
 </tbody>
 </table></div>
 
