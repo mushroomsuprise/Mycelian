@@ -59,6 +59,63 @@ from .twitch_token_auth import (
 
 logger = logging.getLogger(__name__)
 
+# Recently sent chat texts (monotonic time, text). Connectors use this to ignore
+# the echo of the app's own message when it is sent from the broadcaster account.
+_OWN_CHAT_ECHO_SECONDS = 20.0
+_recent_sent_chat: list = []
+_recent_sent_chat_lock = threading.Lock()
+
+
+def note_sent_chat_message(message: str) -> None:
+    """Remember a chat message this app is sending (for echo detection)."""
+    text = str(message or "").strip()
+    if not text:
+        return
+    now = time.monotonic()
+    with _recent_sent_chat_lock:
+        _recent_sent_chat[:] = [
+            (ts, t) for ts, t in _recent_sent_chat if now - ts < _OWN_CHAT_ECHO_SECONDS
+        ][-50:]
+        _recent_sent_chat.append((now, text))
+
+
+def is_own_chat_message(user_id: Any, message: str) -> bool:
+    """True when an incoming chat message was sent by this app.
+
+    * From the dedicated chatbot account (its user id): always the app's own.
+    * From the broadcaster account (fallback mode, or the streamer typing):
+      only when the same text was sent by the app in the last 20 seconds, so
+      the streamer's own commands still reach connectors.
+    """
+    uid = str(user_id or "")
+    if not uid:
+        return False
+    bot = chatbot_api
+    if (
+        bot is not None
+        and not getattr(bot, "using_fallback", True)
+        and str(getattr(bot, "user_id", "") or "") == uid
+    ):
+        return True
+    text = str(message or "").strip()
+    if not text:
+        return False
+    try:
+        from . import twitch
+
+        broadcaster = str(getattr(twitch.twitch_api, "user_id", "") or "")
+    except Exception:
+        broadcaster = ""
+    if not broadcaster or broadcaster != uid:
+        return False
+    now = time.monotonic()
+    with _recent_sent_chat_lock:
+        for index, (ts, sent) in enumerate(_recent_sent_chat):
+            if sent == text and now - ts < _OWN_CHAT_ECHO_SECONDS:
+                del _recent_sent_chat[index]
+                return True
+    return False
+
 
 def _aiohttp_session_usable_on_running_loop(session) -> bool:
     """True when ``session`` can be used on the current running asyncio loop."""
@@ -876,6 +933,7 @@ class Chatbot_API:
         """Send a chat message as the chatbot"""
         try:
             logger.debug(f"send_chat_message called with message: {message[:50]}...")
+            note_sent_chat_message(message)
 
             # Check if we're using fallback mode (no dedicated chatbot credentials)
             if self.using_fallback:

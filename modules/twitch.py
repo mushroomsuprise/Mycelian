@@ -1020,6 +1020,33 @@ async def _emit_connector_new_sub(
         logger.error("Error emitting connector new-sub event: %s", e, exc_info=True)
 
 
+async def _emit_connector_resub(
+    *,
+    tier,
+    username: str,
+    message: str = "",
+    months: int = 1,
+    streak_months: int = 0,
+    user_id=None,
+) -> None:
+    """Emit connector event for a resub that passed on_sub's de-duplication."""
+    try:
+        from .connector_core import EventData
+        from .connector_manager import get_manager
+
+        event_data = EventData.from_twitch_resub(
+            tier=tier,
+            username=username,
+            message=message or "",
+            months=months,
+            streak_months=streak_months or 0,
+            user_id=user_id,
+        )
+        await get_manager().add_event(event_data)
+    except Exception as e:
+        logger.error("Error emitting connector resub event: %s", e, exc_info=True)
+
+
 class TwitchSessionNotReadyError(Exception):
     """Helix call cannot run yet (missing auth or Twitch library client)."""
 
@@ -3047,6 +3074,14 @@ class Twitch_API:
             alert_id=alert.alert_id,
         )
 
+        await _emit_connector_new_sub(
+            tier=tier,
+            username=username,
+            message=user_msg or "",
+            user_id=user_id,
+            is_gift=False,
+        )
+
     async def on_resub(self, data: ChannelSubscriptionMessageEvent):
         """Handle resubscription events (cumulative_months > 1)"""
         self._note_event_received()
@@ -3172,6 +3207,15 @@ class Twitch_API:
             tier=tier,
             user_message=user_msg,
             alert_id=alert.alert_id,
+        )
+
+        await _emit_connector_resub(
+            tier=tier,
+            username=username,
+            message=user_msg or "",
+            months=cumulative_months,
+            streak_months=getattr(data.event, "streak_months", None) or 0,
+            user_id=user_id,
         )
 
     async def on_new_sub(self, data: ChannelSubscribeEvent):

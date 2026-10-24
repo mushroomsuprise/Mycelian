@@ -214,6 +214,7 @@ def _fire_connector(
                     original_amount=original_amount,
                     original_currency=original_currency,
                     formatted_amount=phrase,
+                    display_amount=phrase,
                 )
             )
     except Exception:

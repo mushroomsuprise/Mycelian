@@ -24,10 +24,11 @@ SOFTWARE.
 """
 
 import asyncio
+import hmac
 import logging
 import threading
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from .connector_core import EventData
 from .connector_manager import get_manager
@@ -61,12 +62,10 @@ class ConnectorIntegration:
                 self._wrap_twitch_handler(
                     twitch.twitch_api, "on_bits_use", self._handle_twitch_bits
                 )
-                self._wrap_twitch_handler(
-                    twitch.twitch_api, "on_sub", self._handle_twitch_sub
-                )
-                self._wrap_twitch_handler(
-                    twitch.twitch_api, "on_resub", self._handle_twitch_resub
-                )
+                # Subs and resubs are not wrapped: twitch.py emits twitch_sub only
+                # for a confirmed new sub and twitch_resub only for a resub it
+                # alerted, after its own de-duplication (see
+                # twitch._emit_connector_new_sub / _emit_connector_resub).
                 self._wrap_twitch_handler(
                     twitch.twitch_api, "on_sub_gift", self._handle_twitch_giftsub
                 )
@@ -203,12 +202,16 @@ class ConnectorIntegration:
     async def _handle_twitch_bits(self, data):
         """Handle Twitch bits event for connector system"""
         try:
+            event = data.event
+            is_anonymous = bool(getattr(event, "is_anonymous", False))
             event_data = EventData.from_twitch_bits(
-                bits_amount=data.event.bits,
-                username=data.event.user_name,
-                message=getattr(data.event, "message", ""),
-                user_id=data.event.user_id,
-                is_anonymous=getattr(data.event, "is_anonymous", False),
+                bits_amount=int(str(event.bits)),
+                username=(event.user_name if not is_anonymous else None)
+                or "Anonymous",
+                message=_message_text(getattr(event, "message", None)),
+                user_id=getattr(event, "user_id", None) or "",
+                is_anonymous=is_anonymous,
+                bits_type=str(getattr(event, "type", "") or ""),
             )
             await self.manager.add_event(event_data)
         except Exception as e:
@@ -216,59 +219,25 @@ class ConnectorIntegration:
                 f"Error handling Twitch bits for connector: {e}", exc_info=True
             )
 
-    async def _handle_twitch_sub(self, data):
-        """Handle Twitch subscription event for connector system"""
-        try:
-            event_data = EventData.from_twitch_sub(
-                tier=data.event.tier,
-                username=data.event.user_name,
-                message=getattr(data.event.message, "text", "") if hasattr(data.event, "message") and data.event.message else "",
-                months=1,  # New sub is 1 month
-                user_id=data.event.user_id,
-                is_gift=getattr(data.event, "is_gift", False),
-            )
-            await self.manager.add_event(event_data)
-        except Exception as e:
-            logger.error(f"Error handling Twitch sub for connector: {e}", exc_info=True)
-
-    async def _handle_twitch_resub(self, data):
-        """Handle Twitch resubscription event for connector system"""
-        try:
-            event_data = {
-                "event_type": "twitch_resub",
-                "tier": data.event.tier,
-                "username": data.event.user_name,
-                "message": getattr(data.event.message, "text", "") if hasattr(data.event, "message") and data.event.message else "",
-                "months": getattr(data.event, "cumulative_months", 1),
-                "streak_months": getattr(data.event, "streak_months", 0),
-                "user_id": data.event.user_id,
-                "timestamp": data.event.timestamp
-                if hasattr(data.event, "timestamp")
-                else None,
-                "source": "twitch",
-            }
-            await self.manager.add_event(event_data)
-        except Exception as e:
-            logger.error(
-                f"Error handling Twitch resub for connector: {e}", exc_info=True
-            )
-
     async def _handle_twitch_giftsub(self, data):
-        """Handle Twitch gift subscription event for connector system"""
+        """Handle Twitch gift subscription event for connector system.
+
+        ``username`` is the gifter ("Anonymous" for anonymous gifts). EventSub's
+        channel.subscription.gift has no recipient, so none is reported.
+        """
         try:
-            event_data = {
-                "event_type": "twitch_giftsub",
-                "tier": data.event.tier,
-                "username": data.event.user_name,
-                "recipient": getattr(data.event, "recipient_user_name", ""),
-                "gift_count": getattr(data.event, "total", 1),
-                "is_anonymous": getattr(data.event, "is_anonymous", False),
-                "user_id": data.event.user_id,
-                "timestamp": data.event.timestamp
-                if hasattr(data.event, "timestamp")
-                else None,
-                "source": "twitch",
-            }
+            event = data.event
+            is_anonymous = bool(getattr(event, "is_anonymous", False))
+            event_data = EventData.from_twitch_giftsub(
+                tier=getattr(event, "tier", None),
+                username=(event.user_name if not is_anonymous else None)
+                or "Anonymous",
+                gift_count=int(str(getattr(event, "total", 1) or 1)),
+                is_anonymous=is_anonymous,
+                cumulative_total=getattr(event, "cumulative_total", None) or 0,
+                user_id=(getattr(event, "user_id", None) if not is_anonymous else "")
+                or "",
+            )
             await self.manager.add_event(event_data)
         except Exception as e:
             logger.error(
@@ -326,13 +295,21 @@ class ConnectorIntegration:
             )
 
     async def _handle_twitch_chat(self, data):
-        """Handle Twitch chat message event for connector system"""
+        """Handle Twitch chat message event for connector system.
+
+        Messages the app itself sent (the dedicated chatbot account, or an echo of
+        a message it just sent from the broadcaster account) are skipped so a
+        chat connector cannot trigger itself.
+        """
         try:
-            message = data.event.message.text
+            message = _message_text(data.event.message)
             is_command = message.startswith("!")
             command = message[1:].split()[0] if is_command and len(message) > 1 else ""
             user_id = data.event.chatter_user_id
-            badges = getattr(data.event, "badges", [])
+            badges = getattr(data.event, "badges", None) or []
+            if _is_own_chat_echo(user_id, message):
+                logger.debug("Skipping connector chat event for the app's own message")
+                return
 
             from . import twitch
             from .twitch_moderators import resolve_is_moderator_async
@@ -352,8 +329,8 @@ class ConnectorIntegration:
                 is_command=is_command,
                 command=command,
                 user_id=user_id,
-                badges=badges,
-                emotes=getattr(data.event.message, "emotes", []),
+                badges=_badge_text(badges),
+                emotes=_emote_text(data.event.message),
                 is_moderator=is_moderator,
             )
             await self.manager.add_event(event_data)
@@ -462,11 +439,20 @@ class ConnectorIntegration:
         except Exception as e:
             logger.error(f"Error sending hotkey event: {e}", exc_info=True)
 
-    async def send_timer_event(self, timer_id: str, interval_seconds: int):
-        """Send a timer event to the connector system"""
-        try:
-            import time
+    async def send_timer_event(
+        self,
+        timer_id: str,
+        interval_seconds: int,
+        connector_id: Optional[str] = None,
+    ):
+        """Send a timer event to the connector system.
 
+        The connector scheduler sends its own addressed timer events; this is
+        kept for callers that want to fire a timer by hand. Without
+        *connector_id* the event is flagged ``internal_tick`` so Any-event
+        connectors ignore it; timer triggers only accept their own ``timer_id``.
+        """
+        try:
             event_data = {
                 "event_type": "timer",
                 "timer_id": timer_id,
@@ -474,6 +460,10 @@ class ConnectorIntegration:
                 "timestamp": time.time(),
                 "source": "timer",
             }
+            if connector_id:
+                event_data["target_connector_id"] = connector_id
+            else:
+                event_data["internal_tick"] = True
 
             await self.manager.add_event(event_data)
             logger.debug(f"Timer event sent: {timer_id}")
@@ -481,18 +471,15 @@ class ConnectorIntegration:
         except Exception as e:
             logger.error(f"Error sending timer event: {e}", exc_info=True)
 
-    async def send_webhook_event(self, webhook_data: Dict[str, Any]):
-        """Send a webhook event to the connector system"""
-        try:
-            event_data = {
-                "event_type": "webhook",
-                "webhook_data": webhook_data,
-                "timestamp": webhook_data.get("timestamp") or time.time(),
-                "source": "webhook",
-                **webhook_data,
-            }
+    async def send_webhook_event(
+        self, webhook_data: Dict[str, Any], connector_id: Optional[str] = None
+    ):
+        """Send a webhook event to the connector system.
 
-            await self.manager.add_event(event_data)
+        With *connector_id* the event goes to that connector only.
+        """
+        try:
+            await self.manager.add_event(build_webhook_event(webhook_data, connector_id))
             logger.info("Webhook event sent")
 
         except Exception as e:
@@ -547,6 +534,143 @@ class ConnectorIntegration:
         except Exception as e:
             logger.error(f"Error getting template actions: {e}", exc_info=True)
             return {}
+
+
+def _message_text(message: Any) -> str:
+    """Plain text of a twitchAPI message object (or a str / None)."""
+    if message is None:
+        return ""
+    if isinstance(message, str):
+        return message
+    text = getattr(message, "text", None)
+    if text is None:
+        return ""
+    return str(text)
+
+
+def _badge_text(badges: Any) -> str:
+    """Comma-separated badge set ids ("broadcaster,subscriber") from twitchAPI badges."""
+    names = []
+    for badge in badges or []:
+        if isinstance(badge, dict):
+            name = badge.get("set_id") or badge.get("id")
+        elif isinstance(badge, str):
+            name = badge
+        else:
+            name = getattr(badge, "set_id", None) or getattr(badge, "id", None)
+        if name:
+            names.append(str(name))
+    return ",".join(names)
+
+
+def _emote_text(message: Any) -> str:
+    """Comma-separated emote names used in a twitchAPI chat message."""
+    names = []
+    for fragment in getattr(message, "fragments", None) or []:
+        ftype = (
+            fragment.get("type") if isinstance(fragment, dict) else getattr(fragment, "type", None)
+        )
+        if str(ftype or "") != "emote":
+            continue
+        text = fragment.get("text") if isinstance(fragment, dict) else getattr(fragment, "text", None)
+        if text:
+            names.append(str(text))
+    return ",".join(names)
+
+
+def _is_own_chat_echo(user_id: Any, message: str) -> bool:
+    """True for chat the app itself sent (see chatbot.is_own_chat_message)."""
+    try:
+        from .chatbot import is_own_chat_message
+
+        return bool(is_own_chat_message(user_id, message))
+    except Exception:
+        return False
+
+
+# Keys a webhook payload may not overwrite in the connector event.
+_WEBHOOK_RESERVED_KEYS = frozenset(
+    {"event_type", "target_connector_id", "connector_id", "payload", "source", "internal_tick"}
+)
+
+
+def build_webhook_event(
+    payload: Dict[str, Any], connector_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Connector event for a webhook call.
+
+    Payload fields are copied to the top level (so ``{username}`` works), except
+    reserved keys; the raw payload is also under ``payload``. With *connector_id*
+    the event is addressed to that connector only.
+    """
+    payload = dict(payload or {})
+    event_data: Dict[str, Any] = {
+        key: value for key, value in payload.items() if key not in _WEBHOOK_RESERVED_KEYS
+    }
+    event_data.update(
+        {
+            "event_type": "webhook",
+            "payload": payload,
+            "webhook_data": payload,
+            "timestamp": payload.get("timestamp") or time.time(),
+            "source": "webhook",
+        }
+    )
+    if connector_id:
+        event_data["connector_id"] = connector_id
+        event_data["target_connector_id"] = connector_id
+    return event_data
+
+
+def handle_connector_webhook(
+    connector_id: str, provided_key: Optional[str], payload: Dict[str, Any]
+) -> Tuple[int, Dict[str, Any]]:
+    """Validate and dispatch one webhook call. Returns (HTTP status, JSON body).
+
+    The connector must exist, be enabled, use a webhook trigger and have a
+    ``secret_key``; *provided_key* must match it (constant-time compare).
+    """
+    from .connector_core import TriggerType
+
+    manager = get_manager()
+    connector = manager.get_connector(connector_id) if connector_id else None
+    if connector is None:
+        return 404, {"ok": False, "error": "Connector not found"}
+    trigger = connector.trigger
+    if trigger is None or trigger.trigger_type != TriggerType.WEBHOOK:
+        return 400, {"ok": False, "error": "Connector is not a webhook trigger"}
+    secret = str(getattr(trigger, "secret_key", "") or "")
+    if not secret:
+        return 401, {"ok": False, "error": "Connector has no webhook key set"}
+    if not provided_key or not hmac.compare_digest(
+        str(provided_key).encode("utf-8"), secret.encode("utf-8")
+    ):
+        return 401, {"ok": False, "error": "Invalid webhook key"}
+    if not connector.enabled:
+        return 409, {"ok": False, "error": "Connector is disabled"}
+
+    event_data = build_webhook_event(payload, connector_id)
+    if not _enqueue_connector_event(event_data):
+        return 503, {"ok": False, "error": "Connector system is not ready"}
+    return 200, {"ok": True}
+
+
+def _enqueue_connector_event(event_data: Dict[str, Any]) -> bool:
+    """Queue an event on the connector loop from any thread. False if not running."""
+    from .connector_manager import get_connector_loop
+
+    manager = get_manager()
+    if not manager.is_running:
+        return False
+    loop = get_connector_loop()
+    if loop is None or not loop.is_running():
+        return False
+    try:
+        asyncio.run_coroutine_threadsafe(manager.add_event(event_data), loop)
+        return True
+    except Exception as e:
+        logger.debug("Connector enqueue failed: %s", e)
+        return False
 
 
 # Global connector integration instance

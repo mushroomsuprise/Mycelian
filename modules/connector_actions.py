@@ -24,22 +24,66 @@ SOFTWARE.
 """
 
 import asyncio
+import json
 import logging
 import os
 import re
 import subprocess
 import threading
 from dataclasses import dataclass, field, fields
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from .connector_core import ActionType, BaseAction
 from .connector_placeholders import (
     build_connector_placeholder_context,
     substitute_connector_placeholders,
     substitute_connector_placeholders_mapping,
+    substitute_json_placeholders,
+    substitute_shell_placeholders,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_json_field(
+    value: Any,
+    ctx: Dict[str, Any],
+    label: str,
+    *,
+    allow_text: bool = False,
+) -> Any:
+    """Resolve a JSON-ish action field (dict, list, or JSON source text) with placeholders.
+
+    * dict / list: placeholders substituted in string values.
+    * text: placeholders substituted JSON-aware (``{"amount": {amount}}`` gives a
+      number, ``"Hi {username}"`` is escaped), then ``json.loads``.
+    * empty / None: ``{}``.
+    * text that is not JSON: logged; returns the substituted plain text when
+      *allow_text* (API call bodies may be plain text), else ``{}``.
+    """
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return substitute_connector_placeholders_mapping(value, ctx)
+    if isinstance(value, list):
+        return substitute_connector_placeholders_mapping({"v": value}, ctx)["v"]
+    text = str(value)
+    if not text.strip():
+        return {}
+    try:
+        return json.loads(substitute_json_placeholders(text, ctx))
+    except ValueError as e:
+        if allow_text:
+            return substitute_connector_placeholders(text, ctx)
+        logger.error("%s is not valid JSON (%s); using {}", label, e)
+        return {}
+
+
+def _float_or(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _safe_console_str(value: Any) -> str:
@@ -121,7 +165,8 @@ class WebSocketEmitAction(BaseAction):
     """Action to emit a custom WebSocket event"""
 
     event_name: str = ""
-    event_data: Dict[str, Any] = None
+    # dict, or JSON source text with placeholders (see resolve_json_field)
+    event_data: Union[Dict[str, Any], str] = None
 
     def __post_init__(self):
         self.action_type = ActionType.WEBSOCKET_EMIT
@@ -143,17 +188,17 @@ class WebSocketEmitAction(BaseAction):
                 return False
 
             # Prepare event data
-            websocket_data = self.event_data.copy()
+            ctx = build_connector_placeholder_context(event_data, trigger_data)
+            websocket_data = resolve_json_field(
+                self.event_data, ctx, "WebSocket emit event data"
+            )
+            if not isinstance(websocket_data, dict):
+                websocket_data = {"data": websocket_data}
             websocket_data.update(
                 {
                     "trigger_id": trigger_data.get("trigger_id"),
                     "triggered_at": trigger_data.get("triggered_at"),
                 }
-            )
-
-            ctx = build_connector_placeholder_context(event_data, trigger_data)
-            websocket_data = substitute_connector_placeholders_mapping(
-                websocket_data, ctx
             )
 
             # Emit event (thread-safe: connectors run off the gevent hub)
@@ -176,9 +221,90 @@ class WebSocketEmitAction(BaseAction):
         return True
 
 
+# Runtime alert types (alertutils / overlay) and the legacy editor values they replace.
+TRIGGER_ALERT_TYPES = (
+    "bit", "sub", "resub", "giftsub", "streak", "donation", "raid", "follow", "point",
+)
+_LEGACY_ALERT_TYPE_MAP = {
+    "bits": "bit",
+    "cheer": "bit",
+    "cheers": "bit",
+    "subscription": "sub",
+    "subs": "sub",
+    "new_sub": "sub",
+    "resubscription": "resub",
+    "resubs": "resub",
+    "gift_sub": "giftsub",
+    "giftsubs": "giftsub",
+    "gift_subscription": "giftsub",
+    "streaks": "streak",
+    "watch_streak": "streak",
+    "watchstreak": "streak",
+    "donations": "donation",
+    "tip": "donation",
+    "tips": "donation",
+    "raids": "raid",
+    "host": "raid",  # Twitch removed hosts; a raid alert is the closest match
+    "follows": "follow",
+    "follower": "follow",
+    "points": "point",
+    "channel_points": "point",
+    "reward": "point",
+}
+
+
+def normalize_trigger_alert_type(value: Any) -> str:
+    """Map an editor / legacy alert type to a runtime type ("" when unsupported)."""
+    text = str(value or "").strip().lower()
+    if text in TRIGGER_ALERT_TYPES:
+        return text
+    return _LEGACY_ALERT_TYPE_MAP.get(text, "")
+
+
+def _alert_number(value: Any, default: float) -> float:
+    try:
+        number = float(str(value).strip().replace(",", ""))
+    except (TypeError, ValueError):
+        return default
+    if number != number:
+        return default
+    return number
+
+
+def _point_alert_by_name(name: str):
+    """Configured point alert whose name matches *name* (case-insensitive)."""
+    from . import alertutils
+
+    wanted = str(name or "").strip().casefold()
+    if not wanted:
+        return None
+    manager = alertutils.alert_state_manager
+    manager.initialize()
+    alerts = manager.get_alerts_by_type("points", include_ranges=False) or {}
+    for alert_id, data in alerts.items():
+        if not isinstance(data, dict):
+            continue
+        for key in ("alert_name", "display_name", "title", "reward_name"):
+            if str(data.get(key) or "").strip().casefold() == wanted:
+                alert = alertutils._alert_obj_from_db(data)
+                if not alert.twitch_reward_id:
+                    alert.twitch_reward_id = data.get("twitch_reward_id") or alert_id
+                return alert
+    return None
+
+
 @dataclass
 class TriggerAlertAction(BaseAction):
-    """Action to trigger an alert through the alert system"""
+    """Play the user's configured alert for a runtime alert type, like a real event.
+
+    ``alert_type``: bit, sub, resub, giftsub, streak, donation, raid, follow, point
+    (legacy editor values such as "bits"/"subscription"/"host" are mapped).
+    ``alert_data`` (strings, placeholders allowed): ``amount`` (bits, months,
+    gift count, streak count, raid viewers or donation amount -- whatever picks
+    the configured alert), ``username``, ``message``; point alerts also
+    ``reward_id`` or ``reward_name``; donations may add ``currency``; subs may
+    add ``tier``. Missing username/message fall back to the event's own.
+    """
 
     alert_type: str = ""
     alert_id: str = ""
@@ -188,39 +314,146 @@ class TriggerAlertAction(BaseAction):
         self.action_type = ActionType.TRIGGER_ALERT
         if self.alert_data is None:
             self.alert_data = {}
+        elif isinstance(self.alert_data, str):
+            try:
+                parsed = json.loads(self.alert_data) if self.alert_data.strip() else {}
+            except ValueError:
+                parsed = {}
+            self.alert_data = parsed if isinstance(parsed, dict) else {}
+        runtime = normalize_trigger_alert_type(self.alert_type)
+        if runtime:
+            self.alert_type = runtime
+
+    def _lookup(self, alert_type: str, amount: Optional[float], data: Dict[str, Any]):
+        """Return the configured AlertObj (or None) for this type + amount."""
+        from . import alertutils
+
+        count = max(1, int(round(amount))) if amount is not None else 1
+        if alert_type == "bit":
+            return alertutils.fetch_cheer_alert(count)
+        if alert_type == "sub":
+            return alertutils.fetch_sub_alert(count)
+        if alert_type == "resub":
+            return alertutils.fetch_resub_alert(count)
+        if alert_type == "giftsub":
+            return alertutils.fetch_giftsub_alert(count)
+        if alert_type == "streak":
+            return alertutils.fetch_streak_alert(count)
+        if alert_type == "raid":
+            return alertutils.fetch_raid_alert(count)
+        if alert_type == "follow":
+            return alertutils.fetch_follow_alert()
+        if alert_type == "donation":
+            from .donation_currency import donation_match_quantity
+
+            return alertutils.fetch_donation_alert(
+                donation_match_quantity(amount if amount is not None else 0)
+            )
+        if alert_type == "point":
+            reward_id = str(data.get("reward_id") or "").strip()
+            if reward_id:
+                found = alertutils.fetch_point_alert(reward_id)
+                if found is not None:
+                    return found
+            return _point_alert_by_name(data.get("reward_name") or "")
+        return None
 
     async def execute(
         self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
     ) -> bool:
-        """Execute trigger alert action"""
+        """Look up the configured alert and queue it."""
         try:
-            from . import alert_processor, alertutils
+            import time as _time
 
-            # Create alert object
-            alert = alertutils.AlertObj()
-            alert.alert_type = self.alert_type
-            alert.alert_id = (
-                self.alert_id
-                or f"connector_{trigger_data.get('trigger_id')}_{int(trigger_data.get('triggered_at', 0))}"
-            )
-            alert.timestamp = trigger_data.get("triggered_at", 0)
-            alert.is_test = False
+            from . import alert_processor
 
-            # Fill alert data from event and action parameters
-            alert_data = self.alert_data.copy()
+            alert_type = normalize_trigger_alert_type(self.alert_type)
+            if not alert_type:
+                logger.error(
+                    "Trigger alert action: unsupported alert type %r", self.alert_type
+                )
+                return False
+
             ctx = build_connector_placeholder_context(event_data, trigger_data)
-            alert_data = substitute_connector_placeholders_mapping(
-                alert_data, ctx
+            data = substitute_connector_placeholders_mapping(
+                dict(self.alert_data or {}), ctx
             )
+            raw_amount = data.get("amount")
+            amount = (
+                _alert_number(raw_amount, 0.0)
+                if raw_amount not in (None, "")
+                else None
+            )
+            username = str(data.get("username") or event_data.get("username") or "")
+            message = data.get("message")
+            if message is None:
+                message = event_data.get("message") or ""
+            message = str(message)
 
-            # Set alert properties from data
-            for key, value in alert_data.items():
-                if hasattr(alert, key):
-                    setattr(alert, key, value)
+            alert = self._lookup(alert_type, amount, data)
+            if alert is None:
+                logger.warning(
+                    "Trigger alert action: no %s alert is configured%s; nothing played",
+                    alert_type,
+                    f" for {raw_amount}" if raw_amount not in (None, "") else "",
+                )
+                return False
+            if alert_type == "point" and not getattr(alert, "enable_alert", True):
+                logger.warning(
+                    "Trigger alert action: the point alert %r is switched off; nothing played",
+                    getattr(alert, "alert_name", ""),
+                )
+                return False
 
-            # Add to alert queue
+            now = _time.time()
+            count = max(1, int(round(amount))) if amount is not None else 1
+            alert.alert_type = alert_type
+            alert.username = username
+            alert.message = message
+            alert.is_test = False
+            alert.timestamp = now
+            alert.alert_id = self.alert_id or (
+                f"connector_{trigger_data.get('trigger_id')}_{int(now * 1000)}"
+            )
+            if alert_type == "bit":
+                alert.amt_cheered = count
+            elif alert_type in ("sub", "resub"):
+                alert.resub_month = count
+                tier = data.get("tier")
+                if tier not in (None, ""):
+                    from .connector_core import normalize_sub_tier
+
+                    alert.tier = normalize_sub_tier(tier)
+            elif alert_type == "giftsub":
+                alert.gift_qty = count
+            elif alert_type == "streak":
+                alert.streak_count = count
+            elif alert_type == "raid":
+                alert.raider_count = count
+            elif alert_type == "donation":
+                from .donation_currency import donation_amount_phrase, normalize_currency
+                from .donation_settings import get_settings
+
+                value = float(amount or 0.0)
+                currency = normalize_currency(
+                    data.get("currency") or get_settings().alert_currency
+                )
+                alert.donation_amount = value
+                alert.original_amount = value
+                alert.currency = currency
+                alert.original_currency = currency
+                alert.donation_source = "connector"
+                alert.donation_text = donation_amount_phrase(
+                    value, currency, value, currency, show_original=False
+                )
+            elif alert_type == "point":
+                reward_name = str(data.get("reward_name") or "").strip()
+                if reward_name:
+                    alert.alert_name = reward_name
+                if data.get("reward_id"):
+                    alert.twitch_reward_id = str(data.get("reward_id"))
+
             alert_processor.enqueue_alert(alert)
-
             logger.info(f"Alert triggered: {alert.alert_type} ({alert.alert_id})")
             return True
 
@@ -453,8 +686,10 @@ class ApiCallAction(BaseAction):
 
     url: str = ""
     method: str = "GET"
-    headers: Dict[str, str] = None
-    body: Dict[str, Any] = None
+    # dict, or JSON source text with placeholders (see resolve_json_field)
+    headers: Union[Dict[str, str], str] = None
+    # dict / list (sent as JSON), JSON text, or any other text (sent as-is)
+    body: Union[Dict[str, Any], List[Any], str] = None
 
     def __post_init__(self):
         self.action_type = ActionType.API_CALL
@@ -462,6 +697,7 @@ class ApiCallAction(BaseAction):
             self.headers = {}
         if self.body is None:
             self.body = {}
+        self.method = str(self.method or "GET").strip().upper() or "GET"
 
     async def execute(
         self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
@@ -472,15 +708,25 @@ class ApiCallAction(BaseAction):
 
             ctx = build_connector_placeholder_context(event_data, trigger_data)
             url = substitute_connector_placeholders(self.url, ctx)
-            headers = substitute_connector_placeholders_mapping(self.headers, ctx)
-            body = substitute_connector_placeholders_mapping(self.body, ctx)
+            headers = resolve_json_field(self.headers, ctx, "API call headers")
+            if not isinstance(headers, dict):
+                logger.error("API call headers must be a JSON object; ignoring them")
+                headers = {}
+            headers = {str(k): "" if v is None else str(v) for k, v in headers.items()}
+            body = resolve_json_field(self.body, ctx, "API call body", allow_text=True)
+            request_kwargs: Dict[str, Any] = {}
+            if isinstance(body, str):
+                if body:
+                    request_kwargs["data"] = body.encode("utf-8")
+            elif body:
+                request_kwargs["json"] = body
 
             async with aiohttp.ClientSession() as session:
                 async with session.request(
                     method=self.method,
                     url=url,
                     headers=headers,
-                    json=body if body else None,
+                    **request_kwargs,
                 ) as response:
                     if response.status < 400:
                         logger.info(
@@ -508,9 +754,23 @@ class ApiCallAction(BaseAction):
         return True
 
 
+def resolve_write_file_path(path: str) -> str:
+    """Absolute path for a Write file action.
+
+    ``~`` is expanded; a relative path is resolved against the app data folder
+    (``path_utils.get_data_path``: the folder next to the app / project root).
+    """
+    from .path_utils import get_data_path
+
+    path = os.path.expanduser(str(path or "").strip())
+    if not os.path.isabs(path):
+        path = get_data_path(path)
+    return os.path.normpath(path)
+
+
 @dataclass
 class WriteFileAction(BaseAction):
-    """Action to write data to a file"""
+    """Action to write data to a file (relative paths: see resolve_write_file_path)."""
 
     file_path: str = ""
     content: str = ""
@@ -525,11 +785,15 @@ class WriteFileAction(BaseAction):
         """Execute write file action"""
         try:
             ctx = build_connector_placeholder_context(event_data, trigger_data)
-            file_path = substitute_connector_placeholders(self.file_path, ctx)
+            file_path = resolve_write_file_path(
+                substitute_connector_placeholders(self.file_path, ctx)
+            )
             content = substitute_connector_placeholders(self.content, ctx)
 
             # Ensure directory exists
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            directory = os.path.dirname(file_path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
 
             # Write file
             mode = "a" if self.append else "w"
@@ -557,10 +821,14 @@ class ExecuteCommandAction(BaseAction):
 
     command: str = ""
     working_directory: str = ""
-    timeout_seconds: int = 30
+    timeout_seconds: float = 30
 
     def __post_init__(self):
         self.action_type = ActionType.EXECUTE_COMMAND
+        timeout = _float_or(self.timeout_seconds, 30.0)
+        if timeout <= 0:
+            timeout = 30.0
+        self.timeout_seconds = int(timeout) if float(timeout).is_integer() else timeout
 
     async def execute(
         self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
@@ -568,7 +836,8 @@ class ExecuteCommandAction(BaseAction):
         """Execute command action"""
         try:
             ctx = build_connector_placeholder_context(event_data, trigger_data)
-            command = substitute_connector_placeholders(self.command, ctx)
+            # Every substituted value is shell-quoted; literal text is not.
+            command = substitute_shell_placeholders(self.command, ctx)
             working_dir = (
                 substitute_connector_placeholders(self.working_directory, ctx)
                 if self.working_directory
@@ -595,7 +864,7 @@ class ExecuteCommandAction(BaseAction):
                 return False
 
         except subprocess.TimeoutExpired:
-            logger.error(f"Command timed out: {command}")
+            logger.error(f"Command timed out: {self.command}")
             return False
         except Exception as e:
             logger.error(f"Error executing command action: {e}", exc_info=True)
@@ -2541,10 +2810,12 @@ class AddGreetingAction(BaseAction):
     user_id: str = ""
     username: str = ""
     greeting_text: str = ""
-    enabled: bool = True
+    # Whether the saved greeting is switched on (not the action's own `enabled`)
+    greeting_enabled: bool = True
 
     def __post_init__(self):
         self.action_type = ActionType.ADD_GREETING
+        self.greeting_enabled = bool(self.greeting_enabled)
 
     async def execute(
         self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
@@ -2568,7 +2839,7 @@ class AddGreetingAction(BaseAction):
                 user_id=user_id,
                 username=username,
                 greeting_text=greeting_text,
-                enabled=self.enabled,
+                enabled=self.greeting_enabled,
             )
 
             if success:
@@ -2602,10 +2873,13 @@ class UpdateGreetingAction(BaseAction):
 
     greeting_id: str = ""
     greeting_text: str = ""
-    enabled: bool = None
+    # True / False switches the greeting on / off; None leaves it unchanged
+    greeting_enabled: Optional[bool] = None
 
     def __post_init__(self):
         self.action_type = ActionType.UPDATE_GREETING
+        if self.greeting_enabled is not None:
+            self.greeting_enabled = bool(self.greeting_enabled)
 
     async def execute(
         self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]
@@ -2629,7 +2903,7 @@ class UpdateGreetingAction(BaseAction):
             success = manager.update_greeting(
                 greeting_id=greeting_id,
                 greeting_text=greeting_text,
-                enabled=self.enabled,
+                enabled=self.greeting_enabled,
             )
 
             if success:
@@ -2649,9 +2923,9 @@ class UpdateGreetingAction(BaseAction):
             logger.error("Update greeting action missing greeting_id")
             return False
         # At least one field to update should be provided
-        if self.greeting_text is None and self.enabled is None:
+        if not self.greeting_text and self.greeting_enabled is None:
             logger.error(
-                "Update greeting action needs at least greeting_text or enabled parameter"
+                "Update greeting action needs greeting_text or greeting_enabled"
             )
             return False
         return True
@@ -2885,6 +3159,52 @@ class ObsControlAction(BaseAction):
             return False
 
 
+def migrate_action_kwargs(action_type: ActionType, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """Map old stored / editor keys to the current action fields (returns a new dict).
+
+    * add_greeting / update_greeting: the greeting's on/off switch used to be
+      stored as ``enabled`` (shadowing the action's own ``enabled``). When
+      ``greeting_enabled`` is absent, ``enabled`` is moved to it and the action
+      itself is enabled (the old data cannot tell the two apart, and the old
+      field was the greeting switch). update_greeting ``enabled: None`` becomes
+      "leave unchanged".
+    * execute_command: legacy ``timeout`` -> ``timeout_seconds``.
+    * trigger_alert: legacy alert types are mapped (see normalize_trigger_alert_type);
+      top-level ``amount`` / ``username`` / ``message`` / ``reward_id`` /
+      ``reward_name`` / ``currency`` move into ``alert_data`` when it lacks them.
+    """
+    out = dict(kwargs)
+    if action_type in (ActionType.ADD_GREETING, ActionType.UPDATE_GREETING):
+        if "greeting_enabled" not in out and "enabled" in out:
+            legacy = out.pop("enabled")
+            if action_type == ActionType.ADD_GREETING:
+                out["greeting_enabled"] = True if legacy is None else bool(legacy)
+            else:
+                out["greeting_enabled"] = None if legacy is None else bool(legacy)
+            out["enabled"] = True
+    elif action_type == ActionType.EXECUTE_COMMAND:
+        if "timeout_seconds" not in out and "timeout" in out:
+            out["timeout_seconds"] = out.pop("timeout")
+    elif action_type == ActionType.TRIGGER_ALERT:
+        if "alert_type" in out:
+            out["alert_type"] = normalize_trigger_alert_type(out["alert_type"]) or out[
+                "alert_type"
+            ]
+        alert_data = out.get("alert_data")
+        if isinstance(alert_data, str):
+            try:
+                alert_data = json.loads(alert_data) if alert_data.strip() else {}
+            except ValueError:
+                alert_data = {}
+        alert_data = dict(alert_data) if isinstance(alert_data, dict) else {}
+        for key in ("amount", "username", "message", "reward_id", "reward_name", "currency"):
+            if key in out:
+                value = out.pop(key)
+                alert_data.setdefault(key, value)
+        out["alert_data"] = alert_data
+    return out
+
+
 # Factory function for creating actions
 def create_action(
     action_type: ActionType, action_id: str, name: str, **kwargs
@@ -2916,6 +3236,7 @@ def create_action(
 
     # Remove action_type from kwargs to avoid duplicate parameter
     filtered_kwargs = {k: v for k, v in kwargs.items() if k != "action_type"}
+    filtered_kwargs = migrate_action_kwargs(action_type, filtered_kwargs)
 
     # Only pass parameters that are defined on the action dataclass to avoid __init__ errors
     allowed_field_names = {f.name for f in fields(action_class)}

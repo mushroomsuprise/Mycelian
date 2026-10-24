@@ -39,17 +39,18 @@ _regex_match_cache: Dict[str, Any] = {}
 _REGEX_INVALID = object()
 
 
-def _compiled_regex_match(pattern: str):
-    cached = _regex_match_cache.get(pattern, _REGEX_INVALID)
+def _compiled_regex_match(pattern: str, ignore_case: bool = False):
+    key = ("i:" if ignore_case else "s:") + pattern
+    cached = _regex_match_cache.get(key, _REGEX_INVALID)
     if cached is not _REGEX_INVALID:
         return cached
     try:
-        compiled = re.compile(pattern)
+        compiled = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
     except re.error:
         compiled = None
     if len(_regex_match_cache) >= _REGEX_CACHE_MAX:
         _regex_match_cache.clear()
-    _regex_match_cache[pattern] = compiled
+    _regex_match_cache[key] = compiled
     return compiled
 
 
@@ -166,6 +167,9 @@ class TriggerCondition:
     operator: ComparisonOperator
     value: Any  # The value to compare against
     case_sensitive: bool = True
+    # How this condition joins the one before it: "and" | "or". Ignored on the
+    # first condition. AND binds tighter than OR (see BaseTrigger.evaluate_conditions).
+    join: str = "and"
 
     def evaluate(self, event_data: Dict[str, Any]) -> bool:
         """Evaluate this condition against event data"""
@@ -192,112 +196,157 @@ class TriggerCondition:
     def _compare_values(
         self, field_value: Any, expected_value: Any, operator: ComparisonOperator
     ) -> bool:
-        """Compare two values using the specified operator"""
-        # Handle None values
-        if field_value is None:
-            return operator == ComparisonOperator.EQUAL and expected_value is None
+        """Compare an event field with the condition value.
 
-        # Convert to appropriate types for comparison
-        if operator in [
+        * Missing field (None): ``not_equal`` / ``not_contains`` are True, all
+          other operators False.
+        * ``equal`` / ``not_equal``: boolean comparison only when the event value
+          is a real ``bool`` (or the condition value is a ``bool`` and the event
+          value is the text "true"/"false"); otherwise numeric when both sides
+          parse as numbers, else text.
+        * ``greater_than`` etc.: numeric only; False when either side is not a number.
+        * Text operators (and text equality) honour ``case_sensitive``; regex uses
+          ``re.IGNORECASE`` when it is off.
+        """
+        op = operator
+        if field_value is None:
+            return op in (ComparisonOperator.NOT_EQUAL, ComparisonOperator.NOT_CONTAINS)
+
+        if op in (ComparisonOperator.EQUAL, ComparisonOperator.NOT_EQUAL):
+            same = self._values_equal(field_value, expected_value)
+            return same if op == ComparisonOperator.EQUAL else not same
+
+        if op in (
             ComparisonOperator.GREATER_THAN,
             ComparisonOperator.GREATER_THAN_OR_EQUAL,
             ComparisonOperator.LESS_THAN,
             ComparisonOperator.LESS_THAN_OR_EQUAL,
-        ]:
-            try:
-                field_value = float(field_value) if field_value is not None else 0
-                expected_value = float(expected_value)
-            except (ValueError, TypeError):
+        ):
+            fv = _as_number(field_value)
+            ev = _as_number(expected_value)
+            if fv is None or ev is None:
                 return False
+            if op == ComparisonOperator.GREATER_THAN:
+                return fv > ev
+            if op == ComparisonOperator.GREATER_THAN_OR_EQUAL:
+                return fv >= ev
+            if op == ComparisonOperator.LESS_THAN:
+                return fv < ev
+            return fv <= ev
 
-        # String operations
-        if operator in [
-            ComparisonOperator.CONTAINS,
-            ComparisonOperator.NOT_CONTAINS,
-            ComparisonOperator.STARTS_WITH,
-            ComparisonOperator.BEGINS_WITH,
-            ComparisonOperator.ENDS_WITH,
-            ComparisonOperator.REGEX_MATCH,
-        ]:
-            field_value = str(field_value) if field_value is not None else ""
-            expected_value = str(expected_value)
-
-            if not self.case_sensitive:
-                field_value = field_value.lower()
-                expected_value = expected_value.lower()
-
-        def _looks_bool_token(x):
-            return isinstance(x, str) and str(x).strip().lower() in (
-                "true",
-                "false",
-                "0",
-                "1",
-                "yes",
-                "no",
-                "on",
-                "off",
-            )
-
-        def _truthy_plain(x):
-            if isinstance(x, bool):
-                return x
-            return str(x).strip().lower() in ("true", "1", "yes", "on")
-
-        # Perform comparison
-        if operator == ComparisonOperator.EQUAL:
-            fv, ev = field_value, expected_value
-            if isinstance(fv, bool) or isinstance(ev, bool) or (
-                _looks_bool_token(fv) or _looks_bool_token(ev)
-            ):
-                try:
-                    return bool(_truthy_plain(fv) == _truthy_plain(ev))
-                except Exception:
-                    pass
-            try:
-                return float(fv) == float(ev)
-            except (TypeError, ValueError):
-                return fv == ev
-        elif operator == ComparisonOperator.NOT_EQUAL:
-            fv, ev = field_value, expected_value
-            if isinstance(fv, bool) or isinstance(ev, bool) or (
-                _looks_bool_token(fv) or _looks_bool_token(ev)
-            ):
-                try:
-                    return bool(_truthy_plain(fv) != _truthy_plain(ev))
-                except Exception:
-                    pass
-            try:
-                return float(fv) != float(ev)
-            except (TypeError, ValueError):
-                return fv != ev
-        elif operator == ComparisonOperator.GREATER_THAN:
-            return field_value > expected_value
-        elif operator == ComparisonOperator.GREATER_THAN_OR_EQUAL:
-            return field_value >= expected_value
-        elif operator == ComparisonOperator.LESS_THAN:
-            return field_value < expected_value
-        elif operator == ComparisonOperator.LESS_THAN_OR_EQUAL:
-            return field_value <= expected_value
-        elif operator == ComparisonOperator.CONTAINS:
-            return expected_value in field_value
-        elif operator == ComparisonOperator.NOT_CONTAINS:
-            return expected_value not in field_value
-        elif operator == ComparisonOperator.STARTS_WITH:
-            # Exact match on the first whitespace-delimited token
-            tokens = field_value.split(None, 1)
-            return bool(tokens) and tokens[0] == expected_value
-        elif operator == ComparisonOperator.BEGINS_WITH:
-            return field_value.startswith(expected_value)
-        elif operator == ComparisonOperator.ENDS_WITH:
-            return field_value.endswith(expected_value)
-        elif operator == ComparisonOperator.REGEX_MATCH:
-            compiled = _compiled_regex_match(expected_value)
+        fv_s = _as_text(field_value)
+        ev_s = _as_text(expected_value)
+        if op == ComparisonOperator.REGEX_MATCH:
+            compiled = _compiled_regex_match(ev_s, ignore_case=not self.case_sensitive)
             if compiled is None:
-                logger.error(f"Invalid regex pattern: {expected_value}")
+                logger.error(f"Invalid regex pattern: {ev_s}")
                 return False
-            return bool(compiled.search(field_value))
+            return bool(compiled.search(fv_s))
 
+        if not self.case_sensitive:
+            fv_s = fv_s.casefold()
+            ev_s = ev_s.casefold()
+        if op == ComparisonOperator.CONTAINS:
+            return ev_s in fv_s
+        if op == ComparisonOperator.NOT_CONTAINS:
+            return ev_s not in fv_s
+        if op == ComparisonOperator.STARTS_WITH:
+            # Exact match on the first whitespace-delimited token
+            tokens = fv_s.split(None, 1)
+            return bool(tokens) and tokens[0] == ev_s
+        if op == ComparisonOperator.BEGINS_WITH:
+            return fv_s.startswith(ev_s)
+        if op == ComparisonOperator.ENDS_WITH:
+            return fv_s.endswith(ev_s)
         return False
+
+    def _values_equal(self, field_value: Any, expected_value: Any) -> bool:
+        if isinstance(field_value, bool):
+            expected_bool = _as_bool(expected_value)
+            if expected_bool is not None:
+                return field_value == expected_bool
+        elif isinstance(expected_value, bool) and isinstance(field_value, str):
+            token = field_value.strip().lower()
+            if token in ("true", "false"):
+                return (token == "true") == expected_value
+        fv = _as_number(field_value)
+        ev = _as_number(expected_value)
+        if fv is not None and ev is not None:
+            return fv == ev
+        fv_s = _as_text(field_value)
+        ev_s = _as_text(expected_value)
+        if not self.case_sensitive:
+            return fv_s.casefold() == ev_s.casefold()
+        return fv_s == ev_s
+
+
+def _as_number(value: Any) -> Optional[float]:
+    """Return a float for numbers and numeric text; None otherwise (bools excluded)."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            number = float(text)
+        except ValueError:
+            return None
+        if number != number or number in (float("inf"), float("-inf")):
+            return None
+        return number
+    return None
+
+
+def _as_bool(value: Any) -> Optional[bool]:
+    """Interpret a condition value as a bool for comparison with a bool event field."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value in (0, 1):
+            return bool(value)
+        return None
+    token = str(value).strip().lower()
+    if token in ("true", "yes", "on", "1"):
+        return True
+    if token in ("false", "no", "off", "0"):
+        return False
+    return None
+
+
+def _as_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def evaluate_condition_groups(
+    conditions: List["TriggerCondition"], event_data: Dict[str, Any]
+) -> bool:
+    """AND/OR evaluation: split at each condition whose ``join`` is "or".
+
+    AND binds tighter than OR, so ``A and B or C`` is ``(A and B) or C``. The
+    first condition's ``join`` is ignored. No conditions means True.
+    """
+    if not conditions:
+        return True
+    groups: List[List[TriggerCondition]] = [[]]
+    for index, condition in enumerate(conditions):
+        join = str(getattr(condition, "join", "and") or "and").strip().lower()
+        if index > 0 and join == "or":
+            groups.append([])
+        groups[-1].append(condition)
+    return any(
+        all(condition.evaluate(event_data) for condition in group)
+        for group in groups
+        if group
+    )
 
 
 def message_after_trigger_conditions(
@@ -387,11 +436,8 @@ class BaseTrigger(ABC):
 
     def evaluate_conditions(self, event_data: Dict[str, Any]) -> bool:
         """Evaluate all conditions for this trigger"""
-        if not self.conditions:
-            return True  # No conditions means always trigger
-
-        # All conditions must be true (AND logic)
-        return all(condition.evaluate(event_data) for condition in self.conditions)
+        # AND/OR groups; no conditions means always trigger
+        return evaluate_condition_groups(self.conditions, event_data)
 
     @abstractmethod
     def should_trigger(self, event_data: Dict[str, Any]) -> bool:
@@ -514,6 +560,9 @@ class Connector:
                         "trigger_id": self.trigger.trigger_id,
                         "trigger_type": self.trigger.trigger_type.value,
                         "connector_id": self.connector_id,
+                        "connector_name": self.name,
+                        # Counted after the increment above: 1 on the first run.
+                        "trigger_count": self.trigger_count,
                         "triggered_at": self.last_triggered,
                         "message_after_conditions": msg_after,
                         "action_index": action_index,
@@ -533,6 +582,28 @@ class Connector:
             f"Connector '{self.name}' executed {success_count}/{len(self.actions)} actions"
         )
         return success_count > 0
+
+
+def normalize_sub_tier(raw: Any) -> int:
+    """Map a Twitch sub tier to 1, 2 or 3.
+
+    Accepts plan codes ``"1000"``/``"2000"``/``"3000"`` (str or int), ``1``/``2``/``3``
+    and ``"prime"`` (Prime Gaming subs count as tier 1). Anything else is 1.
+    """
+    if isinstance(raw, bool) or raw is None:
+        return 1
+    text = str(getattr(raw, "value", raw)).strip().lower()
+    if text == "prime":
+        return 1
+    try:
+        value = int(float(text))
+    except ValueError:
+        return 1
+    if value in (1000, 2000, 3000):
+        return value // 1000
+    if value in (1, 2, 3):
+        return value
+    return 1
 
 
 class EventData:
@@ -560,10 +631,52 @@ class EventData:
         """Create event data from Twitch subscription event"""
         return {
             "event_type": "twitch_sub",
-            "tier": tier,
+            "tier": normalize_sub_tier(tier),
             "username": username,
             "message": message,
             "months": months,
+            "timestamp": time.time(),
+            "source": "twitch",
+            **kwargs,
+        }
+
+    @staticmethod
+    def from_twitch_resub(
+        tier: Any,
+        username: str,
+        message: str = "",
+        months: int = 1,
+        streak_months: int = 0,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Create event data from a Twitch resubscription (``months`` = cumulative)."""
+        return {
+            "event_type": "twitch_resub",
+            "tier": normalize_sub_tier(tier),
+            "username": username,
+            "message": message or "",
+            "months": months,
+            "streak_months": streak_months or 0,
+            "timestamp": time.time(),
+            "source": "twitch",
+            **kwargs,
+        }
+
+    @staticmethod
+    def from_twitch_giftsub(
+        tier: Any,
+        username: str,
+        gift_count: int = 1,
+        is_anonymous: bool = False,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Create event data from a Twitch gift-sub event (``username`` = the gifter)."""
+        return {
+            "event_type": "twitch_giftsub",
+            "tier": normalize_sub_tier(tier),
+            "username": username,
+            "gift_count": gift_count,
+            "is_anonymous": bool(is_anonymous),
             "timestamp": time.time(),
             "source": "twitch",
             **kwargs,

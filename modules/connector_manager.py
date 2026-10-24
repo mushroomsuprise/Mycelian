@@ -74,6 +74,28 @@ _TRIGGER_EVENT_BY_CLASS = {
 }
 
 
+_SUB_TIER_TRIGGERS = frozenset({"twitch_sub", "twitch_resub", "twitch_giftsub", "any"})
+
+
+def _migrate_condition_value(trigger_type_value: str, field_name: str, value: Any) -> Any:
+    """Old sub-tier conditions compared against plan codes 1000/2000/3000; tier is now 1/2/3."""
+    if field_name != "tier" or trigger_type_value not in _SUB_TIER_TRIGGERS:
+        return value
+    if isinstance(value, bool):
+        return value
+    try:
+        number = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return value
+    if number in (1000, 2000, 3000):
+        return number // 1000 if isinstance(value, (int, float)) else str(number // 1000)
+    return value
+
+
+def _normalize_join(value: Any) -> str:
+    return "or" if str(value or "").strip().lower() == "or" else "and"
+
+
 def _connector_listens_for(connector: Any, event_type: str) -> bool:
     """Skip triggers that cannot match this event. Unknown triggers still run."""
     trigger = getattr(connector, "trigger", None)
@@ -402,6 +424,11 @@ class ConnectorManager:
         with self._lock:
             connectors = list(self.connectors.items())
 
+        # Events addressed to one connector (timer, schedule, webhook) go only there.
+        target = event_data.get("target_connector_id")
+        if target:
+            connectors = [(cid, c) for cid, c in connectors if cid == target]
+
         # Process enabled connectors for this event, in the same order.
         for connector_id, connector in connectors:
             # Check if connector is enabled
@@ -599,8 +626,21 @@ class ConnectorManager:
             logger.error(f"Error adding connector: {e}", exc_info=True)
             return False
 
-    def update_connector(self, connector_id: str, connector: Connector) -> bool:
-        """Update an existing connector"""
+    def update_connector(
+        self, connector_id: str, connector: Connector, keep_stats: bool = False
+    ) -> bool:
+        """Replace an existing connector with *connector*, stored exactly as given.
+
+        Every field on the passed object is kept and saved: ``created_at``,
+        ``metadata``, trigger ``cooldown_seconds``/``metadata``, condition
+        ``case_sensitive``/``join``, action ``action_id``/``enabled``/
+        ``description``/``delay_seconds``. Nothing is reset.
+
+        ``keep_stats=True`` copies the runtime fields from the stored connector
+        instead of the passed ones: ``created_at``, ``last_triggered``,
+        ``trigger_count`` and (when the trigger type is unchanged) the trigger's
+        ``last_triggered`` so a cooldown in progress keeps running.
+        """
         try:
             with self._lock:
                 if connector_id not in self.connectors:
@@ -612,6 +652,17 @@ class ConnectorManager:
                     return False
 
                 old_connector = self.connectors[connector_id]
+                if keep_stats:
+                    connector.created_at = old_connector.created_at
+                    connector.last_triggered = old_connector.last_triggered
+                    connector.trigger_count = old_connector.trigger_count
+                    old_trigger = old_connector.trigger
+                    if (
+                        old_trigger is not None
+                        and connector.trigger is not None
+                        and old_trigger.trigger_type == connector.trigger.trigger_type
+                    ):
+                        connector.trigger.last_triggered = old_trigger.last_triggered
                 self._unregister_connector_hotkey(old_connector)
                 self.connectors[connector_id] = connector
                 if connector.enabled:
@@ -728,6 +779,14 @@ class ConnectorManager:
 
         return True
 
+    def connector_to_dict(self, connector: Connector) -> Dict[str, Any]:
+        """Public: the stored (JSON-safe) form of *connector*."""
+        return self._serialize_connector(connector)
+
+    def connector_from_dict(self, data: Dict[str, Any]) -> Optional[Connector]:
+        """Public: build a Connector from its stored form (runs data migrations)."""
+        return self._deserialize_connector(data)
+
     def _serialize_connector(self, connector: Connector) -> Dict[str, Any]:
         """Serialize a connector to dictionary"""
         return {
@@ -790,6 +849,7 @@ class ConnectorManager:
                     "operator": cond.operator.value,
                     "value": cond.value,
                     "case_sensitive": cond.case_sensitive,
+                    "join": _normalize_join(getattr(cond, "join", "and")),
                 }
                 for cond in trigger.conditions
             ],
@@ -822,14 +882,20 @@ class ConnectorManager:
 
             trigger_type = TriggerType(data["trigger_type"])
 
-            # Deserialize conditions
+            # Deserialize conditions (missing join -> "and", missing case_sensitive
+            # -> True, old sub-tier plan codes 1000/2000/3000 -> 1/2/3)
             conditions = []
             for cond_data in data.get("conditions", []):
                 condition = TriggerCondition(
                     field=cond_data["field"],
                     operator=ComparisonOperator(cond_data["operator"]),
-                    value=cond_data["value"],
+                    value=_migrate_condition_value(
+                        trigger_type.value,
+                        cond_data["field"],
+                        cond_data.get("value"),
+                    ),
                     case_sensitive=cond_data.get("case_sensitive", True),
+                    join=_normalize_join(cond_data.get("join", "and")),
                 )
                 conditions.append(condition)
 
@@ -946,7 +1012,10 @@ class ConnectorManager:
             ):
                 return
 
-            key_combination = getattr(connector.trigger, "key_combination", "")
+            combo = getattr(connector.trigger, "combo", None)
+            key_combination = (
+                combo() if callable(combo) else ""
+            ) or getattr(connector.trigger, "key_combination", "")
             if not key_combination:
                 return
 
@@ -1042,9 +1111,13 @@ class ConnectorManager:
             return changed
 
     async def test_connector(
-        self, connector_id: str, test_event_data: Dict[str, Any]
+        self, connector_id: str, test_event_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Test a connector with provided event data.
+
+        Without *test_event_data* a sample event for the connector's trigger is
+        used (``connector_variables.sample_event(trigger_type, trigger)``), which
+        fires every trigger type unless its conditions reject the sample.
 
         Actions (sleep, aiohttp, subprocess, audio restore) must run on
         ``connector_loop``, not the NiceGUI loop that ``background_tasks.create`` uses.
@@ -1052,6 +1125,14 @@ class ConnectorManager:
         connector = self.get_connector(connector_id)
         if not connector:
             return {"success": False, "error": "Connector not found"}
+        if test_event_data is None:
+            if connector.trigger is None:
+                return {"success": False, "error": "Connector has no trigger"}
+            from .connector_variables import sample_event
+
+            test_event_data = sample_event(
+                connector.trigger.trigger_type, connector.trigger
+            )
 
         async def _run_test() -> Dict[str, Any]:
             result = await connector.process_event(test_event_data)
@@ -1085,13 +1166,18 @@ class ConnectorManager:
             return {"success": False, "error": str(e)}
 
     async def _connector_scheduler_loop(self):
-        """Fire timer/schedule events for enabled connectors (1s tick on connector_loop)."""
+        """Fire timer/schedule events for enabled connectors (1s tick on connector_loop).
+
+        Timers: each enabled timer connector fires every ``interval_seconds``,
+        first one interval after it is seen enabled (app start, enable, edit).
+        Schedules: once per matching local minute, on ``days_of_week`` (empty =
+        every day). Both events are addressed to their connector only
+        (``target_connector_id``), so Any-event connectors never see them.
+        """
         from datetime import datetime
 
-        from .connector_integration import get_integration
-        from .connector_triggers import parse_schedule_hhmm
-
         last_schedule_fire: Dict[str, str] = {}
+        timer_next: Dict[str, Any] = {}
         while True:
             await asyncio.sleep(1.0)
             if not self.is_running:
@@ -1099,50 +1185,81 @@ class ConnectorManager:
             try:
                 with self._lock:
                     connectors = list(self.connectors.items())
-
-                has_timer = False
-                due_schedules: List[Any] = []
-                now = datetime.now()
-                now_key = now.strftime("%Y-%m-%dT%H:%M")
-
-                for connector_id, connector in connectors:
-                    if not connector.enabled or not connector.trigger:
-                        continue
-                    trigger = connector.trigger
-                    ttype = getattr(trigger, "trigger_type", None)
-                    if ttype == TriggerType.TIMER:
-                        has_timer = True
-                    elif ttype == TriggerType.SCHEDULE:
-                        hhmm = parse_schedule_hhmm(trigger)
-                        if hhmm is None:
-                            continue
-                        hour, minute = hhmm
-                        if now.hour == hour and now.minute == minute:
-                            if last_schedule_fire.get(connector_id) != now_key:
-                                due_schedules.append(trigger)
-                                last_schedule_fire[connector_id] = now_key
-
-                integration = get_integration()
-                if has_timer:
-                    await integration.send_timer_event("connector_timer", 1)
-                for trigger in due_schedules:
-                    await self.add_event(
-                        {
-                            "event_type": "schedule",
-                            "trigger_id": getattr(trigger, "trigger_id", ""),
-                            "schedule_pattern": getattr(
-                                trigger, "schedule_pattern", ""
-                            ),
-                            "specific_time": getattr(trigger, "specific_time", "")
-                            or "",
-                            "timestamp": time.time(),
-                            "source": "schedule",
-                        }
-                    )
+                for event_data in self._scheduler_due_events(
+                    connectors, datetime.now(), time.monotonic(),
+                    last_schedule_fire, timer_next,
+                ):
+                    await self.add_event(event_data)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.debug("connector scheduler tick failed", exc_info=True)
+
+    @staticmethod
+    def _scheduler_due_events(
+        connectors: Sequence[Any],
+        now: Any,
+        mono: float,
+        last_schedule_fire: Dict[str, str],
+        timer_next: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Events due at *now* (local datetime) / *mono* (monotonic seconds).
+
+        ``last_schedule_fire`` and ``timer_next`` carry state between ticks.
+        """
+        from .connector_triggers import schedule_is_due
+
+        events: List[Dict[str, Any]] = []
+        now_key = now.strftime("%Y-%m-%dT%H:%M")
+        seen_timers = set()
+        for connector_id, connector in connectors:
+            if not connector.enabled or not connector.trigger:
+                continue
+            trigger = connector.trigger
+            ttype = getattr(trigger, "trigger_type", None)
+            if ttype == TriggerType.TIMER:
+                try:
+                    interval = max(1, int(float(getattr(trigger, "interval_seconds", 60))))
+                except (TypeError, ValueError):
+                    interval = 60
+                seen_timers.add(connector_id)
+                state = timer_next.get(connector_id)
+                if state is None or state[0] != interval:
+                    timer_next[connector_id] = (interval, mono + interval)
+                    continue
+                if mono >= state[1]:
+                    timer_next[connector_id] = (interval, mono + interval)
+                    events.append(
+                        {
+                            "event_type": "timer",
+                            "target_connector_id": connector_id,
+                            "timer_id": getattr(trigger, "trigger_id", ""),
+                            "interval_seconds": interval,
+                            "timestamp": time.time(),
+                            "source": "timer",
+                        }
+                    )
+            elif ttype == TriggerType.SCHEDULE:
+                if not schedule_is_due(trigger, now):
+                    continue
+                if last_schedule_fire.get(connector_id) == now_key:
+                    continue
+                last_schedule_fire[connector_id] = now_key
+                events.append(
+                    {
+                        "event_type": "schedule",
+                        "target_connector_id": connector_id,
+                        "trigger_id": getattr(trigger, "trigger_id", ""),
+                        "schedule_pattern": getattr(trigger, "schedule_pattern", ""),
+                        "specific_time": getattr(trigger, "specific_time", "") or "",
+                        "days_of_week": list(getattr(trigger, "days_of_week", []) or []),
+                        "timestamp": time.time(),
+                        "source": "schedule",
+                    }
+                )
+        for stale in set(timer_next) - seen_timers:
+            timer_next.pop(stale, None)
+        return events
 
 
 # Global connector manager instance

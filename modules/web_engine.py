@@ -3414,6 +3414,11 @@ class WebEngine:
                     {"Content-Type": "application/json"},
                 )
 
+        # Connector webhook triggers: POST/GET /api/connectors/webhook/<connector_id>
+        from .connector_webhook import install_connector_webhook_route
+
+        install_connector_webhook_route(self.app)
+
         @self.app.route("/api/streamdeck/check_connection", methods=["GET"])
         def streamdeck_check_connection():
             """Stream Deck endpoint to check server connection and status"""

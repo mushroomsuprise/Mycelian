@@ -24,11 +24,11 @@ SOFTWARE.
 """
 
 import logging
-import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field, fields
 from typing import Any, Dict, List, Optional, Tuple
 
 from .connector_core import BaseTrigger, TriggerType
+from .hotkey_listener import normalize_hotkey_combo
 
 logger = logging.getLogger(__name__)
 
@@ -292,32 +292,32 @@ class DonationTrigger(BaseTrigger):
 
 @dataclass
 class TimerTrigger(BaseTrigger):
-    """Trigger for timer-based events"""
+    """Trigger for timer-based events.
+
+    The connector scheduler (``ConnectorManager._connector_scheduler_loop``) owns
+    the clock: it sends one ``timer`` event per elapsed interval, addressed to
+    this connector only (``target_connector_id``), carrying ``timer_id`` (this
+    trigger's id) and ``interval_seconds`` (this trigger's interval). The first
+    event comes one interval after the connector is enabled / the app starts.
+    """
 
     interval_seconds: int = 60  # How often to trigger (in seconds)
 
     def __post_init__(self):
         self.trigger_type = TriggerType.TIMER
+        try:
+            self.interval_seconds = max(1, int(float(self.interval_seconds)))
+        except (TypeError, ValueError):
+            self.interval_seconds = 60
 
     def should_trigger(self, event_data: Dict[str, Any]) -> bool:
         """Check if this timer trigger should fire"""
         if event_data.get("event_type") != "timer":
             return False
-
-        # Check if enough time has passed since last trigger
-        import time
-
-        current_time = time.time()
-        if self.last_triggered == 0:
-            # Arm the clock on first tick; do not fire until interval elapses.
-            self.last_triggered = current_time
+        tid = event_data.get("timer_id")
+        if tid and self.trigger_id and tid not in (self.trigger_id, "test"):
             return False
-
-        time_since_last = current_time - self.last_triggered
-        if time_since_last >= self.interval_seconds:
-            return self.evaluate_conditions(event_data)
-
-        return False
+        return self.evaluate_conditions(event_data)
 
 
 @dataclass
@@ -325,13 +325,16 @@ class ScheduleTrigger(BaseTrigger):
     """Trigger for scheduled events (cron-like)"""
 
     schedule_pattern: str = (
-        ""  # Cron-like pattern (e.g., "0 */15 * * *" for every 15 minutes)
+        ""  # Legacy: "M H * * *" daily cron (only minute/hour are read)
     )
-    timezone: str = "UTC"
-    specific_time: str = ""  # Daily HH:MM when cron is not a full expression
+    timezone: str = "UTC"  # Legacy, unused: schedules run in local time
+    specific_time: str = ""  # Daily "HH:MM" (24-hour, local time)
+    # 0=Mon .. 6=Sun; empty = every day
+    days_of_week: List[int] = field(default_factory=list)
 
     def __post_init__(self):
         self.trigger_type = TriggerType.SCHEDULE
+        self.days_of_week = normalize_days_of_week(self.days_of_week)
 
     def should_trigger(self, event_data: Dict[str, Any]) -> bool:
         """Check if this scheduled trigger should fire"""
@@ -343,6 +346,59 @@ class ScheduleTrigger(BaseTrigger):
             return False
 
         return self.evaluate_conditions(event_data)
+
+
+_DAY_NAMES = {
+    "mon": 0, "monday": 0,
+    "tue": 1, "tues": 1, "tuesday": 1,
+    "wed": 2, "wednesday": 2,
+    "thu": 3, "thur": 3, "thurs": 3, "thursday": 3,
+    "fri": 4, "friday": 4,
+    "sat": 5, "saturday": 5,
+    "sun": 6, "sunday": 6,
+}
+
+
+def normalize_days_of_week(days: Any) -> List[int]:
+    """Sorted unique weekday numbers (0=Mon..6=Sun) from ints, numeric text or names."""
+    if days is None or days == "":
+        return []
+    if isinstance(days, (str, int)):
+        days = [days]
+    out = set()
+    try:
+        items = list(days)
+    except TypeError:
+        return []
+    for item in items:
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, (int, float)):
+            value = int(item)
+        else:
+            text = str(item).strip().lower()
+            if text in _DAY_NAMES:
+                value = _DAY_NAMES[text]
+            else:
+                try:
+                    value = int(text)
+                except ValueError:
+                    continue
+        if 0 <= value <= 6:
+            out.add(value)
+    return sorted(out)
+
+
+def schedule_is_due(trigger: Any, now: Any) -> bool:
+    """True when *now* (a local ``datetime``) is the trigger's scheduled minute and day."""
+    hhmm = parse_schedule_hhmm(trigger)
+    if hhmm is None:
+        return False
+    hour, minute = hhmm
+    if now.hour != hour or now.minute != minute:
+        return False
+    days = normalize_days_of_week(getattr(trigger, "days_of_week", None))
+    return not days or now.weekday() in days
 
 
 def parse_schedule_hhmm(trigger: Any) -> Optional[Tuple[int, int]]:
@@ -399,43 +455,40 @@ class HotkeyTrigger(BaseTrigger):
             self._parse_key_combination()
 
     def _parse_key_combination(self):
-        """Parse key combination string into components"""
-        parts = [p.strip().lower() for p in self.key_combination.split("+")]
+        """Parse key combination string into components (normalized)."""
+        parts = normalize_hotkey_combo(self.key_combination).split("+")
+        parts = [p for p in parts if p]
+        if not parts:
+            self.modifiers, self.key_code = [], ""
+            return
+        self.modifiers = parts[:-1]
+        self.key_code = parts[-1]
 
-        # Identify modifiers and main key
-        modifier_keys = {"ctrl", "control", "alt", "shift", "cmd", "super", "win"}
-        modifiers = []
-        key_code = ""
-
-        for part in parts:
-            if part in modifier_keys:
-                modifiers.append(part)
-            else:
-                key_code = part
-
-        self.modifiers = modifiers
-        self.key_code = key_code
+    def combo(self) -> str:
+        """Normalized combination this trigger listens for."""
+        if self.key_combination:
+            return normalize_hotkey_combo(self.key_combination)
+        return normalize_hotkey_combo(
+            "+".join([*(self.modifiers or []), self.key_code or ""])
+        )
 
     def should_trigger(self, event_data: Dict[str, Any]) -> bool:
-        """Check if this hotkey trigger should fire"""
+        """Check if this hotkey trigger should fire.
+
+        Both sides go through :func:`normalize_hotkey_combo`, so ``"Ctrl + Shift + F"``
+        matches a press of ``ctrl+shift+f``. ``is_global`` is kept for stored data
+        but not compared (hotkeys are always global).
+        """
         if event_data.get("event_type") != "hotkey":
             return False
 
-        # Check if the pressed key matches our configuration
-        pressed_key = event_data.get("key_code", "").lower()
-        pressed_modifiers = set(event_data.get("modifiers", []))
-
-        # Compare key codes
-        if pressed_key != self.key_code.lower():
-            return False
-
-        # Compare modifiers
-        expected_modifiers = set(self.modifiers)
-        if pressed_modifiers != expected_modifiers:
-            return False
-
-        # Check global vs app focus if specified
-        if "is_global" in event_data and event_data["is_global"] != self.is_global:
+        pressed = event_data.get("combo")
+        if not pressed:
+            pressed = "+".join(
+                [*(event_data.get("modifiers") or []), str(event_data.get("key_code") or "")]
+            )
+        expected = self.combo()
+        if not expected or normalize_hotkey_combo(pressed) != expected:
             return False
 
         return self.evaluate_conditions(event_data)
@@ -464,8 +517,8 @@ class StreamdeckTrigger(BaseTrigger):
 class WebhookTrigger(BaseTrigger):
     """Trigger for webhook events"""
 
-    webhook_url: str = ""
-    secret_key: str = ""  # For webhook validation
+    webhook_url: str = ""  # Legacy, unused (see connector_variables.webhook_url)
+    secret_key: str = ""  # Required by POST /api/connectors/webhook/<connector_id>
 
     def __post_init__(self):
         self.trigger_type = TriggerType.WEBHOOK
@@ -575,6 +628,11 @@ class AnyTrigger(BaseTrigger):
     def should_trigger(self, event_data: Dict[str, Any]) -> bool:
         if event_data.get("event_type") not in CONNECTOR_EVENT_TYPES:
             return False
+        # Internal clock ticks and events addressed to one connector (timer,
+        # schedule, webhook) are not "any event"; the manager also routes
+        # addressed events only to their target.
+        if event_data.get("internal_tick"):
+            return False
         return self.evaluate_conditions(event_data)
 
 
@@ -622,6 +680,17 @@ def create_trigger(
     # Remove trigger_type from kwargs to avoid duplicate parameter
     filtered_kwargs = {k: v for k, v in kwargs.items() if k != "trigger_type"}
 
+    # Drop keys the trigger dataclass does not define (old/foreign stored data)
+    allowed = {f.name for f in fields(trigger_class)}
+    unexpected = set(filtered_kwargs) - allowed
+    if unexpected:
+        logger.debug(
+            "Ignoring unexpected parameters for %s: %s",
+            trigger_type.value,
+            sorted(unexpected),
+        )
+    safe_kwargs = {k: v for k, v in filtered_kwargs.items() if k in allowed}
+
     return trigger_class(
-        trigger_id=trigger_id, name=name, trigger_type=trigger_type, **filtered_kwargs
+        trigger_id=trigger_id, name=name, trigger_type=trigger_type, **safe_kwargs
     )
