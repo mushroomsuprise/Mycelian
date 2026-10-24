@@ -86,21 +86,20 @@
     <p><strong>AND</strong>: one connector, two conditions.</p>
     <figure class="hx-figure hx-static">
       <div class="hm">
-        <div class="hm-cx-flow">
-          <div class="hm-cx-flow-row is-trigger"><span class="hx-mi">flash_on</span><span class="hm-cx-flow-label">Trigger</span><span class="hm-cx-tbadge">Twitch Bits</span></div>
-          <span class="hm-cx-flow-arrow">arrow_downward</span>
-          <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Amount ≥ 100</span><span class="hm-cx-cbadge">Amount &lt; 1000</span></div>
+        <div class="hm-cx2-flow">
+          <div class="hm-cx2-row"><span class="hm-cx2-key">When</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-trigger"><span class="hx-mi">bolt</span>Twitch Bits</span></span></div>
+          <div class="hm-cx2-row"><span class="hm-cx2-key">If</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Amount ≥ 100</span><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Amount &lt; 1000</span></span></div>
         </div>
       </div>
       <figcaption><span>Runs for cheers from 100 to 999 bits.</span></figcaption>
     </figure>
   </div>
   <div>
-    <p><strong>OR</strong>: make one connector per case. Duplicate the first ({{icon:content_copy}}) and change its condition.</p>
+    <p><strong>OR</strong>: make one connector per case. Duplicate the first ({{icon:more_horiz}} → <strong>Duplicate</strong>) and change its condition.</p>
     <figure class="hx-figure hx-static">
       <div class="hm hm-stack">
-        <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Tier = 2000</span></div>
-        <div class="hm-cx-flow-row is-cond"><span class="hx-mi">filter_list</span><span class="hm-cx-flow-label">Condition</span><span class="hm-cx-cbadge">Tier = 3000</span></div>
+        <div class="hm-cx2-flow"><div class="hm-cx2-row"><span class="hm-cx2-key">If</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Tier = 2000</span></span></div></div>
+        <div class="hm-cx2-flow"><div class="hm-cx2-row"><span class="hm-cx2-key">If</span><span class="hm-cx2-chips"><span class="hm-cx2-chip is-cond"><span class="hx-mi">filter_alt</span>Tier = 3000</span></span></div></div>
       </div>
       <figcaption><span>Two connectors with the same actions cover Tier 2 or Tier 3.</span></figcaption>
     </figure>

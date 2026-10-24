@@ -24,6 +24,8 @@ SOFTWARE.
 """
 
 import copy
+import datetime
+import html as html_lib
 import json
 import logging
 import time
@@ -44,6 +46,8 @@ from .. import (
     connector_manager,
     connector_triggers,
 )
+from .connectors_styles import CONNECTORS_CSS
+from .service_brand_icons import SERVICE_BRAND_SVG
 from ..connector_core import (
     ActionType,
     ComparisonOperator,
@@ -61,6 +65,10 @@ create_dialog = None
 edit_dialog = None
 search_input = None
 current_search = ""
+current_status = "all"  # All / On / Off filter
+_filter_chips: Dict[str, Any] = {}
+_bar_sub_label = None
+_no_match_label = None
 connector_cards = {}  # Store connector cards by ID for search functionality
 folder_cards = {}  # folder_id -> folder wrapper element for search
 connector_parent_folder: Dict[str, Optional[str]] = (
@@ -525,57 +533,104 @@ CUSTOM_CSS = """
 
 def create_connectors_tab():
     """Create the Connectors tab UI"""
-    global connectors_container, _folder_dialog_host
+    global connectors_container, _folder_dialog_host, _bar_sub_label, current_status
+    from ..help_system.help_render import (
+        inject_page_stylesheet,
+        promote_color_importance,
+        scope_selectors,
+    )
 
-    # Add custom CSS to the page
+    # Old rules are still used by the create/edit dialogs.
     ui.add_head_html(f"<style>{CUSTOM_CSS}</style>")
+    inject_page_stylesheet(
+        "mycelian-connectors", promote_color_importance(scope_selectors(CONNECTORS_CSS, ".cnx"))
+    )
+    _install_drag_hooks()
+    current_status = "all"
 
-    # Create a card for the entire tab content with flex layout
-    with ui.element("div").classes("tab-surface w-full h-full flex flex-col p-4"):
-        # Compact header section - single row layout
-        with ui.column().classes("w-full gap-3 p-4 flex-none"):
-            with ui.row().classes("w-full items-center gap-3"):
-                global search_input
-                with ui.element("div").classes("flex-1 min-w-48 slide-in"):
-                    search_input = (
-                        form_input(
-                            tooltip="Filter connectors by name or description",
-                            label="🔍 Search connectors",
-                            placeholder="Search connectors...",
-                            value="",
-                            on_change=on_search_change,
-                        )
-                        .classes("bg-theme-base")
-                        .props("clearable")
-                    )
+    with ui.element("div").classes("tab-surface cnx w-full h-full flex flex-col gap-3 p-4"):
+        with ui.element("div").classes("cx-bar"):
+            ui.html(
+                '<span class="cx-bar-icon"><span class="cx-icon">hub</span></span>', sanitize=False
+            ).classes("contents")
+            with ui.element("div"):
+                ui.label("Connectors").classes("cx-bar-title")
+                _bar_sub_label = ui.label("When something happens, do something.").classes("cx-bar-sub")
+            ui.element("div").classes("cx-spacer")
+            global search_input
+            search_input = (
+                ui.input(placeholder="Search name, trigger or action", on_change=on_search_change)
+                .props("dense outlined clearable")
+                .classes("cx-search")
+            )
+            with search_input.add_slot("prepend"):
+                ui.icon("search").classes("text-base")
+            search_input.tooltip("Filter connectors by name, description, trigger or action")
+            with ui.element("div").classes("cx-filters"):
+                for key, label in (("all", "All"), ("on", "On"), ("off", "Off")):
+                    chip = ui.element("div").on("click", lambda _e, k=key: _set_status_filter(k))
+                    chip.classes("cx-filter is-on" if key == "all" else "cx-filter")
+                    with chip:
+                        ui.label(label)
+                        count = ui.html("<b>0</b>", sanitize=False).classes("contents")
+                    _filter_chips[key] = (chip, count)
+            refresh_btn = ui.button(icon="refresh", on_click=refresh_connectors).props("outline dense color=primary")
+            refresh_btn.classes("px-2").tooltip("Reload connectors")
+            primary_button("New connector", show_create_connector_dialog, icon="add").props("dense").classes("px-4")
 
-                with ui.row().classes("items-center gap-3 flex-nowrap shrink-0"):
-                    primary_button(
-                        "New Connector",
-                        show_create_connector_dialog,
-                        icon="add",
-                        extra_classes="px-4 py-2 shrink-0",
-                    )
-
-                    outline_button(
-                        "Refresh",
-                        refresh_connectors,
-                        icon="refresh",
-                        extra_classes="px-3 py-2 shrink-0",
-                    )
-
-        # Main content area - flexible height
         with ui.element("div").classes("grow overflow-hidden relative"):
             with ui.scroll_area().classes("w-full h-full"):
-                connectors_container = ui.element("div").classes("w-full p-4")
+                connectors_container = ui.element("div").classes("w-full pb-2")
 
             _ensure_folder_dialog_host()
 
-        # Load and display connectors
         load_connectors()
-
-        # Initialize search visibility after loading
         update_search_visibility()
+
+
+def _install_drag_hooks() -> None:
+    """Show the "move out of folder" bar only while a card from a folder is being dragged."""
+    ui.run_javascript(
+        """
+        if (!window.__mycelianCxDrag) {
+          window.__mycelianCxDrag = true;
+          document.addEventListener('dragstart', (e) => {
+            const card = e.target && e.target.closest && e.target.closest('[data-connector-id]');
+            if (card && card.hasAttribute('data-folder-parent')) document.body.classList.add('cx-dragging');
+          }, true);
+          const clear = () => document.body.classList.remove('cx-dragging');
+          document.addEventListener('dragend', clear, true);
+          document.addEventListener('drop', () => setTimeout(clear, 0), true);
+        }
+        """
+    )
+
+
+def _set_status_filter(key: str) -> None:
+    global current_status
+    current_status = key
+    for k, (chip, _count) in _filter_chips.items():
+        if chip.is_deleted:
+            continue
+        if k == key:
+            chip.classes(add="is-on")
+        else:
+            chip.classes(remove="is-on")
+    update_search_visibility()
+
+
+def _update_toolbar_counts(connectors: Dict[str, "Connector"], folder_count: int) -> None:
+    total = len(connectors)
+    on = sum(1 for c in connectors.values() if c.enabled)
+    for key, value in (("all", total), ("on", on), ("off", total - on)):
+        pair = _filter_chips.get(key)
+        if pair and not pair[1].is_deleted:
+            pair[1].set_content(f"<b>{value}</b>")
+    if _bar_sub_label is not None and not _bar_sub_label.is_deleted:
+        text = f"When something happens, do something. {total} connector{'s' if total != 1 else ''}"
+        if folder_count:
+            text += f" in {folder_count} folder{'s' if folder_count != 1 else ''}"
+        _bar_sub_label.set_text(text + ".")
 
 
 def _folder_header_drag_js(panel_dom_id: str) -> str:
@@ -684,74 +739,69 @@ def _open_folder_floating_window(folder_id: str) -> None:
     z = _FOLDER_FLOAT_Z_SHELL_BASE + min(offset, 85)
 
     with _folder_dialog_host:
-        shell = ui.element("div").classes(
-            "connector-folder-floating pointer-events-auto rounded-lg flex flex-col "
-            "border border-theme-subtle min-h-0"
-        )
+        shell = ui.element("div").classes("cx-float pointer-events-auto")
         shell.style(
             "position:fixed;"
             f"left:{min(40 + offset * 28, 280)}px;"
             f"top:{min(72 + offset * 24, 200)}px;"
-            "width:min(92vw, 960px);"
-            "min-width:320px;"
-            "min-height:280px;"
+            "width:min(92vw, 1000px);"
+            "height:min(70vh, 620px);"
+            "min-width:340px;"
+            "min-height:260px;"
             "max-width:96vw;"
             "max-height:90vh;"
             "resize:both;"
-            "overflow:auto;"
-            "box-sizing:border-box;"
             f"z-index:{z};"
         )
         with shell:
-            head = ui.row().classes(
-                "w-full items-center justify-between gap-2 flex-none "
-                "border-b border-theme-default px-2 py-1 cursor-move"
-            )
+            head = ui.element("div").classes("cx-float-head")
             head.on(
                 "mousedown.capture",
                 js_handler=_folder_header_drag_js(f"c{shell.id}"),
             )
+            n_on = sum(1 for cid in member_ids if connectors[cid].enabled)
             with head:
-                drag_area = ui.element("div").classes(
-                    "folder-float-handle flex flex-row items-center gap-2 grow min-w-0"
+                ui.html(
+                    '<span class="cx-tile is-folder"><span class="cx-icon">folder_open</span></span>',
+                    sanitize=False,
+                ).classes("contents")
+                with ui.element("div").classes("cx-title"):
+                    title_label = ui.label(title).classes("cx-name")
+                    ui.label(
+                        f"{len(member_ids)} connector{'s' if len(member_ids) != 1 else ''} · {n_on} on"
+                        " · drag a card out to remove it"
+                    ).classes("cx-desc")
+                floater_enable_sw = ui.switch(
+                    value=(None if fold_state == "mixed" else fold_state == "all_on"),
+                    on_change=lambda e, fid=folder_id: set_folder_connectors_enabled(
+                        fid, bool(e.value)
+                    ),
+                ).props("dense color=positive").tooltip(
+                    "Turn every connector in this folder on or off"
                 )
-                with drag_area:
-                    ui.icon("folder", size="sm").classes("text-amber-400 shrink-0")
-                    title_label = ui.label(title).classes(
-                        "text-base font-semibold text-theme-primary truncate"
-                    )
-                with ui.row().classes("items-center gap-1 shrink-0"):
-                    floater_enable_sw = ui.switch(
-                        value=(fold_state == "all_on"),
-                        on_change=lambda e, fid=folder_id: set_folder_connectors_enabled(
-                            fid, bool(e.value)
-                        ),
-                    ).props("dense").classes("scale-90").tooltip(
-                        "Enable or disable all connectors in this folder"
-                    )
-                    if fold_state == "mixed":
-                        floater_enable_sw.props("indeterminate")
-                    if not member_ids:
-                        floater_enable_sw.disable()
-                    ui.button(icon="close", on_click=lambda f=folder_id: _close_folder_floater(f)).props(
-                        "flat dense round"
-                    ).tooltip("Close")
+                if fold_state == "mixed":
+                    floater_enable_sw.props("indeterminate color=warning")
+                if not member_ids:
+                    floater_enable_sw.disable()
+                ui.button(
+                    icon="edit", on_click=lambda f=folder_id: show_rename_folder_dialog(f)
+                ).props("flat round dense size=sm").tooltip("Rename folder")
+                ui.button(icon="close", on_click=lambda f=folder_id: _close_folder_floater(f)).props(
+                    "flat round dense size=sm"
+                ).tooltip("Close")
 
-            body_wrap = ui.element("div").classes("flex-1 min-h-0 p-3 flex flex-col")
-            with body_wrap:
-                with ui.scroll_area().classes("w-full flex-1").style(
-                    "min-height: 0; flex: 1 1 auto;"
-                ):
-                    body_grid = ui.element("div").classes(
-                        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-1"
-                    )
-                    body_grid.on("dragover.prevent", lambda _: None)
-                    body_grid.on(
-                        "drop.prevent", lambda _: _handle_drop_on_folder(folder_id)
-                    )
-                    with body_grid:
-                        for cid in member_ids:
-                            create_connector_card(cid, connectors[cid], folder_id)
+            body = ui.element("div").classes("cx-float-body")
+            body.on("dragover.prevent", lambda _: None)
+            body.on("drop.prevent", lambda _: _handle_drop_on_folder(folder_id))
+            with body:
+                body_grid = ui.element("div").classes("cx-grid")
+                with body_grid:
+                    for cid in member_ids:
+                        create_connector_card(cid, connectors[cid], folder_id)
+                    if not member_ids:
+                        ui.label("Drag connectors here to add them to this folder.").classes(
+                            "cx-members-empty"
+                        )
 
     _folder_floaters[folder_id] = {
         "shell": shell,
@@ -1072,136 +1122,119 @@ def load_connectors():
                 if cid in connectors
             ]
             count = len(member_ids)
+            n_on = sum(1 for cid in member_ids if connectors[cid].enabled)
             fold_state = _folder_members_enabled_state(member_ids, connectors)
 
-            wrapper = ui.element("div").classes(
-                "connector-folder connector-folder-tile connector-card p-4 rounded-lg fade-in "
-                "flex flex-col gap-2 border border-theme-subtle bg-[var(--color-bg-surface)]"
-            )
+            wrapper = ui.element("div").classes("cx-card cx-folder")
             wrapper.props(f'data-folder-id="{folder_id}"')
             folder_cards[folder_id] = wrapper
             wrapper.on("dragover.prevent", lambda _: None)
             wrapper.on("drop.prevent", lambda _: _handle_drop_on_folder(folder_id))
 
             with wrapper:
-                with ui.row().classes(
-                    "w-full items-center justify-between gap-2 flex-none"
-                ):
-                    with ui.row().classes("items-center gap-2 grow min-w-0"):
-                        ui.icon("folder", size="28px").classes(
-                            "text-amber-400 shrink-0"
-                        )
-                        title_lbl = ui.label(name).classes(
-                            "text-base font-semibold text-theme-primary truncate"
-                        )
+                with ui.element("div").classes("cx-head"):
+                    ui.html(
+                        '<span class="cx-tile is-folder"><span class="cx-icon">folder</span></span>',
+                        sanitize=False,
+                    ).classes("contents")
+                    with ui.element("div").classes("cx-title"):
+                        title_lbl = ui.label(name).classes("cx-name")
                         folder_tile_title_labels[folder_id] = title_lbl
                         ui.label(
-                            f"{count} connector{'s' if count != 1 else ''}"
-                        ).classes(
-                            "text-xs secondary-text whitespace-nowrap shrink-0"
-                        )
-                    with ui.row().classes("items-center gap-1 shrink-0"):
-                        folder_enable_sw = ui.switch(
-                            "Toggle all",
-                            value=(fold_state == "all_on"),
-                            on_change=lambda e, fid=folder_id: set_folder_connectors_enabled(
-                                fid, bool(e.value)
-                            ),
-                        ).props("left-label dense").classes("scale-90")
-                        if fold_state == "mixed":
-                            folder_enable_sw.props("indeterminate")
-                        if not member_ids:
-                            folder_enable_sw.disable()
-                        ui.button(
-                            icon="edit",
-                            on_click=lambda f=folder_id: show_rename_folder_dialog(f),
-                        ).props("flat dense round").tooltip("Rename folder")
-                        ui.button(
-                            icon="delete",
-                            on_click=lambda f=folder_id: show_delete_folder_dialog(f),
-                        ).props("flat dense round").tooltip("Delete folder")
+                            f"{count} connector{'s' if count != 1 else ''} · {n_on} on"
+                        ).classes("cx-desc")
+                    folder_enable_sw = ui.switch(
+                        value=(None if fold_state == "mixed" else fold_state == "all_on"),
+                        on_change=lambda e, fid=folder_id: set_folder_connectors_enabled(
+                            fid, bool(e.value)
+                        ),
+                    ).props("dense color=positive").tooltip(
+                        "Turn every connector in this folder on or off"
+                    )
+                    if fold_state == "mixed":
+                        folder_enable_sw.props("indeterminate color=warning")
+                    if not member_ids:
+                        folder_enable_sw.disable()
 
-                open_zone = ui.element("div").classes(
-                    "connector-folder-open-zone w-full grow min-w-0 p-1 -m-1"
-                )
-                open_zone.on(
-                    "click",
-                    lambda f=folder_id: _open_folder_floating_window(f),
-                )
-                open_zone.tooltip("Open folder")
-                with open_zone:
-                    if member_ids:
-                        with ui.element("div").classes(
-                            "connector-folder-preview-grid"
-                        ):
-                            for cid in member_ids:
-                                c = connectors.get(cid)
-                                if not c:
-                                    continue
-                                tile_cls = (
-                                    "connector-folder-preview-tile "
-                                    + (
-                                        "connector-folder-preview-tile-enabled"
-                                        if c.enabled
-                                        else "connector-folder-preview-tile-disabled"
-                                    )
-                                )
-                                icon_cls = "text-amber-300 shrink-0 mb-0.5"
-                                if not c.enabled:
-                                    icon_cls += " opacity-40"
-                                with ui.element("div").classes(tile_cls):
-                                    ui.icon("hub", size="18px").classes(icon_cls)
-                                    nm = (c.name or "").strip() or "Untitled"
-                                    ui.label(nm).classes("preview-name")
+                members = ui.element("div").classes("cx-members")
+                members.on("click", lambda f=folder_id: _open_folder_floating_window(f))
+                members.tooltip("Open folder")
+                with members:
+                    if not member_ids:
+                        ui.label("Empty folder. Drag connectors here.").classes("cx-members-empty")
+                    shown = member_ids[:_FOLDER_PREVIEW_LIMIT]
+                    for cid in shown:
+                        c = connectors[cid]
+                        trig = c.trigger.trigger_type if c.trigger else None
+                        icon_html = _trigger_glyph_html(trig) if trig else _icon_html("bolt")
+                        trig_text = format_trigger_name(trig) if trig else "No trigger"
+                        ui.html(
+                            f'<div class="cx-member{"" if c.enabled else " is-off"}">'
+                            '<span class="cx-member-dot"></span>'
+                            f'<span class="cx-member-icon">{icon_html}</span>'
+                            f'<span class="cx-member-name">{html_lib.escape((c.name or "").strip() or "Untitled")}</span>'
+                            f'<span class="cx-member-trig">{html_lib.escape(trig_text)}</span></div>',
+                            sanitize=False,
+                        ).classes("contents")
+                    if count > len(shown):
+                        ui.label(f"+ {count - len(shown)} more").classes("cx-member-more")
 
+                with ui.element("div").classes("cx-foot"):
+                    ui.html(
+                        '<span class="cx-stat is-muted"><span class="cx-icon">drag_indicator</span>Drop connectors here</span>',
+                        sanitize=False,
+                    ).classes("contents")
+                    ui.element("div").classes("cx-spacer")
+                    ui.button(
+                        "Open", icon="open_in_new", on_click=lambda f=folder_id: _open_folder_floating_window(f)
+                    ).props("flat dense no-caps").classes("cx-open px-2")
+                    with ui.button(icon="more_horiz").props("flat round dense size=sm").tooltip("More"):
+                        with ui.menu().props("auto-close"):
+                            ui.menu_item("Rename folder", on_click=lambda f=folder_id: show_rename_folder_dialog(f))
+                            ui.menu_item("Delete folder…", on_click=lambda f=folder_id: show_delete_folder_dialog(f))
+
+        global _no_match_label
+        folder_specs_all = layout.get("folders") or {}
+        _update_toolbar_counts(connectors, len(folder_specs_all))
         with connectors_container:
             if not connectors:
-                with ui.column().classes(
-                    "w-full h-full flex flex-col items-center justify-center gap-4 p-8 empty-state"
-                ):
-                    ui.icon("link_off", size="4rem").classes("muted-text")
-                    ui.label("No connectors created yet").classes(
-                        "text-lg secondary-text fade-in"
-                    )
+                with ui.column().classes("cx-empty empty-state w-full"):
+                    ui.html('<span class="cx-icon">hub</span>', sanitize=False).classes("contents")
+                    ui.label("No connectors yet").classes("cx-empty-title")
                     ui.label(
-                        "Create your first connector to automate your stream"
-                    ).classes("text-sm muted-text fade-in")
-                    ui.button(
-                        icon="add",
-                        text="Create First Connector",
-                        on_click=show_create_connector_dialog,
-                    ).classes(
-                        "control-button btn-primary px-6 py-3 mt-4"
-                    )
+                        "A connector does something when something happens on stream: "
+                        "thank a big cheer in chat, switch scenes on a raid, run a hotkey."
+                    ).classes("text-sm max-w-md")
+                    primary_button(
+                        "Create your first connector", show_create_connector_dialog, icon="add"
+                    ).classes("mt-2")
+                _no_match_label = None
             else:
-                with ui.element("div").classes("w-full flex flex-col gap-3"):
-                    root_drop = ui.element("div").classes(
-                        "connector-root-drop w-full min-h-[2.75rem] rounded-lg px-3 py-2 "
-                        "flex items-center justify-center text-xs secondary-text"
-                    )
+                if folder_specs_all:
+                    root_drop = ui.element("div").classes("cx-root-drop")
                     root_drop.props('data-root-drop="1"')
                     root_drop.on("dragover.prevent", lambda _: None)
                     root_drop.on("drop.prevent", lambda _: _handle_drop_on_root())
                     with root_drop:
-                        ui.label(
-                            "Drop a connector here to move it to the main grid"
-                        ).classes("text-center")
+                        ui.html(
+                            '<span class="cx-icon">move_up</span><span>Drop here to take the connector out of its folder</span>',
+                            sanitize=False,
+                        ).classes("contents")
 
-                    with ui.element("div").classes(
-                        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
-                    ):
-                        for item in layout.get("root_items") or []:
-                            kind = item.get("kind")
-                            iid = item.get("id")
-                            if not kind or not iid:
-                                continue
-                            if kind == "connector":
-                                if iid in connectors:
-                                    create_connector_card(iid, connectors[iid], None)
-                            elif kind == "folder":
-                                spec = (layout.get("folders") or {}).get(iid)
-                                if spec and isinstance(spec, dict):
-                                    render_folder(iid, spec)
+                with ui.element("div").classes("cx-grid"):
+                    for item in layout.get("root_items") or []:
+                        kind = item.get("kind")
+                        iid = item.get("id")
+                        if not kind or not iid:
+                            continue
+                        if kind == "connector":
+                            if iid in connectors:
+                                create_connector_card(iid, connectors[iid], None)
+                        elif kind == "folder":
+                            spec = folder_specs_all.get(iid)
+                            if spec and isinstance(spec, dict):
+                                render_folder(iid, spec)
+                _no_match_label = ui.label("").classes("cx-empty hidden")
 
         folder_specs = layout.get("folders") or {}
         for fid in open_folder_ids:
@@ -1214,23 +1247,150 @@ def load_connectors():
             ui.label(f"Error loading connectors: {str(e)}").classes("text-red-400")
 
 
+_FOLDER_PREVIEW_LIMIT = 5
+_CARD_ACTION_LIMIT = 3
+_CARD_CONDITION_LIMIT = 2
+
+_TRIGGER_BRAND = {
+    "twitch_": "twitch",
+    "youtube_": "youtube",
+    "obs_": "obs",
+}
+_TRIGGER_ICONS = {
+    TriggerType.DONATION: "volunteer_activism",
+    TriggerType.TIMER: "timer",
+    TriggerType.SCHEDULE: "event",
+    TriggerType.HOTKEY: "keyboard",
+    TriggerType.STREAMDECK: "grid_view",
+    TriggerType.WEBHOOK: "webhook",
+    TriggerType.ANY: "all_inclusive",
+}
+_ACTION_ICONS = {
+    "template_control": "widgets",
+    "websocket_emit": "settings_ethernet",
+    "trigger_alert": "notifications_active",
+    "send_chat_message": "chat",
+    "send_announcement": "campaign",
+    "display_banner": "featured_video",
+    "add_greeting": "waving_hand",
+    "update_greeting": "waving_hand",
+    "send_greeting": "waving_hand",
+    "api_call": "http",
+    "write_file": "description",
+    "execute_command": "terminal",
+    "key_press": "keyboard",
+    "audio_control": "volume_up",
+    "game_hook": "sports_esports",
+}
+_ACTION_BRANDS = {"send_discord_message": "discord", "obs_control": "obs"}
+
+
+def _icon_html(name: str) -> str:
+    return f'<span class="cx-icon">{name}</span>'
+
+
+def _brand_html(key: str) -> str:
+    svg = SERVICE_BRAND_SVG.get(key, "")
+    return f'<span class="cx-brand is-{key}">{svg}</span>' if svg else ""
+
+
+def _trigger_brand_key(trigger_type: Optional[TriggerType]) -> str:
+    value = getattr(trigger_type, "value", "") or ""
+    for prefix, key in _TRIGGER_BRAND.items():
+        if value.startswith(prefix):
+            return key
+    return ""
+
+
+def _trigger_glyph_html(trigger_type: Optional[TriggerType]) -> str:
+    key = _trigger_brand_key(trigger_type)
+    if key:
+        return _brand_html(key) or _icon_html("bolt")
+    return _icon_html(_TRIGGER_ICONS.get(trigger_type, "bolt"))
+
+
+def _action_glyph_html(action) -> str:
+    value = getattr(getattr(action, "action_type", None), "value", "") or ""
+    brand = _ACTION_BRANDS.get(value)
+    if brand:
+        return _brand_html(brand) or _icon_html("play_arrow")
+    if value == "audio_control" and getattr(action, "control_type", "") == "microphone":
+        return _icon_html("mic")
+    return _icon_html(_ACTION_ICONS.get(value, "play_arrow"))
+
+
+def _chip_html(kind: str, glyph: str, text: str) -> str:
+    safe = html_lib.escape(text)
+    return f'<span class="cx-chip is-{kind}" title="{safe}">{glyph}<span>{safe}</span></span>'
+
+
+def _relative_time(ts: float, now: Optional[float] = None) -> str:
+    """'just now', '5m ago', '3h ago', 'Yesterday', '4 days ago', then a date."""
+    if not ts:
+        return ""
+    now = time.time() if now is None else now
+    delta = max(0, now - ts)
+    if delta < 60:
+        return "just now"
+    if delta < 3600:
+        return f"{int(delta // 60)}m ago"
+    then = datetime.datetime.fromtimestamp(ts)
+    today = datetime.datetime.fromtimestamp(now).date()
+    if then.date() == today:
+        return f"{int(delta // 3600)}h ago"
+    days = (today - then.date()).days
+    if days == 1:
+        return "Yesterday"
+    if days < 7:
+        return f"{days} days ago"
+    fmt = "%b %d" if then.year == today.year else "%b %d, %Y"
+    return then.strftime(fmt).replace(" 0", " ")
+
+
+def _connector_flow_html(connector: Connector) -> str:
+    """When / If / Then rows for a card."""
+    trigger = connector.trigger
+    rows = []
+    if trigger:
+        rows.append(("When", _chip_html("trigger", _trigger_glyph_html(trigger.trigger_type),
+                                        format_trigger_name(trigger.trigger_type))))
+        conditions = list(trigger.conditions or [])
+        if conditions:
+            chips = "".join(
+                _chip_html("cond", _icon_html("filter_alt"), _format_condition_for_card(c, trigger.trigger_type))
+                for c in conditions[:_CARD_CONDITION_LIMIT]
+            )
+            if len(conditions) > _CARD_CONDITION_LIMIT:
+                chips += f'<span class="cx-more">+{len(conditions) - _CARD_CONDITION_LIMIT} more</span>'
+            rows.append(("If", chips))
+    else:
+        rows.append(("When", _chip_html("none", _icon_html("help_outline"), "No trigger")))
+    actions = list(connector.actions or [])
+    if actions:
+        chips = "".join(
+            _chip_html("action", _action_glyph_html(a), get_action_display_name(a))
+            for a in actions[:_CARD_ACTION_LIMIT]
+        )
+        if len(actions) > _CARD_ACTION_LIMIT:
+            chips += f'<span class="cx-more">+{len(actions) - _CARD_ACTION_LIMIT} more</span>'
+    else:
+        chips = _chip_html("none", _icon_html("help_outline"), "No actions")
+    rows.append(("Then", chips))
+    return "".join(
+        f'<div class="cx-flow-row"><span class="cx-flow-key">{k}</span><div class="cx-flow-val">{v}</div></div>'
+        for k, v in rows
+    )
+
+
 def create_connector_card(
     connector_id: str, connector: Connector, folder_id: Optional[str] = None
 ):
     """Create a card display for a connector"""
     global connector_parent_folder
 
-    card_classes = "connector-card p-4 rounded-lg min-w-0"
-    card_classes += (
-        " connector-card-enabled"
-        if connector.enabled
-        else " connector-card-disabled"
-    )
-
-    # Create the card element and store reference for search functionality
     card_element = (
         ui.element("div")
-        .classes(card_classes)
+        .classes("cx-card" + ("" if connector.enabled else " is-off"))
         .props(f'data-connector-id="{connector_id}"')
     )
     if folder_id:
@@ -1247,104 +1407,58 @@ def create_connector_card(
     card_element.on("dragover.prevent", lambda _: None)
     card_element.on("drop.prevent", lambda _: _handle_drop_on_card(connector_id))
 
+    trigger_type = connector.trigger.trigger_type if connector.trigger else None
+    brand = _trigger_brand_key(trigger_type)
+
     with card_element:
-        # Header row with name, controls, and actions
-        with ui.row().classes("w-full items-center justify-between gap-2 mb-3"):
-            with ui.column().classes("gap-1 grow min-w-0"):
-                ui.label(connector.name).classes(
-                    "text-base font-semibold text-theme-primary truncate"
-                )
+        with ui.element("div").classes("cx-head"):
+            ui.html(
+                f'<span class="cx-tile{" is-" + brand if brand else ""}">{_trigger_glyph_html(trigger_type)}</span>',
+                sanitize=False,
+            ).classes("contents")
+            with ui.element("div").classes("cx-title"):
+                name = ui.label(connector.name or "Untitled").classes("cx-name")
+                name.on("dblclick", lambda cid=connector_id: show_edit_connector_dialog(cid))
                 if connector.description:
-                    ui.label(connector.description).classes(
-                        "text-xs secondary-text truncate"
-                    )
+                    ui.label(connector.description).classes("cx-desc").tooltip(connector.description)
+                else:
+                    ui.label("No description").classes("cx-desc is-empty")
+            ui.switch(
+                value=connector.enabled,
+                on_change=lambda e, cid=connector_id: toggle_connector(cid, e.value),
+            ).props("dense color=positive").tooltip("Turn this connector on or off")
 
-            with ui.row().classes("items-center gap-1 shrink-0"):
-                ui.switch(
-                    value=connector.enabled,
-                    on_change=lambda e, cid=connector_id: toggle_connector(
-                        cid, e.value
-                    ),
-                ).props("dense").classes("scale-90").tooltip(
-                    "Enable or disable this connector"
+        ui.html(_connector_flow_html(connector), sanitize=False).classes("cx-flow")
+
+        with ui.element("div").classes("cx-foot"):
+            if connector.trigger_count:
+                when = _relative_time(connector.last_triggered)
+                stat = (
+                    f'<span class="cx-stat"><span class="cx-icon">bolt</span><b>{connector.trigger_count}</b>'
+                    f' run{"s" if connector.trigger_count != 1 else ""}</span>'
                 )
-                ui.button(
-                    icon="edit",
-                    on_click=lambda cid=connector_id: show_edit_connector_dialog(cid),
-                ).props("flat dense round").tooltip("Edit connector")
-                ui.button(
-                    icon="content_copy",
-                    on_click=lambda cid=connector_id: duplicate_connector(cid),
-                ).props("flat dense round").tooltip("Duplicate connector")
-                ui.button(
-                    icon="play_arrow",
-                    on_click=lambda cid=connector_id: test_connector(cid),
-                ).props("flat dense round").tooltip("Test connector")
-                ui.button(
-                    icon="delete",
-                    on_click=lambda cid=connector_id: delete_connector(cid),
-                ).props("flat dense round").tooltip("Delete connector")
-
-        # Trigger → Condition → Actions flow (vertical)
-        if connector.trigger:
-            conditions = connector.trigger.conditions or []
-            has_actions = bool(connector.actions)
-            has_filter = bool(conditions)
-
-            with ui.column().classes("connector-flow gap-0 mb-3"):
-                with ui.row().classes("items-center gap-2 flex-wrap w-full"):
-                    ui.icon("flash_on", size="16px").classes("text-blue-400 shrink-0")
-                    ui.label("Trigger").classes("connector-flow-label shrink-0")
-                    ui.label(
-                        format_trigger_name(connector.trigger.trigger_type)
-                    ).classes("trigger-badge")
-
-                if has_filter or has_actions:
-                    ui.icon("arrow_downward", size="18px").classes("connector-flow-arrow")
-
-                if has_filter:
-                    with ui.row().classes("items-center gap-2 flex-wrap w-full"):
-                        ui.icon("filter_list", size="16px").classes(
-                            "text-theme-primary shrink-0"
-                        )
-                        ui.label("Condition").classes(
-                            "connector-flow-label shrink-0"
-                        )
-                        for condition in conditions:
-                            chip_text = _format_condition_for_card(
-                                condition, connector.trigger.trigger_type
-                            )
-                            ui.label(chip_text).classes("condition-badge")
-
-                    if has_actions:
-                        ui.icon("arrow_downward", size="18px").classes(
-                            "connector-flow-arrow"
-                        )
-
-                if has_actions:
-                    with ui.row().classes("items-center gap-2 flex-wrap w-full"):
-                        ui.icon("play_arrow", size="16px").classes(
-                            "text-green-400 shrink-0"
-                        )
-                        ui.label("Actions").classes("connector-flow-label shrink-0")
-                        for action in connector.actions:
-                            action_display = get_action_display_name(action)
-                            ui.label(action_display).classes("action-badge")
-
-        # Statistics
-        with ui.row().classes(
-            "w-full items-center justify-between text-xs secondary-text mt-3 pt-3 border-t border-theme-subtle"
-        ):
-            ui.label(f"Triggered: {connector.trigger_count}x")
-            if connector.last_triggered > 0:
-                import datetime
-
-                last_triggered = datetime.datetime.fromtimestamp(
-                    connector.last_triggered
-                )
-                ui.label(f"Last: {last_triggered.strftime('%m/%d %H:%M')}")
+                if when:
+                    stat += f'<span class="cx-stat">&nbsp;·&nbsp;{html_lib.escape(when)}</span>'
+                stat_el = ui.html(stat, sanitize=False).classes("contents")
+                if connector.last_triggered:
+                    full = datetime.datetime.fromtimestamp(connector.last_triggered).strftime("%Y-%m-%d %H:%M")
+                    stat_el.tooltip(f"Last run {full}")
             else:
-                ui.label("Never triggered")
+                ui.html(
+                    '<span class="cx-stat is-muted"><span class="cx-icon">schedule</span>Never run</span>',
+                    sanitize=False,
+                ).classes("contents")
+            ui.element("div").classes("cx-spacer")
+            ui.button(
+                icon="play_arrow", on_click=lambda cid=connector_id: test_connector(cid)
+            ).props("flat round dense size=sm").tooltip("Test connector")
+            ui.button(
+                icon="edit", on_click=lambda cid=connector_id: show_edit_connector_dialog(cid)
+            ).props("flat round dense size=sm").tooltip("Edit connector")
+            with ui.button(icon="more_horiz").props("flat round dense size=sm").tooltip("More"):
+                with ui.menu().props("auto-close"):
+                    ui.menu_item("Duplicate", on_click=lambda cid=connector_id: duplicate_connector(cid))
+                    ui.menu_item("Delete…", on_click=lambda cid=connector_id: delete_connector(cid))
 
 
 def format_trigger_name(trigger_type: TriggerType) -> str:
@@ -6297,114 +6411,88 @@ def on_search_change(event):
     update_search_visibility()
 
 
+def _status_ok(connector) -> bool:
+    if current_status == "on":
+        return bool(connector.enabled)
+    if current_status == "off":
+        return not connector.enabled
+    return True
+
+
 def update_search_visibility():
-    """Update connector visibility based on search term"""
+    """Show cards and folders that match the search text and the All / On / Off filter."""
     search_term = current_search.strip()
+    filtering = bool(search_term) or current_status != "all"
 
     visible_count = 0
     total_connectors = len(connector_cards)
     manager = connector_manager.get_manager()
     layout = connector_layout_store.load_layout()
 
+    def matches(conn) -> bool:
+        return bool(conn) and _status_ok(conn) and (not search_term or search_term in _connector_search_blob(conn))
+
     for folder_id, folder_el in folder_cards.items():
         try:
             spec = (layout.get("folders") or {}).get(folder_id) or {}
             member_ids = list(spec.get("connector_ids") or [])
             fname = (spec.get("name") or "").lower()
+            members = {cid: manager.get_connector(cid) for cid in member_ids}
 
             st = _folder_floaters.get(folder_id)
             shell = st.get("shell") if st else None
             floater_open = shell is not None and not shell.is_deleted
 
-            if not search_term:
-                folder_el.classes(remove="hidden")
-                if floater_open:
-                    for cid in member_ids:
-                        card_el = connector_cards.get(cid)
-                        if card_el:
-                            card_el.classes(remove="hidden")
-                            visible_count += 1
-                continue
+            name_hit = bool(search_term) and search_term in fname
+            shown = {
+                cid
+                for cid, conn in members.items()
+                if conn and (matches(conn) or (name_hit and _status_ok(conn)))
+            }
+            folder_visible = not filtering or bool(shown) or (name_hit and current_status == "all")
 
-            name_hit = search_term in fname
-            matching = []
-            for cid in member_ids:
-                conn = manager.get_connector(cid)
-                if conn and search_term in _connector_search_blob(conn):
-                    matching.append(cid)
-            match_set = set(matching)
-
-            if name_hit or match_set:
+            if folder_visible:
                 folder_el.classes(remove="hidden")
-                if floater_open:
-                    for cid in member_ids:
-                        card_el = connector_cards.get(cid)
-                        if not card_el:
-                            continue
-                        if name_hit or cid in match_set:
-                            card_el.classes(remove="hidden")
-                            visible_count += 1
-                        else:
-                            card_el.classes(add="hidden")
-                else:
-                    visible_count += 1
+                visible_count += 1
             else:
                 folder_el.classes(add="hidden")
-                if floater_open:
-                    for cid in member_ids:
-                        card_el = connector_cards.get(cid)
-                        if card_el:
-                            card_el.classes(add="hidden")
+            if floater_open:
+                for cid in member_ids:
+                    card_el = connector_cards.get(cid)
+                    if not card_el:
+                        continue
+                    if not filtering or cid in shown:
+                        card_el.classes(remove="hidden")
+                    else:
+                        card_el.classes(add="hidden")
         except Exception as e:
             logger.error(f"Error updating visibility for folder {folder_id}: {e}")
-            folder_el.classes(add="hidden")
+            folder_el.classes(remove="hidden")
 
     for connector_id, card_element in connector_cards.items():
         if connector_parent_folder.get(connector_id):
             continue
         try:
             connector = manager.get_connector(connector_id)
-
-            if connector:
-                searchable_text = _connector_search_blob(connector)
-
-                if not search_term or search_term in searchable_text:
-                    card_element.classes(remove="hidden")
-                    visible_count += 1
-                else:
-                    card_element.classes(add="hidden")
+            if connector and matches(connector):
+                card_element.classes(remove="hidden")
+                visible_count += 1
             else:
                 card_element.classes(add="hidden")
         except Exception as e:
             logger.error(f"Error updating visibility for connector {connector_id}: {e}")
-            card_element.classes(add="hidden")
+            card_element.classes(remove="hidden")
 
-    # Update empty state visibility if we have a connectors container
-    if connectors_container:
-        # Find the empty state element among the container's children
-        empty_state = None
-        for child in connectors_container.default_slot.children:
-            if hasattr(child, "classes") and "empty-state" in str(child.classes):
-                empty_state = child
-                break
-
-        if empty_state:
-            if total_connectors == 0:
-                # No connectors at all
-                empty_state.classes(remove="hidden")
-                # Update the message label
-                for child in empty_state.default_slot.children:
-                    if hasattr(child, "text"):
-                        child.text = "No connectors created yet"
-                        break
-            elif visible_count == 0 and search_term:
-                # Search returned no results
-                empty_state.classes(remove="hidden")
-                # Update the message label
-                for child in empty_state.default_slot.children:
-                    if hasattr(child, "text"):
-                        child.text = f"No connectors found matching '{search_term}'"
-                        break
+    label = _no_match_label
+    if label is not None and not label.is_deleted:
+        if total_connectors and visible_count == 0 and filtering:
+            if search_term:
+                text = f"No connectors match “{search_term}”"
+                if current_status != "all":
+                    text += f" among the {current_status} ones"
             else:
-                # Hide empty state when there are visible connectors
-                empty_state.classes(add="hidden")
+                text = "No connectors are on." if current_status == "on" else "No connectors are off."
+            label.set_text(text)
+            label.classes(remove="hidden")
+        else:
+            label.classes(add="hidden")
