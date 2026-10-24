@@ -1204,6 +1204,12 @@ class DatabaseTab:
                             self._event_select_value(e) or "",
                         ),
                     )
+                    self._attach_db_browse("sql_database_path", "Choose a SQLite database",
+                                           "A .db file anywhere on this computer", (".db", ".sqlite", ".sqlite3"),
+                                           "storage", "mycelian.db")
+                    self._attach_db_browse("firebase_service_account_path", "Choose a Firebase key file",
+                                           "The service account .json key from the Firebase console", (".json",),
+                                           "key", "")
                     self.ui_elements["firebase_database_url"] = form_sensitive_input(
                         tooltip="Firebase Realtime Database URL",
                         label="Firebase URL",
@@ -1330,6 +1336,32 @@ class DatabaseTab:
             retry_attempts=cfg.get("retry_attempts", 3),
         )
         self.dirty = False
+
+    def _attach_db_browse(self, field: str, title: str, subtitle: str, extensions, icon: str, default: str) -> None:
+        """Folder button after a path field that opens the picker (anywhere on this computer)."""
+        element = self.ui_elements[field]
+
+        def pick() -> None:
+            import os
+
+            from ...path_utils import get_data_path
+            from ..file_picker import open_file_picker
+
+            current = str(element.value or default or "")
+            if current and not os.path.isabs(current):
+                current = get_data_path(current)
+
+            def apply(result) -> None:
+                element.value = str(result.path)
+                self._set(field, str(result.path))
+
+            open_file_picker(
+                title=title, subtitle=subtitle, extensions=extensions, on_pick=apply,
+                scope="system", icon=icon, start=current or None,
+            )
+
+        with element.add_slot("after"):
+            ui.button(icon="folder_open", on_click=pick).props("flat round dense").tooltip("Browse")
 
     def _set(self, field: str, value) -> None:
         if getattr(self.buffer, field) != value:

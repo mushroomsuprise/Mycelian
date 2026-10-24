@@ -44,35 +44,6 @@ from .alerts_styles import ALERTS_CSS, ALERTS_TAB_CSS
 
 logger = logging.getLogger(__name__)
 
-# Resizable alert file browser dialog (POSIX paths inside dialog for web/OBS consistency).
-# self-start + mx-auto: without this, flex stretch gives the card 100% width and only height resizes.
-_FILE_BROWSER_CARD_CLASSES = (
-    "mx-auto self-start min-w-[480px] min-h-[400px] w-[min(88vw,1100px)] h-[500px] "
-    "!max-w-[min(96vw,1920px)] max-h-[90vh] resize overflow-auto p-4 flex flex-col"
-)
-# Quasar: content-class is applied to .q-dialog__inner; width override is in mainuiwindow FILE_BROWSER_QDIALOG_CSS.
-_FILE_BROWSER_DIALOG_PROPS = "content-class=mycelian-wide-file-dialog"
-
-
-def _alert_browser_path_str(path) -> str:
-    """Forward-slash path for in-dialog display and state (browser-style)."""
-    from pathlib import Path
-
-    return Path(path).expanduser().as_posix()
-
-
-def _path_under_assets(path) -> bool:
-    from pathlib import Path
-
-    from .. import path_utils
-
-    assets_dir = Path(path_utils.get_assets_path()).resolve()
-    try:
-        Path(path).resolve().relative_to(assets_dir)
-        return True
-    except (ValueError, OSError):
-        return False
-
 
 class AlertSettingsState:
     """Class to store alert settings UI state"""
@@ -426,6 +397,16 @@ def _guard_alert_selection(alert_type: str, new_value):
         with suppress_alert_selection_handler():
             select.value = loaded
     return True
+
+
+def _discard_then_select(alert_type: str, new_value, handler) -> None:
+    """Drop the unsaved edits, then switch; switching alone would re-trigger the prompt."""
+    alert_settings_state.ignore_field_dirty = True
+    try:
+        _discard_alert_form(alert_type)
+    finally:
+        alert_settings_state.ignore_field_dirty = False
+    _select_alert_programmatically(alert_type, new_value, handler)
 
 
 def _select_alert_programmatically(alert_type: str, new_value, handler) -> None:
@@ -1786,7 +1767,7 @@ def handle_alert_selection(e, alert_type: str):
         _prompt_unsaved_alert(
             alert_type,
             "You have unsaved changes to this alert. Save them before switching?",
-            on_discard=lambda: _select_alert_programmatically(
+            on_discard=lambda: _discard_then_select(
                 alert_type, new_value, handle_alert_selection
             ),
             on_saved=lambda: _select_alert_programmatically(
@@ -2272,91 +2253,85 @@ def load_alert_settings(alert_type: str, alert_id: str):
         notify("Error loading alert settings", type="negative")
 
 
+# Browse targets: (title, subtitle, kind, extensions, mode, dir field, file field)
+_BROWSE_TARGETS = {
+    "gif": ("Choose a GIF or image", "GIF, PNG, JPG or WebP from your assets folder", "image",
+            (".gif", ".png", ".jpg", ".jpeg", ".webp"), "file", "gif_dir_input", "gif_file_input"),
+    "primary": ("Choose a sound", "MP3, WAV, OGG, M4A or FLAC from your assets folder", "audio",
+                (".mp3", ".wav", ".ogg", ".m4a", ".flac"), "file", "primary_dir_input", "primary_file_input"),
+    "random": ("Choose a folder of sounds", "A random sound from this folder plays instead of the primary sound", "audio",
+               (".mp3", ".wav", ".ogg", ".m4a", ".flac"), "folder", "random_dir_input", None),
+    "extra": ("Choose a folder of extra sounds", "A random sound from this folder can play after the main sound", "audio",
+              (".mp3", ".wav", ".ogg", ".m4a", ".flac"), "folder", "extra_dir_input", None),
+}
+
+
 def handle_browse(folder_type: str, alert_type: str = None):
-    """Handle browsing for files/folders using a custom file browser dialog
+    """Open the shared file picker for a GIF, sound or sound-folder field.
 
     Args:
         folder_type (str): Type of folder being browsed (primary, random, extra, gif)
         alert_type (str): Alert type tab to write into (falls back to current_tab)
     """
     try:
+        from pathlib import Path
+
+        from .file_picker import assets_root, open_file_picker
+
         current_alert_type = alert_type or alert_settings_state.current_tab
         if not current_alert_type:
             notify("No alert type selected", type="warning")
             return
-
-        # Get UI elements to check what fields exist
-        elements = alert_settings_state.get_elements(current_alert_type)
-
-        # Determine browse configuration based on folder type and available fields
-        if folder_type == "gif":
-            # GIF selection - both directory and file fields exist
-            dir_field_name = "gif_dir_input"
-            file_field_name = "gif_file_input"
-            title = "Select GIF File"
-            extensions = [".gif", ".png", ".jpg", ".jpeg", ".webp"]
-            browse_mode = "file"  # Select files and split into dir/file
-            target_fields = [dir_field_name, file_field_name]
-        elif folder_type == "primary":
-            # Primary audio - both directory and file fields exist
-            dir_field_name = "primary_dir_input"
-            file_field_name = "primary_file_input"
-            title = "Select Primary Audio File"
-            extensions = [".mp3", ".wav", ".ogg", ".m4a", ".flac"]
-            browse_mode = "file"  # Select files and split into dir/file
-            target_fields = [dir_field_name, file_field_name]
-        elif folder_type == "random":
-            # Random audio - only directory field exists
-            dir_field_name = "random_dir_input"
-            title = "Select Random Audio Directory"
-            extensions = [
-                ".mp3",
-                ".wav",
-                ".ogg",
-                ".m4a",
-                ".flac",
-            ]  # For display purposes
-            browse_mode = "directory"  # Select directories only
-            target_fields = [dir_field_name]
-        elif folder_type == "extra":
-            # Extra audio - only directory field exists
-            dir_field_name = "extra_dir_input"
-            title = "Select Extra Audio Directory"
-            extensions = [
-                ".mp3",
-                ".wav",
-                ".ogg",
-                ".m4a",
-                ".flac",
-            ]  # For display purposes
-            browse_mode = "directory"  # Select directories only
-            target_fields = [dir_field_name]
-        else:
+        target = _BROWSE_TARGETS.get(folder_type)
+        if target is None:
             notify(f"Unknown folder type: {folder_type}", type="negative")
             return
-
-        # Verify that the required fields exist
-        missing_fields = [
-            field
-            for field in target_fields
-            if field not in elements or elements[field] is None
-        ]
-        if missing_fields:
-            notify(f"Required UI fields not found: {missing_fields}", type="negative")
+        title, subtitle, kind, extensions, mode, dir_field, file_field = target
+        elements = alert_settings_state.get_elements(current_alert_type)
+        missing = [f for f in (dir_field, file_field) if f and elements.get(f) is None]
+        if missing:
+            notify(f"Required UI fields not found: {missing}", type="negative")
             return
 
-        # Get the initial path from the corresponding directory input field
-        initial_path = get_initial_browse_path(current_alert_type, dir_field_name)
+        directory = str(elements[dir_field].value or "")
+        filename = str(elements[file_field].value or "") if file_field else ""
+        start = directory.rstrip("/") + "/" + filename if filename else directory
 
-        # Show the file browser dialog
-        show_file_browser_dialog(
-            current_alert_type,
-            folder_type,
-            title,
-            extensions,
-            target_fields,
-            initial_path,
-            browse_mode,
+        root = assets_root()
+        tab_name = next((n for n, t in ALERT_TAB_TO_TYPE.items() if t == current_alert_type), current_alert_type)
+        places = [
+            ("campaign", "Alerts", root / "alerts"),
+            (_ALERT_TAB_ICONS.get(tab_name, "folder_special"), tab_name, root / current_alert_type),
+        ]
+
+        def apply(result, at=current_alert_type) -> None:
+            els = alert_settings_state.get_elements(at)
+            if result.is_dir:
+                els[dir_field].value = result.web_path
+                track_field_change(dir_field, els[dir_field], result.web_path, at)
+                logger.info(f"Selected directory: {result.web_path}")
+                notify(f"Selected folder: {Path(result.path).name}", type="positive")
+                return
+            els[dir_field].value = result.web_dir
+            els[file_field].value = result.filename
+            track_field_change(dir_field, els[dir_field], result.web_dir, at)
+            track_field_change(file_field, els[file_field], result.filename, at)
+            logger.info(f"Selected file: {result.web_dir}{result.filename}")
+            notify(f"Selected file: {result.filename}", type="positive")
+
+        # The overlay looks random-sound folders up under assets/alerts/ only.
+        within = root / "alerts" if mode == "folder" else None
+        open_file_picker(
+            title=title,
+            subtitle=subtitle,
+            extensions=extensions,
+            on_pick=apply,
+            mode=mode,
+            kind=kind,
+            start=start or None,
+            places=places,
+            within=within,
+            within_hint="Random sound folders must be inside assets/alerts so the overlay can find them.",
         )
 
     except Exception as e:
@@ -2364,794 +2339,6 @@ def handle_browse(folder_type: str, alert_type: str = None):
             f"Error handling browse for {folder_type}: {str(e)}", exc_info=True
         )
         notify(f"Error opening file browser for {folder_type}", type="negative")
-
-
-def get_initial_browse_path(alert_type: str, dir_field_name: str) -> str:
-    """Get the initial path for the browse dialog based on the directory input field
-
-    Args:
-        alert_type (str): The alert type (bits, subs, etc.)
-        dir_field_name (str): The name of the directory input field
-
-    Returns:
-        str: The initial path to use for the browse dialog (with forward slashes, within assets folder)
-    """
-    try:
-        import os
-        from pathlib import Path, PurePath
-
-        from .. import path_utils
-
-        # Get the assets directory as the base path (restrict browsing to assets only)
-        assets_dir = Path(path_utils.get_assets_path()).resolve()
-
-        # Get UI elements for this alert type
-        elements = alert_settings_state.get_elements(alert_type)
-
-        # Check if the directory field exists and has a value
-        if dir_field_name in elements and elements[dir_field_name]:
-            existing_dir = elements[dir_field_name].value
-            if existing_dir and existing_dir.strip():
-                try:
-                    # Clean up the path - remove leading/trailing slashes and normalize separators
-                    cleaned_dir = existing_dir.strip()
-
-                    # Handle web paths that start with /assets/
-                    if cleaned_dir.startswith("/assets/"):
-                        # Remove the /assets/ prefix to get the relative path within assets
-                        cleaned_dir = cleaned_dir[8:]  # Remove '/assets/'
-                    elif cleaned_dir.startswith("assets/"):
-                        # Remove the assets/ prefix to get the relative path within assets
-                        cleaned_dir = cleaned_dir[7:]  # Remove 'assets/'
-
-                    # Remove leading and trailing slashes
-                    cleaned_dir = cleaned_dir.strip("/")
-
-                    # If cleaned path is empty, start at assets root
-                    if not cleaned_dir:
-                        logger.debug(
-                            "Directory path is empty after cleaning, using assets root"
-                        )
-                        return _alert_browser_path_str(assets_dir)
-
-                    # Convert cleaned_dir to a Path object and handle OS differences properly
-                    relative_path = PurePath(cleaned_dir)
-
-                    # Construct path within assets directory
-                    full_path = assets_dir / relative_path
-                    resolved_path = full_path.resolve()
-
-                    # Security check: ensure the resolved path is still within the assets directory
-                    try:
-                        # This will raise ValueError if resolved_path is not within assets_dir
-                        resolved_path.relative_to(assets_dir)
-
-                        if resolved_path.exists() and resolved_path.is_dir():
-                            logger.debug(
-                                f"Using existing directory path for browse: {resolved_path}"
-                            )
-                            return _alert_browser_path_str(resolved_path)
-                        else:
-                            logger.debug(
-                                f"Constructed directory path doesn't exist: {resolved_path}"
-                            )
-                            # Try to find the closest existing parent directory within assets
-                            current_path = resolved_path
-                            while current_path != current_path.parent:
-                                try:
-                                    # Check if still within assets
-                                    current_path.relative_to(assets_dir)
-                                    if current_path.exists() and current_path.is_dir():
-                                        closest_path = _alert_browser_path_str(
-                                            current_path
-                                        )
-                                        logger.debug(
-                                            f"Using closest existing parent directory: {closest_path}"
-                                        )
-                                        return closest_path
-                                    current_path = current_path.parent
-                                except ValueError:
-                                    # Went outside assets directory
-                                    break
-
-                            # If no parent directories exist in the constructed path within assets,
-                            # try to find existing parts starting from the assets directory
-                            logger.debug(
-                                "No constructed path parents exist, checking from assets directory"
-                            )
-                            path_parts = relative_path.parts
-                            current_check = assets_dir
-
-                            for part in path_parts:
-                                next_path = current_check / part
-                                if next_path.exists() and next_path.is_dir():
-                                    current_check = next_path
-                                else:
-                                    break
-
-                            if current_check != assets_dir:
-                                deepest_path = _alert_browser_path_str(current_check)
-                                logger.debug(
-                                    f"Using deepest existing directory: {deepest_path}"
-                                )
-                                return deepest_path
-
-                    except ValueError:
-                        logger.warning(
-                            f"Path '{cleaned_dir}' would escape assets directory, using assets root"
-                        )
-
-                except Exception as path_err:
-                    logger.debug(
-                        f"Error processing directory path '{existing_dir}': {str(path_err)}"
-                    )
-
-        # Fall back to assets directory
-        fallback_path = _alert_browser_path_str(assets_dir)
-        logger.debug(f"Using default assets directory for browse: {fallback_path}")
-        return fallback_path
-
-    except Exception as e:
-        logger.error(f"Error getting initial browse path: {str(e)}", exc_info=True)
-        # Final fallback to assets directory
-        from .. import path_utils
-
-        return _alert_browser_path_str(Path(path_utils.get_assets_path()))
-
-
-def show_file_browser_dialog(
-    alert_type: str,
-    folder_type: str,
-    title: str,
-    extensions: list,
-    target_fields: list,
-    initial_path: str | None = None,
-    browse_mode: str = "file",
-):
-    """Show a NiceGUI-based file browser dialog for alert files
-
-    Args:
-        alert_type (str): The alert type (bits, subs, etc.)
-        folder_type (str): Type of folder being browsed (primary, random, extra, gif)
-        title (str): Dialog title
-        extensions (list): List of allowed file extensions (e.g., ['.mp3', '.wav'])
-        target_fields (list): List of UI field names to update [dir_field, file_field]
-        initial_path (str, optional): Initial path to start browsing from
-        browse_mode (str, optional): Mode of browsing ('file' or 'directory')
-    """
-    import os
-    from pathlib import Path
-
-    from .. import path_utils
-
-    # Use provided initial path or fall back to assets directory (POSIX in dialog)
-    raw_start = (
-        initial_path if initial_path else str(Path(path_utils.get_assets_path()))
-    )
-    start_path = _alert_browser_path_str(Path(raw_start).expanduser().resolve())
-
-    # Create dialog state
-    dialog_state = {
-        "current_path": start_path,
-        "selected_file": None,
-        "path_input": None,
-        "file_list": None,
-        "alert_type": alert_type,
-        "folder_type": folder_type,
-        "extensions": extensions,
-        "target_fields": target_fields,
-        "browse_mode": browse_mode,
-    }
-
-    with (
-        ui.dialog().props(_FILE_BROWSER_DIALOG_PROPS) as dialog,
-        ui.card().classes(_FILE_BROWSER_CARD_CLASSES),
-    ):
-        ui.label(title).classes("text-lg font-bold mb-4 shrink-0")
-
-        with ui.column().classes("w-full min-h-0 flex-1 gap-3"):
-            # Current path display and manual entry
-            with ui.row().classes("w-full items-center gap-2"):
-                ui.label("Path:").classes("text-sm font-medium")
-                dialog_state["path_input"] = form_input(
-                    tooltip="Enter a path manually or navigate below",
-                    value=dialog_state["current_path"],
-                    placeholder=(
-                        "Enter file path or navigate below..."
-                        if dialog_state["browse_mode"] == "file"
-                        else "Enter directory path or navigate below..."
-                    ),
-                    classes="flex-1",
-                )
-                ui.button(
-                    "Go", icon="folder", on_click=lambda: navigate_to_path(dialog_state)
-                ).props("dense")
-
-            # Quick access buttons - assets folder specific
-            with ui.row().classes("w-full gap-2 mb-2 shrink-0 flex-wrap"):
-                ui.button(
-                    "Assets Root",
-                    icon="home",
-                    on_click=lambda: navigate_to_path(
-                        dialog_state, Path(path_utils.get_assets_path())
-                    ),
-                ).props("dense outline size=sm")
-
-                ui.button(
-                    "Default Assets",
-                    icon="folder",
-                    on_click=lambda: navigate_to_path(
-                        dialog_state,
-                        Path(path_utils.get_assets_path()) / "default_assets",
-                    ),
-                ).props("dense outline size=sm")
-
-                ui.button(
-                    "Images",
-                    icon="image",
-                    on_click=lambda: navigate_to_path(
-                        dialog_state,
-                        Path(path_utils.get_assets_path())
-                        / "default_assets"
-                        / "images",
-                    ),
-                ).props("dense outline size=sm")
-
-                ui.button(
-                    "Sounds",
-                    icon="audiotrack",
-                    on_click=lambda: navigate_to_path(
-                        dialog_state,
-                        Path(path_utils.get_assets_path())
-                        / "default_assets"
-                        / "sounds",
-                    ),
-                ).props("dense outline size=sm")
-
-                # Add alert type specific folder if it exists
-                alert_folder_name = dialog_state["alert_type"]
-                ui.button(
-                    f"{alert_folder_name.title()}",
-                    icon="folder_special",
-                    on_click=lambda: navigate_to_path(
-                        dialog_state,
-                        Path(path_utils.get_assets_path()) / alert_folder_name,
-                    ),
-                ).props("dense outline size=sm")
-
-            # File listing area
-            with ui.scroll_area().classes(
-                "w-full min-h-0 flex-1 border border-theme-default rounded-lg p-2 bg-theme-base"
-            ):
-                dialog_state["file_list"] = ui.column().classes("w-full gap-1")
-
-            # Selected file/directory display
-            with ui.row().classes("w-full items-center"):
-                ui.label("Selected:").classes("text-sm font-medium")
-                dialog_state["selected_label"] = ui.label("None").classes(
-                    "text-sm secondary-text"
-                )
-
-            # Directory mode: Show current directory selection option
-            if dialog_state["browse_mode"] == "directory":
-                with ui.row().classes(
-                    "w-full items-center gap-2 p-2 bg-theme-surface rounded"
-                ):
-                    ui.icon("folder").classes("text-yellow-400")
-                    ui.label("Select current directory").classes("text-sm")
-                    select_current_btn = ui.button(
-                        "Select This Directory",
-                        icon="check_circle",
-                        on_click=lambda: select_current_directory(dialog_state, dialog),
-                    ).classes("btn-secondary text-sm")
-
-            # Dialog buttons
-            with ui.row().classes("w-full justify-end gap-2 mt-4 shrink-0"):
-                ui.button("Cancel", on_click=dialog.close).classes("btn-cancel")
-
-                # Button text depends on browse mode
-                button_text = (
-                    "Select File"
-                    if dialog_state["browse_mode"] == "file"
-                    else "Select Directory"
-                )
-                button_icon = (
-                    "description" if dialog_state["browse_mode"] == "file" else "folder"
-                )
-
-                select_button = ui.button(
-                    button_text,
-                    icon=button_icon,
-                    on_click=lambda: select_file_from_dialog(dialog_state, dialog),
-                ).classes("btn-success")
-
-                # For directory mode, button is always enabled (can select current dir)
-                # For file mode, button starts disabled until a file is selected
-                select_button.enabled = dialog_state["browse_mode"] == "directory"
-                dialog_state["select_button"] = select_button
-
-    # Initial file listing
-    update_file_listing(dialog_state)
-
-    dialog.open()
-
-
-def format_path_for_web_server(path_str: str) -> str:
-    """Convert an absolute path to a web server compatible path starting with /assets/
-
-    Args:
-        path_str (str): Absolute path to convert
-
-    Returns:
-        str: Web server compatible path starting with /assets/ (directories end with /)
-    """
-    try:
-        from pathlib import Path, PurePath
-
-        from .. import path_utils
-
-        # Get the assets directory
-        assets_dir = Path(path_utils.get_assets_path()).resolve()
-
-        # Convert input to Path and resolve
-        input_path = Path(path_str).resolve()
-
-        # Check if the path is within the assets directory using OS-agnostic comparison
-        try:
-            # Use relative_to to check if path is within assets_dir - this raises ValueError if not
-            relative_path = input_path.relative_to(assets_dir)
-
-            # Format as web path with forward slashes (PurePath handles OS differences)
-            web_path = "/assets/" + str(PurePath(relative_path)).replace("\\", "/")
-
-            # Add trailing slash for directories
-            if input_path.is_dir() and not web_path.endswith("/"):
-                web_path += "/"
-
-            return web_path
-        except ValueError:
-            # Path is not within assets directory
-            logger.warning(f"Path '{path_str}' is not within assets directory")
-            return "/assets/"
-
-    except Exception as e:
-        logger.error(f"Error formatting path for web server: {str(e)}")
-        return "/assets/"
-
-
-def navigate_to_path(dialog_state, path=None):
-    """Navigate to a specific path in the file browser (restricted to assets directory)
-
-    Args:
-        dialog_state (dict): Dialog state dictionary
-        path (Path, optional): Path to navigate to, or None to use path_input value
-    """
-    try:
-        from pathlib import Path
-
-        from .. import path_utils
-
-        # Get the assets directory for restriction
-        assets_dir = Path(path_utils.get_assets_path()).resolve()
-
-        if path is None:
-            path_input = dialog_state["path_input"].value
-            if path_input:
-                path = Path(path_input).expanduser()
-            else:
-                path = assets_dir
-
-        path = Path(path).expanduser().resolve()
-
-        # Security check: ensure path is within assets directory using OS-agnostic method
-        try:
-            path.relative_to(assets_dir)
-        except ValueError:
-            logger.warning(f"Attempt to navigate outside assets directory: {path}")
-            path = assets_dir
-            notify("Navigation is restricted to the assets folder", type="warning")
-
-        if path.exists():
-            path_str = _alert_browser_path_str(path)
-
-            dialog_state["current_path"] = path_str
-            dialog_state["path_input"].value = path_str
-            dialog_state["selected_file"] = None
-            dialog_state["selected_label"].set_text("None")
-
-            # For directory mode, button stays enabled; for file mode, disable until file selected
-            browse_mode = dialog_state.get("browse_mode", "file")
-            dialog_state["select_button"].enabled = browse_mode == "directory"
-
-            if hasattr(dialog_state["path_input"], "update"):
-                dialog_state["path_input"].update()
-
-            update_file_listing(dialog_state)
-        else:
-            notify(f"Path does not exist: {path}", type="warning")
-
-    except Exception as e:
-        logger.error(f"Error navigating to path: {str(e)}")
-        notify(f"Error navigating to path: {str(e)}", type="negative")
-
-
-def select_current_directory(dialog_state, dialog):
-    """Select the current directory in directory browse mode
-
-    Args:
-        dialog_state (dict): Dialog state dictionary
-        dialog: The dialog to close
-    """
-    try:
-        from pathlib import Path
-
-        current_path = Path(dialog_state["current_path"])
-
-        if not current_path.exists() or not current_path.is_dir():
-            notify("Current path is not a valid directory", type="warning")
-            return
-
-        # Format path for web server (converts to /assets/... format)
-        web_server_path = format_path_for_web_server(str(current_path))
-
-        # Update the target UI field (directory only)
-        alert_type = dialog_state["alert_type"]
-        target_fields = dialog_state["target_fields"]
-
-        if len(target_fields) == 1:  # Directory-only mode
-            dir_field = target_fields[0]
-
-            # Get UI elements
-            elements = alert_settings_state.get_elements(alert_type)
-
-            if dir_field in elements:
-                # Update the directory field with web server compatible path
-                elements[dir_field].value = web_server_path
-
-                # Force UI update to ensure cross-platform compatibility
-                if hasattr(elements[dir_field], "update"):
-                    elements[dir_field].update()
-
-                # Track the change for styling
-                track_field_change(
-                    dir_field, elements[dir_field], web_server_path, alert_type
-                )
-
-                logger.info(f"Selected directory: {web_server_path}")
-                notify(f"Selected directory: {current_path.name}", type="positive")
-            else:
-                logger.error(f"Target UI field not found: {dir_field}")
-                notify("Error updating directory field", type="negative")
-        else:
-            logger.error(f"Invalid target fields for directory mode: {target_fields}")
-            notify("Error updating directory field", type="negative")
-
-        dialog.close()
-
-    except Exception as e:
-        logger.error(f"Error selecting current directory: {str(e)}", exc_info=True)
-        notify("Error selecting directory", type="negative")
-
-
-def update_file_listing(dialog_state):
-    """Update the file listing in the browser
-
-    Args:
-        dialog_state (dict): Dialog state dictionary
-    """
-    try:
-        from pathlib import Path
-
-        current_path = Path(dialog_state["current_path"])
-        extensions = dialog_state["extensions"]
-        browse_mode = dialog_state.get("browse_mode", "file")
-
-        # Clear existing file list
-        dialog_state["file_list"].clear()
-
-        # Add parent directory option (if not at root)
-        if current_path.parent != current_path:
-            with dialog_state["file_list"]:
-                with ui.row().classes(
-                    "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
-                ):
-                    ui.icon("arrow_upward").classes("text-blue-400")
-                    # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
-                    parent_label = ui.label(".. (Parent Directory)").on(
-                        "click",
-                        lambda: navigate_to_path(dialog_state, current_path.parent),
-                    )
-                    parent_label.classes("text-blue-400")
-
-        # List directories and files
-        try:
-            items = sorted(
-                current_path.iterdir(), key=lambda x: (x.is_file(), x.name.lower())
-            )
-
-            for item in items:
-                if item.name.startswith("."):
-                    continue  # Skip hidden files
-
-                with dialog_state["file_list"]:
-                    # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
-                    row = ui.row()
-                    file_extension = item.suffix.lower() if item.is_file() else ""
-                    if item.is_dir():
-                        row.on(
-                            "click",
-                            lambda path=item: navigate_to_path(dialog_state, path),
-                        )
-                        if browse_mode == "directory":
-                            row.on(
-                                "click",
-                                lambda path=item: select_directory_in_dialog(
-                                    dialog_state, path
-                                ),
-                            )
-                    elif browse_mode == "file" and file_extension in extensions:
-                        row.on(
-                            "click",
-                            lambda path=item: select_file_in_dialog(
-                                dialog_state, path
-                            ),
-                        )
-                    row.classes(
-                        "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
-                    )
-                    with row:
-                        if item.is_dir():
-                            ui.icon("folder").classes("text-yellow-400")
-                            dir_label = ui.label(item.name)
-                            if browse_mode == "directory":
-                                dir_label.classes(
-                                    "text-green-400"
-                                )  # Highlight selectable directories
-                        else:
-                            # Show different icons for different file types
-                            if file_extension in extensions:
-                                # Determine icon based on file type
-                                if file_extension in [
-                                    ".mp3",
-                                    ".wav",
-                                    ".ogg",
-                                    ".m4a",
-                                    ".flac",
-                                ]:
-                                    ui.icon("audiotrack").classes("text-green-400")
-                                elif file_extension in [
-                                    ".gif",
-                                    ".png",
-                                    ".jpg",
-                                    ".jpeg",
-                                    ".webp",
-                                ]:
-                                    ui.icon("image").classes("text-theme-primary")
-                                else:
-                                    ui.icon("description").classes("text-green-400")
-                                ui.label(item.name).classes("text-green-400")
-                            else:
-                                ui.icon("description").classes("secondary-text")
-                                ui.label(item.name).classes("secondary-text")
-
-        except PermissionError:
-            with dialog_state["file_list"]:
-                ui.label("Permission denied - cannot access this directory").classes(
-                    "text-red-400 p-2"
-                )
-
-    except Exception as e:
-        logger.error(f"Error updating file listing: {str(e)}")
-        with dialog_state["file_list"]:
-            ui.label(f"Error loading directory: {str(e)}").classes("text-red-400 p-2")
-
-
-def select_directory_in_dialog(dialog_state, dir_path):
-    """Select a directory in the dialog (for directory mode)
-
-    Args:
-        dialog_state (dict): Dialog state dictionary
-        dir_path (Path): Path to the selected directory
-    """
-    try:
-        from pathlib import Path
-
-        dialog_state["selected_file"] = _alert_browser_path_str(
-            Path(dir_path).expanduser().resolve()
-        )
-        dialog_state["selected_label"].set_text(dir_path.name)
-        dialog_state["select_button"].enabled = True
-
-        dialog_state["path_input"].value = _alert_browser_path_str(dir_path)
-        if hasattr(dialog_state["path_input"], "update"):
-            dialog_state["path_input"].update()
-
-    except Exception as e:
-        logger.error(f"Error selecting directory: {str(e)}")
-
-
-def select_file_in_dialog(dialog_state, file_path):
-    """Select a file in the dialog
-
-    Args:
-        dialog_state (dict): Dialog state dictionary
-        file_path (Path): Path to the selected file
-    """
-    try:
-        from pathlib import Path
-
-        resolved = Path(file_path).expanduser().resolve()
-        dialog_state["selected_file"] = _alert_browser_path_str(resolved)
-        dialog_state["selected_label"].set_text(file_path.name)
-        dialog_state["select_button"].enabled = True
-
-        dialog_state["path_input"].value = _alert_browser_path_str(resolved)
-        if hasattr(dialog_state["path_input"], "update"):
-            dialog_state["path_input"].update()
-
-    except Exception as e:
-        logger.error(f"Error selecting file: {str(e)}")
-
-
-def _resolve_alert_browser_selection(dialog_state):
-    """Prefer list selection, then manual path input, then directory-mode current folder."""
-    from pathlib import Path
-
-    browse_mode = dialog_state.get("browse_mode", "file")
-    path_in = dialog_state.get("path_input")
-
-    def _coerce(p_src, mode):
-        if not p_src:
-            return None
-        p = Path(str(p_src).strip()).expanduser()
-        try:
-            p = p.resolve()
-        except OSError:
-            return None
-        if not p.exists():
-            return None
-        if mode == "file" and not p.is_file():
-            return None
-        if mode == "directory" and not p.is_dir():
-            return None
-        return p
-
-    sel = dialog_state.get("selected_file")
-    if sel:
-        hit = _coerce(sel, browse_mode)
-        if hit is not None:
-            return hit
-
-    manual = path_in.value if path_in else None
-    if manual:
-        hit = _coerce(manual, browse_mode)
-        if hit is not None:
-            return hit
-
-    if browse_mode == "directory":
-        return _coerce(dialog_state.get("current_path"), "directory")
-
-    return None
-
-
-def select_file_from_dialog(dialog_state, dialog):
-    """Handle the final file/directory selection from the dialog
-
-    Args:
-        dialog_state (dict): Dialog state dictionary
-        dialog: The dialog to close
-    """
-    try:
-        from pathlib import Path
-
-        browse_mode = dialog_state.get("browse_mode", "file")
-
-        selected_path_obj = _resolve_alert_browser_selection(dialog_state)
-        if not selected_path_obj:
-            selection_type = "directory" if browse_mode == "directory" else "file"
-            notify(f"Please select a {selection_type}", type="warning")
-            return
-
-        if browse_mode == "file":
-            # Validate file extension
-            file_extension = selected_path_obj.suffix.lower()
-            if file_extension not in dialog_state["extensions"]:
-                extensions_str = ", ".join(dialog_state["extensions"])
-                notify(
-                    f"Please select a file with one of these extensions: {extensions_str}",
-                    type="warning",
-                )
-                return
-
-        # Update the target UI fields
-        alert_type = dialog_state["alert_type"]
-        target_fields = dialog_state["target_fields"]
-
-        # Get UI elements
-        elements = alert_settings_state.get_elements(alert_type)
-
-        if browse_mode == "file" and len(target_fields) == 2:
-            # File mode with both directory and file fields
-            dir_field, file_field = target_fields
-
-            if dir_field in elements and file_field in elements:
-                # Split path into directory and filename
-                file_path = Path(selected_path_obj)
-                filename = file_path.name
-
-                # Format directory path for web server
-                directory_web_path = format_path_for_web_server(str(file_path.parent))
-                if not _path_under_assets(file_path):
-                    notify(
-                        "This file is outside the assets folder. Move it under assets for correct browser-source paths.",
-                        type="warning",
-                    )
-
-                # Update the UI elements
-                elements[dir_field].value = directory_web_path
-                elements[file_field].value = filename
-
-                # Force UI updates to ensure cross-platform compatibility
-                if hasattr(elements[dir_field], "update"):
-                    elements[dir_field].update()
-                if hasattr(elements[file_field], "update"):
-                    elements[file_field].update()
-
-                # Track the changes for styling
-                track_field_change(
-                    dir_field, elements[dir_field], directory_web_path, alert_type
-                )
-                track_field_change(
-                    file_field, elements[file_field], filename, alert_type
-                )
-
-                logger.info(f"Selected file: {directory_web_path}/{filename}")
-                notify(f"Selected file: {filename}", type="positive")
-            else:
-                logger.error(f"Target UI fields not found: {target_fields}")
-                notify("Error updating file fields", type="negative")
-
-        elif browse_mode == "directory" and len(target_fields) == 1:
-            # Directory mode with only directory field
-            dir_field = target_fields[0]
-
-            if dir_field in elements:
-                # Format directory path for web server
-                directory_web_path = format_path_for_web_server(str(selected_path_obj))
-                if not _path_under_assets(selected_path_obj):
-                    notify(
-                        "This folder is outside the assets folder. Move or copy it under assets for browser-source paths.",
-                        type="warning",
-                    )
-
-                # Update the directory field
-                elements[dir_field].value = directory_web_path
-
-                # Force UI update to ensure cross-platform compatibility
-                if hasattr(elements[dir_field], "update"):
-                    elements[dir_field].update()
-
-                # Track the change for styling
-                track_field_change(
-                    dir_field, elements[dir_field], directory_web_path, alert_type
-                )
-
-                logger.info(f"Selected directory: {directory_web_path}")
-                notify(f"Selected directory: {selected_path_obj.name}", type="positive")
-            else:
-                logger.error(f"Target UI field not found: {dir_field}")
-                notify("Error updating directory field", type="negative")
-        else:
-            logger.error(
-                f"Invalid field configuration for {browse_mode} mode: {target_fields}"
-            )
-            notify("Error updating fields", type="negative")
-
-        dialog.close()
-
-    except Exception as e:
-        logger.error(f"Error selecting from dialog: {str(e)}", exc_info=True)
-        notify("Error processing selection", type="negative")
 
 
 def _collect_test_alert_data(alert_type: str, elements: dict) -> dict:
@@ -3870,7 +3057,7 @@ def handle_point_reward_selection(e, alert_type: str):
         _prompt_unsaved_alert(
             alert_type,
             "You have unsaved changes to this reward. Save them before switching?",
-            on_discard=lambda: _select_alert_programmatically(
+            on_discard=lambda: _discard_then_select(
                 alert_type, new_value, handle_point_reward_selection
             ),
             on_saved=lambda: _select_alert_programmatically(

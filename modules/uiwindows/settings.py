@@ -58,14 +58,6 @@ from .service_brand_icons import SERVICE_BRAND_SVG, service_tab_icon
 
 logger = logging.getLogger(__name__)
 
-# Native-path file browser dialogs (resizable; OS separators on Windows).
-# self-start + mx-auto: keeps intrinsic width so horizontal resize works (not only height).
-_FILE_BROWSER_CARD_CLASSES = (
-    "mx-auto self-start min-w-[480px] min-h-[400px] w-[min(88vw,1100px)] h-[500px] "
-    "!max-w-[min(96vw,1920px)] max-h-[90vh] resize overflow-auto p-4 flex flex-col"
-)
-_FILE_BROWSER_DIALOG_PROPS = "content-class=mycelian-wide-file-dialog"
-
 # CSS for settings-specific styling - shared card/section rules live in ui_styles.py
 CSS = """
 .header-section {
@@ -4153,327 +4145,45 @@ class SettingsUI:
             )
 
     def _show_database_file_browser_dialog(self, file_type):
-        """Show a NiceGUI-based file browser dialog for database files"""
+        """Open the shared file picker for the SQLite database or Firebase key file."""
         import os
-        from pathlib import Path
 
-        # Determine dialog settings based on file type
+        from .file_picker import open_file_picker
+
         if file_type == "sql":
-            title = "Select SQLite Database File"
-            extension_filter = ".db"
+            title, subtitle = "Choose a SQLite database", "A .db file anywhere on this computer"
+            extensions, icon = (".db", ".sqlite", ".sqlite3"), "storage"
             field_key = "database_settings.sql_database_path"
-            default_filename = "mycelian.db"
         elif file_type == "firebase":
-            title = "Select Firebase Service Account Key File"
-            extension_filter = ".json"
+            title, subtitle = "Choose a Firebase key file", "The service account .json key from the Firebase console"
+            extensions, icon = (".json",), "key"
             field_key = "database_settings.firebase_service_account_path"
-            default_filename = "ServiceAccountKey.json"
         else:
             logger.error(f"Unknown file type for database browser: {file_type}")
             return
 
-        # Create dialog state
-        dialog_state = {
-            "current_path": get_working_directory(),
-            "selected_file": None,
-            "path_input": None,
-            "file_list": None,
-            "file_type": file_type,
-            "extension_filter": extension_filter,
-            "field_key": field_key,
-        }
+        element = self.ui_elements.get(field_key)
+        current = str(getattr(element, "value", "") or "")
+        if current and not os.path.isabs(current):
+            current = os.path.join(get_working_directory(), current)
 
-        with (
-            ui.dialog().props(_FILE_BROWSER_DIALOG_PROPS) as dialog,
-            ui.card().classes(_FILE_BROWSER_CARD_CLASSES),
-        ):
-            ui.label(title).classes("text-lg font-bold mb-4 shrink-0")
-
-            with ui.column().classes("w-full min-h-0 flex-1 gap-3"):
-                # Current path display and manual entry
-                with ui.row().classes("w-full items-center gap-2"):
-                    ui.label("Path:").classes("text-sm font-medium")
-                    dialog_state["path_input"] = ui.input(
-                        value=dialog_state["current_path"],
-                        placeholder="Enter file path or navigate below...",
-                    ).classes("flex-1")
-                    ui.button(
-                        "Go",
-                        icon="folder",
-                        on_click=lambda: self._navigate_to_database_path(dialog_state),
-                    ).props("dense")
-
-                # Quick access buttons
-                with ui.row().classes("w-full gap-2 mb-2 shrink-0"):
-                    ui.button(
-                        "Home",
-                        icon="home",
-                        on_click=lambda: self._navigate_to_database_path(
-                            dialog_state, Path.home()
-                        ),
-                    ).props("dense outline size=sm")
-
-                    ui.button(
-                        "Desktop",
-                        icon="desktop_windows",
-                        on_click=lambda: self._navigate_to_database_path(
-                            dialog_state, Path.home() / "Desktop"
-                        ),
-                    ).props("dense outline size=sm")
-
-                    ui.button(
-                        "Downloads",
-                        icon="download",
-                        on_click=lambda: self._navigate_to_database_path(
-                            dialog_state, Path.home() / "Downloads"
-                        ),
-                    ).props("dense outline size=sm")
-
-                    ui.button(
-                        "Documents",
-                        icon="description",
-                        on_click=lambda: self._navigate_to_database_path(
-                            dialog_state, Path.home() / "Documents"
-                        ),
-                    ).props("dense outline size=sm")
-
-                # File listing area
-                with ui.scroll_area().classes(
-                    "w-full min-h-0 flex-1 border border-theme-default rounded-lg p-2 bg-theme-base"
-                ):
-                    dialog_state["file_list"] = ui.column().classes("w-full gap-1")
-
-                # Selected file display
-                with ui.row().classes("w-full items-center shrink-0"):
-                    ui.label("Selected:").classes("text-sm font-medium")
-                    dialog_state["selected_label"] = ui.label("None").classes(
-                        "text-sm secondary-text"
-                    )
-
-                # New file name input (for SQL databases)
-                if file_type == "sql":
-                    with ui.row().classes("w-full items-center shrink-0"):
-                        ui.label("Or create new:").classes("text-sm font-medium")
-                        dialog_state["new_filename_input"] = ui.input(
-                            value=default_filename,
-                            placeholder="Enter new database filename...",
-                        ).classes("flex-1")
-
-                # Dialog buttons
-                with ui.row().classes("w-full justify-end gap-2 mt-4 shrink-0"):
-                    ui.button("Cancel", on_click=dialog.close).classes("btn-cancel")
-
-                    select_button = ui.button(
-                        "Select File",
-                        icon="check",
-                        on_click=lambda: self._select_database_file_from_dialog(
-                            dialog_state, dialog
-                        ),
-                    ).classes("btn-primary")
-                    select_button.enabled = False
-                    dialog_state["select_button"] = select_button
-
-        # Initial file listing
-        self._update_database_file_listing(dialog_state)
-
-        dialog.open()
-
-    def _navigate_to_database_path(self, dialog_state, path=None):
-        """Navigate to a specific path in the database file browser"""
-        try:
-            from pathlib import Path
-
-            if path is None:
-                path = dialog_state["path_input"].value
-
-            path = Path(path).expanduser().resolve()
-
-            if path.exists():
-                dialog_state["current_path"] = str(path)
-                dialog_state["path_input"].value = str(path)
-                dialog_state["selected_file"] = None
-                dialog_state["selected_label"].set_text("None")
-                dialog_state["select_button"].enabled = False
-
-                self._update_database_file_listing(dialog_state)
-            else:
-                notify(f"Path does not exist: {path}", type="warning")
-
-        except Exception as e:
-            logger.error(f"Error navigating to database path: {str(e)}")
-            notify(f"Error navigating to path: {str(e)}", type="negative")
-
-    def _update_database_file_listing(self, dialog_state):
-        """Update the file listing in the database browser"""
-        try:
-            from pathlib import Path
-
-            current_path = Path(dialog_state["current_path"])
-            extension_filter = dialog_state["extension_filter"]
-
-            # Clear existing file list
-            dialog_state["file_list"].clear()
-
-            # Add parent directory option (if not at root)
-            if current_path.parent != current_path:
-                with dialog_state["file_list"]:
-                    with ui.row().classes(
-                        "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
-                    ):
-                        ui.icon("arrow_upward").classes("text-blue-400")
-                        # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
-                        parent_label = ui.label(".. (Parent Directory)").on(
-                            "click",
-                            lambda: self._navigate_to_database_path(
-                                dialog_state, current_path.parent
-                            ),
-                        )
-                        parent_label.classes("text-blue-400")
-
-            # List directories and files
-            try:
-                items = sorted(
-                    current_path.iterdir(), key=lambda x: (x.is_file(), x.name.lower())
-                )
-
-                for item in items:
-                    if item.name.startswith("."):
-                        continue  # Skip hidden files
-
-                    with dialog_state["file_list"]:
-                        # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
-                        row = ui.row()
-                        if item.is_dir():
-                            row.on(
-                                "click",
-                                lambda path=item: self._navigate_to_database_path(
-                                    dialog_state, path
-                                ),
-                            )
-                        elif item.suffix.lower() == extension_filter:
-                            row.on(
-                                "click",
-                                lambda path=item: self._select_database_file_in_dialog(
-                                    dialog_state, path
-                                ),
-                            )
-                        row.classes(
-                            "w-full items-center gap-2 p-2 hover-theme-surface rounded cursor-pointer"
-                        )
-                        with row:
-                            if item.is_dir():
-                                ui.icon("folder").classes("text-yellow-400")
-                                ui.label(item.name)
-                            else:
-                                # Show different icons for different file types
-                                if item.suffix.lower() == extension_filter:
-                                    if extension_filter == ".db":
-                                        ui.icon("storage").classes("text-green-400")
-                                    else:  # .json
-                                        ui.icon("code").classes("text-green-400")
-                                    ui.label(item.name).classes("text-green-400")
-                                else:
-                                    ui.icon("description").classes("secondary-text")
-                                    ui.label(item.name).classes("secondary-text")
-
-            except PermissionError:
-                with dialog_state["file_list"]:
-                    ui.label(
-                        "Permission denied - cannot access this directory"
-                    ).classes("text-red-400 p-2")
-
-        except Exception as e:
-            logger.error(f"Error updating database file listing: {str(e)}")
-            with dialog_state["file_list"]:
-                ui.label(f"Error loading directory: {str(e)}").classes(
-                    "text-red-400 p-2"
-                )
-
-    def _select_database_file_in_dialog(self, dialog_state, file_path):
-        """Select a file in the database dialog"""
-        try:
-            dialog_state["selected_file"] = str(file_path)
-            dialog_state["selected_label"].set_text(file_path.name)
-            dialog_state["select_button"].enabled = True
-
-            # Update the path input to show the full file path
-            dialog_state["path_input"].value = str(file_path)
-
-        except Exception as e:
-            logger.error(f"Error selecting database file: {str(e)}")
-
-    def _select_database_file_from_dialog(self, dialog_state, dialog):
-        """Handle the final file selection from the database dialog"""
-        try:
-            from pathlib import Path
-
-            selected_path = None
-
-            # Check for manual path entry first
-            manual_path = dialog_state["path_input"].value
-            if manual_path and Path(manual_path).exists():
-                if Path(manual_path).is_file():
-                    selected_path = manual_path
-                elif Path(manual_path).is_dir() and dialog_state["file_type"] == "sql":
-                    # For SQL, allow selecting directory + filename
-                    if "new_filename_input" in dialog_state:
-                        filename = dialog_state["new_filename_input"].value
-                        if filename:
-                            selected_path = str(Path(manual_path) / filename)
-
-            # Fall back to selected file
-            if not selected_path and dialog_state["selected_file"]:
-                selected_path = dialog_state["selected_file"]
-
-            # For SQL databases, allow creating new files
-            if (
-                not selected_path
-                and dialog_state["file_type"] == "sql"
-                and "new_filename_input" in dialog_state
-            ):
-                filename = dialog_state["new_filename_input"].value
-                if filename:
-                    current_dir = Path(dialog_state["current_path"])
-                    selected_path = str(current_dir / filename)
-
-            if not selected_path:
-                notify("Please select a file or enter a path", type="warning")
+        def apply(result) -> None:
+            selected_path = str(result.path)
+            if field_key not in self.ui_elements:
                 return
-
-            # Validate file extension
-            extension_filter = dialog_state["extension_filter"]
-            if not selected_path.lower().endswith(extension_filter):
-                notify(f"Please select a {extension_filter} file", type="warning")
-                return
-
-            # Update the main input field
-            field_key = dialog_state["field_key"]
-            if field_key in self.ui_elements:
-                self.ui_elements[field_key].value = selected_path
-
-                # Trigger the change event
-                event_obj = type("Event", (), {"value": selected_path})()
-                if dialog_state["file_type"] == "firebase":
-                    self.on_firebase_config_change(
-                        "firebase_service_account_path", event_obj
-                    )
-                else:
-                    self.on_field_change(
-                        "database_settings", field_key.split(".")[1], event_obj
-                    )
-
-                logger.info(
-                    f"User selected database file ({dialog_state['file_type']}): {selected_path}"
-                )
-                notify(f"Selected file: {Path(selected_path).name}", type="positive")
-
-                dialog.close()
+            self.ui_elements[field_key].value = selected_path
+            event_obj = type("Event", (), {"value": selected_path})()
+            if file_type == "firebase":
+                self.on_firebase_config_change("firebase_service_account_path", event_obj)
             else:
-                notify("Error updating file path", type="negative")
+                self.on_field_change("database_settings", field_key.split(".")[1], event_obj)
+            logger.info(f"User selected database file ({file_type}): {selected_path}")
+            notify(f"Selected file: {os.path.basename(selected_path)}", type="positive")
 
-        except Exception as e:
-            logger.error(f"Error in database file selection: {str(e)}")
-            notify(f"Error selecting file: {str(e)}", type="negative")
+        open_file_picker(
+            title=title, subtitle=subtitle, extensions=extensions, on_pick=apply,
+            scope="system", icon=icon, start=current or get_working_directory(),
+        )
 
     def test_spotify_connection(self):
         """Handle the Test Connection button click for Spotify"""

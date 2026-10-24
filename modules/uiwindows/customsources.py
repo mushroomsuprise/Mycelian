@@ -2585,6 +2585,50 @@ def handle_number_change(e, element_id, form_data):
     update_form_data(form_data, element_id, e.value)
 
 
+def _asset_browse_spec(element: dict, value) -> Optional[Tuple[str, Tuple[str, ...]]]:
+    """(kind, extensions) when a template field holds an /assets/ file path, else None."""
+    from .file_picker import AUDIO_EXTS, IMAGE_EXTS, VIDEO_EXTS
+
+    element_type = element.get("type", "text")
+    current = str(value or "")
+    default = str(element.get("value") or "")
+    if element_type != "file" and not (current.startswith("/assets/") or default.startswith("/assets/")):
+        return None
+    sample = current or default
+    ext = os.path.splitext(sample.split("?", 1)[0])[1].lower()
+    accept = str(element.get("accept") or "").lower()
+    if ext in IMAGE_EXTS or accept.startswith("image"):
+        return "image", IMAGE_EXTS
+    if ext in AUDIO_EXTS or accept.startswith("audio"):
+        return "audio", AUDIO_EXTS
+    if ext in VIDEO_EXTS or accept.startswith("video"):
+        return "video", VIDEO_EXTS
+    return "media", IMAGE_EXTS + AUDIO_EXTS + VIDEO_EXTS
+
+
+def _attach_asset_browse(input_element, label: str, kind: str, extensions: Tuple[str, ...]) -> None:
+    """Folder button after the field that opens the shared picker and fills in the /assets/ path."""
+    from .file_picker import open_file_picker
+
+    nouns = {"image": "an image", "audio": "a sound", "video": "a video", "media": "a file"}
+
+    def pick() -> None:
+        def apply(result) -> None:
+            input_element.value = result.web_path
+
+        open_file_picker(
+            title=f"Choose {nouns.get(kind, 'a file')} for {label}" if label else f"Choose {nouns.get(kind, 'a file')}",
+            subtitle=", ".join(e[1:].upper() for e in extensions[:8]) + " from your assets folder",
+            extensions=extensions,
+            on_pick=apply,
+            kind=kind,
+            start=str(input_element.value or "") or None,
+        )
+
+    with input_element.add_slot("after"):
+        ui.button(icon="folder_open", on_click=pick).props("flat round dense").tooltip("Browse the assets folder")
+
+
 def render_form_element(
     element, form_data, config_name="", container=None, search_term=""
 ):
@@ -2620,7 +2664,7 @@ def render_form_element(
                 )
 
             tip = element_description or element_label or "Template setting"
-            if element_type == "text":
+            if element_type in ("text", "file"):
                 input_element = form_input(
                     tooltip=tip,
                     value=element_value,
@@ -2629,6 +2673,9 @@ def render_form_element(
                     ),
                 )
                 element_ui_map[element_id] = input_element
+                browse = _asset_browse_spec(element, element_value)
+                if browse is not None:
+                    _attach_asset_browse(input_element, element_label, *browse)
             elif element_type == "textarea":
                 input_element = form_textarea(
                     tooltip=tip,
