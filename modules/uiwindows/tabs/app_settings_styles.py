@@ -112,7 +112,7 @@ body:not(.body--dark) .aps :is(p, span, div, label):not([class]) { color: inheri
 .aps-mx td { padding: 1px 4px; border-top: 1px solid var(--color-border-subtle); text-align: center; }
 .aps-mx td:first-child { text-align: left; }
 .aps-mx .mod { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--color-text-primary); white-space: nowrap; }
-.aps-mx td:first-child { white-space: nowrap; padding-right: 10px; }
+.aps-mx th:first-child, .aps-mx td:first-child { width: 200px; min-width: 200px; white-space: nowrap; padding-right: 10px; }
 .aps-mx .mod .aps-icon { font-size: 16px; color: var(--color-text-muted); }
 .aps-mx tr.is-muted .mod { opacity: .55; }
 .aps-mx .q-checkbox__inner { font-size: 30px; }
