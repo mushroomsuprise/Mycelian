@@ -2200,6 +2200,31 @@ def _suppress_and_select(config_select, config_name) -> None:
         _suppress_config_change = False
 
 
+def open_source_settings(config_name: str) -> None:
+    """Switch to the Source Settings tab and select ``config_name`` (e.g. from the Giveaways tab).
+
+    The tab is built lazily, so the selection retries briefly until its dropdown exists.
+    Selecting goes through the normal change handler, so unsaved edits still prompt.
+    """
+    from ..help_system.contextual_help import navigate_to_main_tab
+
+    navigate_to_main_tab("Source Settings")
+    done = {"value": False}
+
+    def select() -> None:
+        if done["value"]:
+            return
+        sel = _custom_sources_ctx.get("config_select")
+        if sel is None or getattr(sel, "is_deleted", False) or config_name not in (sel.options or []):
+            return
+        done["value"] = True
+        if sel.value != config_name:
+            sel.value = config_name
+
+    for delay in (0.15, 0.6, 1.5, 3.0):
+        layout_schedule(delay, select, once=True)
+
+
 def on_config_selected(e, config_parser, config_container, config_select=None):
     """Handle config selection"""
     global _suppress_config_change

@@ -11,10 +11,17 @@ import logging
 import random
 import re
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def format_winners_message(template: str, winners: List[str]) -> str:
+    """The winner announcement: {winners}/{winner} become the names, {count} how many."""
+    names = ", ".join(winners)
+    return (template or "").replace("{winners}", names).replace("{winner}", names).replace("{count}", str(len(winners)))
 
 DATA_PATH = "BotData/Giveaway"
 
@@ -36,6 +43,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 class GiveawayEntry:
     user_id: str
     display_name: str
+    entered_at: float = field(default_factory=time.time)
 
 
 _giveaway_manager: Optional["GiveawayManager"] = None
@@ -62,6 +70,8 @@ class GiveawayManager:
     def __init__(self):
         self._lock = threading.RLock()
         self._accepting_entries = False
+        self._started_at = 0.0
+        self._last_draw: Dict[str, Any] = {}
         self._pool: List[GiveawayEntry] = []
         self._config: Dict[str, Any] = dict(DEFAULT_CONFIG)
         self._last_error: str = ""
@@ -242,6 +252,69 @@ class GiveawayManager:
         with self._lock:
             return [e.display_name for e in reversed(self._pool)]
 
+    def get_pool_details(self) -> List[Dict[str, Any]]:
+        """Entrants newest first: name, user id and when they entered."""
+        with self._lock:
+            return [{"name": e.display_name, "user_id": e.user_id, "entered_at": e.entered_at} for e in reversed(self._pool)]
+
+    def get_status(self) -> Dict[str, Any]:
+        """Everything the Giveaways tab shows in one snapshot."""
+        with self._lock:
+            return {
+                "accepting": bool(self._accepting_entries and self._config.get("keyword", "").strip()),
+                "keyword": self._config.get("keyword", "") or "",
+                "pool_size": len(self._pool),
+                "started_at": self._started_at,
+                "last_draw": dict(self._last_draw),
+                "last_error": self._last_error,
+            }
+
+    def remove_entry(self, user_id: str, *, block: bool = False) -> bool:
+        """Take one viewer out of the pool (optionally blocking them from entering again)."""
+        with self._lock:
+            entry = next((e for e in self._pool if e.user_id == user_id), None)
+            if entry is None:
+                return False
+            self._pool = [e for e in self._pool if e.user_id != user_id]
+            pending = None
+            if block:
+                blocked = list(self._config.get("blocked_usernames") or [])
+                name = entry.display_name.lower().strip()
+                if name and name not in blocked:
+                    blocked.append(name)
+                    self._config["blocked_usernames"] = blocked
+                    self._normalize_config_in_place(self._config)
+                    pending = self._snapshot_config_locked()
+        if pending is not None:
+            self._save_config(pending)
+        self._emit_event("giveaway_sync", self.get_overlay_state())
+        return True
+
+    def announce_last_draw(self) -> Tuple[bool, str]:
+        """Send the last draw's announcement again (chat and, if enabled, the banner)."""
+        with self._lock:
+            winners = list(self._last_draw.get("winners") or [])
+            template = self._config.get("winning_message_template") or ""
+            banner = bool(self._config.get("announce_winners_as_banner"))
+        if not winners:
+            return False, "No winners to announce yet."
+        text = format_winners_message(template, winners)
+        ok = False
+        try:
+            from .chatbot import send_chatbot_announcement
+
+            ok = bool(send_chatbot_announcement(text, "primary"))
+        except Exception as e:
+            logger.error("Giveaway re-announcement error: %s", e, exc_info=True)
+        if banner:
+            try:
+                from .chat_banner import emit_chat_banner
+
+                emit_chat_banner(text, source="giveaway")
+            except Exception as banner_err:
+                logger.error("Giveaway winner banner failed: %s", banner_err, exc_info=True)
+        return (True, "Announced again.") if ok else (False, "Couldn't send the announcement (check the chatbot connection).")
+
     def get_overlay_state(self) -> Dict[str, Any]:
         """Snapshot for overlay reconnect (keyword, accepting, pool)."""
         with self._lock:
@@ -280,6 +353,8 @@ class GiveawayManager:
             if not self._config.get("keyword", "").strip():
                 return False, "Set an entry keyword before starting."
             self._accepting_entries = True
+            if not self._pool:
+                self._started_at = time.time()
             keyword = self._config["keyword"]
         self._emit_event("giveaway_start", {"keyword": keyword})
         return True, ""
@@ -294,6 +369,8 @@ class GiveawayManager:
             self._pool.clear()
             self._config["keyword"] = ""
             self._accepting_entries = False
+            self._started_at = 0.0
+            self._last_draw = {}
             self._normalize_config_in_place(self._config)
             pending = self._snapshot_config_locked()
         self._save_config(pending)
@@ -402,8 +479,9 @@ class GiveawayManager:
             pool_size = len(self._pool)
             pool_entries = [e.display_name for e in reversed(self._pool)]
 
-            winners_text = ", ".join(winners)
-            text = template.replace("{winners}", winners_text).replace("{winner}", winners_text)
+            text = format_winners_message(template, winners)
+            self._last_draw = {"winners": list(winners), "at": time.time(), "announced": True,
+                               "banner": bool(self._config.get("announce_winners_as_banner"))}
 
         announce_ok = True
         try:
@@ -414,6 +492,7 @@ class GiveawayManager:
                 announce_ok = False
                 with self._lock:
                     self._last_error = "Failed to send announcement (check chatbot connection)."
+                    self._last_draw["announced"] = False
                 logger.warning("Giveaway announcement failed; overlay winners still emitted")
         except Exception as e:
             announce_ok = False
@@ -430,6 +509,7 @@ class GiveawayManager:
                 pass
             with self._lock:
                 self._last_error = str(e)
+                self._last_draw["announced"] = False
 
         if bool(self._config.get("announce_winners_as_banner")):
             try:

@@ -245,15 +245,15 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Chatbot Giveaways',
         category=HelpCategory.CHATBOT,
         summary='Keyword-based giveaways, draws, and winner announcements',
-        keywords=['giveaway', 'giveaways', 'contest', 'winner', 'raffle', 'chatbot', 'announcement'],
+        keywords=['giveaway', 'giveaways', 'contest', 'winner', 'raffle', 'chatbot', 'announcement', 'entrants', 'draw', 'keyword', 'blocked', 'overlay'],
         related_topics=['chatbot_commands', 'chatbot_variables', 'integrations_twitch'],
     ),
     'chatbot_polls': HelpTopic(
         id='chatbot_polls',
         title='Chatbot Polls',
         category=HelpCategory.CHATBOT,
-        summary='Category polls driven by #keywords in Twitch and YouTube chat',
-        keywords=['poll', 'polls', 'vote', 'votes', 'keyword', 'chatbot', 'banner'],
+        summary='Overlay polls driven by #keywords in Twitch and YouTube chat',
+        keywords=['poll', 'polls', 'vote', 'votes', 'keyword', 'chatbot', 'banner', 'options', 'timer', 'overlay', 'startpoll'],
         related_topics=['chatbot_giveaways', 'chatbot_commands', 'spore_studio_widgets'],
     ),
     'chatbot_variables': HelpTopic(

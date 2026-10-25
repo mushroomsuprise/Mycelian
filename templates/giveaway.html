@@ -525,6 +525,22 @@
             updateEntryCount(data.pool_size || 0);
         });
 
+        // State replay on connect/refresh, and list updates (e.g. an entrant removed in Mycelian).
+        socket.on('giveaway_sync', function(data) {
+            data = data || {};
+            var entries = data.pool_entries || [];
+            if (!data.keyword && !entries.length) { return; }
+            setKeyword(data.keyword || '');
+            rebuildEntryList(entries);
+            updateEntryCount(data.pool_size || entries.length);
+            if (data.accepting) {
+                elClosedMessage.classList.add('hidden');
+            } else if (settings.showClosedMessage) {
+                elClosedMessage.classList.remove('hidden');
+            }
+            showContainer();
+        });
+
         socket.on('giveaway_clear', function() {
             hideContainer();
             setTimeout(function() {

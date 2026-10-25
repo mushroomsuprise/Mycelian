@@ -239,6 +239,51 @@ def list_poll_template_names() -> List[str]:
     return names
 
 
+def format_banner_message(template_text: str, winners: List[Dict[str, Any]]) -> str:
+    """The winner message: {option}/{options} names, {keyword} keywords, {votes} the winning count."""
+    if not winners:
+        return str(template_text or DEFAULT_BANNER_MESSAGE).strip()
+    names = ", ".join(str(item.get("name") or "") for item in winners)
+    keywords = ", ".join(str(item.get("keyword") or "") for item in winners)
+    votes = str(int(winners[0].get("votes") or 0))
+    text = str(template_text or DEFAULT_BANNER_MESSAGE)
+    text = text.replace("{options}", names)
+    text = text.replace("{option}", names if len(winners) != 1 else str(winners[0].get("name") or ""))
+    text = text.replace("{keyword}", keywords if len(winners) != 1 else str(winners[0].get("keyword") or ""))
+    text = text.replace("{votes}", votes)
+    return text.strip()
+
+
+_WIDGET_STYLE_DEFAULTS = {
+    "background_color": "rgba(15,23,42,0.85)",
+    "bar_color": "#a855f7",
+    "track_color": "rgba(255,255,255,0.15)",
+    "winner_color": "#facc15",
+    "color": "#ffffff",
+    "show_counts": True,
+    "show_percent": True,
+    "winner_mode": "highlight",
+}
+
+
+def poll_widget_info(template: str) -> Dict[str, Any]:
+    """The template's first Poll widget: its id, how many there are, and its colours/options."""
+    try:
+        from .spore_studio.template_parser_back import load_sidecar
+
+        widgets = _poll_elements(load_sidecar(str(template or "")))
+    except Exception as exc:
+        logger.debug("poll widget info for %s failed: %s", template, exc)
+        widgets = []
+    props = dict(_WIDGET_STYLE_DEFAULTS)
+    first = widgets[0] if widgets else {}
+    for key in props:
+        value = (first.get("props") or {}).get(key)
+        if value not in (None, ""):
+            props[key] = value
+    return {"id": str(first.get("id") or ""), "count": len(widgets), "style": props}
+
+
 _poll_manager: Optional["PollManager"] = None
 _poll_lock = threading.Lock()
 
@@ -623,7 +668,7 @@ class PollManager:
     def _categories_locked(self, template: str) -> Tuple[bool, str]:
         runtime = (self._templates.get(template) or {}).get("runtime") or {}
         if runtime.get("status") == "open":
-            return False, "Stop the poll before changing categories."
+            return False, "End the poll before changing its options."
         return True, ""
 
     def add_category(self, template: str, name: str = "") -> Tuple[bool, str]:
@@ -670,10 +715,10 @@ class PollManager:
                     target = cat
                     break
             if target is None:
-                return False, "Category not found."
+                return False, "Option not found."
             proposed_name = target["name"] if name is None else str(name or "").strip()
             if not proposed_name:
-                return False, "Category name cannot be empty."
+                return False, "Option name cannot be empty."
             keyword_source = target["keyword"] if keyword is None else keyword
             proposed_keyword = normalize_keyword(keyword_source, proposed_name)
             if not proposed_keyword:
@@ -681,7 +726,7 @@ class PollManager:
             folded = proposed_keyword.casefold()
             for cat in config["categories"]:
                 if cat["id"] != category_id and cat["keyword"].casefold() == folded:
-                    return False, f"{proposed_keyword} is already used by another category."
+                    return False, f"{proposed_keyword} is already used by another option."
             target["name"] = proposed_name
             target["keyword"] = proposed_keyword
             self._persist()
@@ -699,7 +744,7 @@ class PollManager:
             before = len(config["categories"])
             config["categories"] = [c for c in config["categories"] if c["id"] != category_id]
             if len(config["categories"]) == before:
-                return False, "Category not found."
+                return False, "Option not found."
             self._persist()
         return True, ""
 
@@ -714,7 +759,7 @@ class PollManager:
             cats = self._templates[template]["config"]["categories"]
             index = next((i for i, cat in enumerate(cats) if cat["id"] == category_id), -1)
             if index < 0:
-                return False, "Category not found."
+                return False, "Option not found."
             target = index + int(delta)
             if target < 0 or target >= len(cats):
                 return True, ""
@@ -736,11 +781,11 @@ class PollManager:
             entry = self._templates[template]
             runtime = entry.get("runtime") or _idle_runtime()
             if runtime.get("status") == "open":
-                return False, "Stop the poll before editing votes."
+                return False, "End the poll before editing votes."
             config = entry["config"]
             target = next((cat for cat in config.get("categories") or [] if cat["id"] == category_id), None)
             if target is None:
-                return False, "Category not found."
+                return False, "Option not found."
             target["votes"] = count
             votes = runtime.setdefault("votes", {})
             votes[category_id] = count
@@ -761,11 +806,11 @@ class PollManager:
             config = self._templates[template]["config"]
             categories = config.get("categories") or []
             if len(categories) < 2:
-                return False, "Add at least two categories before starting."
+                return False, "Add at least two options before starting."
             seen = set()
             for cat in categories:
                 if not cat.get("keyword"):
-                    return False, f"{cat.get('name') or 'A category'} needs a keyword."
+                    return False, f"{cat.get('name') or 'An option'} needs a keyword."
                 folded = cat["keyword"].casefold()
                 if folded in seen:
                     return False, f"{cat['keyword']} is used more than once."
@@ -1044,15 +1089,7 @@ class PollManager:
                 logger.error("Poll winner chat failed: %s", exc, exc_info=True)
 
     def _banner_text(self, template_text: str, winners: List[Dict[str, Any]]) -> str:
-        names = ", ".join(str(item.get("name") or "") for item in winners)
-        keywords = ", ".join(str(item.get("keyword") or "") for item in winners)
-        votes = str(int(winners[0].get("votes") or 0))
-        text = str(template_text or DEFAULT_BANNER_MESSAGE)
-        text = text.replace("{options}", names)
-        text = text.replace("{option}", names if len(winners) != 1 else str(winners[0].get("name") or ""))
-        text = text.replace("{keyword}", keywords if len(winners) != 1 else str(winners[0].get("keyword") or ""))
-        text = text.replace("{votes}", votes)
-        return text.strip()
+        return format_banner_message(template_text, winners)
 
     def _record_stats(self, snapshot: Dict[str, Any]) -> None:
         if not self._persist_enabled:
