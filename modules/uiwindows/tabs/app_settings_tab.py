@@ -307,6 +307,7 @@ class AppSettingsTab:
         with panel:
             with ui.element("div").classes("aps-nhead"):
                 ui.html('<span class="aps-icon">notifications</span>Notifications', sanitize=False).classes("aps-sec-head")
+                help_button(topic_id="notifications", tooltip="How notifications work", size="sm")
                 ui.element("div").classes("aps-spacer")
                 outline_button("Send a test", self._send_test_notifications, icon="science").props("dense").classes("px-3").tooltip(
                     "Shows one of each kind with the saved settings")

@@ -55,6 +55,8 @@ body:not(.body--dark) .aps :is(p, span, div, label):not([class]) { color: inheri
 .aps-help .aps-icon { font-size: 14px; }
 .aps-label .q-btn { color: var(--color-text-muted); min-height: 0; padding: 0; }
 .aps-label .q-btn .q-icon { font-size: 15px; }
+.aps-nhead .help-inline-icon { color: var(--color-text-muted) !important; min-height: 0; padding: 0 !important; margin-left: -4px; }
+.aps-nhead .help-inline-icon .q-icon { font-size: 15px; color: var(--color-text-muted) !important; }
 .aps-tag { font-size: .62rem; font-weight: 600; padding: 1px 6px; border-radius: 999px; white-space: nowrap; color: var(--color-text-secondary);
     background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); }
 .aps-ctrl { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }

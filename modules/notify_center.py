@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 
 NC_CSS = """
 .ncx-card { width: min(100vw, 430px); max-width: 100vw; height: 100%; padding: 0 !important; gap: 0 !important; display: flex; flex-direction: column;
-  border-radius: 0 !important; border-left: 1px solid var(--color-border-default); background: var(--color-bg-surface); }
+  border-radius: 0 !important; border-left: 1px solid var(--color-border-default); background: var(--color-bg-surface);
+  align-items: stretch !important; }
 .ncx-head { display: flex; align-items: center; gap: 8px; padding: 12px 10px 10px 16px; }
 .ncx-title { font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary); }
 .ncx-pill { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: .68rem; font-weight: 700;
@@ -325,6 +326,9 @@ def create_notification_tray_button() -> None:
             S.new_pill = ui.label("").classes("ncx-pill")
             ui.element("div").classes("ncx-spacer")
             ui.label("Mark all read").classes("ncx-link").on("click", lambda: mark_all_read())
+            from .help_system.contextual_help import help_button
+
+            help_button(topic_id="notifications", tooltip="How notifications work", size="sm")
             ui.button(icon="delete_sweep", on_click=lambda: ne.clear_history()).props("flat round dense").tooltip("Clear all")
             ui.button(icon="close", on_click=close).props("flat round dense").tooltip("Close")
         S.chips = ui.element("div").classes("ncx-chips")

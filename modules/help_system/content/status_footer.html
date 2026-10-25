@@ -5,6 +5,8 @@
   <span>{{icon:tune}} <span class="hx-path"><span>Settings</span><span>App Settings</span></span></span>
 </div>
 
+<div class="hx-callout hx-note"><p>The footer shows every connection change as it happens. Pop-ups are only shown when a service settles into a problem or recovers from one, so routine connecting and reconnecting appear here and nowhere else. See <a href="help:notifications">Notifications</a>.</p></div>
+
 <h2>What the footer looks like</h2>
 
 <p>Each badge has the service icon, its name, a colored dot and a short status word. Switch between the two display modes below.</p>
@@ -13,7 +15,7 @@
   <div class="hm" data-tabs>
     <div class="hm-subtabs">
       <span class="hm-subtab is-active" data-tab="full">Full badges</span>
-      <span class="hm-subtab" data-tab="min">Minimal status badges</span>
+      <span class="hm-subtab" data-tab="min">Minimal badges</span>
     </div>
     <div class="hm-frame">
       <div data-panel="full">
@@ -44,7 +46,7 @@
 
 <ul>
   <li><strong>Full badges</strong> (the default) show the icon, name, dot and status word.</li>
-  <li><strong>Minimal status badges</strong> show only the service icon with a colored ring. The ring uses the same color as the full badge. Hover the icon to read the status word; in this mode that hover text is the only label.</li>
+  <li><strong>Minimal badges</strong> show only the service icon with a colored ring. The ring uses the same color as the full badge. Hover the icon to read the status word; in this mode that hover text is the only label.</li>
 </ul>
 
 <div class="hx-callout hx-note"><p><strong>Overlay Server</strong> has no icon, so it does not show up in minimal mode. Switch back to full badges to see it.</p></div>
@@ -95,11 +97,10 @@
 <figure class="hx-figure">
   <div class="hm">
     <div class="hm-panel">
-      <div class="hm-panel-title">General</div>
+      <div class="hm-row"><span class="hx-mi">signal_cellular_alt</span><span class="hm-panel-title">Status bar</span></div>
       <div class="hm-col hm-tight">
-        <span class="hm-switch is-on"><i></i>Notifications</span>
-        <span class="hm-row"><span class="hm-switch is-on"><i></i>Show connection status footer</span><span class="hx-mi hm-muted">help_outline</span><span class="hm-marker" data-n="1"></span></span>
-        <span class="hm-row"><span class="hm-switch"><i></i>Minimal status badges</span><span class="hm-marker" data-n="2"></span></span>
+        <div class="hm-row hm-between"><span class="hm-row"><span class="hm-sm">Connection status bar</span><span class="hx-mi hm-muted">help_outline</span></span><span class="hm-row"><span class="hm-switch is-on"><i></i></span><span class="hm-marker" data-n="1"></span></span></div>
+        <div class="hm-row hm-between"><span class="hm-row"><span class="hm-sm">Minimal badges</span><span class="hx-mi hm-muted">help_outline</span></span><span class="hm-row"><span class="hm-switch"><i></i></span><span class="hm-marker" data-n="2"></span></span></div>
       </div>
     </div>
     <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span><span class="hm-marker" data-n="3"></span></div>
@@ -108,8 +109,8 @@
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1"><strong>Show connection status footer</strong> shows or hides the whole bar. The <strong>?</strong> beside it opens this page.</li>
-  <li data-n="2"><strong>Minimal status badges</strong> switches to icon-and-ring mode.</li>
+  <li data-n="1"><strong>Connection status bar</strong> shows or hides the whole bar. The <strong>?</strong> beside it opens this page.</li>
+  <li data-n="2"><strong>Minimal badges</strong> switches to icon-and-ring mode. Hover its <strong>?</strong> for a short reminder.</li>
   <li data-n="3">Changes take effect when you click <strong>Save</strong>.</li>
 </ol>
 
@@ -173,7 +174,7 @@
 
 <details class="hx-details">
   <summary>Everything turned red at once</summary>
-  <p>Check the Internet badge first. When it is red, online services show <strong>No Internet</strong> or <strong>Unreachable</strong> until the network comes back. See <a href="help:troubleshooting_connections">Connection Problems</a>.</p>
+  <p>Check the Internet badge first. When it is red, online services show <strong>No Internet</strong> or <strong>Unreachable</strong> until the network comes back. You get a single <em>You're offline</em> pop-up for this, not one per service. See <a href="help:troubleshooting_connections">Connection Problems</a>.</p>
 </details>
 
 <div class="hx-cards">

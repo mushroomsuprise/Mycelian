@@ -66,7 +66,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         category=HelpCategory.GETTING_STARTED,
         summary='Learn the basics of Mycelian streaming toolkit',
         keywords=['start', 'begin', 'intro', 'overview', 'basics'],
-        related_topics=['twitch_setup', 'first_alert_setup', 'alerts_overview', 'templates_intro'],
+        related_topics=['twitch_setup', 'first_alert_setup', 'alerts_overview', 'templates_intro', 'notifications'],
     ),
     'first_alert_setup': HelpTopic(
         id='first_alert_setup',
@@ -488,7 +488,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         category=HelpCategory.SETTINGS,
         summary='Understanding and configuring Mycelian settings',
         keywords=['settings', 'configuration', 'preferences', 'setup', 'about', 'theme', 'database', 'backup'],
-        related_topics=['integrations_twitch', 'getting_started_intro', 'game_hooks', 'status_footer'],
+        related_topics=['integrations_twitch', 'getting_started_intro', 'game_hooks', 'status_footer', 'notifications'],
     ),
     'settings_statistics': HelpTopic(
         id='settings_statistics',
@@ -505,8 +505,18 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         category=HelpCategory.SETTINGS,
         summary='What the colored badges and icon rings on the bottom status bar mean',
         keywords=['status', 'footer', 'badge', 'color', 'minimal', 'ring', 'connected', 'disconnected'],
-        related_topics=['settings_overview', 'integrations_twitch', 'obs_websocket'],
+        related_topics=['settings_overview', 'integrations_twitch', 'obs_websocket', 'notifications'],
         ui_context='settings.status_footer',
+    ),
+    'notifications': HelpTopic(
+        id='notifications',
+        title='Notifications',
+        category=HelpCategory.SETTINGS,
+        summary='Pop-ups, the notification centre, and choosing what you see and how it looks',
+        keywords=['notification', 'notifications', 'pop-up', 'popup', 'toast', 'bell', 'notification centre', 'notification center',
+                  'mute', 'silence', 'desktop', 'dock', 'repeat', 'error', 'warning'],
+        related_topics=['settings_overview', 'status_footer', 'troubleshooting_connections', 'source_controls', 'obs_setup'],
+        ui_context='settings.notifications',
     ),
     'game_hooks': HelpTopic(
         id='game_hooks',
@@ -533,7 +543,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         category=HelpCategory.TROUBLESHOOTING,
         summary='Fixing connection problems with Twitch and other services',
         keywords=['connection', 'network', 'integration', 'websocket', 'api'],
-        related_topics=['integrations_twitch', 'twitch_setup', 'obs_websocket', 'connection_guides_overview', 'status_footer'],
+        related_topics=['integrations_twitch', 'twitch_setup', 'obs_websocket', 'connection_guides_overview', 'status_footer', 'notifications'],
     ),
     'troubleshooting_audio': HelpTopic(
         id='troubleshooting_audio',

@@ -333,3 +333,272 @@
 .help-doc .hm .hm-subtabs.hm-wrap .hm-subtab { flex: 0 0 auto; border-radius: 8px; border: 1px solid var(--color-border-subtle); }
 .help-doc .hm .hm-subtabs.hm-wrap .hm-subtab.is-active { border-color: var(--color-border-accent); margin-bottom: 0; padding-bottom: 0; }
 .help-doc .hm .hm-subtabs.hm-wrap + .hm-frame { margin-top: 6px; }
+
+/* ---- Pop-up notification, copy of assets/default_assets/mycelian_toast.js --
+   <div class="hm-gn-pop is-error">: hm-gn-pop-ico, -top (-lvl, -dot, -count),
+   -x, -title, -msg, -fix, -prog, -acts > -btn(.is-main), -bar. Style variants
+   st-chip st-minimal st-tinted st-glass (accent bar is the default).          */
+
+.help-doc .hm .hm-gn-pops { display: flex; flex-direction: column; gap: 10px; max-width: 392px; }
+.help-doc .hm .hm-gn-pop {
+    --c: var(--color-notify-info);
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 3px 11px;
+    max-width: 392px;
+    padding: 12px 8px 13px 14px;
+    border-radius: var(--notify-radius, 12px);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    box-shadow: 0 10px 26px var(--color-bg-overlay);
+    overflow: hidden;
+    line-height: 1.4;
+}
+.help-doc .hm .hm-gn-pop.is-error { --c: var(--color-notify-error); }
+.help-doc .hm .hm-gn-pop.is-warning { --c: var(--color-notify-warning); }
+.help-doc .hm .hm-gn-pop.is-success { --c: var(--color-notify-success); }
+.help-doc .hm .hm-gn-pop::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
+.help-doc .hm .hm-gn-pop-ico {
+    grid-row: span 4;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c);
+    background: color-mix(in srgb, var(--c) 15%, transparent);
+}
+.help-doc .hm .hm-gn-pop-ico .hx-mi { font-size: 19px; color: var(--c); }
+.help-doc .hm .hm-gn-pop-spin {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2.5px solid color-mix(in srgb, var(--c) 30%, transparent);
+    border-top-color: var(--c);
+    animation: hm-gn-spin 0.9s linear infinite;
+}
+@keyframes hm-gn-spin { to { transform: rotate(360deg); } }
+.help-doc .hm .hm-gn-pop-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+.help-doc .hm .hm-gn-pop-lvl { color: var(--c); }
+.help-doc .hm .hm-gn-pop-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--color-text-muted); flex: none; }
+.help-doc .hm .hm-gn-pop-count {
+    display: inline-flex;
+    align-items: center;
+    height: 17px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0;
+    color: var(--c);
+    background: color-mix(in srgb, var(--c) 16%, transparent);
+}
+.help-doc .hm .hm-gn-pop-x { grid-row: 1; grid-column: 3; color: var(--color-text-muted); }
+.help-doc .hm .hm-gn-pop-x .hx-mi { font-size: 16px; }
+.help-doc .hm .hm-gn-pop-title { grid-column: 2 / span 2; font-size: 0.9rem; font-weight: 650; line-height: 1.3; color: var(--color-text-primary); }
+.help-doc .hm .hm-gn-pop-msg { grid-column: 2 / span 2; font-size: 0.8rem; color: var(--color-text-secondary); }
+.help-doc .hm .hm-gn-pop-fix {
+    grid-column: 2 / span 2;
+    display: flex;
+    gap: 7px;
+    margin-top: 6px;
+    padding: 7px 9px;
+    border-radius: 8px;
+    font-size: 0.76rem;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm .hm-gn-pop-fix .hx-mi { font-size: 15px; color: var(--color-warning); }
+.help-doc .hm .hm-gn-pop-prog {
+    grid-column: 2 / span 2;
+    height: 5px;
+    margin-top: 8px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--c) 18%, transparent);
+    overflow: hidden;
+}
+.help-doc .hm .hm-gn-pop-prog > i { display: block; width: 35%; height: 100%; border-radius: 3px; background: var(--c); }
+.help-doc .hm .hm-gn-pop-acts { grid-column: 2 / span 2; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.help-doc .hm .hm-gn-pop-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 0.74rem;
+    font-weight: 650;
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border-default);
+}
+.help-doc .hm .hm-gn-pop-btn .hx-mi { font-size: 15px; }
+.help-doc .hm .hm-gn-pop-btn.is-main {
+    color: var(--color-text-primary);
+    border-color: var(--color-border-accent);
+    background: var(--color-primary-light);
+}
+.help-doc .hm .hm-gn-pop-bar { position: absolute; left: 0; bottom: 0; height: 2px; width: 60%; background: var(--c); opacity: 0.85; }
+.help-doc .hm .hm-gn-pop.st-chip::before { display: none; }
+.help-doc .hm .hm-gn-pop.st-minimal::before { display: none; }
+.help-doc .hm .hm-gn-pop.st-minimal .hm-gn-pop-ico { width: 10px; height: 10px; margin-top: 4px; grid-row: span 1; background: var(--c); }
+.help-doc .hm .hm-gn-pop.st-minimal .hm-gn-pop-ico > * { display: none; }
+.help-doc .hm .hm-gn-pop.st-tinted::before { display: none; }
+.help-doc .hm .hm-gn-pop.st-tinted {
+    background: color-mix(in srgb, var(--c) 18%, var(--color-bg-surface));
+    border-color: color-mix(in srgb, var(--c) 40%, var(--color-border-default));
+}
+.help-doc .hm .hm-gn-pop.st-tinted .hm-gn-pop-ico { background: var(--c); }
+.help-doc .hm .hm-gn-pop.st-tinted .hm-gn-pop-ico .hx-mi { color: #fff; }
+.help-doc .hm .hm-gn-pop.st-glass::before { display: none; }
+.help-doc .hm .hm-gn-pop.st-glass {
+    background: color-mix(in srgb, var(--color-bg-surface) 72%, transparent);
+    border-color: color-mix(in srgb, var(--c) 35%, var(--color-border-subtle));
+}
+.help-doc .hm .hm-gn-pop.st-glass .hm-gn-pop-ico { box-shadow: 0 0 14px color-mix(in srgb, var(--c) 45%, transparent); }
+
+/* ---- Notification centre panel, copy of modules/notify_center.py ------ */
+
+.help-doc .hm .hm-gn-nc {
+    max-width: 430px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 10px;
+    background: var(--color-bg-surface);
+    overflow: hidden;
+}
+.help-doc .hm .hm-gn-nc-head { display: flex; align-items: center; gap: 8px; padding: 12px 10px 10px 16px; }
+.help-doc .hm .hm-gn-nc-title { font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm .hm-gn-nc-pill {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm .hm-gn-nc-link { font-size: 0.76rem; font-weight: 650; color: var(--color-primary); }
+.help-doc .hm .hm-gn-nc-head .hx-mi { font-size: 20px; color: var(--color-text-secondary); }
+.help-doc .hm .hm-gn-nc-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px 16px; }
+.help-doc .hm .hm-gn-nc-chip {
+    --c: var(--color-text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 650;
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border-default);
+}
+.help-doc .hm .hm-gn-nc-chip > i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.help-doc .hm .hm-gn-nc-chip b { font-weight: 800; color: var(--color-text-muted); }
+.help-doc .hm .hm-gn-nc-chip.is-on { color: var(--color-text-primary); background: var(--color-bg-base); border-color: var(--color-border-accent); }
+.help-doc .hm .hm-gn-nc-chip.is-error { --c: var(--color-notify-error); }
+.help-doc .hm .hm-gn-nc-chip.is-warning { --c: var(--color-notify-warning); }
+.help-doc .hm .hm-gn-nc-chip.is-info { --c: var(--color-notify-info); }
+.help-doc .hm .hm-gn-nc-chip.is-success { --c: var(--color-notify-success); }
+.help-doc .hm .hm-gn-nc-search { padding: 0 12px 10px 16px; }
+.help-doc .hm .hm-gn-nc-group {
+    padding: 10px 16px 4px;
+    border-top: 1px solid var(--color-border-subtle);
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+.help-doc .hm .hm-gn-nc-item {
+    --c: var(--color-notify-info);
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 2px 10px;
+    padding: 9px 12px 10px 16px;
+}
+.help-doc .hm .hm-gn-nc-item.is-hover { background: var(--color-bg-base); }
+.help-doc .hm .hm-gn-nc-item.is-error { --c: var(--color-notify-error); }
+.help-doc .hm .hm-gn-nc-item.is-warning { --c: var(--color-notify-warning); }
+.help-doc .hm .hm-gn-nc-item.is-success { --c: var(--color-notify-success); }
+.help-doc .hm .hm-gn-nc-ico {
+    grid-row: span 3;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--c) 15%, transparent);
+}
+.help-doc .hm .hm-gn-nc-ico .hx-mi { font-size: 16px; color: var(--c); }
+.help-doc .hm .hm-gn-nc-t { font-size: 0.84rem; font-weight: 650; line-height: 1.3; color: var(--color-text-primary); }
+.help-doc .hm .hm-gn-nc-time { font-size: 0.68rem; color: var(--color-text-muted); white-space: nowrap; }
+.help-doc .hm .hm-gn-nc-m { grid-column: 2 / span 2; font-size: 0.76rem; color: var(--color-text-secondary); }
+.help-doc .hm .hm-gn-nc-meta { grid-column: 2 / span 2; display: flex; align-items: center; gap: 6px; font-size: 0.68rem; color: var(--color-text-muted); }
+.help-doc .hm .hm-gn-nc-meta strong { font-weight: 700; }
+.help-doc .hm .hm-gn-nc-tag { padding: 0 6px; border-radius: 999px; border: 1px solid var(--color-border-subtle); }
+.help-doc .hm .hm-gn-nc-unread { position: absolute; left: 6px; top: 20px; width: 6px; height: 6px; border-radius: 50%; background: var(--color-primary); }
+.help-doc .hm .hm-gn-nc-tools { grid-column: 2 / span 2; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.help-doc .hm .hm-gn-nc-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--color-border-subtle);
+    font-size: 0.74rem;
+    color: var(--color-text-muted);
+}
+
+/* ---- App Settings → Notifications: level cards and feature grid -------- */
+
+.help-doc .hm .hm-gn-levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.help-doc .hm .hm-gn-level {
+    --c: var(--color-notify-info);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-base);
+    font-size: 0.8rem;
+}
+.help-doc .hm .hm-gn-level.is-error { --c: var(--color-notify-error); }
+.help-doc .hm .hm-gn-level.is-warning { --c: var(--color-notify-warning); }
+.help-doc .hm .hm-gn-level.is-success { --c: var(--color-notify-success); }
+.help-doc .hm .hm-gn-level-top { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm .hm-gn-level-top > i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.help-doc .hm .hm-gn-level-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--color-text-secondary); }
+.help-doc .hm .hm-gn-mx th > i { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--c, var(--color-text-muted)); }
+.help-doc .hm .hm-gn-mx th.is-error { --c: var(--color-notify-error); }
+.help-doc .hm .hm-gn-mx th.is-warning { --c: var(--color-notify-warning); }
+.help-doc .hm .hm-gn-mx th.is-info { --c: var(--color-notify-info); }
+.help-doc .hm .hm-gn-mx th.is-success { --c: var(--color-notify-success); }
+.help-doc .hm .hm-gn-mx td:not(:first-child), .help-doc .hm .hm-gn-mx th:not(:first-child) { text-align: center; }
+
+@media (max-width: 700px) {
+    .help-doc .hm .hm-gn-levels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .help-doc .hm .hm-gn-pop-spin { animation: none; }
+}

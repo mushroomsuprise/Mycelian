@@ -27,6 +27,8 @@
 
 <div class="hx-callout hx-tip"><p>If <strong>Internet</strong> is red, fix the network first. Every remote service then shows <strong>No Internet</strong> or <strong>Unreachable</strong>, and they recover on their own once the network is back.</p></div>
 
+<div class="hx-callout hx-note"><p>Pop-ups only report a service once it settles into a problem (for example <em>Twitch disconnected</em>) and again when it reconnects. A dropped internet connection gives one <em>You're offline</em> notice instead of one per service. Short reconnects show only in the footer. See <a href="help:notifications">Notifications</a>.</p></div>
+
 <h2>Fix by service</h2>
 
 <div class="hx-tabs">
@@ -190,7 +192,7 @@
 
 <h2>Still stuck: check the log</h2>
 
-<p>Open <span class="hx-path"><span>Settings</span><span>About</span></span>. <strong>Health check</strong> lists recent actionable errors and has the folder button (<strong>Open the logs folder</strong>), which opens the folder holding <code>mycelian.log</code>. Search the file for the service name (for example <code>twitch</code> or <code>obs</code>) near the time it failed. Critical problems also show in the notification bell at the top right of the main tabs.</p>
+<p>Open <span class="hx-path"><span>Settings</span><span>About</span></span>. <strong>Health check</strong> lists recent actionable errors and has the folder button (<strong>Open the logs folder</strong>), which opens the folder holding <code>mycelian.log</code>. Search the file for the service name (for example <code>twitch</code> or <code>obs</code>) near the time it failed. Problems Mycelian noticed are also listed in the notification centre (the bell at the top right of the main tabs); hover an entry and click <strong>Copy</strong> to copy its details for a bug report. See <a href="help:notifications">Notifications</a>.</p>
 
 <div class="hx-cards">
   <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>Connection guides</strong><span class="hx-card-text">Set up each service step by step</span></span></a>

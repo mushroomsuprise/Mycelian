@@ -120,8 +120,7 @@
             <div class="hm-panel-title">Appearance</div>
             <div class="hm-row hm-between"><span class="hm-sm">App font</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">System default</span></div></div>
             <div class="hm-row hm-between"><span class="hm-sm">Interface scale</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">100%</span></div></div>
-            <div class="hm-panel-title">Notifications</div>
-            <span class="hm-switch is-on"><i></i>Pop-up notifications</span>
+            <div class="hm-panel-title">Status bar</div>
             <span class="hm-row"><span class="hm-switch is-on"><i></i>Connection status bar</span><span class="hx-mi hm-muted">help_outline</span></span>
             <span class="hm-switch"><i></i>Minimal badges</span>
             <div class="hm-panel-title">Stream Deck plugin</div>
@@ -146,6 +145,24 @@
             <div class="hm-row hm-between"><span class="hm-sm">Keep the newest</span><span class="hm-row"><div class="hm-field hm-nolabel"><span class="hm-value">500</span></div><span class="hm-muted">alerts</span></span></div>
             <div class="hm-row hm-between"><span class="hm-sm">Delete alerts older than</span><span class="hm-row"><div class="hm-field hm-nolabel"><span class="hm-value">30</span></div><span class="hm-muted">days</span></span></div>
           </div>
+        </div>
+        <div class="hm-panel">
+          <div class="hm-row hm-between">
+            <span class="hm-row"><span class="hm-panel-title">Notifications</span><span class="hx-mi hm-muted">help_outline</span></span>
+            <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">science</span>Send a test</span>
+          </div>
+          <div class="hm-grid-2">
+            <div class="hm-col hm-tight">
+              <span class="hm-switch is-on"><i></i>Pop-up notifications</span>
+              <div class="hm-row hm-between"><span class="hm-sm">Where pop-ups appear</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Top right</span></div></div>
+              <div class="hm-row hm-between"><span class="hm-sm">Most on screen at once</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">4</span></div></div>
+            </div>
+            <div class="hm-col hm-tight">
+              <span class="hm-switch is-on"><i></i>Desktop notifications when minimized</span>
+              <span class="hm-switch is-on"><i></i>Keep muted ones in the notification centre</span>
+            </div>
+          </div>
+          <span class="hm-muted hm-xs">By level · By feature</span>
         </div>
       </div>
 
@@ -195,13 +212,14 @@
 
 <p>Apply saves color edits into the selected theme. The built-in Dark and Light themes cannot be changed or deleted: edit them, then use <strong>Save as</strong> to keep the colors as a new theme. These help pages use the same theme colors.</p>
 
+<p>The <strong>Pop-up notifications</strong> panel under the preview sets how pop-ups look in this theme: style (Accent bar, Icon chip, Minimal, Tinted or Glass), corners, shadow, density and the timer bar, with a live sample. It is saved with the theme like the colors. See <a href="help:notifications">Notifications</a>.</p>
+
 <h3>App Settings</h3>
 
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
 <tbody>
 <tr><td><strong>App font</strong>, <strong>Interface scale</strong></td><td>Font and zoom (90% to 125%) for the whole window. The sample line below them shows the chosen font</td></tr>
-<tr><td><strong>Pop-up notifications</strong></td><td>Shows pop-up messages from Mycelian</td></tr>
 <tr><td><strong>Connection status bar</strong>, <strong>Minimal badges</strong></td><td>The bar at the bottom of the window. Click the help icon next to it, or see <a href="help:status_footer">Status Footer</a></td></tr>
 <tr><td><strong>Start maximized</strong></td><td>Opens the window maximized. Applies on next launch</td></tr>
 <tr><td><strong>Run at login</strong>, <strong>Minimize to tray</strong>, <strong>Start minimized to tray</strong></td><td>Keep Mycelian running in the background. <strong>Run at login</strong> only works in an installed build</td></tr>
@@ -209,6 +227,7 @@
 <tr><td><strong>Items per page</strong>, <strong>Pages to load</strong></td><td>How many Activity Feed items load per page and how many pages you can go back. The line under the section shows the total</td></tr>
 <tr><td><strong>Auto-trim stored alerts</strong>, <strong>Trim by</strong>, <strong>Keep the newest</strong>, <strong>Delete alerts older than</strong></td><td>Delete old stored alerts by number, age, or both</td></tr>
 <tr><td><strong>Stream Deck plugin</strong></td><td>Shows whether the plugin is installed and current (hover the badge for versions), and installs or reinstalls the bundled plugin. See <a href="help:guide_streamdeck">Connect Stream Deck</a></td></tr>
+<tr><td><strong>Notifications</strong> (panel across the bottom)</td><td>Turn pop-ups on or off, where they appear, how many show at once, desktop notifications while minimized to the tray, how long each level stays, and which features may pop up. <strong>Send a test</strong> shows one of each. See <a href="help:notifications">Notifications</a></td></tr>
 </tbody>
 </table></div>
 

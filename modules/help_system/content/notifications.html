@@ -1,0 +1,375 @@
+<p class="hx-lead">Mycelian tells you what it is doing with small pop-ups in the corner of the window. Every pop-up is also kept in the <strong>notification centre</strong> behind the bell, so you can read it later. You choose what pops up, for how long, and what it looks like.</p>
+
+<div class="hx-meta">
+  <span>{{icon:notifications}} The bell at the top right of the main tabs</span>
+  <span>{{icon:tune}} <span class="hx-path"><span>Settings</span><span>App Settings</span></span></span>
+  <span>{{icon:palette}} <span class="hx-path"><span>Settings</span><span>Theme</span></span></span>
+</div>
+
+<h2>Reading a pop-up</h2>
+
+<p>The colored icon and the thin accent show the level at a glance. The rest of the card is plain text.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-gn-pop is-error">
+      <div class="hm-gn-pop-ico"><span class="hx-mi">error</span></div>
+      <div class="hm-gn-pop-top"><span class="hm-gn-pop-lvl">Error</span><span class="hm-gn-pop-dot"></span><span>Overlay server</span><span class="hm-marker" data-n="1"></span></div>
+      <span class="hm-gn-pop-x"><span class="hx-mi">close</span></span>
+      <div class="hm-gn-pop-title">Another app is using port 5000 <span class="hm-marker" data-n="2"></span></div>
+      <div class="hm-gn-pop-msg">OBS browser sources, alerts and Stream Deck won't work until the port is free.</div>
+      <div class="hm-gn-pop-fix"><span class="hx-mi">lightbulb</span><span>Quit the other app using port 5000. Mycelian starts the overlay server as soon as the port is free. <span class="hm-marker" data-n="3"></span></span></div>
+      <div class="hm-gn-pop-acts"><span class="hm-gn-pop-btn is-main"><span class="hx-mi">content_copy</span>Copy details</span><span class="hm-marker" data-n="4"></span></div>
+    </div>
+  </div>
+  <figcaption>An error pop-up. Errors have no timer bar because they stay until you close them.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Level and feature.</strong> <em>Error</em>, <em>Warning</em>, <em>Info</em>, <em>Done</em> or <em>Working</em>, then the part of Mycelian it came from. A <strong>×2</strong>, <strong>×3</strong>… tag appears here when the same thing happened again (see below).</li>
+  <li data-n="2"><strong>Title and message.</strong> What happened, in one line, with detail under it.</li>
+  <li data-n="3"><strong>How to fix it.</strong> Errors and warnings say what to do next.</li>
+  <li data-n="4"><strong>Buttons.</strong> For example <strong>Open Twitch settings</strong>, <strong>Copy details</strong> (copies the technical text for a bug report) or <strong>Try again</strong>.</li>
+</ol>
+
+<h3>Hover, click and close</h3>
+
+<ul>
+  <li>Pop-ups with a timer show a thin bar along the bottom that shrinks until the pop-up closes. Hover the pop-up to pause it; move away and it carries on.</li>
+  <li>If a pop-up has an <strong>Open …</strong> button, clicking anywhere on the card does the same thing.</li>
+  <li>Click {{icon:close}} to close it. It stays in the notification centre.</li>
+  <li>When more pop-ups arrive than fit (see <strong>Most on screen at once</strong>), the oldest close first. Errors and work in progress are kept longest.</li>
+</ul>
+
+<h3>Levels and how long they stay</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Level</th><th>Used for</th><th>Stays on screen (default)</th></tr></thead>
+<tbody>
+<tr><td><span class="hx-badge hx-err">Error</span></td><td>Something failed and needs you</td><td>Until you close it</td></tr>
+<tr><td><span class="hx-badge hx-warn">Warning</span></td><td>Worth a look, but things still work</td><td>8 seconds</td></tr>
+<tr><td><span class="hx-badge hx-info">Info</span></td><td>Just so you know</td><td>4 seconds</td></tr>
+<tr><td><span class="hx-badge hx-ok">Done</span></td><td>Something you asked for finished</td><td>3 seconds</td></tr>
+<tr><td><span class="hx-badge hx-info">Working</span></td><td>Work in progress, with a spinner</td><td>Until the work ends</td></tr>
+</tbody>
+</table></div>
+
+<p>You can change these times in App Settings (see <strong>Choose what pops up</strong> below).</p>
+
+<h3>Progress notices</h3>
+
+<p>Some actions take a few seconds, such as testing a connection. Mycelian shows a <em>Working</em> pop-up while it runs, then turns that same pop-up into the result. You get one pop-up, not two. Click the tabs to see each stage.</p>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-subtabs">
+      <span class="hm-subtab is-active" data-tab="work">While working</span>
+      <span class="hm-subtab" data-tab="done">When it works</span>
+      <span class="hm-subtab" data-tab="fail">When it fails</span>
+    </div>
+    <div class="hm-frame">
+      <div data-panel="work">
+        <div class="hm-gn-pop">
+          <div class="hm-gn-pop-ico"><span class="hm-gn-pop-spin"></span></div>
+          <div class="hm-gn-pop-top"><span class="hm-gn-pop-lvl">Working</span><span class="hm-gn-pop-dot"></span><span>OBS</span></div>
+          <span class="hm-gn-pop-x"><span class="hx-mi">close</span></span>
+          <div class="hm-gn-pop-title">Testing the OBS connection</div>
+          <div class="hm-gn-pop-msg">Waiting for OBS at localhost:4455…</div>
+          <div class="hm-gn-pop-prog"><i></i></div>
+        </div>
+      </div>
+      <div data-panel="done">
+        <div class="hm-gn-pop is-success">
+          <div class="hm-gn-pop-ico"><span class="hx-mi">check_circle</span></div>
+          <div class="hm-gn-pop-top"><span class="hm-gn-pop-lvl">Done</span><span class="hm-gn-pop-dot"></span><span>OBS</span></div>
+          <span class="hm-gn-pop-x"><span class="hx-mi">close</span></span>
+          <div class="hm-gn-pop-title">Connected to OBS</div>
+          <div class="hm-gn-pop-bar"></div>
+        </div>
+      </div>
+      <div data-panel="fail">
+        <div class="hm-gn-pop is-error">
+          <div class="hm-gn-pop-ico"><span class="hx-mi">error</span></div>
+          <div class="hm-gn-pop-top"><span class="hm-gn-pop-lvl">Error</span><span class="hm-gn-pop-dot"></span><span>OBS</span></div>
+          <span class="hm-gn-pop-x"><span class="hx-mi">close</span></span>
+          <div class="hm-gn-pop-title">OBS isn't open</div>
+          <div class="hm-gn-pop-msg">Mycelian connects to OBS on its own once it's running.</div>
+          <div class="hm-gn-pop-fix"><span class="hx-mi">lightbulb</span><span>Open OBS, then test again.</span></div>
+          <div class="hm-gn-pop-acts"><span class="hm-gn-pop-btn is-main"><span class="hx-mi">content_copy</span>Copy details</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Clicking <strong>Test</strong> on the OBS settings tab. The tabs only switch the picture.</figcaption>
+</figure>
+
+<h3>×N: when the same thing happens again</h3>
+
+<p>If the same notification fires again shortly after the first one, Mycelian does not stack a new pop-up. It updates the one you already have, adds a <strong>×2</strong>, <strong>×3</strong>… tag after the feature name and restarts its timer. In the notification centre the entry says <em>· 3 times</em>. A burst of identical errors therefore stays one line, and the count tells you how often it happened.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-gn-pop is-warning">
+      <div class="hm-gn-pop-ico"><span class="hx-mi">warning</span></div>
+      <div class="hm-gn-pop-top"><span class="hm-gn-pop-lvl">Warning</span><span class="hm-gn-pop-dot"></span><span>Twitch</span><span class="hm-gn-pop-count">×3</span></div>
+      <span class="hm-gn-pop-x"><span class="hx-mi">close</span></span>
+      <div class="hm-gn-pop-title">Twitch disconnected</div>
+      <div class="hm-gn-pop-msg">Status: Disconnected</div>
+      <div class="hm-gn-pop-fix"><span class="hx-mi">lightbulb</span><span>Open Settings → Twitch and click Reconnect. If it keeps happening, sign in again.</span></div>
+      <div class="hm-gn-pop-acts"><span class="hm-gn-pop-btn is-main"><span class="hx-mi">open_in_new</span>Open Twitch settings</span></div>
+      <div class="hm-gn-pop-bar"></div>
+    </div>
+  </div>
+  <figcaption>The same warning, the third time.</figcaption>
+</figure>
+
+<h2>The notification centre</h2>
+
+<p>Click the bell ({{icon:notifications}}) at the top right of the main tabs. The red number on it counts notifications you have not seen yet. The centre opens as a panel on the right; the rest of the app stays usable. It keeps your last 200 notifications, also after a restart.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-gn-nc">
+      <div class="hm-gn-nc-head">
+        <span class="hm-gn-nc-title">Notifications</span><span class="hm-gn-nc-pill">2 new</span>
+        <span class="hm-grow"></span>
+        <span class="hm-gn-nc-link">Mark all read</span><span class="hm-marker" data-n="1"></span>
+        <span class="hx-mi">help_outline</span><span class="hx-mi">delete_sweep</span><span class="hx-mi">close</span>
+      </div>
+      <div class="hm-gn-nc-chips">
+        <span class="hm-gn-nc-chip is-on">All <b>6</b></span>
+        <span class="hm-gn-nc-chip is-error"><i></i>Errors <b>1</b></span>
+        <span class="hm-gn-nc-chip is-warning"><i></i>Warnings <b>2</b></span>
+        <span class="hm-gn-nc-chip is-info"><i></i>Info <b>1</b></span>
+        <span class="hm-gn-nc-chip is-success"><i></i>Done <b>2</b></span>
+        <span class="hm-marker" data-n="2"></span>
+      </div>
+      <div class="hm-gn-nc-search"><div class="hm-field hm-nolabel"><span class="hm-placeholder"><span class="hx-mi">search</span> Search notifications</span></div></div>
+      <div class="hm-gn-nc-group">Today <span class="hm-marker" data-n="3"></span></div>
+      <div class="hm-gn-nc-item is-warning is-hover">
+        <span class="hm-gn-nc-unread"></span>
+        <div class="hm-gn-nc-ico"><span class="hx-mi">warning</span></div>
+        <span class="hm-gn-nc-t">Twitch disconnected</span><span class="hm-gn-nc-time">now</span>
+        <span class="hm-gn-nc-m">Status: Disconnected</span>
+        <span class="hm-gn-nc-meta"><strong>Twitch</strong><span>· 3 times</span></span>
+        <div class="hm-gn-nc-tools">
+          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">open_in_new</span>Open Twitch settings</span>
+          <span class="hm-btn hm-flat hm-dense"><span class="hx-mi">content_copy</span>Copy</span>
+          <span class="hm-btn hm-flat hm-dense"><span class="hx-mi">close</span>Dismiss</span>
+          <span class="hm-marker" data-n="4"></span>
+        </div>
+      </div>
+      <div class="hm-gn-nc-item is-success">
+        <span class="hm-gn-nc-unread"></span>
+        <div class="hm-gn-nc-ico"><span class="hx-mi">check_circle</span></div>
+        <span class="hm-gn-nc-t">Connected to OBS</span><span class="hm-gn-nc-time">12 min</span>
+        <span class="hm-gn-nc-meta"><strong>OBS</strong></span>
+      </div>
+      <div class="hm-gn-nc-group">Yesterday</div>
+      <div class="hm-gn-nc-item is-info">
+        <div class="hm-gn-nc-ico"><span class="hx-mi">info</span></div>
+        <span class="hm-gn-nc-t">Test alert sent (Bits)</span><span class="hm-gn-nc-time">Oct 24</span>
+        <span class="hm-gn-nc-meta"><strong>Alerts</strong><span class="hm-gn-nc-tag">Muted</span></span>
+      </div>
+      <div class="hm-gn-nc-foot"><span>Showing 6 of 6</span><span class="hm-gn-nc-link"><span class="hx-mi">tune</span> Notification settings</span><span class="hm-marker" data-n="5"></span></div>
+    </div>
+  </div>
+  <figcaption>The notification centre. In the app, the buttons on an entry appear when you hover it.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Mark all read</strong> clears the dots and the count on the bell. {{icon:help_outline}} opens this page, {{icon:delete_sweep}} <strong>Clear all</strong> empties the list, and {{icon:close}} closes the panel.</li>
+  <li data-n="2"><strong>Filter by level.</strong> Each chip shows how many notifications it has. Click one to show only that level; <strong>All</strong> shows everything. Type in <strong>Search notifications</strong> to find words in the title, message, fix or feature name.</li>
+  <li data-n="3"><strong>Today</strong>, <strong>Yesterday</strong> and <strong>Earlier</strong> group the list, newest first. A dot on the left marks notifications that arrived since you last looked. Hover the time to see the exact date and time.</li>
+  <li data-n="4">Hover an entry for its buttons: the same <strong>Open …</strong> buttons as the pop-up, <strong>Copy</strong> (copies the text, or the details when there are some) and <strong>Dismiss</strong> (removes it from the list). Clicking an entry that has an <strong>Open …</strong> button does the same as that button.</li>
+  <li data-n="5"><strong>Notification settings</strong> closes the panel and opens <span class="hx-path"><span>Settings</span><span>App Settings</span></span>.</li>
+</ol>
+
+<div class="hx-callout hx-note"><p>While the centre is open, pop-ups fade away and new ones do not appear, so they never cover the list. Anything that arrives meanwhile shows up in the centre straight away.</p></div>
+
+<p>An entry tagged <strong>Muted</strong> is one you silenced (by level or by feature), so it did not pop up. It is listed only while <strong>Keep muted ones in the notification centre</strong> is on.</p>
+
+<h2>Choose what pops up</h2>
+
+<p>Open <span class="hx-path"><span>Settings</span><span>App Settings</span></span>. The <strong>Notifications</strong> panel runs across the bottom of the tab. Like the rest of App Settings, changes apply when you click <strong>Save</strong>.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-panel">
+      <div class="hm-row hm-between">
+        <span class="hm-row"><span class="hx-mi">notifications</span><span class="hm-panel-title">Notifications</span><span class="hx-mi hm-muted">help_outline</span></span>
+        <span class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">science</span>Send a test</span><span class="hm-marker" data-n="1"></span></span>
+      </div>
+      <div class="hm-grid-2">
+        <div class="hm-col hm-tight">
+          <div class="hm-row hm-between"><span class="hm-sm">Pop-up notifications</span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-row hm-between"><span class="hm-sm">Where pop-ups appear</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Top right</span></div></div>
+          <div class="hm-row hm-between"><span class="hm-sm">Most on screen at once</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">4</span></div></div>
+        </div>
+        <div class="hm-col hm-tight">
+          <div class="hm-row hm-between"><span class="hm-sm">Desktop notifications when minimized</span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-row hm-between"><span class="hm-sm">Keep muted ones in the notification centre</span><span class="hm-switch is-on"><i></i></span></div>
+        </div>
+      </div>
+      <span class="hm-label">By level <span class="hm-marker" data-n="2"></span></span>
+      <div class="hm-gn-levels">
+        <div class="hm-gn-level is-error"><div class="hm-gn-level-top"><i></i>Errors<span class="hm-grow"></span><span class="hm-switch is-on"><i></i></span></div><div class="hm-gn-level-row"><span>Stays up</span><div class="hm-field hm-nolabel"><span class="hm-placeholder">Never</span></div></div><div class="hm-gn-level-row"><span>Never dismiss</span><span class="hm-switch is-on"><i></i></span></div></div>
+        <div class="hm-gn-level is-warning"><div class="hm-gn-level-top"><i></i>Warnings<span class="hm-grow"></span><span class="hm-switch is-on"><i></i></span></div><div class="hm-gn-level-row"><span>Stays up</span><div class="hm-field hm-nolabel"><span class="hm-value">8 sec</span></div></div><div class="hm-gn-level-row"><span>Never dismiss</span><span class="hm-switch"><i></i></span></div></div>
+        <div class="hm-gn-level"><div class="hm-gn-level-top"><i></i>Info<span class="hm-grow"></span><span class="hm-switch is-on"><i></i></span></div><div class="hm-gn-level-row"><span>Stays up</span><div class="hm-field hm-nolabel"><span class="hm-value">4 sec</span></div></div><div class="hm-gn-level-row"><span>Never dismiss</span><span class="hm-switch"><i></i></span></div></div>
+        <div class="hm-gn-level is-success"><div class="hm-gn-level-top"><i></i>Done<span class="hm-grow"></span><span class="hm-switch is-on"><i></i></span></div><div class="hm-gn-level-row"><span>Stays up</span><div class="hm-field hm-nolabel"><span class="hm-value">3 sec</span></div></div><div class="hm-gn-level-row"><span>Never dismiss</span><span class="hm-switch"><i></i></span></div></div>
+      </div>
+      <span class="hm-label">By feature: untick to silence one kind of notification for one feature <span class="hm-marker" data-n="3"></span></span>
+      <table class="hm-table hm-gn-mx">
+        <tr><th>Feature</th><th class="is-error"><i></i>Errors</th><th class="is-warning"><i></i>Warnings</th><th class="is-info"><i></i>Info</th><th class="is-success"><i></i>Done</th></tr>
+        <tr><td><span class="hx-mi">campaign</span> Alerts</td><td><span class="hm-check is-on"><i></i></span></td><td><span class="hm-check is-on"><i></i></span></td><td><span class="hm-check"><i></i></span></td><td><span class="hm-check"><i></i></span></td></tr>
+        <tr><td><span class="hx-mi">smart_toy</span> Chatbot</td><td><span class="hm-check is-on"><i></i></span></td><td><span class="hm-check is-on"><i></i></span></td><td><span class="hm-check is-on"><i></i></span></td><td><span class="hm-check is-on"><i></i></span></td></tr>
+        <tr><td><span class="hx-mi">live_tv</span> Twitch</td><td><span class="hm-check is-on"><i></i></span></td><td><span class="hm-check is-on"><i></i></span></td><td><span class="hm-check is-on"><i></i></span></td><td><span class="hm-check is-on"><i></i></span></td></tr>
+      </table>
+    </div>
+  </div>
+  <figcaption>Part of Settings → App Settings, with Info and Done silenced for Alerts. The real grid lists every feature in two columns.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Send a test</strong> shows one error, one warning, one info and one done pop-up using your <em>saved</em> settings. If you have unsaved changes, it asks you to save first.</li>
+  <li data-n="2"><strong>By level</strong>: one card per level. See below.</li>
+  <li data-n="3"><strong>By feature</strong>: silence a level for one part of Mycelian. See <strong>Silence one feature</strong> below.</li>
+</ol>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Pop-up notifications</strong></td><td>Turns every pop-up off. The notification centre still records them.</td></tr>
+<tr><td><strong>Where pop-ups appear</strong></td><td>Top right (default), Bottom right, Top center or Bottom left of the window.</td></tr>
+<tr><td><strong>Most on screen at once</strong></td><td>1 to 8 (default 4). Older pop-ups close early when more arrive; errors stay longest.</td></tr>
+<tr><td><strong>Desktop notifications when minimized</strong></td><td>While Mycelian is minimized to the tray, errors and warnings also show as system notifications. Needs <strong>Minimize to tray</strong> in the same tab.</td></tr>
+<tr><td><strong>Keep muted ones in the notification centre</strong></td><td>Notifications you silenced still appear under the bell, tagged <strong>Muted</strong>. Turn it off to drop them completely.</td></tr>
+</tbody>
+</table></div>
+
+<h3>By level</h3>
+
+<ul>
+  <li>The switch at the top of each card turns pop-ups for that level on or off. Turned-off levels count as muted.</li>
+  <li><strong>Stays up</strong> is how many seconds the pop-up stays on screen. Type any number of seconds (1 or more) and press <kbd>Enter</kbd> or click away.</li>
+  <li><strong>Never dismiss</strong> keeps that level on screen until you close it. The seconds box then reads <em>Never</em>. Errors start with this on.</li>
+</ul>
+
+<h3>Silence one feature</h3>
+
+<p>Say test alerts and saved-alert pop-ups are too chatty, but you still want to hear about alert errors:</p>
+
+<ol>
+  <li>Open <span class="hx-path"><span>Settings</span><span>App Settings</span></span> and scroll to <strong>By feature</strong>.</li>
+  <li>Find the <strong>Alerts</strong> row and untick <strong>Info</strong> and <strong>Done</strong>. Leave <strong>Errors</strong> and <strong>Warnings</strong> ticked.</li>
+  <li>Click <strong>Save</strong>.</li>
+</ol>
+
+<ul>
+  <li>Click a column header (<strong>Errors</strong>, <strong>Warnings</strong>, <strong>Info</strong> or <strong>Done</strong>) to untick that level for every feature at once. Click it again to tick it everywhere.</li>
+  <li>A feature with all four boxes unticked is tagged <strong>Muted</strong>.</li>
+  <li>The features are: App, Updates, Database, Theme, Alerts, Activity Feed, Source Settings, Source Controls, Spore Studio, Chatbot, Connectors, Statistics, Overlay server, OBS, Twitch, YouTube, Discord, Spotify, PlayStation, Streamlabs, StreamElements, Game Hooks, Files and Help. The feature name on a pop-up tells you which row to change.</li>
+</ul>
+
+<h2>Change how pop-ups look</h2>
+
+<p>The look of pop-ups belongs to your theme. Open <span class="hx-path"><span>Settings</span><span>Theme</span></span> and find the <strong>Pop-up notifications</strong> panel under the preview. A sample pop-up there updates as you change things. Click a style below to compare.</p>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-subtabs">
+      <span class="hm-subtab is-active" data-tab="accent">Accent bar</span>
+      <span class="hm-subtab" data-tab="chip">Icon chip</span>
+      <span class="hm-subtab" data-tab="minimal">Minimal</span>
+      <span class="hm-subtab" data-tab="tinted">Tinted</span>
+      <span class="hm-subtab" data-tab="glass">Glass</span>
+    </div>
+    <div class="hm-frame">
+      <div data-panel="accent"><div class="hm-gn-pop is-warning"><div class="hm-gn-pop-ico"><span class="hx-mi">warning</span></div><div class="hm-gn-pop-top"><span class="hm-gn-pop-lvl">Warning</span><span class="hm-gn-pop-dot"></span><span>Spore Studio</span></div><span class="hm-gn-pop-x"><span class="hx-mi">close</span></span><div class="hm-gn-pop-title">Font missing in “giveaway”</div><div class="hm-gn-pop-msg">Renogare.ttf isn't in the fonts folder, so the overlay falls back to Arial.</div><div class="hm-gn-pop-acts"><span class="hm-gn-pop-btn is-main"><span class="hx-mi">auto_awesome</span>Open in Spore Studio</span></div><div class="hm-gn-pop-bar"></div></div></div>
+      <div data-panel="chip"><div class="hm-gn-pop is-warning st-chip"><div class="hm-gn-pop-ico"><span class="hx-mi">warning</span></div><div class="hm-gn-pop-top"><span class="hm-gn-pop-lvl">Warning</span><span class="hm-gn-pop-dot"></span><span>Spore Studio</span></div><span class="hm-gn-pop-x"><span class="hx-mi">close</span></span><div class="hm-gn-pop-title">Font missing in “giveaway”</div><div class="hm-gn-pop-msg">Renogare.ttf isn't in the fonts folder, so the overlay falls back to Arial.</div><div class="hm-gn-pop-acts"><span class="hm-gn-pop-btn is-main"><span class="hx-mi">auto_awesome</span>Open in Spore Studio</span></div><div class="hm-gn-pop-bar"></div></div></div>
+      <div data-panel="minimal"><div class="hm-gn-pop is-warning st-minimal"><div class="hm-gn-pop-ico"><span class="hx-mi">warning</span></div><div class="hm-gn-pop-top"><span class="hm-gn-pop-lvl">Warning</span><span class="hm-gn-pop-dot"></span><span>Spore Studio</span></div><span class="hm-gn-pop-x"><span class="hx-mi">close</span></span><div class="hm-gn-pop-title">Font missing in “giveaway”</div><div class="hm-gn-pop-msg">Renogare.ttf isn't in the fonts folder, so the overlay falls back to Arial.</div><div class="hm-gn-pop-acts"><span class="hm-gn-pop-btn is-main"><span class="hx-mi">auto_awesome</span>Open in Spore Studio</span></div><div class="hm-gn-pop-bar"></div></div></div>
+      <div data-panel="tinted"><div class="hm-gn-pop is-warning st-tinted"><div class="hm-gn-pop-ico"><span class="hx-mi">warning</span></div><div class="hm-gn-pop-top"><span class="hm-gn-pop-lvl">Warning</span><span class="hm-gn-pop-dot"></span><span>Spore Studio</span></div><span class="hm-gn-pop-x"><span class="hx-mi">close</span></span><div class="hm-gn-pop-title">Font missing in “giveaway”</div><div class="hm-gn-pop-msg">Renogare.ttf isn't in the fonts folder, so the overlay falls back to Arial.</div><div class="hm-gn-pop-acts"><span class="hm-gn-pop-btn is-main"><span class="hx-mi">auto_awesome</span>Open in Spore Studio</span></div><div class="hm-gn-pop-bar"></div></div></div>
+      <div data-panel="glass"><div class="hm-gn-pop is-warning st-glass"><div class="hm-gn-pop-ico"><span class="hx-mi">warning</span></div><div class="hm-gn-pop-top"><span class="hm-gn-pop-lvl">Warning</span><span class="hm-gn-pop-dot"></span><span>Spore Studio</span></div><span class="hm-gn-pop-x"><span class="hx-mi">close</span></span><div class="hm-gn-pop-title">Font missing in “giveaway”</div><div class="hm-gn-pop-msg">Renogare.ttf isn't in the fonts folder, so the overlay falls back to Arial.</div><div class="hm-gn-pop-acts"><span class="hm-gn-pop-btn is-main"><span class="hx-mi">auto_awesome</span>Open in Spore Studio</span></div><div class="hm-gn-pop-bar"></div></div></div>
+    </div>
+  </div>
+  <figcaption>The five styles, drawn with your current theme's colors. The tabs only switch the picture.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Option</th><th>Choices</th></tr></thead>
+<tbody>
+<tr><td><strong>Style</strong></td><td>Accent bar (default), Icon chip, Minimal, Tinted, Glass</td></tr>
+<tr><td><strong>Corners</strong></td><td>0 to 24 px (default 12 px)</td></tr>
+<tr><td><strong>Shadow</strong></td><td>None, Soft (default), Strong</td></tr>
+<tr><td><strong>Density</strong></td><td>Comfortable (default) leaves more room; Compact fits more on screen</td></tr>
+<tr><td><strong>Timer bar</strong></td><td>The thin bar along the bottom that shows how long the pop-up stays</td></tr>
+</tbody>
+</table></div>
+
+<p>The colors for each level are swatches in the <strong>Notifications</strong> group under <strong>Colors</strong> on the same tab (Success, Warning, Error, Info). These settings are saved with the theme when you click <strong>Apply</strong>, so each theme can have its own pop-up look. The built-in Dark and Light themes cannot be changed: use <strong>Save as</strong> to keep your version as a new theme. The OBS docks use the same look.</p>
+
+<h2>Pop-ups in OBS docks</h2>
+
+<p>The Activity Feed and Source Controls docks in OBS show their own small pop-ups along the bottom of the dock, for things you do in the dock (pausing alerts, skipping one, sending a control). They follow the <strong>Pop-up notifications</strong> switch and the <strong>By level</strong> settings in App Settings, and update when you save there.</p>
+
+<ul>
+  <li>Only <strong>errors</strong> from a dock are also sent to the app's notification centre, under <strong>Activity Feed</strong> or <strong>Source Controls</strong>. Everything else stays in the dock.</li>
+  <li>App pop-ups do not appear inside the docks.</li>
+  <li>When the dock cannot reach Mycelian, its error pop-up says so and offers <strong>Try again</strong> where that makes sense.</li>
+</ul>
+
+<p>See <a href="help:source_controls">Source Controls</a> and <a href="help:obs_setup">Setting Up Browser Sources in OBS</a> for adding the docks.</p>
+
+<h2>Connection notices</h2>
+
+<p>The <a href="help:status_footer">status footer</a> at the bottom of the window shows every connection change as it happens. Pop-ups are kept for changes that matter:</p>
+
+<ul>
+  <li>A service pops up only once it <strong>settles into a problem</strong>, such as <em>Twitch disconnected</em> or <em>Spotify needs you to sign in again</em>. Brief drops that fix themselves stay quiet. Right after Mycelian starts, services get extra time to connect before anything is reported.</li>
+  <li>When it recovers, you get one <em>… reconnected</em> pop-up, but only if you were told about the problem.</li>
+  <li>If the internet drops, you get one <strong>You're offline</strong> warning instead of one per service, then <strong>Back online</strong> when it returns. Services then get some time to reconnect quietly.</li>
+  <li>Routine states such as <em>Connecting</em> and <em>Reconnecting</em> never pop up. Watch the footer for those.</li>
+</ul>
+
+<h2>I'm not seeing notifications</h2>
+
+<details class="hx-details">
+  <summary>No pop-ups appear at all</summary>
+  <p>Check <strong>Pop-up notifications</strong> in <span class="hx-path"><span>Settings</span><span>App Settings</span></span> is on, and that you clicked <strong>Save</strong>. Then click <strong>Send a test</strong>: four pop-ups should appear in the corner chosen in <strong>Where pop-ups appear</strong>. Also check the notification centre is closed; pop-ups are hidden while it is open.</p>
+</details>
+
+<details class="hx-details">
+  <summary>One kind of notification never pops up</summary>
+  <p>Open the bell and find the entry. If it is tagged <strong>Muted</strong>, either its level is switched off under <strong>By level</strong>, or its box is unticked for that feature under <strong>By feature</strong>. The feature name on the entry tells you which row to check. If the entry is not in the centre at all and <strong>Keep muted ones in the notification centre</strong> is off, it may still be muted: turn that switch on to find out.</p>
+</details>
+
+<details class="hx-details">
+  <summary>A pop-up disappears too fast, or never goes away</summary>
+  <p>Change <strong>Stays up</strong> for that level, or switch <strong>Never dismiss</strong> on or off. Hovering a pop-up pauses its timer. Pop-ups can also close early when more arrive than <strong>Most on screen at once</strong> allows; raise it if you miss things during busy moments. Everything stays in the notification centre either way.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The same problem keeps happening but I only see one pop-up</summary>
+  <p>That is on purpose. Repeats update the pop-up you already have and add <strong>×2</strong>, <strong>×3</strong>… See <strong>×N: when the same thing happens again</strong> above.</p>
+</details>
+
+<details class="hx-details">
+  <summary>A service went down but nothing popped up</summary>
+  <p>Mycelian waits until the problem holds for a few seconds, and stays quiet about routine reconnecting. While the internet is down you get only <strong>You're offline</strong>. Check the <a href="help:status_footer">status footer</a> for the live state, and see <a href="help:troubleshooting_connections">Connection and Integration Issues</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>No system notifications while Mycelian is in the tray</summary>
+  <p>Turn on <strong>Minimize to tray</strong> and <strong>Desktop notifications when minimized</strong> in App Settings, then save. Only errors and warnings are sent, not muted ones, and not repeats. Your operating system must also allow notifications from Mycelian.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The OBS dock shows nothing, or an app error is missing from the dock</summary>
+  <p>Docks only show pop-ups for actions taken in the dock, and app pop-ups never appear there. Dock pop-ups use the saved <strong>Pop-up notifications</strong> and <strong>By level</strong> settings. If you just changed them, save in App Settings; if the dock still ignores them, right-click the dock in OBS and choose <strong>Refresh</strong>.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:status_footer">{{icon:traffic}}<span><strong>Status Footer</strong><span class="hx-card-text">Live connection state for every service</span></span></a>
+  <a class="hx-card" href="help:settings_overview">{{icon:settings}}<span><strong>Settings Overview</strong><span class="hx-card-text">App Settings, Theme and the other tabs</span></span></a>
+  <a class="hx-card" href="help:troubleshooting_connections">{{icon:build}}<span><strong>Connection Problems</strong><span class="hx-card-text">When a service keeps dropping</span></span></a>
+</div>

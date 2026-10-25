@@ -110,7 +110,8 @@ Wrap every mock in `<div class="hm">`. Pieces mirror `modules/ui_styles.py`:
 | `hm-chip` (`hm-plain`), `hm-badge` (`hm-outline` `hm-badge-ok/warn/err`), `hm-dot` (`hm-ok/warn/err/info`) | chips, badges, status dots |
 | `hm-list` > `hm-list-item[.is-selected]`, `table.hm-table` | lists, tables |
 | `hm-footer` > `hm-footer-item` | service status footer |
-| `hm-toast` (`hm-ok/warn/err`) | notification toast |
+| `hm-toast` (`hm-ok/warn/err`) | one-line notification pop-up |
+| `hm-gn-pop` (`is-error/warning/success`, `st-chip/minimal/tinted/glass`), `hm-gn-nc` | full pop-up and notification centre (see `content/notifications.html`) |
 | `hm-browser` > `hm-browser-bar` > `hm-browser-url`, then `hm-browser-body` | a third-party web page (Twitch console, Spotify dashboard). Neutral colors, not brand palettes. |
 | `hm-marker[data-n]` (`hm-pin` + `style="top/left"` for absolute) | numbered callout, pairs with `hx-annotations` |
 | `hm-highlight`, `hm-pulse` | dashed ring / pulsing "click here" |

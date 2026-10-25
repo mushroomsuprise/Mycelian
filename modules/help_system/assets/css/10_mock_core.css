@@ -539,23 +539,36 @@
 
 .help-doc .hm-footer-item .hx-brand { font-size: 0.85rem; }
 
-/* ---- Toast (notification_engine) ------------------------------------- */
+/* ---- Pop-up, short form (mycelian_toast.js, Accent bar style) ---------
+   For a full pop-up (level tag, fix, buttons, timer) or the notification
+   centre, use hm-gn-pop / hm-gn-nc from 20_mock_general.css.              */
 
 .help-doc .hm-toast {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
+    align-items: center;
+    gap: 11px;
     padding: 10px 12px;
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-border-default);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
     border-left: 4px solid var(--hm-toast, var(--color-notify-info));
-    border-radius: 8px;
+    border-radius: var(--notify-radius, 12px);
     box-shadow: 0 6px 18px var(--color-bg-overlay);
     font-size: 0.85rem;
     max-width: 380px;
 }
 
-.help-doc .hm-toast > .hx-mi { color: var(--hm-toast, var(--color-notify-info)); font-size: 20px; }
+.help-doc .hm-toast > .hx-mi {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--hm-toast, var(--color-notify-info));
+    background: color-mix(in srgb, var(--hm-toast, var(--color-notify-info)) 15%, transparent);
+    font-size: 18px;
+}
 .help-doc .hm-toast.hm-ok { --hm-toast: var(--color-notify-success); color: inherit !important; }
 .help-doc .hm-toast.hm-warn { --hm-toast: var(--color-notify-warning); color: inherit !important; }
 .help-doc .hm-toast.hm-err { --hm-toast: var(--color-notify-error); color: inherit !important; }
