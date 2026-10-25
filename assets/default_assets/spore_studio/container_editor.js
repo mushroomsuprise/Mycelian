@@ -23,26 +23,72 @@
 
     function $(id) { return document.getElementById(id); }
 
-    function toast(message, kind) {
+    /** In-page toast; only used if editor.js's notifier is missing. */
+    function localToast(text, kind) {
         var el = $("ss-toast");
         if (!el) { return; }
-        el.textContent = message;
+        el.textContent = text;
         el.classList.remove("ss-toast--success", "ss-toast--error");
         if (kind === "success") { el.classList.add("ss-toast--success"); }
         if (kind === "error") { el.classList.add("ss-toast--error"); }
         el.classList.add("visible");
         clearTimeout(el._mcTimeout);
-        el._mcTimeout = setTimeout(function () { el.classList.remove("visible"); }, 2200);
+        el._mcTimeout = setTimeout(function () { el.classList.remove("visible"); }, kind === "error" ? 10000 : 3500);
     }
 
+    /**
+     * Same notifier as the template editor (editor.js): app pop-up and
+     * notification centre in Mycelian, in-page toast in an external browser.
+     * opts: { type, title, message, hint, details, dedupe }
+     */
+    function notify(opts) {
+        if (typeof window.sporeNotify === "function") {
+            window.sporeNotify(opts);
+            return;
+        }
+        localToast([opts.title, opts.message, opts.hint].filter(function (s) { return !!s; }).join(" "), opts.type);
+    }
+
+    /** Error for a failed request: 4xx text is a plain message; 5xx text goes to details only. */
     function api(url, options) {
         return fetch(url, options).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (body) {
                 if (!response.ok) {
-                    throw new Error(body.error || ("Request failed (" + response.status + ")"));
+                    var serverText = body && body.error ? String(body.error) : "";
+                    var err = new Error(serverText || ("Request failed (" + response.status + ")"));
+                    err.status = response.status;
+                    err.userText = response.status < 500 ? serverText : "";
+                    err.details = [url, "HTTP " + response.status, serverText].filter(function (s) { return !!s; }).join(" | ");
+                    throw err;
                 }
                 return body;
             });
+        });
+    }
+
+    function errorDetails(err) {
+        if (err && err.details) { return err.details; }
+        return err ? String(err.message || err) : "";
+    }
+
+    /** Plain reason for a failed request (server validation text, or a generic line). */
+    function failReason(err, doing) {
+        if (err && err.userText) { return err.userText; }
+        if (err && err.status) { return "Something went wrong while " + doing + "."; }
+        return "Spore Studio couldn't reach Mycelian.";
+    }
+
+    function failHint(err) {
+        return err && err.status
+            ? "Try again. If it keeps failing, click Reload editor."
+            : "Make sure Mycelian is running, then try again.";
+    }
+
+    function needContainerNotice() {
+        notify({
+            type: "info",
+            title: "Create a container first",
+            message: "Click + New to make a container, then add templates to it."
         });
     }
 
@@ -1021,7 +1067,7 @@
                 });
                 item.addEventListener("dblclick", function () {
                     if (!state.model) {
-                        toast("Create a container first.", "error");
+                        needContainerNotice();
                         return;
                     }
                     commit(function () {
@@ -1093,6 +1139,8 @@
 
     function saveCurrent() {
         if (!state.model) { return Promise.resolve(); }
+        var route = state.model.route || state.savedRoute || "";
+        var saved = false;
         return api("/api/spore-studio/containers/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1108,10 +1156,32 @@
             state.history = [];
             state.future = [];
             updateDirty();
-            toast("Container saved.", "success");
+            saved = true;
+            notify({ type: "success", title: "Saved container “/" + body.container.route + "”" });
             return refreshLists();
         }).catch(function (err) {
-            toast(err.message, "error");
+            if (saved) {
+                notifyListFailed(err);
+                return;
+            }
+            notify({
+                type: "error",
+                title: "Couldn't save container “/" + route + "”",
+                message: failReason(err, "saving") + " Your changes are still in the editor.",
+                hint: err && err.userText ? "Fix the problem, then click Save again." : failHint(err),
+                details: errorDetails(err)
+            });
+        });
+    }
+
+    function notifyListFailed(err) {
+        notify({
+            type: "error",
+            title: "Couldn't load your containers",
+            message: failReason(err, "loading the container list"),
+            hint: failHint(err),
+            details: errorDetails(err),
+            dedupe: "containers_list"
         });
     }
 
@@ -1143,6 +1213,15 @@
             if (spec.onInput) { input.addEventListener("input", function () { spec.onInput(input, inputs); }); }
             row.appendChild(input);
         });
+        // Problems with the form (taken route, bad name) show here, not as pop-ups.
+        var formError = document.createElement("div");
+        formError.setAttribute("role", "alert");
+        formError.style.cssText = "color:var(--ss-error);font-size:12px;margin-top:8px;display:none;";
+        card.appendChild(formError);
+        function setError(text) {
+            formError.textContent = text || "";
+            formError.style.display = text ? "block" : "none";
+        }
         var actions = document.createElement("div");
         actions.className = "ss-row";
         actions.style.justifyContent = "flex-end";
@@ -1158,7 +1237,8 @@
         ok.addEventListener("click", function () {
             var values = {};
             Object.keys(inputs).forEach(function (key) { values[key] = inputs[key].value; });
-            Promise.resolve(onOk(values)).then(function (close) {
+            setError("");
+            Promise.resolve(onOk(values, setError)).then(function (close) {
                 if (close !== false) { overlay.remove(); }
             });
         });
@@ -1193,8 +1273,9 @@
                     { value: "720x1280", label: "720 × 1280" }
                 ]
             }
-        ], function (values) {
+        ], function (values, setError) {
             var parts = (values.preset || "1920x1080").split("x");
+            var created = false;
             return api("/api/spore-studio/containers/create", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1205,12 +1286,17 @@
                     height: Number(parts[1])
                 })
             }).then(function (body) {
+                created = true;
+                notify({ type: "success", title: "Created container “/" + body.container.route + "”" });
                 return refreshLists().then(function () {
                     return loadContainer(body.container.route);
                 });
             }).catch(function (err) {
-                toast(err.message, "error");
-                return false;
+                if (created) {
+                    notifyListFailed(err);
+                    return true;
+                }
+                return formFailure(err, setError, "Couldn't create the container", "creating the container");
             });
         });
         var nameInput = document.querySelector(".ss-create-overlay input");
@@ -1225,16 +1311,42 @@
         }
     }
 
+    /**
+     * A create/duplicate form request failed: validation text stays in the
+     * form; anything else also gets a notification. Returns false (keep open).
+     */
+    function formFailure(err, setError, title, doing) {
+        if (err && err.userText) {
+            setError(err.userText);
+            return false;
+        }
+        setError(title + ".");
+        notify({
+            type: "error",
+            title: title,
+            message: failReason(err, doing),
+            hint: failHint(err),
+            details: errorDetails(err)
+        });
+        return false;
+    }
+
     function duplicateContainer() {
         if (!state.model) { return; }
         if (state.dirty) {
-            toast("Save this container before duplicating it.", "error");
+            notify({
+                type: "warning",
+                title: "Save this container first",
+                message: "Duplicate copies the saved version, so your unsaved changes wouldn't be included.",
+                hint: "Click Save, then Duplicate."
+            });
             return;
         }
         openForm("Duplicate container", [
             { id: "name", label: "Name", value: state.model.name + " copy" },
             { id: "route", label: "Route path", value: suggestRoute(state.model.route + "_copy") }
-        ], function (values) {
+        ], function (values, setError) {
+            var copied = false;
             return api("/api/spore-studio/containers/duplicate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1244,10 +1356,15 @@
                     new_route: values.route || suggestRoute(values.name)
                 })
             }).then(function (body) {
+                copied = true;
+                notify({ type: "success", title: "Duplicated as “/" + body.container.route + "”" });
                 return refreshLists().then(function () { return loadContainer(body.container.route); });
             }).catch(function (err) {
-                toast(err.message, "error");
-                return false;
+                if (copied) {
+                    notifyListFailed(err);
+                    return true;
+                }
+                return formFailure(err, setError, "Couldn't duplicate the container", "duplicating the container");
             });
         });
     }
@@ -1255,11 +1372,15 @@
     function deleteContainer() {
         if (!state.model) { return; }
         if (!confirm("Delete container /" + state.model.route + "?")) { return; }
+        var route = state.savedRoute || state.model.route;
+        var deleted = false;
         api("/api/spore-studio/containers/delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ route: state.savedRoute || state.model.route })
+            body: JSON.stringify({ route: route })
         }).then(function () {
+            deleted = true;
+            notify({ type: "success", title: "Deleted container “/" + route + "”" });
             state.model = null;
             state.savedRoute = null;
             state.dirty = false;
@@ -1269,7 +1390,19 @@
         }).then(function () {
             if (state.list.length) { return loadContainer(state.list[0].route); }
             renderAll();
-        }).catch(function (err) { toast(err.message, "error"); });
+        }).catch(function (err) {
+            if (deleted) {
+                notifyListFailed(err);
+                return;
+            }
+            notify({
+                type: "error",
+                title: "Couldn't delete container “/" + route + "”",
+                message: failReason(err, "deleting the container"),
+                hint: failHint(err),
+                details: errorDetails(err)
+            });
+        });
     }
 
     function nudgeOrder(dir) {
@@ -1315,7 +1448,7 @@
             refreshLists().then(function () {
                 if (!state.model && state.list.length) { return loadContainer(state.list[0].route); }
                 renderAll();
-            }).catch(function (err) { toast(err.message, "error"); });
+            }).catch(notifyListFailed);
         }
     }
 
@@ -1337,7 +1470,12 @@
         $("mc-btn-preview").addEventListener("click", function () {
             if (!state.model) { return; }
             if (!state.model.enabled) {
-                toast("Enable the container before previewing its route.", "error");
+                notify({
+                    type: "warning",
+                    title: "Turn the container on first",
+                    message: "A disabled container has no route to preview.",
+                    hint: "Tick “Enabled” in the container settings, then click Preview."
+                });
                 return;
             }
             api("/api/spore-studio/containers/preview", {
@@ -1346,10 +1484,20 @@
                 body: JSON.stringify({ container: state.model })
             }).then(function (body) {
                 window.open(body.url, "_blank");
-                if (state.dirty) {
-                    toast("Draft preview. Save to update the live route.", "info");
+                var dirtyEl = $("mc-dirty");
+                if (state.dirty && dirtyEl) {
+                    // Inline note instead of a pop-up on every Preview click.
+                    dirtyEl.textContent = "Unsaved changes (preview shows this draft)";
                 }
-            }).catch(function (err) { toast(err.message, "error"); });
+            }).catch(function (err) {
+                notify({
+                    type: "error",
+                    title: "Couldn't open the preview",
+                    message: failReason(err, "preparing the preview"),
+                    hint: failHint(err),
+                    details: errorDetails(err)
+                });
+            });
         });
         $("mc-container-select").addEventListener("change", function (ev) {
             var route = ev.target.value;
@@ -1357,7 +1505,18 @@
                 ev.target.value = state.savedRoute || "";
                 return;
             }
-            loadContainer(route).catch(function (err) { toast(err.message, "error"); });
+            loadContainer(route).catch(function (err) {
+                ev.target.value = state.savedRoute || "";
+                notify({
+                    type: "error",
+                    title: "Couldn't open container “/" + route + "”",
+                    message: failReason(err, "opening the container") +
+                        " It may have been deleted, or its file may be damaged.",
+                    hint: failHint(err),
+                    details: errorDetails(err),
+                    dedupe: "container_open:" + route
+                });
+            });
         });
         $("mc-template-search").addEventListener("input", renderPalette);
         var canvas = $("mc-canvas");
@@ -1365,7 +1524,7 @@
         canvas.addEventListener("drop", function (ev) {
             ev.preventDefault();
             if (!state.model) {
-                toast("Create a container first.", "error");
+                needContainerNotice();
                 return;
             }
             var name = ev.dataTransfer.getData("text/plain");

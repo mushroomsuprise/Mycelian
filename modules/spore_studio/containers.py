@@ -290,12 +290,48 @@ def load_container(route: str) -> Optional[Dict[str, Any]]:
             raw = json.load(fh)
     except (OSError, json.JSONDecodeError) as exc:
         logger.warning("Could not read container %s: %s", path, exc)
+        _warn_bad_container(path, cleaned, exc)
         return None
     try:
         return normalize_container(raw)
     except ContainerError as exc:
         logger.warning("Container %s is invalid: %s", path, exc)
+        _warn_bad_container(path, cleaned, exc)
         return None
+
+
+# (path, mtime) pairs already reported; this runs on every overlay request.
+_warned_bad_containers: set = set()
+
+
+def _warn_bad_container(path: str, route: str, exc: BaseException) -> None:
+    """Tell the user once per file version that a container file can't be used."""
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = 0.0
+    key = (path, mtime)
+    if key in _warned_bad_containers:
+        return
+    _warned_bad_containers.add(key)
+    try:
+        from ..notification_engine import nav_actions_main_tab, notify
+
+        notify(
+            "Its file is damaged or invalid, so it's missing from the Containers list "
+            "and its OBS address won't work.",
+            type="warning",
+            source="spore_studio",
+            title=f"Container \u201c/{route}\u201d couldn't be loaded",
+            hint="Fix or remove the file in the containers folder, or create the container "
+            "again in Spore Studio \u2192 Containers.",
+            details=f"{path}\n{type(exc).__name__}: {exc}",
+            actions=nav_actions_main_tab("Spore Studio"),
+            dedupe_key=f"spore:container_bad:{path}",
+            dedupe_cooldown_sec=3600,
+        )
+    except Exception:
+        logger.debug("Could not show the damaged container warning", exc_info=True)
 
 
 def list_container_models() -> List[Dict[str, Any]]:

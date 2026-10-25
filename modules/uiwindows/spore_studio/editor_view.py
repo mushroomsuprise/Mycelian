@@ -231,8 +231,17 @@ def _open_externally() -> None:
     if not url:
         from ...notification_engine import notify
 
-        notify("Overlay server is not running yet.", type="warning")
+        notify(
+            "Spore Studio runs on the overlay server, which hasn't started yet.",
+            type="warning",
+            source="overlay_server",
+            title="Spore Studio can't open yet",
+            hint="Wait for the overlay server to start (see the footer), then try again.",
+        )
         return
+    # external=1 makes the editor show its messages in that browser tab
+    # instead of sending them to the app window.
+    url = f"{url}?external=1"
     # Server-side webbrowser.open is the pattern used elsewhere in the app
     # (settings, help_browser, spotify) and is far more reliable than
     # ui.run_javascript("window.open(...)") which is async-only and gets
@@ -243,4 +252,12 @@ def _open_externally() -> None:
         logger.warning("Failed to open Spore Studio externally: %s", e)
         from ...notification_engine import notify
 
-        notify(f"Could not open browser: {e}", type="negative")
+        notify(
+            "Spore Studio couldn't be opened in your default browser.",
+            type="error",
+            source="spore_studio",
+            title="Couldn't open your browser",
+            hint="Click Copy address and paste it into any browser on this computer.",
+            details=f"{url}\n{type(e).__name__}: {e}",
+            actions=[{"kind": "copy", "text": url, "label": "Copy address"}],
+        )

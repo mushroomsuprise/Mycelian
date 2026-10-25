@@ -231,20 +231,48 @@ def ensure_template_assets_folder(template_name: str) -> str:
     return template_dir
 
 
-def _refresh_web_engine_routes() -> None:
-    """Ask the running web engine to register routes for any new template."""
+def _refresh_web_engine_routes(template_name: Optional[str] = None) -> bool:
+    """Ask the running web engine to register routes for any new template.
+
+    Returns False (after telling the user) when the overlay server could not
+    pick up the change, so OBS may keep serving the old version or a 404.
+    """
     try:
         from .. import web_engine as web_engine_module
     except Exception as e:
         logger.debug("web_engine import skipped during route refresh: %s", e)
-        return
+        return True
     inst = getattr(web_engine_module, "web_engine_instance", None)
     if inst is None:
-        return
+        return True
     try:
         inst.register_routes()
+        return True
     except Exception as e:
         logger.warning("Failed to refresh web engine routes: %s", e)
+        try:
+            from ..notification_engine import nav_spore_template, notify
+
+            name = str(template_name or "").strip()
+            notify(
+                (
+                    f"\u201c{name}\u201d was saved, but its OBS address may still show the old "
+                    "version (or nothing, if it's new)."
+                    if name
+                    else "The template change is on disk, but OBS may still show the old version."
+                ),
+                type="warning",
+                source="overlay_server",
+                title="The overlay server didn't pick up the change",
+                hint="Refresh the browser source in OBS. If it still looks old, restart Mycelian.",
+                details=f"register_routes: {type(e).__name__}: {e}",
+                actions=nav_spore_template(name) if name else None,
+                dedupe_key="spore:route_refresh",
+                dedupe_cooldown_sec=300,
+            )
+        except Exception:
+            logger.debug("Could not show the route refresh warning", exc_info=True)
+        return False
 
 
 def create_template(
@@ -465,7 +493,7 @@ def _save_legacy_template(model: Dict[str, Any], template_name: str) -> Dict[str
                 entry["value"] = edited_values[str(eid)]
 
     _atomic_write_json(json_path, config)
-    _refresh_web_engine_routes()
+    _refresh_web_engine_routes(template_name)
     return model
 
 
@@ -559,7 +587,7 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     html_path = get_template_path(f"{template_name}.html")
     _atomic_write(html_path, html_text)
     _atomic_write_json(json_path, json_config)
-    template_parser_back.save_sidecar(template_name, model)
+    sidecar_ok = template_parser_back.save_sidecar(template_name, model)
     ensure_template_assets_folder(template_name)
     try:
         from .template_outputs import invalidate_cache
@@ -568,7 +596,15 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         logger.debug("Could not refresh template output cache", exc_info=True)
 
-    _refresh_web_engine_routes()
+    _refresh_web_engine_routes(template_name)
+    if not sidecar_ok:
+        # The overlay HTML/JSON are written, but the editor model is not:
+        # the next open would reverse-parse the HTML and could lose layout.
+        raise SporeStudioError(
+            "The overlay itself was saved, but Spore Studio couldn't write its own copy of "
+            "the layout, so it may not reopen correctly. Check that the templates folder "
+            "isn't read-only or out of space."
+        )
     return model
 
 

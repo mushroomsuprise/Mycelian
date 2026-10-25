@@ -326,7 +326,15 @@ def help_button(context: str = None, topic_id: str = None, tooltip: str = "Help"
             logger.error(f"Error opening help: {e}")
             from ..notification_engine import notify as app_notify
 
-            app_notify(f"Error opening help: {e}", type="negative")
+            app_notify(
+                "Something went wrong while opening it.",
+                type="error",
+                source="help",
+                title="Couldn't open Help",
+                hint="Try again. If it keeps failing, restart Mycelian.",
+                details=f"context: {context}\n{type(e).__name__}: {e}",
+                dedupe_key="help:open_failed",
+            )
 
     # Choose icon based on size
     icon_name = "help_outline" if size == "sm" else "help"

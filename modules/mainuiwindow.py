@@ -210,7 +210,25 @@ def apply_theme(theme_name: str):
     theme = theme_manager.get_theme()
     if not theme:
         logger.error(f"Failed to load theme: {theme_name}")
-        return
+        if not isinstance(theme_name, str):
+            return False
+        try:
+            from .notification_engine import nav_actions_settings, notify
+
+            notify(
+                "The app keeps its current look.",
+                type="warning",
+                source="theme",
+                title=f"Couldn't load the theme \u201c{theme_name}\u201d",
+                hint="Pick another theme in Settings \u2192 Theme. If this is a custom theme, check its file.",
+                details=f"theme: {theme_name!r}",
+                actions=nav_actions_settings("Theme"),
+                dedupe_key=f"theme:load_failed:{theme_name}",
+                dedupe_cooldown_sec=600,
+            )
+        except Exception:
+            logger.debug("Could not show the theme load warning", exc_info=True)
+        return False  # callers can tell the theme didn't apply (it already warned)
 
     # Generate theme CSS variables
     theme_css = generate_css_variables(theme)
@@ -1077,32 +1095,65 @@ def _inject_animation_observer() -> None:
 
 
 def _schedule_spore_legacy_widget_notice() -> None:
-    """Warn once when a template still stores a counter or data display as text."""
+    """One summary notice when templates still store a counter or data display as text.
+
+    Skipped when the same list was already reported and that notice is still in the
+    notification centre, so it doesn't come back at every launch.
+    """
 
     def notify_legacy() -> None:
         try:
-            from .notification_engine import notify
+            from .notification_engine import (
+                get_history,
+                nav_actions_main_tab,
+                nav_spore_template,
+                notify,
+            )
             from .spore_studio.data_feed_registry import templates_needing_widget_resave
 
+            rows = []
             for row in templates_needing_widget_resave():
-                name = row.get("template") or ""
-                if not name:
-                    continue
-                kind = "counter" if row.get("mode") == "counter" else "data display"
-                notify(
-                    f"{name} still uses a Text {kind}. Open it in Spore Studio and Save so it becomes its own widget.",
-                    type="warning",
-                    timeout=0,
-                    dedupe_key=f"spore-legacy-text:{name}",
-                    dedupe_cooldown_sec=3600,
-                    actions=[
-                        {
-                            "kind": "navigate",
-                            "main_tab": "Spore Studio",
-                            "spore_template": name,
-                        }
-                    ],
+                name = str(row.get("template") or "").strip()
+                if name:
+                    kind = "counter" if row.get("mode") == "counter" else "data display"
+                    rows.append((name, kind))
+            if not rows:
+                return
+            rows.sort(key=lambda item: item[0].lower())
+            dedupe_key = "spore:legacy_text_widgets"
+            details = "\n".join(f"{name}: Text {kind}" for name, kind in rows)
+            if any(
+                entry.get("dedupe_key") == dedupe_key and entry.get("details") == details
+                for entry in get_history()
+            ):
+                return
+            names = [name for name, _kind in rows]
+            if len(names) == 1:
+                title = f"\u201c{names[0]}\u201d needs a re-save in Spore Studio"
+                message = (
+                    f"It still shows a {rows[0][1]} as a Text block. Saving it once turns that "
+                    "into its own widget."
                 )
+                actions = nav_spore_template(names[0])
+            else:
+                shown = ", ".join(names[:5]) + (f" and {len(names) - 5} more" if len(names) > 5 else "")
+                title = f"{len(names)} Spore templates need a re-save"
+                message = (
+                    f"{shown} still show a counter or data display as a Text block. Saving each "
+                    "one once turns it into its own widget."
+                )
+                actions = nav_actions_main_tab("Spore Studio")
+            notify(
+                message,
+                type="warning",
+                source="spore_studio",
+                title=title,
+                hint="Open the template in Spore Studio and click Save.",
+                details=details,
+                actions=actions,
+                dedupe_key=dedupe_key,
+                dedupe_cooldown_sec=3600,
+            )
         except Exception as e:
             logger.error("Spore Studio legacy widget notice failed: %s", e, exc_info=True)
 
@@ -2182,6 +2233,17 @@ def create_ui_elements():
                             exc,
                             exc_info=True,
                         )
+                        from .notification_engine import nav_actions_main_tab, notify as app_notify
+
+                        app_notify(
+                            "Your changes are still on the Settings tab.",
+                            type="error",
+                            source="app",
+                            title="Couldn't save your settings",
+                            hint="Check the tab with unsaved changes, then click Save again or discard the changes.",
+                            details=f"{type(exc).__name__}: {exc}",
+                            actions=nav_actions_main_tab("Settings"),
+                        )
                         done(False)
                         return
                     done(not settings_ui.has_unsaved_changes())
@@ -2214,8 +2276,6 @@ def create_ui_elements():
                     on_discard,
                 ):
                     """Ask to save, discard, or stay before leaving a main tab."""
-                    from .notification_engine import notify as app_notify
-
                     if main_unsaved_dialog_open["value"]:
                         return
                     main_unsaved_dialog_open["value"] = True
@@ -2225,6 +2285,12 @@ def create_ui_elements():
                     ):
                         ui.label("Unsaved changes").classes("text-lg font-bold mb-2")
                         ui.label(message).classes("secondary-text mb-4")
+                        # The save itself reports why it failed; this only says we stayed.
+                        save_failed_label = ui.label(
+                            "Couldn't save, so you're still here and your changes are kept. "
+                            "Fix the problem, or discard the changes."
+                        ).classes("text-negative text-sm mb-3")
+                        save_failed_label.set_visibility(False)
 
                         def release() -> None:
                             main_unsaved_dialog_open["value"] = False
@@ -2242,10 +2308,7 @@ def create_ui_elements():
                         def save_and_leave():
                             def finished(ok: bool) -> None:
                                 if not ok:
-                                    app_notify(
-                                        "Could not save. Your changes are still here.",
-                                        type="warning",
-                                    )
+                                    save_failed_label.set_visibility(True)
                                     return
                                 release()
                                 tabs_component.value = target_tab
@@ -2342,14 +2405,28 @@ def toggle_alerts():
         # Show user feedback
         from .notification_engine import notify as app_notify
 
-        state_text = "paused" if web_engine.ALERTS_PAUSED else "resumed"
-        app_notify(f"Alerts {state_text}", type="info")
+        if web_engine.ALERTS_PAUSED:
+            app_notify(
+                "New alerts wait in the queue until you resume.",
+                type="info",
+                source="alerts",
+                title="Alerts paused",
+            )
+        else:
+            app_notify("", type="info", source="alerts", title="Alerts resumed")
 
     except Exception as e:
         logger.error(f"Error toggling alerts: {str(e)}", exc_info=True)
         from .notification_engine import notify as app_notify
 
-        app_notify("Error toggling alerts", type="negative")
+        app_notify(
+            "Alerts are still in the state they were before.",
+            type="error",
+            source="alerts",
+            title="Couldn't pause or resume alerts",
+            hint="Check that the overlay server is running (see the footer), then try again.",
+            details=f"{type(e).__name__}: {e}",
+        )
 
 
 def toggle_mute():
@@ -2395,11 +2472,20 @@ def toggle_mute():
 
         from .notification_engine import notify as app_notify
 
-        state_text = "muted" if web_engine.ALERTS_MUTED else "unmuted"
-        app_notify(f"Alerts {state_text}", type="info")
+        if web_engine.ALERTS_MUTED:
+            app_notify("", type="info", source="alerts", title="Alert sound muted")
+        else:
+            app_notify("", type="info", source="alerts", title="Alert sound unmuted")
 
     except Exception as e:
         logger.error(f"Error toggling mute: {str(e)}", exc_info=True)
         from .notification_engine import notify as app_notify
 
-        app_notify("Error toggling mute", type="negative")
+        app_notify(
+            "The alert sound setting didn't change.",
+            type="error",
+            source="alerts",
+            title="Couldn't mute or unmute alerts",
+            hint="Check that the overlay server is running (see the footer), then try again.",
+            details=f"{type(e).__name__}: {e}",
+        )

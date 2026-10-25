@@ -825,57 +825,164 @@
     function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
     /**
-     * Show a user-facing message.
-     *
-     * Default path: POST to /api/spore-studio/notify so the parent
-     * NiceGUI window's notification engine handles it (top-right toast +
-     * notification center history). The in-iframe ss-toast element is
-     * only used as a fallback when that round-trip fails (network blip,
-     * server stopped) so we never silently swallow errors.
-     *
-     * Pass forceLocal=true for transport-layer messages whose whole
-     * point is to report that the network call failed.
+     * True when the editor runs inside the Mycelian window (an iframe in the
+     * Spore Studio tab). "Open externally" adds ?external=1, and a top-level
+     * page is a browser tab, so those show their messages on the page itself.
      */
-    function toast(message, kind, forceLocal) {
-        if (!message) { return; }
-        var ntype = kind || "info";
-        if (ntype === "success") { ntype = "positive"; }
-        else if (ntype === "error") { ntype = "negative"; }
-
-        function showLocal() {
-            var el = $("#ss-toast");
-            if (!el) { return; }
-            el.textContent = message;
-            el.classList.remove("ss-toast--success", "ss-toast--error");
-            if (kind === "success") { el.classList.add("ss-toast--success"); }
-            else if (kind === "error") { el.classList.add("ss-toast--error"); }
-            el.classList.add("visible");
-            clearTimeout(el._timeout);
-            el._timeout = setTimeout(function () {
-                el.classList.remove("visible");
-            }, 1800);
+    var EMBEDDED_IN_APP = (function () {
+        try {
+            if (/[?&]external=1(?:&|$)/.test(window.location.search)) { return false; }
+            return window.self !== window.top;
+        } catch (err) {
+            return true;
         }
+    })();
 
-        if (forceLocal) { showLocal(); return; }
+    var LOCAL_TOAST_MS = { error: 10000, warning: 7000, info: 3500, success: 3000 };
+    var localDedupeSeen = {};
 
+    function normalizeNoticeType(kind) {
+        var t = String(kind || "info").toLowerCase();
+        if (t === "positive") { return "success"; }
+        if (t === "negative") { return "error"; }
+        if (t === "error" || t === "warning" || t === "success") { return t; }
+        return "info";
+    }
+
+    /** Show a notice on this page (external browser, or when the app can't be reached). */
+    function showLocalNotice(n) {
+        var el = $("#ss-toast");
+        if (!el) { return; }
+        if (n.dedupe) {
+            var last = localDedupeSeen[n.dedupe] || 0;
+            if (Date.now() - last < 30000) { return; }
+            localDedupeSeen[n.dedupe] = Date.now();
+        }
+        var parts = [n.title, n.message, n.hint].filter(function (s) { return !!s; });
+        el.textContent = parts.join(" ");
+        el.classList.remove("ss-toast--success", "ss-toast--error");
+        el.style.borderColor = "";
+        if (n.type === "success") { el.classList.add("ss-toast--success"); }
+        else if (n.type === "error") { el.classList.add("ss-toast--error"); }
+        else if (n.type === "warning") { el.style.borderColor = "var(--ss-warn)"; }
+        el.classList.add("visible");
+        clearTimeout(el._timeout);
+        el._timeout = setTimeout(function () {
+            el.classList.remove("visible");
+        }, LOCAL_TOAST_MS[n.type] || 3500);
+    }
+
+    /**
+     * Show a user-facing notice.
+     *
+     * Inside the app this POSTs to /api/spore-studio/notify so Mycelian's
+     * notification engine shows it (pop-up + notification centre history).
+     * The in-page ss-toast is used when the editor is open in an external
+     * browser, and as a fallback when that request fails.
+     *
+     * opts: { type, title, message, hint, details, template, dedupe, source }
+     *   title    short first line ("Couldn't save my_alert")
+     *   message  what happened, in plain words
+     *   hint     how to fix it (errors and warnings)
+     *   details  raw/technical text for "Copy details" (HTTP status, server error)
+     *   template Spore template name: adds an "Open in Spore Studio" action
+     *   dedupe   stable key for repeats (background or repeating failures)
+     */
+    function notify(opts) {
+        var n = {
+            type: normalizeNoticeType(opts && opts.type),
+            title: String((opts && opts.title) || ""),
+            message: String((opts && opts.message) || ""),
+            hint: String((opts && opts.hint) || ""),
+            details: String((opts && opts.details) || ""),
+            template: String((opts && opts.template) || ""),
+            dedupe: String((opts && opts.dedupe) || ""),
+            source: String((opts && opts.source) || "spore_studio")
+        };
+        if (!n.title && !n.message) { return; }
+        if (!EMBEDDED_IN_APP) { showLocalNotice(n); return; }
+        var body = { type: n.type, title: n.title, message: n.message, source: n.source };
+        if (n.hint) { body.hint = n.hint; }
+        if (n.details) { body.details = n.details; }
+        if (n.template) { body.template = n.template; }
+        if (n.dedupe) { body.dedupe = n.dedupe; }
         try {
             fetch("/api/spore-studio/notify", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: message, type: ntype })
+                body: JSON.stringify(body)
             })
                 .then(function (r) {
-                    if (!r.ok) { showLocal(); }
+                    if (!r.ok) { showLocalNotice(n); }
                 })
-                .catch(function () { showLocal(); });
+                .catch(function () { showLocalNotice(n); });
         } catch (e) {
-            showLocal();
+            showLocalNotice(n);
         }
     }
+    window.sporeNotify = notify;
 
-    function setStatus(text) {
-        if (!text) { return; }
-        toast(text, "info");
+    /** Plain-text summary of a failed request for "Copy details". */
+    function requestDetails(res, what) {
+        var bits = [];
+        if (what) { bits.push(what); }
+        if (res && res.status) { bits.push("HTTP " + res.status); }
+        var err = res && res.data && res.data.error;
+        if (err) { bits.push(String(err)); }
+        return bits.join(" | ");
+    }
+
+    /**
+     * Error for a failed JSON request. ``userText`` is the server's message when
+     * it is a plain validation message (HTTP 4xx); server faults (5xx) carry raw
+     * exception text, which only goes into ``details``.
+     */
+    function requestError(res, what) {
+        var serverText = (res && res.data && res.data.error) ? String(res.data.error) : "";
+        var err = new Error(serverText || ("Request failed (" + ((res && res.status) || "?") + ")"));
+        err.status = (res && res.status) || 0;
+        err.userText = (err.status >= 400 && err.status < 500) ? serverText : "";
+        err.details = requestDetails(res, what);
+        return err;
+    }
+
+    /** Details text for any error caught in a request chain. */
+    function errorDetails(err, what) {
+        if (err && err.details) { return err.details; }
+        var text = err && (err.message || String(err));
+        return [what, text].filter(function (s) { return !!s; }).join(" | ");
+    }
+
+    /** fetch + JSON body; resolves { ok, status, data } even for non-JSON error pages. */
+    function fetchJson(url, options) {
+        return fetch(url, options).then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (data) {
+                return { ok: r.ok, status: r.status, data: data || {} };
+            });
+        });
+    }
+
+    /**
+     * Small status text in the toolbar for load state ("Loading…", "Legacy
+     * template (advanced mode)", "No templates yet"). Replaces the old toasts.
+     */
+    function setLoadState(text, tone) {
+        var el = $("#ss-load-state");
+        if (!el) {
+            var anchor = $("#ss-dirty-indicator");
+            if (!anchor || !anchor.parentNode) { return; }
+            el = document.createElement("span");
+            el.id = "ss-load-state";
+            el.className = "ss-dirty-indicator ss-template-only";
+            el.setAttribute("role", "status");
+            anchor.parentNode.insertBefore(el, anchor);
+        }
+        el.textContent = text || "";
+        el.style.color = tone === "error" ? "var(--ss-error)"
+            : (tone === "warn" ? "var(--ss-warn)" : "var(--ss-text-muted)");
+        el.title = tone === "warn"
+            ? "This template was not made in Spore Studio. You can change its settings, but not add or move blocks."
+            : "";
     }
     function setDirty(isDirty) {
         state.dirty = !!isDirty;
@@ -1176,11 +1283,28 @@
         if (!state.model || state.model.legacy) {
             return Promise.resolve();
         }
-        return fetch("/api/spore-studio/preview/draft", {
+        return fetchJson("/api/spore-studio/preview/draft", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token: state.previewToken, model: state.model })
-        }).catch(function () { /* best-effort */ });
+        })
+            .then(function (res) {
+                if (!res.ok) { throw requestError(res, "POST /api/spore-studio/preview/draft"); }
+            })
+            .catch(function (err) {
+                // Best-effort, but say so once when the preview stops following edits.
+                notify({
+                    type: "warning",
+                    source: err && err.status ? "spore_studio" : "overlay_server",
+                    title: "The live preview couldn't update",
+                    message: "The preview still shows an older version of your changes.",
+                    hint: err && err.status
+                        ? "Click Reload in the preview. Saving the template also updates it."
+                        : "Check that the overlay server is running (see the footer), then reload the preview.",
+                    details: errorDetails(err, "POST /api/spore-studio/preview/draft"),
+                    dedupe: "preview_draft"
+                });
+            });
     }
 
     function schedulePreviewDraft() {
@@ -7662,7 +7786,15 @@
             var conflict = state.model.elements.some(function (e) {
                 return e.id === newId && e !== el;
             });
-            if (conflict) { toast("Another element already has id '" + newId + "'", "error"); return; }
+            if (conflict) {
+                notify({
+                    type: "warning",
+                    title: "That ID is already taken",
+                    message: "Another element already uses the ID “" + newId + "”.",
+                    hint: "Pick a different ID. Each element needs its own."
+                });
+                return;
+            }
             updateBindingsForRename(el.id, newId);
             var renameFrom = el.id;
             state.model.elements.forEach(function (e2) {
@@ -8417,12 +8549,22 @@
                     var nid = idIn.value.trim().replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_|_$/g, "") || "action";
                     if (nid === prevId) { return; }
                     if ((state.model.streamdeck_options.actions || {})[nid]) {
-                        toast("That action id is already in use", "error");
+                        notify({
+                            type: "warning",
+                            title: "That action ID is already taken",
+                            message: "Another Stream Deck action already uses “" + nid + "”.",
+                            hint: "Pick a different action ID."
+                        });
                         idIn.value = prevId;
                         return;
                     }
                     if (!migrateStreamdeckActionId(prevId, nid)) {
-                        toast("Could not rename action id", "error");
+                        notify({
+                            type: "warning",
+                            title: "Couldn't rename the action",
+                            message: "The action ID and its Stream Deck bindings were left unchanged.",
+                            hint: "Try a different ID."
+                        });
                         idIn.value = prevId;
                         return;
                     }
@@ -8495,7 +8637,12 @@
                                 throw new Error("must be object");
                             }
                         } catch (e) {
-                            toast("default_data must be JSON object", "error");
+                            notify({
+                                type: "warning",
+                                title: "Sample data isn't valid",
+                                message: "Sample data must be a JSON object, like {\"user\": \"name\"}. Your last valid value was kept.",
+                                hint: "Check for missing quotes, commas or braces."
+                            });
                             ddTa.value = JSON.stringify(spec.default_data || {}, null, 2);
                             return;
                         }
@@ -9093,11 +9240,12 @@
         if (!state.model) { return; }
         if (!ELEMENT_PROP_SCHEMA[type]) { return; }
         if (isLegacyModel()) {
-            toast(
-                "Legacy templates can't accept new blocks — create a new " +
-                "template via '+ New' to edit visually.",
-                "error"
-            );
+            notify({
+                type: "warning",
+                title: "Legacy templates can't take new blocks",
+                message: "This template wasn't made in Spore Studio, so blocks can't be added to it.",
+                hint: "Click + New to create a Spore template you can edit visually."
+            });
             return;
         }
         promptCategory().then(function (category) {
@@ -9316,7 +9464,11 @@
                     renderAll();
                     modelTouch();
                 } else {
-                    toast("Select an image / video / audio element first.", "error");
+                    notify({
+                        type: "info",
+                        title: "Select an image, video or audio element first",
+                        message: "Double-clicking an asset puts it into the selected media element."
+                    });
                 }
             });
             grid.appendChild(card);
@@ -9337,12 +9489,23 @@
 
     function refreshAssetsForCurrent() {
         if (!state.model) { return; }
-        fetch("/api/spore-studio/assets/" + encodeURIComponent(state.model.template_name))
-            .then(function (r) { return r.json(); })
-            .then(renderAssets)
+        var name = state.model.template_name;
+        fetchJson("/api/spore-studio/assets/" + encodeURIComponent(name))
+            .then(function (res) {
+                if (!res.ok) { throw requestError(res, "GET /api/spore-studio/assets/" + name); }
+                renderAssets(res.data);
+            })
             .catch(function (err) {
                 console.warn("Asset refresh failed", err);
                 renderAssets(null);
+                notify({
+                    type: "warning",
+                    title: "Couldn't load the assets for “" + name + "”",
+                    message: "The Assets panel may be empty even though the files are still there.",
+                    hint: "Click Reload editor to try again.",
+                    details: errorDetails(err),
+                    dedupe: "assets_list:" + name
+                });
             });
     }
 
@@ -9350,9 +9513,22 @@
      * Template list / loading / saving
      * ------------------------------------------------------------------ */
     function refreshTemplateList() {
-        return fetch("/api/spore-studio/templates")
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
+        return fetchJson("/api/spore-studio/templates")
+            .then(function (res) {
+                if (!res.ok) {
+                    var listErr = requestError(res, "GET /api/spore-studio/templates");
+                    notify({
+                        type: "error",
+                        title: "Couldn't load the template list",
+                        message: "Spore Studio couldn't read your templates, so the list may be out of date.",
+                        hint: "Click Reload editor. If it keeps failing, restart Mycelian.",
+                        details: listErr.details,
+                        dedupe: "template_list"
+                    });
+                    listErr.notified = true;
+                    throw listErr;
+                }
+                var data = res.data;
                 state.templates.spore = data.spore_templates || [];
                 state.templates.legacy = data.legacy_templates || [];
                 var sel = $("#ss-template-select");
@@ -9380,14 +9556,23 @@
     function loadTemplate(name) {
         if (!name) {
             state.model = null;
+            setLoadState("");
             renderAll();
             renderPreviewMockToolbar();
             return Promise.resolve();
         }
-        setStatus("Loading " + name + "…");
-        return fetch("/api/spore-studio/model/" + encodeURIComponent(name))
-            .then(function (r) { return r.json(); })
-            .then(function (model) {
+        // No toast here: opening a template is routine (tab build, deep links,
+        // after create/delete). The toolbar shows the state instead.
+        setLoadState("Loading " + name + "…");
+        return fetchJson("/api/spore-studio/model/" + encodeURIComponent(name))
+            .then(function (res) {
+                var model = res.data;
+                // A 404/500 body is {error: ...}; never open it as a blank
+                // "untitled" model that a later Save would write to disk.
+                if (!res.ok || !model || typeof model !== "object" || model.error ||
+                        !Array.isArray(model.elements)) {
+                    throw requestError(res, "GET /api/spore-studio/model/" + name);
+                }
                 state.model = normalizeModel(model);
                 state.selectedId = null;
                 state.history = [];
@@ -9412,13 +9597,25 @@
                         );
                     }
                 } catch (err) {}
-                if (model.legacy) {
-                    toast("Legacy template (advanced mode)", "info");
-                }
+                setLoadState(
+                    model.legacy ? "Legacy template (advanced mode)" : "",
+                    model.legacy ? "warn" : ""
+                );
             })
             .catch(function (err) {
                 console.error("Load failed", err);
-                toast("Failed to load template", "error");
+                // Keep whatever was open before; point the picker back at it.
+                var sel = $("#ss-template-select");
+                if (sel) { sel.value = state.model ? state.model.template_name : ""; }
+                setLoadState(state.model ? "" : "Couldn't open “" + name + "”", "error");
+                notify({
+                    type: "error",
+                    title: "Couldn't open “" + name + "”",
+                    message: "Spore Studio couldn't load this template. It may have been renamed or deleted, or its files may be damaged.",
+                    hint: "Choose it again from the template list or click Reload editor. If it still fails, check its files in the templates folder.",
+                    details: errorDetails(err, "GET /api/spore-studio/model/" + name),
+                    dedupe: "open:" + name
+                });
             });
     }
 
@@ -9540,25 +9737,36 @@
     function saveCurrent() {
         if (!state.model) { return; }
         flushStreamdeckPanelInputs();
-        fetch("/api/spore-studio/save", {
+        var name = state.model.template_name;
+        fetchJson("/api/spore-studio/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ model: state.model })
         })
-            .then(function (r) {
-                return r.json().then(function (data) { return { ok: r.ok, data: data }; });
-            })
             .then(function (res) {
-                if (!res.ok) {
-                    throw new Error((res.data && res.data.error) || "Save failed");
+                if (!res.ok || (res.data && res.data.ok === false)) {
+                    throw requestError(res, "POST /api/spore-studio/save (" + name + ")");
                 }
                 setDirty(false);
-                toast("Saved " + state.model.template_name, "success");
+                notify({ type: "success", title: "Saved “" + name + "”" });
                 refreshPreview(true);
             })
             .catch(function (err) {
                 console.error("Save failed", err);
-                toast("Save failed: " + err.message, "error");
+                var reached = !!(err && err.status);
+                notify({
+                    type: "error",
+                    title: "Couldn't save “" + name + "”",
+                    message: (err && err.userText ? err.userText : (reached
+                        ? "Something went wrong while saving."
+                        : "Spore Studio couldn't reach Mycelian.")) +
+                        " Your changes are still in the editor.",
+                    hint: reached
+                        ? "Fix the problem above if there is one, then click Save again."
+                        : "Make sure Mycelian is running, then click Save again.",
+                    details: errorDetails(err, "POST /api/spore-studio/save (" + name + ")"),
+                    template: name
+                });
             });
     }
 
@@ -9835,27 +10043,39 @@
         if (act.alert_type) {
             body.alert_type = act.alert_type;
         }
-        fetch("/api/spore-studio/preview/emit", {
+        fetchJson("/api/spore-studio/preview/emit", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body)
         })
-            .then(function (r) {
-                return r.json().then(function (data) {
-                    return { ok: r.ok, data: data };
-                });
-            })
             .then(function (res) {
-                if (!res.ok) {
-                    toast(
-                        (res.data && res.data.error) || "Mock emit failed",
-                        "error"
-                    );
-                }
+                if (!res.ok) { notifyMockEmitFailed(res); }
             })
-            .catch(function () {
-                toast("Mock emit failed", "error");
+            .catch(function (err) {
+                notifyMockEmitFailed(null, err);
             });
+    }
+
+    /** One message for a failed "send test event to the preview" click. */
+    function notifyMockEmitFailed(res, err) {
+        if (res) {
+            notify({
+                type: "warning",
+                title: "Couldn't send the test event",
+                message: "The preview didn't receive it.",
+                hint: "Open the preview first (Preview button), wait for it to load, then try again.",
+                details: requestDetails(res, "POST /api/spore-studio/preview/emit")
+            });
+            return;
+        }
+        notify({
+            type: "error",
+            source: "overlay_server",
+            title: "Couldn't send the test event",
+            message: "Spore Studio couldn't reach the overlay server.",
+            hint: "Check that the overlay server is running (see the footer), then try again.",
+            details: errorDetails(err, "POST /api/spore-studio/preview/emit")
+        });
     }
 
     function _appendPreviewMockButtons(host, actions) {
@@ -9947,7 +10167,7 @@
                     sbtn.textContent = spec.name || k;
                     sbtn.title = "Emit '" + spec.event + "' with default_data";
                     sbtn.addEventListener("click", function () {
-                        fetch("/api/spore-studio/preview/emit", {
+                        fetchJson("/api/spore-studio/preview/emit", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
@@ -9956,22 +10176,11 @@
                                 data: spec.default_data || {},
                             }),
                         })
-                            .then(function (r) {
-                                return r.json().then(function (data) {
-                                    return { ok: r.ok, data: data };
-                                });
-                            })
                             .then(function (res) {
-                                if (!res.ok) {
-                                    toast(
-                                        (res.data && res.data.error) ||
-                                            "Mock emit failed",
-                                        "error"
-                                    );
-                                }
+                                if (!res.ok) { notifyMockEmitFailed(res); }
                             })
-                            .catch(function () {
-                                toast("Mock emit failed", "error");
+                            .catch(function (err) {
+                                notifyMockEmitFailed(null, err);
                             });
                     });
                     host.appendChild(sbtn);
@@ -10078,10 +10287,25 @@
         });
 
         function close() { node.remove(); }
+        // Problems with the form show inside the dialog, next to the buttons.
+        var formError = document.createElement("div");
+        formError.setAttribute("role", "alert");
+        formError.style.cssText = "color:var(--ss-error);font-size:12px;margin-top:8px;display:none;";
+        var actionsRow = node.querySelector("[data-create-action='create']").parentNode;
+        actionsRow.parentNode.insertBefore(formError, actionsRow);
+        function showFormError(text) {
+            formError.textContent = text || "";
+            formError.style.display = text ? "block" : "none";
+        }
         node.querySelector("[data-create-action='cancel']").addEventListener("click", close);
         node.querySelector("[data-create-action='create']").addEventListener("click", function () {
             var name = node.querySelector("[data-create='name']").value.trim();
-            if (!name) { toast("Name is required", "error"); return; }
+            if (!name) {
+                showFormError("Enter a name for the new template.");
+                node.querySelector("[data-create='name']").focus();
+                return;
+            }
+            showFormError("");
             var payload = {
                 name: name,
                 alert_system: node.querySelector("[data-create='alert_system']").value,
@@ -10089,23 +10313,44 @@
                 design_width: parseInt(node.querySelector("[data-create='design_width']").value, 10) || 800,
                 design_height: parseInt(node.querySelector("[data-create='design_height']").value, 10) || 200
             };
-            fetch("/api/spore-studio/create", {
+            var created = false;
+            fetchJson("/api/spore-studio/create", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             })
-                .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
                 .then(function (res) {
-                    if (!res.ok) { throw new Error((res.data && res.data.error) || "Create failed"); }
+                    if (!res.ok) { throw requestError(res, "POST /api/spore-studio/create (" + payload.name + ")"); }
+                    created = true;
                     close();
-                    toast("Created " + payload.name, "success");
+                    notify({ type: "success", title: "Created “" + payload.name + "”" });
                     return refreshTemplateList().then(function () {
                         $("#ss-template-select").value = payload.name;
                         return loadTemplate(payload.name);
                     });
                 })
                 .catch(function (err) {
-                    toast(err.message, "error");
+                    if (created) {
+                        // The template exists; refreshTemplateList already said what went wrong.
+                        if (!(err && err.notified)) { console.error("Refresh after create failed", err); }
+                        return;
+                    }
+                    if (err && err.userText) {
+                        showFormError(err.userText);
+                        return;
+                    }
+                    showFormError("Couldn't create the template.");
+                    notify({
+                        type: "error",
+                        title: "Couldn't create “" + payload.name + "”",
+                        message: err && err.status
+                            ? "Something went wrong while creating the template."
+                            : "Spore Studio couldn't reach Mycelian.",
+                        hint: err && err.status
+                            ? "Try again. If it keeps failing, check that the templates folder can be written to."
+                            : "Make sure Mycelian is running, then try again.",
+                        details: errorDetails(err, "POST /api/spore-studio/create (" + payload.name + ")")
+                    });
                 });
         });
     }
@@ -10266,12 +10511,16 @@
                     return e.type === "container" && !pidNorm(e.parent_id) && !isLegacyElement(e);
                 });
                 if (roots.length !== 1) {
-                    showToast(
-                        roots.length === 0
-                            ? "Add a top-level container first."
-                            : "Match canvas requires exactly one top-level container.",
-                        "error"
-                    );
+                    notify({
+                        type: "warning",
+                        title: "Can't match the canvas yet",
+                        message: roots.length === 0
+                            ? "There's no top-level container to match the canvas to."
+                            : "There are " + roots.length + " top-level containers, so it isn't clear which one to match.",
+                        hint: roots.length === 0
+                            ? "Add a Container block to the canvas first."
+                            : "Keep exactly one top-level container (put the others inside it), then try again."
+                    });
                     return;
                 }
                 var root = roots[0];
@@ -10496,19 +10745,18 @@
         )) {
             return;
         }
-        fetch("/api/spore-studio/delete", {
+        var deleted = false;
+        fetchJson("/api/spore-studio/delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: name })
         })
-            .then(function (r) {
-                return r.json().then(function (data) { return { ok: r.ok, data: data }; });
-            })
             .then(function (res) {
                 if (!res.ok) {
-                    throw new Error((res.data && res.data.error) || "Delete failed");
+                    throw requestError(res, "POST /api/spore-studio/delete (" + name + ")");
                 }
-                toast("Deleted " + name, "success");
+                deleted = true;
+                notify({ type: "success", title: "Deleted “" + name + "”" });
                 setDirty(false);
                 return refreshTemplateList();
             })
@@ -10518,37 +10766,58 @@
                 if (!sel.options.length) {
                     loadTemplate("");
                     updateDeleteTemplateButton();
-                    toast("No templates — click '+ New'.", "info");
+                    setLoadState("No templates yet — click + New to create one.");
                     return;
                 }
                 sel.value = sel.options[0].value;
                 return loadTemplate(sel.options[0].value);
             })
             .catch(function (err) {
+                if (deleted) {
+                    // Already deleted; refreshTemplateList reported its own failure.
+                    if (!(err && err.notified)) { console.error("Refresh after delete failed", err); }
+                    return;
+                }
                 console.error("Delete failed", err);
-                toast("Delete failed: " + err.message, "error");
+                notify({
+                    type: "error",
+                    title: "Couldn't delete “" + name + "”",
+                    message: err && err.userText ? err.userText : (err && err.status
+                        ? "Something went wrong while deleting the template."
+                        : "Spore Studio couldn't reach Mycelian."),
+                    hint: err && err.status
+                        ? "Close anything that might be using its files (OBS, a file browser), then try again."
+                        : "Make sure Mycelian is running, then try again.",
+                    details: errorDetails(err, "POST /api/spore-studio/delete (" + name + ")"),
+                    template: name
+                });
             });
     }
 
     function deleteAsset(file) {
         if (!state.model || !file) { return; }
         if (!confirm("Delete " + file.name + " from this template's assets?")) { return; }
-        fetch("/api/spore-studio/assets/" + encodeURIComponent(state.model.template_name) + "/delete", {
+        var tplName = state.model.template_name;
+        fetchJson("/api/spore-studio/assets/" + encodeURIComponent(tplName) + "/delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ rel_path: file.rel_path || file.name })
         })
-            .then(function (r) {
-                return r.json().then(function (data) { return { ok: r.ok, data: data }; });
-            })
             .then(function (res) {
                 if (!res.ok) {
-                    throw new Error((res.data && res.data.error) || "Delete failed");
+                    throw requestError(res, "POST /api/spore-studio/assets/" + tplName + "/delete (" + (file.rel_path || file.name) + ")");
                 }
                 renderAssets(res.data);
             })
             .catch(function (err) {
-                toast("Delete failed: " + err.message, "error");
+                notify({
+                    type: "error",
+                    title: "Couldn't delete “" + file.name + "”",
+                    message: err && err.userText ? err.userText : "The file is still in this template's assets folder.",
+                    hint: "Close any program using the file, then try again. You can also delete it from the folder (Reveal folder).",
+                    details: errorDetails(err),
+                    template: tplName
+                });
             });
     }
 
@@ -10557,9 +10826,16 @@
         var upload = $("#ss-asset-upload");
         var reveal = $("#ss-asset-reveal");
         if (!fileInput || !upload || !reveal) { return; }
+        function needTemplateNotice() {
+            notify({
+                type: "info",
+                title: "Open a template first",
+                message: "Assets belong to a template. Choose one from the template list."
+            });
+        }
         upload.addEventListener("click", function () {
             if (!state.model) {
-                toast("Open a template first.", "error");
+                needTemplateNotice();
                 return;
             }
             fileInput.click();
@@ -10570,33 +10846,65 @@
             if (!state.model || !files.length) { return; }
             var name = state.model.template_name;
             var chain = Promise.resolve();
+            var uploaded = 0;
             files.forEach(function (file) {
                 chain = chain.then(function () {
                     var body = new FormData();
                     body.append("file", file, file.name);
-                    return fetch("/api/spore-studio/assets/" + encodeURIComponent(name) + "/upload", {
+                    return fetchJson("/api/spore-studio/assets/" + encodeURIComponent(name) + "/upload", {
                         method: "POST",
                         body: body
-                    }).then(function (r) {
-                        return r.json().then(function (data) { return { ok: r.ok, data: data }; });
                     }).then(function (res) {
                         if (!res.ok) {
-                            throw new Error((res.data && res.data.error) || "Upload failed");
+                            var upErr = requestError(res, "POST /api/spore-studio/assets/" + name + "/upload (" + file.name + ")");
+                            upErr.fileName = file.name;
+                            throw upErr;
                         }
+                        uploaded += 1;
                         renderAssets(res.data);
+                    }, function (netErr) {
+                        netErr.fileName = file.name;
+                        throw netErr;
                     });
                 });
             });
-            chain.catch(function (err) { toast(err.message, "error"); });
+            chain.catch(function (err) {
+                var fileName = (err && err.fileName) || "the file";
+                var skipped = files.length - uploaded - 1;
+                notify({
+                    type: "error",
+                    title: "Couldn't upload “" + fileName + "”",
+                    message: (err && err.userText ? err.userText : (err && err.status
+                        ? "Something went wrong while uploading."
+                        : "Spore Studio couldn't reach Mycelian.")) +
+                        (skipped > 0 ? " The " + skipped + " file(s) after it were not uploaded." : ""),
+                    hint: "Check the file type and size, then upload it again.",
+                    details: errorDetails(err),
+                    template: name
+                });
+            });
         });
         reveal.addEventListener("click", function () {
             if (!state.model) {
-                toast("Open a template first.", "error");
+                needTemplateNotice();
                 return;
             }
-            fetch("/api/spore-studio/assets/" + encodeURIComponent(state.model.template_name) + "/reveal", {
+            var tplName = state.model.template_name;
+            fetchJson("/api/spore-studio/assets/" + encodeURIComponent(tplName) + "/reveal", {
                 method: "POST"
-            }).catch(function (err) { toast(err.message, "error"); });
+            })
+                .then(function (res) {
+                    if (!res.ok) { throw requestError(res, "POST /api/spore-studio/assets/" + tplName + "/reveal"); }
+                })
+                .catch(function (err) {
+                    notify({
+                        type: "error",
+                        title: "Couldn't open the assets folder",
+                        message: err && err.userText ? err.userText : "Your file browser didn't open.",
+                        hint: "Open the assets folder for “" + tplName + "” from your file browser instead.",
+                        details: errorDetails(err)
+                    });
+                });
         });
     }
 
@@ -10724,10 +11032,12 @@
         $("#ss-btn-save").addEventListener("click", saveCurrent);
         $("#ss-btn-preview").addEventListener("click", togglePreviewDialog);
         $("#ss-btn-reload").addEventListener("click", function () {
-            window.location.href = window.location.pathname + "?_cb=" + Date.now();
+            window.location.href = window.location.pathname + "?_cb=" + Date.now() +
+                (EMBEDDED_IN_APP ? "" : "&external=1");
         });
         $("#ss-btn-open-external").addEventListener("click", function () {
-            window.open(window.location.pathname, "_blank");
+            // external=1: that page shows its own messages instead of the app's pop-ups.
+            window.open(window.location.pathname + "?external=1", "_blank");
         });
         $("#ss-stage").addEventListener("mousedown", function () {
             state.selectedId = null;
@@ -10815,14 +11125,34 @@
                         if (sel.options[i].value === saved) { hasSaved = true; break; }
                     }
                     sel.value = hasSaved ? saved : sel.options[0].value;
+                    if (requested && !hasSaved) {
+                        // Someone asked for this template (a notification link,
+                        // "Edit in Spore Studio"); say why something else opened.
+                        notify({
+                            type: "warning",
+                            title: "Couldn't find “" + requested + "”",
+                            message: "It may have been renamed or deleted. Opened “" + sel.value + "” instead.",
+                            hint: "Choose the template from the list at the top of Spore Studio.",
+                            dedupe: "missing:" + requested
+                        });
+                    }
                     loadTemplate(sel.value);
                 } else {
-                    toast("No templates yet — click '+ New' to create one.", "info");
+                    // Empty state, not a pop-up: this runs every time the editor opens.
+                    setLoadState("No templates yet — click + New to create one.");
                 }
             })
             .catch(function (err) {
                 console.error("Init failed", err);
-                toast("Editor failed to initialize", "error");
+                if (err && err.notified) { return; }
+                notify({
+                    type: "error",
+                    title: "Spore Studio couldn't load",
+                    message: "The editor couldn't get what it needs from Mycelian.",
+                    hint: "Click Reload editor. If it keeps failing, restart Mycelian.",
+                    details: errorDetails(err, "Spore Studio editor start-up"),
+                    dedupe: "init_failed"
+                });
             });
     }
 

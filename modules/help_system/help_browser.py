@@ -51,6 +51,18 @@ def ensure_help_system_styles() -> None:
     _help_system_styles_injected = True
 
 
+def _notify_help_open_failed(exc: BaseException) -> None:
+    notify(
+        "Something went wrong while opening it.",
+        type="error",
+        source="help",
+        title="Couldn't open Help",
+        hint="Try again. If it keeps failing, restart Mycelian.",
+        details=f"{type(exc).__name__}: {exc}",
+        dedupe_key="help:open_failed",
+    )
+
+
 class HelpBrowser:
     """In-app help browser component with modern styling"""
 
@@ -105,7 +117,7 @@ class HelpBrowser:
 
         except Exception as e:
             logger.error(f"Error opening help browser: {e}")
-            notify(f"Error opening help: {e}", type="negative")
+            _notify_help_open_failed(e)
 
     def build_page(self, initial_topic: str = None, category: str = None):
         """Build the help browser as the whole page (the separate help window)."""
@@ -164,10 +176,22 @@ class HelpBrowser:
             elif isinstance(e.args, str):
                 url = e.args
             if url and url.startswith(('http://', 'https://')):
-                webbrowser.open(url)
+                opened = webbrowser.open(url)
+                if opened is False:
+                    raise RuntimeError("webbrowser.open returned False")
                 logger.debug(f"Opened external link in browser: {url}")
         except Exception as ex:
             logger.error(f"Error opening external link: {ex}")
+            if url:
+                notify(
+                    "The link didn't open in your default browser.",
+                    type="warning",
+                    source="help",
+                    title="Couldn't open your browser",
+                    hint="Click Copy link and paste it into your browser.",
+                    details=f"{url}\n{type(ex).__name__}: {ex}",
+                    actions=[{"kind": "copy", "text": url, "label": "Copy link"}],
+                )
 
     def _setup_help_link_handler(self):
         """Install a single document-level click handler for help: and external links."""
@@ -531,7 +555,16 @@ class HelpBrowser:
         try:
             topic = self.help_manager.get_topic(topic_id)
             if not topic:
-                notify(f"Help topic not found: {topic_id}", type="warning")
+                logger.warning("Help topic not found: %s", topic_id)
+                notify(
+                    "This page may have moved or isn't written yet.",
+                    type="warning",
+                    source="help",
+                    title="That help page isn't available",
+                    hint="Use the search or the topic list on the left to find it.",
+                    details=f"topic: {topic_id}",
+                    dedupe_key=f"help:missing_topic:{topic_id}",
+                )
                 return
 
             if not self.current_topic or self.current_topic.id != topic_id:
@@ -551,7 +584,14 @@ class HelpBrowser:
 
         except Exception as e:
             logger.error(f"Error navigating to topic {topic_id}: {e}")
-            notify(f"Error loading help topic: {e}", type="negative")
+            notify(
+                "Something went wrong while showing it.",
+                type="error",
+                source="help",
+                title="Couldn't load this help page",
+                hint="Pick another topic, or close Help and open it again.",
+                details=f"topic: {topic_id}\n{type(e).__name__}: {e}",
+            )
 
     def _render_topic(self, topic: HelpTopic):
         """Render a help topic with metadata, TOC, content, prev/next, and related topics"""
@@ -1034,4 +1074,4 @@ def show_help_browser(topic_id: str = None, category: str = None):
         browser.show(initial_topic=topic_id, category=category)
     except Exception as e:
         logger.error(f"Error showing help browser: {e}")
-        notify(f"Error opening help: {e}", type="negative")
+        _notify_help_open_failed(e)

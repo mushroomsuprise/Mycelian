@@ -217,9 +217,9 @@ def load_sidecar(template_name: str) -> Optional[Dict[str, Any]]:
 def save_sidecar(template_name: str, model: Dict[str, Any]) -> bool:
     """Write the editor sidecar atomically. Returns True on success."""
     path = _spore_sidecar_path(template_name)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp_path = path + ".tmp"
     try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(tmp_path, "w", encoding="utf-8") as fh:
             json.dump(model, fh, indent=2, ensure_ascii=False)
         os.replace(tmp_path, path)
@@ -323,6 +323,37 @@ def _synthesize_legacy_elements(template_name: str) -> list:
     return out
 
 
+def _has_public_config(template_name: str) -> bool:
+    from ..template_config_parser import TemplateConfigParser
+
+    try:
+        return os.path.isfile(TemplateConfigParser().get_config_path(template_name))
+    except Exception:
+        return False
+
+
+def _warn_damaged_sidecar(template_name: str) -> None:
+    """The editor file exists but can't be read, so the template opens in advanced mode."""
+    try:
+        from ..notification_engine import nav_spore_template, notify
+
+        notify(
+            "Its Spore Studio layout file couldn't be read, so it opened as a legacy template "
+            "(advanced mode). The overlay itself is unchanged.",
+            type="warning",
+            source="spore_studio",
+            title=f"\u201c{template_name}\u201d opened in advanced mode",
+            hint="Restore the .spore.json file from a backup if you have one. Saving now only "
+            "updates its settings, not the layout.",
+            details=_spore_sidecar_path(template_name),
+            actions=nav_spore_template(template_name),
+            dedupe_key=f"spore:sidecar_damaged:{template_name}",
+            dedupe_cooldown_sec=600,
+        )
+    except Exception:
+        logger.debug("Could not show the damaged sidecar warning", exc_info=True)
+
+
 def parse_existing(template_name: str) -> Dict[str, Any]:
     """
     Build a usable editor model for ``template_name``.
@@ -344,6 +375,8 @@ def parse_existing(template_name: str) -> Dict[str, Any]:
        Outline entries, same as before.
     """
     sidecar = load_sidecar(template_name)
+    if sidecar is None and os.path.isfile(_spore_sidecar_path(template_name)):
+        _warn_damaged_sidecar(template_name)
     if sidecar is not None:
         sidecar.setdefault("template_name", template_name)
         sidecar.setdefault("alert_system", sidecar.get("alert_system", "queue"))
@@ -375,6 +408,10 @@ def parse_existing(template_name: str) -> Dict[str, Any]:
         return sidecar
 
     html_path = get_template_path(f"{template_name}.html")
+    if not os.path.isfile(html_path) and not _has_public_config(template_name):
+        # Nothing on disk: don't hand the editor an empty "legacy" model that
+        # looks like a real template (it was renamed or deleted).
+        raise FileNotFoundError(f"No template named '{template_name}' ({html_path})")
     advanced_js = ""
     if os.path.isfile(html_path):
         try:

@@ -20,7 +20,7 @@ from typing import Any, Callable, Dict, Optional
 
 from packaging.version import InvalidVersion, Version, parse as parse_version
 
-from .notification_engine import nav_actions_settings, notify
+from .notification_engine import get_history, nav_actions_settings, notify
 from .path_utils import get_data_path
 
 logger = logging.getLogger(__name__)
@@ -428,15 +428,23 @@ def maybe_notify_streamdeck_plugin_outdated() -> bool:
     if status.state != PluginInstallState.OUTDATED:
         return False
     bundled = status.bundled_version or "?"
+    details = f"installed: v{status.installed_version or '?'}, bundled: v{bundled}"
+    # Still in the notification centre for this version: don't repeat it every launch.
+    if any(
+        entry.get("dedupe_key") == OUTDATED_NOTIFY_DEDUPE_KEY and entry.get("details") == details
+        for entry in get_history()
+    ):
+        return False
     entry_id = notify(
-        f"A new Stream Deck plugin version (v{bundled}) is available. "
-        "Reinstall from Settings → App Settings, then restart Stream Deck. "
-        "Click this in the notification center to open App Settings.",
+        "A newer plugin comes with this version of Mycelian.",
         type="warning",
+        source="app",
+        title=f"Stream Deck plugin update available (v{bundled})",
+        hint="Open Settings \u2192 App Settings, click Reinstall Plugin, then restart Stream Deck.",
+        details=details,
         dedupe_key=OUTDATED_NOTIFY_DEDUPE_KEY,
         dedupe_cooldown_sec=OUTDATED_NOTIFY_COOLDOWN_SEC,
         actions=nav_actions_settings("App Settings"),
-        timeout=12,
     )
     if entry_id:
         logger.info(
