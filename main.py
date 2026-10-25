@@ -268,6 +268,59 @@ def emergency_stats_save():
         print(f"Emergency statistics save failed: {str(e)}")
 
 
+def _show_fatal_startup_error(reason: str) -> None:
+    """Tell the user why Mycelian is about to quit during startup.
+
+    Startup failures happen before any window exists, so an in-app notification
+    would never be seen. Shows a native dialog (Windows/macOS) or a desktop
+    notification, and never raises.
+    """
+    title = "Mycelian couldn't start"
+    try:
+        from modules.log_parser import get_log_file_path
+
+        log_hint = f"Details are in the log: {get_log_file_path()}"
+    except Exception:
+        log_hint = "Details are in mycelian.log."
+    message = f"{(reason or 'Something went wrong while starting.').strip()}\n\n{log_hint}"
+    logger.critical("Startup failed: %s", message)
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)  # MB_ICONERROR
+            return
+        if sys.platform == "darwin":
+            import subprocess
+
+            def _esc(text: str) -> str:
+                return text.replace("\\", "\\\\").replace('"', '\\"')
+
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'display alert "{_esc(title)}" message "{_esc(message)}" as critical',
+                ],
+                timeout=600,
+                check=False,
+            )
+            return
+    except Exception as e:
+        logger.debug("Native startup error dialog failed: %s", e)
+    try:
+        from modules import system_notify
+
+        system_notify.notify(message, title=title, force=True)
+    except Exception:
+        pass
+
+
+def _exit_startup_failed(reason: str) -> None:
+    _show_fatal_startup_error(reason)
+    sys.exit(1)
+
+
 # Spawn children re-import this module (NiceGUI's webview process is SpawnProcess-N).
 # They must not install these handlers: a SIGTERM during their atexit import of
 # modules.shutdown raises "cannot import name ... from partially initialized module".
@@ -329,11 +382,13 @@ if __name__ == "__main__":
             with StartupTimer("ensure_database_initialized"):
                 if not ensure_database_initialized():
                     logger.error("Failed to initialize database system")
-                    sys.exit(1)
+                    from modules import database_init
+
+                    _exit_startup_failed(database_init.last_startup_error)
             logger.info("Database system initialized successfully")
         except Exception as e:
             logger.error(f"Error initializing database system: {str(e)}", exc_info=True)
-            sys.exit(1)
+            _exit_startup_failed(f"Mycelian's database system failed to start.\n\n{e}")
 
         # Load all data in parallel (instead of sequential database calls)
         logger.info("Loading all startup data in parallel...")
@@ -351,7 +406,7 @@ if __name__ == "__main__":
             logger.info(f"Loaded data for {len(all_data)} paths")
         except Exception as e:
             logger.error(f"Error loading startup data: {str(e)}", exc_info=True)
-            sys.exit(1)
+            _exit_startup_failed(f"Mycelian couldn't load your data from the database.\n\n{e}")
 
         # Initialize core modules with pre-loaded data
         try:
@@ -373,7 +428,7 @@ if __name__ == "__main__":
             logger.info("Core modules initialized successfully")
         except Exception as e:
             logger.error(f"Error initializing core modules: {str(e)}", exc_info=True)
-            sys.exit(1)
+            _exit_startup_failed(f"Mycelian couldn't set up your settings and alerts.\n\n{e}")
 
         # =========================================
         # Phase 2: UI Initialization
@@ -419,7 +474,7 @@ if __name__ == "__main__":
             logger.info("UI shell ready")
         except Exception as e:
             logger.error(f"Error initializing UI shell: {str(e)}", exc_info=True)
-            sys.exit(1)
+            _exit_startup_failed(f"Mycelian couldn't build its window.\n\n{e}")
 
         # =========================================
         # Phase 3: Deferred Initialization (Background)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from nicegui import ui
-from ...notification_engine import notify
+from ...notification_engine import notify, notify_progress
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import copy_text_button, form_sensitive_input
 from ...ui_timer import layout_schedule
@@ -36,6 +36,18 @@ def _stop_ui_timer(timer) -> None:
         timer.cancel()
     except Exception:
         pass
+
+
+def _fail_or_notify(work, source: str, title: str, details: str) -> None:
+    """End a sign-in progress notice with an error, or show one if it never started."""
+    kwargs = {
+        "hint": "Try again. If it keeps happening, copy the details and report it.",
+        "details": details,
+    }
+    if work is not None and not work.finished:
+        work.fail(title, **kwargs)
+    else:
+        notify("", type="error", source=source, title=title, **kwargs)
 
 
 class TwitchTab:
@@ -471,10 +483,9 @@ class TwitchTab:
                 )
 
         if state_manager.save_changes():
-            notify("Twitch saved", type="positive")
+            notify("", type="success", source="twitch", title="Twitch settings saved")
             self.dirty = False
-        else:
-            notify("Error saving Twitch", type="negative")
+        # A failed save_changes() was already reported once (changes stay pending).
 
     def discard(self) -> None:
         self._load_from_state()
@@ -508,8 +519,11 @@ class TwitchTab:
             # Check if client ID and secret are provided
             if not self._creds.get("client_id") or not self._creds.get("client_secret"):
                 notify(
-                    "Please enter your main Twitch Client ID and Client Secret first!",
+                    "",
                     type="warning",
+                    source="twitch",
+                    title="Enter your Twitch Client ID and Client Secret first",
+                    hint="Get them from your app at dev.twitch.tv/console.",
                 )
                 return
 
@@ -518,8 +532,11 @@ class TwitchTab:
                 self.ui_elements["main_connect_button"].set_text("Connecting...")
                 self.ui_elements["main_connect_button"].disable()
 
-            # Show a notification that the process is starting
-            notify("Starting main Twitch OAuth connection...", type="info")
+            work = notify_progress(
+                "Connecting your Twitch account",
+                source="twitch",
+                message="Opening Twitch sign-in in your browser…",
+            )
 
             # Save only Twitch settings to avoid triggering database and other notifications
             self._save_settings_only()
@@ -566,17 +583,22 @@ class TwitchTab:
                     try:
                         oauth_result["notification_shown"] = True
                         if oauth_result["success"]:
-                            notify(
-                                "Successfully connected main Twitch account!",
-                                type="positive",
-                                timeout=3000,
+                            # trigger_oauth_reconnection() returns True once the browser
+                            # flow has *started*; the status watcher announces the
+                            # connection when Twitch confirms it.
+                            work.done(
+                                "Finish signing in to Twitch in your browser",
+                                "Mycelian connects as soon as you approve it.",
+                                type="info",
                             )
-                            logger.info("Main Twitch OAuth connection successful")
+                            logger.info("Main Twitch OAuth browser flow started")
                         else:
-                            notify(
-                                "Failed to connect main Twitch account. Please check your credentials and try again.",
-                                type="negative",
-                                timeout=5000,
+                            work.fail(
+                                "Couldn't start Twitch sign-in",
+                                hint=(
+                                    "Check the Client ID and Secret, and that your Twitch app's "
+                                    "OAuth redirect URL matches the one shown here, then try again."
+                                ),
                             )
                             logger.error("Main Twitch OAuth connection failed")
 
@@ -599,9 +621,10 @@ class TwitchTab:
                 ):
                     try:
                         oauth_result["notification_shown"] = True
-                        notify(
-                            f"Error during main Twitch connection: {oauth_result['error']}",
-                            type="negative",
+                        work.fail(
+                            "Couldn't start Twitch sign-in",
+                            hint="Check the Client ID and Secret, then try again.",
+                            details=str(oauth_result["error"] or ""),
                         )
                         # Reset button state
                         if "main_connect_button" in self.ui_elements:
@@ -620,7 +643,9 @@ class TwitchTab:
 
             # Start timer to check results with timeout protection
             check_count = {"count": 0}  # Use dict to maintain reference in closure
-            max_checks = 150  # 30 seconds max (150 * 0.2s)
+            # trigger_oauth_reconnection() waits up to 90 s for the browser flow to
+            # start; wait a little longer so its answer arrives first.
+            max_checks = 500  # 100 seconds (500 * 0.2s)
 
             def check_oauth_result_with_timeout():
                 check_count["count"] += 1
@@ -631,10 +656,11 @@ class TwitchTab:
                     and not oauth_result["notification_shown"]
                 ):
                     oauth_result["notification_shown"] = True
-                    logger.warning("Main OAuth check timed out after 30 seconds")
-                    notify(
-                        "Main OAuth connection timed out. Please try again.",
-                        type="negative",
+                    logger.warning("Main OAuth check timed out after 100 seconds")
+                    work.done(
+                        "Still waiting for Twitch sign-in",
+                        "Finish it in your browser, or press Connect Main Account again.",
+                        type="warning",
                     )
                     # Reset button state
                     if "main_connect_button" in self.ui_elements:
@@ -661,8 +687,11 @@ class TwitchTab:
             logger.error(
                 f"Error handling main Twitch OAuth connection: {str(e)}", exc_info=True
             )
-            notify(
-                f"Error starting main Twitch connection: {str(e)}", type="negative"
+            _fail_or_notify(
+                locals().get("work"),
+                "twitch",
+                "Couldn't start Twitch sign-in",
+                f"{type(e).__name__}: {e}",
             )
             # Reset button state
             if "main_connect_button" in self.ui_elements:
@@ -682,8 +711,11 @@ class TwitchTab:
                 "chatbot_client_secret"
             ):
                 notify(
-                    "Please enter your chatbot Twitch Client ID and Client Secret first!",
+                    "",
                     type="warning",
+                    source="chatbot",
+                    title="Enter the chatbot's Twitch Client ID and Client Secret first",
+                    hint="Get them from your app at dev.twitch.tv/console.",
                 )
                 return
 
@@ -692,8 +724,11 @@ class TwitchTab:
                 self.ui_elements["chatbot_connect_button"].set_text("Connecting...")
                 self.ui_elements["chatbot_connect_button"].disable()
 
-            # Show a notification that the process is starting
-            notify("Starting chatbot Twitch OAuth connection...", type="info")
+            work = notify_progress(
+                "Connecting the chatbot account",
+                source="chatbot",
+                message="Sign in with the bot's Twitch account in the browser page that opens.",
+            )
 
             # Persist chatbot credentials without flushing the rest of the Twitch tab.
             self._save_settings_only()
@@ -742,17 +777,15 @@ class TwitchTab:
                     try:
                         oauth_result["notification_shown"] = True
                         if oauth_result["success"]:
-                            notify(
-                                "Successfully connected chatbot Twitch account!",
-                                type="positive",
-                                timeout=3000,
-                            )
+                            work.done("Chatbot account connected")
                             logger.info("Chatbot Twitch OAuth connection successful")
                         else:
-                            notify(
-                                "Failed to connect chatbot Twitch account. Please check your credentials and try again.",
-                                type="negative",
-                                timeout=5000,
+                            work.fail(
+                                "Couldn't connect the chatbot account",
+                                hint=(
+                                    "Check the chatbot Client ID and Secret, and sign in with the bot "
+                                    "account (not your main account), then try again."
+                                ),
                             )
                             logger.error("Chatbot Twitch OAuth connection failed")
 
@@ -775,9 +808,10 @@ class TwitchTab:
                 ):
                     try:
                         oauth_result["notification_shown"] = True
-                        notify(
-                            f"Error during chatbot Twitch connection: {oauth_result['error']}",
-                            type="negative",
+                        work.fail(
+                            "Couldn't connect the chatbot account",
+                            hint="Check the chatbot Client ID and Secret, then try again.",
+                            details=str(oauth_result["error"] or ""),
                         )
                         # Reset button state
                         if "chatbot_connect_button" in self.ui_elements:
@@ -796,7 +830,9 @@ class TwitchTab:
 
             # Start timer to check results with timeout protection
             check_count = {"count": 0}  # Use dict to maintain reference in closure
-            max_checks = 300  # 60 seconds max for chatbot OAuth (longer process)
+            # trigger_chatbot_oauth_reconnection() gives up after 120 s; wait a
+            # little longer so its answer arrives first.
+            max_checks = 650  # 130 seconds (650 * 0.2s)
 
             def check_oauth_result_with_timeout():
                 check_count["count"] += 1
@@ -807,10 +843,11 @@ class TwitchTab:
                     and not oauth_result["notification_shown"]
                 ):
                     oauth_result["notification_shown"] = True
-                    logger.warning("Chatbot OAuth check timed out after 60 seconds")
-                    notify(
-                        "Chatbot OAuth connection timed out. Please try again.",
-                        type="negative",
+                    logger.warning("Chatbot OAuth check timed out after 130 seconds")
+                    work.done(
+                        "Still waiting for the chatbot sign-in",
+                        "Finish it in your browser, or press Connect Chatbot again.",
+                        type="warning",
                     )
                     # Reset button state
                     if "chatbot_connect_button" in self.ui_elements:
@@ -838,8 +875,11 @@ class TwitchTab:
                 f"Error handling chatbot Twitch OAuth connection: {str(e)}",
                 exc_info=True,
             )
-            notify(
-                f"Error starting chatbot Twitch connection: {str(e)}", type="negative"
+            _fail_or_notify(
+                locals().get("work"),
+                "chatbot",
+                "Couldn't start the chatbot sign-in",
+                f"{type(e).__name__}: {e}",
             )
             # Reset button state
             if "chatbot_connect_button" in self.ui_elements:

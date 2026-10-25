@@ -9,7 +9,7 @@ from dataclasses import replace
 from typing import Dict, Any, Optional, List
 
 from nicegui import run, ui
-from ...notification_engine import notify
+from ...notification_engine import nav_actions_settings, notify, notify_progress
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import form_input, form_number, form_select, form_sensitive_input
 from ...ui_timer import layout_schedule
@@ -22,9 +22,59 @@ from ...ui_settings_layout import (
 
 from ... import dataobjects
 from ...config_manager import config_manager
-from ...database_manager import DatabaseConfig, database_manager
+from ...database_manager import (
+    DatabaseConfig,
+    clear_last_write_problem,
+    database_label,
+    database_manager,
+    last_write_problem,
+    quiet_notifications,
+)
 
 logger = logging.getLogger(__name__)
+
+_DB_NAV = nav_actions_settings("Database")
+
+
+def _reported_write(fn, *args) -> tuple:
+    """Run a database write whose result this tab reports itself: ``(ok, reason)``.
+
+    The database layer's generic "couldn't save" notification is silenced so
+    the user gets one message that names the path.
+    """
+    with quiet_notifications():
+        clear_last_write_problem()
+        ok = bool(fn(*args))
+        problem = last_write_problem()
+    status, reason = problem or (("ok", "") if ok else ("failed", ""))
+    if ok or status == "superseded":
+        return True, ""
+    if status == "timeout":
+        return False, f"The database didn't answer in time ({reason})."
+    if status == "down":
+        return False, "The database isn't connected."
+    return False, reason or "The database rejected the change (see the log)."
+
+
+def _notify_write_failed(title: str, reason: str) -> None:
+    notify(
+        reason,
+        type="error",
+        source="database",
+        title=title,
+        hint="Check the connection in Settings → Database, then try again.",
+        actions=_DB_NAV,
+    )
+
+
+def _notify_invalid_json(e: json.JSONDecodeError) -> None:
+    notify(
+        f"Line {e.lineno}, column {e.colno}: {e.msg}.",
+        type="warning",
+        source="database",
+        title="That isn't valid JSON",
+        hint="Fix it and try again.",
+    )
 
 
 class DatabaseViewer:
@@ -79,21 +129,38 @@ class DatabaseViewer:
         self.dialog.open()
 
     def _fetch_snapshot(self) -> tuple:
-        snapshot = database_manager.get_snapshot()
-        paths = database_manager.get_paths_from_snapshot(snapshot)
-        return snapshot, paths
+        snapshot, error = database_manager.get_snapshot_checked()
+        paths = database_manager.get_paths_from_snapshot(snapshot) if not error else []
+        return snapshot, paths, error
 
-    async def _load_snapshot(self) -> None:
-        """Load a complete snapshot of the database off the NiceGUI thread."""
+    async def _load_snapshot(self) -> bool:
+        """Load a complete snapshot of the database off the NiceGUI thread.
+
+        On failure the explorer is left empty and the user is told why.
+        """
         try:
-            snapshot, paths = await run.io_bound(self._fetch_snapshot)
-            self.snapshot = snapshot
-            self.all_paths = paths
-            logger.info(f"Database snapshot loaded: {len(self.all_paths)} paths found")
+            snapshot, paths, error = await run.io_bound(self._fetch_snapshot)
         except Exception as e:
             logger.error(f"Error loading database snapshot: {e}", exc_info=True)
-            self.snapshot = {}
-            self.all_paths = []
+            snapshot, paths, error = {}, [], str(e)
+        self.snapshot = snapshot
+        self.all_paths = paths
+        if error:
+            logger.error("Database snapshot failed: %s", error)
+            notify(
+                "The explorer can't show anything until it can read the database.",
+                type="error",
+                source="database",
+                title="Couldn't read the database",
+                hint="Check the connection in Settings → Database, then press Refresh.",
+                details=error,
+                dedupe_key="db:explorer_read",
+                dedupe_cooldown_sec=30,
+                actions=nav_actions_settings("Database"),
+            )
+            return False
+        logger.info(f"Database snapshot loaded: {len(self.all_paths)} paths found")
+        return True
 
     def _build_header(self) -> None:
         """Build the dialog header"""
@@ -484,9 +551,8 @@ class DatabaseViewer:
             data = json.loads(self._json_editor.value)
             formatted = json.dumps(data, indent=2, default=str)
             self._json_editor.value = formatted
-            notify("JSON formatted", type="positive")
         except json.JSONDecodeError as e:
-            notify(f"Invalid JSON: {e}", type="negative")
+            _notify_invalid_json(e)
 
     def _reset_editor(self) -> None:
         """Reset editor to original value"""
@@ -500,8 +566,6 @@ class DatabaseViewer:
         if self._save_btn:
             self._save_btn.disable()
 
-        notify("Editor reset", type="info")
-
     async def _save_current_path(self) -> None:
         """Save the current path data to database"""
         if self._json_editor is None or not self.current_path:
@@ -510,12 +574,15 @@ class DatabaseViewer:
         try:
             data = json.loads(self._json_editor.value)
         except json.JSONDecodeError as e:
-            notify(f"Invalid JSON: {e}", type="negative")
+            _notify_invalid_json(e)
             return
 
         # Save to database (worker thread; this handler already awaits)
-        if await run.io_bound(database_manager.set_data, self.current_path, data):
-            notify(f"Saved: {self.current_path}", type="positive")
+        ok, reason = await run.io_bound(
+            _reported_write, database_manager.set_data, self.current_path, data
+        )
+        if ok:
+            notify("", type="success", source="database", title=f"Saved {self.current_path}")
             db_type = database_manager.get_config().database_type
             if db_type in ("sql", "mongodb"):
                 await self._load_snapshot()
@@ -526,7 +593,7 @@ class DatabaseViewer:
             if self._save_btn:
                 self._save_btn.disable()
         else:
-            notify("Failed to save data", type="negative")
+            _notify_write_failed(f"Couldn't save {self.current_path}", reason)
 
     def _set_data_in_snapshot(self, path: str, data: Any) -> None:
         """Update a path in the local snapshot"""
@@ -570,8 +637,9 @@ class DatabaseViewer:
 
     async def _execute_delete(self, path: str, dialog: ui.dialog) -> None:
         """Execute path deletion"""
-        if await run.io_bound(database_manager.delete_data, path):
-            notify(f"Deleted: {path}", type="positive")
+        ok, reason = await run.io_bound(_reported_write, database_manager.delete_data, path)
+        if ok:
+            notify("", type="success", source="database", title=f"Deleted {path}")
             # Refresh snapshot
             await self._load_snapshot()
             self._build_tree()
@@ -579,7 +647,7 @@ class DatabaseViewer:
             self._update_breadcrumb()
             self._show_welcome_content()
         else:
-            notify("Failed to delete", type="negative")
+            _notify_write_failed(f"Couldn't delete {path}", reason)
 
         dialog.close()
 
@@ -628,7 +696,13 @@ class DatabaseViewer:
     async def _execute_create(self, path: str, json_data: str, dialog: ui.dialog) -> None:
         """Execute path creation"""
         if not path or not path.strip():
-            notify("Path cannot be empty", type="warning")
+            notify(
+                "",
+                type="warning",
+                source="database",
+                title="Enter a path",
+                hint="For example Settings/MyData.",
+            )
             return
 
         path = path.strip()
@@ -638,18 +712,19 @@ class DatabaseViewer:
         try:
             data = json.loads(json_data) if json_data.strip() else {}
         except json.JSONDecodeError as e:
-            notify(f"Invalid JSON: {e}", type="negative")
+            _notify_invalid_json(e)
             return
 
-        if await run.io_bound(database_manager.set_data, path, data):
-            notify(f"Created: {path}", type="positive")
+        ok, reason = await run.io_bound(_reported_write, database_manager.set_data, path, data)
+        if ok:
+            notify("", type="success", source="database", title=f"Created {path}")
             # Refresh snapshot
             await self._load_snapshot()
             self._build_tree()
             self._select_path(path)
             dialog.close()
         else:
-            notify("Failed to create path", type="negative")
+            _notify_write_failed(f"Couldn't create {path}", reason)
 
     async def _refresh_snapshot(self) -> None:
         """Refresh the database snapshot"""
@@ -661,8 +736,7 @@ class DatabaseViewer:
             self._load_path_content()
         else:
             self._show_welcome_content()
-
-        notify(f"Refreshed: {len(self.all_paths)} paths", type="positive")
+        # The tree visibly reloads; a failed read was already reported by _load_snapshot.
 
     def _filter_tree(self, e) -> None:
         """Filter the tree based on search input"""
@@ -803,11 +877,15 @@ class DatabaseTab:
                 firebase_issues
                 and signature != self._last_firebase_issues_signature
             ):
-                issue_text = "Firebase Configuration Issues:\n" + "\n".join(
-                    f"• {issue}"
-                    for issue in firebase_issues[:3]  # Limit to 3 issues
+                notify(
+                    "; ".join(str(issue) for issue in firebase_issues[:3]) + ".",
+                    type="warning",
+                    source="database",
+                    title="Firebase isn't set up correctly",
+                    hint="Fix these fields below, press Save, then press Test.",
+                    dedupe_key="db:firebase_config:" + signature,
+                    dedupe_cooldown_sec=600,
                 )
-                notify(issue_text, type="warning", timeout=8000)
             self._last_firebase_issues_signature = signature
         else:
             self._last_firebase_issues_signature = None
@@ -826,24 +904,29 @@ class DatabaseTab:
 
     async def _test_connection(self) -> None:
         """Test database connection"""
+        label = database_label()
+        work = notify_progress(f"Testing the {label} database connection", source="database")
         try:
-            notify("Testing database connection...", type="info")
-
             ok = await run.io_bound(database_manager.test_connection)
             if ok:
-                notify("Database connection successful!", type="positive", timeout=3000)
+                work.done(f"Connected to the {label} database")
             else:
-                notify(
-                    "Database connection failed. Check configuration and logs.",
-                    type="negative",
-                    timeout=5000,
+                work.fail(
+                    f"Couldn't connect to the {label} database",
+                    hint="Check the connection details below, press Save, then test again.",
+                    details=database_manager.last_init_error or None,
+                    actions=_DB_NAV,
                 )
 
             await self._refresh_status_async(force=True)
 
         except Exception as e:
             logger.error(f"Error testing database connection: {str(e)}", exc_info=True)
-            notify(f"Error testing connection: {str(e)}", type="negative")
+            work.fail(
+                f"Couldn't test the {label} database connection",
+                hint="Check the connection details below, press Save, then test again.",
+                details=str(e),
+            )
 
     def _event_select_value(self, e: Any) -> Any:
         """Resolve NiceGUI select value from change events (value vs args)."""
@@ -860,8 +943,14 @@ class DatabaseTab:
         """Show database migration dialog (same flow as Settings → migrate)."""
         try:
             available_dbs = database_manager.get_available_databases()
-            if not available_dbs:
-                notify("No database backends available", type="negative")
+            if not available_dbs:  # SQL is always listed; kept as a guard
+                notify(
+                    "",
+                    type="warning",
+                    source="database",
+                    title="No other database is available to migrate to",
+                    hint="Fill in the Firebase or MongoDB details first.",
+                )
                 return
 
             with ui.dialog() as migration_dialog:
@@ -926,25 +1015,40 @@ class DatabaseTab:
 
         except Exception as e:
             logger.error(f"Error showing migration dialog: {str(e)}", exc_info=True)
-            notify(f"Error opening migration dialog: {str(e)}", type="negative")
+            notify(
+                "",
+                type="error",
+                source="database",
+                title="Couldn't open the migration window",
+                hint="Try again. If it keeps happening, copy the details and report it.",
+                details=str(e),
+            )
 
     def _start_migration(self, source_type: str, target_type: str, dialog: Any) -> None:
         """Run migration in a background thread; update config when complete."""
         try:
             if source_type == target_type:
                 notify(
-                    "Source and target must be different database types",
+                    "",
                     type="warning",
+                    source="database",
+                    title="Pick two different databases",
+                    hint="Copying needs a different source and target.",
                 )
                 return
 
             dialog.close()
-            notify("Starting database migration…", type="info")
+            src_label, dst_label = database_label(source_type), database_label(target_type)
+            work = notify_progress(
+                f"Copying your data to the {dst_label} database",
+                source="database",
+                message="Don't close Mycelian until this finishes.",
+            )
 
             migration_status: Dict[str, Any] = {
                 "completed": False,
                 "success": False,
-                "error": None,
+                "failure": None,  # dict of notify kwargs for work.fail
                 "notified": False,
             }
 
@@ -1006,8 +1110,11 @@ class DatabaseTab:
                             DatabaseConfig(**buf.__dict__, streamer_name="mycelian"),
                             database_type=target_type,
                         )
-                        if database_manager.update_config(**switch_cfg.__dict__):
+                        with quiet_notifications():
+                            switched = database_manager.update_config(**switch_cfg.__dict__)
+                        if switched:
                             buf.database_type = target_type
+                            # A failed config.json write is reported by config_manager.
                             if not config_manager.update_database_config(
                                 **buf.__dict__
                             ):
@@ -1016,42 +1123,75 @@ class DatabaseTab:
                                 )
                             migration_status["success"] = True
                         else:
+                            reason = database_manager.last_init_error
                             buf.database_type = prior_type
-                            database_manager.initialize(snapshot_before_switch)
-                            migration_status["error"] = (
-                                "Data was copied but the app could not switch to the "
-                                "target database. Check credentials and logs."
-                            )
+                            with quiet_notifications():
+                                database_manager.initialize(snapshot_before_switch)
+                            migration_status["failure"] = {
+                                "title": f"Copied your data, but couldn't switch to the {dst_label} database",
+                                "message": f"Mycelian is still using the {src_label} database.",
+                                "hint": f"Check the {dst_label} connection details and press Test.",
+                                "details": reason or None,
+                            }
                     else:
-                        migration_status["error"] = (
-                            f"Migration {source_type} → {target_type} failed "
-                            "(see logs)"
-                        )
+                        result = database_manager.last_migration_result or {}
+                        stage = result.get("stage")
+                        if stage in ("source", "target"):
+                            which = src_label if stage == "source" else dst_label
+                            migration_status["failure"] = {
+                                "title": f"Couldn't open the {which} database",
+                                "message": "Nothing was copied or switched.",
+                                "hint": f"Check the {which} connection details below and try again.",
+                                "details": result.get("error") or None,
+                            }
+                        elif result.get("failed"):
+                            failed_paths = result.get("failed_paths") or []
+                            migration_status["failure"] = {
+                                "title": "Some data couldn't be copied",
+                                "message": (
+                                    f"Copied {result.get('migrated', 0)} of {result.get('total', 0)} items. "
+                                    f"{result['failed']} couldn't be written to the {dst_label} database, "
+                                    f"so Mycelian stayed on the {src_label} database."
+                                ),
+                                "hint": f"Check the {dst_label} connection and try again.",
+                                "details": "Not copied:\n" + "\n".join(failed_paths[:200]),
+                            }
+                        else:
+                            migration_status["failure"] = {
+                                "title": "The migration stopped before it finished",
+                                "message": f"Nothing was switched; Mycelian is still using the {src_label} database.",
+                                "hint": "Check both databases' connection details and try again.",
+                                "details": result.get("error") or None,
+                            }
                     migration_status["completed"] = True
                 except Exception as ex:
                     logger.error(f"Migration thread error: {ex}", exc_info=True)
                     migration_status["completed"] = True
-                    migration_status["error"] = str(ex)
+                    migration_status["failure"] = {
+                        "title": "The migration stopped before it finished",
+                        "message": "Check which database Mycelian is using above before trying again.",
+                        "hint": "Try again. If it keeps happening, copy the details and report it.",
+                        "details": str(ex),
+                    }
 
             threading.Thread(target=migration_thread, daemon=True).start()
 
             check_count = {"n": 0}
-            max_checks = 240
+            slow_after = 240  # 2 minutes of 0.5 s polls
 
             def poll() -> None:
+                # Polls until the thread finishes; the progress notice stays up meanwhile.
                 check_count["n"] += 1
-                if check_count["n"] >= max_checks:
-                    if not migration_status["notified"]:
-                        migration_status["notified"] = True
-                        notify("Migration timed out; check logs.", type="warning")
-                    return
+                if check_count["n"] == slow_after:
+                    work.update(
+                        "Still copying. Large databases can take several minutes; don't close Mycelian."
+                    )
                 if migration_status["completed"] and not migration_status["notified"]:
                     migration_status["notified"] = True
                     if migration_status["success"]:
-                        notify(
-                            f"Migration to {target_type} finished successfully.",
-                            type="positive",
-                            timeout=5000,
+                        work.done(
+                            f"Moved your data to the {dst_label} database",
+                            "Mycelian now uses it.",
                         )
                         self._load_from_config()
                         for key, element in self.ui_elements.items():
@@ -1059,10 +1199,12 @@ class DatabaseTab:
                                 element.value = getattr(self.buffer, key)
                         self.dirty = False
                     else:
-                        notify(
-                            migration_status.get("error", "Migration failed"),
-                            type="negative",
-                            timeout=8000,
+                        failure = dict(migration_status.get("failure") or {})
+                        work.fail(
+                            failure.pop("title", "The migration didn't finish"),
+                            failure.pop("message", ""),
+                            actions=_DB_NAV,
+                            **failure,
                         )
                     self._refresh_status()
                     return
@@ -1073,7 +1215,14 @@ class DatabaseTab:
 
         except Exception as e:
             logger.error(f"Error starting migration: {e}", exc_info=True)
-            notify(f"Error starting migration: {e}", type="negative")
+            fail_kwargs = {
+                "hint": "Try again. If it keeps happening, copy the details and report it.",
+                "details": str(e),
+            }
+            if "work" in locals():
+                work.fail("Couldn't start the migration", **fail_kwargs)
+            else:
+                notify("", type="error", source="database", title="Couldn't start the migration", **fail_kwargs)
 
     async def _show_data_viewer_dialog(self) -> None:
         """Show database data viewer and editor dialog"""
@@ -1083,7 +1232,14 @@ class DatabaseTab:
 
         except Exception as e:
             logger.error(f"Error showing data viewer dialog: {str(e)}", exc_info=True)
-            notify(f"Error opening data viewer dialog: {str(e)}", type="negative")
+            notify(
+                "",
+                type="error",
+                source="database",
+                title="Couldn't open the Database Explorer",
+                hint="Try again. If it keeps happening, copy the details and report it.",
+                details=str(e),
+            )
 
     def _validate_path_name(self, path: str) -> bool:
         """Validate data path name format"""
@@ -1371,19 +1527,54 @@ class DatabaseTab:
     def save(self) -> None:
         if not self.buffer:
             return
-        # apply to config manager
+        previous_file_cfg = dict(config_manager.get_database_config() or {})
+        live_before = replace(database_manager.get_config())
+        # apply to config manager (config_manager reports a failed write itself)
         ok = config_manager.update_database_config(**self.buffer.__dict__)
         if not ok:
-            notify("Failed to save database config", type="negative")
             return
 
         # update runtime database manager
         cfg = DatabaseConfig(**self.buffer.__dict__, streamer_name="mycelian")
-        if database_manager.update_config(**cfg.__dict__):
-            notify("Database settings saved", type="positive")
+        with quiet_notifications():
+            applied = database_manager.update_config(**cfg.__dict__)
+        if applied:
+            connection_fields = (
+                "sql_database_path",
+                "firebase_service_account_path",
+                "firebase_database_url",
+                "mongodb_connection_string",
+                "mongodb_database_name",
+            )
+            reconnect_needed = cfg.database_type == live_before.database_type and any(
+                getattr(cfg, f) != getattr(live_before, f) for f in connection_fields
+            )
+            notify(
+                "Restart Mycelian to use the new connection details." if reconnect_needed else "",
+                type="success",
+                source="database",
+                title="Database settings saved",
+            )
             self.dirty = False
-        else:
-            notify("Failed to apply database settings", type="negative")
+            return
+
+        # Couldn't connect to the new database: go back to the one that worked,
+        # in memory and in config.json, and keep the edits in the form.
+        reason = database_manager.last_init_error
+        with quiet_notifications():
+            database_manager.initialize(live_before)
+        if previous_file_cfg:
+            config_manager.update_database_config(**previous_file_cfg)
+        new_label = database_label(cfg.database_type)
+        notify(
+            f"Mycelian kept using the {database_label(live_before.database_type)} database. "
+            "Your edits are still in the form.",
+            type="error",
+            source="database",
+            title=f"Couldn't connect to the {new_label} database",
+            hint="Check the connection details, press Test, then Save again.",
+            details=reason or None,
+        )
 
     def discard(self) -> None:
         self._load_from_config()

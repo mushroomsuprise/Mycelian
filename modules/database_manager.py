@@ -34,13 +34,14 @@ import threading
 import time
 import weakref
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from urllib.parse import urlparse
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
 from .path_utils import get_data_path
-from .notification_engine import nav_actions_settings, notify_critical
+from .notification_engine import nav_actions_settings, notify, notify_critical
 
 # Third-party imports are loaded on first use (DB-02). Hiddenimports stay in build.py.
 firebase_admin = None
@@ -169,6 +170,11 @@ class DatabaseConfig:
 
 class DatabaseInterface(ABC):
     """Abstract base class for database implementations"""
+
+    # Plain-language reason for the last failed initialize() (shown in notification details).
+    last_error: str = ""
+    # Set by get_snapshot() when the read failed (it still returns {} for old callers).
+    snapshot_error: str = ""
 
     @abstractmethod
     def initialize(self) -> bool:
@@ -322,6 +328,7 @@ class SQLDatabase(DatabaseInterface):
             logger.error(
                 f"Failed to initialize SQLite database: {str(e)}", exc_info=True
             )
+            self.last_error = f"Couldn't open {self.db_path}: {e}"
             return False
 
     def _create_tables(self):
@@ -755,6 +762,7 @@ class SQLDatabase(DatabaseInterface):
 
         except Exception as e:
             logger.error(f"Error getting snapshot from SQLite: {str(e)}", exc_info=True)
+            self.snapshot_error = str(e)
             return {}
         finally:
             if conn:
@@ -946,15 +954,18 @@ class FirebaseDatabase(DatabaseInterface):
         """Initialize Firebase connection"""
         if not _ensure_firebase():
             logger.error("Firebase SDK not available. Install firebase-admin package.")
+            self.last_error = "The Firebase library (firebase-admin) isn't installed."
             return False
 
         # Validate required configuration
         if not self.service_account_path:
             logger.error("Firebase service account path is required but not configured")
+            self.last_error = "No Firebase service account key file is set."
             return False
 
         if not self.database_url:
             logger.error("Firebase database URL is required but not configured")
+            self.last_error = "No Firebase database URL is set."
             return False
 
         try:
@@ -962,6 +973,9 @@ class FirebaseDatabase(DatabaseInterface):
             if not os.path.exists(self.service_account_path):
                 logger.error(
                     f"Firebase service account key not found at {self.service_account_path}"
+                )
+                self.last_error = (
+                    f"The service account key file wasn't found at {self.service_account_path}."
                 )
                 return False
 
@@ -985,9 +999,14 @@ class FirebaseDatabase(DatabaseInterface):
                         logger.error(
                             f"Firebase service account key is missing required fields: {missing_fields}"
                         )
+                        self.last_error = (
+                            "The service account key file is missing: "
+                            + ", ".join(missing_fields)
+                        )
                         return False
             except Exception as e:
                 logger.error(f"Invalid Firebase service account key file: {str(e)}")
+                self.last_error = f"The service account key file isn't valid JSON: {e}"
                 return False
 
             # Validate database URL format (firebaseio.com or regional firebasedatabase.app)
@@ -995,6 +1014,10 @@ class FirebaseDatabase(DatabaseInterface):
                 logger.error(
                     "Invalid Firebase Realtime Database URL. Use https://…firebaseio.com/ "
                     "or https://…firebasedatabase.app/ (trailing slash optional)."
+                )
+                self.last_error = (
+                    "The database URL must look like https://…firebaseio.com/ "
+                    "or https://…firebasedatabase.app/."
                 )
                 return False
 
@@ -1062,6 +1085,7 @@ class FirebaseDatabase(DatabaseInterface):
 
         except Exception as e:
             logger.error(f"Failed to initialize Firebase: {str(e)}", exc_info=True)
+            self.last_error = f"Firebase refused the connection: {e}"
             return False
 
     def _probe_connection(self) -> None:
@@ -1443,6 +1467,7 @@ class FirebaseDatabase(DatabaseInterface):
             logger.error(
                 f"Error getting snapshot from Firebase: {str(e)}", exc_info=True
             )
+            self.snapshot_error = str(e)
             return {}
 
     def get_alert_storage_limited(self, max_alerts: int) -> Dict[str, Any]:
@@ -1569,6 +1594,7 @@ class MongoDatabase(DatabaseInterface):
         """Initialize MongoDB connection"""
         if not _ensure_pymongo():
             logger.error("MongoDB driver not available. Install pymongo package.")
+            self.last_error = "The MongoDB driver (pymongo) isn't installed."
             return False
 
         try:
@@ -1603,6 +1629,7 @@ class MongoDatabase(DatabaseInterface):
 
         except Exception as e:
             logger.error(f"Failed to initialize MongoDB: {str(e)}", exc_info=True)
+            self.last_error = f"Couldn't reach the MongoDB server: {e}"
             return False
 
     def get_data(self, path: str, request_etag: bool = False) -> Dict[str, Any]:
@@ -1860,6 +1887,7 @@ class MongoDatabase(DatabaseInterface):
             logger.error(
                 f"Error getting snapshot from MongoDB: {str(e)}", exc_info=True
             )
+            self.snapshot_error = str(e)
             return {}
 
     def _set_nested_value(self, d: Dict[str, Any], path: str, value: Any) -> None:
@@ -2015,6 +2043,12 @@ class DatabaseManager:
         self._path_write_locks: Dict[str, threading.Lock] = {}
         self._listener_lock = threading.Lock()
         self._write_listeners: List[Any] = []
+        # One "can't connect" notification per outage; reset on a successful connect.
+        self._down_notified = False
+        self.last_init_error = ""
+        self._last_failure_toast: Dict[str, float] = {}
+        # Outcome of the last migrate_data() call, for the Database tab to report.
+        self.last_migration_result: Dict[str, Any] = {}
 
     def add_write_listener(self, callback) -> None:
         """Call ``callback(path, done)`` around every write.
@@ -2055,12 +2089,98 @@ class DatabaseManager:
                 ]
 
     def initialize(self, config: Optional[DatabaseConfig] = None) -> bool:
-        """Initialize the database manager with the specified configuration"""
+        """Initialize the database manager with the specified configuration.
+
+        A failure notifies once per outage (callers that report it themselves wrap
+        the call in :func:`quiet_notifications`); the next success after a reported
+        outage says the connection is back.
+        """
         self._notify_write("", False)
         try:
-            return self._initialize(config)
+            ok = self._initialize(config)
         finally:
             self._notify_write("", True)
+        if ok:
+            self.last_init_error = ""
+            if self._down_notified:
+                self._down_notified = False
+                if not _quiet():
+                    notify(
+                        "",
+                        type="success",
+                        source="database",
+                        title=f"Reconnected to the {_db_label(self._config.database_type)} database",
+                        dedupe_key="db:reconnected",
+                    )
+        elif not _quiet():
+            self._notify_down()
+        return ok
+
+    def _notify_down(self) -> None:
+        """Say once that the database can't be reached (until it connects again)."""
+        if self._down_notified:
+            return
+        self._down_notified = True
+        label = _db_label(self._config.database_type)
+        notify_critical(
+            "Changes won't be saved until the connection is back.",
+            source="database",
+            title=f"Can't connect to the {label} database",
+            hint="Check the connection details in Settings → Database and press Test.",
+            details=self.last_init_error or None,
+            dedupe_key="db:down",
+            dedupe_cooldown_sec=1800,
+            actions=nav_actions_settings("Database"),
+        )
+
+    def _report_write_failure(self, op_name: str, path: str) -> None:
+        """Notify (deduped, popup at most every few minutes) that a write didn't land.
+
+        Skipped for writes superseded by a newer write to the same path, and for
+        callers inside :func:`quiet_notifications` (they report with more context).
+        """
+        if _quiet():
+            return
+        status, reason = last_write_problem() or ("failed", "")
+        if status in ("ok", "superseded"):
+            return
+        if status == "down" or not self._initialized:
+            self._notify_down()
+            return
+        label = _db_label(self._config.database_type)
+        target = path or "(root)"
+        if status == "timeout":
+            key = "db:write_timeout"
+            kwargs = dict(
+                type="warning",
+                title=f"The {label} database is responding slowly",
+                hint="Check your internet connection and the settings in Settings → Database.",
+                details=f"{op_name} {target}: {reason}",
+            )
+            message = "A save took too long, so recent changes may not have been kept."
+        else:
+            key = "db:write_failed"
+            kwargs = dict(
+                type="error",
+                title=f"Couldn't save to the {label} database",
+                hint="Check the connection in Settings → Database, then try again.",
+                details=f"{op_name} {target}: {reason or 'the database rejected the write (see the log)'}",
+            )
+            message = "Recent changes may not have been kept."
+        now = time.monotonic()
+        last = self._last_failure_toast.get(key, 0.0)
+        quiet_popup = bool(last) and now - last < _WRITE_FAILURE_POPUP_GAP_SEC
+        if not quiet_popup:
+            self._last_failure_toast[key] = now
+        notify(
+            message,
+            source="database",
+            dedupe_key=key,
+            dedupe_cooldown_sec=600,
+            skip_toast=quiet_popup,
+            actions=nav_actions_settings("Database"),
+            **kwargs,
+        )
 
     def _initialize(self, config: Optional[DatabaseConfig] = None) -> bool:
         with self._lock:
@@ -2076,10 +2196,9 @@ class DatabaseManager:
                 self._database = MongoDatabase(self._config)
             else:
                 logger.error(f"Unsupported database type: {self._config.database_type}")
-                notify_critical(
-                    f"Unsupported database type configured: {self._config.database_type}.",
-                    dedupe_key="db:unsupported_type",
-                    actions=nav_actions_settings("Database"),
+                self.last_init_error = (
+                    f"config.json has an unknown database type '{self._config.database_type}'. "
+                    "Choose SQL, Firebase or MongoDB in Settings → Database."
                 )
                 return False
 
@@ -2094,11 +2213,7 @@ class DatabaseManager:
                 logger.error(
                     f"Failed to initialize {self._config.database_type} database"
                 )
-                notify_critical(
-                    f"Failed to initialize the {self._config.database_type} database. Check connection settings.",
-                    dedupe_key=f"db:init_fail:{self._config.database_type}",
-                    actions=nav_actions_settings("Database"),
-                )
+                self.last_init_error = str(getattr(self._database, "last_error", "") or "")
                 return False
 
     def get_config(self) -> DatabaseConfig:
@@ -2108,8 +2223,14 @@ class DatabaseManager:
     def update_config(self, **kwargs) -> bool:
         """Update database configuration and reinitialize if necessary"""
         with self._lock:
-            # Log the update attempt
-            logger.info(f"Updating database manager config with: {kwargs}")
+            # Log the update attempt (connection strings can hold a password)
+            logger.info(
+                "Updating database manager config with: %s",
+                {
+                    k: ("***" if k == "mongodb_connection_string" and v else v)
+                    for k, v in kwargs.items()
+                },
+            )
 
             # Update configuration
             old_type = self._config.database_type
@@ -2119,7 +2240,8 @@ class DatabaseManager:
                         value = normalize_firebase_database_url(value)
                     old_value = getattr(self._config, key)
                     setattr(self._config, key, value)
-                    logger.debug(f"Updated config {key}: {old_value} -> {value}")
+                    if key != "mongodb_connection_string":
+                        logger.debug(f"Updated config {key}: {old_value} -> {value}")
                 else:
                     logger.warning(f"Unknown config key: {key}")
 
@@ -2191,9 +2313,11 @@ class DatabaseManager:
 
         if not self._database:
             logger.error("Database not initialized")
+            _write_tls.last_write = ("down", "")
+            self._report_write_failure("Write", path)
             return False
 
-        return bool(
+        ok = bool(
             self._run_db_op_with_timeout(
                 "Write",
                 lambda: self._database.set_data(path, data),
@@ -2202,6 +2326,9 @@ class DatabaseManager:
                 invalidate_on_timeout=True,
             )
         )
+        if not ok:
+            self._report_write_failure("Write", path)
+        return ok
 
     def _path_write_lock(self, path: str) -> threading.Lock:
         with self._write_gen_lock:
@@ -2221,7 +2348,7 @@ class DatabaseManager:
         invalidate_on_timeout: bool = False,
     ):
         timeout = max(5, int(getattr(self._config, "connection_timeout", 30) or 30))
-        result: Dict[str, Any] = {"value": default}
+        result: Dict[str, Any] = {"value": default, "status": "ok", "reason": ""}
         my_gen = 0
         path_lock = None
 
@@ -2238,10 +2365,12 @@ class DatabaseManager:
                     with path_lock:
                         with self._write_gen_lock:
                             if self._write_generation.get(path) != my_gen:
+                                result["status"] = "superseded"
                                 return
                         value = fn()
                         with self._write_gen_lock:
                             if self._write_generation.get(path) != my_gen:
+                                result["status"] = "superseded"
                                 return
                         result["value"] = value
                 else:
@@ -2255,6 +2384,8 @@ class DatabaseManager:
                     exc_info=True,
                 )
                 result["value"] = default
+                result["status"] = "failed"
+                result["reason"] = str(e)
             finally:
                 if invalidate_on_timeout:
                     self._notify_write(path, True)
@@ -2262,6 +2393,8 @@ class DatabaseManager:
         is_sql = str(getattr(self._config, "database_type", "sql") or "sql") == "sql"
         if is_sql:
             _worker()
+            if invalidate_on_timeout:
+                _write_tls.last_write = _write_outcome(result)
             return result["value"]
 
         worker = threading.Thread(
@@ -2290,8 +2423,12 @@ class DatabaseManager:
                 path or "(root)",
                 timeout,
             )
+            if invalidate_on_timeout:
+                _write_tls.last_write = ("timeout", f"no answer after {timeout} s")
             return default
 
+        if invalidate_on_timeout:
+            _write_tls.last_write = _write_outcome(result)
         return result["value"]
 
     def update_data(self, path: str, data: Dict[str, Any]) -> bool:
@@ -2301,9 +2438,11 @@ class DatabaseManager:
 
         if not self._database:
             logger.error("Database not initialized")
+            _write_tls.last_write = ("down", "")
+            self._report_write_failure("Update", path)
             return False
 
-        return bool(
+        ok = bool(
             self._run_db_op_with_timeout(
                 "Update",
                 lambda: self._database.update_data(path, data),
@@ -2312,6 +2451,9 @@ class DatabaseManager:
                 invalidate_on_timeout=True,
             )
         )
+        if not ok:
+            self._report_write_failure("Update", path)
+        return ok
 
     def delete_data(self, path: str) -> bool:
         """Delete data from the database"""
@@ -2320,9 +2462,11 @@ class DatabaseManager:
 
         if not self._database:
             logger.error("Database not initialized")
+            _write_tls.last_write = ("down", "")
+            self._report_write_failure("Delete", path)
             return False
 
-        return bool(
+        ok = bool(
             self._run_db_op_with_timeout(
                 "Delete",
                 lambda: self._database.delete_data(path),
@@ -2331,6 +2475,9 @@ class DatabaseManager:
                 invalidate_on_timeout=True,
             )
         )
+        if not ok:
+            self._report_write_failure("Delete", path)
+        return ok
 
     def _alert_backend(self):
         """Active backend once the app database is already open. Does not connect."""
@@ -2486,6 +2633,26 @@ class DatabaseManager:
             path="*",
         ) or {}
 
+    def get_snapshot_checked(self) -> Tuple[Dict[str, Any], str]:
+        """Like get_snapshot, plus why it failed: ``(snapshot, error)``.
+
+        ``error`` is "" when the read worked, even if the database is empty.
+        """
+        if not self._initialized:
+            with quiet_notifications():
+                self.initialize()
+        db = self._database
+        if not db or not self._initialized:
+            return {}, self.last_init_error or "The database isn't connected."
+        db.snapshot_error = ""
+        failed = object()
+        out = self._run_db_op_with_timeout("Snapshot", db.get_snapshot, failed, path="*")
+        if out is failed:
+            return {}, "The database didn't answer in time, or the read failed (see the log)."
+        if db.snapshot_error:
+            return {}, db.snapshot_error
+        return out or {}, ""
+
     def get_paths_from_snapshot(self, snapshot: Dict[str, Any]) -> List[str]:
         """Derive path list from an in-memory snapshot (avoids a second full-tree read)."""
         if not snapshot:
@@ -2514,6 +2681,8 @@ class DatabaseManager:
     ) -> bool:
         """Migrate data from one database to another"""
         # The target may be the live database; its writes bypass set_data.
+        # The caller (Database tab) reports the outcome from last_migration_result.
+        self.last_migration_result = {}
         self._notify_write("", False)
         try:
             return self._migrate_data(source_config, target_config)
@@ -2535,11 +2704,10 @@ class DatabaseManager:
                 logger.error(
                     f"Unsupported source database type: {source_config.database_type}"
                 )
-                notify_critical(
-                    "Database migration aborted: unsupported source database type.",
-                    dedupe_key="db:migrate:bad_source",
-                    actions=nav_actions_settings("Database"),
-                )
+                self.last_migration_result = {
+                    "ok": False,
+                    "error": f"Unknown source database type '{source_config.database_type}'.",
+                }
                 return False
 
             if target_config.database_type == "sql":
@@ -2552,30 +2720,29 @@ class DatabaseManager:
                 logger.error(
                     f"Unsupported target database type: {target_config.database_type}"
                 )
-                notify_critical(
-                    "Database migration aborted: unsupported target database type.",
-                    dedupe_key="db:migrate:bad_target",
-                    actions=nav_actions_settings("Database"),
-                )
+                self.last_migration_result = {
+                    "ok": False,
+                    "error": f"Unknown target database type '{target_config.database_type}'.",
+                }
                 return False
 
             # Initialize both databases
             if not source_db.initialize():
                 logger.error("Failed to initialize source database")
-                notify_critical(
-                    "Database migration failed: could not open the source database.",
-                    dedupe_key="db:migrate:source_init",
-                    actions=nav_actions_settings("Database"),
-                )
+                self.last_migration_result = {
+                    "ok": False,
+                    "stage": "source",
+                    "error": source_db.last_error or "Couldn't open the source database.",
+                }
                 return False
 
             if not target_db.initialize():
                 logger.error("Failed to initialize target database")
-                notify_critical(
-                    "Database migration failed: could not open the target database.",
-                    dedupe_key="db:migrate:target_init",
-                    actions=nav_actions_settings("Database"),
-                )
+                self.last_migration_result = {
+                    "ok": False,
+                    "stage": "target",
+                    "error": target_db.last_error or "Couldn't open the target database.",
+                }
                 return False
 
             if hasattr(source_db, "get_migration_paths"):
@@ -2589,6 +2756,7 @@ class DatabaseManager:
 
             migrated_count = 0
             failed_count = 0
+            failed_paths: List[str] = []
             for path in paths_to_migrate:
                 try:
                     data = source_db.get_data(path)
@@ -2597,10 +2765,19 @@ class DatabaseManager:
                         logger.debug(f"Migrated data from path: {path}")
                     else:
                         failed_count += 1
+                        failed_paths.append(path)
                         logger.warning(f"Failed to migrate data from path: {path}")
                 except Exception as e:
                     failed_count += 1
+                    failed_paths.append(f"{path} ({e})")
                     logger.error(f"Error migrating path {path}: {str(e)}")
+            self.last_migration_result = {
+                "ok": failed_count == 0,
+                "total": len(paths_to_migrate),
+                "migrated": migrated_count,
+                "failed": failed_count,
+                "failed_paths": failed_paths,
+            }
 
             logger.info(
                 f"Migration completed. Wrote {migrated_count} paths, "
@@ -2623,12 +2800,62 @@ class DatabaseManager:
 
         except Exception as e:
             logger.error(f"Error during data migration: {str(e)}", exc_info=True)
-            notify_critical(
-                "Database migration failed. Check logs before retrying.",
-                dedupe_key="db:migrate_abort",
-                actions=nav_actions_settings("Database"),
-            )
+            self.last_migration_result = {"ok": False, "error": str(e)}
             return False
+
+
+# --- Notification plumbing -------------------------------------------------
+# Write outcome of the calling thread's last set/update/delete: (status, reason) with
+# status "ok", "failed", "timeout", "superseded" or "down".
+_write_tls = threading.local()
+_WRITE_FAILURE_POPUP_GAP_SEC = 300.0
+_DB_LABELS = {"sql": "local", "firebase": "Firebase", "mongodb": "MongoDB"}
+
+
+def _db_label(database_type: Optional[str]) -> str:
+    return _DB_LABELS.get(str(database_type or "").lower(), str(database_type or "local"))
+
+
+def _write_outcome(result: Dict[str, Any]) -> Tuple[str, str]:
+    """(status, reason) for a finished write; a backend that returned False failed."""
+    status = result.get("status") or "ok"
+    if status == "ok" and not result.get("value"):
+        status = "failed"
+    return status, str(result.get("reason") or "")
+
+
+def _quiet() -> bool:
+    return getattr(_write_tls, "quiet", 0) > 0
+
+
+@contextmanager
+def quiet_notifications():
+    """Silence this thread's database notifications (connect and write failures).
+
+    For callers that report the failure themselves with better context, such as
+    StateManager.save_changes, startup, and the Database tab.
+    """
+    _write_tls.quiet = getattr(_write_tls, "quiet", 0) + 1
+    try:
+        yield
+    finally:
+        _write_tls.quiet -= 1
+
+
+def last_write_problem() -> Optional[Tuple[str, str]]:
+    """(status, reason) of this thread's last write, or None if unknown."""
+    return getattr(_write_tls, "last_write", None)
+
+
+def clear_last_write_problem() -> None:
+    _write_tls.last_write = None
+
+
+def database_label(database_type: Optional[str] = None) -> str:
+    """User-facing name of a database type ("local", "Firebase", "MongoDB")."""
+    if database_type is None:
+        database_type = database_manager.get_config().database_type
+    return _db_label(database_type)
 
 
 # Global database manager instance

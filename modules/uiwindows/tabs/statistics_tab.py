@@ -377,12 +377,21 @@ class StatisticsTab:
     def _save_now(self) -> None:
         try:
             self.mgr.force_save()
-            notify("Statistics saved", type="positive")
+            if getattr(self.mgr, "last_save_ok", True) is False:
+                return  # the statistics manager already said what went wrong
+            notify("", type="success", source="statistics", title="Statistics saved")
             if self._save_label:
                 self._save_label.set_text(self._save_text())
         except Exception as e:
             logger.error("Error force saving statistics: %s", e, exc_info=True)
-            notify("Could not save statistics", type="negative")
+            notify(
+                "Recent stream stats may be lost if Mycelian closes.",
+                type="error",
+                source="statistics",
+                title="Couldn't save statistics",
+                hint="Check that the Mycelian data folder is writable and has free space, then try again.",
+                details=f"{type(e).__name__}: {e}",
+            )
 
     # ----- live updates -----
 
@@ -1171,14 +1180,21 @@ class StatisticsTab:
             return
         box.clear()
         rng = self._range()
+        failed = False
         try:
             image, _source = self._render_image(rng)
         except Exception as e:
             logger.error("Highlights preview failed: %s", e, exc_info=True)
             image = None
+            failed = True
         with box:
             if image is None:
-                ui.html(f'<div class="mst-empty">{_icon("image_not_supported")}Nothing to export for this range yet.</div>', sanitize=False)
+                text = (
+                    "Couldn't draw the preview. Details are in the log."
+                    if failed
+                    else "Nothing to export for this range yet."
+                )
+                ui.html(f'<div class="mst-empty">{_icon("image_not_supported")}{text}</div>', sanitize=False)
                 return
             preview = image.copy()
             preview.thumbnail((1280, 1280))
@@ -1193,7 +1209,13 @@ class StatisticsTab:
         try:
             image, source = self._render_image(rng)
             if image is None:
-                notify("Nothing to export: no events were recorded in this date range.", type="warning")
+                notify(
+                    "No events were recorded in this date range.",
+                    type="info",
+                    source="statistics",
+                    title="Nothing to export",
+                    hint="Pick a wider date range.",
+                )
                 return
             export_dir = get_data_path("exports")
             os.makedirs(export_dir, exist_ok=True)
@@ -1203,10 +1225,26 @@ class StatisticsTab:
             self.export_last_path = path
             self._render_export_status()
             note = " Numbers are lifetime totals because the event log has nothing in this range." if source == "lifetime" else ""
-            notify(f"Highlights saved.{note}\n{path}", type="positive", close_button=True)
+            notify(
+                f"Saved to {path}.{note}",
+                type="success",
+                source="statistics",
+                title="Highlights image saved",
+                actions=[
+                    {"kind": "call", "label": "Open folder", "icon": "folder_open", "fn": self._open_exports_folder},
+                    {"kind": "copy", "text": path, "label": "Copy path"},
+                ],
+            )
         except Exception as e:
             logger.error("Error exporting highlights: %s", e, exc_info=True)
-            notify("Could not export the highlights image", type="negative")
+            notify(
+                "",
+                type="error",
+                source="statistics",
+                title="Couldn't save the highlights image",
+                hint="Check there's free space and the Mycelian data folder is writable, then try again.",
+                details=f"{type(e).__name__}: {e}",
+            )
 
     def _open_exports_folder(self) -> None:
         from pathlib import Path
@@ -1219,4 +1257,11 @@ class StatisticsTab:
             reveal_in_file_manager(path)
         except Exception as e:
             logger.debug("Could not open exports folder: %s", e)
-            notify("Could not open the exports folder", type="warning")
+            notify(
+                f"It's at {path}.",
+                type="warning",
+                source="files",
+                title="Couldn't open the exports folder",
+                hint="Open it yourself in your file manager.",
+                actions=[{"kind": "copy", "text": str(path), "label": "Copy path"}],
+            )

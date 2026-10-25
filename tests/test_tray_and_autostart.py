@@ -22,16 +22,6 @@ def test_background_settings_exist_and_default_off():
     assert settings.run_at_startup is False
 
 
-def test_database_defaults_include_background_settings():
-    from modules import database_init
-
-    source = database_init.__file__
-    with open(source, encoding="utf-8") as handle:
-        text = handle.read()
-    for field in ("minimize_to_tray", "start_minimized", "run_at_startup"):
-        assert f'"{field}"' in text
-
-
 # ----- tray controller -----
 
 

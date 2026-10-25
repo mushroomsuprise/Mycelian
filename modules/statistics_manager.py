@@ -39,6 +39,27 @@ from typing import Any, Dict, List, Optional, Tuple
 from .database_manager import get_data, set_data, update_data
 from .path_utils import get_data_path
 
+
+def _notify_stats_problem(title: str, message: str, *, hint: str, details: str, key: str,
+                          cooldown: float, type: str = "warning") -> None:
+    """Tell the user statistics aren't being kept (deduped; these come from background work)."""
+    try:
+        from .notification_engine import nav_actions_settings, notify
+
+        notify(
+            message,
+            type=type,
+            source="statistics",
+            title=title,
+            hint=hint,
+            details=details,
+            dedupe_key=key,
+            dedupe_cooldown_sec=cooldown,
+            actions=nav_actions_settings("Statistics"),
+        )
+    except Exception as e:  # never let a notification break stats bookkeeping
+        logger.debug("statistics notification failed: %s", e)
+
 logger = logging.getLogger(__name__)
 
 
@@ -425,6 +446,15 @@ class StatisticsManager:
         except Exception as e:
             logger.error(f"Failed to initialize statistics database: {e}", exc_info=True)
             self._stats_db_initialized = False
+            _notify_stats_problem(
+                "Statistics are off for this session",
+                "Mycelian couldn't open its statistics database, so event history won't be recorded until it restarts.",
+                hint="Check that the Mycelian data folder is writable and has free space, then restart Mycelian.",
+                details=f"{getattr(self, '_stats_db_path', '') or 'statistics.db'}: {e}",
+                key="stats:init_failed",
+                cooldown=86400,
+                type="error",
+            )
 
     def _create_stats_tables(self, conn: sqlite3.Connection):
         """Create tables for the separate statistics database."""
@@ -952,10 +982,22 @@ class StatisticsManager:
                 [(*row, row[0]) for row in rows],
             )
             conn.commit()
+            self._event_write_failures = 0
         except Exception as e:
             logger.error(f"Error recording event: {e}")
             with self._event_batch_lock:
                 self._event_batch = list(rows) + self._event_batch
+            # Rows are retried; only speak up when the failure persists.
+            self._event_write_failures = getattr(self, "_event_write_failures", 0) + 1
+            if self._event_write_failures == 3:
+                _notify_stats_problem(
+                    "Couldn't record stream events",
+                    "New events are being held in memory and will be lost if Mycelian closes before they're saved.",
+                    hint="Check that the Mycelian data folder is writable and has free space.",
+                    details=str(e),
+                    key="stats:events_write",
+                    cooldown=1800,
+                )
         finally:
             self._return_stats_db_connection(conn)
 
@@ -1008,6 +1050,15 @@ class StatisticsManager:
             logger.debug("Statistics saved to statistics database successfully")
         except Exception as e:
             logger.error(f"Error saving to statistics database: {e}", exc_info=True)
+            self.last_save_ok = False
+            _notify_stats_problem(
+                "Couldn't save statistics",
+                "Recent stream stats may be lost if Mycelian closes.",
+                hint="Check that the Mycelian data folder is writable and has free space.",
+                details=str(e),
+                key="stats:save_failed",
+                cooldown=1800,
+            )
         finally:
             self._return_stats_db_connection(conn)
 
@@ -1063,6 +1114,14 @@ class StatisticsManager:
             return True
         except Exception as e:
             logger.error(f"Error during statistics migration: {e}", exc_info=True)
+            _notify_stats_problem(
+                "Couldn't import your older statistics",
+                "Statistics from before the last update weren't copied over. New stats are recorded as normal.",
+                hint="Restart Mycelian to try the import again.",
+                details=str(e),
+                key="stats:migrate",
+                cooldown=86400,
+            )
             return False
         finally:
             self._return_stats_db_connection(conn)
@@ -2613,7 +2672,11 @@ class StatisticsManager:
             logger.error(f"Error loading statistics from database: {e}")
 
     def _save_to_database(self):
-        """Save current statistics to database"""
+        """Save current statistics to database.
+
+        ``self.last_save_ok`` says whether it worked (failures notify the user once).
+        """
+        self.last_save_ok = True
         try:
             logger.debug("Starting statistics save to database")
 
@@ -2843,10 +2906,21 @@ class StatisticsManager:
                 if success:
                     logger.debug("Statistics saved to database successfully")
                 else:
+                    # database_manager already notified about the failed write.
+                    self.last_save_ok = False
                     logger.error("Failed to save statistics to database")
 
         except Exception as e:
             logger.error(f"Error saving statistics to database: {e}")
+            self.last_save_ok = False
+            _notify_stats_problem(
+                "Couldn't save statistics",
+                "Recent stream stats may be lost if Mycelian closes.",
+                hint="Check that the Mycelian data folder is writable and has free space.",
+                details=str(e),
+                key="stats:save_failed",
+                cooldown=1800,
+            )
 
     @_stats_data_locked
     def _track_user_alert(self, username: str, alert_type: str):

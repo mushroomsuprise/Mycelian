@@ -115,25 +115,41 @@ class AppSettingsTab:
                     else "installed"
                 )
                 notify(
-                    f"Plugin {verb} successfully! "
-                    "Quit and reopen Stream Deck (or restart it) so the update loads.",
-                    type="positive",
-                    timeout=6000,
+                    "Quit and reopen Stream Deck so it loads the plugin.",
+                    type="success",
+                    source="app",
+                    title=f"Stream Deck plugin {verb}",
                 )
                 self._refresh_plugin_ui()
             else:
                 notify(
-                    "Plugin files were copied but version check failed. "
-                    "Restart Stream Deck, then open App Settings to verify.",
+                    "Mycelian copied the plugin but couldn't confirm which version Stream Deck will load.",
                     type="warning",
-                    timeout=6000,
+                    source="app",
+                    title="Stream Deck plugin copied",
+                    hint="Restart Stream Deck, then check the plugin status here.",
                 )
                 self._refresh_plugin_ui()
 
         except PluginInstallError as e:
-            notify(e.user_message, type="negative", timeout=8000)
+            notify(
+                e.user_message,
+                type="error",
+                source="app",
+                title="Couldn't install the Stream Deck plugin",
+                hint="Close Stream Deck and try again.",
+                details=f"{type(e).__name__}: {e}",
+            )
         except Exception as e:
-            notify(f"Error installing plugin: {e}", type="negative")
+            logger.error("Stream Deck plugin install failed: %s", e, exc_info=True)
+            notify(
+                "",
+                type="error",
+                source="app",
+                title="Couldn't install the Stream Deck plugin",
+                hint="Close Stream Deck and try again.",
+                details=f"{type(e).__name__}: {e}",
+            )
 
     # ----- lifecycle -----
     def on_enter(self) -> None:
@@ -663,11 +679,10 @@ class AppSettingsTab:
             except Exception:
                 logger.debug("status footer refresh after save failed", exc_info=True)
             self._push_notify_settings_to_docks()
-            notify("Settings saved", type="positive", source="app")
+            notify("", type="success", source="app", title="App settings saved")
             self.dirty = False
             self._refresh_derived()
-        else:
-            notify("Error saving settings", type="negative")
+        # A failed save_changes() was already reported once (changes stay pending).
 
     @staticmethod
     def _push_notify_settings_to_docks() -> None:
@@ -688,7 +703,15 @@ class AppSettingsTab:
 
             set_autostart_enabled(bool(self.buffer.run_at_startup))
         except Exception as e:
-            notify(f"Could not update the login item: {e}", type="warning")
+            logger.warning("Could not update run-at-startup: %s", e, exc_info=True)
+            notify(
+                "Your other settings were saved.",
+                type="warning",
+                source="app",
+                title=f"Couldn't turn 'Run at startup' {'on' if self.buffer.run_at_startup else 'off'}",
+                hint="Try again, or change it in your system's startup/login items settings.",
+                details=f"{type(e).__name__}: {e}",
+            )
 
         try:
             from ...tray_controller import apply_settings
@@ -708,8 +731,16 @@ class AppSettingsTab:
 
             alertutils.alert_state_manager.initialize()
             alertutils.schedule_auto_trim_stored_alerts()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not schedule stored-alert cleanup: %s", e, exc_info=True)
+            notify(
+                "Your settings were saved, but stored alerts won't be trimmed automatically for now.",
+                type="warning",
+                source="alerts",
+                title="Automatic alert cleanup couldn't start",
+                hint="Restart Mycelian to try again.",
+                details=f"{type(e).__name__}: {e}",
+            )
 
     def discard(self) -> None:
         # reload from state and update UI controls

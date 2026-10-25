@@ -8,11 +8,18 @@ import logging
 from typing import Any, Dict, Optional, Tuple
 
 from nicegui import run, ui
-from ...notification_engine import notify
+import time
+
+from ...notification_engine import nav_actions_settings, notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_timer import layout_schedule
 
-from ...database_manager import database_manager
+from ...database_manager import (
+    clear_last_write_problem,
+    database_manager,
+    last_write_problem,
+    quiet_notifications,
+)
 from ...game_hooks.base import runtime_os_key
 from ...game_hooks.registry import (
     enabled_db_path,
@@ -24,6 +31,11 @@ from ...game_hooks.registry import (
 from ..os_brand_icons import OS_BRAND_ROW
 
 logger = logging.getLogger(__name__)
+
+# hook_id -> monotonic time of the last error pop-up. Module level so a rebuilt tab or a
+# changing error text (addresses, PIDs) doesn't re-announce the same problem.
+_HOOK_ERROR_TOASTED: Dict[str, float] = {}
+_HOOK_ERROR_TOAST_GAP_SEC = 600.0
 
 _CARD_BASE = (
     "content-card w-full min-w-0 p-3 border-2 border-solid transition-colors"
@@ -147,11 +159,26 @@ class GameHooksTab:
         card.classes(replace=f"{_CARD_BASE} {state_classes}")
 
     def _maybe_notify_error(self, hook_id: str, err_msg: Optional[str], title: str) -> None:
+        # Driven by the status timer: the card shows the error; the pop-up is rate-limited.
         prev = self._last_error_notified.get(hook_id, "")
         if err_msg:
             if err_msg != prev:
                 self._last_error_notified[hook_id] = err_msg
-                notify(f"{title}: {err_msg}", type="negative", timeout=8000)
+                now = time.monotonic()
+                last = _HOOK_ERROR_TOASTED.get(hook_id)
+                if last is None or now - last >= _HOOK_ERROR_TOAST_GAP_SEC:
+                    _HOOK_ERROR_TOASTED[hook_id] = now
+                    notify(
+                        "Its card below shows the latest status.",
+                        type="warning",
+                        source="game_hooks",
+                        title=f"The {title} hook has a problem",
+                        hint="Make sure the game is running and Mycelian is allowed to read it, then check the card.",
+                        details=err_msg,
+                        dedupe_key=f"gamehook:{hook_id}:err",
+                        dedupe_cooldown_sec=_HOOK_ERROR_TOAST_GAP_SEC,
+                        actions=nav_actions_settings("Game Hooks"),
+                    )
         elif prev:
             self._last_error_notified[hook_id] = ""
 
@@ -390,13 +417,22 @@ class GameHooksTab:
             run = action.get("run")
             if not callable(run):
                 return
+            label = str(action.get("label") or action_id)
+            hook_title = self._hook_title(hook_id)
             try:
                 result = run()
             except Exception as e:
                 logger.warning(
                     "hook action %s/%s failed: %s", hook_id, action_id, e, exc_info=True
                 )
-                notify(str(e), type="negative")
+                notify(
+                    "",
+                    type="error",
+                    source="game_hooks",
+                    title=f"{hook_title}: “{label}” didn't work",
+                    hint="Make sure the game is running and the hook is attached, then try again.",
+                    details=f"{type(e).__name__}: {e}",
+                )
                 return
             ok = True
             message = ""
@@ -407,9 +443,25 @@ class GameHooksTab:
             elif isinstance(result, str):
                 message = result
             if message:
-                notify(message, type="positive" if ok else "negative", timeout=8000)
+                if ok:
+                    notify(message, type="success", source="game_hooks", title=f"{hook_title}: {label}")
+                else:
+                    notify(
+                        message,
+                        type="error",
+                        source="game_hooks",
+                        title=f"{hook_title}: “{label}” didn't work",
+                        hint="Check the hook's card for its status, then try again.",
+                    )
             self._refresh_hook_actions(hook_id)
             return
+
+    @staticmethod
+    def _hook_title(hook_id: str) -> str:
+        for meta in list_hooks_for_ui():
+            if meta.hook_id == hook_id:
+                return meta.title
+        return hook_id
 
     def _on_toggle(self, hook_id: str, value: bool) -> None:
         if not self._hook_supported.get(hook_id, True):
@@ -429,7 +481,7 @@ class GameHooksTab:
 
     def save(self) -> None:
         try:
-            ok_all = True
+            failed = []
             for meta in list_hooks_for_ui():
                 hid = meta.hook_id
                 to_save = (
@@ -437,25 +489,42 @@ class GameHooksTab:
                     if self._hook_supported.get(hid, True)
                     else False
                 )
-                ok = database_manager.set_data(
-                    enabled_db_path(hid), {"enabled": to_save}
-                )
-                if ok:
+                # This tab reports a failed write itself (one message for the save).
+                with quiet_notifications():
+                    clear_last_write_problem()
+                    ok = database_manager.set_data(
+                        enabled_db_path(hid), {"enabled": to_save}
+                    )
+                    problem = last_write_problem()
+                if ok or (problem and problem[0] == "superseded"):
                     set_hook_enabled_cached(hid, to_save)
                     self._loaded_enabled[hid] = bool(to_save)
                     self._buffer_enabled[hid] = bool(to_save)
                     logger.info("GameHooks: %s_enabled=%s", hid, to_save)
                 else:
-                    ok_all = False
-            if ok_all:
+                    status, reason = problem or ("failed", "")
+                    failed.append(f"{meta.title}: {status}{' - ' + reason if reason else ''}")
+            if not failed:
                 self.dirty = False
-                notify("Game Hooks saved", type="positive")
+                notify("", type="success", source="game_hooks", title="Game Hooks saved")
             else:
-                notify("Failed to save Game Hooks", type="negative")
+                self._notify_save_failed("\n".join(failed))
         except Exception as e:
             logger.error("GameHooks save failed: %s", e, exc_info=True)
-            notify(f"Error saving Game Hooks: {e}", type="negative")
+            self._notify_save_failed(f"{type(e).__name__}: {e}")
         self._refresh_all_runtime_status()
+
+    @staticmethod
+    def _notify_save_failed(details: str) -> None:
+        notify(
+            "Your changes are still selected here.",
+            type="error",
+            source="game_hooks",
+            title="Couldn't save Game Hooks settings",
+            hint="Check the connection in Settings → Database, then press Save again.",
+            details=details,
+            actions=nav_actions_settings("Database"),
+        )
 
     def discard(self) -> None:
         self._load_from_db()

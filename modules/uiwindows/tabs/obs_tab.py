@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 from nicegui import run, ui
@@ -14,11 +15,13 @@ from ...ui_settings_layout import (
     settings_surface,
 )
 from ...dataobjects import OBSData, state_manager
-from ...notification_engine import notify
+from ...notification_engine import notify, notify_progress
 from ...obs_service import obs_service
 from ...help_system.contextual_help import help_button
 from ...ui_form_controls import form_sensitive_input, form_sensitive_number
 from ...ui_timer import layout_schedule
+
+logger = logging.getLogger(__name__)
 
 
 class ObsTab:
@@ -100,11 +103,12 @@ class ObsTab:
 
     async def _test_connection(self) -> None:
         if getattr(self, "_test_in_progress", False):
-            notify("OBS test already in progress...", type="info")
-            return
+            return  # the progress notice is already showing
         if not self.buffer:
             return
         self._test_in_progress = True
+        address = f"{self.buffer.host}:{self.buffer.port}"
+        work = None
         try:
             state_manager.set_obs_data(
                 {
@@ -113,8 +117,8 @@ class ObsTab:
                 }
             )
             if not state_manager.save_changes():
-                notify("Could not save OBS settings before test", type="negative")
-                return
+                return  # save_changes already said why; the test needs the saved settings
+            work = notify_progress("Testing the OBS connection", source="obs", message=f"Waiting for OBS at {address}…")
             obs_service.apply_settings()
             # Must not block NiceGUI thread (Future.result would freeze UI for the timeout window).
             ok, msg = await run.io_bound(
@@ -122,10 +126,24 @@ class ObsTab:
                 25.0,
             )
             if ok:
-                notify("OBS responded successfully", type="positive")
+                work.done("Connected to OBS")
             else:
-                notify(f"OBS test failed: {msg}", type="negative")
+                work.fail(
+                    f"Couldn't reach OBS at {address}",
+                    hint="Check OBS is open, WebSocket is on (Tools → WebSocket Server Settings), and the password matches.",
+                    details=str(msg or "No answer within 25 seconds."),
+                )
             self._refresh_status()
+        except Exception as e:
+            logger.error("OBS test failed: %s", e, exc_info=True)
+            fail_kwargs = {
+                "hint": "Check the host, port and password, then test again.",
+                "details": f"{type(e).__name__}: {e}",
+            }
+            if work is not None:
+                work.fail("Couldn't test the OBS connection", **fail_kwargs)
+            else:
+                notify("", type="error", source="obs", title="Couldn't test the OBS connection", **fail_kwargs)
         finally:
             self._test_in_progress = False
 
@@ -222,12 +240,11 @@ class ObsTab:
         }
         state_manager.set_obs_data(payload)
         if state_manager.save_changes():
-            notify("OBS settings saved", type="positive")
+            notify("", type="success", source="obs", title="OBS settings saved")
             self.dirty = False
             obs_service.apply_settings()
             self._refresh_status()
-        else:
-            notify("Error saving OBS settings", type="negative")
+        # A failed save_changes() was already reported once (changes stay pending).
 
     def discard(self) -> None:
         self._load_from_state()

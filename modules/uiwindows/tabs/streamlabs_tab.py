@@ -17,7 +17,7 @@ from ...api_credentials_manager import (
 from ...donation_currency import ALERT_CURRENCIES
 from ...donation_settings import get_settings, update_settings
 from ...help_system.contextual_help import help_button
-from ...notification_engine import notify
+from ...notification_engine import nav_actions_settings, notify, notify_progress
 from ...streamlabs import (
     STREAMLABS_OAUTH_REDIRECT_URI,
     disconnect_streamlabs,
@@ -36,6 +36,36 @@ from ...ui_settings_layout import (
 from ...ui_timer import layout_schedule
 
 logger = logging.getLogger(__name__)
+
+
+def _streamlabs_error_text(error: str) -> tuple:
+    """Plain (title, hint) for a Streamlabs sign-in error; the raw text goes in details."""
+    text = str(error or "").strip()
+    low = text.lower()
+    if "already in progress" in low:
+        return (
+            "Streamlabs sign-in is already open",
+            "Finish it in your browser, or wait a few minutes and try again.",
+        )
+    if "port" in low and "in use" in low:
+        return (
+            "Another app is using the port Streamlabs sign-in needs (9975)",
+            "Close the other app (or another Mycelian window), then try again.",
+        )
+    if "not completed" in low:
+        return (
+            "Streamlabs sign-in timed out",
+            "Press Connect and approve Mycelian within 3 minutes.",
+        )
+    if "access_denied" in low or "denied" in low:
+        return (
+            "Streamlabs sign-in was cancelled",
+            "Press Connect and choose Approve on the Streamlabs page.",
+        )
+    return (
+        "Couldn't connect to Streamlabs",
+        "Check the Client ID, Client Secret and redirect URI in your Streamlabs app, then try again.",
+    )
 
 
 def _status_classes(status: str) -> str:
@@ -114,10 +144,18 @@ class StreamlabsTab:
             update_settings(alert_currency=self._currency or "USD")
             self.dirty = False
             if not silent:
-                notify("Streamlabs settings saved.", type="positive")
+                notify("", type="success", source="streamlabs", title="Streamlabs settings saved")
         except Exception as exc:
             logger.error("Streamlabs save failed: %s", exc, exc_info=True)
-            notify("Could not save Streamlabs settings.", type="negative")
+            notify(
+                "Your changes are still in the form.",
+                type="error",
+                source="streamlabs",
+                title="Couldn't save Streamlabs settings",
+                hint="Check the connection in Settings → Database, then press Save again.",
+                details=f"{type(exc).__name__}: {exc}",
+                actions=nav_actions_settings("Database"),
+            )
 
     def discard(self) -> None:
         self._load()
@@ -192,9 +230,20 @@ class StreamlabsTab:
         if not (creds.get("client_id") or "").strip() or not (
             creds.get("client_secret") or ""
         ).strip():
-            notify("Enter a Streamlabs client id and secret first.", type="warning")
+            notify(
+                "",
+                type="warning",
+                source="streamlabs",
+                title="Enter your Streamlabs Client ID and Client Secret first",
+                hint="Use the Guide button to see where to get them.",
+            )
             return
         self._connect_in_progress = True
+        progress = notify_progress(
+            "Connecting to Streamlabs",
+            source="streamlabs",
+            message="Approve Mycelian in the Streamlabs page that opens (up to 3 minutes).",
+        )
 
         def work() -> None:
             try:
@@ -202,21 +251,39 @@ class StreamlabsTab:
                     creds["client_id"], creds["client_secret"]
                 )
                 if error:
-                    notify(error, type="negative")
+                    title, hint = _streamlabs_error_text(error)
+                    progress.fail(title, hint=hint, details=error)
                 else:
-                    notify("Streamlabs connected.", type="positive")
+                    progress.done("Connected to Streamlabs")
             except Exception as exc:
                 logger.error("Streamlabs connect failed: %s", exc, exc_info=True)
-                notify("Streamlabs connection failed.", type="negative")
+                progress.fail(
+                    "Couldn't connect to Streamlabs",
+                    hint="Try again. If it keeps happening, copy the details and report it.",
+                    details=f"{type(exc).__name__}: {exc}",
+                )
             finally:
                 self._connect_in_progress = False
 
         threading.Thread(target=work, name="StreamlabsOAuth", daemon=True).start()
 
     def _disconnect(self) -> None:
-        disconnect_streamlabs()
+        try:
+            disconnect_streamlabs()
+        except Exception as exc:
+            logger.error("Streamlabs disconnect failed: %s", exc, exc_info=True)
+            notify(
+                "",
+                type="warning",
+                source="streamlabs",
+                title="Couldn't disconnect Streamlabs",
+                hint="Try again.",
+                details=f"{type(exc).__name__}: {exc}",
+            )
+            self._refresh_status()
+            return
         self._refresh_status()
-        notify("Streamlabs disconnected.", type="info")
+        notify("", type="info", source="streamlabs", title="Streamlabs disconnected")
 
     def build(self, parent_container) -> None:
         self._load()

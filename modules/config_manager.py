@@ -106,9 +106,12 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Failed to initialize configuration manager: {str(e)}", exc_info=True)
             notify_critical(
-                "Failed to initialize application configuration. Check config.json and logs.",
+                "Mycelian can't load or save its app configuration.",
+                source="app",
+                title="Couldn't read Mycelian's settings file",
+                hint="Check that the file and the Mycelian data folder are writable, or delete the file so Mycelian recreates it.",
+                details=f"{self.config_path}: {e}",
                 dedupe_key="config:init_failed",
-                actions=nav_actions_settings("App Settings"),
             )
             return False
     
@@ -130,6 +133,16 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Error loading config from {self.config_path}: {str(e)}")
             logger.info("Creating default config due to load failure")
+            notify_critical(
+                "Mycelian started with default settings, including the local database. "
+                "Your saved data is untouched.",
+                source="app",
+                title="Couldn't read Mycelian's settings file",
+                hint="Fix the file (it must be valid JSON) or choose your database again in Settings → Database.",
+                details=f"{self.config_path}: {e}",
+                dedupe_key="config:load_failed",
+                actions=nav_actions_settings("Database"),
+            )
             return self._create_default_config()
     
     def _create_default_config(self) -> AppConfig:
@@ -180,9 +193,13 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Error saving config to {self.config_path}: {str(e)}", exc_info=True)
             notify_critical(
-                "Could not save application configuration to disk.",
+                "Your database choice and connection settings won't survive a restart.",
+                source="files",
+                title="Couldn't save Mycelian's settings file",
+                hint="Check that the Mycelian data folder is writable and the disk isn't full, then save again.",
+                details=f"{self.config_path}: {e}",
                 dedupe_key="config:save_failed",
-                actions=nav_actions_settings("App Settings"),
+                dedupe_cooldown_sec=600,
             )
             return False
     
@@ -240,7 +257,10 @@ class ConfigManager:
                     value = normalize_firebase_database_url(value)
                 old_value = getattr(self._config, key)
                 setattr(self._config, key, value)
-                updated_fields.append(f"{key}: {old_value} -> {value}")
+                if key == "mongodb_connection_string":  # may contain a password
+                    updated_fields.append(f"{key}: (changed)" if old_value != value else f"{key}: (unchanged)")
+                else:
+                    updated_fields.append(f"{key}: {old_value} -> {value}")
         
         if updated_fields:
             logger.info(f"Updated config fields: {'; '.join(updated_fields)}")

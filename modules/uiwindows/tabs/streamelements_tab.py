@@ -12,7 +12,7 @@ from nicegui import ui
 from ...donation_currency import ALERT_CURRENCIES
 from ...donation_settings import get_settings, update_settings
 from ...help_system.contextual_help import help_button
-from ...notification_engine import notify
+from ...notification_engine import nav_actions_settings, notify
 from ...streamelements import (
     connect_streamelements,
     disconnect_streamelements,
@@ -106,10 +106,18 @@ class StreamElementsTab:
                 update_settings(alert_currency=self._currency or "USD")
             self.dirty = False
             if not silent:
-                notify("StreamElements settings saved.", type="positive")
+                notify("", type="success", source="streamelements", title="StreamElements settings saved")
         except Exception as exc:
             logger.error("StreamElements save failed: %s", exc, exc_info=True)
-            notify("Could not save StreamElements settings.", type="negative")
+            notify(
+                "Your changes are still in the form.",
+                type="error",
+                source="streamelements",
+                title="Couldn't save StreamElements settings",
+                hint="Check the connection in Settings → Database, then press Save again.",
+                details=f"{type(exc).__name__}: {exc}",
+                actions=nav_actions_settings("Database"),
+            )
 
     def discard(self) -> None:
         self._load()
@@ -170,19 +178,38 @@ class StreamElementsTab:
         self.save(silent=True)
         error = connect_streamelements(self._jwt)
         if error:
-            notify(error, type="warning")
+            notify(
+                "",
+                type="warning",
+                source="streamelements",
+                title=error,
+                hint="Use the Guide button to see where to find the JWT.",
+            )
             return
+        # The status line shows "Connecting"; the result is announced by the status watcher.
         self._refresh_status()
-        notify("Connecting to StreamElements.", type="info")
 
     def _disconnect(self) -> None:
-        disconnect_streamelements()
+        try:
+            disconnect_streamelements()
+        except Exception as exc:
+            logger.error("StreamElements disconnect failed: %s", exc, exc_info=True)
+            notify(
+                "",
+                type="warning",
+                source="streamelements",
+                title="Couldn't disconnect StreamElements",
+                hint="Try again.",
+                details=f"{type(exc).__name__}: {exc}",
+            )
+            self._refresh_status()
+            return
         self._jwt = ""
         if "jwt" in self.ui_elements:
             self.ui_elements["jwt"].value = ""
         self.dirty = False
         self._refresh_status()
-        notify("StreamElements disconnected.", type="info")
+        notify("", type="info", source="streamelements", title="StreamElements disconnected")
 
     def build(self, parent_container) -> None:
         self._load()

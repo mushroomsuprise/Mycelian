@@ -28,154 +28,30 @@ import os
 from typing import Optional
 
 from .api_credentials_manager import (
-    get_encrypted_spotify_client_id,
-    get_encrypted_spotify_client_secret,
-    get_encrypted_twitch_client_id,
-    get_encrypted_twitch_client_secret,
     initialize_api_credentials,
 )
-from .database_manager import DatabaseConfig, database_manager
-from .dataobjects import DatabaseSettings, state_manager
+from .database_manager import (
+    DatabaseConfig,
+    database_label,
+    database_manager,
+    quiet_notifications,
+)
 from .notification_engine import nav_actions_settings, notify_critical
 
 logger = logging.getLogger(__name__)
 
+# Why startup failed, in plain language. main.py shows it in a native dialog
+# before exiting, because no window exists yet to show a notification in.
+last_startup_error: str = ""
+
+
+def _set_startup_error(text: str) -> None:
+    global last_startup_error
+    last_startup_error = text
+
 # The settings migration thread starts before the startup preload; it waits this
 # long for the preload's DatabaseSettings before reading the path itself.
 _MIGRATION_PRELOAD_WAIT_SEC = 120.0
-
-
-def _create_default_data():
-    """Create default data for new database installations"""
-    try:
-        logger.info("Creating default data for new installation...")
-
-        # Only create data if it doesn't already exist
-
-        # Check and create default app settings
-        if not database_manager.get_data("AppSettings"):
-            default_app_settings = {
-                "streamer_name": "",
-                "streamer_id": "",
-                "version": "1.3.11",
-                "build_number": "dev",
-                "build_date": "November 29th 2025",
-                "alert_volume": 0.5,
-                "auto_reconnect": True,
-                "auto_raid_helix_shoutout": True,
-                "auto_raid_chat_shoutout": True,
-                "current_theme": "dark",
-                "notifications_enabled": True,
-                "status_footer_enabled": True,
-                "status_footer_minimal": False,
-                "auto_update": True,
-                "activity_feed_limit": 25,
-                "activity_feed_max_pages": 10,
-                "alert_storage_auto_trim": False,
-                "alert_storage_trim_mode": "both",
-                "alert_storage_keep_count": 500,
-                "alert_storage_keep_days": 30,
-                "minimize_to_tray": False,
-                "start_minimized": False,
-                "run_at_startup": False,
-            }
-            database_manager.set_data("AppSettings", default_app_settings)
-            logger.debug("Created default AppSettings")
-
-        # Check and create default Twitch data with encrypted credentials
-        existing_twitch_data = database_manager.get_data("TwitchData")
-        if not existing_twitch_data:
-            default_twitch_data = {
-                "client_id": get_encrypted_twitch_client_id(),
-                "client_secret": get_encrypted_twitch_client_secret(),
-                "auth_token": "",
-                "refresh_token": "",
-                "user_id": "",
-                "token_expiry": "",
-                "current_category": "",
-                "log_level": "INFO",
-            }
-            database_manager.set_data("TwitchData", default_twitch_data)
-            logger.debug("Created default TwitchData with encrypted credentials")
-        else:
-            logger.debug("TwitchData already exists, preserving existing data")
-
-        # Check and create default PSN settings data
-        if not database_manager.get_data("PSNSettings"):
-            default_psn_settings_data = {"npsso_code": "", "psn_username": ""}
-            database_manager.set_data("PSNSettings", default_psn_settings_data)
-            logger.debug("Created default PSNSettings")
-
-        # Check and create default Spotify data with encrypted credentials
-        if not database_manager.get_data("SpotifyData"):
-            default_spotify_data = {
-                "client_id": get_encrypted_spotify_client_id(),
-                "client_secret": get_encrypted_spotify_client_secret(),
-                "access_token": "",
-                "refresh_token": "",
-                "token_expiry": None,
-                "connection_status": "Disconnected",
-                "market_country": "",
-                "track_name": "Nothing playing",
-                "artist_name": "Nothing playing",
-                "album_name": "",
-                "album_image_url": "",
-                "current_tracktime": "0:00",
-                "track_length": "0:00",
-                "current_tracktime_seconds": 0.0,
-                "track_length_seconds": 0.0,
-                "is_playing": False,
-                "progress_percentage": 0.0,
-            }
-            database_manager.set_data("SpotifyData", default_spotify_data)
-            logger.debug("Created default SpotifyData with encrypted credentials")
-
-        if not database_manager.get_data("OBSData"):
-            default_obs = {
-                "host": "localhost",
-                "port": 4455,
-                "password": "",
-                "enabled": True,
-                "connection_status": "Disconnected",
-                "last_error": "",
-            }
-            database_manager.set_data("OBSData", default_obs)
-            logger.debug("Created default OBSData")
-
-        # Create empty alert collections only if they don't exist
-        alert_paths = [
-            "Alerts/AlertQueue",
-            "Alerts/AlertStorage",
-            "Alerts/BitAlerts",
-            "Alerts/BitRangeAlerts",
-            "Alerts/SubAlerts",
-            "Alerts/StreakAlerts",
-            "Alerts/StreakRangeAlerts",
-            "Alerts/ResubAlerts",
-            "Alerts/GiftsubAlerts",
-            "Alerts/GiftsubRangeAlerts",
-            "Alerts/FollowAlerts",
-            "Alerts/RaidAlerts",
-            "Alerts/RaidRangeAlerts",
-            "Alerts/DonationAlerts",
-            "Alerts/DonationRangeAlerts",
-            "Alerts/PointAlerts",
-        ]
-
-        for alert_path in alert_paths:
-            if not database_manager.get_data(alert_path):
-                database_manager.set_data(alert_path, {})
-                logger.debug(f"Created default {alert_path}")
-
-        logger.info("Default data created successfully")
-
-    except Exception as e:
-        logger.error(f"Error creating default data: {str(e)}", exc_info=True)
-        notify_critical(
-            "Could not create default database entries. Check logs.",
-            dedupe_key="db:default_data",
-            actions=nav_actions_settings("Database"),
-        )
 
 
 def initialize_database_system() -> bool:
@@ -225,21 +101,25 @@ def initialize_database_system() -> bool:
             with StartupTimer("database_init.initialize_api_credentials"):
                 api_success = initialize_api_credentials()
 
+        # These failures end startup (main.py exits), so they are reported through
+        # last_startup_error rather than a notification nobody would see.
         if not config_success:
             logger.error("Failed to initialize configuration manager")
-            notify_critical(
-                "Failed to load application configuration. Check config.json and logs.",
-                dedupe_key="startup:config_manager",
-                actions=nav_actions_settings("App Settings"),
+            _set_startup_error(
+                "Mycelian couldn't read its settings file "
+                f"({getattr(config_manager, 'config_path', 'config.json')}). "
+                "Fix or delete the file, then start Mycelian again."
             )
             return False
 
         if not api_success:
             logger.error("Failed to initialize API credentials manager")
-            notify_critical(
-                "Failed to initialize API credentials storage. Check file permissions and logs.",
-                dedupe_key="startup:api_credentials",
-                actions=nav_actions_settings("App Settings"),
+            from .api_credentials_manager import api_credentials_manager
+
+            _set_startup_error(
+                "Mycelian couldn't open its API credentials file "
+                f"({getattr(api_credentials_manager, 'config_path', 'api_credentials.json')}). "
+                "Check that the Mycelian data folder is writable."
             )
             return False
 
@@ -269,8 +149,9 @@ def initialize_database_system() -> bool:
             retry_attempts=config_data.get("retry_attempts", 3),
         )
 
-        # Initialize the database manager with the external configuration
-        with StartupTimer("database_init.database_manager.initialize"):
+        # Initialize the database manager with the external configuration.
+        # Failures are reported below with what Mycelian did about them.
+        with StartupTimer("database_init.database_manager.initialize"), quiet_notifications():
             db_init_ok = database_manager.initialize(config)
         if db_init_ok:
             logger.info(f"Database manager initialized with {config.database_type}")
@@ -292,26 +173,49 @@ def initialize_database_system() -> bool:
             logger.error(
                 f"Failed to initialize database manager with {config.database_type}"
             )
-            notify_critical(
-                "Could not connect using the configured database. Check Settings → Database.",
-                dedupe_key=f"startup:db_manager:{config.database_type}",
-                actions=nav_actions_settings("Database"),
-            )
+            reason = database_manager.last_init_error
             # Fall back to SQL if the configured database type fails
             if config.database_type != "sql":
+                failed_type = config.database_type
+                failed_label = database_label(failed_type)
                 logger.info("Falling back to SQL database...")
                 config.database_type = "sql"
+                with quiet_notifications():
+                    fallback_ok = database_manager.initialize(config)
+                if not fallback_ok:
+                    _set_startup_error(
+                        f"Mycelian couldn't connect to your {failed_label} database, and "
+                        "its local database couldn't be opened either.\n\n"
+                        f"{failed_label}: {reason or 'see the log'}\n"
+                        f"Local: {database_manager.last_init_error or 'see the log'}"
+                    )
+                    return False
+                # Saved so the next start doesn't wait on the broken connection again;
+                # the notification tells the user how to switch back.
                 config_manager.set_database_type("sql")
-                return database_manager.initialize(config)
+                notify_critical(
+                    f"Mycelian started with the local database instead. Your {failed_label} "
+                    "data is untouched; settings changed now are saved locally.",
+                    source="database",
+                    title=f"Couldn't connect to your {failed_label} database",
+                    hint=(
+                        "Fix the connection in Settings → Database, press Test, then switch "
+                        f"back to {failed_label}."
+                    ),
+                    details=reason or None,
+                    dedupe_key="db:startup_fallback",
+                    actions=nav_actions_settings("Database"),
+                )
+                return True
+            _set_startup_error(
+                "Mycelian couldn't open its local database "
+                f"({config.sql_database_path}).\n\n{reason or 'See the log for details.'}"
+            )
             return False
 
     except Exception as e:
         logger.error(f"Error initializing database system: {str(e)}", exc_info=True)
-        notify_critical(
-            "Database system failed to start. See logs for details.",
-            dedupe_key="startup:database_system",
-            actions=nav_actions_settings("Database"),
-        )
+        _set_startup_error(f"Mycelian's database system failed to start.\n\n{e}")
         return False
 
 
@@ -396,91 +300,6 @@ def _migrate_old_database_settings_if_needed(config_data: dict) -> bool:
     except Exception as e:
         logger.warning(f"Error during database settings migration: {e}")
         return True  # Don't fail initialization due to migration issues
-
-
-def migrate_from_firebase_only() -> bool:
-    """
-    Migrate from the old Firebase-only system to the new multi-database system.
-
-    This function checks if there's existing Firebase data and migrates it to
-    the new system while preserving all existing data.
-
-    Returns:
-        bool: True if migration was successful or not needed, False if failed
-    """
-    try:
-        logger.info("Checking for Firebase-only system migration...")
-
-        # Check if ServiceAccountKey.json exists (indicates old Firebase system)
-        if not os.path.exists("ServiceAccountKey.json"):
-            logger.debug("No ServiceAccountKey.json found, no migration needed")
-            return True
-
-        # Check if we already have database settings (indicates new system)
-        try:
-            if hasattr(state_manager, "_initialized") and state_manager._initialized:
-                db_settings = state_manager.get_database_settings()
-                if db_settings and db_settings.database_type:
-                    logger.debug("Database settings already exist, no migration needed")
-                    return True
-        except:
-            pass
-
-        logger.info("Migrating from Firebase-only system...")
-
-        # Initialize with Firebase first to access existing data
-        firebase_config = DatabaseConfig(
-            database_type="firebase",
-            firebase_service_account_path="ServiceAccountKey.json",
-            firebase_database_url="",
-            streamer_name="mycelian",
-        )
-
-        if database_manager.initialize(firebase_config):
-            logger.info("Successfully connected to existing Firebase data")
-
-            # Create database settings entry in Firebase
-            default_settings = DatabaseSettings(
-                database_type="firebase",  # Keep using Firebase as default for existing users
-                sql_database_path="mycelian.db",
-                firebase_service_account_path="ServiceAccountKey.json",
-                firebase_database_url="",
-                mongodb_connection_string="mongodb://localhost:27017/",
-                mongodb_database_name="mycelian",
-                connection_timeout=30,
-                retry_attempts=3,
-            )
-
-            # Save database settings to Firebase
-            settings_dict = {
-                "database_type": default_settings.database_type,
-                "sql_database_path": default_settings.sql_database_path,
-                "firebase_service_account_path": default_settings.firebase_service_account_path,
-                "firebase_database_url": default_settings.firebase_database_url,
-                "mongodb_connection_string": default_settings.mongodb_connection_string,
-                "mongodb_database_name": default_settings.mongodb_database_name,
-                "connection_timeout": default_settings.connection_timeout,
-                "retry_attempts": default_settings.retry_attempts,
-            }
-
-            database_manager.set_data("DatabaseSettings", settings_dict)
-            logger.info(
-                "Migration completed: Added database settings to existing Firebase data"
-            )
-
-            return True
-        else:
-            logger.warning("Could not connect to existing Firebase data for migration")
-            return False
-
-    except Exception as e:
-        logger.error(f"Error during Firebase migration: {str(e)}", exc_info=True)
-        notify_critical(
-            "Firebase settings migration failed. Your data may need a manual fix.",
-            dedupe_key="db:migrate_firebase",
-            actions=nav_actions_settings("Database"),
-        )
-        return False
 
 
 def get_database_status() -> dict:
@@ -571,9 +390,6 @@ def ensure_database_initialized() -> bool:
 
     except Exception as e:
         logger.error(f"Error ensuring database initialization: {str(e)}", exc_info=True)
-        notify_critical(
-            "Database initialization error. Some features may be unavailable.",
-            dedupe_key="db:ensure_init",
-            actions=nav_actions_settings("Database"),
-        )
+        # Startup exits on False; main.py shows this reason in a native dialog.
+        _set_startup_error(f"Mycelian's database system failed to start.\n\n{e}")
         return False

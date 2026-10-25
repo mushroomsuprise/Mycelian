@@ -46,7 +46,7 @@ from .encryption_utils import (
     ensure_encrypted,
     ensure_decrypted,
 )
-from .notification_engine import nav_actions_settings, notify_critical
+from .notification_engine import notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -115,9 +115,12 @@ class APICredentialsManager:
                 f"Failed to initialize API credentials manager: {str(e)}", exc_info=True
             )
             notify_critical(
-                "Failed to initialize API credentials. Check api_credentials.json and permissions.",
+                "Saved API keys can't be loaded or saved.",
+                source="app",
+                title="Couldn't open Mycelian's API credentials file",
+                hint="Check that the file and the Mycelian data folder are writable, then restart Mycelian.",
+                details=f"{self.config_path}: {e}",
                 dedupe_key="api_creds:init_failed",
-                actions=nav_actions_settings("App Settings"),
             )
             return False
 
@@ -220,9 +223,13 @@ class APICredentialsManager:
                 exc_info=True,
             )
             notify_critical(
-                "Could not save API credentials to disk.",
+                "Your API keys weren't saved, so they'll be lost when Mycelian restarts.",
+                source="files",
+                title="Couldn't save your API keys",
+                hint="Check that the Mycelian data folder is writable and the disk isn't full, then save again.",
+                details=f"{self.config_path}: {e}",
                 dedupe_key="api_creds:save_failed",
-                actions=nav_actions_settings("App Settings"),
+                dedupe_cooldown_sec=600,
             )
             return False
 

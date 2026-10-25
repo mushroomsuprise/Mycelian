@@ -264,9 +264,15 @@ class AboutTab:
 
                 dialog.close()
                 if clear_log_file():
-                    notify("Log file cleared", type="positive")
+                    notify("", type="success", source="app", title="Log file cleared")
                 else:
-                    notify("Could not clear the log file", type="warning")
+                    notify(
+                        "It may be in use or read-only.",
+                        type="error",
+                        source="app",
+                        title="Couldn't clear the log file",
+                        hint="Try again, or delete mycelian.log from the logs folder (Open logs folder).",
+                    )
                 await self.refresh_logs_async()
 
             with ui.row().classes("w-full justify-end gap-2"):
@@ -436,10 +442,13 @@ class AboutTab:
             error = ""
         with box:
             if urls is None:
+                text = (
+                    "Couldn't list the source URLs. Press reload to try again; details are in the log."
+                    if error
+                    else "The overlay server is not running, so there are no URLs to show yet."
+                )
                 ui.html(
-                    f'<div class="abt-empty">{_icon("cloud_off")}The overlay server is not running, so there are no URLs to show yet.'
-                    + (f"<br>{html.escape(error)}" if error else "")
-                    + "</div>",
+                    f'<div class="abt-empty">{_icon("cloud_off")}{html.escape(text)}</div>',
                     sanitize=False,
                 )
                 self._set_count(0)

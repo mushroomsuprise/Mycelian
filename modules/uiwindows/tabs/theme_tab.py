@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import html
+import logging
 import re
 from typing import Dict, Any, Optional, Callable, List, Tuple
 
@@ -21,6 +22,8 @@ from ...ui_buttons import destructive_button, outline_button, primary_button
 from ...ui_form_controls import form_input, form_select
 from .theme_mock import build_mock_html
 from .theme_styles import THEME_CSS, THEME_MENU_CSS
+
+logger = logging.getLogger(__name__)
 
 
 # Color fields shown in the editor: (group, [(field, label, what it colors)])
@@ -209,7 +212,17 @@ class ThemeTab:
         try:
             return get_theme_manager()
         except Exception as e:
-            notify(f"Error accessing theme manager: {str(e)}", type="negative")
+            logger.error("Theme manager unavailable: %s", e, exc_info=True)
+            notify(
+                "Mycelian is using the default theme.",
+                type="error",
+                source="theme",
+                title="Themes couldn't be loaded",
+                hint="Restart Mycelian. If it keeps happening, copy the details and report it.",
+                details=f"{type(e).__name__}: {e}",
+                dedupe_key="theme:manager",
+                dedupe_cooldown_sec=3600,
+            )
             return None
 
     def _get_available_themes(self, theme_manager):
@@ -217,7 +230,17 @@ class ThemeTab:
         try:
             return theme_manager.get_available_themes() if theme_manager else []
         except Exception as e:
-            notify(f"Error loading themes: {str(e)}", type="negative")
+            logger.error("Could not list themes: %s", e, exc_info=True)
+            notify(
+                "",
+                type="error",
+                source="theme",
+                title="Couldn't read the theme list",
+                hint="Check that the themes folder is readable, then reopen Settings → Theme.",
+                details=f"{type(e).__name__}: {e}",
+                dedupe_key="theme:list",
+                dedupe_cooldown_sec=600,
+            )
             return []
 
     def _get_current_theme(self, theme_name=None):
@@ -228,7 +251,18 @@ class ThemeTab:
                 return None
             return theme_manager.get_theme_by_name(theme_name or self.buffer or "dark")
         except Exception as e:
-            notify(f"Error loading theme: {str(e)}", type="negative")
+            name = theme_name or self.buffer or "dark"
+            logger.error("Could not load theme %s: %s", name, e, exc_info=True)
+            notify(
+                "",
+                type="error",
+                source="theme",
+                title=f"Couldn't load the theme “{name}”",
+                hint="Its file may be damaged. Pick another theme.",
+                details=f"{type(e).__name__}: {e}",
+                dedupe_key=f"theme:load:{name}",
+                dedupe_cooldown_sec=600,
+            )
             return None
 
     def _safe_get_theme_attribute(self, theme, attribute, default=""):
@@ -333,7 +367,6 @@ class ThemeTab:
         self._reset_palette_history()
         self._refresh_dirty_from_palette()
         self._apply_preview()
-        notify("Palette changes discarded", type="info")
 
     def _get_preview_theme(self) -> Optional[ThemeColors]:
         """Theme object used for mock-ui preview (working copy preferred)."""
@@ -779,7 +812,7 @@ class ThemeTab:
     def save(self) -> None:
         """Apply and persist selected theme (and palette edits for custom themes)."""
         if not self.buffer:
-            notify("No theme selected to apply", type="warning")
+            notify("", type="warning", source="theme", title="Pick a theme first")
             return
 
         try:
@@ -791,10 +824,13 @@ class ThemeTab:
             ):
                 if self.buffer in PROTECTED_THEMES:
                     notify(
-                        "Built-in themes cannot be overwritten. Use Save as to "
-                        "persist palette changes.",
+                        "Nothing was applied.",
                         type="warning",
+                        source="theme",
+                        title="Built-in themes can't be changed",
+                        hint="Use Save as to keep your colors as a new theme, or discard the color changes.",
                     )
+                    return
                 else:
                     self._working_theme.name = self.buffer
                     persisted = theme_manager.get_theme_by_name(self.buffer)
@@ -802,7 +838,13 @@ class ThemeTab:
                         self._working_theme.display_name = persisted.display_name
                         self._working_theme.theme_type = persisted.theme_type
                     if not theme_manager.update_custom_theme(self._working_theme):
-                        notify("Failed to save theme color changes", type="negative")
+                        notify(
+                            "",
+                            type="error",
+                            source="theme",
+                            title=f"Couldn't save your color changes to “{self._display_name(self.buffer)}”",
+                            hint="Check that the themes folder is writable, then press Save again.",
+                        )
                         return
                     self._reset_palette_history()
                     self._refresh_dirty_from_palette()
@@ -810,24 +852,42 @@ class ThemeTab:
             state_manager.update_app_setting("current_theme", self.buffer)
 
             if not state_manager.save_changes():
-                notify("Error saving theme setting", type="negative")
-                return
+                return  # save_changes() already reported it (changes stay pending)
 
             from ...mainuiwindow import apply_theme
 
-            apply_theme(self.buffer)
+            # apply_theme returns False (and warns, source "theme") when the theme fails to load.
+            if apply_theme(self.buffer) is False:
+                return
 
             notify(
-                f"Theme '{self.buffer}' applied successfully!",
-                type="positive",
-                timeout=3000,
+                "",
+                type="success",
+                source="theme",
+                title=f"Theme “{self._display_name(self.buffer)}” applied",
             )
             self.dirty = False
             self._render_option_dots()
             self._build_palette_section()
             self._refresh_view()
         except Exception as e:
-            notify(f"Error applying theme: {str(e)}", type="negative")
+            logger.error("Applying theme %s failed: %s", self.buffer, e, exc_info=True)
+            notify(
+                "",
+                type="error",
+                source="theme",
+                title="Couldn't apply the theme",
+                hint="Try again or pick another theme. If it keeps happening, copy the details and report it.",
+                details=f"{type(e).__name__}: {e}",
+            )
+
+    def _display_name(self, name: str) -> str:
+        """The theme's display name (falls back to its internal name)."""
+        try:
+            manager = get_theme_manager()
+            return str(manager.get_theme_display_name(name) or name)
+        except Exception:
+            return name
 
     def discard(self) -> None:
         """Revert to saved theme"""
@@ -841,7 +901,15 @@ class ThemeTab:
             self._apply_preview()
             self.dirty = False
         except Exception as e:
-            notify(f"Error discarding changes: {str(e)}", type="negative")
+            logger.error("Discarding theme changes failed: %s", e, exc_info=True)
+            notify(
+                "",
+                type="error",
+                source="theme",
+                title="Couldn't reset the theme editor",
+                hint="Leave and reopen Settings → Theme.",
+                details=f"{type(e).__name__}: {e}",
+            )
 
     def _update_delete_button_state(self) -> None:
         """Enable or disable Delete based on whether the theme is protected."""
@@ -881,7 +949,7 @@ class ThemeTab:
     def _open_save_as_dialog(self) -> None:
         """Save the current working theme configuration under a new name."""
         if not self._working_theme:
-            notify("No theme loaded to save", type="warning")
+            notify("", type="warning", source="theme", title="Pick a theme to base the new one on")
             return
 
         dialog_ui: Dict[str, Any] = {}
@@ -928,19 +996,27 @@ class ThemeTab:
         theme_type = dialog_ui["theme_type"].value
 
         if not name:
-            notify("Theme name is required", type="negative")
+            notify("", type="warning", source="theme", title="Enter a theme name")
             return
         if not display_name:
-            notify("Display name is required", type="negative")
+            notify("", type="warning", source="theme", title="Enter a display name")
             return
         if not re.match(r"^[a-zA-Z0-9_]+$", name):
             notify(
-                "Theme name can only contain letters, numbers, and underscores",
-                type="negative",
+                "",
+                type="warning",
+                source="theme",
+                title="Theme names can only use letters, numbers and underscores",
             )
             return
         if theme_manager.theme_name_exists(name):
-            notify(f"Theme '{name}' already exists", type="negative")
+            notify(
+                "",
+                type="warning",
+                source="theme",
+                title=f"A theme called “{name}” already exists",
+                hint="Choose another name.",
+            )
             return
 
         theme_obj = copy.deepcopy(self._working_theme)
@@ -949,10 +1025,21 @@ class ThemeTab:
         theme_obj.theme_type = theme_type
 
         if not theme_manager.save_custom_theme(theme_obj):
-            notify("Failed to save theme", type="negative")
+            notify(
+                "",
+                type="error",
+                source="theme",
+                title="Couldn't save the new theme",
+                hint="Check that the themes folder is writable, then try again.",
+            )
             return
 
-        notify(f"Theme '{display_name}' saved successfully!", type="positive")
+        notify(
+            "Press Save to use it.",
+            type="success",
+            source="theme",
+            title=f"Theme “{display_name}” created",
+        )
         self.buffer = name
         self._working_theme = copy.deepcopy(theme_obj)
         self._reset_palette_history()
@@ -965,10 +1052,11 @@ class ThemeTab:
     def _confirm_delete_theme(self) -> None:
         """Show confirmation before deleting the selected theme."""
         if not self.buffer:
-            notify("No theme selected", type="warning")
+            notify("", type="warning", source="theme", title="Pick a theme first")
             return
         if self.buffer in PROTECTED_THEMES:
-            notify("Built-in themes cannot be deleted", type="warning")
+            # Delete is disabled for built-in themes; kept as a guard.
+            notify("", type="warning", source="theme", title="Built-in themes can't be deleted")
             return
 
         theme_manager = self._get_theme_manager()
@@ -1008,21 +1096,35 @@ class ThemeTab:
         deleted_name = self.buffer
         theme_manager = self._get_theme_manager()
         if not theme_manager:
-            notify("Theme manager unavailable", type="negative")
-            dialog.close()
+            dialog.close()  # _get_theme_manager already reported it
             return
 
+        deleted_display = self._display_name(deleted_name)
         if not theme_manager.delete_theme(deleted_name):
-            notify(f"Failed to delete theme '{deleted_name}'", type="negative")
+            notify(
+                "",
+                type="error",
+                source="theme",
+                title=f"Couldn't delete “{deleted_display}”",
+                hint="Check that the themes folder is writable, then try again.",
+            )
             dialog.close()
             return
 
         app_settings = state_manager.get_app_settings()
         saved_theme = getattr(app_settings, "current_theme", "dark")
         fallback = "dark"
+        switched = False
         if saved_theme == deleted_name:
             state_manager.update_app_setting("current_theme", fallback)
+            # A failed save is reported by save_changes (and retried on the next save).
             state_manager.save_changes()
+            try:
+                from ...mainuiwindow import apply_theme
+
+                switched = apply_theme(fallback) is not False
+            except Exception as e:
+                logger.error("Could not switch to %s after delete: %s", fallback, e, exc_info=True)
 
         self.buffer = fallback
         self._sync_working_theme()
@@ -1030,7 +1132,12 @@ class ThemeTab:
         self._apply_preview()
         self.dirty = False
         self._palette_dirty = False
-        notify(f"Theme '{deleted_name}' deleted", type="positive")
+        notify(
+            f"Switched to {self._display_name(fallback)}." if switched else "",
+            type="success",
+            source="theme",
+            title=f"Deleted “{deleted_display}”",
+        )
         dialog.close()
 
     # ------------------------------------------------------------------ #

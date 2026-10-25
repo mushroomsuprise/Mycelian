@@ -18,7 +18,7 @@ from ...ui_settings_layout import (
     settings_surface,
     theme_chip_row,
 )
-from ...notification_engine import notify
+from ...notification_engine import notify, notify_progress
 from ...ui_timer import layout_schedule
 from ...api_credentials_manager import api_credentials_manager
 
@@ -27,6 +27,24 @@ from ...dataobjects import state_manager, YouTubeData
 from ...youtube import YOUTUBE_OAUTH_REDIRECT_URI
 
 logger = logging.getLogger(__name__)
+
+
+def _restart_live_chat() -> None:
+    """Restart YouTube live chat with the saved settings; say so if that fails."""
+    try:
+        from ... import youtube
+
+        youtube.restart_youtube_live_chat_if_needed()
+    except Exception as e:
+        logger.error("YouTube live chat restart failed: %s", e, exc_info=True)
+        notify(
+            "",
+            type="warning",
+            source="youtube",
+            title="YouTube settings saved, but live chat couldn't restart",
+            hint="Press Connect to start it again.",
+            details=f"{type(e).__name__}: {e}",
+        )
 
 
 class YouTubeTab:
@@ -178,8 +196,7 @@ class YouTubeTab:
                 logger.warning(
                     "YouTube test already in progress, ignoring duplicate request"
                 )
-                notify("YouTube test already in progress...", type="info")
-                return
+                return  # the progress notice is already showing
 
             # Mark test as in progress
             self._test_in_progress = True
@@ -189,28 +206,21 @@ class YouTubeTab:
                 self.ui_elements["test_button"].set_text("Testing...")
                 self.ui_elements["test_button"].disable()
 
-            # Show a notification that the process is starting
-            notify("Testing YouTube connection...", type="info")
-
             def test_thread():
                 from ... import youtube
 
                 return youtube.test_connection()
 
+            work = notify_progress("Testing the YouTube connection", source="youtube")
             try:
                 success = await run.io_bound(test_thread)
                 if success:
-                    notify(
-                        "YouTube connection successful!",
-                        type="positive",
-                        timeout=3000,
-                    )
+                    work.done("YouTube connection works")
                     logger.info("YouTube connection test completed successfully")
                 else:
-                    notify(
-                        "YouTube connection failed. Please check your API key and channel URLs.",
-                        type="negative",
-                        timeout=5000,
+                    work.fail(
+                        "Couldn't reach YouTube",
+                        hint="Check the API key and channel URLs. The daily API quota may also be used up.",
                     )
                     logger.warning("YouTube connection test failed")
                 self._refresh_status()
@@ -218,7 +228,11 @@ class YouTubeTab:
                 logger.error(
                     f"Error in YouTube test: {str(e)}", exc_info=True
                 )
-                notify(f"Error testing YouTube connection: {e}", type="negative")
+                work.fail(
+                    "Couldn't test the YouTube connection",
+                    hint="Check the API key and channel URLs, then try again.",
+                    details=f"{type(e).__name__}: {e}",
+                )
             finally:
                 self._cleanup_test()
 
@@ -229,7 +243,14 @@ class YouTubeTab:
             logger.error(
                 f"Error handling YouTube test connection: {str(e)}", exc_info=True
             )
-            notify(f"Error starting YouTube test: {str(e)}", type="negative")
+            notify(
+                "",
+                type="error",
+                source="youtube",
+                title="Couldn't run the YouTube test",
+                hint="Try again. If it keeps happening, copy the details and report it.",
+                details=f"{type(e).__name__}: {e}",
+            )
             self._cleanup_test()
 
     def _cleanup_test(self) -> None:
@@ -252,8 +273,12 @@ class YouTubeTab:
         if self._status_timer is not None:
             self._status_timer.active = False
 
-    def _persist_credentials_to_state(self) -> None:
-        """Write UI OAuth credentials to YouTubeData and api_credentials.json."""
+    def _persist_credentials_to_state(self, flush: bool = True) -> bool:
+        """Write UI OAuth credentials to YouTubeData and api_credentials.json.
+
+        ``flush`` saves and restarts live chat now (save() does both itself).
+        Returns False when the save failed (already reported by save_changes).
+        """
         client_id = self._creds.get("client_id", "")
         client_secret = self._creds.get("client_secret", "")
         if self.buffer:
@@ -269,37 +294,45 @@ class YouTubeTab:
             client_id=client_id,
             client_secret=client_secret,
         )
-        state_manager.save_changes()
-        try:
-            from ... import youtube
-
-            youtube.restart_youtube_live_chat_if_needed()
-        except Exception:
-            pass
+        if not flush:
+            return True
+        if not state_manager.save_changes():
+            return False
+        _restart_live_chat()
+        return True
 
     def _handle_oauth_connection(self) -> None:
         """Connect / reconnect Google OAuth for live chat (Spotify-style)."""
         try:
             if self._oauth_in_progress:
-                notify("YouTube OAuth already in progress...", type="info")
-                return
+                return  # the progress notice is already showing
 
-            self._persist_credentials_to_state()
+            # Check before saving so blank credentials don't overwrite saved ones.
             client_id = (self._creds.get("client_id") or "").strip()
             client_secret = (self._creds.get("client_secret") or "").strip()
             if not client_id or not client_secret:
                 notify(
-                    "Enter OAuth Client ID and Client Secret first, then Save or Connect.",
+                    "",
                     type="warning",
+                    source="youtube",
+                    title="Enter your Google OAuth Client ID and Client Secret first",
+                    hint="Create them in the Google Cloud console (APIs & Services → Credentials).",
                 )
                 return
+            if not self._persist_credentials_to_state():
+                return  # save_changes() already said why
 
             self._oauth_in_progress = True
             if "connect_button" in self.ui_elements:
                 self.ui_elements["connect_button"].set_text("Connecting...")
                 self.ui_elements["connect_button"].disable()
 
-            notify("Opening browser for YouTube authorization...", type="info")
+            work = notify_progress(
+                "Connecting YouTube live chat",
+                source="youtube",
+                message="Choose your channel's Google account in the browser page that opens.",
+            )
+            self._oauth_work = work
 
             oauth_result = {
                 "status": "connecting",
@@ -331,11 +364,7 @@ class YouTubeTab:
                     return
                 if oauth_result["status"] == "complete":
                     if oauth_result["success"]:
-                        notify(
-                            "YouTube live chat authorized successfully!",
-                            type="positive",
-                            timeout=4000,
-                        )
+                        work.done("YouTube live chat connected")
                         self._load_from_state()
                         if "oauth_client_id" in self.ui_elements:
                             self.ui_elements["oauth_client_id"].value = (
@@ -346,17 +375,17 @@ class YouTubeTab:
                                 self._creds.get("client_secret", "")
                             )
                     else:
-                        notify(
-                            "YouTube authorization failed or was cancelled.",
-                            type="negative",
-                            timeout=5000,
+                        work.fail(
+                            "YouTube sign-in didn't finish",
+                            hint="Press Connect again and choose the channel's Google account.",
                         )
                     self._cleanup_oauth()
                     self._refresh_status()
                 elif oauth_result["status"] == "error":
-                    notify(
-                        f"Error during YouTube OAuth: {oauth_result['error']}",
-                        type="negative",
+                    work.fail(
+                        "YouTube sign-in didn't finish",
+                        hint="Check the OAuth Client ID and Secret, then press Connect again.",
+                        details=str(oauth_result["error"] or ""),
                     )
                     self._cleanup_oauth()
                     self._refresh_status()
@@ -365,7 +394,15 @@ class YouTubeTab:
             self._active_timers.append(timer)
         except Exception as e:
             logger.error("Error starting YouTube OAuth: %s", e, exc_info=True)
-            notify(f"Error starting YouTube OAuth: {e}", type="negative")
+            kwargs = {
+                "hint": "Try again. If it keeps happening, copy the details and report it.",
+                "details": f"{type(e).__name__}: {e}",
+            }
+            work = getattr(self, "_oauth_work", None)
+            if work is not None and not work.finished:
+                work.fail("Couldn't start YouTube sign-in", **kwargs)
+            else:
+                notify("", type="error", source="youtube", title="Couldn't start YouTube sign-in", **kwargs)
             self._cleanup_oauth()
 
     def _cleanup_oauth(self) -> None:
@@ -386,11 +423,18 @@ class YouTubeTab:
 
             youtube.disconnect_youtube_oauth()
             self._load_from_state()
-            notify("YouTube live chat disconnected", type="info")
+            notify("", type="info", source="youtube", title="YouTube live chat disconnected")
             self._refresh_status()
         except Exception as e:
             logger.error("Error disconnecting YouTube OAuth: %s", e, exc_info=True)
-            notify(f"Error disconnecting: {e}", type="negative")
+            notify(
+                "",
+                type="error",
+                source="youtube",
+                title="Couldn't disconnect YouTube live chat",
+                hint="Try again.",
+                details=f"{type(e).__name__}: {e}",
+            )
 
     def _on_playlist_input_enter(self, _event=None) -> None:
         """Handle Enter key in the playlist filter input."""
@@ -408,7 +452,7 @@ class YouTubeTab:
         if not self.buffer:
             return
         if name in self.buffer.playlist_filter:
-            notify(f"'{name}' is already in the filter list", type="warning")
+            notify("", type="warning", source="youtube", title=f"“{name}” is already in the filter list")
             return
         self.buffer.playlist_filter.append(name)
         self._sync_playlist_dirty()
@@ -467,7 +511,7 @@ class YouTubeTab:
             return
         urls = self._channel_url_list()
         if cleaned in urls:
-            notify(f"'{cleaned}' is already listed", type="warning")
+            notify("", type="warning", source="youtube", title="That channel is already listed")
             return
         urls.append(cleaned)
         self._write_channel_urls(urls)
@@ -748,7 +792,7 @@ class YouTubeTab:
     def save(self) -> None:
         if not self.buffer:
             return
-        self._persist_credentials_to_state()
+        self._persist_credentials_to_state(flush=False)
         yt_dict = {
             field.name: getattr(self.buffer, field.name)
             for field in YouTubeData.__dataclass_fields__.values()
@@ -758,17 +802,11 @@ class YouTubeTab:
         yt_dict["oauth_client_secret"] = self._creds.get("client_secret", "")
         state_manager.set_youtube_data(yt_dict)
         if state_manager.save_changes():
-            try:
-                from ... import youtube
-
-                youtube.restart_youtube_live_chat_if_needed()
-            except Exception:
-                pass
-            notify("YouTube saved", type="positive")
+            notify("", type="success", source="youtube", title="YouTube settings saved")
+            _restart_live_chat()
             self._saved_playlist_filter = list(self.buffer.playlist_filter or [])
             self.dirty = False
-        else:
-            notify("Error saving YouTube", type="negative")
+        # A failed save_changes() was already reported once (changes stay pending).
 
     def discard(self) -> None:
         self._suppress_dirty = True

@@ -163,20 +163,26 @@ def encrypt_value(value: str) -> str:
         # Return as base64 string for storage
         return base64.urlsafe_b64encode(encrypted_bytes).decode()
         
-    except EncryptionError:
-        raise
     except Exception as e:
+        # Every failure is reported here once; callers (e.g. StateManager.save_changes)
+        # rely on that and don't add their own notification for an EncryptionError.
         logger.error(f"Error encrypting value: {str(e)}")
         try:
             from .notification_engine import notify_critical
 
             notify_critical(
-                "Credential encryption failed. Secrets were not saved.",
+                "Nothing was saved, so your stored API keys and sign-ins stay as they were.",
+                source="app",
+                title="Couldn't encrypt your keys",
+                hint="Restart Mycelian and save again. If it keeps failing, copy the details and report it.",
+                details=str(e),
                 dedupe_key="crypto:encrypt_failed",
                 dedupe_cooldown_sec=300.0,
             )
         except Exception:
             pass
+        if isinstance(e, EncryptionError):
+            raise
         raise EncryptionError(str(e)) from e
 
 def decrypt_value(encrypted_value: str) -> str:
@@ -206,13 +212,17 @@ def decrypt_value(encrypted_value: str) -> str:
     except Exception as e:
         logger.error(f"Error decrypting value: {str(e)}")
         try:
-            from .notification_engine import nav_actions_settings, notify_critical
+            from .notification_engine import notify_critical
 
+            # Called once per stored secret during state loads; one entry per hour.
             notify_critical(
-                "Could not decrypt stored credentials. You may need to re-enter keys in Settings.",
+                "Services that use them (Twitch, Spotify, YouTube, OBS, Discord…) may fail to connect.",
+                source="app",
+                title="Couldn't read some saved API keys",
+                hint="Re-enter the keys and sign in again on the affected service's Settings tab.",
+                details=f"{type(e).__name__}: {e}",
                 dedupe_key="crypto:decrypt_failed",
-                dedupe_cooldown_sec=300.0,
-                actions=nav_actions_settings("App Settings"),
+                dedupe_cooldown_sec=3600.0,
             )
         except Exception:
             pass

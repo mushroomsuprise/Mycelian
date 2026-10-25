@@ -9,7 +9,9 @@ import time
 from typing import Dict, Any, Optional, List
 
 from nicegui import run, ui
-from ...notification_engine import notify
+from ...notification_engine import nav_actions_settings, notify, notify_progress
+from ... import database_manager as _dbm
+
 from ...ui_buttons import outline_button, primary_button
 from ...ui_timer import app_schedule, layout_schedule, run_on_ui_loop
 from ...ui_form_controls import form_input, form_select, form_sensitive_input
@@ -38,6 +40,32 @@ from ...psnapi import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _cache_write(fn, *args) -> tuple:
+    """Run a game-cache write this tab reports itself: ``(ok, details)``."""
+    with _dbm.quiet_notifications():
+        _dbm.clear_last_write_problem()
+        ok = bool(fn(*args))
+        problem = _dbm.last_write_problem()
+    if ok:
+        return True, ""
+    if problem is None:
+        return False, "Not written (the cached game couldn't be found or read)."
+    status, reason = problem
+    return False, f"{status}{' - ' + reason if reason else ''}"
+
+
+def _notify_cache_write_failed(title: str, details: str) -> None:
+    notify(
+        "",
+        type="error",
+        source="psn",
+        title=title,
+        hint="Check the connection in Settings → Database, then try again.",
+        details=details or None,
+        actions=nav_actions_settings("Database"),
+    )
 
 
 def _npsso_trace(msg: str) -> None:
@@ -190,8 +218,7 @@ class PSNTab:
             self._auth_in_progress = False
 
         if self._auth_in_progress:
-            notify("Authentication already in progress", type="warning")
-            return
+            return  # the Connect button is already disabled
 
         self._auth_in_progress = True
         self.connect_button.disable()
@@ -220,11 +247,10 @@ class PSNTab:
                         "on_auth_complete: set npsso_code input + buffer "
                         f"(len={len(result.npsso_code)})"
                     )
-                    notify(
-                        "NPSSO token acquired successfully! PSN service will reconnect automatically.",
-                        type="positive",
-                        position="bottom-right",
-                        duration=5000,
+                    work = notify_progress(
+                        "Connecting to PlayStation",
+                        source="psn",
+                        message="Signed in. Saving and reconnecting…",
                     )
                     defer_reset = True
 
@@ -244,14 +270,11 @@ class PSNTab:
                             )
                             ok = self._persist_psn_settings()
                             if ok is None:
+                                work.close()
                                 return
                             if not ok:
-                                notify(
-                                    "Error saving PSN settings",
-                                    type="negative",
-                                    position="bottom-right",
-                                    duration=8000,
-                                )
+                                # save_changes() already said why; don't stack a second error.
+                                work.close()
                                 return
                             loop = asyncio.get_running_loop()
                             await loop.run_in_executor(
@@ -260,6 +283,7 @@ class PSNTab:
                             _npsso_trace(
                                 "deferred_save: handle_psn_settings_change returned"
                             )
+                            work.done("Signed in to PlayStation", "PSN is reconnecting with the new sign-in.")
                             self.dirty = False
                             self._refresh_status()
                         except Exception as save_err:
@@ -269,11 +293,10 @@ class PSNTab:
                                 exc_info=True,
                             )
                             _npsso_trace(f"deferred_save: raised {save_err!r}")
-                            notify(
-                                f"Error saving PSN settings: {save_err}",
-                                type="negative",
-                                position="bottom-right",
-                                duration=8000,
+                            work.fail(
+                                "Signed in, but couldn't connect to PSN",
+                                hint="Press Connect to PSN to try again.",
+                                details=f"{type(save_err).__name__}: {save_err}",
                             )
                         finally:
                             _npsso_trace("deferred_save: finally -> reset_connect_ui")
@@ -285,18 +308,22 @@ class PSNTab:
                     )
                 else:
                     notify(
-                        f"Authentication failed: {result.error_message}",
-                        type="negative",
-                        position="bottom-right",
-                        duration=8000,
+                        "",
+                        type="error",
+                        source="psn",
+                        title="PlayStation sign-in didn't finish",
+                        hint="Press Connect to PSN to try again, and finish signing in in the window that opens.",
+                        details=result.error_message or None,
                     )
             except Exception as e:
                 logger.error(f"Error applying NPSSO auth result: {e}", exc_info=True)
                 notify(
-                    f"Error applying NPSSO token: {e}",
-                    type="negative",
-                    position="bottom-right",
-                    duration=8000,
+                    "",
+                    type="error",
+                    source="psn",
+                    title="Signed in, but Mycelian couldn't use the PSN sign-in",
+                    hint="Press Connect to PSN to try again.",
+                    details=f"{type(e).__name__}: {e}",
                 )
             finally:
                 if not defer_reset:
@@ -444,7 +471,14 @@ class PSNTab:
             self._auth_in_progress = False
             self.connect_button.enable()
             self.connect_button.text = "Connect to PSN"
-            notify(f"Error: {str(e)}", type="negative")
+            notify(
+                "",
+                type="error",
+                source="psn",
+                title="Couldn't open the PlayStation sign-in window",
+                hint="Try again. If it keeps happening, copy the details and report it.",
+                details=f"{type(e).__name__}: {e}",
+            )
 
     def _show_help_dialog(self) -> None:
         """Show help dialog with NPSSO token acquisition steps."""
@@ -564,14 +598,13 @@ class PSNTab:
             return
         if not ok:
             _npsso_trace("save(): save_changes returned False")
-            notify("Error saving PSN settings", type="negative")
-            return
+            return  # save_changes() already reported it (changes stay pending)
         _npsso_trace("save(): save_changes OK, calling handle_psn_settings_change() …")
 
         def _after_service() -> None:
             _npsso_trace("save(): handle_psn_settings_change() returned")
             if not suppress_saved_notification:
-                notify("PSN settings saved", type="positive")
+                notify("", type="success", source="psn", title="PSN settings saved")
             self.dirty = False
             self._refresh_status()
 
@@ -580,7 +613,14 @@ class PSNTab:
                 await run.io_bound(psn_service.handle_psn_settings_change)
             except Exception as e:
                 logger.error("PSN save service change failed: %s", e, exc_info=True)
-                notify(f"Error applying PSN settings: {e}", type="negative")
+                notify(
+                    "",
+                    type="warning",
+                    source="psn",
+                    title="PSN settings saved, but PSN couldn't reconnect",
+                    hint="Check the NPSSO token, or press Connect to PSN to sign in again.",
+                    details=f"{type(e).__name__}: {e}",
+                )
             else:
                 _after_service()
 
@@ -789,10 +829,11 @@ class PSNTab:
     def _on_remove_cache_chip(self, np_comm: str) -> None:
         if not np_comm:
             return
-        if not delete_psn_game_cache_in_db(np_comm):
-            notify("Failed to remove cache entry", type="negative")
+        ok, details = _cache_write(delete_psn_game_cache_in_db, np_comm)
+        if not ok:
+            _notify_cache_write_failed("Couldn't remove that game from the cache", details)
             return
-        notify("Cache entry removed", type="positive", position="bottom-right")
+        # The chip disappearing is the confirmation.
         if self._selected_game and self._selected_game.get("np_communication_id") == (
             np_comm
         ):
@@ -809,6 +850,17 @@ class PSNTab:
             return games
         except Exception as e:
             logger.error(f"Error loading cached games: {str(e)}")
+            notify(
+                "The game cache list is empty for now.",
+                type="warning",
+                source="psn",
+                title="Couldn't load the PSN game cache",
+                hint="Check the connection in Settings → Database, then reopen this tab.",
+                details=f"{type(e).__name__}: {e}",
+                dedupe_key="psn:cache_load",
+                dedupe_cooldown_sec=600,
+                actions=nav_actions_settings("Database"),
+            )
             return []
 
     def _load_cached_games(self) -> None:
@@ -934,12 +986,18 @@ class PSNTab:
     def _save_game_cache(self) -> None:
         """Save changes to the game cache."""
         if not self._selected_game:
-            notify("No game selected", type="warning")
+            notify("", type="warning", source="psn", title="Pick a game from the list first")
             return
 
         np_comm_id = self._selected_game.get("np_communication_id")
         if not np_comm_id:
-            notify("Invalid game data", type="negative")
+            notify(
+                "",
+                type="warning",
+                source="psn",
+                title="That cache entry can't be edited",
+                hint="It's missing its ID. Remove it and PSN will add it again.",
+            )
             return
 
         # Gather updated values
@@ -956,14 +1014,18 @@ class PSNTab:
                 updates["np_title_id"] = new_np_title_id
 
         if not updates:
-            notify("No changes to save", type="info")
-            return
+            return  # nothing changed
 
+        game_name = (
+            self._selected_game.get("presence_name")
+            or self._selected_game.get("title_name")
+            or "the game"
+        )
         # Save to cache
         try:
-            success = update_psn_game_cache_in_db(np_comm_id, updates)
+            success, details = _cache_write(update_psn_game_cache_in_db, np_comm_id, updates)
             if success:
-                notify("Game cache updated successfully", type="positive")
+                notify("", type="success", source="psn", title=f"Saved changes to {game_name}")
                 for key, value in updates.items():
                     self._selected_game[key] = value
                 self._game_cache_dirty = False
@@ -971,10 +1033,10 @@ class PSNTab:
                     self.ui_elements["cache_save_btn"].disable()
                 self.refresh_game_cache()
             else:
-                notify("Failed to update game cache", type="negative")
+                _notify_cache_write_failed(f"Couldn't save changes to {game_name}", details)
         except Exception as e:
             logger.error(f"Error saving game cache: {str(e)}")
-            notify(f"Error saving: {str(e)}", type="negative")
+            _notify_cache_write_failed(f"Couldn't save changes to {game_name}", f"{type(e).__name__}: {e}")
 
     def refresh_game_cache(self, *, reload: bool = True) -> None:
         """Reload list from the database and rebuild selector, chips, and details sync."""

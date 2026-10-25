@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict, Any, Optional
 
 from nicegui import run, ui
-from ...notification_engine import notify
+from ...notification_engine import nav_actions_settings, notify, notify_progress
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import (
     copy_text_button,
@@ -258,10 +258,9 @@ class SpotifyTab:
         for field in self.buffer.__dataclass_fields__.keys():
             state_manager.update_spotify_field(field, getattr(self.buffer, field))
         if state_manager.save_changes():
-            notify("Spotify saved", type="positive")
+            notify("", type="success", source="spotify", title="Spotify settings saved")
             self.dirty = False
-        else:
-            notify("Error saving Spotify", type="negative")
+        # A failed save_changes() was already reported once (changes stay pending).
 
     def discard(self) -> None:
         self._load_from_state()
@@ -285,14 +284,16 @@ class SpotifyTab:
                 logger.warning(
                     "Spotify OAuth already in progress, ignoring duplicate request"
                 )
-                notify("Spotify connection already in progress...", type="info")
-                return
+                return  # the progress notice is already showing
 
             # Check if client ID and secret are provided
             if not self._creds.get("client_id") or not self._creds.get("client_secret"):
                 notify(
-                    "Please enter your Spotify Client ID and Client Secret first!",
+                    "",
                     type="warning",
+                    source="spotify",
+                    title="Enter your Spotify Client ID and Client Secret first",
+                    hint="Create an app at developer.spotify.com/dashboard to get them.",
                 )
                 return
 
@@ -304,11 +305,15 @@ class SpotifyTab:
                 self.ui_elements["connect_button"].set_text("Connecting...")
                 self.ui_elements["connect_button"].disable()
 
-            # Show a notification that the process is starting
-            notify("Starting Spotify OAuth connection...", type="info")
-
-            # Save only Spotify settings to avoid triggering database and other notifications
+            # Save only Spotify settings (a failure is reported by save_changes)
             self._save_settings_only()
+
+            work = notify_progress(
+                "Connecting to Spotify",
+                source="spotify",
+                message="Approve Mycelian in the browser page that opens.",
+            )
+            self._oauth_work = work
 
             # Start the OAuth connection in a separate thread
             import threading
@@ -349,7 +354,9 @@ class SpotifyTab:
 
             # Create a timer to check the result from main thread
             check_count = {"count": 0}
-            max_checks = 1500  # 5 minutes at 0.2s — browser authorize is not 30s
+            # A little longer than the callback server's own 5-minute wait, so the
+            # real result (success or timeout) normally arrives first.
+            max_checks = 1650
             notification_shown = {"done": False}
 
             def check_oauth_result():
@@ -364,30 +371,45 @@ class SpotifyTab:
                         logger.warning("Spotify OAuth check timed out")
                         notification_shown["done"] = True
                         self._cleanup_oauth()
-                        notify("Spotify OAuth timed out", type="negative")
+                        work.done(
+                            "Still waiting for Spotify sign-in",
+                            "Finish signing in in your browser, or press Connect to Spotify again.",
+                            type="warning",
+                        )
                     return
 
                 notification_shown["done"] = True
                 if oauth_result["status"] == "complete":
                     try:
                         if oauth_result["success"]:
-                            notify(
-                                "Spotify authorization will open in your browser. Please authorize the application.",
-                                type="info",
-                                timeout=5000,
-                            )
-                            logger.info(
-                                "Spotify automatic OAuth flow started successfully"
-                            )
+                            # trigger_automatic_oauth_flow returns only after the
+                            # browser approval and token exchange both succeeded.
+                            work.done("Connected to Spotify")
+                            logger.info("Spotify automatic OAuth flow completed")
                         else:
-                            notify(
-                                "Failed to start Spotify authorization. Please check your credentials.",
-                                type="negative",
-                                timeout=5000,
-                            )
-                            logger.warning(
-                                "Failed to start Spotify automatic OAuth flow"
-                            )
+                            status = ""
+                            try:
+                                status = str(
+                                    getattr(state_manager.get_spotify_data(), "connection_status", "") or ""
+                                )
+                            except Exception:
+                                pass
+                            if "timeout" in status.lower():
+                                work.fail(
+                                    "Spotify sign-in timed out",
+                                    hint="Press Connect to Spotify and approve Mycelian within 5 minutes.",
+                                    details=status,
+                                )
+                            else:
+                                work.fail(
+                                    "Spotify sign-in didn't complete",
+                                    hint=(
+                                        "Check the Client ID and Secret, and that the redirect URI in your "
+                                        "Spotify app matches the one shown here, then try again."
+                                    ),
+                                    details=status or None,
+                                )
+                            logger.warning("Spotify automatic OAuth flow failed: %s", status)
 
                         # Refresh the status display
                         self._refresh_status()
@@ -399,9 +421,10 @@ class SpotifyTab:
                     return
                 elif oauth_result["status"] == "error":
                     try:
-                        notify(
-                            f"Error during Spotify OAuth: {oauth_result['error']}",
-                            type="negative",
+                        work.fail(
+                            "Spotify sign-in didn't complete",
+                            hint="Check the Client ID and Secret, then try again.",
+                            details=str(oauth_result["error"] or ""),
                         )
                     except Exception as ui_error:
                         logger.error(f"Error showing OAuth error: {str(ui_error)}")
@@ -422,7 +445,15 @@ class SpotifyTab:
             logger.error(
                 f"Error handling Spotify OAuth connection: {str(e)}", exc_info=True
             )
-            notify(f"Error starting Spotify connection: {str(e)}", type="negative")
+            fail_kwargs = {
+                "hint": "Try again. If it keeps happening, copy the details and report it.",
+                "details": f"{type(e).__name__}: {e}",
+            }
+            work = getattr(self, "_oauth_work", None)
+            if work is not None and not work.finished:
+                work.fail("Couldn't start Spotify sign-in", **fail_kwargs)
+            else:
+                notify("", type="error", source="spotify", title="Couldn't start Spotify sign-in", **fail_kwargs)
             self._cleanup_oauth()
 
     def _cleanup_oauth(self) -> None:
@@ -472,8 +503,7 @@ class SpotifyTab:
                 logger.warning(
                     "Spotify test already in progress, ignoring duplicate request"
                 )
-                notify("Spotify test already in progress...", type="info")
-                return
+                return  # the progress notice is already showing
 
             # Mark test as in progress
             self._test_in_progress = True
@@ -483,10 +513,7 @@ class SpotifyTab:
                 self.ui_elements["test_button"].set_text("Testing...")
                 self.ui_elements["test_button"].disable()
 
-            # Show a notification that the process is starting
-            notify("Testing Spotify connection...", type="info")
-
-            # Save only Spotify settings to avoid triggering database and other notifications
+            # Save only Spotify settings (a failure is reported by save_changes)
             self._save_settings_only()
 
             def test_thread():
@@ -494,26 +521,26 @@ class SpotifyTab:
 
                 return spotify.test_and_reconnect()
 
+            work = notify_progress("Testing the Spotify connection", source="spotify")
             try:
                 success = await run.io_bound(test_thread)
                 if success:
-                    notify(
-                        "Spotify connection successful!",
-                        type="positive",
-                        timeout=3000,
-                    )
+                    work.done("Connected to Spotify")
                     logger.info("Spotify connection test completed successfully")
                 else:
-                    notify(
-                        "Spotify connection failed. Please check your credentials and try again.",
-                        type="negative",
-                        timeout=5000,
+                    work.fail(
+                        "Couldn't reach Spotify with the saved sign-in",
+                        hint="Press Connect to Spotify to sign in again.",
                     )
                     logger.warning("Spotify connection test failed")
                 self._refresh_status()
             except Exception as e:
                 logger.error(f"Error testing Spotify connection: {str(e)}", exc_info=True)
-                notify(f"Error testing Spotify connection: {e}", type="negative")
+                work.fail(
+                    "Couldn't test the Spotify connection",
+                    hint="Press Connect to Spotify to sign in again.",
+                    details=f"{type(e).__name__}: {e}",
+                )
             finally:
                 self._cleanup_test()
 
@@ -524,7 +551,14 @@ class SpotifyTab:
             logger.error(
                 f"Error handling Spotify test connection: {str(e)}", exc_info=True
             )
-            notify(f"Error starting Spotify test: {str(e)}", type="negative")
+            notify(
+                "",
+                type="error",
+                source="spotify",
+                title="Couldn't run the Spotify test",
+                hint="Try again. If it keeps happening, copy the details and report it.",
+                details=f"{type(e).__name__}: {e}",
+            )
             self._cleanup_test()
 
     def _cleanup_test(self) -> None:
@@ -543,13 +577,26 @@ class SpotifyTab:
             logger = logging.getLogger(__name__)
             logger.error(f"Error cleaning up Spotify test: {str(e)}")
 
-    def _save_settings_only(self) -> None:
-        """Save Spotify credentials to DB and api_credentials.json."""
+    def _save_settings_only(self) -> bool:
+        """Save Spotify credentials to DB and api_credentials.json.
+
+        A False result has already been reported (save_changes or here).
+        """
         try:
             self._persist_credentials_to_state()
-            state_manager.save_changes()
+            return bool(state_manager.save_changes())
         except Exception as e:
             import logging
 
             logger = logging.getLogger(__name__)
             logger.error(f"Error saving Spotify settings only: {str(e)}", exc_info=True)
+            notify(
+                "Sign-in may use the previously saved values.",
+                type="error",
+                source="spotify",
+                title="Couldn't save your Spotify Client ID and Secret",
+                hint="Check the connection in Settings → Database, then try again.",
+                details=f"{type(e).__name__}: {e}",
+                actions=nav_actions_settings("Database"),
+            )
+            return False

@@ -36,10 +36,55 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from .encryption_utils import ensure_decrypted, ensure_encrypted, is_encrypted
-from .notification_engine import nav_actions_settings, notify_critical
+from .encryption_utils import (
+    EncryptionError,
+    ensure_decrypted,
+    ensure_encrypted,
+    is_encrypted,
+)
+from .notification_engine import nav_actions_settings, notify, notify_critical
+
+# How each settings blob is named in notifications ("Couldn't save your Twitch settings").
+_BLOB_LABELS = {
+    "twitch_data": "Twitch",
+    "app_settings": "app",
+    "psn_settings_data": "PSN",
+    "spotify_data": "Spotify",
+    "database_settings": "database",
+    "youtube_data": "YouTube",
+    "chatbot_data": "chatbot",
+    "obs_data": "OBS",
+    "discord_data": "Discord",
+}
+# A failed save already showing stays one entry; repeats within this gap don't pop up again.
+_SAVE_FAILURE_POPUP_GAP_SEC = 60.0
+
+
+def _blob_names(state_keys) -> str:
+    names = sorted({_BLOB_LABELS.get(k, k) for k in state_keys})
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _database_is_up() -> bool:
+    try:
+        from . import database_manager
+
+        return bool(database_manager.database_manager._initialized)
+    except Exception:
+        return False
+
+
+def _database_label() -> str:
+    try:
+        from . import database_manager
+
+        return database_manager.database_label()
+    except Exception:
+        return "configured"
 
 # Import database_manager in functions that need it, not at the module level
 # This avoids circular import issues
@@ -462,6 +507,7 @@ class StateManager:
         # A failed SpotifyData write keeps unchanged playback fields dirty, so
         # the next save retries it as it did before (DBX-09).
         self._spotify_write_failed = False
+        self._last_save_failure_toast = float("-inf")
 
         # Initialize with default data
         self._twitch_data = TwitchData()
@@ -558,9 +604,13 @@ class StateManager:
 
             from . import database_manager
 
+            unreadable = []
             for state_key, path in self._paths.items():
                 if path in all_data and database_manager.startup_read_failed(path):
                     self._mark_blob_unreadable(state_key)
+                    unreadable.append(state_key)
+            if unreadable:
+                self._notify_unreadable(unreadable)
 
             self._initialized = True
             logger.debug("State manager initialized with pre-loaded data")
@@ -574,6 +624,78 @@ class StateManager:
         logger.warning(
             "%s could not be read; it will be re-read before it is saved",
             self._paths.get(state_key, state_key),
+        )
+
+    def _notify_unreadable(self, state_keys) -> None:
+        """Say once that some settings couldn't be read (so they show defaults and
+        won't be written). Skipped when the whole database is down: that has its own
+        notification."""
+        if not state_keys or not _database_is_up():
+            return
+        notify(
+            "Mycelian is showing defaults for them and won't overwrite your saved copy "
+            "until it can read it.",
+            type="warning",
+            source="database",
+            title=f"Couldn't read your {_blob_names(state_keys)} settings",
+            hint="Check the connection in Settings → Database. Mycelian reads them again before the next save.",
+            details="Unreadable: " + ", ".join(self._paths.get(k, k) for k in state_keys),
+            dedupe_key="state:unreadable",
+            dedupe_cooldown_sec=3600,
+            actions=nav_actions_settings("Database"),
+        )
+
+    def _notify_load_failed(self, exc: Exception) -> None:
+        if not _database_is_up():
+            return  # the database layer already said it can't connect
+        notify_critical(
+            "Mycelian is using defaults for anything it couldn't read.",
+            source="database",
+            title="Couldn't load your settings",
+            hint="Check the connection in Settings → Database, then restart Mycelian.",
+            details=f"{type(exc).__name__}: {exc}",
+            dedupe_key="state:load",
+            actions=nav_actions_settings("Database"),
+        )
+
+    def _notify_save_failed(self, failed: Dict[str, Tuple[str, str]], blocked) -> None:
+        """One notification for a save that didn't fully land (changes stay pending)."""
+        keys = set(failed) | set(blocked)
+        names = _blob_names(keys)
+        label = _database_label()
+        details = [
+            f"{self._paths.get(k, k)}: {status}{' - ' + reason if reason else ''}"
+            for k, (status, reason) in sorted(failed.items())
+        ] + [f"{self._paths.get(k, k)}: not written (couldn't be read first)" for k in sorted(blocked)]
+        if failed:
+            statuses = {status for status, _ in failed.values()}
+            if "down" in statuses or not _database_is_up():
+                why = f"Mycelian can't reach the {label} database."
+            elif "timeout" in statuses:
+                why = f"The {label} database didn't respond in time."
+            else:
+                why = f"The {label} database didn't accept the change."
+            title, level = f"Couldn't save your {names} settings", "error"
+        else:
+            why = "Mycelian couldn't read the saved copy first, so it won't overwrite it."
+            title, level = f"Didn't save your {names} settings", "warning"
+        import time
+
+        now = time.monotonic()
+        quiet_popup = now - self._last_save_failure_toast < _SAVE_FAILURE_POPUP_GAP_SEC
+        if not quiet_popup:
+            self._last_save_failure_toast = now
+        notify(
+            f"{why} Your changes are kept and will be saved the next time you press Save.",
+            type=level,
+            source="database",
+            title=title,
+            hint="Check the connection in Settings → Database, then press Save again.",
+            details="\n".join(details),
+            dedupe_key="state:save_failed",
+            dedupe_cooldown_sec=600,
+            skip_toast=quiet_popup,
+            actions=nav_actions_settings("Database"),
         )
 
     def _read_blob_checked(self, state_key: str, failed: List[str]) -> Dict[str, Any]:
@@ -691,17 +813,14 @@ class StateManager:
             self._update_local_objects()
             for state_key in failed:
                 self._mark_blob_unreadable(state_key)
+            self._notify_unreadable(failed)
             logger.info(
                 "Discord bot_token after decrypt (len=%s)",
                 len((getattr(self._discord_data, "bot_token", "") or "").strip()),
             )
         except Exception as e:
             logger.error(f"Error loading data from database: {str(e)}", exc_info=True)
-            notify_critical(
-                "Could not load application data from the database.",
-                dedupe_key="state:load_from_db",
-                actions=nav_actions_settings("Database"),
-            )
+            self._notify_load_failed(e)
 
     async def _load_from_firebase_async(self):
         """Load all data from Firebase asynchronously and update the state"""
@@ -749,11 +868,7 @@ class StateManager:
             logger.debug("Loaded data from database")
         except Exception as e:
             logger.error(f"Error loading data from database: {str(e)}", exc_info=True)
-            notify_critical(
-                "Could not load application data from the database.",
-                dedupe_key="state:load_from_db_async",
-                actions=nav_actions_settings("Database"),
-            )
+            self._notify_load_failed(e)
 
     def _update_local_objects(self):
         """Update the local objects from the current state"""
@@ -2069,6 +2184,11 @@ class StateManager:
         slow Firebase write would otherwise freeze OBS sources, Stream Deck, and
         Twitch all at once.
 
+        A False result has already been reported to the user (one deduped
+        notification from here or from the encryption layer), and the unsaved
+        fields stay pending for the next save, so callers must not add their own
+        "couldn't save" notification.
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -2096,6 +2216,7 @@ class StateManager:
             }
             if not fields_being_saved:
                 if blocked:
+                    self._notify_save_failed({}, blocked)
                     return False
                 self._changes_pending = False
                 return True
@@ -2247,53 +2368,76 @@ class StateManager:
                 logger.error(
                     f"Error preparing changes to save: {str(e)}", exc_info=True
                 )
-                notify_critical(
-                    "Could not save changes to the database. Your edits may be lost.",
-                    dedupe_key="state:save_changes",
-                    actions=nav_actions_settings("Database"),
-                )
+                if not isinstance(e, EncryptionError):  # encryption_utils reported it
+                    notify_critical(
+                        "Nothing was written, and your changes are kept.",
+                        source="app",
+                        title="Couldn't prepare your changes for saving",
+                        hint="Try again. If it keeps happening, copy the details and report it.",
+                        details=f"{type(e).__name__}: {e}",
+                        dedupe_key="state:save_failed",
+                    )
                 return False
 
         # --- Perform the (potentially blocking) writes WITHOUT holding _lock ---
-        try:
+        # The database layer stays quiet here: one notification below names what
+        # wasn't saved, instead of a generic database error plus a tab error.
+        path_to_key = {path: key for key, path in self._paths.items()}
+        failed: Dict[str, Tuple[str, str]] = {}
+        with database_manager.quiet_notifications():
             for path, data in writes:
-                if path == self._paths["discord_data"]:
-                    if not _write_discord_data_merged(data):
-                        raise RuntimeError("DiscordData merged write failed")
-                else:
-                    ok = database_manager.set_data(path, data)
-                    if path == self._paths["spotify_data"]:
-                        self._spotify_write_failed = not ok
-
-            if db_config_to_apply is not None:
+                state_key = path_to_key.get(path, path)
+                database_manager.clear_last_write_problem()
+                problem = None
                 try:
-                    database_manager.update_config(**db_config_to_apply.__dict__)
-                    logger.debug(
-                        "Updated database manager configuration after save: %s",
-                        db_config_to_apply.database_type,
-                    )
+                    if path == self._paths["discord_data"]:
+                        ok = _write_discord_data_merged(data)
+                        if not ok and database_manager.last_write_problem() is None:
+                            problem = ("failed", "the stored copy couldn't be read first")
+                    else:
+                        ok = bool(database_manager.set_data(path, data))
                 except Exception as e:
-                    logger.warning(
-                        f"Could not update database manager config after save: {e}"
+                    logger.error(
+                        f"Error saving {path} to database: {str(e)}", exc_info=True
                     )
-        except Exception as e:
-            logger.error(
-                f"Error saving changes to database: {str(e)}", exc_info=True
-            )
-            notify_critical(
-                "Could not save changes to the database. Your edits may be lost.",
-                dedupe_key="state:save_changes",
-                actions=nav_actions_settings("Database"),
-            )
-            return False
+                    ok, problem = False, ("failed", str(e))
+                if path == self._paths["spotify_data"]:
+                    self._spotify_write_failed = not ok
+                if ok:
+                    continue
+                status, reason = problem or database_manager.last_write_problem() or ("failed", "")
+                if status == "superseded":
+                    # A newer write of the same blob (with these fields) replaced this one.
+                    continue
+                failed[state_key] = (status, reason)
 
-        # Clear only the fields we persisted; preserve anything changed mid-write.
+        if db_config_to_apply is not None and "database_settings" not in failed:
+            try:
+                database_manager.update_config(**db_config_to_apply.__dict__)
+                logger.debug(
+                    "Updated database manager configuration after save: %s",
+                    db_config_to_apply.database_type,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Could not update database manager config after save: {e}"
+                )
+
+        # Clear only the fields we persisted; preserve anything changed mid-write
+        # and everything whose write failed (it is retried on the next save).
         with self._lock:
-            self._changed_fields -= fields_being_saved
+            self._changed_fields -= {
+                f for f in fields_being_saved if f.split(".", 1)[0] not in failed
+            }
             self._changes_pending = len(self._changed_fields) > 0
 
+        if failed or blocked:
+            logger.error("Changes not saved: %s (unreadable: %s)", failed, sorted(blocked))
+            self._notify_save_failed(failed, blocked)
+            return False
+
         logger.debug("Changes saved to database")
-        return not blocked
+        return True
 
     def discard_changes(self):
         """Discard all pending changes and reload from Firebase"""

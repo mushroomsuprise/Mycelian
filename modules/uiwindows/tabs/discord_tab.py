@@ -12,7 +12,7 @@ from nicegui import ui
 from ... import dataobjects
 from ...dataobjects import DiscordData, state_manager
 from ... import discord_service
-from ...notification_engine import notify
+from ...notification_engine import nav_actions_settings, notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_form_controls import form_sensitive_input
 from ...help_system.contextual_help import help_button
@@ -142,7 +142,10 @@ class DiscordTab:
         state_manager.update_discord_field("bot_token", token)
 
     def _save_settings_only(self) -> bool:
-        """Persist Discord credentials + buffer fields. Returns True on success."""
+        """Persist Discord credentials + buffer fields. Returns True on success.
+
+        Every False has already been reported to the user (by save_changes or here).
+        """
         try:
             self._persist_credentials_to_state()
             if self.buffer is not None:
@@ -165,11 +168,25 @@ class DiscordTab:
                     "(expected len=%s)",
                     len(expected),
                 )
+                self._notify_save_failed("The bot token didn't stick after saving.")
                 return False
             return True
         except Exception as e:
             logger.error("Error saving Discord settings: %s", e, exc_info=True)
+            self._notify_save_failed(f"{type(e).__name__}: {e}")
             return False
+
+    @staticmethod
+    def _notify_save_failed(details: str) -> None:
+        notify(
+            "Your changes are still in the form.",
+            type="error",
+            source="discord",
+            title="Couldn't save Discord settings",
+            hint="Check the connection in Settings → Database, then press Save again.",
+            details=details,
+            actions=nav_actions_settings("Database"),
+        )
 
     def _channel_key(self, entry: Dict[str, Any]) -> str:
         return f"{entry.get('guild_id')}:{entry.get('channel_id')}"
@@ -209,7 +226,8 @@ class DiscordTab:
         except Exception:
             logger.debug("Discord status refresh failed", exc_info=True)
 
-    def _reload_guilds(self) -> None:
+    def _reload_guilds(self, report: bool = False) -> None:
+        """Refresh the server list; ``report`` says so when it fails (button or connect)."""
         try:
             if not discord_service.discord_service.is_connected():
                 self._guilds_cache = []
@@ -229,8 +247,17 @@ class DiscordTab:
                     first = next(iter(options))
                     self._guild_select.value = first
                     self._on_guild_changed(first)
-        except Exception:
+        except Exception as e:
             logger.debug("Failed to reload Discord guilds", exc_info=True)
+            if report:
+                notify(
+                    "The server and channel lists are empty for now.",
+                    type="warning",
+                    source="discord",
+                    title="Couldn't list your Discord servers",
+                    hint="Make sure the bot is invited to your server (Copy invite link), then press Refresh servers.",
+                    details=f"{type(e).__name__}: {e}",
+                )
 
     def _on_guild_changed(self, guild_id: Any) -> None:
         gid = str(guild_id or "").strip()
@@ -282,7 +309,7 @@ class DiscordTab:
         guild_id = str(self._guild_select.value or "").strip()
         channel_id = str(self._channel_select.value or "").strip()
         if not guild_id or not channel_id:
-            notify("Select a server and channel first", type="warning")
+            notify("", type="warning", source="discord", title="Pick a server and channel first")
             return
         guild_name = next(
             (g.get("name") for g in self._guilds_cache if g.get("id") == guild_id),
@@ -305,7 +332,12 @@ class DiscordTab:
         existing = list(self.buffer.go_live_channels or [])
         key = self._channel_key(entry)
         if any(self._channel_key(e) == key for e in existing if isinstance(e, dict)):
-            notify("Channel already added", type="warning")
+            notify(
+                "",
+                type="warning",
+                source="discord",
+                title=f"#{channel_name or channel_id} is already in the go-live list",
+            )
             return
         existing.append(entry)
         self.buffer.go_live_channels = existing
@@ -332,15 +364,18 @@ class DiscordTab:
 
         token = (self._creds.get("bot_token") or "").strip()
         if not token:
-            notify("Enter a Discord bot token first", type="warning")
+            notify(
+                "",
+                type="warning",
+                source="discord",
+                title="Enter a Discord bot token first",
+                hint="Find it in the Discord Developer Portal under Bot → Reset Token.",
+            )
             return
 
-        # Persist from _creds only (never re-read password UI .value) — hard-fail
+        # Persist from _creds only (never re-read password UI .value) — hard-fail.
+        # A failed save was already reported; don't connect with an unsaved token.
         if not self._save_settings_only():
-            notify(
-                "Could not save Discord bot token. Connect aborted.",
-                type="negative",
-            )
             return
 
         self._connect_in_progress = True
@@ -369,7 +404,7 @@ class DiscordTab:
             if "connect_button" in self.ui_elements:
                 self.ui_elements["connect_button"].enable()
             if result.get("ok"):
-                notify("Discord bot connected", type="positive")
+                notify("", type="success", source="discord", title="Discord bot connected")
                 self._creds["bot_token"] = token
                 self._load_from_state()
                 if not (self._creds.get("bot_token") or "").strip():
@@ -378,10 +413,16 @@ class DiscordTab:
                     self.ui_elements["bot_token"].value = self._creds.get(
                         "bot_token", ""
                     )
-                self._reload_guilds()
+                self._reload_guilds(report=True)
             else:
-                err = result.get("error") or "Check the bot token and try again"
-                notify(f"Discord connect failed: {err}", type="negative")
+                notify(
+                    "",
+                    type="error",
+                    source="discord",
+                    title="Couldn't connect the Discord bot",
+                    hint="Check the token is current and the bot has been invited to your server, then try again.",
+                    details=result.get("error") or "Discord didn't accept the connection.",
+                )
             self._refresh_status()
 
         layout_schedule(0.5, poll, once=True)
@@ -423,12 +464,18 @@ class DiscordTab:
                 except Exception:
                     pass
             if result.get("ok"):
-                notify("Discord bot disconnected", type="info")
+                notify("", type="info", source="discord", title="Discord bot disconnected")
                 self._load_from_state()
                 self._reload_guilds()
             else:
-                err = result.get("error") or "Disconnect failed"
-                notify(f"Disconnect error: {err}", type="negative")
+                notify(
+                    "It will stop when Mycelian closes.",
+                    type="warning",
+                    source="discord",
+                    title="Couldn't disconnect the Discord bot cleanly",
+                    hint="Try Disconnect again.",
+                    details=result.get("error") or None,
+                )
             self._refresh_status()
 
         layout_schedule(0.5, poll, once=True)
@@ -440,20 +487,37 @@ class DiscordTab:
         if not url:
             url = discord_service.get_invite_url()
         if not url:
-            notify("Connect the bot first to generate an invite URL", type="warning")
+            self._notify_no_invite()
             return
         try:
             ui.clipboard.write(url)
-            notify("Invite URL copied", type="positive")
+            notify("", type="success", source="discord", title="Invite link copied")
         except Exception:
-            notify(url, type="info", timeout=8000)
+            notify(
+                url,
+                type="warning",
+                source="discord",
+                title="Couldn't copy the invite link automatically",
+                hint="Use Copy link below, or select the link and copy it.",
+                actions=[{"kind": "copy", "text": url, "label": "Copy link"}],
+            )
+
+    @staticmethod
+    def _notify_no_invite() -> None:
+        notify(
+            "",
+            type="warning",
+            source="discord",
+            title="Connect the bot first",
+            hint="The invite link appears once the bot is connected.",
+        )
 
     def _open_invite(self) -> None:
         url = discord_service.get_invite_url()
         if not url and "invite_url" in self.ui_elements:
             url = (self.ui_elements["invite_url"].value or "").strip()
         if not url:
-            notify("Connect the bot first to generate an invite URL", type="warning")
+            self._notify_no_invite()
             return
         ui.navigate.to(url, new_tab=True)
 
@@ -576,7 +640,7 @@ class DiscordTab:
                     outline_button("Add channel", self._add_go_live_channel, icon="add")
                     outline_button(
                         "Refresh servers",
-                        self._reload_guilds,
+                        lambda: self._reload_guilds(report=True),
                         icon="refresh",
                     )
 
@@ -598,10 +662,9 @@ class DiscordTab:
             self._saved_go_live_channels = self._go_live_signature()
             self.dirty = False
             if not silent:
-                notify("Discord settings saved", type="positive")
+                notify("", type="success", source="discord", title="Discord settings saved")
             self._refresh_status()
-        elif not silent:
-            notify("Error saving Discord settings", type="negative")
+        # A failed save was already reported by _save_settings_only / save_changes.
 
     def discard(self) -> None:
         self._load_from_state()
