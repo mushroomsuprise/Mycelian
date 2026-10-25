@@ -195,6 +195,41 @@ class DynamicControlsCacheTests(unittest.TestCase):
     def test_dynamic_controls_keep_their_original_3s_ttl(self) -> None:
         self.assertEqual(WebEngine._DYNAMIC_CONTROLS_CACHE_TTL, 3.0)
 
+    def test_only_hidden_templates_carry_the_hidden_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            controls = {"elements": [{"type": "button", "action": "go"}]}
+            for name, hidden in (("shown", False), ("secret", True)):
+                cfg = {"template_name": name, "elements": [], "dynamic_controls": controls}
+                if hidden:
+                    cfg["hidden"] = True
+                with open(os.path.join(d, f"{name}.json"), "w", encoding="utf-8") as fh:
+                    json.dump(cfg, fh)
+            configs = _cache_engine(d)._build_dynamic_controls_configs(None)
+            self.assertNotIn("hidden", configs["shown"])
+            self.assertIs(configs["secret"]["hidden"], True)
+            self.assertEqual(configs["secret"]["elements"], controls["elements"])
+
+
+class DockThemeInjectTests(unittest.TestCase):
+    """OBS docks get the theme on first paint; overlays stay unthemed."""
+
+    HTML = '<!DOCTYPE html>\n<html lang="en">\n<head><title>x</title></head><body></body></html>'
+
+    def test_docks_get_theme_vars_and_theme_type(self) -> None:
+        from modules.web_engine import _theme_dock_html
+
+        for template in ("source_controls", "activity_feed"):
+            html = _theme_dock_html(template, self.HTML)
+            self.assertIn('<style id="mycelian-theme-vars">', html)
+            self.assertIn("--color-bg-base", html)
+            self.assertRegex(html, r'<html data-theme-type="(dark|light)" lang="en">')
+            self.assertLess(html.index("mycelian-theme-vars"), html.index("</head>"))
+
+    def test_overlays_are_untouched(self) -> None:
+        from modules.web_engine import _theme_dock_html
+
+        self.assertEqual(_theme_dock_html("alerts", self.HTML), self.HTML)
+
 
 class OverlayHtmlCacheKeyTests(unittest.TestCase):
     def test_key_taken_before_render_is_stored(self) -> None:

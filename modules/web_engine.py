@@ -93,6 +93,41 @@ def _inject_served_overlay_scripts(html: str) -> str:
     return inject_template_logger(inject_overlay_recovery(html))
 
 
+# OBS docks (not overlays, which stay transparent and unthemed) are served with the
+# current theme so their first paint is themed; their theme_update handler then
+# replaces this same <style id="mycelian-theme-vars"> live.
+_THEMED_DOCK_TEMPLATES = frozenset({"source_controls", "activity_feed"})
+
+
+def _inject_theme_vars(html: str) -> str:
+    """Add the current theme's CSS variables and ``data-theme-type`` to a page."""
+    try:
+        theme = get_theme_manager().get_theme()
+    except Exception:
+        logger.debug("Theme lookup for page inject failed", exc_info=True)
+        return html
+    if not theme:
+        return html
+    theme_css = generate_css_variables(theme)
+    theme_type = theme.theme_type or "dark"
+    theme_block = f'<style id="mycelian-theme-vars">{theme_css}</style>'
+    if 'id="mycelian-theme-vars"' not in html:
+        if "</head>" in html:
+            html = html.replace("</head>", f"    {theme_block}\n</head>", 1)
+        else:
+            html = theme_block + html
+    if 'data-theme-type="' not in html:
+        html = html.replace("<html", f'<html data-theme-type="{theme_type}"', 1)
+    return html
+
+
+def _theme_dock_html(template: str, html: str) -> str:
+    """Theme the served HTML of an OBS dock page; other templates pass through."""
+    if template in _THEMED_DOCK_TEMPLATES and isinstance(html, str):
+        return _inject_theme_vars(html)
+    return html
+
+
 def _finalize_served_overlay_html(html: str) -> str:
     """Inject overlay scripts, and mute/volume when the page is inside a container."""
     html = _inject_served_overlay_scripts(html)
@@ -1694,25 +1729,7 @@ class WebEngine:
             try:
                 with open(editor_path, encoding="utf-8") as f:
                     html = f.read()
-                theme_mgr = get_theme_manager()
-                theme = theme_mgr.get_theme()
-                if theme:
-                    theme_css = generate_css_variables(theme)
-                    theme_type = theme.theme_type or "dark"
-                    theme_block = f'<style id="mycelian-theme-vars">{theme_css}</style>'
-                    if 'id="mycelian-theme-vars"' not in html:
-                        if "</head>" in html:
-                            html = html.replace(
-                                "</head>", f"    {theme_block}\n</head>", 1
-                            )
-                        else:
-                            html = theme_block + html
-                    if 'data-theme-type="' not in html:
-                        html = html.replace(
-                            "<html",
-                            f'<html data-theme-type="{theme_type}"',
-                            1,
-                        )
+                html = _inject_theme_vars(html)
                 response = make_response(html)
                 response.headers["Content-Type"] = "text/html; charset=utf-8"
                 return response
@@ -3755,6 +3772,10 @@ class WebEngine:
                         self._merge_preview_session_into_config(
                             preview_tok, config_name, dynamic_controls
                         )
+                        # Only when true, so the payload is unchanged otherwise
+                        # (the OBS dock shows a "Hidden" tag).
+                        if config_parser.is_config_hidden(config_name):
+                            dynamic_controls["hidden"] = True
                         configs[config_name] = dynamic_controls
             except Exception as e:
                 logger.warning(
@@ -3810,6 +3831,17 @@ class WebEngine:
         finally:
             with self._dynamic_controls_cache_lock:
                 self._dynamic_controls_building = False
+
+    def get_source_controls_configs(self) -> Dict[str, Any]:
+        """The /api/template-configs body (live control values) for the app's Source Controls tab.
+
+        Safe from any thread: reuses the warm cache, otherwise builds directly
+        without the gevent singleflight wait.
+        """
+        cached = self._peek_dynamic_controls_cache("")
+        if cached is not None:
+            return json.loads(cached)
+        return self._build_dynamic_controls_configs(None)
 
     def invalidate_template_queue_metadata_cache(self) -> None:
         with self._template_queue_metadata_cache_lock:
@@ -5842,7 +5874,7 @@ class WebEngine:
                                 template, html_cache_key
                             )
                             if cached_html is not None:
-                                return cached_html
+                                return _theme_dock_html(template, cached_html)
 
                         if draft_html is not None and draft_config is not None:
                             template_config = copy.deepcopy(draft_config)
@@ -5887,6 +5919,7 @@ class WebEngine:
                             engine_self._store_overlay_html(
                                 template, html, html_cache_key
                             )
+                        html = _theme_dock_html(template, html)
                         if mycelian_preview_mode and preview_token:
                             # Inject preview helper (force-show + mock-data
                             # MutationObserver). Try </body> first, then
@@ -6049,6 +6082,7 @@ class WebEngine:
                         mycelian_preview_mode=mycelian_preview_mode,
                     )
                 html = _finalize_served_overlay_html(html)
+                html = _theme_dock_html(template_name, html)
                 if mycelian_preview_mode and preview_token:
                     if "</body>" in html:
                         html = html.replace(
@@ -9395,6 +9429,17 @@ class WebEngine:
                             element.get("action_decrement", "counter_decrement"),
                             element.get("action_reset", "counter_reset"),
                         ]
+                    )
+            elif element_type == "timer_control":
+                # Same events the app tab and the OBS dock send:
+                # {slug(target_timer_id)}_{start|pause|reset}.
+                target_timer_id = element.get("target_timer_id")
+                if target_timer_id:
+                    from .spore_studio.spore_data_codegen import timer_control_event
+
+                    actions_to_register.extend(
+                        timer_control_event(str(target_timer_id), op)
+                        for op in ("start", "pause", "reset")
                     )
             elif element_type in [
                 "button",
