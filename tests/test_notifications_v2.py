@@ -118,3 +118,26 @@ def test_tracker_leaves_obs_password_and_twitch_network_drops_alone():
     tracker.observe({"internet": "Online", "twitch": "Connected"})
     notices = [n for _ in range(4) for n in tracker.observe({"internet": "Online", "twitch": "Authenticated but Disconnected"})]
     assert [n.title for n in notices] == ["Twitch disconnected"]
+
+
+def test_pop_up_duration_always_follows_the_user_setting(engine):
+    prefs, shown = engine
+    prefs.durations["warning"] = 5
+    ne.notify("Sign in again", type="warning", source="psn", title="PlayStation sign-in expired", sticky=True)
+    ne.notify("Other", type="warning", source="obs", title="Something", timeout=0)
+    assert [p["timeout"] for p in shown] == [5000, 5000]
+
+
+def test_closed_obs_is_quiet_and_open_but_unreachable_obs_explains_websocket():
+    assert classify("obs", "Not running") == "off" and classify("obs", "Can't connect") == "problem"
+    assert ne.footer_status_display("obs", "Not running") == "Not running"
+    assert ne.footer_status_tier("obs", "Not running") == "muted" and ne.footer_status_tier("obs", "Can't connect") == "warning"
+    tracker = ServiceAlertTracker()
+    tracker.observe({"internet": "Online", "obs": "Connected"})
+    closed = [n for _ in range(5) for n in tracker.observe({"internet": "Online", "obs": "Not running"})]
+    assert closed == []
+    tracker = ServiceAlertTracker()
+    tracker.observe({"internet": "Online", "obs": "Connected"})
+    stuck = [n for _ in range(4) for n in tracker.observe({"internet": "Online", "obs": "Can't connect"})]
+    assert [n.title for n in stuck] == ["Mycelian can't connect to OBS"]
+    assert "Enable WebSocket server" in stuck[0].hint and "host" not in stuck[0].hint

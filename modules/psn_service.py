@@ -108,7 +108,6 @@ def notify_psn_npsso_expired(npsso_code: str = "") -> None:
             hint="Open Settings → PSN and click Connect to get a fresh NPSSO code.",
             dedupe_key="psn:npsso_expired",
             dedupe_cooldown_sec=6 * 3600.0,
-            sticky=True,
             actions=nav_actions_settings("PSN"),
         )
     except Exception as e:

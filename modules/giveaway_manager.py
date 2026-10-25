@@ -232,7 +232,6 @@ class GiveawayManager:
                 actions=nav_chatbot("Giveaways"),
                 dedupe_key="giveaway:save_config" if critical else "giveaway:save_blocked",
                 dedupe_cooldown_sec=120 if critical else 600,
-                sticky=critical,
             )
         except Exception:
             logger.debug("Could not show the giveaway save notification", exc_info=True)

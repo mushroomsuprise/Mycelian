@@ -5612,7 +5612,6 @@ class WebEngine:
                 details=f"Last error: {self._last_run_error}" if self._last_run_error else None,
                 dedupe_key="svc:webengine:problem",
                 dedupe_cooldown_sec=600.0,
-                sticky=True,
             )
         except Exception as e:
             logger.debug("WebEngine give-up notification failed: %s", e)

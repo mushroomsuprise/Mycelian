@@ -128,11 +128,32 @@ class ObsTab:
             if ok:
                 work.done("Connected to OBS")
             else:
-                work.fail(
-                    f"Couldn't reach OBS at {address}",
-                    hint="Check OBS is open, WebSocket is on (Tools → WebSocket Server Settings), and the password matches.",
-                    details=str(msg or "No answer within 25 seconds."),
-                )
+                from ...connection_status_tracker import obs_disconnected_status
+                from ...service_alerts import OBS_OPEN_HINT
+
+                why = obs_disconnected_status()
+                if obs_service.auth_failed():
+                    work.close()  # obs_service already explained the password problem
+                elif why == "Not running":
+                    work.fail(
+                        "OBS isn't open",
+                        "Mycelian connects to OBS on its own once it's running.",
+                        hint="Open OBS, then test again.",
+                        details=str(msg or "No OBS process found on this computer."),
+                    )
+                elif why == "Can't connect":
+                    work.fail(
+                        "OBS is open, but its WebSocket server isn't answering",
+                        hint=OBS_OPEN_HINT,
+                        details=f"{address}: {msg or 'No answer within 25 seconds.'}",
+                    )
+                else:
+                    work.fail(
+                        f"Couldn't reach OBS at {address}",
+                        hint="Check that OBS is open on that computer with its WebSocket server on "
+                        "(Tools → WebSocket Server Settings), and that the host, port and password match.",
+                        details=str(msg or "No answer within 25 seconds."),
+                    )
             self._refresh_status()
         except Exception as e:
             logger.error("OBS test failed: %s", e, exc_info=True)

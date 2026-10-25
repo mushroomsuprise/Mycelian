@@ -574,7 +574,8 @@ def notify(
     ``{"kind": "call", "label", "fn"}``.
     Repeats within ``dedupe_cooldown_sec`` update the same entry and show ×N.
     ``notice_id`` updates an existing entry in place (see :func:`notify_progress`).
-    Durations come from the user's settings; ``timeout=0`` or ``sticky`` keeps it up.
+    How long a pop-up stays comes only from the user's per-level settings (work in progress
+    stays until it ends); ``timeout`` and ``sticky`` are accepted for old callers and ignored.
 
     Returns the entry id, or None when the user's settings drop it entirely.
     """
@@ -657,7 +658,7 @@ def notify(
         if not popup:
             dismiss_notification(snapshot["id"])
         else:
-            payload = _toast_payload(snapshot, prefs.duration_ms(level, sticky=sticky or timeout == 0))
+            payload = _toast_payload(snapshot, prefs.duration_ms(level))
             opts = {"config": prefs.for_client()}
             if not _deliver_toast(payload, opts):
                 _queue_toast(payload, opts)
@@ -992,6 +993,10 @@ def footer_status_display(service_key: str, status_raw: str) -> str:
         return "Reconnecting"
     if s in ("connecting", "disconnecting"):
         return status_raw.strip().title() or "Connecting"
+    if s == "not running":
+        return "Not running"
+    if s == "can't connect":
+        return "Can't connect"
     if "stopped" in s:
         return "Stopped"
     if "no internet" in s:
@@ -1064,8 +1069,10 @@ def footer_status_tier(service_key: str, status_raw: str) -> str:
         "checking",
     ):
         return "info"
-    if display in ("disconnected", "idle", "unknown"):
+    if display in ("disconnected", "idle", "unknown", "not running"):
         return "muted"
+    if display == "can't connect":
+        return "warning"
     if display == "offline":
         return "error" if service_key == "internet" else "warning"
     if display in ("degraded", "stalled", "overloaded", "partial", "stopped"):

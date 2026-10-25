@@ -58,8 +58,8 @@ SETTINGS_TABS: Dict[str, str] = {
 
 HINTS: Dict[str, str] = {
     "twitch": "Open Settings → Twitch and click Reconnect. If it keeps happening, sign in again.",
-    "obs": "Check that OBS is open with WebSocket turned on (Tools → WebSocket Server Settings), "
-           "and that the port and password in Settings → OBS match.",
+    "obs": "Check that OBS is open on that computer with its WebSocket server on (Tools → WebSocket Server "
+           "Settings), and that the host, port and password in Settings → OBS match.",
     "psn": "Open Settings → PSN and paste a fresh NPSSO code.",
     "spotify": "Open Settings → Spotify and sign in again.",
     "youtube": "Open Settings → YouTube and reconnect your account.",
@@ -79,10 +79,13 @@ AUTH_HINTS: Dict[str, str] = {
     "obs": "The WebSocket password was rejected. Copy it from OBS (Tools → WebSocket Server Settings) into Settings → OBS.",
 }
 
+OBS_OPEN_HINT = ("In OBS, open Tools → WebSocket Server Settings and tick Enable WebSocket server. "
+                 "Then check the port and password there match Settings → OBS.")
+
 _BUSY_WORDS = ("connecting", "reconnecting", "disconnecting", "starting", "restarting", "degraded", "stalled",
                "overloaded", "checking", "initializing", "waiting", "partial", "pending")
-_OFF_WORDS = ("not configured", "disabled", "not initialized", "unknown", "not set up", "off")
-_PROBLEM_WORDS = ("error", "fail", "disconnected", "expired", "not authenticated", "unauthorized", "offline", "no internet",
+_OFF_WORDS = ("not configured", "disabled", "not initialized", "unknown", "not set up", "off", "not running")
+_PROBLEM_WORDS = ("error", "fail", "disconnected", "can't connect", "expired", "not authenticated", "unauthorized", "offline", "no internet",
                   "unreachable", "crashed", "stopped", "frozen", "invalid", "denied", "lost")
 _AUTH_WORDS = ("auth", "token", "expired", "sign", "unauthorized", "password", "invalid", "credentials", "denied")
 
@@ -236,15 +239,20 @@ class ServiceAlertTracker:
             raw = track.raw.lower().replace("authenticated but", "")
             auth = any(w in raw for w in _AUTH_WORDS) and key in AUTH_HINTS
             track.warned = True
+            hint = AUTH_HINTS.get(key, "") if auth else HINTS.get(key, "")
+            message = f"Status: {track.raw}" if track.raw else ""
             if key == "webengine":
                 title = f"{label} {track.raw.lower() or 'stopped'}"
             elif auth:
                 title = f"{label} needs you to sign in again"
+            elif key == "obs" and raw.strip() == "can't connect":
+                title = "Mycelian can't connect to OBS"
+                message = "OBS is open, but its WebSocket server isn't answering."
+                hint = OBS_OPEN_HINT
             else:
                 title = f"{label} disconnected"
             return [Notice(key, "problem", "error" if auth or key == "webengine" else "warning", title,
-                           f"Status: {track.raw}" if track.raw else "",
-                           AUTH_HINTS.get(key, "") if auth else HINTS.get(key, ""),
+                           message, hint,
                            source=SOURCES.get(key, "app"), settings_tab=SETTINGS_TABS.get(key),
                            dedupe_key=f"svc:{key}:problem")]
         if new == "ok" and before == "problem" and track.warned:

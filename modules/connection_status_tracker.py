@@ -84,6 +84,48 @@ def psn_configured() -> bool:
         return False
 
 
+_LOCAL_HOSTS = frozenset({"", "localhost", "127.0.0.1", "::1", "0.0.0.0"})
+# (checked_at, running) for the local OBS process; scanning processes every poll is wasteful.
+_obs_process_cache: list = [0.0, False]
+_OBS_PROCESS_TTL_SEC = 10.0
+
+
+def _obs_host_is_local() -> bool:
+    try:
+        from .dataobjects import state_manager
+
+        o = state_manager.get_obs_data()
+        return str(getattr(o, "host", "") or "").strip().lower() in _LOCAL_HOSTS
+    except Exception:
+        return False
+
+
+def _local_obs_running() -> bool:
+    now = time.monotonic()
+    if now - _obs_process_cache[0] < _OBS_PROCESS_TTL_SEC:
+        return _obs_process_cache[1]
+    try:
+        from .obs_browser_docks import obs_process_is_running
+
+        running = bool(obs_process_is_running())
+    except Exception:
+        running = True  # unknown: don't claim OBS is closed
+    _obs_process_cache[0], _obs_process_cache[1] = now, running
+    return running
+
+
+def obs_disconnected_status() -> str:
+    """Why OBS isn't connected, as far as Mycelian can tell.
+
+    "Not running" when OBS points at this computer and no OBS process is open (normal,
+    no notification); "Can't connect" when OBS is open here but its WebSocket doesn't
+    answer; plain "Disconnected" for OBS on another computer.
+    """
+    if not _obs_host_is_local():
+        return "Disconnected"
+    return "Can't connect" if _local_obs_running() else "Not running"
+
+
 def obs_configured() -> bool:
     try:
         from .dataobjects import state_manager
@@ -359,7 +401,7 @@ def get_connection_status(key: str) -> str:
         elif obs_service.auth_failed():
             base_status = "Auth Failed"
         else:
-            base_status = "Disconnected"
+            base_status = obs_disconnected_status()
 
     elif key == "discord":
         from . import discord_service
