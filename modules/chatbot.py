@@ -656,6 +656,13 @@ class Chatbot_API:
                 )
                 # Set a flag to indicate we're using fallback mode
                 self.using_fallback = True
+                # Timer events must run in fallback mode too (D9).
+                try:
+                    from .chatbot_manager import get_manager
+
+                    get_manager().start_deferred_interval_events()
+                except Exception as e:
+                    logger.error("Failed to start chatbot timers: %s", e, exc_info=True)
                 return (
                     True  # Still return True since we can fallback to main Twitch API
                 )
@@ -1784,7 +1791,28 @@ def send_chatbot_message(
 def _send_chatbot_message_blocking(
     message: str, reply_to_message_id: Optional[str] = None
 ) -> bool:
-    """Blocking send. Must not run on the EventSub socket thread."""
+    """Blocking send. Must not run on the EventSub socket thread.
+
+    Replies longer than 500 characters are split at word boundaries into up
+    to 3 messages (the rest is cut and ends with "…"); only the first part
+    replies to ``reply_to_message_id``.
+    """
+    from .chatbot_core import split_chat_message
+
+    parts = split_chat_message(message)
+    if not parts or not chatbot_api:
+        return False
+    ok = True
+    for index, part in enumerate(parts):
+        ok = _send_one_chatbot_message_blocking(
+            part, reply_to_message_id if index == 0 else None
+        ) and ok
+    return ok
+
+
+def _send_one_chatbot_message_blocking(
+    message: str, reply_to_message_id: Optional[str] = None
+) -> bool:
     import concurrent.futures
 
     if not chatbot_api:
@@ -1819,8 +1847,14 @@ def deliver_chatbot_output(
     discord_channels=None,
     output_mode: str = "chat",
 ) -> bool:
-    """Send a command/event response to chat, or to the overlay banner instead."""
+    """Send a command/event response to chat, or to the overlay banner instead.
+
+    An empty / whitespace-only message is never sent (returns False).
+    """
     from .chatbot_core import _normalize_output_mode
+
+    if not str(message or "").strip():
+        return False
 
     if _normalize_output_mode(output_mode) == "banner":
         from .chat_banner import emit_chat_banner
@@ -1900,13 +1934,18 @@ def _dispatch_chatbot_response_blocking(
     Send a chatbot response to Twitch and/or YouTube based on reply_targets,
     and optionally to Discord channels listed in discord_channels.
 
-    reply_targets: list containing 'twitch' and/or 'youtube'. Missing/empty → twitch.
+    reply_targets: list containing 'twitch' and/or 'youtube'. Missing → twitch;
+    an explicit empty list with discord_channels sends to Discord only.
     discord_channels: list of {guild_id, channel_id, ...} dicts (optional).
     Returns True if any selected target succeeds.
     """
     from .chatbot_core import _normalize_reply_targets
 
-    targets = _normalize_reply_targets(reply_targets, default=["twitch"])
+    if not str(message or "").strip():
+        return False
+    targets = _normalize_reply_targets(
+        reply_targets, default=["twitch"], allow_empty=bool(discord_channels)
+    )
     any_ok = False
     if "twitch" in targets:
         try:

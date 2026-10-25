@@ -22,16 +22,51 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+# Chatbot data model and runtime substitution.
+#
+# Template syntax (replies, fallbacks, argument defaults, custom variables)
+# -------------------------------------------------------------------------
+# * ``{key}`` -- a value from the item's context (chat / event data, command
+#   variables, argument names, lookup variables). Dotted paths walk dicts.
+# * ``{key:FORMAT}`` -- formatted like connectors: a FORMAT with a strftime
+#   directive (``%d``, portable ``%-d`` ...) formats a date / epoch / ISO value,
+#   anything else is a numeric format spec (``{amount:,}``, ``{amount:.2f}``).
+# * ``{time}`` / ``{time.12.ampm}`` ... -- clock with dot filters
+#   (:func:`format_time_variable`); ``{time:%H:%M}`` formats the clock.
+# * ``{timestamp}`` (``YYYY-MM-DD HH:MM:SS``), ``{date}`` (``YYYY-MM-DD``),
+#   ``{datetime}`` (``YYYY-MM-DD HH:MM``): local now; all accept a date FORMAT.
+# * ``{stats.<path>}``, ``{youtube.<var>}``, ``{quote.random.text}`` /
+#   ``{quote.<number>.<field>}``, ``{custom_<name>}``, ``{command_word_N}``.
+#
+# Substitution is one pass over the template: text inserted from a value (a
+# viewer's message, a username, an API result) is never scanned again, so
+# ``{stats.x}`` typed by a viewer stays literal. Unknown tokens stay as written.
+# ``None`` values render as an empty string, booleans as ``true`` / ``false``.
 
-import asyncio
 import logging
 import re
+import sys
 import time
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from .connector_placeholders import (
+    _ctx_lookup_found,
+    _stringify,
+    format_placeholder_value,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _stat_child(obj: Any, part: str) -> Tuple[bool, Any]:
+    if isinstance(obj, dict):
+        if part in obj:
+            return True, obj[part]
+        if part.lstrip("-").isdigit() and int(part) in obj:
+            return True, obj[int(part)]
+    return False, None
 
 
 def get_statistics_value(stat_name: str) -> str:
@@ -44,24 +79,16 @@ def get_statistics_value(stat_name: str) -> str:
         from .statistics_manager import get_statistics_manager
 
         manager = get_statistics_manager()
-        all_stats = manager.get_all_statistics()
-
-        # Handle nested statistics (e.g., 'alerts.bit_alerts_played')
-        if "." in stat_name:
-            parts = stat_name.split(".")
-            current_obj = all_stats
-            try:
-                for part in parts:
-                    if isinstance(current_obj, dict):
-                        current_obj = current_obj.get(part, 0)
-                    else:
-                        return "0"
-                return str(current_obj) if current_obj is not None else "0"
-            except:
+        current: Any = manager.get_all_statistics()
+        for part in stat_name.split("."):
+            found, current = _stat_child(current, part)
+            if not found:
                 return "0"
-        else:
-            # Handle top-level statistics
-            return str(all_stats.get(stat_name, "0"))
+        if current is None:
+            return "0"
+        if isinstance(current, float):
+            return _stringify(round(current, 2))
+        return _stringify(current)
     except Exception as e:
         logger.error(f"Error getting statistics value for '{stat_name}': {e}")
         return "0"
@@ -141,6 +168,48 @@ def get_youtube_value(youtube_var: str) -> str:
     except Exception as e:
         logger.error(f"Error getting YouTube value for '{youtube_var}': {e}")
         return f"YouTube error: {str(e)}"
+
+
+_QUOTE_FIELDS = ("text", "author", "quote_number", "number", "date_added", "added_by", "formatted")
+
+
+def get_quote_value(spec: str) -> Optional[str]:
+    """``random.text`` / ``5.author`` ... -> value; None for an unknown field.
+
+    A missing quote gives an empty string.
+    """
+    which, _, field = str(spec or "").partition(".")
+    if field not in _QUOTE_FIELDS:
+        return None
+    try:
+        from .chatbot_manager import get_manager
+
+        manager = get_manager()
+        if which.isdigit():
+            quote = manager.get_quote_by_number(int(which))
+        elif which in ("random", "id", "any"):
+            quote = manager.get_random_quote()
+        else:
+            return None
+    except Exception as exc:
+        logger.debug("Quote variable %s failed: %s", spec, exc)
+        return ""
+    if quote is None:
+        return ""
+    if field == "text":
+        return quote.text
+    if field == "author":
+        return quote.author or ""
+    if field in ("quote_number", "number"):
+        return str(quote.quote_number)
+    if field == "date_added":
+        try:
+            return datetime.fromtimestamp(float(quote.date_added)).strftime("%Y-%m-%d")
+        except Exception:
+            return ""
+    if field == "added_by":
+        return quote.added_by or ""
+    return quote.format_quote()
 
 
 TIME_VAR_PATTERN = re.compile(r"\{time(?:\.([^}]+))?\}", re.IGNORECASE)
@@ -303,6 +372,140 @@ def replace_time_variables(text: str) -> str:
     )
 
 
+# --------------------------------------------------------------------------
+# Template engine (single pass)
+# --------------------------------------------------------------------------
+
+TEMPLATE_TOKEN = re.compile(r"\{([A-Za-z0-9_][^{}]*)\}")
+_TEMPLATE_KEY = re.compile(r"^[\w.\-]+$")
+_COMMAND_WORD_KEY = re.compile(r"^command_word_(\d+)$")
+_MAX_TEMPLATE_DEPTH = 10
+
+
+class _TimestampValue(datetime):
+    """``{timestamp}``: prints ``YYYY-MM-DD HH:MM:SS``."""
+
+    def __str__(self) -> str:
+        return self.strftime("%Y-%m-%d %H:%M:%S")
+
+
+class _DateValue(datetime):
+    """``{date}``: prints ``YYYY-MM-DD``."""
+
+    def __str__(self) -> str:
+        return self.strftime("%Y-%m-%d")
+
+
+class _DateTimeValue(datetime):
+    """``{datetime}``: prints ``YYYY-MM-DD HH:MM``."""
+
+    def __str__(self) -> str:
+        return self.strftime("%Y-%m-%d %H:%M")
+
+
+class _ClockValue(datetime):
+    """``{time:FMT}`` base value."""
+
+    def __str__(self) -> str:
+        return self.strftime("%H:%M:%S")
+
+
+_CLOCK_CLASSES = {
+    "timestamp": _TimestampValue,
+    "date": _DateValue,
+    "datetime": _DateTimeValue,
+    "time": _ClockValue,
+}
+
+
+def _clock_value(key: str) -> datetime:
+    now = datetime.now()
+    cls = _CLOCK_CLASSES[key]
+    return cls(now.year, now.month, now.day, now.hour, now.minute, now.second)
+
+
+def lookup_template_value(key: str, context: Dict[str, Any], depth: int = 0) -> Tuple[bool, Any]:
+    """(found, raw value) for a template key. See the module docstring."""
+    lowered = key.lower()
+    if lowered in _CLOCK_CLASSES:
+        return True, _clock_value(lowered)
+    if key.startswith("stats."):
+        return True, get_statistics_value(key[6:])
+    if key.startswith("youtube."):
+        return True, get_youtube_value(key[8:])
+    if key.startswith("quote."):
+        value = get_quote_value(key[6:])
+        return value is not None, value
+    if key.startswith("custom_"):
+        if depth > _MAX_TEMPLATE_DEPTH:
+            return False, None
+        from .chatbot_custom_variables import evaluate_custom_variable
+
+        value = evaluate_custom_variable(key, context, _depth=depth + 1)
+        return value is not None, value
+    match = _COMMAND_WORD_KEY.match(key)
+    if match and isinstance(context.get("command_args"), (list, tuple)):
+        args = context["command_args"]
+        index = int(match.group(1)) - 1
+        return True, (str(args[index]) if 0 <= index < len(args) else "")
+    if key in context:
+        return True, context[key]
+    if "." in key:
+        return _ctx_lookup_found(context, key)
+    return False, None
+
+
+def resolve_template_token(inner: str, context: Dict[str, Any], depth: int = 0) -> Optional[str]:
+    """Replacement text for the inside of one ``{...}``, or None (left as written)."""
+    lowered = inner.lower()
+    if lowered == "time" or lowered.startswith("time."):
+        return format_time_variable(inner[5:] if len(inner) > 4 else "")
+    key, _, fmt = inner.partition(":")
+    if not _TEMPLATE_KEY.match(key):
+        return None
+    found, value = lookup_template_value(key, context, depth)
+    if not found:
+        return None
+    if fmt:
+        return format_placeholder_value(value, fmt)
+    return _stringify(value)
+
+
+def render_template(text: Any, context: Optional[Dict[str, Any]] = None, *, _depth: int = 0) -> str:
+    """Substitute every ``{token}`` of *text* in one pass (see module docstring)."""
+    if text is None:
+        return ""
+    text = str(text)
+    if "{" not in text:
+        return text
+    ctx = context or {}
+
+    def repl(match: re.Match) -> str:
+        out = resolve_template_token(match.group(1), ctx, _depth)
+        return match.group(0) if out is None else out
+
+    return TEMPLATE_TOKEN.sub(repl, text)
+
+
+def resolve_raw_template_value(text: str, context: Dict[str, Any], depth: int = 0) -> Any:
+    """The raw value when *text* is exactly one ``{key}`` token, else rendered text.
+
+    Keeps datetimes intact for date maths (custom "age" variables).
+    """
+    stripped = str(text or "").strip()
+    match = TEMPLATE_TOKEN.fullmatch(stripped)
+    if match and ":" not in match.group(1):
+        found, value = lookup_template_value(match.group(1), context, depth)
+        if found:
+            return value
+    return render_template(stripped, context, _depth=depth)
+
+
+# --------------------------------------------------------------------------
+# Enums
+# --------------------------------------------------------------------------
+
+
 class CommandType(Enum):
     """Types of chat commands"""
 
@@ -366,10 +569,106 @@ class VariableType(Enum):
     USAGE_LEFT = "usage_left"
 
 
+# Bumped when stored items need a one-time migration (see from_dict).
+SCHEMA_VERSION = 2
+
+# --------------------------------------------------------------------------
+# Permissions
+# --------------------------------------------------------------------------
+
+PERMISSION_LEVELS = {
+    "everyone": 0,
+    "subscriber": 1,
+    "vip": 2,
+    "moderator": 3,
+    "broadcaster": 4,
+}
+PERMISSION_CHOICES = ("everyone", "subscriber", "vip", "moderator")
+
+
+def normalize_permission(value: Any, mod_only: bool = False) -> str:
+    """A valid command permission; legacy ``mod_only`` maps to ``moderator``."""
+    text = str(value or "").strip().lower()
+    aliases = {"mod": "moderator", "mods": "moderator", "moderators": "moderator",
+               "sub": "subscriber", "subs": "subscriber", "subscribers": "subscriber",
+               "vips": "vip", "all": "everyone"}
+    text = aliases.get(text, text)
+    if text in PERMISSION_CHOICES:
+        return text
+    if text == "broadcaster":
+        return "moderator"
+    return "moderator" if mod_only else "everyone"
+
+
+def badge_set_ids(badges: Any) -> set:
+    """Badge set ids from ``"broadcaster/1,subscriber/12"`` (or a list); None safe."""
+    ids: set = set()
+    if not badges:
+        return ids
+    if isinstance(badges, str):
+        items: List[Any] = badges.split(",")
+    elif isinstance(badges, dict):
+        items = list(badges.keys())
+    elif isinstance(badges, (list, tuple, set)):
+        items = list(badges)
+    else:
+        return ids
+    for item in items:
+        if isinstance(item, dict):
+            set_id = item.get("set_id") or item.get("id") or ""
+        elif isinstance(item, str):
+            set_id = item.split("/", 1)[0]
+        else:
+            set_id = getattr(item, "set_id", "") or ""
+        set_id = str(set_id).strip().lower()
+        if set_id:
+            ids.add(set_id)
+    return ids
+
+
+def _broadcaster_user_id() -> str:
+    twitch = sys.modules.get("modules.twitch")
+    api = getattr(twitch, "twitch_api", None) if twitch else None
+    return str(getattr(api, "user_id", "") or "")
+
+
+def user_permission_level(data: Dict[str, Any]) -> str:
+    """Highest level of the chatter: broadcaster > moderator > vip > subscriber > everyone."""
+    data = data or {}
+    ids = badge_set_ids(data.get("badges"))
+    user_id = str(data.get("user_id") or data.get("userid") or "")
+    if (
+        "broadcaster" in ids
+        or data.get("is_broadcaster")
+        or (user_id and user_id == _broadcaster_user_id())
+    ):
+        return "broadcaster"
+    if ids & {"moderator", "lead_moderator"} or data.get("is_mod") or data.get("is_moderator"):
+        return "moderator"
+    if "vip" in ids or data.get("is_vip"):
+        return "vip"
+    if ids & {"subscriber", "founder"} or data.get("is_subscriber"):
+        return "subscriber"
+    return "everyone"
+
+
+def permission_allows(required: str, data: Dict[str, Any]) -> bool:
+    need = PERMISSION_LEVELS.get(normalize_permission(required), 0)
+    return PERMISSION_LEVELS[user_permission_level(data)] >= need
+
+
+# --------------------------------------------------------------------------
+# Small normalizers
+# --------------------------------------------------------------------------
+
+
 def _normalize_reply_targets(
-    raw, *, default: Optional[List[str]] = None
+    raw, *, default: Optional[List[str]] = None, allow_empty: bool = False
 ) -> List[str]:
-    """Normalize reply_targets to a list of 'twitch' and/or 'youtube'."""
+    """Normalize reply_targets to a list of 'twitch' and/or 'youtube'.
+
+    ``allow_empty`` keeps an explicit empty list (Discord-only / banner items).
+    """
     if default is None:
         default = ["twitch"]
     allowed = {"twitch", "youtube"}
@@ -386,7 +685,9 @@ def _normalize_reply_targets(
             return ["twitch", "youtube"]
         if s in allowed and s not in out:
             out.append(s)
-    return out if out else list(default)
+    if out:
+        return out
+    return [] if allow_empty else list(default)
 
 
 def _normalize_output_mode(raw) -> str:
@@ -395,8 +696,207 @@ def _normalize_output_mode(raw) -> str:
     return "banner" if mode == "banner" else "chat"
 
 
+def _resolve_output(kwargs: Dict[str, Any]) -> Tuple[List[str], str, List[Any]]:
+    """reply_targets / output_mode / discord_channels for an item.
+
+    Missing reply_targets -> ``["twitch"]``. An empty list is kept only when
+    the item still produces output (Discord channels or banner mode).
+    """
+    output_mode = _normalize_output_mode(kwargs.get("output_mode", "chat"))
+    raw_discord = kwargs.get("discord_channels") or []
+    discord_channels = list(raw_discord) if isinstance(raw_discord, list) else []
+    targets = _normalize_reply_targets(kwargs.get("reply_targets"), allow_empty=True)
+    if not targets and not discord_channels and output_mode != "banner":
+        targets = ["twitch"]
+    return targets, output_mode, discord_channels
+
+
+def _to_number(value: Any, default: Union[int, float] = 0) -> Union[int, float]:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return value
+    try:
+        number = float(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return int(number) if number.is_integer() else number
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    number = _to_number(value, default)
+    try:
+        return int(number)
+    except (TypeError, ValueError):
+        return default
+
+
+def clean_command_word(value: Any) -> str:
+    """``"!Hello "`` -> ``"hello"`` (first word, no prefix, lowercase)."""
+    text = str(value or "").strip()
+    if "ValueChangeEventArguments" in text:
+        return ""
+    text = text.lstrip("!").strip()
+    if not text:
+        return ""
+    return text.split()[0].lower()
+
+
+def clean_aliases(raw: Any, exclude: str = "") -> List[str]:
+    """Clean alias list: no ``!``, lowercase, unique, junk entries dropped."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        if "ValueChangeEventArguments" in raw:
+            return []
+        items: List[Any] = re.split(r"[,\s]+", raw)
+    elif isinstance(raw, (list, tuple, set)):
+        items = list(raw)
+    else:
+        return []
+    out: List[str] = []
+    for item in items:
+        word = clean_command_word(item)
+        if word and word != exclude and word not in out:
+            out.append(word)
+    return out
+
+
+def normalize_argument_mappings(raw: Any) -> Dict[str, Dict[str, Any]]:
+    """``{name: {"position": int>=1, "default": str}}`` from int / dict values."""
+    out: Dict[str, Dict[str, Any]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for name, spec in raw.items():
+        key = str(name or "").strip().strip("{}").strip()
+        if not key or not re.match(r"^[\w\-]+$", key):
+            continue
+        default = ""
+        if isinstance(spec, dict):
+            position = _to_int(spec.get("position"), 0)
+            default = str(spec.get("default") or "")
+        else:
+            position = _to_int(spec, 0)
+        if position < 1:
+            continue
+        out[key] = {"position": position, "default": default}
+    return out
+
+
+def serialize_argument_mappings(mappings: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Compact stored form: int, or the dict form only when a default is set."""
+    out: Dict[str, Any] = {}
+    for name, spec in (mappings or {}).items():
+        if spec.get("default"):
+            out[name] = {"position": int(spec["position"]), "default": str(spec["default"])}
+        else:
+            out[name] = int(spec["position"])
+    return out
+
+
+def normalize_lookup(raw: Any) -> Optional[Dict[str, Any]]:
+    """A lookup config dict with a non-empty ``id``, or None."""
+    if not isinstance(raw, dict):
+        return None
+    lookup_id = str(raw.get("id") or "").strip().lower()
+    if not lookup_id:
+        return None
+    out = {k: v for k, v in raw.items() if k != "id"}
+    out = {"id": lookup_id, **out}
+    return out
+
+
+_SPECIFIC_TIME = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*$")
+
+
+def normalize_specific_time(value: Any) -> Optional[str]:
+    """``"9:05"`` -> ``"09:05"``; None when it is not a valid 24-hour HH:MM."""
+    match = _SPECIFIC_TIME.match(str(value or ""))
+    if not match:
+        return None
+    hour, minute = int(match.group(1)), int(match.group(2))
+    if hour > 23 or minute > 59:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
+TWITCH_MESSAGE_LIMIT = 500
+TWITCH_MAX_PARTS = 3
+
+
+def split_chat_message(text: str, limit: int = TWITCH_MESSAGE_LIMIT, max_parts: int = TWITCH_MAX_PARTS) -> List[str]:
+    """Split a reply into chat-sized parts at word boundaries.
+
+    At most *max_parts* messages are produced; text that still does not fit is
+    cut at a word boundary and the last part ends with ``…``.
+    """
+    text = str(text or "").strip()
+    if not text:
+        return []
+    if len(text) <= limit:
+        return [text]
+    parts: List[str] = []
+    rest = text
+    while rest:
+        if len(rest) <= limit:
+            parts.append(rest)
+            break
+        if len(parts) == max_parts - 1:
+            cut = rest[: limit - 1]
+            space = cut.rfind(" ")
+            if space > limit // 2:
+                cut = cut[:space]
+            parts.append(cut.rstrip() + "…")
+            break
+        window = rest[: limit + 1]
+        space = window.rfind(" ")
+        if space <= 0:
+            piece, rest = rest[:limit], rest[limit:]
+        else:
+            piece, rest = rest[:space], rest[space + 1 :]
+        parts.append(piece.rstrip())
+        rest = rest.lstrip()
+    return parts
+
+
+def _clean_event_data(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Copy of producer data with None text fields as "" and id aliases filled."""
+    ctx = dict(data or {})
+    for key in ("message", "badges", "username", "user_login", "user_id"):
+        if key in ctx and ctx[key] is None:
+            ctx[key] = ""
+    if not ctx.get("user_id") and ctx.get("userid"):
+        ctx["user_id"] = str(ctx["userid"])
+    return ctx
+
+
+def choose_lookup_outcome(lookup_vars: Optional[Dict[str, Any]], fallback_text: str) -> str:
+    """``"normal"``, ``"fallback"`` or ``"silent"`` after a lookup.
+
+    * success -> normal reply;
+    * failure (or follow_age: not following) with fallback text -> fallback;
+    * follow_age not following without fallback -> normal reply (its variables
+      say "not following");
+    * any other failure without fallback -> silent (nothing is posted).
+    """
+    if not lookup_vars:
+        return "normal"
+    if lookup_vars.get("lookup_ok"):
+        return "normal"
+    if str(fallback_text or "").strip():
+        return "fallback"
+    if lookup_vars.get("lookup_reason") == "not_following":
+        return "normal"
+    return "silent"
+
+
+# --------------------------------------------------------------------------
+# Conditions
+# --------------------------------------------------------------------------
+
+
 class TriggerCondition:
-    """Condition for triggering a command or event"""
+    """Condition for triggering a command or event (no UI yet; round-trips)."""
 
     def __init__(self, field: str, operator: ComparisonOperator, value: Any):
         self.field = field
@@ -404,806 +904,305 @@ class TriggerCondition:
         self.value = value
 
     def evaluate(self, data: Dict[str, Any]) -> bool:
-        """Evaluate the condition against provided data"""
-        try:
-            field_value = data.get(self.field)
+        """True when ``data[field] <operator> value``; a missing field is False.
 
+        EQUAL / ordering compare numerically when both sides are numbers
+        (floats included); otherwise EQUAL is case-insensitive text and the
+        ordering operators are False. CONTAINS / STARTS_WITH / ENDS_WITH are
+        always case-insensitive text. ``self.value`` is never modified.
+        """
+        try:
+            if not isinstance(data, dict) or self.field not in data:
+                return False
+            field_value = data.get(self.field)
             if field_value is None:
                 return False
+            from .chatbot_custom_variables import compare_values
 
-            # Type conversion for comparison
-            if isinstance(field_value, str) and self.value.isdigit():
-                field_value = int(field_value)
-                self.value = int(self.value)
-            elif (
-                isinstance(field_value, int)
-                and isinstance(self.value, str)
-                and self.value.isdigit()
-            ):
-                self.value = int(self.value)
-
-            # Perform comparison based on operator
-            if self.operator == ComparisonOperator.EQUAL:
-                return field_value == self.value
-            elif self.operator == ComparisonOperator.GREATER_THAN_OR_EQUAL:
-                return field_value >= self.value
-            elif self.operator == ComparisonOperator.LESS_THAN_OR_EQUAL:
-                return field_value <= self.value
-            elif self.operator == ComparisonOperator.GREATER_THAN:
-                return field_value > self.value
-            elif self.operator == ComparisonOperator.LESS_THAN:
-                return field_value < self.value
-            elif self.operator == ComparisonOperator.CONTAINS:
-                return str(self.value).lower() in str(field_value).lower()
-            elif self.operator == ComparisonOperator.STARTS_WITH:
-                return str(field_value).lower().startswith(str(self.value).lower())
-            elif self.operator == ComparisonOperator.ENDS_WITH:
-                return str(field_value).lower().endswith(str(self.value).lower())
-
+            return compare_values(field_value, self.operator.value, self.value)
         except Exception as e:
-            logger.error(
+            logger.debug(
                 "Error evaluating condition %s %s %s: %s",
                 self.field,
-                self.operator.value,
+                getattr(self.operator, "value", self.operator),
                 self.value,
                 e,
             )
             return False
 
-        return False
+    def to_dict(self) -> Dict[str, Any]:
+        value = self.value
+        if not isinstance(value, (str, int, float, bool)) and value is not None:
+            value = str(value)
+        return {
+            "field": str(self.field),
+            "operator": getattr(self.operator, "value", str(self.operator)),
+            "value": value,
+        }
+
+    @classmethod
+    def from_any(cls, raw: Any) -> Optional["TriggerCondition"]:
+        if isinstance(raw, TriggerCondition):
+            return raw
+        if not isinstance(raw, dict) or not raw.get("field"):
+            return None
+        try:
+            operator = ComparisonOperator(raw.get("operator"))
+        except ValueError:
+            return None
+        return cls(field=str(raw["field"]), operator=operator, value=raw.get("value"))
+
+
+def _parse_conditions(raw: Any) -> List[TriggerCondition]:
+    out = []
+    for item in raw or []:
+        cond = TriggerCondition.from_any(item)
+        if cond is not None:
+            out.append(cond)
+    return out
+
+
+def _sanitize_value(value):
+    """Make a value JSON serializable."""
+    if value is None:
+        return None
+    if isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(k): _sanitize_value(v) for k, v in value.items()}
+    if hasattr(value, "value"):
+        return _sanitize_value(value.value)
+    try:
+        return str(value)
+    except Exception:
+        return ""
+
+
+def _track_stat(kind: str, username: Any, name: str) -> None:
+    try:
+        from .statistics_manager import get_statistics_manager
+
+        stats_manager = get_statistics_manager()
+        if kind == "command":
+            stats_manager.increment_commands_triggered(username=username, command_name=name)
+        else:
+            stats_manager.increment_events_triggered(username=username, event_name=name)
+    except Exception as e:
+        logger.error("Error tracking %s statistics: %s", kind, e)
+
+
+def _run_lookup_for(item: Any, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Blocking lookup for *item* (call off the event loop / outside locks)."""
+    if not getattr(item, "lookup", None):
+        return None
+    from .chatbot_lookups import run_lookup_blocking
+
+    kind = "event" if isinstance(item, ChatEvent) else "command"
+    return run_lookup_blocking(item.lookup, context, kind=kind)
+
+
+# --------------------------------------------------------------------------
+# Commands
+# --------------------------------------------------------------------------
 
 
 class ChatCommand:
-    """Represents a chat command"""
+    """A chat command (``!name``).
+
+    Stored fields (``to_dict`` keys): see ``to_dict``. New in schema 2:
+    ``permission`` ("everyone" | "subscriber" | "vip" | "moderator"),
+    ``lookup`` (dict | None), ``lookup_fallback`` (str), ``schema_version``.
+    ``mod_only`` is kept in sync with ``permission == "moderator"``.
+    """
 
     def __init__(self, **kwargs):
         self.command_id = kwargs.get("command_id", "")
         self.name = kwargs.get("name", "")
         self.description = kwargs.get("description", "")
-        self.command_name = kwargs.get("command_name", "")
-        self.aliases = kwargs.get("aliases", [])
-        self.response_text = kwargs.get("response_text", "")
-        self.mod_only = kwargs.get("mod_only", False)
-        self.cooldown = kwargs.get("cooldown", 0)
-        self.command_type = kwargs.get("command_type", CommandType.BASIC)
-        self.usage_limit = kwargs.get("usage_limit", 0)
-        self.repeating_enabled = kwargs.get("repeating_enabled", False)
+        self.command_name = clean_command_word(kwargs.get("command_name", ""))
+        self.aliases = clean_aliases(kwargs.get("aliases", []), exclude=self.command_name)
+        self.response_text = kwargs.get("response_text", "") or ""
+        self.permission = normalize_permission(
+            kwargs.get("permission"), mod_only=bool(kwargs.get("mod_only", False))
+        )
+        self.cooldown = max(0, _to_number(kwargs.get("cooldown", 0), 0))
+        command_type = kwargs.get("command_type", CommandType.BASIC)
+        if not isinstance(command_type, CommandType):
+            try:
+                command_type = CommandType(str(command_type))
+            except ValueError:
+                command_type = CommandType.BASIC
+        self.command_type = command_type
+        self.usage_limit = max(0, _to_int(kwargs.get("usage_limit", 0), 0))
+        # Legacy repeat fields: still read, migrated into interval events by
+        # the manager; nothing schedules repeating commands any more.
+        self.repeating_enabled = bool(kwargs.get("repeating_enabled", False))
         self.repeat_count = kwargs.get("repeat_count", 1)
         self.repeat_interval = kwargs.get("repeat_interval", 0)
-        self.persistent_counter = kwargs.get("persistent_counter", False)
-        self.reset_command = kwargs.get("reset_command", "")
-        self.enabled = kwargs.get("enabled", True)
+        # True: counter survives an app restart; False: reset to 0 on start.
+        self.persistent_counter = bool(kwargs.get("persistent_counter", True))
+        self.reset_command = clean_command_word(kwargs.get("reset_command", ""))
+        self.enabled = bool(kwargs.get("enabled", True))
 
-        # API Call functionality
-        self.api_enabled = kwargs.get("api_enabled", False)
-        self.api_endpoint = kwargs.get("api_endpoint", "")
-        self.api_method = kwargs.get("api_method", "GET")
-        self.api_headers = kwargs.get("api_headers", {})
-        self.api_body = kwargs.get("api_body", "")
-        self.api_response_format = kwargs.get("api_response_format", "")
-        self.api_parameters = kwargs.get("api_parameters", {})
-        self.api_endpoint_select = kwargs.get("api_endpoint_select", "")
-        self.api_variable_processing = kwargs.get(
-            "api_variable_processing", []
-        )  # List of processing expressions
+        # Legacy API fields (read for compatibility; migrated into ``lookup``).
+        self.api_enabled = bool(kwargs.get("api_enabled", False))
+        self.api_endpoint = kwargs.get("api_endpoint", "") or ""
+        self.api_method = kwargs.get("api_method", "GET") or "GET"
+        headers = kwargs.get("api_headers", {})
+        if isinstance(headers, str):
+            try:
+                import json
+
+                headers = json.loads(headers)
+            except Exception:
+                headers = {}
+        self.api_headers = headers if isinstance(headers, dict) else {}
+        self.api_body = kwargs.get("api_body", "") or ""
+        self.api_response_format = kwargs.get("api_response_format", "") or ""
+        self.api_parameters = kwargs.get("api_parameters", {}) or {}
+        self.api_endpoint_select = kwargs.get("api_endpoint_select", "") or ""
+        self.api_variable_processing = kwargs.get("api_variable_processing", []) or []
+
+        self.lookup = normalize_lookup(kwargs.get("lookup"))
+        if self.lookup is None and self.api_enabled and str(self.api_endpoint).strip():
+            from .chatbot_lookups import migrate_legacy_api_fields
+
+            self.lookup = migrate_legacy_api_fields(self)
+            self.api_enabled = False
+        self.lookup_fallback = str(kwargs.get("lookup_fallback") or "")
 
         # Runtime state
-        self.counter_value = kwargs.get("counter_value", 0)
-        self.usage_count = kwargs.get("usage_count", 0)
-        self.last_used = kwargs.get("last_used", 0)
-        self.trigger_count = kwargs.get("trigger_count", 0)
-        self.last_triggered = kwargs.get("last_triggered", 0)
+        self.counter_value = _to_int(kwargs.get("counter_value", 0), 0)
+        self.usage_count = _to_int(kwargs.get("usage_count", 0), 0)
+        self.last_used = _to_number(kwargs.get("last_used", 0), 0)
+        self.trigger_count = _to_int(kwargs.get("trigger_count", 0), 0)
+        self.last_triggered = _to_number(kwargs.get("last_triggered", 0), 0)
 
-        # Conditions
-        self.conditions = kwargs.get("conditions", [])
+        self.conditions = _parse_conditions(kwargs.get("conditions", []))
+        # {name: {"position": 1-based int, "default": template}}
+        self.argument_mappings = normalize_argument_mappings(kwargs.get("argument_mappings", {}))
+        self.reply_targets, self.output_mode, self.discord_channels = _resolve_output(kwargs)
 
-        # Argument mappings for custom variable names
-        # Format: {"variable_name": position} where position is 1-based
-        self.argument_mappings = kwargs.get("argument_mappings", {})
-        # Where to send the response: "twitch", "youtube" (missing → twitch only)
-        self.reply_targets = _normalize_reply_targets(
-            kwargs.get("reply_targets"), default=["twitch"]
-        )
-        # "chat" posts to reply targets; "banner" shows the chat overlay banner.
-        self.output_mode = _normalize_output_mode(kwargs.get("output_mode", "chat"))
-        # Discord channel targets (independent of reply_targets):
-        # [{guild_id, channel_id, guild_name?, channel_name?}, ...]
-        raw_discord = kwargs.get("discord_channels") or []
-        self.discord_channels = (
-            list(raw_discord) if isinstance(raw_discord, list) else []
-        )
+    # ``mod_only`` mirrors the permission for old callers.
+    @property
+    def mod_only(self) -> bool:
+        return self.permission == "moderator"
+
+    @mod_only.setter
+    def mod_only(self, value: bool) -> None:
+        if value:
+            self.permission = "moderator"
+        elif self.permission == "moderator":
+            self.permission = "everyone"
+
+    def all_names(self) -> List[str]:
+        return [n for n in [self.command_name, *self.aliases] if n]
 
     def should_trigger(self, data: Dict[str, Any]) -> bool:
-        """Check if this command should trigger based on conditions"""
+        """Enabled and every condition passes."""
         if not self.enabled:
             return False
+        return all(condition.evaluate(data) for condition in self.conditions)
 
-        # Check all conditions
-        for condition in self.conditions:
-            if not condition.evaluate(data):
-                return False
-
-        return True
-
-    def can_use(self, data: Dict[str, Any]) -> tuple[bool, str]:
-        """Check if command can be used, returns (can_use, reason)"""
+    def can_use(self, data: Dict[str, Any]) -> tuple:
+        """(allowed, reason): permission, cooldown and usage limit checks."""
         if not self.enabled:
             return False, "Command is disabled"
-
-        # Check cooldown
+        if not permission_allows(self.permission, data):
+            return False, f"Requires {self.permission}"
         current_time = time.time()
         if self.cooldown > 0 and current_time - self.last_used < self.cooldown:
             remaining = int(self.cooldown - (current_time - self.last_used))
             return False, f"Command is on cooldown ({remaining}s remaining)"
-
-        # Check usage limit
         if self.usage_limit > 0 and self.usage_count >= self.usage_limit:
             return False, "Command has reached its usage limit"
-
-        # Check mod only
-        if self.mod_only:
-            is_mod = (
-                data.get("is_mod", False)
-                or data.get("badges", "").find("moderator") >= 0
-            )
-            if not is_mod:
-                return False, "Command is mod-only"
-
         return True, ""
 
-    def use_command(self, data: Dict[str, Any]) -> str:
-        """Use the command and return the processed response"""
+    def begin_use(self, data: Dict[str, Any], *, track_stats: bool = True) -> None:
+        """Consume one use: counters, cooldown start, counter increment, stats."""
         current_time = time.time()
-
-        # Update counters
         self.usage_count += 1
         self.trigger_count += 1
         self.last_used = current_time
         self.last_triggered = current_time
-
         if self.command_type == CommandType.COUNTER:
             self.counter_value += 1
+        if track_stats:
+            _track_stat("command", (data or {}).get("username"), self.command_name)
 
-        # Track statistics
-        try:
-            from .statistics_manager import get_statistics_manager
+    def build_context(self, data: Dict[str, Any], lookup_vars: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Variables for this command's reply.
 
-            stats_manager = get_statistics_manager()
-            username = data.get("username")
-            stats_manager.increment_commands_triggered(
-                username=username, command_name=self.command_name
-            )
-            logger.debug("Tracked command trigger for: %s", self.command_name)
-        except Exception as e:
-            logger.error("Error tracking command statistics: %s", e)
-
-        # Handle API calls if enabled
-        api_data = {}
-        if self.api_enabled and self.api_endpoint:
-            try:
-                api_response = self._execute_api_call(data)
-                logger.debug("API call completed for command %s", self.command_name)
-
-                # Process API variables with custom expressions
-                if self.api_variable_processing:
-                    processed_vars = self._process_api_variables(api_response, data)
-                    api_data = {**api_response, **processed_vars}
-                else:
-                    api_data = api_response
-
-            except Exception as e:
-                logger.error(
-                    "Error executing API call for command %s: %s", self.command_name, e
-                )
-                # Continue with empty API data, command will still work with regular variables
-
-        # Merge API data with regular data for variable processing
-        combined_data = {**data, **api_data}
-
-        # Process response with variables (including API response variables)
-        response = self._process_variables(self.response_text, combined_data)
-        return response
-
-    def _process_variables(self, text: str, data: Dict[str, Any]) -> str:
-        """Process variables in response text"""
-        processed = text
-
-        # Basic variables
-        processed = processed.replace(
-            "{username}", str(data.get("username", "Unknown"))
-        )
-        processed = processed.replace(
-            "{timestamp}", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
-        processed = processed.replace("{date}", datetime.now().strftime("%Y-%m-%d"))
-        # Resolve {time} / {time.filters} before the generic dotted-path walker
-        processed = replace_time_variables(processed)
-
-        # Command-specific variables
-        if self.command_type == CommandType.COUNTER:
-            processed = processed.replace("{count}", str(self.counter_value))
-
-        processed = processed.replace(
-            "{target_command}", str(data.get("target_command", ""))
-        )
-        processed = processed.replace(
-            "{target_count}", str(data.get("target_count", ""))
-        )
-
-        if self.cooldown > 0:
-            processed = processed.replace("{cooldown}", str(self.cooldown))
-
+        Precedence (later wins): lookup variables < chat data < command
+        variables < argument names.
+        """
+        ctx: Dict[str, Any] = dict(lookup_vars or {})
+        ctx.update(_clean_event_data(data))
+        ctx.setdefault("username", "Unknown")
+        ctx.setdefault("user_login", str(ctx.get("username") or "").lower())
+        args = ctx.get("command_args")
+        if not isinstance(args, (list, tuple)):
+            message = str(ctx.get("message") or "").strip()
+            words = message.split()
+            args = words[1:] if words and words[0].startswith("!") else []
+        args = [str(a) for a in args]
+        ctx["command_args"] = args
+        ctx.setdefault("command_message", " ".join(args))
+        ctx["command_first_word"] = args[0] if args else ""
+        ctx["command_last_word"] = args[-1] if args else ""
+        ctx["chatter_id"] = str(ctx.get("user_id") or "")
+        ctx["chatter_login"] = str(ctx.get("user_login") or "")
+        ctx["command_name"] = self.command_name
+        ctx["cooldown"] = _stringify(self.cooldown)
         if self.usage_limit > 0:
-            uses_left = max(0, self.usage_limit - self.usage_count)
-            processed = processed.replace("{usage_left}", str(uses_left))
-
-        # Command message variables
-        if "command_message" in data:
-            processed = processed.replace(
-                "{command_message}", str(data.get("command_message", ""))
-            )
-        if "command_args" in data:
-            command_args = data.get("command_args", [])
-            if command_args:
-                processed = processed.replace(
-                    "{command_first_word}", str(command_args[0])
-                )
-                processed = processed.replace(
-                    "{command_last_word}", str(command_args[-1])
-                )
+            ctx["usage_left"] = str(max(0, self.usage_limit - self.usage_count))
+        else:
+            ctx["usage_left"] = "unlimited"
+        if self.command_type == CommandType.COUNTER:
+            ctx["count"] = self.counter_value
+        if self.command_type == CommandType.RESET:
+            ctx.setdefault("target_command", "")
+            ctx.setdefault("target_count", "")
+        for name, spec in self.argument_mappings.items():
+            index = spec["position"] - 1
+            if 0 <= index < len(args):
+                ctx[name] = args[index]
             else:
-                processed = processed.replace("{command_first_word}", "")
-                processed = processed.replace("{command_last_word}", "")
+                default = spec.get("default") or ""
+                ctx[name] = render_template(default, ctx) if default else ""
+        return ctx
 
-            # Handle {command_word_N} variables
-            word_pattern = COMMAND_WORD_PATTERN
+    def render_response(
+        self,
+        data: Dict[str, Any],
+        lookup_vars: Optional[Dict[str, Any]] = None,
+        *,
+        use_fallback: bool = False,
+    ) -> str:
+        text = self.lookup_fallback if use_fallback else self.response_text
+        return render_template(text, self.build_context(data, lookup_vars))
 
-            def replace_word_var(match):
-                index = int(match.group(1)) - 1  # Convert to 0-based indexing
-                if 0 <= index < len(command_args):
-                    return str(command_args[index])
-                return ""
-
-            processed = word_pattern.sub(replace_word_var, processed)
-
-        # Event-specific variables
-        if "amount" in data:
-            processed = processed.replace("{amount}", str(data.get("amount", "0")))
-        if "tier" in data:
-            processed = processed.replace("{tier}", str(data.get("tier", "1")))
-        if "months" in data:
-            processed = processed.replace("{months}", str(data.get("months", "1")))
-        if "message" in data:
-            processed = processed.replace("{message}", str(data.get("message", "")))
-        if "viewer_count" in data:
-            processed = processed.replace(
-                "{viewer_count}", str(data.get("viewer_count", "0"))
+    def respond_after_lookup(self, data: Dict[str, Any], lookup_vars: Optional[Dict[str, Any]]) -> str:
+        """Reply text after a lookup ran ("" when the outcome is silent)."""
+        outcome = choose_lookup_outcome(lookup_vars, self.lookup_fallback)
+        if outcome == "silent":
+            logger.debug(
+                "Command %s lookup failed (%s); staying silent",
+                self.command_name,
+                (lookup_vars or {}).get("lookup_error"),
             )
-        if "level" in data:
-            processed = processed.replace("{level}", str(data.get("level", "1")))
-
-        # Handle custom argument mappings (e.g., {city} -> command_args[0])
-        if self.argument_mappings and "command_args" in data:
-            command_args = data.get("command_args", [])
-            for var_name, position in self.argument_mappings.items():
-                if isinstance(position, int) and position >= 1:
-                    # Position is 1-based, convert to 0-based index
-                    arg_index = position - 1
-                    if 0 <= arg_index < len(command_args):
-                        # Valid position, replace with argument value
-                        processed = processed.replace(
-                            f"{{{var_name}}}", str(command_args[arg_index])
-                        )
-                    else:
-                        # Out of bounds, replace with empty string
-                        processed = processed.replace(f"{{{var_name}}}", "")
-
-        # Handle processed variables with dot notation (e.g., {account_age.days})
-        processed_vars_pattern = PROCESSED_VARS_PATTERN
-
-        def replace_processed_var(match):
-            var_path = match.group(1)
-            if "." in var_path:
-                # Handle nested object access
-                parts = var_path.split(".")
-                current_obj = data
-                try:
-                    for part in parts:
-                        if isinstance(current_obj, dict):
-                            current_obj = current_obj.get(part, "")
-                        else:
-                            return match.group(0)  # Return original if can't access
-                    return str(current_obj) if current_obj != "" else match.group(0)
-                except:
-                    return match.group(0)
-            else:
-                # Handle simple variable
-                return str(data.get(var_path, match.group(0)))
-
-        processed = processed_vars_pattern.sub(replace_processed_var, processed)
-
-        # Handle YouTube variables (prefixed with 'youtube.')
-        youtube_pattern = YOUTUBE_VAR_PATTERN
-
-        def replace_youtube_var(match):
-            youtube_var = match.group(1)
-            return get_youtube_value(youtube_var)
-
-        processed = youtube_pattern.sub(replace_youtube_var, processed)
-
-        # Handle statistics variables (prefixed with 'stats.')
-        stats_pattern = STATS_VAR_PATTERN
-
-        def replace_stats_var(match):
-            stat_name = match.group(1)
-            return get_statistics_value(stat_name)
-
-        processed = stats_pattern.sub(replace_stats_var, processed)
-
-        # Handle custom variables (prefixed with 'custom_')
-        custom_pattern = CUSTOM_VAR_PATTERN
-
-        def replace_custom_var(match):
-            custom_var_name = f"custom_{match.group(1)}"
-            try:
-                # Import here to avoid circular imports
-                from modules.uiwindows.chatbot import \
-                    evaluate_custom_variable_expression
-
-                # Evaluate the custom variable with the current data context
-                result = evaluate_custom_variable_expression(custom_var_name, data)
-                if result is not None:
-                    return str(result)
-                else:
-                    return f"[Custom:{custom_var_name}]"
-            except Exception as e:
-                logger.error(f"Error evaluating custom variable {custom_var_name}: {e}")
-                return f"[Custom:{custom_var_name}]"
-
-        processed = custom_pattern.sub(replace_custom_var, processed)
-
-        return processed
-
-    def _execute_api_call(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the API call and return extracted variables"""
-        try:
-            import asyncio
-            import json
-
-            # Process endpoint URL with variables
-            endpoint = self._process_variables(self.api_endpoint, data)
-
-            # Handle special trigger variables in the endpoint URL
-            if "{trigger_username}" in endpoint:
-                endpoint = endpoint.replace(
-                    "{trigger_username}", data.get("username", "")
-                )
-            if "{trigger_user_id}" in endpoint:
-                endpoint = endpoint.replace(
-                    "{trigger_user_id}", data.get("user_id", "")
-                )
-
-            # Process headers with variables
-            additional_headers = {}
-            for key, value in self.api_headers.items():
-                processed_key = self._process_variables(key, data)
-                processed_value = self._process_variables(str(value), data)
-
-                # Handle special trigger variables in headers
-                if processed_value == "{trigger_username}":
-                    processed_value = data.get("username", "")
-                elif processed_value == "{trigger_user_id}":
-                    processed_value = data.get("user_id", "")
-
-                additional_headers[processed_key] = processed_value
-
-            # Process body with variables (for POST/PUT requests)
-            json_data = None
-            if self.api_body and self.api_method.upper() in ["POST", "PUT", "PATCH"]:
-                processed_body = self._process_variables(self.api_body, data)
-
-                # Handle special trigger variables in the body
-                if processed_body == "{trigger_username}":
-                    processed_body = data.get("username", "")
-                elif processed_body == "{trigger_user_id}":
-                    processed_body = data.get("user_id", "")
-
-                try:
-                    json_data = json.loads(processed_body)
-                except json.JSONDecodeError:
-                    # If not valid JSON, we'll pass it as raw data to generic_api_call
-                    json_data = processed_body
-
-            # Make the API call using the existing generic_api_call method
-            async def make_api_call():
-                try:
-                    # Import the twitch module to use its generic_api_call method
-                    from . import twitch
-
-                    if not twitch.twitch_api or not twitch.twitch_api.is_connected:
-                        raise Exception(
-                            "Twitch API not connected - cannot make authenticated API calls"
-                        )
-
-                    # Prepare parameters for generic_api_call
-                    params = {}
-                    final_json_data = json_data
-
-                    # Add API parameters from form data if available
-                    if hasattr(self, "api_parameters") and self.api_parameters:
-                        for key, value in self.api_parameters.items():
-                            processed_key = self._process_variables(key, data)
-                            processed_value = self._process_variables(str(value), data)
-
-                            # Handle special trigger variables for the command user
-                            if processed_value == "{trigger_username}":
-                                processed_value = data.get("username", "")
-                            elif processed_value == "{trigger_user_id}":
-                                # For user_id, we might need to look it up if not available
-                                processed_value = data.get("user_id", "")
-
-                            params[processed_key] = processed_value
-
-                    # For GET requests, extract query parameters from URL if present
-                    final_endpoint = endpoint
-                    if self.api_method.upper() == "GET" and "?" in endpoint:
-                        base_url, query_string = endpoint.split("?", 1)
-                        final_endpoint = base_url
-                        # Parse query parameters
-                        from urllib.parse import parse_qs
-
-                        url_params = {
-                            k: v[0] for k, v in parse_qs(query_string).items()
-                        }
-                        params.update(url_params)
-
-                    # Note: The generic_api_call method already handles authentication headers
-                    # We don't need to pass additional headers as they're handled by the method
-                    # For now, we'll proceed with the basic implementation
-
-                    # Make the API call using the authenticated session
-                    response_data = await twitch.twitch_api.generic_api_call(
-                        url=final_endpoint,
-                        method=self.api_method.upper(),
-                        params=params,
-                        json_data=final_json_data,
-                    )
-
-                    # Add response metadata (generic_api_call doesn't return status/headers)
-                    api_response = {
-                        "status_code": 200,  # Assume success since generic_api_call raises on error
-                        "headers": {},
-                        "data": response_data,
-                    }
-
-                    return api_response
-
-                except Exception as e:
-                    logger.error("Error making API call to %s: %s", endpoint, e)
-                    raise
-
-            # Execute the async API call off this thread (never new_event_loop
-            # on EventSub / a thread that already has a running loop).
-            from . import twitch as twitch_mod
-
-            try:
-                asyncio.get_running_loop()
-                on_running_loop = True
-            except RuntimeError:
-                on_running_loop = False
-
-            if on_running_loop:
-                api_response = twitch_mod._run_twitch_coro_sync(
-                    make_api_call(), timeout=30
-                )
-            else:
-                api_response = asyncio.run(make_api_call())
-
-            # Extract variables from API response
-            extracted_vars = self._extract_api_variables(api_response)
-
-            return extracted_vars
-
-        except Exception as e:
-            logger.error(
-                "Error executing API call for command %s: %s", self.command_name, e
-            )
-            raise
-
-    def _extract_api_variables(self, api_response: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract variables from API response based on response_format"""
-        try:
-            import json
-
-            extracted_vars = {
-                "api_status": api_response.get("status_code", 0),
-                "api_success": api_response.get("status_code", 0) < 400,
-            }
-
-            if not self.api_response_format:
-                # No specific format, return common API response variables
-                response_data = api_response.get("data", {})
-                if isinstance(response_data, dict):
-                    for key, value in response_data.items():
-                        if isinstance(value, (str, int, float, bool)):
-                            extracted_vars[f"api_{key}"] = value
-                return extracted_vars
-
-            # Parse response format - support JSON path-like syntax
-            format_specs = self.api_response_format.split(",")
-
-            for spec in format_specs:
-                spec = spec.strip()
-                if "=" in spec:
-                    # Format: variable_name=json_path or variable_name=static_value
-                    var_name, path = spec.split("=", 1)
-                    var_name = var_name.strip()
-                    path = path.strip()
-
-                    if path.startswith("{") and path.endswith("}"):
-                        # JSON path extraction
-                        json_path = path[1:-1]  # Remove { }
-                        value = self._extract_json_path(
-                            api_response.get("data", {}), json_path
-                        )
-                        if value is not None:
-                            extracted_vars[var_name] = value
-                    else:
-                        # Static value or simple path
-                        value = self._extract_json_path(
-                            api_response.get("data", {}), path
-                        )
-                        if value is not None:
-                            extracted_vars[var_name] = value
-                        else:
-                            # Treat as static value
-                            extracted_vars[var_name] = path
-                else:
-                    # Simple format: json_path -> variable name derived from path
-                    value = self._extract_json_path(api_response.get("data", {}), spec)
-                    if value is not None:
-                        var_name = (
-                            spec.replace(".", "_").replace("[", "_").replace("]", "")
-                        )
-                        extracted_vars[f"api_{var_name}"] = value
-
-            # Special handling for Twitch user API - calculate account age
-            if "data.created_at" in self.api_response_format or "created_at" in str(
-                api_response.get("data", {})
-            ):
-                try:
-                    created_at = self._extract_json_path(
-                        api_response.get("data", {}), "created_at"
-                    )
-                    if created_at:
-                        age_data = self._calculate_account_age(created_at)
-                        extracted_vars.update(age_data)
-                except Exception as e:
-                    logger.error(
-                        "Error calculating account age from API response: %s", e
-                    )
-
-            return extracted_vars
-
-        except Exception as e:
-            logger.error("Error extracting API variables: %s", e)
-            return {"api_error": str(e)}
-
-    def _process_api_variables(
-        self, api_response: Dict[str, Any], data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Process API variables with custom expressions and calculations"""
-        try:
-            processed_vars = {}
-
-            for expression in self.api_variable_processing:
-                try:
-                    result = self._evaluate_expression(expression, api_response, data)
-                    if result is not None:
-                        # Extract variable name from expression (format: variable_name=expression)
-                        if "=" in expression:
-                            var_name = expression.split("=")[0].strip()
-                            processed_vars[var_name] = result
-                        else:
-                            # If no variable name specified, create one from the expression
-                            var_name = (
-                                expression.replace("{", "")
-                                .replace("}", "")
-                                .replace(".", "_")
-                                .replace(" ", "_")
-                            )
-                            processed_vars[f"processed_{var_name}"] = result
-                except Exception as e:
-                    logger.error("Error processing expression '%s': %s", expression, e)
-                    processed_vars[
-                        f'error_{expression.split("=")[0].strip() if "=" in expression else "processing"}'
-                    ] = str(e)
-
-            return processed_vars
-
-        except Exception as e:
-            logger.error("Error processing API variables: %s", e)
-            return {"processing_error": str(e)}
-
-    def _evaluate_expression(
-        self, expression: str, api_response: Dict[str, Any], data: Dict[str, Any]
-    ) -> Any:
-        """Evaluate a single expression for variable processing"""
-        try:
-            # Remove variable assignment part if present
-            if "=" in expression:
-                expression = expression.split("=", 1)[1].strip()
-
-            # Replace variables in the expression
-            processed_expression = self._process_variables(
-                expression, {**data, **api_response.get("data", {})}
-            )
-
-            # Handle special functions
-            if processed_expression.startswith(
-                "date_diff_days("
-            ) and processed_expression.endswith(")"):
-                # Date difference in days: date_diff_days(date1, date2)
-                args = processed_expression[15:-1].split(",")
-                if len(args) == 2:
-                    from datetime import datetime
-
-                    try:
-                        date1 = datetime.fromisoformat(
-                            args[0].strip().replace("Z", "+00:00")
-                        )
-                        date2 = datetime.fromisoformat(
-                            args[1].strip().replace("Z", "+00:00")
-                        )
-                        return abs((date1 - date2).days)
-                    except:
-                        return 0
-
-            elif processed_expression.startswith(
-                "date_to_age("
-            ) and processed_expression.endswith(")"):
-                # Convert date to age components: date_to_age(date_string)
-                date_str = processed_expression[13:-1].strip()
-                try:
-                    from datetime import datetime
-
-                    created_date = datetime.fromisoformat(
-                        date_str.replace("Z", "+00:00")
-                    )
-                    current_time = datetime.now(created_date.tzinfo)
-
-                    # Calculate the difference
-                    age_delta = current_time - created_date
-                    days = age_delta.days
-                    years = days // 365
-                    remaining_days = days % 365
-
-                    return {
-                        "days": str(days),
-                        "years": str(years),
-                        "remaining_days": str(remaining_days),
-                        "datetime": created_date.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                    }
-                except Exception as e:
-                    logger.error("Error calculating date age: %s", e)
-                    return {"days": "0", "years": "0", "remaining_days": "0"}
-
-            elif processed_expression.startswith(
-                "math("
-            ) and processed_expression.endswith(")"):
-                # Basic math operations: math(expression)
-                math_expr = processed_expression[5:-1].strip()
-                try:
-                    # Safe evaluation of math expressions
-                    import builtins
-
-                    allowed_names = {
-                        k: v
-                        for k, v in builtins.__dict__.items()
-                        if k
-                        in ("abs", "round", "min", "max", "sum", "len", "int", "float")
-                    }
-                    allowed_names.update({"__builtins__": {}})
-                    return eval(math_expr, allowed_names, {})
-                except:
-                    return 0
-
-            elif processed_expression.startswith(
-                "compare("
-            ) and processed_expression.endswith(")"):
-                # Comparisons: compare(value1, operator, value2)
-                compare_expr = processed_expression[8:-1].strip()
-                try:
-                    parts = [p.strip() for p in compare_expr.split(",")]
-                    if len(parts) == 3:
-                        val1, op, val2 = parts
-                        val1 = float(val1) if val1.replace(".", "").isdigit() else val1
-                        val2 = float(val2) if val2.replace(".", "").isdigit() else val2
-
-                        if op == "==":
-                            return val1 == val2
-                        elif op == "!=":
-                            return val1 != val2
-                        elif op == ">":
-                            return val1 > val2
-                        elif op == "<":
-                            return val1 < val2
-                        elif op == ">=":
-                            return val1 >= val2
-                        elif op == "<=":
-                            return val1 <= val2
-                except:
-                    pass
-
-            # If no special function, return the processed expression as-is
-            return processed_expression
-
-        except Exception as e:
-            logger.error("Error evaluating expression '%s': %s", expression, e)
-            return None
-
-    def _calculate_account_age(self, created_at: str) -> Dict[str, Any]:
-        """Calculate account age from created_at timestamp"""
-        try:
-            import time
-            from datetime import datetime
-
-            # Parse the created_at timestamp (Twitch format: "2021-01-01T00:00:00Z")
-            created_date = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-            current_time = datetime.now(created_date.tzinfo)
-
-            # Calculate the difference
-            age_delta = current_time - created_date
-
-            # Extract components
-            days = age_delta.days
-            years = days // 365
-            remaining_days = days % 365
-
-            return {
-                "account_age_days": days,
-                "account_age_years": years,
-                "account_age_remaining_days": remaining_days,
-                "account_created_datetime": created_date.strftime(
-                    "%Y-%m-%d %H:%M:%S UTC"
-                ),
-            }
-
-        except Exception as e:
-            logger.error("Error calculating account age: %s", e)
-            return {
-                "account_age_days": 0,
-                "account_age_years": 0,
-                "account_age_remaining_days": 0,
-                "account_created_datetime": "Unknown",
-            }
-
-    def _extract_json_path(self, data: Any, path: str) -> Any:
-        """Extract value from JSON data using dot notation path"""
-        try:
-            if not path:
-                return data
-
-            parts = path.split(".")
-            current = data
-
-            for part in parts:
-                if isinstance(current, dict) and part in current:
-                    current = current[part]
-                elif isinstance(current, list) and part.isdigit():
-                    index = int(part)
-                    if 0 <= index < len(current):
-                        current = current[index]
-                    else:
-                        return None
-                else:
-                    return None
-
-            return current
-
-        except Exception as e:
-            logger.error("Error extracting JSON path %s: %s", path, e)
-            return None
+            return ""
+        return self.render_response(data, lookup_vars, use_fallback=outcome == "fallback")
+
+    def use_command(self, data: Dict[str, Any]) -> str:
+        """Consume a use and return the reply (runs a lookup synchronously)."""
+        self.begin_use(data)
+        lookup_vars = _run_lookup_for(self, self.build_context(data))
+        if lookup_vars is None:
+            return self.render_response(data)
+        return self.respond_after_lookup(data, lookup_vars)
 
     def reset_counter(self):
         """Reset the command counter"""
@@ -1212,524 +1211,285 @@ class ChatCommand:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
-
-        # Helper function to sanitize values
-        def sanitize_value(value):
-            """Sanitize a value to ensure it's JSON serializable"""
-            if value is None:
-                return None
-            if isinstance(value, (str, bool, int, float)):
-                return value
-            if isinstance(value, list):
-                return [sanitize_value(item) for item in value]
-            if isinstance(value, dict):
-                return {k: sanitize_value(v) for k, v in value.items()}
-            # Handle non-serializable objects
-            if hasattr(value, "value"):
-                return sanitize_value(value.value)
-            # Convert to string as last resort
-            try:
-                return str(value)
-            except Exception:
-                return ""
-
-        return {
-            "command_id": sanitize_value(self.command_id),
-            "name": sanitize_value(self.name),
-            "description": sanitize_value(self.description),
-            "command_name": sanitize_value(self.command_name),
-            "aliases": sanitize_value(self.aliases),
-            "response_text": sanitize_value(self.response_text),
-            "mod_only": sanitize_value(self.mod_only),
-            "cooldown": sanitize_value(self.cooldown),
-            "command_type": sanitize_value(
-                self.command_type.value
-                if hasattr(self.command_type, "value")
-                else str(self.command_type)
-            ),
-            "usage_limit": sanitize_value(self.usage_limit),
-            "repeating_enabled": sanitize_value(self.repeating_enabled),
-            "repeat_count": sanitize_value(self.repeat_count),
-            "repeat_interval": sanitize_value(self.repeat_interval),
-            "persistent_counter": sanitize_value(self.persistent_counter),
-            "reset_command": sanitize_value(self.reset_command),
-            "enabled": sanitize_value(self.enabled),
-            # API Call fields
-            "api_enabled": sanitize_value(self.api_enabled),
-            "api_endpoint": sanitize_value(self.api_endpoint),
-            "api_method": sanitize_value(self.api_method),
-            "api_headers": sanitize_value(self.api_headers),
-            "api_body": sanitize_value(self.api_body),
-            "api_response_format": sanitize_value(self.api_response_format),
-            "api_parameters": sanitize_value(self.api_parameters),
-            "api_endpoint_select": sanitize_value(self.api_endpoint_select),
-            "api_variable_processing": sanitize_value(self.api_variable_processing),
-            # Runtime state
-            "counter_value": sanitize_value(self.counter_value),
-            "usage_count": sanitize_value(self.usage_count),
-            "last_used": sanitize_value(self.last_used),
-            "trigger_count": sanitize_value(self.trigger_count),
-            "last_triggered": sanitize_value(self.last_triggered),
-            "conditions": sanitize_value(
-                [
-                    {
-                        "field": sanitize_value(c.field),
-                        "operator": sanitize_value(
-                            c.operator.value
-                            if hasattr(c.operator, "value")
-                            else str(c.operator)
-                        ),
-                        "value": sanitize_value(c.value),
-                    }
-                    for c in self.conditions
-                ]
-            ),
-            "argument_mappings": sanitize_value(self.argument_mappings),
-            "reply_targets": sanitize_value(list(self.reply_targets)),
-            "discord_channels": sanitize_value(list(self.discord_channels or [])),
-            "output_mode": sanitize_value(self.output_mode),
-        }
+        return _sanitize_value(
+            {
+                "command_id": self.command_id,
+                "name": self.name,
+                "description": self.description,
+                "command_name": self.command_name,
+                "aliases": list(self.aliases),
+                "response_text": self.response_text,
+                "permission": self.permission,
+                "mod_only": self.mod_only,
+                "cooldown": self.cooldown,
+                "command_type": self.command_type.value,
+                "usage_limit": self.usage_limit,
+                "repeating_enabled": self.repeating_enabled,
+                "repeat_count": self.repeat_count,
+                "repeat_interval": self.repeat_interval,
+                "persistent_counter": self.persistent_counter,
+                "reset_command": self.reset_command,
+                "enabled": self.enabled,
+                "lookup": self.lookup,
+                "lookup_fallback": self.lookup_fallback,
+                # Legacy API fields (kept readable; ``lookup`` is authoritative)
+                "api_enabled": self.api_enabled,
+                "api_endpoint": self.api_endpoint,
+                "api_method": self.api_method,
+                "api_headers": self.api_headers,
+                "api_body": self.api_body,
+                "api_response_format": self.api_response_format,
+                "api_parameters": self.api_parameters,
+                "api_endpoint_select": self.api_endpoint_select,
+                "api_variable_processing": self.api_variable_processing,
+                # Runtime state
+                "counter_value": self.counter_value,
+                "usage_count": self.usage_count,
+                "last_used": self.last_used,
+                "trigger_count": self.trigger_count,
+                "last_triggered": self.last_triggered,
+                "conditions": [c.to_dict() for c in self.conditions],
+                "argument_mappings": serialize_argument_mappings(self.argument_mappings),
+                "reply_targets": list(self.reply_targets),
+                "discord_channels": list(self.discord_channels or []),
+                "output_mode": self.output_mode,
+                "schema_version": SCHEMA_VERSION,
+            }
+        )
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ChatCommand":
-        """Create from dictionary"""
-        conditions = []
-        for cond_data in data.get("conditions", []):
-            conditions.append(
-                TriggerCondition(
-                    field=cond_data["field"],
-                    operator=ComparisonOperator(cond_data["operator"]),
-                    value=cond_data["value"],
-                )
-            )
+        """Create from a stored dict (migrates schema-1 items)."""
+        data = dict(data or {})
+        if _to_int(data.get("schema_version"), 1) < 2:
+            # persistent_counter used to do nothing (counters always persisted).
+            data["persistent_counter"] = True
+        return cls(**data)
 
-        # Handle the command creation, excluding conditions which we'll set separately
-        command_data = {k: v for k, v in data.items() if k != "conditions"}
 
-        # Ensure command_type is properly converted to enum
-        if "command_type" in command_data:
-            if isinstance(command_data["command_type"], str):
-                # Convert string to enum
-                try:
-                    command_data["command_type"] = CommandType(
-                        command_data["command_type"]
-                    )
-                except ValueError:
-                    # If invalid, default to BASIC
-                    command_data["command_type"] = CommandType.BASIC
-            elif not isinstance(command_data["command_type"], CommandType):
-                # If it's something else, default to BASIC
-                command_data["command_type"] = CommandType.BASIC
+# --------------------------------------------------------------------------
+# Events
+# --------------------------------------------------------------------------
 
-        # Ensure API headers is a dict, handle migration from older versions
-        if "api_headers" in command_data:
-            if isinstance(command_data["api_headers"], str):
-                # If it's a string, try to parse as JSON, otherwise set as empty dict
-                try:
-                    import json
+_CHAT_EVENT_TYPES = (EventType.CHAT_MESSAGE, EventType.YOUTUBE_CHAT_MESSAGE)
+CHAT_MATCH_TYPES = ("exact", "starts_with", "contains")
 
-                    command_data["api_headers"] = json.loads(
-                        command_data["api_headers"]
-                    )
-                except:
-                    command_data["api_headers"] = {}
-        else:
-            command_data["api_headers"] = {}
 
-        command = cls(**command_data)
-        command.conditions = conditions
-        return command
+def _number_or_none(value: Any) -> Optional[float]:
+    from .chatbot_custom_variables import as_number
+
+    return as_number(value)
+
+
+def _at_least(data: Dict[str, Any], keys, minimum: float) -> bool:
+    for key in keys:
+        if key in data and data[key] not in (None, ""):
+            number = _number_or_none(data[key])
+            return number is not None and number >= minimum
+    return False
+
+
+def _equals_number(data: Dict[str, Any], key: str, wanted: float) -> bool:
+    number = _number_or_none(data.get(key))
+    return number is not None and number == wanted
+
+
+def chat_text_matches(message: Any, pattern: Any, match_type: str) -> bool:
+    """Case-insensitive, trimmed chat matching. Empty pattern matches everything."""
+    wanted = str(pattern or "").strip().casefold()
+    if not wanted:
+        return True
+    text = str(message or "").strip().casefold()
+    if match_type == "starts_with":
+        return text.startswith(wanted)
+    if match_type == "contains":
+        return wanted in text
+    return text == wanted
 
 
 class ChatEvent:
-    """Represents an automatic event response"""
+    """An automatic response to a Twitch / YouTube / tip / time event.
+
+    New in schema 2: ``lookup`` (dict | None; target "event_user" by default),
+    ``lookup_fallback`` (str). ``interval`` (seconds) only matters for
+    ``EventType.INTERVAL``; ``specific_time`` is "HH:MM" (24 h, local).
+    """
 
     def __init__(self, **kwargs):
         self.event_id = kwargs.get("event_id", "")
         self.name = kwargs.get("name", "")
         self.description = kwargs.get("description", "")
-        self.event_type = kwargs.get("event_type", EventType.FOLLOW)
-        self.response_text = kwargs.get("response_text", "")
-        self.enabled = kwargs.get("enabled", True)
+        event_type = kwargs.get("event_type", EventType.FOLLOW)
+        if not isinstance(event_type, EventType):
+            try:
+                event_type = EventType(str(event_type))
+            except ValueError:
+                event_type = EventType.FOLLOW
+        self.event_type = event_type
+        self.response_text = kwargs.get("response_text", "") or ""
+        self.enabled = bool(kwargs.get("enabled", True))
 
-        # Interval for repeating events (in seconds, 0 means no repeat)
-        self.interval = kwargs.get("interval", 0)
+        # Seconds between posts; only used by EventType.INTERVAL.
+        self.interval = max(0, _to_number(kwargs.get("interval", 0), 0))
 
         # Runtime state
-        self.trigger_count = kwargs.get("trigger_count", 0)
-        self.last_triggered = kwargs.get("last_triggered", 0)
+        self.trigger_count = _to_int(kwargs.get("trigger_count", 0), 0)
+        self.last_triggered = _to_number(kwargs.get("last_triggered", 0), 0)
 
-        # Conditions
-        self.conditions = kwargs.get("conditions", [])
+        self.conditions = _parse_conditions(kwargs.get("conditions", []))
+        self.argument_mappings = normalize_argument_mappings(kwargs.get("argument_mappings", {}))
+        self.reply_targets, self.output_mode, self.discord_channels = _resolve_output(kwargs)
 
-        # Argument mappings for custom variable names (primarily for chat message events)
-        # Format: {"variable_name": position} where position is 1-based
-        self.argument_mappings = kwargs.get("argument_mappings", {})
-        self.reply_targets = _normalize_reply_targets(
-            kwargs.get("reply_targets"), default=["twitch"]
-        )
-        self.output_mode = _normalize_output_mode(kwargs.get("output_mode", "chat"))
-        raw_discord = kwargs.get("discord_channels") or []
-        self.discord_channels = (
-            list(raw_discord) if isinstance(raw_discord, list) else []
-        )
+        self.lookup = normalize_lookup(kwargs.get("lookup"))
+        self.lookup_fallback = str(kwargs.get("lookup_fallback") or "")
 
         # Event-specific settings
-        self.specific_time = kwargs.get("specific_time", "")  # HH:MM format
-        self.chat_message_text = kwargs.get("chat_message_text", "")
-        self.chat_message_match_type = kwargs.get(
-            "chat_message_match_type", "exact"
-        )  # exact, starts_with, contains
-        self.bits_quantity = kwargs.get("bits_quantity", 0)  # 0 = any
-        self.hype_train_level = kwargs.get("hype_train_level", 0)  # 0 = any
-        self.hype_train_end_level = kwargs.get("hype_train_end_level", 0)  # 0 = any
-        self.gift_sub_quantity = kwargs.get("gift_sub_quantity", 0)  # 0 = any
-        self.gift_sub_tier = kwargs.get("gift_sub_tier", 0)  # 0 = any
-        self.resub_months = kwargs.get("resub_months", 0)  # 0 = any
-        self.resub_tier = kwargs.get("resub_tier", 0)  # 0 = any
-        self.sub_tier = kwargs.get("sub_tier", 0)  # 0 = any
-        self.donation_amount = kwargs.get("donation_amount", 0.0)  # 0 = any
-        self.raid_viewer_count = kwargs.get("raid_viewer_count", 0)  # 0 = any
-        self.raid_raider_name = kwargs.get("raid_raider_name", "")  # empty = any
-        self.channel_point_reward_name = kwargs.get(
-            "channel_point_reward_name", ""
-        )  # empty = any
+        raw_time = kwargs.get("specific_time", "") or ""
+        self.specific_time = normalize_specific_time(raw_time) or str(raw_time)
+        self.chat_message_text = str(kwargs.get("chat_message_text", "") or "")
+        match_type = str(kwargs.get("chat_message_match_type", "exact") or "exact")
+        self.chat_message_match_type = match_type if match_type in CHAT_MATCH_TYPES else "exact"
+        self.bits_quantity = _to_int(kwargs.get("bits_quantity", 0))  # 0 = any
+        self.hype_train_level = _to_int(kwargs.get("hype_train_level", 0))
+        self.hype_train_end_level = _to_int(kwargs.get("hype_train_end_level", 0))
+        self.gift_sub_quantity = _to_int(kwargs.get("gift_sub_quantity", 0))
+        self.gift_sub_tier = _to_int(kwargs.get("gift_sub_tier", 0))
+        self.resub_months = _to_int(kwargs.get("resub_months", 0))
+        self.resub_tier = _to_int(kwargs.get("resub_tier", 0))
+        self.sub_tier = _to_int(kwargs.get("sub_tier", 0))
+        self.donation_amount = float(_to_number(kwargs.get("donation_amount", 0.0), 0.0))
+        self.raid_viewer_count = _to_int(kwargs.get("raid_viewer_count", 0))
+        self.raid_raider_name = str(kwargs.get("raid_raider_name", "") or "")
+        self.channel_point_reward_name = str(kwargs.get("channel_point_reward_name", "") or "")
+
+    def repeats(self) -> bool:
+        """True only for an enabled-or-not INTERVAL event with a positive interval."""
+        return self.event_type == EventType.INTERVAL and self.interval > 0
 
     def should_trigger(self, data: Dict[str, Any]) -> bool:
-        """Check if this event should trigger based on conditions and event-specific settings"""
+        """Conditions plus the per-type filters (0 / empty filter = any)."""
         if not self.enabled:
             return False
-
-        # Check all conditions
+        data = data or {}
         for condition in self.conditions:
             if not condition.evaluate(data):
                 return False
 
-        # Check event-specific settings based on event type
-        if self.event_type == EventType.SPECIFIC_TIME:
-            # For SPECIFIC_TIME, this is handled by the scheduler, not here
-            # But we can validate the time format if needed
-            if not self.specific_time:
+        etype = self.event_type
+        if etype == EventType.SPECIFIC_TIME:
+            return normalize_specific_time(self.specific_time) is not None
+        if etype in _CHAT_EVENT_TYPES:
+            return chat_text_matches(
+                data.get("message"), self.chat_message_text, self.chat_message_match_type
+            )
+        if etype == EventType.BITS:
+            return self.bits_quantity <= 0 or _at_least(data, ("amount",), self.bits_quantity)
+        if etype == EventType.HYPE_TRAIN_PROGRESS:
+            return self.hype_train_level <= 0 or _at_least(data, ("level",), self.hype_train_level)
+        if etype == EventType.HYPE_TRAIN_END:
+            return self.hype_train_end_level <= 0 or _at_least(
+                data, ("level",), self.hype_train_end_level
+            )
+        if etype == EventType.GIFT_SUBSCRIPTION:
+            # Gifts in *this* event (total_gifts is the gifter's lifetime total).
+            if self.gift_sub_quantity > 0 and not _at_least(
+                data, ("quantity", "amount", "gift_qty", "total_gifts"), self.gift_sub_quantity
+            ):
                 return False
-            # Time matching is done in the scheduler
-            return True
-
-        elif self.event_type == EventType.CHAT_MESSAGE:
-            # Check message matching
-            message = data.get("message", "")
-            if not self.chat_message_text:
+            if self.gift_sub_tier > 0 and not _equals_number(data, "tier", self.gift_sub_tier):
                 return False
-
-            if self.chat_message_match_type == "exact":
-                return message == self.chat_message_text
-            elif self.chat_message_match_type == "starts_with":
-                return message.startswith(self.chat_message_text)
-            elif self.chat_message_match_type == "contains":
-                return self.chat_message_text in message
-            return False
-
-        elif self.event_type == EventType.BITS:
-            # Check bits quantity if specified
-            if self.bits_quantity > 0:
-                amount = data.get("amount", 0)
-                try:
-                    amount = int(amount) if isinstance(amount, str) else amount
-                    return amount >= self.bits_quantity
-                except (ValueError, TypeError):
+            return True
+        if etype == EventType.RESUBSCRIPTION:
+            if self.resub_months > 0 and not _at_least(
+                data, ("months", "cumulative_months"), self.resub_months
+            ):
+                return False
+            if self.resub_tier > 0 and not _equals_number(data, "tier", self.resub_tier):
+                return False
+            return True
+        if etype == EventType.SUBSCRIPTION:
+            return self.sub_tier <= 0 or _equals_number(data, "tier", self.sub_tier)
+        if etype == EventType.DONATION:
+            return self.donation_amount <= 0 or _at_least(data, ("amount",), self.donation_amount)
+        if etype == EventType.RAID:
+            if self.raid_viewer_count > 0 and not _at_least(
+                data, ("viewer_count",), self.raid_viewer_count
+            ):
+                return False
+            wanted = self.raid_raider_name.strip().lstrip("@").casefold()
+            if wanted:
+                names = {
+                    str(data.get(k) or "").strip().lstrip("@").casefold()
+                    for k in ("raider_name", "username", "user_login", "raider_login")
+                }
+                if wanted not in names:
                     return False
             return True
-
-        elif self.event_type == EventType.HYPE_TRAIN_PROGRESS:
-            # Check hype train level if specified
-            if self.hype_train_level > 0:
-                level = data.get("level", 0)
-                try:
-                    level = int(level) if isinstance(level, str) else level
-                    return level >= self.hype_train_level
-                except (ValueError, TypeError):
+        if etype == EventType.CHANNEL_POINT_REDEMPTION:
+            wanted = self.channel_point_reward_name.strip().casefold()
+            if wanted:
+                reward = str(data.get("reward_title") or data.get("reward_name") or "")
+                if reward.strip().casefold() != wanted:
                     return False
             return True
-
-        elif self.event_type == EventType.HYPE_TRAIN_END:
-            # Check hype train end level if specified
-            if self.hype_train_end_level > 0:
-                level = data.get("level", 0)
-                try:
-                    level = int(level) if isinstance(level, str) else level
-                    return level >= self.hype_train_end_level
-                except (ValueError, TypeError):
-                    return False
-            return True
-
-        elif self.event_type == EventType.GIFT_SUBSCRIPTION:
-            # Check gift sub quantity and tier if specified
-            if self.gift_sub_quantity > 0:
-                quantity = data.get(
-                    "total_gifts",
-                    data.get("quantity", data.get("amount", data.get("gift_qty", 0))),
-                )
-                try:
-                    quantity = int(quantity) if isinstance(quantity, str) else quantity
-                    if quantity < self.gift_sub_quantity:
-                        return False
-                except (ValueError, TypeError):
-                    return False
-
-            if self.gift_sub_tier > 0:
-                tier = data.get("tier", 0)
-                try:
-                    tier = int(tier) if isinstance(tier, str) else tier
-                    if tier != self.gift_sub_tier:
-                        return False
-                except (ValueError, TypeError):
-                    return False
-
-            return True
-
-        elif self.event_type == EventType.RESUBSCRIPTION:
-            # Check resub months and tier if specified
-            if self.resub_months > 0:
-                months = data.get("months", data.get("cumulative_months", 0))
-                try:
-                    months = int(months) if isinstance(months, str) else months
-                    if months < self.resub_months:
-                        return False
-                except (ValueError, TypeError):
-                    return False
-
-            if self.resub_tier > 0:
-                tier = data.get("tier", 0)
-                try:
-                    tier = int(tier) if isinstance(tier, str) else tier
-                    if tier != self.resub_tier:
-                        return False
-                except (ValueError, TypeError):
-                    return False
-
-            return True
-
-        elif self.event_type == EventType.SUBSCRIPTION:
-            # Check sub tier if specified
-            if self.sub_tier > 0:
-                tier = data.get("tier", 0)
-                try:
-                    tier = int(tier) if isinstance(tier, str) else tier
-                    if tier != self.sub_tier:
-                        return False
-                except (ValueError, TypeError):
-                    return False
-            return True
-
-        elif self.event_type == EventType.DONATION:
-            # Check donation amount if specified
-            if self.donation_amount > 0:
-                amount = data.get("amount", 0)
-                try:
-                    amount = float(amount) if isinstance(amount, str) else amount
-                    return amount >= self.donation_amount
-                except (ValueError, TypeError):
-                    return False
-            return True
-
-        elif self.event_type == EventType.RAID:
-            # Check raid viewer count and raider name if specified
-            if self.raid_viewer_count > 0:
-                viewer_count = data.get("viewer_count", 0)
-                try:
-                    viewer_count = (
-                        int(viewer_count)
-                        if isinstance(viewer_count, str)
-                        else viewer_count
-                    )
-                    if viewer_count < self.raid_viewer_count:
-                        return False
-                except (ValueError, TypeError):
-                    return False
-
-            if self.raid_raider_name:
-                raider_name = data.get("raider_name", data.get("username", ""))
-                if raider_name != self.raid_raider_name:
-                    return False
-
-            return True
-
-        elif self.event_type == EventType.CHANNEL_POINT_REDEMPTION:
-            # Check channel point reward name if specified
-            if self.channel_point_reward_name:
-                reward_name = data.get("reward_title", data.get("reward_name", ""))
-                if reward_name != self.channel_point_reward_name:
-                    return False
-            return True
-
-        # For all other event types, no additional filtering
         return True
 
-    def trigger_event(self, data: Dict[str, Any]) -> str:
-        """Trigger the event and return the processed response"""
+    def begin_trigger(self, data: Dict[str, Any], *, track_stats: bool = True) -> None:
         current_time = time.time()
-
-        # Update counters
         self.trigger_count += 1
         self.last_triggered = current_time
+        if track_stats:
+            _track_stat("event", (data or {}).get("username"), self.name)
 
-        # Track statistics
-        try:
-            from .statistics_manager import get_statistics_manager
-
-            stats_manager = get_statistics_manager()
-            username = data.get("username")
-            stats_manager.increment_events_triggered(
-                username=username, event_name=self.name
-            )
-            logger.debug(f"Tracked event trigger for: {self.name}")
-        except Exception as e:
-            logger.error(f"Error tracking event statistics: {e}")
-
-        # Process response with variables
-        response = self._process_variables(self.response_text, data)
-        return response
-
-    def _process_variables(self, text: str, data: Dict[str, Any]) -> str:
-        """Process variables in response text"""
-        processed = text
-
-        # Basic variables
-        processed = processed.replace(
-            "{username}", str(data.get("username", "Unknown"))
-        )
-        processed = processed.replace(
-            "{timestamp}", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
-        processed = processed.replace("{date}", datetime.now().strftime("%Y-%m-%d"))
-        # Resolve {time} / {time.filters} before the generic dotted-path walker
-        processed = replace_time_variables(processed)
-
-        # Event-specific variables
-        if "amount" in data:
-            processed = processed.replace("{amount}", str(data.get("amount", "0")))
-        if "tier" in data:
-            processed = processed.replace("{tier}", str(data.get("tier", "1")))
-        if "months" in data:
-            processed = processed.replace("{months}", str(data.get("months", "1")))
-        if "message" in data:
-            processed = processed.replace("{message}", str(data.get("message", "")))
-        if "viewer_count" in data:
-            processed = processed.replace(
-                "{viewer_count}", str(data.get("viewer_count", "0"))
-            )
-        if "level" in data:
-            processed = processed.replace("{level}", str(data.get("level", "1")))
-
-        # Command message variables (for chat message events)
-        if "command_message" in data:
-            processed = processed.replace(
-                "{command_message}", str(data.get("command_message", ""))
-            )
-        if "command_args" in data:
-            command_args = data.get("command_args", [])
-            if command_args:
-                processed = processed.replace(
-                    "{command_first_word}", str(command_args[0])
-                )
-                processed = processed.replace(
-                    "{command_last_word}", str(command_args[-1])
-                )
+    def build_context(self, data: Dict[str, Any], lookup_vars: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Variables for the reply: lookup variables < event data < argument names."""
+        ctx: Dict[str, Any] = dict(lookup_vars or {})
+        ctx.update(_clean_event_data(data))
+        ctx.setdefault("username", "Unknown")
+        ctx.setdefault("user_login", str(ctx.get("username") or "").lower())
+        ctx["event_name"] = self.name
+        args = ctx.get("command_args")
+        if isinstance(args, (list, tuple)):
+            args = [str(a) for a in args]
+            ctx["command_args"] = args
+            ctx.setdefault("command_message", " ".join(args))
+            ctx["command_first_word"] = args[0] if args else ""
+            ctx["command_last_word"] = args[-1] if args else ""
+        else:
+            args = []
+        for name, spec in self.argument_mappings.items():
+            index = spec["position"] - 1
+            if 0 <= index < len(args):
+                ctx[name] = args[index]
             else:
-                processed = processed.replace("{command_first_word}", "")
-                processed = processed.replace("{command_last_word}", "")
+                default = spec.get("default") or ""
+                ctx[name] = render_template(default, ctx) if default else ""
+        return ctx
 
-            # Handle {command_word_N} variables
-            word_pattern = COMMAND_WORD_PATTERN
+    def render_response(
+        self,
+        data: Dict[str, Any],
+        lookup_vars: Optional[Dict[str, Any]] = None,
+        *,
+        use_fallback: bool = False,
+    ) -> str:
+        text = self.lookup_fallback if use_fallback else self.response_text
+        return render_template(text, self.build_context(data, lookup_vars))
 
-            def replace_word_var(match):
-                index = int(match.group(1)) - 1  # Convert to 0-based indexing
-                if 0 <= index < len(command_args):
-                    return str(command_args[index])
-                return ""
+    def respond_after_lookup(self, data: Dict[str, Any], lookup_vars: Optional[Dict[str, Any]]) -> str:
+        outcome = choose_lookup_outcome(lookup_vars, self.lookup_fallback)
+        if outcome == "silent":
+            logger.debug("Event %s lookup failed; staying silent", self.name)
+            return ""
+        return self.render_response(data, lookup_vars, use_fallback=outcome == "fallback")
 
-            processed = word_pattern.sub(replace_word_var, processed)
-
-        # Handle custom argument mappings (e.g., {city} -> command_args[0])
-        if self.argument_mappings and "command_args" in data:
-            command_args = data.get("command_args", [])
-            for var_name, position in self.argument_mappings.items():
-                if isinstance(position, int) and position >= 1:
-                    # Position is 1-based, convert to 0-based index
-                    arg_index = position - 1
-                    if 0 <= arg_index < len(command_args):
-                        # Valid position, replace with argument value
-                        processed = processed.replace(
-                            f"{{{var_name}}}", str(command_args[arg_index])
-                        )
-                    else:
-                        # Out of bounds, replace with empty string
-                        processed = processed.replace(f"{{{var_name}}}", "")
-
-        # Handle processed variables with dot notation (e.g., {account_age.days})
-        processed_vars_pattern = PROCESSED_VARS_PATTERN
-
-        def replace_processed_var(match):
-            var_path = match.group(1)
-            if "." in var_path:
-                # Handle nested object access
-                parts = var_path.split(".")
-                current_obj = data
-                try:
-                    for part in parts:
-                        if isinstance(current_obj, dict):
-                            current_obj = current_obj.get(part, "")
-                        else:
-                            return match.group(0)  # Return original if can't access
-                    return str(current_obj) if current_obj != "" else match.group(0)
-                except:
-                    return match.group(0)
-            else:
-                # Handle simple variable
-                return str(data.get(var_path, match.group(0)))
-
-        processed = processed_vars_pattern.sub(replace_processed_var, processed)
-
-        # Handle YouTube variables (prefixed with 'youtube.')
-        youtube_pattern = YOUTUBE_VAR_PATTERN
-
-        def replace_youtube_var(match):
-            youtube_var = match.group(1)
-            return get_youtube_value(youtube_var)
-
-        processed = youtube_pattern.sub(replace_youtube_var, processed)
-
-        # Handle statistics variables (prefixed with 'stats.')
-        stats_pattern = STATS_VAR_PATTERN
-
-        def replace_stats_var(match):
-            stat_name = match.group(1)
-            return get_statistics_value(stat_name)
-
-        processed = stats_pattern.sub(replace_stats_var, processed)
-
-        # Handle custom variables (prefixed with 'custom_')
-        custom_pattern = CUSTOM_VAR_PATTERN
-
-        def replace_custom_var(match):
-            custom_var_name = f"custom_{match.group(1)}"
-            try:
-                # Import here to avoid circular imports
-                from modules.uiwindows.chatbot import \
-                    evaluate_custom_variable_expression
-
-                # Evaluate the custom variable with the current data context
-                result = evaluate_custom_variable_expression(custom_var_name, data)
-                if result is not None:
-                    return str(result)
-                else:
-                    return f"[Custom:{custom_var_name}]"
-            except Exception as e:
-                logger.error(f"Error evaluating custom variable {custom_var_name}: {e}")
-                return f"[Custom:{custom_var_name}]"
-
-        processed = custom_pattern.sub(replace_custom_var, processed)
-
-        return processed
+    def trigger_event(self, data: Dict[str, Any]) -> str:
+        """Count the trigger and return the reply (runs a lookup synchronously)."""
+        self.begin_trigger(data)
+        lookup_vars = _run_lookup_for(self, self.build_context(data))
+        if lookup_vars is None:
+            return self.render_response(data)
+        return self.respond_after_lookup(data, lookup_vars)
 
     def set_interval_from_string(self, interval_str: str) -> bool:
         """Set interval from hh:mm:ss format string"""
@@ -1755,85 +1515,58 @@ class ChatEvent:
 
     def get_interval_string(self) -> str:
         """Get interval as hh:mm:ss format string"""
-        if self.interval == 0:
+        if not self.interval:
             return ""
-
-        hours = self.interval // 3600
-        minutes = (self.interval % 3600) // 60
-        seconds = self.interval % 60
-
+        total = int(self.interval)
+        hours = total // 3600
+        minutes = (total % 3600) // 60
+        seconds = total % 60
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
-        return {
-            "event_id": self.event_id,
-            "name": self.name,
-            "description": self.description,
-            "event_type": self.event_type.value,
-            "response_text": self.response_text,
-            "enabled": self.enabled,
-            "interval": self.interval,
-            "trigger_count": self.trigger_count,
-            "last_triggered": self.last_triggered,
-            "conditions": [
-                {"field": c.field, "operator": c.operator.value, "value": c.value}
-                for c in self.conditions
-            ],
-            # Event-specific settings
-            "specific_time": self.specific_time,
-            "chat_message_text": self.chat_message_text,
-            "chat_message_match_type": self.chat_message_match_type,
-            "bits_quantity": self.bits_quantity,
-            "hype_train_level": self.hype_train_level,
-            "hype_train_end_level": self.hype_train_end_level,
-            "gift_sub_quantity": self.gift_sub_quantity,
-            "gift_sub_tier": self.gift_sub_tier,
-            "resub_months": self.resub_months,
-            "resub_tier": self.resub_tier,
-            "sub_tier": self.sub_tier,
-            "donation_amount": self.donation_amount,
-            "raid_viewer_count": self.raid_viewer_count,
-            "raid_raider_name": self.raid_raider_name,
-            "channel_point_reward_name": self.channel_point_reward_name,
-            "argument_mappings": self.argument_mappings,
-            "reply_targets": list(self.reply_targets),
-            "discord_channels": list(self.discord_channels or []),
-            "output_mode": self.output_mode,
-        }
+        return _sanitize_value(
+            {
+                "event_id": self.event_id,
+                "name": self.name,
+                "description": self.description,
+                "event_type": self.event_type.value,
+                "response_text": self.response_text,
+                "enabled": self.enabled,
+                "interval": self.interval,
+                "trigger_count": self.trigger_count,
+                "last_triggered": self.last_triggered,
+                "conditions": [c.to_dict() for c in self.conditions],
+                "lookup": self.lookup,
+                "lookup_fallback": self.lookup_fallback,
+                # Event-specific settings
+                "specific_time": self.specific_time,
+                "chat_message_text": self.chat_message_text,
+                "chat_message_match_type": self.chat_message_match_type,
+                "bits_quantity": self.bits_quantity,
+                "hype_train_level": self.hype_train_level,
+                "hype_train_end_level": self.hype_train_end_level,
+                "gift_sub_quantity": self.gift_sub_quantity,
+                "gift_sub_tier": self.gift_sub_tier,
+                "resub_months": self.resub_months,
+                "resub_tier": self.resub_tier,
+                "sub_tier": self.sub_tier,
+                "donation_amount": self.donation_amount,
+                "raid_viewer_count": self.raid_viewer_count,
+                "raid_raider_name": self.raid_raider_name,
+                "channel_point_reward_name": self.channel_point_reward_name,
+                "argument_mappings": serialize_argument_mappings(self.argument_mappings),
+                "reply_targets": list(self.reply_targets),
+                "discord_channels": list(self.discord_channels or []),
+                "output_mode": self.output_mode,
+                "schema_version": SCHEMA_VERSION,
+            }
+        )
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ChatEvent":
         """Create from dictionary"""
-        conditions = []
-        for cond_data in data.get("conditions", []):
-            conditions.append(
-                TriggerCondition(
-                    field=cond_data["field"],
-                    operator=ComparisonOperator(cond_data["operator"]),
-                    value=cond_data["value"],
-                )
-            )
-
-        # Handle the event creation, excluding conditions which we'll set separately
-        event_data = {k: v for k, v in data.items() if k != "conditions"}
-
-        # Ensure event_type is properly converted to enum
-        if "event_type" in event_data:
-            if isinstance(event_data["event_type"], str):
-                # Convert string to enum
-                try:
-                    event_data["event_type"] = EventType(event_data["event_type"])
-                except ValueError:
-                    # If invalid, default to FOLLOW
-                    event_data["event_type"] = EventType.FOLLOW
-            elif not isinstance(event_data["event_type"], EventType):
-                # If it's something else, default to FOLLOW
-                event_data["event_type"] = EventType.FOLLOW
-
-        event = cls(**event_data)
-        event.conditions = conditions
-        return event
+        return cls(**dict(data or {}))
 
 
 class Quote:

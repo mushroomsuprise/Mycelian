@@ -1886,6 +1886,7 @@ class YouTubeClient:
                 "username": username,
                 "message": message,
                 "userid": user_id,
+                "user_id": user_id,
                 "timestamp": time.time(),
                 "source": "youtube",
             },

@@ -23,15 +23,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import asyncio
 import json
 import logging
 import os
 import threading
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .chatbot_core import (
     ChatCommand,
@@ -40,6 +40,8 @@ from .chatbot_core import (
     EventType,
     Greeting,
     Quote,
+    normalize_specific_time,
+    permission_allows,
 )
 from .statistics_manager import get_statistics_manager
 from .notification_engine import nav_actions_main_tab, notify_critical
@@ -95,6 +97,42 @@ def _find_reset_target(
         if _command_matches_name(command, target_name):
             return command
     return None
+
+
+_COMMAND_RUNTIME_FIELDS = (
+    "counter_value",
+    "usage_count",
+    "last_used",
+    "trigger_count",
+    "last_triggered",
+)
+
+
+def _silent_result(command_name: str) -> tuple:
+    """A matched command that posts nothing (blocked, or lookup failed)."""
+    return ("", command_name, [], [], "chat")
+
+
+class TestResult(dict):
+    """``{ok, triggered, response, reason, lookup}`` from a test run.
+
+    Also carries the old keys (``success``, ``message``, ``error``) and can be
+    awaited, so the old editor's ``await manager.test_command(...)`` works.
+    """
+
+    __test__ = False  # not a pytest class
+
+    def __init__(self, *, ok: bool, triggered: bool, response: str, reason: str, lookup=None):
+        super().__init__(ok=ok, triggered=triggered, response=response, reason=reason, lookup=lookup)
+        self["success"] = ok
+        self["message"] = response or reason
+        if not ok:
+            self["error"] = reason
+
+    def __await__(self):
+        if False:  # pragma: no cover - makes this a generator
+            yield None
+        return self
 
 
 class GreetingFlagManager:
@@ -319,15 +357,14 @@ class ChatbotManager:
         # Command cooldown tracking
         self.command_cooldowns: Dict[str, float] = {}
 
-        # Repeating command scheduler
-        self.repeating_tasks: Dict[str, asyncio.Task] = {}
-        # Stop flag per running repeat thread, so a stopped thread never fires
+        # Timer threads of INTERVAL / SPECIFIC_TIME events, by event id.
+        self.repeating_tasks: Dict[str, threading.Thread] = {}
+        # Stop flag per running timer thread, so a stopped thread never fires
         # again after a quick re-enable starts its replacement (TH-12).
         self._repeating_stops: Dict[str, threading.Event] = {}
         self._scheduler_lock = threading.Lock()
-        self._deferred_interval_events: List[
-            ChatEvent
-        ] = []  # Events waiting for chatbot readiness
+        # Kept for compatibility (status display); timers no longer wait.
+        self._deferred_interval_events: List[ChatEvent] = []
 
         # Load saved data
         self._load_data()
@@ -428,59 +465,7 @@ class ChatbotManager:
                             f"Error loading event {event_data.get('event_id', 'unknown')}: {e}"
                         )
 
-                # Restart repeating tasks for events that have intervals or are specific time events
-                # Separate Interval events for staggered startup
-                interval_events = []
-                specific_time_events = []
-                other_events = []
-
-                logger.info(f"Processing {len(self.events)} loaded events for startup")
-                for event in self.events.values():
-                    logger.info(
-                        f"Event: {event.name} (ID: {event.event_id}), enabled: {event.enabled}, type: {event.event_type}, interval: {event.interval}"
-                    )
-                    if event.enabled:
-                        if event.event_type == EventType.SPECIFIC_TIME:
-                            specific_time_events.append(event)
-                            logger.info(f"Added {event.name} to specific_time_events")
-                        elif event.interval > 0:
-                            if event.event_type == EventType.INTERVAL:
-                                interval_events.append(event)
-                                logger.info(f"Added {event.name} to interval_events")
-                            else:
-                                other_events.append(event)
-                                logger.info(f"Added {event.name} to other_events")
-
-                # Always defer interval events during manager initialization to avoid event loop issues
-                # Only the chatbot API staging process should start interval events when it knows
-                # there's a proper event loop available
-                logger.info(
-                    f"Deferring {len(interval_events)} interval events during manager initialization - they will start when chatbot API is staged"
-                )
-
-                # Store ALL interval events as deferred - they'll be started by chatbot API staging
-                self._deferred_interval_events.extend(interval_events)
-                logger.info(
-                    f"Deferred events list now contains: {[e.name for e in self._deferred_interval_events]}"
-                )
-
-                # Start specific time events immediately (they handle their own event loop issues)
-                for event in specific_time_events:
-                    try:
-                        self._start_specific_time_event(event)
-                    except Exception as e:
-                        logger.error(
-                            f"Error restarting specific time task for event {event.name}: {e}"
-                        )
-
-                # Start non-Interval events immediately (they handle their own event loop issues)
-                for event in other_events:
-                    try:
-                        self._start_repeating_event(event)
-                    except Exception as e:
-                        logger.error(
-                            f"Error restarting repeating task for event {event.name}: {e}"
-                        )
+            migrated = self._apply_load_migrations(commands_data, events_data)
 
             # Load quotes
             quotes_data = self._read_checked("BotData/Quotes")
@@ -520,6 +505,18 @@ class ChatbotManager:
                 f"Loaded {len(self.commands)} commands, {len(self.events)} events, {len(self.quotes)} quotes, and {len(self.greetings)} greetings"
             )
 
+            # Timers run on their own threads from now on; posts wait one full
+            # interval and are skipped while chat is unavailable.
+            for event in list(self.events.values()):
+                try:
+                    self._schedule_event(event)
+                except Exception as e:
+                    logger.error(f"Error starting timer for event {event.name}: {e}")
+
+            if migrated:
+                logger.info("Chatbot data migrated to the current format; saving")
+                self._save_data()
+
         except Exception as e:
             logger.error(f"Error loading chatbot data: {e}")
             notify_critical(
@@ -527,6 +524,68 @@ class ChatbotManager:
                 dedupe_key="chatbot:load_failed",
                 actions=nav_actions_main_tab("Chatbot"),
             )
+
+    def _apply_load_migrations(self, commands_data: Any, events_data: Any) -> bool:
+        """One-time repairs after load. Returns True when anything must be saved.
+
+        * repeating commands become INTERVAL events (only when both the
+          commands and the events could be read, so nothing is lost);
+        * counters with ``persistent_counter`` False restart at 0;
+        * everything the constructors normalized (aliases, ``!`` prefixes,
+          legacy API -> lookup, mod_only -> permission, schema version) is
+          detected by comparing the normalized form with what was stored.
+        """
+        both_readable = (
+            "BotData/Commands" not in self._unreadable_paths
+            and "BotData/Events" not in self._unreadable_paths
+        )
+        changed = False
+        for command in list(self.commands.values()):
+            if command.command_type == CommandType.COUNTER and not command.persistent_counter:
+                if command.counter_value:
+                    command.counter_value = 0
+                    changed = True
+            if command.repeating_enabled and both_readable:
+                self._convert_repeating_command(command)
+                changed = True
+        if "BotData/Commands" not in self._unreadable_paths and isinstance(commands_data, list):
+            stored = _json_fingerprint(commands_data)
+            current = _json_fingerprint([c.to_dict() for c in self.commands.values()])
+            changed = changed or stored != current
+        if "BotData/Events" not in self._unreadable_paths and isinstance(events_data, list):
+            stored = _json_fingerprint(events_data)
+            current = _json_fingerprint([e.to_dict() for e in self.events.values()])
+            changed = changed or stored != current
+        return changed
+
+    def _convert_repeating_command(self, command: ChatCommand) -> ChatEvent:
+        """Move a command's repeat settings into a new INTERVAL event."""
+        try:
+            interval = float(command.repeat_interval or 0)
+        except (TypeError, ValueError):
+            interval = 0
+        event = ChatEvent(
+            event_id=str(uuid.uuid4()),
+            name=f"{command.name or ('!' + command.command_name)} (timer)",
+            description=f"Moved from the repeating setting of !{command.command_name}",
+            event_type=EventType.INTERVAL,
+            interval=int(interval) if interval > 0 else 60,
+            response_text=command.response_text,
+            enabled=command.enabled,
+            reply_targets=list(command.reply_targets),
+            discord_channels=list(command.discord_channels or []),
+            output_mode=command.output_mode,
+            lookup=dict(command.lookup) if command.lookup else None,
+            lookup_fallback=command.lookup_fallback,
+        )
+        self.events[event.event_id] = event
+        command.repeating_enabled = False
+        logger.info(
+            "Moved repeating command !%s into interval event %s",
+            command.command_name,
+            event.name,
+        )
+        return event
 
     def _read_checked(self, path: str):
         from .database_manager import get_data_checked
@@ -620,13 +679,7 @@ class ChatbotManager:
                 self.greetings_by_user_id.setdefault(obj.user_id, obj)
             elif path == "BotData/Events" and obj.enabled:
                 # Same start rules as _load_data.
-                if obj.event_type == EventType.SPECIFIC_TIME:
-                    self._start_specific_time_event(obj)
-                elif obj.interval > 0:
-                    if obj.event_type == EventType.INTERVAL:
-                        self._deferred_interval_events.append(obj)
-                    else:
-                        self._start_repeating_event(obj)
+                self._schedule_event(obj)
 
     def _apply_settings(self, settings_data: Dict[str, Any]) -> None:
         """Apply a stored BotData/Settings dict to this manager."""
@@ -775,63 +828,78 @@ class ChatbotManager:
         return self
 
     # Command Management
+    #
+    # UI contract: build a full ChatCommand / ChatEvent from the editor and
+    # call add_* / update_*. update_* keeps the runtime stats of the stored item
+    # (counter_value, usage_count, last_used, trigger_count, last_triggered)
+    # unless keep_runtime=False, and keeps stored conditions when the new item
+    # has none (there is no conditions editor yet) unless keep_conditions=False.
+    # Every other field (permission, lookup, lookup_fallback,
+    # argument_mappings, outputs ...) is taken from the object passed in.
+
+    def validate_command(self, command: ChatCommand) -> Optional[str]:
+        """Error text for a command the editor wants to save, or None."""
+        if not command.command_name:
+            return "Give the command a name (the word after !)."
+        names = set(command.all_names())
+        if self.quotes_enabled and names & {"quote", "add_quote"}:
+            return "!quote and !add_quote are built in."
+        with self._lock:
+            for other in self.commands.values():
+                if other.command_id == command.command_id:
+                    continue
+                clash = names & set(other.all_names())
+                if clash:
+                    return f"!{sorted(clash)[0]} is already used by another command."
+        return None
+
     def add_command(self, command: ChatCommand) -> bool:
         """Add a new command"""
         with self._lock:
             if not command.command_id:
                 command.command_id = str(uuid.uuid4())
-
+            if command.repeating_enabled:
+                event = self._convert_repeating_command(command)
+                self._schedule_event(event)
             self.commands[command.command_id] = command
             self._save_data()
-
-            # Note: We don't track command creation count in statistics anymore
-            # since we get it dynamically from the chatbot_manager itself
-
-            # Start repeating task if enabled
-            if command.repeating_enabled:
-                self._start_repeating_command(command)
-
             logger.info(f"Added command: {command.command_name}")
             return True
 
-    def update_command(self, command_id: str, command: ChatCommand) -> bool:
-        """Update an existing command"""
+    def update_command(
+        self,
+        command_id: str,
+        command: ChatCommand,
+        *,
+        keep_runtime: bool = True,
+        keep_conditions: bool = True,
+    ) -> bool:
+        """Replace a stored command (see the UI contract above)."""
         with self._lock:
-            if command_id not in self.commands:
+            old_command = self.commands.get(command_id)
+            if old_command is None:
                 return False
-
-            old_command = self.commands[command_id]
-
-            # Stop old repeating task if it exists
-            if old_command.repeating_enabled:
-                self._stop_repeating_command(command_id)
-
             command.command_id = command_id
+            if keep_runtime:
+                for attr in _COMMAND_RUNTIME_FIELDS:
+                    setattr(command, attr, getattr(old_command, attr))
+            if keep_conditions and not command.conditions and old_command.conditions:
+                command.conditions = list(old_command.conditions)
+            if command.repeating_enabled:
+                event = self._convert_repeating_command(command)
+                self._schedule_event(event)
             self.commands[command_id] = command
             self._save_data()
-
-            # Start new repeating task if enabled
-            if command.repeating_enabled:
-                self._start_repeating_command(command)
-
             logger.info(f"Updated command: {command.command_name}")
             return True
 
     def remove_command(self, command_id: str) -> bool:
         """Remove a command"""
         with self._lock:
-            if command_id not in self.commands:
+            command = self.commands.pop(command_id, None)
+            if command is None:
                 return False
-
-            command = self.commands[command_id]
-
-            # Stop repeating task if it exists
-            if command.repeating_enabled:
-                self._stop_repeating_command(command_id)
-
-            del self.commands[command_id]
             self._save_data()
-
             logger.info(f"Removed command: {command.command_name}")
             return True
 
@@ -844,124 +912,75 @@ class ChatbotManager:
         return self.commands.copy()
 
     # Event Management
+    @staticmethod
+    def validate_event(event: ChatEvent) -> Optional[str]:
+        """Error text for an event that cannot be saved, or None.
+
+        Also normalizes ``specific_time`` to ``HH:MM``.
+        """
+        if event.event_type == EventType.INTERVAL and not event.interval > 0:
+            return "Timer events need an interval."
+        if event.event_type == EventType.SPECIFIC_TIME:
+            normalized = normalize_specific_time(event.specific_time)
+            if normalized is None:
+                return "Pick a time as HH:MM (24-hour), e.g. 18:30."
+            event.specific_time = normalized
+        return None
+
     def add_event(self, event: ChatEvent) -> bool:
-        """Add a new event"""
+        """Add a new event (False when validate_event fails)."""
+        error = self.validate_event(event)
+        if error:
+            logger.error("Cannot add event '%s': %s", event.name, error)
+            return False
         with self._lock:
-            # Validate Interval events require an interval
-            if event.event_type == EventType.INTERVAL and event.interval <= 0:
-                logger.error(
-                    f"Cannot add Interval event '{event.name}' without an interval set"
-                )
-                return False
-
-            # Validate Specific Time events require a time
-            if event.event_type == EventType.SPECIFIC_TIME and not event.specific_time:
-                logger.error(
-                    f"Cannot add Specific Time event '{event.name}' without a time set"
-                )
-                return False
-
             if not event.event_id:
                 event.event_id = str(uuid.uuid4())
-
             self.events[event.event_id] = event
             self._save_data()
-
-            # Start repeating task if event has an interval or is a specific time event
-            if event.enabled:
-                if event.event_type == EventType.SPECIFIC_TIME:
-                    self._start_specific_time_event(event)
-                elif event.interval > 0:
-                    # For Interval events, use staggered startup
-                    if event.event_type == EventType.INTERVAL:
-                        # Calculate delay based on number of existing Interval events
-                        existing_interval_count = sum(
-                            1
-                            for e in self.events.values()
-                            if e.event_type == EventType.INTERVAL
-                            and e.event_id != event.event_id
-                        )
-                        initial_delay = (
-                            (existing_interval_count * 2) % event.interval
-                            if event.interval > 0
-                            else 0
-                        )
-                        self._start_repeating_event(event, initial_delay=initial_delay)
-                    else:
-                        self._start_repeating_event(event)
-
-            # Note: We don't track event creation count in statistics anymore
-            # since we get it dynamically from the chatbot_manager itself
-
+            self._schedule_event(event)
             logger.info(f"Added event: {event.name}")
             return True
 
-    def update_event(self, event_id: str, event: ChatEvent) -> bool:
-        """Update an existing event"""
+    def update_event(
+        self,
+        event_id: str,
+        event: ChatEvent,
+        *,
+        keep_runtime: bool = True,
+        keep_conditions: bool = True,
+    ) -> bool:
+        """Replace a stored event (False when missing or validate_event fails)."""
+        error = self.validate_event(event)
+        if error:
+            logger.error("Cannot update event '%s': %s", event.name, error)
+            return False
         with self._lock:
-            if event_id not in self.events:
+            old_event = self.events.get(event_id)
+            if old_event is None:
                 return False
-
-            # Validate Interval events require an interval
-            if event.event_type == EventType.INTERVAL and event.interval <= 0:
-                logger.error(
-                    f"Cannot update Interval event '{event.name}' without an interval set"
-                )
-                return False
-
-            old_event = self.events[event_id]
-
-            # Stop old repeating task if it exists
-            if (
-                old_event.interval > 0
-                or old_event.event_type == EventType.SPECIFIC_TIME
-            ):
-                self._stop_repeating_event(event_id)
-
             event.event_id = event_id
+            if keep_runtime:
+                event.trigger_count = old_event.trigger_count
+                event.last_triggered = old_event.last_triggered
+            if keep_conditions and not event.conditions and old_event.conditions:
+                event.conditions = list(old_event.conditions)
             self.events[event_id] = event
             self._save_data()
-
-            # Start new repeating task if event has an interval or is a specific time event
-            if event.enabled:
-                if event.event_type == EventType.SPECIFIC_TIME:
-                    self._start_specific_time_event(event)
-                elif event.interval > 0:
-                    # For Interval events, use staggered startup
-                    if event.event_type == EventType.INTERVAL:
-                        # Calculate delay based on number of existing Interval events (excluding this one)
-                        existing_interval_count = sum(
-                            1
-                            for e in self.events.values()
-                            if e.event_type == EventType.INTERVAL
-                            and e.event_id != event_id
-                        )
-                        initial_delay = (
-                            (existing_interval_count * 2) % event.interval
-                            if event.interval > 0
-                            else 0
-                        )
-                        self._start_repeating_event(event, initial_delay=initial_delay)
-                    else:
-                        self._start_repeating_event(event)
-
+            # Stops the old timer; starts a new one only for INTERVAL /
+            # SPECIFIC_TIME events that are enabled.
+            self._schedule_event(event)
             logger.info(f"Updated event: {event.name}")
             return True
 
     def remove_event(self, event_id: str) -> bool:
         """Remove an event"""
         with self._lock:
-            if event_id not in self.events:
+            event = self.events.pop(event_id, None)
+            if event is None:
                 return False
-
-            event = self.events[event_id]
-
-            # Always unregister the worker; Specific Time events use interval 0
-            self._stop_repeating_event(event_id)
-
-            del self.events[event_id]
+            self._unschedule_event(event_id)
             self._save_data()
-
             logger.info(f"Removed event: {event.name}")
             return True
 
@@ -974,10 +993,10 @@ class ChatbotManager:
         return self.events.copy()
 
     def message_may_call_api(self, message_data: Dict[str, Any]) -> bool:
-        """True when the chat text names an enabled command that makes an API call.
+        """True when the chat text names an enabled command that runs a lookup.
 
         Lock-free on purpose: EventSub calls this while another thread may hold
-        ``_lock`` across a slow API call. A wrong guess only picks another thread.
+        ``_lock``. A wrong guess only picks another thread.
         """
         message = str((message_data or {}).get("message") or "").strip()
         if not message.startswith("!"):
@@ -993,8 +1012,7 @@ class ChatbotManager:
         for command in commands:
             if (
                 command.enabled
-                and getattr(command, "api_enabled", False)
-                and getattr(command, "api_endpoint", "")
+                and getattr(command, "lookup", None)
                 and _command_matches_name(command, command_name)
             ):
                 return True
@@ -1004,47 +1022,39 @@ class ChatbotManager:
     def process_chat_message(
         self, message_data: Dict[str, Any]
     ) -> Optional[tuple]:
-        """Process a chat message for commands
+        """Process a chat message for commands.
 
-        Args:
-            message_data: Dictionary containing message information
+        Returns ``(response, command_name, reply_targets, discord_channels,
+        output_mode)`` when a command matched. ``response`` is "" when the
+        command was blocked (permission / cooldown / usage limit) or its lookup
+        failed without fallback: callers must post nothing (the bot stays
+        silent). Built-in quote commands return ``(response, name)``.
+        None when no command matched.
 
-        Returns:
-            On success: (response_message, command_name, reply_targets, discord_channels).
-            Quote/blocked paths may return a shorter tuple. None if no command matched.
+        A lookup runs after the command lock is released; the use (cooldown,
+        usage count, counter) is consumed before it, so a failed lookup still
+        counts as a use.
         """
         try:
-            message = message_data.get("message", "").strip()
+            message = str(message_data.get("message") or "").strip()
             username = message_data.get("username", "Unknown")
-            if not message:
-                return None
-
-            # Check if message starts with command prefix
             if not message.startswith("!"):
                 return None
 
-            logger.debug("[CHATBOT] Processing command from %s: %s", username, message)
-
-            # Extract command name and arguments
             parts = message[1:].split()
             if not parts:
                 return None
 
             command_name = parts[0].lower()
-            arguments = parts[1:] if len(parts) > 1 else []
-            command_message = " ".join(arguments)  # Full message after command name
-            logger.debug(
-                "[CHATBOT] Extracted command: '%s' with args: %s",
-                command_name,
-                arguments,
-            )
+            arguments = parts[1:]
+            logger.debug("[CHATBOT] Command %r from %s args=%s", command_name, username, arguments)
 
-            # Add command-specific data to message_data for variable processing
-            message_data["command_message"] = command_message
+            # Command variables (kept on message_data for chat-message events).
+            message_data["command_message"] = " ".join(arguments)
             message_data["command_args"] = arguments
-            message_data["command_words"] = (
-                arguments  # Alias for backwards compatibility
-            )
+            message_data["command_words"] = arguments
+            if not message_data.get("user_id") and message_data.get("userid"):
+                message_data["user_id"] = str(message_data["userid"])
 
             # Handle built-in quote commands first
             if self.quotes_enabled:
@@ -1053,84 +1063,63 @@ class ChatbotManager:
                 elif command_name == "add_quote":
                     return self._handle_add_quote_command(arguments, message_data)
 
-            # Find matching custom command (primary name or alias)
+            lookup_job = None
             with self._lock:
-                for command in self.commands.values():
-                    if not command.enabled or not _command_matches_name(
-                        command, command_name
+                command = None
+                for candidate in self.commands.values():
+                    if (
+                        candidate.enabled
+                        and _command_matches_name(candidate, command_name)
+                        and candidate.should_trigger(message_data)
                     ):
-                        continue
+                        command = candidate
+                        break
+                if command is None:
+                    return None
 
-                    # Check if command should trigger based on conditions
-                    if not command.should_trigger(message_data):
-                        continue
+                can_use, reason = command.can_use(message_data)
+                if not can_use:
+                    logger.debug("[CHATBOT] Command '%s' blocked: %s", command_name, reason)
+                    return _silent_result(command_name)
 
-                    # Check if command can be used
-                    can_use, reason = command.can_use(message_data)
-                    if not can_use:
+                data = message_data
+                if command.command_type == CommandType.RESET:
+                    target = _find_reset_target(
+                        self.commands, command.reset_command, command.command_id
+                    )
+                    if target is None:
                         logger.debug(
-                            "[CHATBOT] Command '%s' blocked: %s",
+                            "[CHATBOT] Reset command '%s' has unknown target '%s'",
                             command_name,
-                            reason,
+                            command.reset_command,
                         )
-                        return reason, command_name
+                        return _silent_result(command_name)
+                    data = dict(message_data)
+                    data["target_command"] = target.command_name
+                    data["target_count"] = getattr(target, "counter_value", 0)
+                    target.reset_counter()
 
-                    if command.command_type == CommandType.RESET:
-                        target = _find_reset_target(
-                            self.commands, command.reset_command, command.command_id
-                        )
-                        if target is None:
-                            logger.debug(
-                                "[CHATBOT] Reset command '%s' has unknown target '%s'",
-                                command_name,
-                                command.reset_command,
-                            )
-                            return (
-                                f"Unknown command to reset: {command.reset_command}",
-                                command_name,
-                            )
-                        message_data = dict(message_data)
-                        message_data["target_command"] = target.command_name
-                        message_data["target_count"] = getattr(
-                            target, "counter_value", 0
-                        )
-                        target.reset_counter()
+                command.begin_use(data)
+                if command.lookup:
+                    lookup_job = (dict(command.lookup), command.build_context(data))
+                    response = ""
+                else:
+                    response = command.render_response(data)
+                targets = list(command.reply_targets)
+                discord_channels = list(command.discord_channels or [])
+                output_mode = command.output_mode or "chat"
+                self._save_data()
 
-                    # Use the command and get response
-                    logger.debug(
-                        "[CHATBOT] Executing command '%s' for %s",
-                        command_name,
-                        username,
-                    )
-                    response = command.use_command(message_data)
-                    logger.debug(
-                        "[CHATBOT] Command '%s' returned response: %s",
-                        command_name,
-                        response,
-                    )
+            if lookup_job is not None:
+                from .chatbot_lookups import run_lookup_blocking
 
-                    # Save data after command use
-                    self._save_data()
+                lookup_vars = run_lookup_blocking(lookup_job[0], lookup_job[1], kind="command")
+                response = command.respond_after_lookup(data, lookup_vars)
 
-                    logger.info(
-                        f"Command triggered: {command_name} by {message_data.get('username', 'Unknown')}"
-                    )
-                    targets = list(
-                        getattr(command, "reply_targets", None) or ["twitch"]
-                    )
-                    discord_channels = list(
-                        getattr(command, "discord_channels", None) or []
-                    )
-                    output_mode = getattr(command, "output_mode", "chat") or "chat"
-                    return (
-                        response,
-                        command_name,
-                        targets,
-                        discord_channels,
-                        output_mode,
-                    )
-
-            return None
+            logger.info(f"Command triggered: {command_name} by {username}")
+            if not str(response or "").strip():
+                return _silent_result(command_name)
+            return (response, command_name, targets, discord_channels, output_mode)
 
         except Exception as e:
             logger.error(f"Error processing chat message: {e}", exc_info=True)
@@ -1149,13 +1138,9 @@ class ChatbotManager:
                 self.quote_cooldown_seconds > 0
                 and current_time - self.quote_last_used < self.quote_cooldown_seconds
             ):
-                remaining_time = int(
-                    self.quote_cooldown_seconds - (current_time - self.quote_last_used)
-                )
-                return (
-                    f"Quote command is on cooldown. Please wait {remaining_time} seconds.",
-                    "quote",
-                )
+                # Blocked commands stay silent.
+                logger.debug("[CHATBOT] !quote blocked: cooldown")
+                return _silent_result("quote")
 
             if not arguments:
                 # Random quote
@@ -1293,45 +1278,53 @@ class ChatbotManager:
 
     def process_event(
         self, event_type: EventType, event_data: Dict[str, Any]
-    ) -> Optional[str]:
-        """Process an automatic event
+    ) -> Optional[Any]:
+        """Process an automatic event.
 
-        Args:
-            event_type: Type of event that occurred
-            event_data: Dictionary containing event information
-
-        Returns:
-            (response, reply_targets) if event triggered, None otherwise
+        Returns None, one ``(response, reply_targets, discord_channels,
+        output_mode)`` tuple, or a list of them. Events with a lookup are not
+        returned: their lookup and delivery run on a background thread so the
+        caller (often the EventSub loop) never waits for Twitch. Timer events
+        (INTERVAL / SPECIFIC_TIME) only fire from their schedulers.
         """
         try:
             matches = []
+            deferred = []
             with self._lock:
                 for event in self.events.values():
-                    # Skip Interval events - they only trigger via their scheduled loop
-                    if event.event_type == EventType.INTERVAL:
+                    if event.event_type in (EventType.INTERVAL, EventType.SPECIFIC_TIME):
                         continue
-                    if (
+                    if not (
                         event.enabled
                         and event.event_type == event_type
                         and event.should_trigger(event_data)
                     ):
-                        response = event.trigger_event(event_data)
-                        logger.info(
-                            f"Event triggered: {event.name} for {event_type.value}"
-                        )
-                        targets = list(
-                            getattr(event, "reply_targets", None) or ["twitch"]
-                        )
-                        discord_channels = list(
-                            getattr(event, "discord_channels", None) or []
-                        )
-                        output_mode = getattr(event, "output_mode", "chat") or "chat"
+                        continue
+                    event.begin_trigger(event_data)
+                    logger.info(f"Event triggered: {event.name} for {event_type.value}")
+                    if event.lookup:
+                        deferred.append(event)
+                        continue
+                    response = event.render_response(event_data)
+                    if str(response or "").strip():
                         matches.append(
-                            (response, targets, discord_channels, output_mode)
+                            (
+                                response,
+                                list(event.reply_targets),
+                                list(event.discord_channels or []),
+                                event.output_mode or "chat",
+                            )
                         )
-
-                if matches:
+                if matches or deferred:
                     self._save_data()
+
+            for event in deferred:
+                threading.Thread(
+                    target=self._lookup_and_deliver_event,
+                    args=(event, dict(event_data or {})),
+                    daemon=True,
+                    name=f"ChatbotEventLookup-{event.name}",
+                ).start()
 
             if not matches:
                 return None
@@ -1343,47 +1336,42 @@ class ChatbotManager:
             logger.error(f"Error processing event {event_type}: {e}", exc_info=True)
             return None
 
+    def _lookup_and_deliver_event(self, event: ChatEvent, data: Dict[str, Any]) -> None:
+        """Run an event's lookup and send the reply (background thread)."""
+        try:
+            from .chatbot_lookups import run_lookup_blocking
+
+            lookup_vars = run_lookup_blocking(event.lookup, event.build_context(data), kind="event")
+            response = event.respond_after_lookup(data, lookup_vars)
+            if not str(response or "").strip():
+                return
+            from .chatbot import deliver_chatbot_output
+
+            deliver_chatbot_output(
+                response,
+                list(event.reply_targets),
+                discord_channels=list(event.discord_channels or []),
+                output_mode=event.output_mode,
+            )
+        except Exception as e:
+            logger.error("Event %s lookup/delivery failed: %s", event.name, e, exc_info=True)
+
     # Utility Methods
     def toggle_item(self, item_id: str, enabled: bool) -> bool:
-        """Toggle enabled state of a command or event"""
+        """Enable / disable a command or event (nothing else changes).
+
+        Re-enabling an interval event restarts its timer (first post after one
+        full interval).
+        """
         with self._lock:
             if item_id in self.commands:
-                self.commands[item_id].enabled = enabled
-                if enabled and self.commands[item_id].repeating_enabled:
-                    self._start_repeating_command(self.commands[item_id])
-                elif not enabled:
-                    self._stop_repeating_command(item_id)
+                self.commands[item_id].enabled = bool(enabled)
                 self._save_data()
                 return True
-            elif item_id in self.events:
+            if item_id in self.events:
                 event = self.events[item_id]
-                event.enabled = enabled
-                if enabled:
-                    if event.event_type == EventType.SPECIFIC_TIME:
-                        self._start_specific_time_event(event)
-                    elif event.interval > 0:
-                        # For Interval events, use staggered startup
-                        if event.event_type == EventType.INTERVAL:
-                            # Calculate delay based on number of existing Interval events (excluding this one)
-                            existing_interval_count = sum(
-                                1
-                                for e in self.events.values()
-                                if e.event_type == EventType.INTERVAL
-                                and e.event_id != item_id
-                                and e.enabled
-                            )
-                            initial_delay = (
-                                (existing_interval_count * 2) % event.interval
-                                if event.interval > 0
-                                else 0
-                            )
-                            self._start_repeating_event(
-                                event, initial_delay=initial_delay
-                            )
-                        else:
-                            self._start_repeating_event(event)
-                elif not enabled:
-                    self._stop_repeating_event(item_id)
+                event.enabled = bool(enabled)
+                self._schedule_event(event)
                 self._save_data()
                 return True
         return False
@@ -1396,6 +1384,16 @@ class ChatbotManager:
                 self._save_data()
                 return True
         return False
+
+    def reset_usage(self, command_id: str) -> bool:
+        """Reset a command's usage count (its usage limit starts over)."""
+        with self._lock:
+            command = self.commands.get(command_id)
+            if command is None:
+                return False
+            command.usage_count = 0
+            self._save_data()
+            return True
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get chatbot statistics"""
@@ -1433,641 +1431,318 @@ class ChatbotManager:
                 },
             }
 
-    # Repeating Commands
-    def _start_repeating_command(self, command: ChatCommand):
-        """Start a repeating command task using threading"""
-        with self._scheduler_lock:
-            # Check if task already exists
-            if command.command_id in self.repeating_tasks:
-                logger.info(
-                    f"Command {command.command_name} already has a running task, skipping"
-                )
-                return
+    # Timers (INTERVAL and SPECIFIC_TIME events)
+    #
+    # Each enabled timer event has one daemon thread with its own stop flag.
+    # Threads start when the manager loads (no waiting for chat): interval
+    # events post after every full interval (never right away) and skip a post
+    # while chat is unavailable; specific-time events fire once in the
+    # matching local minute. Only EventType.INTERVAL repeats.
 
-            stop = threading.Event()
-
-            def repeating_thread():
-                try:
-                    while (
-                        command.enabled
-                        and command.repeating_enabled
-                        and not stop.is_set()
-                    ):
-                        # Create mock event data for repeating commands
-                        event_data = {
-                            "username": "System",
-                            "timestamp": time.time(),
-                            "source": "repeating",
-                        }
-
-                        # Check if command should trigger and can be used
-                        if command.should_trigger(event_data):
-                            can_use, reason = command.can_use(event_data)
-                            if can_use:
-                                response = command.use_command(event_data)
-                                try:
-                                    from .chatbot import deliver_chatbot_output
-
-                                    deliver_chatbot_output(
-                                        response,
-                                        getattr(command, "reply_targets", None),
-                                        discord_channels=getattr(
-                                            command, "discord_channels", None
-                                        ),
-                                        output_mode=getattr(
-                                            command, "output_mode", "chat"
-                                        ),
-                                    )
-                                except Exception as send_err:
-                                    logger.error(
-                                        "Error sending repeating command: %s",
-                                        send_err,
-                                    )
-                                logger.info(
-                                    f"Repeating command {command.command_name} executed: {response}"
-                                )
-
-                        # Wait for the interval
-                        interval = (
-                            command.repeat_interval
-                            if command.repeat_interval > 0
-                            else 60
-                        )
-                        stop.wait(interval)
-
-                except Exception as e:
-                    logger.error(
-                        f"Error in repeating thread for command {command.command_name}: {e}"
-                    )
-
-            thread = threading.Thread(
-                target=repeating_thread,
-                daemon=True,
-                name=f"Command-{command.command_name}",
-            )
-            self._repeating_stops[command.command_id] = stop
-            thread.start()
-            self.repeating_tasks[command.command_id] = thread
-            logger.info(f"Started repeating thread for command: {command.command_name}")
-
-    def _stop_repeating_command(self, command_id: str):
-        """Stop a repeating command task"""
-        with self._scheduler_lock:
-            command = self.commands.get(command_id)
-            if command is not None:
-                command.enabled = False
-                command.repeating_enabled = False
-            stop = self._repeating_stops.pop(command_id, None)
-            if stop is not None:
-                stop.set()
-            if command_id in self.repeating_tasks:
-                del self.repeating_tasks[command_id]
-                logger.info(
-                    f"Removed repeating task reference for command ID: {command_id}"
-                )
-
-    def _start_repeating_event_with_thread(
-        self, event: ChatEvent, initial_delay: float = 0
-    ):
-        """Start a repeating event using threading instead of async tasks
-
-        Args:
-            event: The event to start repeating
-            initial_delay: Optional initial delay in seconds before first trigger (for staggering)
-        """
-        try:
-            logger.info(
-                f"_start_repeating_event_with_thread called for event {event.name}"
-            )
-            logger.info(f"Event object type: {type(event)}")
-            logger.info(
-                f"Event details: ID={event.event_id}, enabled={event.enabled}, interval={event.interval}, type={event.event_type}"
-            )
-            logger.info(f"Event has response_text: {hasattr(event, 'response_text')}")
-            if hasattr(event, "response_text"):
-                response_text = getattr(event, "response_text", None)
-                logger.info(
-                    f"Event response_text length: {len(response_text) if response_text else 0}"
-                )
-                preview = (
-                    response_text[:50]
-                    if response_text and len(response_text) > 0
-                    else "None"
-                )
-                logger.info(f"Event response_text preview: '{preview}...'")
-
-            # Scheduler lock is already held by caller (start_deferred_interval_events)
-
-        except Exception as e:
-            logger.error(
-                f"Exception in _start_repeating_event_with_thread setup for event {event.name}: {e}",
-                exc_info=True,
-            )
+    def _schedule_event(self, event: ChatEvent) -> None:
+        """Stop any timer of this event, then start the right one (if any)."""
+        self._unschedule_event(event.event_id)
+        if not event.enabled or self.events.get(event.event_id) is not event:
             return
+        if event.repeats():
+            self._start_interval_thread(event)
+        elif (
+            event.event_type == EventType.SPECIFIC_TIME
+            and normalize_specific_time(event.specific_time) is not None
+        ):
+            self._start_specific_time_event(event)
 
-        try:
-            # Check if task already exists
-            if event.event_id in self.repeating_tasks:
-                logger.info(f"Event {event.name} already has a running task, skipping")
-                return
-
-            stop = threading.Event()
-
-            def repeating_thread():
-                try:
-                    logger.debug(
-                        "=== THREAD STARTED: repeating thread for event %s (ID: %s) ===",
-                        event.name,
-                        event.event_id,
-                    )
-                    logger.info(
-                        f"Thread function called successfully - event: {event.name}"
-                    )
-                    logger.info(
-                        f"Event enabled: {event.enabled}, interval: {event.interval}, type: {event.event_type}"
-                    )
-
-                    # Apply initial delay for staggered startup (especially for Interval events)
-                    if initial_delay > 0:
-                        logger.info(
-                            f"Applying {initial_delay}s initial delay for event {event.name}"
-                        )
-                        stop.wait(initial_delay)
-
-                    logger.info(
-                        f"Entering main loop for event {event.name} with interval {event.interval}s"
-                    )
-
-                    # Track if this is the first iteration to prevent double triggering
-                    first_iteration = True
-
-                    while event.enabled and event.interval > 0 and not stop.is_set():
-                        logger.debug(
-                            f"Loop iteration for event {event.name} - enabled: {event.enabled}, interval: {event.interval}"
-                        )
-
-                        # Wait for the interval before triggering (skip sleep on first iteration since we already triggered)
-                        if not first_iteration:
-                            logger.debug(
-                                f"Sleeping for {event.interval}s for event {event.name}"
-                            )
-                            if stop.wait(event.interval):
-                                break
-                        else:
-                            logger.debug(
-                                f"Skipping initial sleep for event {event.name} (already triggered immediately)"
-                            )
-                            first_iteration = False
-
-                        # Create mock event data for repeating events
-                        event_data = {
-                            "username": "System",
-                            "timestamp": time.time(),
-                            "source": "repeating_event",
-                        }
-
-                        # Check if event should trigger
-                        # INTERVAL events trigger automatically on schedule - bypass condition checking
-                        should_trigger = True
-                        if event.event_type != EventType.INTERVAL:
-                            should_trigger = event.should_trigger(event_data)
-
-                        logger.debug(
-                            f"Event {event.name} should_trigger: {should_trigger}"
-                        )
-
-                        if should_trigger:
-                            logger.info(
-                                f"Triggering event {event.name} in loop (first_iteration={first_iteration})"
-                            )
-                            response = event.trigger_event(event_data)
-                            logger.info(
-                                f"Event {event.name} generated response in loop: '{response}'"
-                            )
-
-                            # Send the response through the chatbot
-                            try:
-                                from .chatbot import (
-                                    is_chatbot_connected,
-                                    deliver_chatbot_output,
-                                )
-
-                                output_mode = getattr(event, "output_mode", "chat")
-                                # Check if chatbot is ready before attempting to send
-                                if output_mode != "banner" and not is_chatbot_connected():
-                                    logger.warning(
-                                        f"Skipping repeating event {event.name} - chatbot not connected"
-                                    )
-                                    # Don't send the message, but continue the loop
-                                    # The event will try again on the next interval
-                                else:
-                                    logger.info(
-                                        f"Sending message for event {event.name} in loop"
-                                    )
-                                    success = deliver_chatbot_output(
-                                        response,
-                                        getattr(event, "reply_targets", None),
-                                        discord_channels=getattr(
-                                            event, "discord_channels", None
-                                        ),
-                                        output_mode=output_mode,
-                                    )
-                                    if success:
-                                        logger.info(
-                                            f"Repeating event {event.name} sent message: {response}"
-                                        )
-                                    else:
-                                        logger.warning(
-                                            f"Failed to send repeating event message for {event.name}"
-                                        )
-                            except Exception as e:
-                                logger.error(
-                                    f"Error sending repeating event message for {event.name}: {e}"
-                                )
-
-                    logger.info(
-                        f"Exiting repeating thread for event {event.name} - enabled: {event.enabled}, interval: {event.interval}"
-                    )
-
-                except Exception as e:
-                    logger.error(
-                        f"Error in repeating thread for event {event.name}: {e}",
-                        exc_info=True,
-                    )
-
-            # Create and start the real thread directly
-            logger.debug("Creating thread for event %s", event.name)
-            thread = threading.Thread(
-                target=repeating_thread, daemon=True, name=f"Event-{event.name}"
-            )
-            logger.debug("Thread created: %s", thread.name)
-            self._repeating_stops[event.event_id] = stop
-            thread.start()
-            logger.debug(
-                "Thread started: %s, is_alive: %s", thread.name, thread.is_alive()
-            )
-
-            # Store the thread reference (we'll use this for cleanup)
-            self.repeating_tasks[event.event_id] = thread
-            logger.debug("Stored thread reference for event: %s", event.name)
-        except Exception as e:
-            logger.error(
-                f"Exception in _start_repeating_event_with_thread thread creation for event {event.name}: {e}",
-                exc_info=True,
-            )
-
-    def _start_repeating_event(self, event: ChatEvent, initial_delay: float = 0):
-        """Start a repeating event task
-
-        Args:
-            event: The event to start repeating
-            initial_delay: Optional initial delay in seconds before first trigger (for staggering)
-        """
-        # For backwards compatibility, delegate to the threading version
-        self._start_repeating_event_with_thread(event, initial_delay)
-
-    def _start_specific_time_event(self, event: ChatEvent):
-        """Start a specific-time event on a daemon thread (wait until HH:MM, then fire)."""
+    def _unschedule_event(self, event_id: str) -> None:
+        """Stop an event's timer thread (does not change the event)."""
         with self._scheduler_lock:
-            existing = self.repeating_tasks.get(event.event_id)
-            if existing is not None:
-                is_alive = getattr(existing, "is_alive", lambda: False)()
-                is_done = getattr(existing, "done", lambda: True)()
-                if is_alive or (hasattr(existing, "done") and not is_done):
-                    return
-                del self.repeating_tasks[event.event_id]
-
-            stop = threading.Event()
-
-            def specific_time_thread():
-                from datetime import datetime, timedelta
-
-                try:
-                    while (
-                        event.enabled
-                        and event.event_type == EventType.SPECIFIC_TIME
-                        and not stop.is_set()
-                    ):
-                        if not event.specific_time:
-                            time.sleep(1.0)
-                            continue
-                        try:
-                            time_parts = event.specific_time.split(":")
-                            if len(time_parts) != 2:
-                                logger.error(
-                                    "Invalid time format for event %s: %s",
-                                    event.name,
-                                    event.specific_time,
-                                )
-                                time.sleep(60)
-                                continue
-                            target_hour = int(time_parts[0])
-                            target_minute = int(time_parts[1])
-                        except (ValueError, IndexError) as e:
-                            logger.error(
-                                "Invalid time format for event %s: %s - %s",
-                                event.name,
-                                event.specific_time,
-                                e,
-                            )
-                            time.sleep(60)
-                            continue
-
-                        now = datetime.now()
-                        target = now.replace(
-                            hour=target_hour,
-                            minute=target_minute,
-                            second=0,
-                            microsecond=0,
-                        )
-                        if target <= now:
-                            target += timedelta(days=1)
-                        remaining = (target - datetime.now()).total_seconds()
-                        while event.enabled and remaining > 0 and not stop.is_set():
-                            stop.wait(min(1.0, remaining))
-                            remaining = (target - datetime.now()).total_seconds()
-                        if not event.enabled or stop.is_set():
-                            break
-
-                        current_time = datetime.now()
-                        last_triggered = (
-                            datetime.fromtimestamp(event.last_triggered)
-                            if event.last_triggered > 0
-                            else None
-                        )
-                        if last_triggered is not None and (
-                            last_triggered.date() == current_time.date()
-                            and last_triggered.hour == target_hour
-                            and last_triggered.minute == target_minute
-                        ):
-                            continue
-
-                        event_data = {
-                            "username": "System",
-                            "timestamp": time.time(),
-                            "source": "specific_time",
-                            "time": event.specific_time,
-                        }
-                        if not event.should_trigger(event_data):
-                            continue
-                        response = event.trigger_event(event_data)
-                        try:
-                            from .chatbot import deliver_chatbot_output
-
-                            success = deliver_chatbot_output(
-                                response,
-                                getattr(event, "reply_targets", None),
-                                discord_channels=getattr(
-                                    event, "discord_channels", None
-                                ),
-                                output_mode=getattr(event, "output_mode", "chat"),
-                            )
-                            if success:
-                                logger.info(
-                                    "Specific time event %s triggered at %s, sent message: %s",
-                                    event.name,
-                                    event.specific_time,
-                                    response,
-                                )
-                            else:
-                                logger.warning(
-                                    "Failed to send specific time event message for %s",
-                                    event.name,
-                                )
-                        except Exception as e:
-                            logger.error(
-                                "Error sending specific time event message for %s: %s",
-                                event.name,
-                                e,
-                            )
-                except Exception as e:
-                    logger.error(
-                        "Error in specific time thread for event %s: %s",
-                        event.name,
-                        e,
-                    )
-
-            thread = threading.Thread(
-                target=specific_time_thread,
-                daemon=True,
-                name=f"SpecificTime-{event.name}",
-            )
-            self._repeating_stops[event.event_id] = stop
-            thread.start()
-            self.repeating_tasks[event.event_id] = thread
-            logger.info(
-                "Started specific time thread for event: %s at %s",
-                event.name,
-                event.specific_time,
-            )
-
-    def _stop_repeating_event(self, event_id: str):
-        """Stop a repeating event task"""
-        with self._scheduler_lock:
-            event = self.events.get(event_id)
-            if event is not None:
-                event.enabled = False
             stop = self._repeating_stops.pop(event_id, None)
             if stop is not None:
                 stop.set()
-            if event_id in self.repeating_tasks:
-                del self.repeating_tasks[event_id]
-                logger.info(
-                    f"Removed repeating task reference for event ID: {event_id}"
+            self.repeating_tasks.pop(event_id, None)
+
+    def _timer_still_valid(self, event: ChatEvent, stop: threading.Event) -> bool:
+        return (
+            not stop.is_set()
+            and event.enabled
+            and self.events.get(event.event_id) is event
+        )
+
+    def _start_interval_thread(self, event: ChatEvent) -> None:
+        with self._scheduler_lock:
+            existing = self.repeating_tasks.get(event.event_id)
+            if existing is not None and getattr(existing, "is_alive", lambda: False)():
+                return
+            stop = threading.Event()
+
+            def interval_loop():
+                try:
+                    while True:
+                        interval = float(event.interval or 0)
+                        if interval <= 0 or stop.wait(interval):
+                            break
+                        if not self._timer_still_valid(event, stop) or not event.repeats():
+                            break
+                        self._fire_timer_event(
+                            event,
+                            {"username": "System", "timestamp": time.time(), "source": "interval"},
+                        )
+                except Exception as e:
+                    logger.error(f"Error in interval timer for event {event.name}: {e}", exc_info=True)
+
+            thread = threading.Thread(target=interval_loop, daemon=True, name=f"Event-{event.name}")
+            self._repeating_stops[event.event_id] = stop
+            self.repeating_tasks[event.event_id] = thread
+            thread.start()
+            logger.debug("Started interval timer for event %s (%ss)", event.name, event.interval)
+
+    # Backwards-compatible names
+    def _start_repeating_event(self, event: ChatEvent, initial_delay: float = 0):
+        if event.repeats():
+            self._start_interval_thread(event)
+
+    def _start_repeating_event_with_thread(self, event: ChatEvent, initial_delay: float = 0):
+        self._start_repeating_event(event, initial_delay)
+
+    def _stop_repeating_event(self, event_id: str):
+        self._unschedule_event(event_id)
+
+    @staticmethod
+    def _specific_time_due(event: ChatEvent, now: datetime, last_key: Optional[str]) -> Tuple[bool, str]:
+        """(fire now?, minute key) for a specific-time event at *now*.
+
+        Fires once per matching local minute, also across restarts within the
+        same minute (``last_triggered``).
+        """
+        key = now.strftime("%Y-%m-%d %H:%M")
+        target = normalize_specific_time(event.specific_time)
+        if target is None or now.strftime("%H:%M") != target or key == last_key:
+            return False, key
+        if event.last_triggered:
+            try:
+                fired = datetime.fromtimestamp(float(event.last_triggered)).strftime("%Y-%m-%d %H:%M")
+            except (OverflowError, OSError, ValueError):
+                fired = ""
+            if fired == key:
+                return False, key
+        return True, key
+
+    def _start_specific_time_event(self, event: ChatEvent):
+        """Start a specific-time event on a daemon thread (checks every second)."""
+        with self._scheduler_lock:
+            existing = self.repeating_tasks.get(event.event_id)
+            if existing is not None and getattr(existing, "is_alive", lambda: False)():
+                return
+            stop = threading.Event()
+
+            def specific_time_loop():
+                last_key: Optional[str] = None
+                try:
+                    while self._timer_still_valid(event, stop):
+                        if event.event_type != EventType.SPECIFIC_TIME:
+                            break
+                        due, key = self._specific_time_due(event, datetime.now(), last_key)
+                        if due:
+                            last_key = key
+                            self._fire_timer_event(
+                                event,
+                                {
+                                    "username": "System",
+                                    "timestamp": time.time(),
+                                    "source": "specific_time",
+                                    "scheduled_time": event.specific_time,
+                                },
+                            )
+                        stop.wait(1.0)
+                except Exception as e:
+                    logger.error("Error in specific time thread for event %s: %s", event.name, e)
+
+            thread = threading.Thread(
+                target=specific_time_loop, daemon=True, name=f"SpecificTime-{event.name}"
+            )
+            self._repeating_stops[event.event_id] = stop
+            self.repeating_tasks[event.event_id] = thread
+            thread.start()
+            logger.debug("Started specific time timer for %s at %s", event.name, event.specific_time)
+
+    def _fire_timer_event(self, event: ChatEvent, data: Dict[str, Any]) -> bool:
+        """Post a timer event's reply. False when skipped."""
+        from .chatbot import deliver_chatbot_output, is_chatbot_connected
+
+        targets = list(event.reply_targets)
+        if (
+            event.output_mode != "banner"
+            and targets == ["twitch"]
+            and not event.discord_channels
+            and not is_chatbot_connected()
+        ):
+            logger.debug("Skipping timer event %s: chat not connected", event.name)
+            return False
+        with self._lock:
+            event.begin_trigger(data)
+            context = event.build_context(data)
+            response = "" if event.lookup else event.render_response(data)
+            self._save_data()
+        if event.lookup:
+            from .chatbot_lookups import run_lookup_blocking
+
+            lookup_vars = run_lookup_blocking(event.lookup, context, kind="event")
+            response = event.respond_after_lookup(data, lookup_vars)
+        if not str(response or "").strip():
+            return False
+        try:
+            return bool(
+                deliver_chatbot_output(
+                    response,
+                    targets,
+                    discord_channels=list(event.discord_channels or []),
+                    output_mode=event.output_mode,
                 )
+            )
+        except Exception as e:
+            logger.error(f"Error sending timer event {event.name}: {e}")
+            return False
 
     def start_deferred_interval_events(self):
-        """Start any interval events that were deferred due to chatbot not being ready"""
-        with self._scheduler_lock:
-            logger.info(
-                f"start_deferred_interval_events called - deferred events: {len(self._deferred_interval_events)}"
-            )
+        """Make sure every enabled timer event has a running timer (idempotent).
 
-            if not self._deferred_interval_events:
-                logger.debug("No deferred interval events to start")
-                return
-
-            from .chatbot import is_chatbot_connected
-
-            chatbot_connected = is_chatbot_connected()
-            logger.info(f"Chatbot connected status: {chatbot_connected}")
-
-            if not chatbot_connected:
-                logger.warning(
-                    f"Chatbot not ready (is_chatbot_connected returned False), cannot start {len(self._deferred_interval_events)} deferred interval events"
-                )
-                # Log detailed connection status for debugging
-                try:
-                    from .chatbot import get_chatbot_connection_status
-
-                    status = get_chatbot_connection_status()
-                    logger.info(f"Detailed chatbot status: {status}")
-                except Exception as e:
-                    logger.error(f"Error getting detailed chatbot status: {e}")
-                return
-
-            logger.info(
-                f"Starting {len(self._deferred_interval_events)} deferred interval events"
-            )
-
-            started_count = 0
-            for index, event in enumerate(self._deferred_interval_events):
-                try:
-                    # Calculate staggered delay: spread events across their interval
-                    # Use modulo to ensure delay is within the interval range
-                    initial_delay = (
-                        (index * 2) % event.interval if event.interval > 0 else 0
-                    )
-                    logger.info(
-                        f"About to start deferred Interval event {event.name} (ID: {event.event_id}) with {initial_delay}s initial delay, interval: {event.interval}s"
-                    )
-
-                    # Instead of creating async tasks that may not persist, create threading-based timers
-                    # This ensures the events run independently of the event loop lifecycle
-                    logger.info(
-                        f"Calling _start_repeating_event_with_thread for event {event.name}"
-                    )
-                    self._start_repeating_event_with_thread(event, initial_delay)
-                    logger.info(
-                        f"Returned from _start_repeating_event_with_thread for event {event.name}"
-                    )
-                    logger.info(
-                        f"Successfully started deferred Interval event {event.name} (ID: {event.event_id}) with threading approach"
-                    )
-                    started_count += 1
-
-                except Exception as e:
-                    logger.error(
-                        f"Error starting deferred repeating task for Interval event {event.name}: {e}",
-                        exc_info=True,
-                    )
-
-            # Clear the deferred list
-            self._deferred_interval_events.clear()
-            logger.info(
-                f"All deferred interval events have been processed - started {started_count} events"
-            )
-
-    # Async wrappers for testing
-    async def test_command(
-        self, command_id: str, test_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Test a command with sample data and send message to Twitch chat"""
-        try:
-            command = self.commands.get(command_id)
-            if not command:
-                return {"success": False, "error": "Command not found"}
-
-            if not command.should_trigger(test_data):
-                return {
-                    "success": True,
-                    "triggered": False,
-                    "message": "Command conditions not met",
-                }
-
-            can_use, reason = command.can_use(test_data)
-            if not can_use:
-                return {"success": True, "triggered": False, "message": reason}
-
-            response = command.use_command(test_data)
-
-            # Send the response to configured reply targets
+        Kept for callers from chatbot staging (dedicated and fallback modes).
+        """
+        with self._lock:
+            events = list(self.events.values())
+        self._deferred_interval_events.clear()
+        for event in events:
+            if not event.enabled:
+                continue
+            thread = self.repeating_tasks.get(event.event_id)
+            if thread is not None and getattr(thread, "is_alive", lambda: False)():
+                continue
             try:
-                from .chatbot import deliver_chatbot_output
+                self._schedule_event(event)
+            except Exception as e:
+                logger.error(f"Error starting timer for event {event.name}: {e}")
 
-                success = deliver_chatbot_output(
-                    response,
-                    getattr(command, "reply_targets", None),
-                    discord_channels=getattr(command, "discord_channels", None),
-                    output_mode=getattr(command, "output_mode", "chat"),
-                )
-                if success:
-                    logger.info(
-                        f"Test command '{command.command_name}' sent message: {response}"
-                    )
-                else:
-                    logger.warning(
-                        f"Failed to send test command message for '{command.command_name}'"
-                    )
-                    return {
-                        "success": False,
-                        "error": "Failed to send message to chat targets",
-                    }
-            except Exception as send_error:
-                logger.error(
-                    f"Error sending test command message: {send_error}", exc_info=True
-                )
-                return {
-                    "success": False,
-                    "error": f"Error sending message: {str(send_error)}",
-                }
+    # Test runs (no side effects)
+    def _test_lookup_vars(self, item: Any, data: Dict[str, Any], kind: str, live_lookup: bool):
+        if not item.lookup:
+            return None, None
+        from .chatbot_lookups import get_lookup, run_lookup_blocking
+        from .chatbot_variables import example_lookup_variables
 
-            return {
-                "success": True,
-                "triggered": True,
-                "message": response,
-                "command_name": command.command_name,
-            }
+        lookup_id = item.lookup.get("id")
+        entry = get_lookup(lookup_id)
+        read_only = (entry is not None and entry.get("group") != "Do something") or (
+            lookup_id == "advanced" and str(item.lookup.get("method") or "GET").upper() == "GET"
+        )
+        if live_lookup and read_only:
+            return run_lookup_blocking(item.lookup, item.build_context(data), kind=kind), "live"
+        return example_lookup_variables(item.lookup), "example"
 
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+    def test_command(
+        self,
+        command_id: str,
+        sample: Optional[Dict[str, Any]] = None,
+        *,
+        send: bool = False,
+        live_lookup: bool = False,
+    ) -> "TestResult":
+        """Dry-run a command on a copy: no counter / usage / cooldown / stats changes.
 
-    async def test_event(
-        self, event_id: str, test_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Test an event with sample data and send message to Twitch chat"""
+        Returns ``{"ok", "triggered", "response", "reason", "lookup"}``
+        (``lookup``: None | "example" | "live"). The sample defaults to
+        ``chatbot_variables.sample_data("command", item=...)`` (sent by the
+        broadcaster, so permissions pass). Cooldown and usage limit are ignored
+        for test runs. Lookups use example values unless ``live_lookup`` is
+        True and the lookup only reads (never for "Do something" lookups).
+        ``send=True`` also posts the reply to the command's outputs. The
+        result can be awaited for old callers.
+        """
+        command = self.commands.get(command_id)
+        if command is None:
+            return TestResult(ok=False, triggered=False, response="", reason="Command not found")
         try:
-            event = self.events.get(event_id)
-            if not event:
-                return {"success": False, "error": "Event not found"}
+            from .chatbot_variables import sample_data
 
-            if not event.should_trigger(test_data):
-                return {
-                    "success": True,
-                    "triggered": False,
-                    "message": "Event conditions not met",
-                }
-
-            response = event.trigger_event(test_data)
-
-            # Send the response to configured reply targets
-            try:
-                from .chatbot import deliver_chatbot_output
-
-                success = deliver_chatbot_output(
-                    response,
-                    getattr(event, "reply_targets", None),
-                    discord_channels=getattr(event, "discord_channels", None),
-                    output_mode=getattr(event, "output_mode", "chat"),
-                )
-                if success:
-                    logger.info(f"Test event '{event.name}' sent message: {response}")
-                else:
-                    logger.warning(
-                        f"Failed to send test event message for '{event.name}'"
-                    )
-                    return {
-                        "success": False,
-                        "error": "Failed to send message to chat targets",
-                    }
-            except Exception as send_error:
-                logger.error(
-                    f"Error sending test event message: {send_error}", exc_info=True
-                )
-                return {
-                    "success": False,
-                    "error": f"Error sending message: {str(send_error)}",
-                }
-
-            return {
-                "success": True,
-                "triggered": True,
-                "message": response,
-                "event_name": event.name,
-            }
-
+            copy = ChatCommand.from_dict(command.to_dict())
+            data = sample_data("command", item=copy)
+            if sample:
+                data.update(dict(sample))
+            if not copy.enabled:
+                return TestResult(ok=True, triggered=False, response="", reason="Command is disabled")
+            if not copy.should_trigger(data):
+                return TestResult(ok=True, triggered=False, response="", reason="Conditions not met")
+            if not permission_allows(copy.permission, data):
+                return TestResult(ok=True, triggered=False, response="",
+                                  reason=f"Only {copy.permission} can use this command")
+            if copy.command_type == CommandType.RESET:
+                target = _find_reset_target(self.commands, copy.reset_command, copy.command_id)
+                data["target_command"] = target.command_name if target else copy.reset_command
+                data["target_count"] = target.counter_value if target else 0
+            copy.begin_use(data, track_stats=False)
+            lookup_vars, lookup_mode = self._test_lookup_vars(copy, data, "command", live_lookup)
+            if lookup_vars is None:
+                response = copy.render_response(data)
+            else:
+                response = copy.respond_after_lookup(data, lookup_vars)
+            reason = "" if response.strip() else "Lookup failed; nothing would be posted"
+            if send and response.strip():
+                self._send_test_output(copy, response)
+            return TestResult(ok=True, triggered=bool(response.strip()), response=response,
+                              reason=reason, lookup=lookup_mode)
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            logger.error("Command test failed: %s", e, exc_info=True)
+            return TestResult(ok=False, triggered=False, response="", reason=str(e))
+
+    def test_event(
+        self,
+        event_id: str,
+        sample: Optional[Dict[str, Any]] = None,
+        *,
+        send: bool = False,
+        live_lookup: bool = False,
+    ) -> "TestResult":
+        """Dry-run an event on a copy with sample data for its own type.
+
+        Same result shape and options as :meth:`test_command`.
+        """
+        event = self.events.get(event_id)
+        if event is None:
+            return TestResult(ok=False, triggered=False, response="", reason="Event not found")
+        try:
+            from .chatbot_variables import sample_data
+
+            copy = ChatEvent.from_dict(event.to_dict())
+            copy.enabled = True
+            data = sample_data("event", copy.event_type.value, item=copy)
+            if sample:
+                data.update(dict(sample))
+            if not copy.should_trigger(data):
+                return TestResult(ok=True, triggered=False, response="",
+                                  reason="This sample does not pass the event's filters")
+            copy.begin_trigger(data, track_stats=False)
+            lookup_vars, lookup_mode = self._test_lookup_vars(copy, data, "event", live_lookup)
+            if lookup_vars is None:
+                response = copy.render_response(data)
+            else:
+                response = copy.respond_after_lookup(data, lookup_vars)
+            reason = "" if response.strip() else "Lookup failed; nothing would be posted"
+            if send and response.strip():
+                self._send_test_output(copy, response)
+            return TestResult(ok=True, triggered=bool(response.strip()), response=response,
+                              reason=reason, lookup=lookup_mode)
+        except Exception as e:
+            logger.error("Event test failed: %s", e, exc_info=True)
+            return TestResult(ok=False, triggered=False, response="", reason=str(e))
+
+    @staticmethod
+    def _send_test_output(item: Any, response: str) -> None:
+        from .chatbot import deliver_chatbot_output
+
+        deliver_chatbot_output(
+            response,
+            list(item.reply_targets),
+            discord_channels=list(item.discord_channels or []),
+            output_mode=item.output_mode,
+        )
 
     # Quote Management Methods
     def add_quote(
@@ -2593,7 +2268,9 @@ class ChatbotManager:
     def cleanup(self):
         """Cleanup resources"""
         with self._scheduler_lock:
-            # For threading, we just clear the references - threads will exit when events are disabled
+            for stop in self._repeating_stops.values():
+                stop.set()
+            self._repeating_stops.clear()
             self.repeating_tasks.clear()
 
         # Force save any pending flag changes

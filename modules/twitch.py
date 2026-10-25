@@ -346,6 +346,10 @@ def _chat_notification_message_text(ev: Any) -> Optional[str]:
     return str(text) if text else None
 
 
+class _SilentReply(Exception):
+    """A matched command that posts nothing."""
+
+
 class _ChatbotLane:
     """One FIFO worker for chatbot work that would stall the EventSub loop (TH-07).
 
@@ -440,6 +444,22 @@ def _chat_message_may_call_api(msg_dict) -> bool:
         return get_chatbot_manager().message_may_call_api(msg_dict)
     except Exception:
         return False
+
+
+def _points_chatbot_data(data, alert) -> Dict[str, Any]:
+    """Chatbot payload for a channel point redemption."""
+    ev = data.event
+    return {
+        "username": alert.username,
+        "user_login": str(getattr(ev, "user_login", "") or ""),
+        "user_id": str(getattr(ev, "user_id", "") or ""),
+        "reward_title": alert.alert_name,
+        "reward_name": alert.alert_name,
+        "amount": int(alert.point_cost or 0),
+        "message": alert.message or "",
+        "timestamp": alert.timestamp,
+        "source": "twitch",
+    }
 
 
 def _notify_chatbot_event(event_type, event_data) -> None:
@@ -638,6 +658,28 @@ def _take_matching_recent_recipient(
             return ""
         entry = _recent_gift_recipients.pop(matches[0])
         return str(entry.get("recipient") or "").strip()
+
+
+def _peek_matching_recent_recipient(
+    gifter_login: Optional[str] = None,
+    gifter_id: Optional[str] = None,
+) -> str:
+    """Recipient of a single gift seen just before the gift event (not removed)."""
+    with _recent_gift_recipients_lock:
+        _prune_recent_gift_recipients()
+        matches = [
+            entry
+            for entry in _recent_gift_recipients
+            if _gifter_keys_match(
+                gifter_login,
+                gifter_id,
+                entry.get("gifter_login"),
+                entry.get("gifter_id"),
+            )
+        ]
+        if len(matches) != 1:
+            return ""
+        return str(matches[0].get("recipient") or "").strip()
 
 
 def _attach_recipient_to_pending_gift(
@@ -2159,6 +2201,9 @@ class Twitch_API:
             "id": twmsg_id,
             "username": username,
             "userid": user_id,
+            "user_id": user_id,
+            "user_login": getattr(data.event, "chatter_user_login", None)
+            or str(username or "").lower(),
             "message": message,
             "twmsgid": twmsg_id,
             "fragments": None,  # Convert fragments to JSON-serializable format below
@@ -2324,6 +2369,10 @@ class Twitch_API:
                     try:
                         from .chatbot import deliver_chatbot_output
 
+                        if not str(response_message or "").strip():
+                            # Blocked command (cooldown / permission / limit)
+                            # or failed lookup: the bot stays silent.
+                            raise _SilentReply()
                         deliver_chatbot_output(
                             response_message,
                             reply_targets,
@@ -2338,6 +2387,8 @@ class Twitch_API:
                         logger.info(
                             f"Command '{command_name}' processed by {username}: {response_message}"
                         )
+                    except _SilentReply:
+                        logger.debug("Command '%s' produced no reply", command_name)
                     except Exception as send_error:
                         logger.error(f"Error sending chatbot response: {str(send_error)}")
                 else:
@@ -2413,7 +2464,16 @@ class Twitch_API:
                     exc_info=True,
                 )
 
-        if _chatbot_lane.busy() or _chat_message_may_call_api(msg_dict):
+        try:
+            from .chatbot import is_own_chat_message
+
+            own_message = is_own_chat_message(user_id, message)
+        except Exception:
+            own_message = False
+        if own_message:
+            # The bot's own replies never run commands or chat events (no loops).
+            logger.debug("Ignoring the chatbot's own chat message for commands/events")
+        elif _chatbot_lane.busy() or _chat_message_may_call_api(msg_dict):
             try:
                 await asyncio.wrap_future(_chatbot_lane.submit(_chatbot_block))
             except Exception as e:
@@ -2895,6 +2955,9 @@ class Twitch_API:
             chatbot_manager = get_chatbot_manager()
             follow_data = {
                 "username": alert.username,
+                "user_login": str(getattr(data.event, "user_login", "") or ""),
+                "user_id": str(getattr(data.event, "user_id", "") or ""),
+                "followed_at": getattr(data.event, "followed_at", None) or "",
                 "timestamp": alert.timestamp,
                 "source": "twitch",
             }
@@ -3036,9 +3099,11 @@ class Twitch_API:
             chatbot_manager = get_chatbot_manager()
             sub_data = {
                 "username": username,
+                "user_login": str(user_login or ""),
+                "user_id": str(user_id or ""),
                 "tier": tier,
                 "months": cumulative_months,
-                "message": user_msg,
+                "message": user_msg or "",
                 "timestamp": alert.timestamp,
                 "source": "twitch",
             }
@@ -3171,9 +3236,12 @@ class Twitch_API:
             chatbot_manager = get_chatbot_manager()
             resub_data = {
                 "username": username,
+                "user_login": str(user_login or ""),
+                "user_id": str(user_id or ""),
                 "tier": tier,
                 "months": cumulative_months,
-                "message": user_msg,
+                "streak_months": getattr(data.event, "streak_months", None) or 0,
+                "message": user_msg or "",
                 "timestamp": alert.timestamp,
                 "source": "twitch",
             }
@@ -3396,9 +3464,11 @@ class Twitch_API:
             chatbot_manager = get_chatbot_manager()
             sub_data = {
                 "username": username,
+                "user_login": str(user_login or username or "").lower(),
+                "user_id": str(user_id or ""),
                 "tier": tier,
                 "months": 1,
-                "message": user_msg,
+                "message": user_msg or "",
                 "timestamp": alert.timestamp,
                 "source": "twitch",
             }
@@ -3493,10 +3563,26 @@ class Twitch_API:
         # Process through chatbot system
         try:
             chatbot_manager = get_chatbot_manager()
+            cumulative = getattr(data.event, "cumulative_total", None)
+            recipient = (
+                _peek_matching_recent_recipient(
+                    None if alert.anonymous else gifter_login,
+                    None if alert.anonymous else (str(gifter_id) if gifter_id else None),
+                )
+                if alert.gift_qty == 1
+                else ""
+            )
             giftsub_data = {
                 "username": gifter_name,
+                "user_login": "" if alert.anonymous else str(gifter_login or ""),
+                "user_id": "" if alert.anonymous else str(gifter_id or ""),
+                "is_anonymous": bool(alert.anonymous),
                 "tier": alert.tier,
                 "amount": alert.gift_qty,
+                "quantity": alert.gift_qty,
+                "total_gifts": cumulative if cumulative is not None else "",
+                "recipient": recipient,
+                "recipient_name": recipient,
                 "timestamp": alert.timestamp,
                 "source": "twitch",
             }
@@ -3641,12 +3727,20 @@ class Twitch_API:
             # Process through chatbot system
             try:
                 chatbot_manager = get_chatbot_manager()
+                power_msg = getattr(data.event, "message", None)
                 bits_data = {
                     "username": alert.username,
+                    "user_login": ""
+                    if is_anonymous
+                    else str(getattr(data.event, "user_login", "") or ""),
+                    "user_id": ""
+                    if is_anonymous
+                    else str(getattr(data.event, "user_id", "") or ""),
                     "amount": alert.amt_cheered,
-                    "message": data.event.message
-                    if hasattr(data.event, "message")
-                    else "",
+                    "message": str(getattr(power_msg, "text", "") or "")
+                    if power_msg is not None and not isinstance(power_msg, str)
+                    else str(power_msg or ""),
+                    "power_up_type": power_up_type,
                     "timestamp": alert.timestamp,
                     "source": "twitch",
                 }
@@ -3778,8 +3872,15 @@ class Twitch_API:
             chatbot_manager = get_chatbot_manager()
             cheer_data = {
                 "username": username_display,
+                "user_login": ""
+                if alert.anonymous
+                else str(getattr(data.event, "user_login", "") or ""),
+                "user_id": ""
+                if alert.anonymous
+                else str(getattr(data.event, "user_id", "") or ""),
                 "amount": alert.amt_cheered,
-                "message": alert.message,
+                "message": alert.message or "",
+                "power_up_type": "",
                 "timestamp": alert.timestamp,
                 "source": "twitch",
             }
@@ -3896,9 +3997,19 @@ class Twitch_API:
         # Process through chatbot system
         try:
             chatbot_manager = get_chatbot_manager()
+            raider_login = str(
+                getattr(data.event, "from_broadcaster_user_login", "") or ""
+            )
+            raider_id = str(getattr(data.event, "from_broadcaster_user_id", "") or "")
             raid_data = {
                 "username": alert.username,
+                "user_login": raider_login,
+                "user_id": raider_id,
+                "raider_name": alert.username,
+                "raider_login": raider_login,
+                "raider_id": raider_id,
                 "viewer_count": alert.raider_count,
+                "game": game_name or "",
                 "timestamp": alert.timestamp,
                 "source": "twitch",
             }
@@ -4009,6 +4120,10 @@ class Twitch_API:
             alert_id=alert.alert_id,
             point_cost=int(data.event.reward.cost or 0),
         )
+        _notify_chatbot_event(
+            EventType.CHANNEL_POINT_REDEMPTION,
+            _points_chatbot_data(data, alert),
+        )
 
     async def on_points(self, data: ChannelPointsCustomRewardRedemptionAddEvent):
         self._note_event_received()
@@ -4096,15 +4211,7 @@ class Twitch_API:
         )
         _notify_chatbot_event(
             EventType.CHANNEL_POINT_REDEMPTION,
-            {
-                "username": alert.username,
-                "reward_title": alert.alert_name,
-                "reward_name": alert.alert_name,
-                "amount": int(alert.point_cost or 0),
-                "message": alert.message or "",
-                "timestamp": alert.timestamp,
-                "source": "twitch",
-            },
+            _points_chatbot_data(data, alert),
         )
 
     async def on_hype_train_start(
@@ -4168,6 +4275,8 @@ class Twitch_API:
             EventType.HYPE_TRAIN_START,
             {
                 "username": conductor_name,
+                "user_login": str(getattr(data.event, "conductor_user_login", "") or ""),
+                "user_id": str(getattr(data.event, "conductor_user_id", "") or ""),
                 "level": level,
                 "timestamp": current_ts,
                 "source": "twitch",
@@ -4224,6 +4333,7 @@ class Twitch_API:
         _notify_chatbot_event(
             EventType.HYPE_TRAIN_PROGRESS,
             {
+                "username": "",
                 "level": data.event.level,
                 "progress": data.event.progress,
                 "goal": data.event.goal,
@@ -5222,9 +5332,13 @@ class Twitch_API:
         method: str = "GET",
         params: Optional[dict] = None,
         json_data: Optional[dict] = None,
+        headers: Optional[dict] = None,
     ) -> dict:
         """
         Makes a generic call to the Twitch API.
+
+        ``headers`` are extra request headers; Client-ID / Authorization /
+        Content-Type are always the app's own and cannot be overridden.
 
         Args:
             url (str): The full Twitch API URL to call.
@@ -5284,7 +5398,14 @@ class Twitch_API:
             logger.warning("No auth token available for API call")
             raise Exception("Authentication token missing - authentication required")
 
+        extra_headers = {
+            str(k): str(v)
+            for k, v in (headers or {}).items()
+            if str(k).strip().lower()
+            not in ("client-id", "authorization", "content-type")
+        }
         headers = {
+            **extra_headers,
             "Client-ID": self.client_id,
             "Authorization": f"Bearer {self.auth_token}",
         }

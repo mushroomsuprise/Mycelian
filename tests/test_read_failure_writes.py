@@ -50,12 +50,11 @@ def backend(monkeypatch):
 
 
 def _chatbot(monkeypatch, backend):
-    from modules.uiwindows import chatbot
+    # Custom variable storage lives in chatbot_custom_variables (reads go through database_manager).
+    from modules import chatbot_custom_variables as chatbot
 
-    monkeypatch.setattr(chatbot, "get_data", backend.get_data)
-    monkeypatch.setattr(chatbot, "get_data_checked", backend.get_data_checked)
-    monkeypatch.setattr(chatbot, "set_data", backend.set_data)
     monkeypatch.setattr(chatbot.time, "time", lambda: 1000.0)
+    chatbot.invalidate_custom_variable_cache()
     return chatbot
 
 
