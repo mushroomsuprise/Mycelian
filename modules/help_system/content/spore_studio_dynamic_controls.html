@@ -93,45 +93,30 @@
 
   <div class="hx-step">
     <h3>Save, then use it live</h3>
-    <p>Click <strong>Save</strong>. On Mycelian's <strong>Source Controls</strong> tab the template gets a card with your controls, grouped by type:</p>
+    <p>Click <strong>Save</strong>. On Mycelian's <strong>Source Controls</strong> tab the template gets a card with your controls, in the order you added them:</p>
 
     <div class="hx-split">
       <div>
         <figure class="hx-figure">
           <div class="hm">
-            <div class="hm-ssb-sc">
-              <div class="hm-row hm-between">
-                <span class="hm-bold hm-sm">Game_Hud Controls</span>
-                <span class="hm-badge">3 controls</span>
-              </div>
-              <span class="hm-ssb-sc-group">Actions</span>
-              <div class="hm-ssb-sc-grid">
-                <span class="hm-btn hm-dense">Pause / resume</span>
-              </div>
-              <span class="hm-ssb-sc-group">Counters &amp; Numbers</span>
-              <div class="hm-ssb-sc-counter">
-                <div class="hm-field hm-nolabel"><span class="hm-value">1</span></div>
-                <span class="hm-btn hm-danger hm-dense">-</span>
-                <span class="hm-btn hm-success hm-dense">+</span>
-                <span class="hm-btn hm-outline hm-dense">Reset</span>
-              </div>
-              <span class="hm-ssb-sc-group">Timers</span>
-              <div class="hm-ssb-sc-counter">
-                <span class="hm-btn hm-success hm-dense">Start</span>
-                <span class="hm-btn hm-ssb-warnbtn hm-dense">Stop</span>
-                <span class="hm-btn hm-outline hm-dense">Reset</span>
+            <div class="hm-sc-card hm-sc-solo">
+              <div class="hm-sc-card-head"><span class="hm-sc-name">game_hud</span><span class="hm-sc-count">3</span><span class="hm-sc-open"><span class="hx-mi">tune</span></span></div>
+              <div class="hm-sc-card-body">
+                <div class="hm-sc-btns"><span class="hm-sc-btn is-wide">Pause / resume</span></div>
+                <div class="hm-sc-row"><span class="hm-sc-label">Score</span><span class="hm-sc-tools"><span class="hm-sc-stepper"><span class="is-minus">−</span><span class="is-amount">1</span><span class="is-plus">+</span></span><span class="hm-sc-iconbtn"><span class="hx-mi">restart_alt</span></span></span></div>
+                <div class="hm-sc-row"><span class="hm-sc-label">Timer round_timer</span><span class="hm-sc-seg"><span class="is-go"><span class="hx-mi">play_arrow</span>Start</span><span class="is-pause"><span class="hx-mi">pause</span>Stop</span><span><span class="hx-mi">restart_alt</span></span></span></div>
               </div>
             </div>
           </div>
-          <figcaption>The template's card on the Source Controls tab, simplified.</figcaption>
+          <figcaption>The template's card on the Source Controls tab and in the OBS dock.</figcaption>
         </figure>
       </div>
       <div>
         <ul>
-          <li>The card title is the template name followed by <strong>Controls</strong>.</li>
-          <li>A button shows its <strong>Button text</strong> (or its label when that is empty).</li>
-          <li>A counter control has an amount box, filled with the <strong>Default step</strong>. <strong>-</strong> and <strong>+</strong> change the counter by that amount; <strong>Reset</strong> returns it to its initial value. You can type a different amount before clicking.</li>
-          <li>A timer control has <strong>Start</strong>, <strong>Stop</strong> (pauses) and <strong>Reset</strong>.</li>
+          <li>The card is titled with the template name, exactly as saved, and shows how many controls it has.</li>
+          <li>A button shows its <strong>Button text</strong> (or its label when that is empty). Buttons in a row share a two-per-row grid.</li>
+          <li>A counter control has an amount box between <strong>−</strong> and <strong>+</strong>, filled with the <strong>Default step</strong>. <strong>−</strong> and <strong>+</strong> change the counter by that amount; {{icon:restart_alt}} resets it to its initial value. You can type a different amount before clicking.</li>
+          <li>A timer control has <strong>Start</strong>, <strong>Stop</strong> (pauses) and {{icon:restart_alt}} reset. It works in the OBS dock too.</li>
         </ul>
       </div>
     </div>
@@ -146,12 +131,12 @@
 <tbody>
 <tr><td><strong>Button</strong></td><td>One button</td><td>The action, once per click</td></tr>
 <tr><td><strong>Toggle</strong></td><td>A switch</td><td>The action with <code>enabled</code> true or false</td></tr>
-<tr><td><strong>Text input</strong></td><td>A text box</td><td>The action with the typed text as <code>value</code></td></tr>
+<tr><td><strong>Text input</strong></td><td>A text box</td><td>The action with the typed text as <code>text</code></td></tr>
 <tr><td><strong>Number input</strong></td><td>A number box</td><td>The action with the number as <code>value</code></td></tr>
 <tr><td><strong>Slider</strong></td><td>A slider</td><td>The action with the slider position as <code>value</code></td></tr>
 <tr><td><strong>Select</strong></td><td>Not drawn yet. The Source Controls tab shows <em>"Unknown control type: select"</em>.</td><td>Nothing</td></tr>
-<tr><td><strong>Counter control</strong></td><td>Amount box, <strong>-</strong>, <strong>+</strong>, <strong>Reset</strong></td><td>Adjust counter on the chosen counter</td></tr>
-<tr><td><strong>Timer control</strong></td><td><strong>Start</strong>, <strong>Stop</strong>, <strong>Reset</strong></td><td>Start, pause or reset the chosen timer</td></tr>
+<tr><td><strong>Counter control</strong></td><td><strong>−</strong>, amount box, <strong>+</strong> and a reset button</td><td>Adjust counter on the chosen counter</td></tr>
+<tr><td><strong>Timer control</strong></td><td><strong>Start</strong>, <strong>Stop</strong> and a reset button</td><td>Start, pause or reset the chosen timer</td></tr>
 </tbody>
 </table></div>
 
@@ -224,7 +209,7 @@
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Use</th><th>When</th></tr></thead>
 <tbody>
-<tr><td><strong>Counter control</strong> type</td><td>One box per counter with <strong>-</strong>, <strong>+</strong> and <strong>Reset</strong>. The amount is typed live. The usual choice.</td></tr>
+<tr><td><strong>Counter control</strong> type</td><td>One row per counter with <strong>−</strong>, <strong>+</strong> and reset. The amount is typed live. The usual choice.</td></tr>
 <tr><td><strong>Button</strong> with <strong>Adjust counter</strong></td><td>One labelled button that always does the same thing, for example "Add 100 bits".</td></tr>
 </tbody>
 </table></div>

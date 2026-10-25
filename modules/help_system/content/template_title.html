@@ -137,32 +137,24 @@
 
 <p>Turn <strong>Show Category</strong> off to show the <strong>Custom Title</strong> text instead. <strong>Category Prefix</strong> and <strong>Category Suffix</strong> add text around the category (for example <code>Now playing: </code>) while Show Category is on.</p>
 
-<p>During the stream, use the <strong>Title Controls</strong> card in <a href="help:source_controls">Source Controls</a>:</p>
+<p>During the stream, use the <strong>title</strong> card in <a href="help:source_controls">Source Controls</a>:</p>
 
 <figure class="hx-figure">
   <div class="hm">
     <div class="hm-sc-card hm-sc-solo">
-      <div class="hm-sc-head"><span class="hm-sc-name">Title Controls</span><span class="hm-badge">4 controls</span></div>
-      <span class="hm-sc-group">Adjustments</span>
-      <div class="hm-sc-grid">
-        <div class="hm-sc-span"><span class="hm-sc-label">Show Category <span class="hm-marker" data-n="1"></span></span><span class="hm-switch is-on"><i></i></span></div>
-      </div>
-      <span class="hm-sc-group">Text Input</span>
-      <div class="hm-sc-grid">
-        <div class="hm-sc-span"><span class="hm-sc-label">Custom Title <span class="hm-marker" data-n="2"></span></span><div class="hm-field hm-nolabel"><span class="hm-placeholder">Enter custom title...</span></div></div>
-      </div>
-      <span class="hm-sc-group">Actions <span class="hm-marker" data-n="3"></span></span>
-      <div class="hm-sc-grid">
-        <span class="hm-btn">Clear</span>
-        <span class="hm-btn">Refresh</span>
+      <div class="hm-sc-card-head"><span class="hm-sc-name">title</span><span class="hm-sc-count">4</span><span class="hm-sc-open"><span class="hx-mi">tune</span></span></div>
+      <div class="hm-sc-card-body">
+        <div class="hm-sc-row"><span class="hm-sc-label">Show Category <span class="hx-mi">info_outline</span><span class="hm-marker" data-n="1"></span></span><span class="hm-switch hm-sc-sw is-on"><i></i></span></div>
+        <div class="hm-sc-field"><span class="hm-sc-label">Custom Title <span class="hx-mi">info_outline</span><span class="hm-marker" data-n="2"></span></span><span class="hm-sc-input is-ph">Enter custom title...</span></div>
+        <div class="hm-sc-btns"><span class="hm-sc-btn">Clear <span class="hm-marker" data-n="3"></span></span><span class="hm-sc-btn">Refresh</span></div>
       </div>
     </div>
   </div>
-  <figcaption>Source Controls → Title Controls. Click the switch to see both states.</figcaption>
+  <figcaption>The <em>title</em> card on the Source Controls tab (the OBS dock shows the same card). Click the switch to see both states.</figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1"><strong>Show Category</strong> changes the same setting as in Source Settings and is saved, so it survives a source refresh.</li>
+  <li data-n="1"><strong>Show Category</strong> changes the same setting as in Source Settings and is saved, so it survives a source refresh. The switch follows the saved value, so it flips by itself when you change it in Source Settings.</li>
   <li data-n="2">Text you type here is sent to the overlay as you type. It only shows while Show Category is off; typing does not turn Show Category off for you.</li>
   <li data-n="3"><strong>Clear</strong> (Clear Custom Title) empties the text and turns Show Category back on. <strong>Refresh</strong> (Refresh Category) reads the category from Twitch right now.</li>
 </ol>
@@ -187,7 +179,7 @@
 
 <details class="hx-details">
   <summary>The overlay says "Stream Title" and never changes</summary>
-  <p>Twitch is not connected yet, or the category has not been read. Check the Twitch connection (<a href="help:twitch_setup">Twitch Setup</a>), then press <strong>Refresh</strong> on Title Controls. The overlay keeps retrying while it waits for Twitch to authenticate.</p>
+  <p>Twitch is not connected yet, or the category has not been read. Check the Twitch connection (<a href="help:twitch_setup">Twitch Setup</a>), then press <strong>Refresh</strong> on the <strong>title</strong> card in Source Controls. The overlay keeps retrying while it waits for Twitch to authenticate.</p>
 </details>
 
 <details class="hx-details">
@@ -197,7 +189,7 @@
 
 <details class="hx-details">
   <summary>Nothing shows at all</summary>
-  <p>Show Category is probably off with an empty Custom Title, which draws a blank overlay by design. Press <strong>Clear</strong> on Title Controls to switch back to the category.</p>
+  <p>Show Category is probably off with an empty Custom Title, which draws a blank overlay by design. Press <strong>Clear</strong> on the <strong>title</strong> card in Source Controls to switch back to the category.</p>
 </details>
 
 <details class="hx-details">

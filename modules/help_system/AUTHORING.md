@@ -138,7 +138,7 @@ area class needs its file's prefix:
 | `20_mock_alerts.css` | `hma-` |
 | `20_mock_chatbot.css` | `hm-cb-`, `hm-chat` |
 | `20_mock_connectors.css` | `hm-cx-` |
-| `20_mock_templates.css` | `hm-tp-`, `hm-sc-` |
+| `20_mock_templates.css` | `hm-tp-`, `hm-sc-` (Source Controls tab and OBS dock: header, cards, every control type; see `content/source_controls.html`) |
 | `20_mock_spore.css` | `hm-ss-` (Spore Studio editor kit, reuse it) |
 | `20_mock_spore_b.css` | `hm-ssb-` |
 

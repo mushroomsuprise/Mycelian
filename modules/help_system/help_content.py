@@ -355,8 +355,8 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Real-time Source Controls',
         category=HelpCategory.TEMPLATES,
         summary='Control template elements in real-time during streams',
-        keywords=['controls', 'real-time', 'live', 'stream', 'interactive', 'dynamic controls', 'spore studio'],
-        related_topics=['templates_intro', 'template_configuration', 'spore_studio_dynamic_controls', 'spore_studio_overview'],
+        keywords=['controls', 'real-time', 'live', 'stream', 'interactive', 'dynamic controls', 'spore studio', 'obs dock', 'dock', 'custom browser dock', 'dock link'],
+        related_topics=['templates_intro', 'template_configuration', 'spore_studio_dynamic_controls', 'spore_studio_overview', 'obs_setup'],
     ),
     # =========================================
     # Spore Studio
