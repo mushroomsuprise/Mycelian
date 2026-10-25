@@ -101,6 +101,7 @@ body:not(.body--dark) .aps :is(p, span, div, label):not([class]) { color: inheri
 .aps-level-top { display: flex; align-items: center; gap: 7px; font-size: .82rem; font-weight: 650; color: var(--color-text-primary); }
 .aps-level-top .d { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
 .aps-level-top .aps-spacer { flex: 1; }
+.aps-level-secs.q-field { width: 7.5rem !important; }
 .aps-level-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: .72rem; color: var(--color-text-muted); }
 .aps-mx-wrap { padding: 0 14px 12px; }
 .aps-mx { width: 100%; border-collapse: collapse; font-size: .8rem; }
@@ -110,7 +111,8 @@ body:not(.body--dark) .aps :is(p, span, div, label):not([class]) { color: inheri
 .aps-mx th .d { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
 .aps-mx td { padding: 1px 4px; border-top: 1px solid var(--color-border-subtle); text-align: center; }
 .aps-mx td:first-child { text-align: left; }
-.aps-mx .mod { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--color-text-primary); }
+.aps-mx .mod { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--color-text-primary); white-space: nowrap; }
+.aps-mx td:first-child { white-space: nowrap; padding-right: 10px; }
 .aps-mx .mod .aps-icon { font-size: 16px; color: var(--color-text-muted); }
 .aps-mx tr.is-muted .mod { opacity: .55; }
 .aps-mx .q-checkbox__inner { font-size: 30px; }

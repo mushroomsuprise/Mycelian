@@ -38,7 +38,7 @@ NC_CSS = """
 .ncx-chip b { font-weight: 800; color: var(--color-text-muted); }
 .ncx-chip.is-on { color: var(--color-text-primary); background: var(--color-bg-base); border-color: var(--color-border-accent); }
 .ncx-search { padding: 0 12px 10px 16px; }
-.ncx-search .q-field { width: 100%; }
+.ncx-search > *, .ncx-search .q-field { width: 100% !important; }
 .ncx-search .q-field__control { height: 32px; min-height: 32px; border-radius: 8px; }
 .ncx-search .q-field__native, .ncx-search .q-field__marginal { height: 32px; min-height: 32px; font-size: .8rem; }
 .ncx-scroll { flex: 1 1 auto; min-height: 0; border-top: 1px solid var(--color-border-subtle); }
@@ -299,12 +299,14 @@ def create_notification_tray_button() -> None:
         else:
             render()
             S.dialog.open()
+            ui.run_javascript("window.MycelianToast&&MycelianToast.suppress(true)")
             S.last_read_ts = time.time()
             update_badge()
 
     def close() -> None:
         if S.dialog is not None:
             S.dialog.close()
+        ui.run_javascript("window.MycelianToast&&MycelianToast.suppress(false)")
         S.last_read_ts = time.time()
         update_badge()
         render()

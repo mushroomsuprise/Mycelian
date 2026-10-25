@@ -15,7 +15,7 @@ from ...ui_font import apply_app_font, apply_ui_scale
 from ...ui_form_controls import form_number, form_select
 from .app_settings_styles import APP_SETTINGS_CSS
 from ...notification_engine import notify, refresh_service_status_footer
-from ...notify_settings import DURATION_CHOICES, LEVEL_LABELS, LEVELS, POSITIONS, SOURCES, NotifyPrefs, duration_label
+from ...notify_settings import DEFAULT_DURATIONS, LEVEL_LABELS, LEVELS, MAX_DURATION_SECONDS, POSITIONS, SOURCES, NotifyPrefs
 from ...help_system.contextual_help import help_button
 from ...streamdeck_plugin_utils import (
     PluginInstallError,
@@ -323,14 +323,21 @@ class AppSettingsTab:
                             ui.element("div").classes("aps-spacer")
                             ui.switch(value=on, on_change=lambda e, lv=level: self._set_level(lv, bool(e.value))).props("dense").tooltip(
                                 f"Show {LEVEL_LABELS[level].lower()} as pop-ups")
+                        current = prefs.durations[level]
+                        never = current <= 0
                         with ui.element("div").classes("aps-level-row"):
                             ui.label("Stays up")
-                            choices = {str(int(s) if s == int(s) else s): duration_label(s) for s in DURATION_CHOICES}
-                            current = prefs.durations[level]
-                            key = str(int(current) if current == int(current) else current)
-                            choices.setdefault(key, duration_label(current))
-                            form_select(tooltip=f"How long {LEVEL_LABELS[level].lower()} stay on screen", options=choices, value=key,
-                                        classes="w-36", on_change=lambda e, lv=level: self._set_duration(lv, e.value))
+                            seconds = ui.number(value=None if never else current, min=1, max=MAX_DURATION_SECONDS, step=1, format="%g",
+                                                placeholder="Never").props("dense outlined suffix=sec").classes("aps-level-secs")
+                            seconds.tooltip(f"How many seconds {LEVEL_LABELS[level].lower()} stay on screen")
+                            if never:
+                                seconds.disable()
+                            seconds.on("blur", lambda _e, lv=level, box=seconds: self._set_duration(lv, box.value))
+                            seconds.on("keydown.enter", lambda _e, lv=level, box=seconds: self._set_duration(lv, box.value))
+                        with ui.element("div").classes("aps-level-row"):
+                            ui.label("Never dismiss")
+                            ui.switch(value=never, on_change=lambda e, lv=level: self._set_never(lv, bool(e.value))).props("dense").tooltip(
+                                f"Keep {LEVEL_LABELS[level].lower()} on screen until you close them")
             ui.label("By feature: untick to silence one kind of notification for one feature").classes("aps-nsub")
             with ui.element("div").classes("aps-mx-wrap"):
                 with ui.element("div").classes("aps-mx-cols"):
@@ -367,11 +374,24 @@ class AppSettingsTab:
 
     def _set_duration(self, level: str, raw) -> None:
         durations = dict(NotifyPrefs.from_app_settings(self.buffer).durations)
+        if durations.get(level, 0) <= 0:
+            return  # "Never dismiss" is on; the box is disabled
         try:
-            durations[level] = float(raw)
+            seconds = max(1.0, min(MAX_DURATION_SECONDS, float(raw)))
         except (TypeError, ValueError):
             return
+        if durations[level] != seconds:
+            durations[level] = seconds
+            self._set("notify_durations", durations)
+
+    def _set_never(self, level: str, never: bool) -> None:
+        durations = dict(NotifyPrefs.from_app_settings(self.buffer).durations)
+        if never:
+            durations[level] = 0
+        elif durations.get(level, 0) <= 0:
+            durations[level] = DEFAULT_DURATIONS.get(level) or 10
         self._set("notify_durations", durations)
+        self._render_notify_panel()
 
     def _set_source_level(self, source: str, level: str, on: bool) -> None:
         muted = {k: list(v) for k, v in NotifyPrefs.from_app_settings(self.buffer).muted.items()}

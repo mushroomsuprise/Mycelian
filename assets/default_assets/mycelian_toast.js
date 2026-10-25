@@ -256,8 +256,16 @@
         }
     }
 
+    /* While the notification centre is open, pop-ups would cover it: fade the visible ones
+       out and keep new ones away (they are listed in the centre). */
+    var suppressed = false;
+    function suppress(on) {
+        suppressed = !!on;
+        if (suppressed) { order.slice().forEach(function (id) { dismiss(id); }); }
+    }
+
     function show(entry) {
-        if (!entry || !entry.id) { return; }
+        if (!entry || !entry.id || suppressed) { return; }
         ensureStack();
         var item = items[entry.id];
         if (!item) {
@@ -346,6 +354,7 @@
         dismiss: dismiss,
         configure: configure,
         ensureStyles: ensureStyles,
+        suppress: suppress,
         local: local,
         onAction: function (id, index) {
             var fn = (localHandlers[id] || [])[index];

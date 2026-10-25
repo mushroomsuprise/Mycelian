@@ -18,7 +18,8 @@ LEVEL_TAGS: Dict[str, str] = {"error": "Error", "warning": "Warning", "info": "I
 DEFAULT_LEVELS: Dict[str, bool] = {level: True for level in LEVELS}
 # Seconds a pop-up stays up; 0 means until dismissed.
 DEFAULT_DURATIONS: Dict[str, float] = {"error": 0, "warning": 8, "info": 4, "success": 3}
-DURATION_CHOICES: Tuple[float, ...] = (0, 3, 4, 5, 6, 8, 10, 15, 20, 30)
+# Longest a pop-up can be set to stay (seconds); 0 means until dismissed.
+MAX_DURATION_SECONDS = 86400.0
 POSITIONS: Dict[str, str] = {
     "top-right": "Top right",
     "bottom-right": "Bottom right",
@@ -112,7 +113,7 @@ class NotifyPrefs:
         for level, seconds in (durations or {}).items():
             if level in self.durations:
                 try:
-                    self.durations[level] = max(0.0, min(300.0, float(seconds)))
+                    self.durations[level] = max(0.0, min(MAX_DURATION_SECONDS, float(seconds)))
                 except (TypeError, ValueError):
                     pass
         self.position = position if position in POSITIONS else DEFAULT_POSITION

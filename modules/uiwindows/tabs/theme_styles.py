@@ -109,9 +109,10 @@ body:not(.body--dark) .thm :is(p, span, div, label):not([class]) { color: inheri
     color: var(--color-text-secondary); background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); user-select: none; }
 .thm-nstyle:hover { color: var(--color-text-primary); }
 .thm-nstyle.is-on { color: var(--color-text-primary); border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
-.thm-nrow { display: grid; grid-template-columns: auto minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 6px 8px; font-size: .74rem;
+.thm-nrow { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 6px 10px; font-size: .74rem;
     color: var(--color-text-secondary); }
-.thm-nsel { min-width: 0; }
+.thm-nrow > .q-toggle { justify-self: end; }
+.thm-nsel { min-width: 0; width: 100%; }
 .thm-nsample { display: block; }
 .thm-nsample .mt { width: 100%; pointer-events: none; }
 .thm-read { display: flex; align-items: center; gap: 5px; font-size: .72rem; color: var(--color-text-secondary); padding: 4px 6px; border-radius: 6px;
