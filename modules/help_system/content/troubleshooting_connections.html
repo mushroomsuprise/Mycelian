@@ -46,11 +46,11 @@
     <details class="hx-details">
       <summary>Status is Idle or Not Configured</summary>
       <p><strong>Cause:</strong> No credentials, or you have not signed in yet.</p>
-      <p><strong>Fix:</strong> Open <span class="hx-path"><span>Settings</span><span>Twitch</span></span>, expand <strong>Advanced</strong> on the <strong>Main Account</strong> card, paste the <strong>Client ID</strong> and <strong>Client Secret</strong>, and click <strong>Connect</strong>. <strong>Refresh</strong> only updates the labels; it does not sign you in.</p>
+      <p><strong>Fix:</strong> Open <span class="hx-path"><span>Settings</span><span>Twitch</span></span>. On the <strong>Main account</strong> card, open <strong>Client ID &amp; secret</strong> (its tag says <strong>Needed to connect</strong>), paste the <strong>Client ID</strong> and <strong>Client Secret</strong>, and click <strong>Connect</strong>. The {{icon:refresh}} icon only re-reads the status; it does not sign you in.</p>
     </details>
     <details class="hx-details">
-      <summary>"Please enter your Client ID and Client Secret first"</summary>
-      <p><strong>Cause:</strong> One of the two <strong>Advanced</strong> fields is empty.</p>
+      <summary>"Enter your Twitch Client ID and Client Secret first"</summary>
+      <p><strong>Cause:</strong> One of the two fields under <strong>Client ID &amp; secret</strong> is empty.</p>
       <p><strong>Fix:</strong> Fill both and click <strong>Connect</strong> again.</p>
     </details>
     <details class="hx-details">
@@ -59,19 +59,19 @@
       <p><strong>Fix:</strong> Correct the URL in the Twitch developer console (http, localhost, no trailing slash). Close other streaming tools that use Twitch sign-in and try again.</p>
     </details>
     <details class="hx-details">
-      <summary>Status is Expired or Auth Failed</summary>
+      <summary>Status is Expired or Auth Failed, or the card says "Token expired"</summary>
       <p><strong>Cause:</strong> The token could not be refreshed: the Client Secret was regenerated, or access was removed on Twitch.</p>
-      <p><strong>Fix:</strong> Paste the new secret under <strong>Advanced</strong> if it changed, then click <strong>Connect</strong> and approve again. Check the application still exists in the developer console.</p>
+      <p><strong>Fix:</strong> Paste the new secret under <strong>Client ID &amp; secret</strong> if it changed, then click <strong>Reconnect</strong> and approve again. Check the application still exists in the developer console.</p>
     </details>
     <details class="hx-details">
       <summary>Status is Degraded and events stopped</summary>
       <p><strong>Cause:</strong> Signed in, but Twitch's event session dropped.</p>
-      <p><strong>Fix:</strong> Wait a minute; Mycelian reconnects on its own. If it stays amber, click <strong>Connect</strong> on the Main Account card. Check <a href="https://status.twitch.tv/">status.twitch.tv</a> for a Twitch outage.</p>
+      <p><strong>Fix:</strong> Wait a minute; Mycelian reconnects on its own. If it stays amber, click <strong>Reconnect</strong> on the <strong>Main account</strong> card. Check <a href="https://status.twitch.tv/">status.twitch.tv</a> for a Twitch outage.</p>
     </details>
     <details class="hx-details">
       <summary>Connected, but no alerts</summary>
       <p><strong>Cause:</strong> <strong>Process Twitch alerts</strong> is off, or the problem is on the overlay side.</p>
-      <p><strong>Fix:</strong> Turn on <strong>Process Twitch alerts</strong> under <strong>Options</strong> on <span class="hx-path"><span>Settings</span><span>Twitch</span></span>. If events appear in the Activity Feed but nothing plays, see <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
+      <p><strong>Fix:</strong> Turn on <strong>Process Twitch alerts</strong> under <strong>Alerts</strong> on <span class="hx-path"><span>Settings</span><span>Twitch</span></span> and click <strong>Save</strong>. If events appear in the Activity Feed but nothing plays, see <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
     </details>
   </div>
 
@@ -79,29 +79,43 @@
     <p>Mycelian controls OBS through the OBS WebSocket server built into OBS 28 and newer. Full steps: <a href="help:obs_websocket">OBS WebSocket</a>.</p>
     <figure class="hx-figure hx-static">
       <div class="hm">
-        <div class="hm-panel">
-          <div class="hm-row hm-between">
-            <span class="hm-row"><span class="hm-xs hm-muted">Live status</span><span class="hm-bold">Disconnected</span></span>
-            <span class="hm-switch is-on"><i></i>Enable OBS integration</span>
+        <div class="hm-it">
+          <div class="hm-it-head">
+            <span class="hm-it-brand">{{brand:obs}}</span>
+            <div><div class="hm-it-name">OBS</div><div class="hm-it-sub">Scenes, sources and recording control over OBS WebSocket</div></div>
+            <span class="hm-it-pill is-warn">Can't connect</span>
           </div>
-          <div class="hm-grid-2">
-            <div class="hm-field" data-label="Host"><span class="hm-value">localhost</span></div>
-            <div class="hm-field" data-label="Port"><span class="hm-value">4455</span></div>
+          <div class="hm-it-body">
+            <div class="hm-it-col">
+              <div class="hm-it-acct">
+                <div class="hm-it-acct-top">
+                  <div class="hm-it-who">
+                    <span class="hm-it-ava is-empty">{{brand:obs}}</span>
+                    <div><div class="hm-it-kicker">OBS Studio</div><div class="hm-it-acct-name">localhost:4455</div><div class="hm-it-state is-warn">OBS is open, but its WebSocket server isn't answering.</div></div>
+                  </div>
+                  <div class="hm-it-actions"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">wifi_tethering</span>Test</span></div>
+                </div>
+              </div>
+              <div class="hm-it-row"><div><div class="hm-it-row-title">Enable OBS integration</div><div class="hm-it-row-sub">Connect automatically whenever OBS is running</div></div><span class="hm-switch is-on"><i></i></span></div>
+              <div class="hm-grid-2">
+                <div><div class="hm-it-label">Host</div><div class="hm-field hm-nolabel"><span class="hm-value">localhost</span></div></div>
+                <div><div class="hm-it-label">Port</div><div class="hm-field hm-nolabel"><span class="hm-value">4455</span></div></div>
+              </div>
+              <div><div class="hm-it-label">WebSocket password</div><div class="hm-field hm-nolabel"><span class="hm-value hm-secret">••••••••</span><span class="hx-mi">visibility_off</span></div></div>
+            </div>
           </div>
-          <div class="hm-field" data-label="WebSocket password"><span class="hm-value hm-secret">••••••••</span></div>
-          <div class="hm-row hm-end"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">wifi_tethering</span>Test</span></div>
         </div>
       </div>
       <figcaption><span class="hx-path"><span>Settings</span><span>OBS</span></span>, simplified.</figcaption>
     </figure>
     <details class="hx-details">
-      <summary>Stays Disconnected</summary>
-      <p><strong>Cause:</strong> OBS is closed, its WebSocket server is off, or <strong>Enable OBS integration</strong> is off.</p>
+      <summary>Stays Disconnected (the tab says OBS not running, Can't connect or Turned off)</summary>
+      <p><strong>Cause:</strong> OBS is closed (<strong>OBS not running</strong>), its WebSocket server is off (<strong>Can't connect</strong>), or <strong>Enable OBS integration</strong> is off (<strong>Turned off</strong>).</p>
       <p><strong>Fix:</strong> Start OBS. In OBS, open <span class="hx-path"><span>Tools</span><span>WebSocket Server Settings</span></span> and tick <strong>Enable WebSocket server</strong>. In Mycelian, turn on <strong>Enable OBS integration</strong>, then <strong>Save</strong> and <strong>Test</strong>.</p>
     </details>
     <details class="hx-details">
-      <summary>Test fails with an authentication error</summary>
-      <p><strong>Cause:</strong> The <strong>WebSocket password</strong> does not match OBS.</p>
+      <summary>The tab says Wrong password</summary>
+      <p><strong>Cause:</strong> The <strong>WebSocket password</strong> does not match OBS. Mycelian also shows <em>"OBS rejected the WebSocket password"</em>.</p>
       <p><strong>Fix:</strong> In OBS's WebSocket Server Settings, click <strong>Show Connect Info</strong>, copy the password, paste it into Mycelian and save.</p>
     </details>
     <details class="hx-details">
@@ -134,7 +148,7 @@
   <div class="hx-tab-panel" data-panel="donations">
     <p>Cash tips come from Streamlabs or StreamElements; YouTube Super Chats use the same donation alerts. Alert amounts use the <strong>Alert currency</strong> set on the service's settings tab.</p>
     <details class="hx-details">
-      <summary>Streamlabs: "OAuth callback port 9975 is in use."</summary>
+      <summary>Streamlabs: "Another app is using the port Streamlabs sign-in needs (9975)"</summary>
       <p><strong>Cause:</strong> Another program holds the port Streamlabs sign-in returns to.</p>
       <p><strong>Fix:</strong> Close it and click <strong>Connect</strong> again. The redirect URI in your Streamlabs app must be <span class="hx-copy" data-copy="http://127.0.0.1:9975">http://127.0.0.1:9975</span>. Steps: <a href="help:guide_streamlabs">Streamlabs guide</a>.</p>
     </details>

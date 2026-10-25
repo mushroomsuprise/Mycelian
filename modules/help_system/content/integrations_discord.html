@@ -1,4 +1,4 @@
-<p class="hx-lead">With your own Discord bot connected, Mycelian can post to the Discord channels you choose: automatic <strong>Stream is live</strong> announcements, <strong>Chatbot</strong> replies and <strong>Connector</strong> messages.</p>
+<p class="hx-lead">With your own Discord bot connected, Mycelian can post to the Discord channels you choose: automatic <strong>go-live</strong> announcements, <strong>Chatbot</strong> replies and <strong>Connector</strong> messages.</p>
 
 <div class="hx-meta">
   <span>{{icon:send}} Send-only</span>
@@ -13,22 +13,26 @@
 
 <h2>Go-live announcements</h2>
 
-<p>Turn on <strong>Enable go-live Discord message</strong> under <strong>Stream is live</strong>, add one or more channels, and click <strong>Save</strong>. Mycelian then posts your message the first time <strong>Twitch</strong> or <strong>YouTube</strong> goes live in a session.</p>
+<p>Under <strong>Go-live announcement</strong> on <span class="hx-path"><span>Settings</span><span>Discord</span></span>, turn on <strong>Announce when you go live</strong>, add one or more channels, and click <strong>Save</strong> in the header. Mycelian then posts your message the first time <strong>Twitch</strong> or <strong>YouTube</strong> goes live in a session.</p>
 
 <figure class="hx-figure">
   <div class="hm">
     <div class="hm-col">
-      <span class="hm-switch is-on"><i></i>Enable go-live Discord message</span>
-      <div class="hm-field hm-textarea" data-label="Message template"><span class="hm-value">Stream is live on {platform}! {url}</span></div>
-      <span class="hm-muted hm-xs">Placeholders: {platform}, {title}, {url}</span>
-      <span class="hm-bold hm-sm">Announcement channels</span>
-      <div class="hm-row">
-        <span class="hm-chip hm-plain">My Stream Server / #announcements <span class="hx-mi">close</span></span>
-        <span class="hm-chip hm-plain">Friends / #going-live <span class="hx-mi">close</span></span>
+      <div class="hm-it-sec"><span class="hx-mi">campaign</span>Go-live announcement</div>
+      <div class="hm-it-row"><div><div class="hm-it-row-title">Announce when you go live</div><div class="hm-it-row-sub">Once per stream when Twitch or YouTube goes live. Multi-stream safe, never sent twice.</div></div><span class="hm-switch is-on"><i></i></span></div>
+      <div>
+        <div class="hm-it-label">Message <span class="hx-mi">help_outline</span></div>
+        <div class="hm-field hm-nolabel hm-textarea"><span class="hm-value">Stream is live on {platform}! {url}</span></div>
+      </div>
+      <div class="hm-it-tokens"><span class="hm-it-token">{platform}</span><span class="hm-it-token">{title}</span><span class="hm-it-token">{url}</span></div>
+      <div class="hm-it-label">Channels</div>
+      <div class="hm-it-list">
+        <div class="hm-it-li"><span class="hx-mi">tag</span><span class="hm-it-li-main">announcements</span><span class="hm-it-li-muted">My Stream Server</span><span class="hx-mi">close</span></div>
+        <div class="hm-it-li"><span class="hx-mi">tag</span><span class="hm-it-li-main">going-live</span><span class="hm-it-li-muted">Friends</span><span class="hx-mi">close</span></div>
       </div>
     </div>
   </div>
-  <figcaption>Settings → Discord → Stream is live. One message goes to every listed channel. The switch is only a picture.</figcaption>
+  <figcaption>Settings → Discord → Go-live announcement. One message goes to every listed channel. Click a placeholder chip to add it to the end of the message. The switch is only a picture.</figcaption>
 </figure>
 
 <div class="hx-table-wrap"><table>
@@ -63,12 +67,12 @@
 <h2>Troubleshooting</h2>
 
 <details class="hx-details">
-  <summary>Status says Auth Failed</summary>
+  <summary>The tab says Auth failed</summary>
   <p>Reset the bot token in the Developer Portal, paste it, and click <strong>Connect</strong>.</p>
 </details>
 <details class="hx-details">
   <summary>No servers are listed</summary>
-  <p>Invite the bot to at least one server, then click <strong>Refresh servers</strong>.</p>
+  <p>Invite the bot to at least one server, then click the {{icon:refresh}} icon next to <strong>Add</strong> (<em>Reload servers and channels</em>). The Server and Channel pickers only show while the bot is connected.</p>
 </details>
 <details class="hx-details">
   <summary>Messages are not sent</summary>

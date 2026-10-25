@@ -30,14 +30,14 @@
     </div>
     <div class="hm-frame">
 
-      <div data-panel="twitch" class="hm-col"><span class="hm-h2">Twitch</span><span class="hm-muted">Main Account and Chatbot Account sign-in, and switches for Twitch alerts and raid shoutouts.</span><span><a href="help:twitch_setup">Connect Twitch</a></span></div>
-      <div data-panel="obs" class="hm-col"><span class="hm-h2">OBS</span><span class="hm-muted">Enable OBS integration, Host, Port and WebSocket password.</span><span><a href="help:obs_websocket">Connect OBS</a></span></div>
-      <div data-panel="psn" class="hm-col"><span class="hm-h2">PSN</span><span class="hm-muted">NPSSO code, PSN username to track, and the game cache.</span><span><a href="help:guide_psn">Connect PlayStation Network</a></span></div>
-      <div data-panel="spotify" class="hm-col"><span class="hm-h2">Spotify</span><span class="hm-muted">Client ID, Client Secret and market country.</span><span><a href="help:guide_spotify">Connect Spotify</a></span></div>
-      <div data-panel="youtube" class="hm-col"><span class="hm-h2">YouTube</span><span class="hm-muted">API key, channel URLs, and Google sign-in for live chat.</span><span><a href="help:guide_youtube">Connect YouTube</a></span></div>
-      <div data-panel="streamlabs" class="hm-col"><span class="hm-h2">Streamlabs</span><span class="hm-muted">Alert currency, Client ID and Client secret, Connect / Disconnect.</span><span><a href="help:guide_streamlabs">Connect Streamlabs</a></span></div>
-      <div data-panel="se" class="hm-col"><span class="hm-h2">StreamElements</span><span class="hm-muted">Alert currency and JWT token, Connect / Disconnect.</span><span><a href="help:guide_streamelements">Connect StreamElements</a></span></div>
-      <div data-panel="discord" class="hm-col"><span class="hm-h2">Discord</span><span class="hm-muted">Bot token, go-live message template and announcement channels.</span><span><a href="help:guide_discord">Connect Discord</a></span></div>
+      <div data-panel="twitch" class="hm-col"><span class="hm-h2">Twitch</span><span class="hm-muted">Main account and Chatbot account cards (sign-in, token timers, Client ID &amp; secret), switches for Twitch alerts and raid shoutouts, and setup steps.</span><span><a href="help:twitch_setup">Connect Twitch</a></span></div>
+      <div data-panel="obs" class="hm-col"><span class="hm-h2">OBS</span><span class="hm-muted">Connection card with Test, Enable OBS integration, Host, Port and WebSocket password, and a WebSocket checklist.</span><span><a href="help:obs_websocket">Connect OBS</a></span></div>
+      <div data-panel="psn" class="hm-col"><span class="hm-h2">PSN</span><span class="hm-muted">PlayStation account card with the NPSSO code, PSN username to track, and the searchable game cache.</span><span><a href="help:guide_psn">Connect PlayStation Network</a></span></div>
+      <div data-panel="spotify" class="hm-col"><span class="hm-h2">Spotify</span><span class="hm-muted">Account card with now playing, Client ID &amp; secret, and market country.</span><span><a href="help:guide_spotify">Connect Spotify</a></span></div>
+      <div data-panel="youtube" class="hm-col"><span class="hm-h2">YouTube</span><span class="hm-muted">Live chat (Google sign-in) and Channel lookups (API key) cards, live chat switches, channels to watch and ignored playlists.</span><span><a href="help:guide_youtube">Connect YouTube</a></span></div>
+      <div data-panel="streamlabs" class="hm-col"><span class="hm-h2">Streamlabs</span><span class="hm-muted">Account card with Connect, Disconnect and Client ID &amp; secret, and the alert currency.</span><span><a href="help:guide_streamlabs">Connect Streamlabs</a></span></div>
+      <div data-panel="se" class="hm-col"><span class="hm-h2">StreamElements</span><span class="hm-muted">Account card with Connect, Disconnect and the JWT token, and the alert currency.</span><span><a href="help:guide_streamelements">Connect StreamElements</a></span></div>
+      <div data-panel="discord" class="hm-col"><span class="hm-h2">Discord</span><span class="hm-muted">Bot card with the invite link and bot token, setup steps, and the go-live announcement message and channels.</span><span><a href="help:guide_discord">Connect Discord</a></span></div>
       <div data-panel="hooks" class="hm-col"><span class="hm-h2">Game Hooks</span><span class="hm-muted">Turn live game data on or off for Final Fantasy VII (2013) and Factorio.</span><span><a href="help:game_hooks">Game Hooks</a></span></div>
 
       <div data-panel="db" class="hm-col">
@@ -242,8 +242,8 @@
 <h2>Saving changes</h2>
 
 <ul>
-  <li>Each sub-tab saves separately. Click <strong>Save</strong> on the tab you changed.</li>
-  <li><strong>Discard</strong> puts the tab back to its last saved values.</li>
+  <li>Each sub-tab saves separately. Click <strong>Save</strong> on the tab you changed. On the service tabs (Twitch through Discord), <strong>Discard</strong> and <strong>Save</strong> are in the tab's header, next to the connection pills, and an <strong>Unsaved changes</strong> tag shows while there is something to save.</li>
+  <li><strong>Discard</strong> puts the tab back to its last saved values. It is greyed out while there is nothing to discard.</li>
   <li>If you leave Settings with unsaved changes, Mycelian asks: <em>"You have unsaved changes in Settings. Save them before leaving?"</em></li>
 </ul>
 

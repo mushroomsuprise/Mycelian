@@ -56,16 +56,21 @@
 
 <h2>Playlist filter</h2>
 
-<p>Under <strong>Playlist filter (exclude)</strong>, type a playlist name and press <kbd>Enter</kbd>. If the newest upload is in a listed playlist, Mycelian skips it and uses the next newest video.</p>
+<p>Under <strong>Ignore playlists</strong> on the right of <span class="hx-path"><span>Settings</span><span>YouTube</span></span>, type a playlist name and press <kbd>Enter</kbd> or click <strong>Add</strong>. If the newest upload is in a listed playlist, Mycelian skips it and uses the next newest video.</p>
 
-<figure class="hx-figure">
+<figure class="hx-figure hx-static">
   <div class="hm">
-    <div class="hm-section">Playlist filter (exclude)</div>
-    <span class="hm-muted hm-xs">Press Enter to add a playlist name</span>
-    <div class="hm-row"><span class="hm-chip">Shorts <span class="hx-mi">close</span></span><span class="hm-chip">Clips <span class="hx-mi">close</span></span></div>
-    <div class="hm-field hm-nolabel is-focused"><span class="hm-value">Stream VODs</span></div>
+    <div class="hm-col">
+      <div class="hm-it-sec"><span class="hx-mi">playlist_remove</span>Ignore playlists<span class="hm-it-sec-right">2</span></div>
+      <div class="hm-it-list">
+        <div class="hm-it-li"><span class="hx-mi">playlist_play</span><span class="hm-it-li-main">Shorts</span><span class="hx-mi">close</span></div>
+        <div class="hm-it-li"><span class="hx-mi">playlist_play</span><span class="hm-it-li-main">Clips</span><span class="hx-mi">close</span></div>
+      </div>
+      <div class="hm-it-add"><div class="hm-field hm-nolabel is-focused"><span class="hm-value">Stream VODs</span></div><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">add</span>Add</span></div>
+      <div class="hm-it-hint"><span class="hx-mi">info</span><span>Videos in these playlists are skipped when picking the latest video.</span></div>
+    </div>
   </div>
-  <figcaption>Each name becomes a chip. Click its <strong>×</strong> to remove it, then click <strong>Save</strong>.</figcaption>
+  <figcaption>Each name joins the list; the count is in the heading. Click a row's <strong>×</strong> (<em>Stop ignoring this playlist</em>) to remove it, then click <strong>Save</strong> in the header.</figcaption>
 </figure>
 
 <ul>
@@ -82,18 +87,21 @@
 
 <figure class="hx-figure">
   <div class="hm">
-    <div class="hm-row hm-gap-xl">
-      <span class="hm-switch is-on"><i></i>Enable live chat poller</span>
-      <span class="hm-switch is-on"><i></i>Process YouTube alerts</span>
+    <div class="hm-col">
+      <div class="hm-it-sec"><span class="hx-mi">tune</span>Options</div>
+      <div>
+        <div class="hm-it-row"><div><div class="hm-it-row-title">Read live chat</div><div class="hm-it-row-sub">Poll live chat for messages and alerts while you're live</div></div><span class="hm-switch is-on"><i></i></span></div>
+        <div class="hm-it-row"><div><div class="hm-it-row-title">Process YouTube alerts</div><div class="hm-it-row-sub">Off: memberships and Super Chats still reach chat and Connectors, but skip the alert queue</div></div><span class="hm-switch is-on"><i></i></span></div>
+      </div>
     </div>
   </div>
-  <figcaption>Under Settings → YouTube → Live chat &amp; alerts. Click a switch to preview it; nothing is saved.</figcaption>
+  <figcaption>Under <strong>Options</strong>, below the connection cards on Settings → YouTube. Click a switch to preview it; nothing is saved.</figcaption>
 </figure>
 
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Switch</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><strong>Enable live chat poller</strong></td><td>When on and authorized, Mycelian polls your live chat for messages and alerts.</td></tr>
+<tr><td><strong>Read live chat</strong></td><td>When on and authorized, Mycelian polls your live chat for messages and alerts.</td></tr>
 <tr><td><strong>Process YouTube alerts</strong></td><td>When off, memberships and Super Chats still reach chat, Connectors and the Chatbot, but skip the alert queue, instant alerts and the activity feed.</td></tr>
 </tbody>
 </table></div>
@@ -117,20 +125,20 @@
 
 <h3>Permission</h3>
 
-<p>Live chat uses the <code>youtube.force-ssl</code> scope so Mycelian can <strong>read</strong> live chat and <strong>send</strong> chatbot replies. If you connected earlier with read-only access, click <strong>Disconnect</strong>, then <strong>Connect</strong> to grant it.</p>
+<p>Live chat uses the <code>youtube.force-ssl</code> scope so Mycelian can <strong>read</strong> live chat and <strong>send</strong> chatbot replies. If you connected earlier with read-only access, click the {{icon:logout}} <strong>Disconnect</strong> icon on the live chat card, then <strong>Connect</strong> to grant it.</p>
 
 <h2>Quota</h2>
 
 <ul>
 <li>The YouTube Data API allows 10,000 units per day by default.</li>
-<li>When the quota runs out, the status shows <strong>Quota Exceeded (retry in 1 hour)</strong> and Mycelian tries again an hour later.</li>
+<li>When the quota runs out, the Channel lookups card shows <strong>Quota Exceeded (retry in 1 hour)</strong> and Mycelian tries again an hour later.</li>
 <li>Live chat polling costs about 5 units per poll and follows the interval Google asks for (often about 5 seconds). Long streams may need a <a href="https://support.google.com/youtube/contact/yt_api_form">quota extension</a>.</li>
 <li>Fewer channels and fewer filtered playlists use less quota.</li>
 </ul>
 
 <h2>Connection status</h2>
 
-<p>The bottom status bar uses these colors for YouTube, based on the upload status. The guide lists the exact text each one covers: <a href="help:guide_youtube">Connect YouTube</a>. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+<p>The bottom status bar uses these colors for YouTube, based on the Channel lookups card (uploads), not live chat. The guide lists the exact text each one covers: <a href="help:guide_youtube">Connect YouTube</a>. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
 
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
@@ -147,7 +155,7 @@
 
 <details class="hx-details">
   <summary>The latest video is not updating</summary>
-  <p>Uploads are checked every 30 minutes, so a new video can take that long to appear. The <strong>Refresh</strong> button only re-reads the status labels; it does not ask YouTube again. If the playlist filter is on, the new video may be excluded; check your filter list.</p>
+  <p>Uploads are checked every 30 minutes, so a new video can take that long to appear. The {{icon:refresh}} icon on the Channel lookups card only re-reads the status; it does not ask YouTube again. If the playlist filter is on, the new video may be excluded; check your filter list.</p>
 </details>
 
 <details class="hx-details">

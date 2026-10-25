@@ -45,13 +45,16 @@
 
 <h2>Options on the Spotify tab</h2>
 
+<p>The buttons are on the account card on the left; <strong>Market country</strong> is under <strong>Options</strong> on the right. <strong>Discard</strong> and <strong>Save</strong> are in the tab's header.</p>
+
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Control</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><strong>Market country</strong></td><td>Region for Spotify API requests. <strong>Auto (from account)</strong>, <strong>US</strong>, <strong>GB</strong> or <strong>CA</strong>.</td></tr>
-<tr><td><strong>Refresh</strong></td><td>Updates the Status and Current track labels.</td></tr>
-<tr><td><strong>Test</strong></td><td>Checks the saved token and reconnects without a new browser sign-in when possible.</td></tr>
-<tr><td><strong>Connect</strong></td><td>Saves the Client ID and Client Secret and starts the browser sign-in.</td></tr>
+<tr><td><strong>Market country</strong></td><td>Region for Spotify API requests. <strong>Auto (from account)</strong>, <strong>United States</strong>, <strong>United Kingdom</strong> or <strong>Canada</strong>.</td></tr>
+<tr><td>{{icon:refresh}} (<em>Check status now</em>)</td><td>Re-reads the connection status and the now playing strip.</td></tr>
+<tr><td><strong>Test</strong></td><td>Saves the Client ID and Client Secret, checks the saved token, and reconnects without a new browser sign-in when possible.</td></tr>
+<tr><td><strong>Connect</strong> / <strong>Reconnect</strong></td><td>Saves the Client ID and Client Secret and starts the browser sign-in. It reads <strong>Reconnect</strong> once Spotify is connected.</td></tr>
+<tr><td><strong>Client ID &amp; secret</strong></td><td>The folded credentials section on the card, with the redirect URI to copy. Its tag says <strong>Saved</strong> or <strong>Needed to connect</strong>.</td></tr>
 </tbody>
 </table></div>
 
@@ -75,7 +78,7 @@
 
 <details class="hx-details">
   <summary>The overlay is empty</summary>
-  <p>Check that the Spotify tab shows <strong>Connected</strong> and a song under <strong>Current track</strong>. If music is paused, <strong>Hide When Nothing Playing</strong> hides the overlay after the hide delay. Then check the browser source URL and refresh the source in OBS.</p>
+  <p>Check that the Spotify tab shows <strong>Connected</strong> and a song in the now playing strip on the account card. If music is paused, <strong>Hide When Nothing Playing</strong> hides the overlay after the hide delay. Then check the browser source URL and refresh the source in OBS.</p>
 </details>
 
 <details class="hx-details">

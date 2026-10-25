@@ -11,7 +11,7 @@
 
 <h2>Events Mycelian receives</h2>
 
-<p>Once the <strong>Main Account</strong> is connected, Mycelian listens for these events on your channel:</p>
+<p>Once the <strong>Main account</strong> is connected, Mycelian listens for these events on your channel:</p>
 
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Event</th><th>Used for</th></tr></thead>
@@ -36,32 +36,43 @@
 
 <h2>Options on the Twitch tab</h2>
 
-<p><span class="hx-path"><span>Settings</span><span>Twitch</span></span> has three switches under <strong>Options</strong>. Click <strong>Save</strong> after changing them.</p>
+<p><span class="hx-path"><span>Settings</span><span>Twitch</span></span> has three switches in its right-hand column: one under <strong>Alerts</strong> and two under <strong>Raids</strong>. Click <strong>Save</strong> in the tab's header after changing them.</p>
 
 <figure class="hx-figure">
   <div class="hm">
-    <div class="hm-panel">
-      <div class="hm-panel-title">Options</div>
-      <div class="hm-row hm-gap-xl">
-        <span class="hm-switch is-on"><i></i>Process Twitch alerts</span>
-        <span class="hm-switch"><i></i>Send native Twitch Shoutout</span>
-        <span class="hm-switch"><i></i>Send chat raid shoutout</span>
+    <div class="hm-it">
+      <div class="hm-it-head">
+        <span class="hm-it-brand">{{brand:twitch}}</span>
+        <div><div class="hm-it-name">Twitch</div><div class="hm-it-sub">Alerts, chat, raids and channel points from your channel</div></div>
+        <span class="hm-it-pill is-ok">Main account connected</span>
+        <span class="hm-it-pill is-edit">Unsaved changes</span>
+        <span class="hm-it-tools"><span class="hx-mi">help_outline</span><span class="hm-btn hm-outline hm-dense">Discard</span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span></span>
+      </div>
+      <div class="hm-it-body">
+        <div class="hm-it-col">
+          <div class="hm-it-sec"><span class="hx-mi">campaign</span>Alerts</div>
+          <div class="hm-it-row"><div><div class="hm-it-row-title">Process Twitch alerts</div><div class="hm-it-row-sub">Follows, subs, bits, raids and redemptions go to the alert queue</div></div><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-it-sec"><span class="hx-mi">diversity_3</span>Raids</div>
+          <div>
+            <div class="hm-it-row"><div><div class="hm-it-row-title">Send a native Twitch shoutout</div><div class="hm-it-row-sub">Uses Twitch's /shoutout for incoming raids</div></div><span class="hm-switch"><i></i></span></div>
+            <div class="hm-it-row"><div><div class="hm-it-row-title">Send a chat raid shoutout</div><div class="hm-it-row-sub">Posts a link to the raider's channel in chat</div></div><span class="hm-switch"><i></i></span></div>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
   </div>
-  <figcaption>Click a switch to see its on and off states. Changes here are only a preview.</figcaption>
+  <figcaption>The switches with the tab header above them (the Accounts column is left out). Click a switch to see its on and off states. Changes here are only a preview.</figcaption>
 </figure>
 
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Switch</th><th>What it does</th></tr></thead>
 <tbody>
 <tr><td><strong>Process Twitch alerts</strong></td><td>Sends Twitch events into the alert queue and Activity Feed. Turn it off to keep the connection without playing Twitch alerts.</td></tr>
-<tr><td><strong>Send native Twitch Shoutout</strong></td><td>After a raid, sends Twitch's own shoutout for the raider.</td></tr>
-<tr><td><strong>Send chat raid shoutout</strong></td><td>After a raid, the chatbot also posts a shoutout message in chat.</td></tr>
+<tr><td><strong>Send a native Twitch shoutout</strong></td><td>After a raid, sends Twitch's own shoutout for the raider.</td></tr>
+<tr><td><strong>Send a chat raid shoutout</strong></td><td>After a raid, the chatbot also posts a shoutout with a link to the raider's channel in chat.</td></tr>
 </tbody>
 </table></div>
 
 <h2>If events stop</h2>
 
-<p>Check the Twitch item in the status footer. <strong>Degraded</strong> means you are signed in but events have stopped; <strong>Expired</strong> or <strong>Auth Failed</strong> means you need to sign in again. Click <strong>Connect</strong> on the Main Account card. The full status list and fixes are in <a href="help:twitch_setup">Connect Twitch</a>, and more in <a href="help:troubleshooting_connections">Connection Problems</a>.</p>
+<p>Check the Twitch item in the status footer. <strong>Degraded</strong> means you are signed in but events have stopped; <strong>Expired</strong> or <strong>Auth Failed</strong> means you need to sign in again. Click <strong>Reconnect</strong> (or <strong>Connect</strong>) on the <strong>Main account</strong> card. The full status list and fixes are in <a href="help:twitch_setup">Connect Twitch</a>, and more in <a href="help:troubleshooting_connections">Connection Problems</a>.</p>

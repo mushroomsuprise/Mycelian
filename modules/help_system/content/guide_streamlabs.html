@@ -56,7 +56,7 @@
 
   <div class="hx-step">
     <h3>Paste both values into Mycelian</h3>
-    <p>Open <span class="hx-path"><span>Settings</span><span>Streamlabs</span></span>. Pick your <strong>Alert currency</strong>, paste the two values, and click <strong>Connect</strong>.</p>
+    <p>Open <span class="hx-path"><span>Settings</span><span>Streamlabs</span></span>. Paste the two values under <strong>Client ID &amp; secret</strong> on the account card, pick your <strong>Alert currency</strong> on the right, and click <strong>Connect</strong>.</p>
 
     <figure class="hx-figure">
       <div class="hm">
@@ -79,41 +79,53 @@
             <span class="hm-subtab">{{brand:streamelements}} StreamElements</span>
             <span class="hm-subtab">{{brand:discord}} Discord</span>
           </div>
-          <div class="hm-frame">
-            <div class="hm-col">
-              <div class="hm-status-band">
-                <div class="hm-metric"><span>Status</span><span class="hm-warn">Disconnected</span></div>
+          <div class="hm-it">
+            <div class="hm-it-head">
+              <span class="hm-it-brand">{{brand:streamlabs}}</span>
+              <div><div class="hm-it-name">Streamlabs</div><div class="hm-it-sub">Donations from Streamlabs as alerts</div></div>
+              <span class="hm-it-pill is-error">Not connected</span>
+              <span class="hm-it-pill is-edit">Unsaved changes</span>
+              <span class="hm-it-tools"><span class="hx-mi">help_outline</span><span class="hm-btn hm-outline hm-dense">Discard</span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span></span>
+            </div>
+            <div class="hm-it-body">
+              <div class="hm-it-col">
+                <div class="hm-it-sec"><span class="hx-mi">account_circle</span>Account</div>
+                <div class="hm-it-acct">
+                  <div class="hm-it-acct-top">
+                    <div class="hm-it-who">
+                      <span class="hm-it-ava is-empty">{{brand:streamlabs}}</span>
+                      <div><div class="hm-it-kicker">Streamlabs</div><div class="hm-it-acct-name">Not connected</div><div class="hm-it-state">Add your app's client ID and secret, then connect</div></div>
+                    </div>
+                    <div class="hm-it-actions"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">menu_book</span>How to connect</span><span class="hm-marker" data-n="1"></span><span class="hm-btn hm-dense hm-pulse"><span class="hx-mi">login</span>Connect</span><span class="hm-marker" data-n="3"></span></div>
+                  </div>
+                  <div class="hm-expansion hm-it-fold is-open">
+                    <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>Client ID &amp; secret<span class="hm-it-tag is-missing">Needed to connect</span></div>
+                    <div class="hm-expansion-body">
+                      <div class="hm-grid-2">
+                        <div><div class="hm-it-label">Client ID <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel is-focused"><span class="hm-value hm-mono">aBcD1234eFgH5678</span></div></div>
+                        <div><div class="hm-it-label">Client secret <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel"><span class="hm-value hm-secret">••••••••••••••••</span><span class="hx-mi">visibility_off</span></div></div>
+                      </div>
+                      <div class="hm-it-copy"><span class="hm-it-copy-k">Redirect URI</span><span class="hm-it-copy-v">http://127.0.0.1:9975</span><span class="hx-mi">content_copy</span></div>
+                      <div class="hm-it-hint"><span class="hx-mi">info</span><span>Register an app at <span class="hm-it-link">dev.streamlabs.com</span> with the redirect URI above. <span class="hm-it-link">How to connect</span> walks through it.</span></div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="hm-col hm-tight">
-                <span class="hm-h2">Donations</span>
-                <span class="hm-muted hm-sm">Cash tips from Streamlabs become donation alerts.</span>
-              </div>
-              <div class="hm-row hm-between">
-                <span class="hm-muted hm-xs">Alert amounts are matched in the currency below.</span>
-                <span class="hm-row"><span class="hm-btn hm-outline">How to connect</span><span class="hm-marker" data-n="1"></span><span class="hm-btn hm-flat hm-round hm-icon-only"><span class="hx-mi">help_outline</span></span></span>
-              </div>
-              <div class="hm-row hm-nowrap">
-                <div class="hm-field hm-select hm-grow" data-label="Alert currency"><span class="hm-value">USD</span></div>
-                <span class="hm-marker" data-n="2"></span>
-              </div>
-              <div class="hm-field is-focused" data-label="Client ID"><span class="hm-value hm-mono">aBcD1234eFgH5678</span></div>
-              <div class="hm-field" data-label="Client secret"><span class="hm-value hm-secret">••••••••••••••••</span><span class="hx-mi">visibility_off</span></div>
-              <div class="hm-row">
-                <span class="hm-btn hm-pulse">Connect</span>
-                <span class="hm-btn hm-outline">Disconnect</span>
-                <span class="hm-marker" data-n="3"></span>
+              <div class="hm-it-col">
+                <div class="hm-it-sec"><span class="hx-mi">payments</span>Donations</div>
+                <div class="hm-it-row"><div><div class="hm-it-row-title">Alert currency</div><div class="hm-it-row-sub">Donation alert amounts are matched in this currency (shared with StreamElements)</div></div><div class="hm-field hm-nolabel hm-select"><span class="hm-value">USD</span></div><span class="hm-marker" data-n="2"></span></div>
+                <div class="hm-it-hint"><span class="hx-mi">info</span><span>Only tips come from Streamlabs. Follows, subs and bits stay on Twitch.</span></div>
               </div>
             </div>
-            <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
           </div>
         </div>
       </div>
-      <figcaption>Settings → Streamlabs.</figcaption>
+      <figcaption>Settings → Streamlabs before connecting. Click <strong>Client ID &amp; secret</strong> to fold it open or closed.</figcaption>
     </figure>
     <ol class="hx-annotations">
-      <li data-n="1"><strong>How to connect</strong> opens a short version of these steps with the redirect URI and a copy button.</li>
+      <li data-n="1"><strong>How to connect</strong> opens a short version of these steps with the redirect URI and a copy button. The redirect URI is also in the copy box under <strong>Client ID &amp; secret</strong>.</li>
       <li data-n="2"><strong>Alert currency</strong> is the currency your donation alert thresholds use. It is shared with StreamElements.</li>
-      <li data-n="3"><strong>Connect</strong> saves the fields first, then opens your browser. If either field is empty you see <em>"Enter a Streamlabs client id and secret first."</em></li>
+      <li data-n="3"><strong>Connect</strong> saves the fields first, then opens your browser. If either field is empty you see <em>"Enter your Streamlabs Client ID and Client Secret first"</em>. Only the Client secret is masked.</li>
     </ol>
   </div>
 
@@ -132,11 +144,21 @@
 
   <div class="hx-step">
     <h3>Check it worked</h3>
-    <p>While you approve, a <em>Connecting to Streamlabs</em> pop-up waits. It turns into <em>Connected to Streamlabs</em> and the status turns green:</p>
+    <p>While you approve, a <em>Connecting to Streamlabs</em> pop-up waits and the button reads <strong>Connecting…</strong>. It turns into <em>Connected to Streamlabs</em> and the card turns green:</p>
     <figure class="hx-figure hx-static">
       <div class="hm">
-        <div class="hm-status-band">
-          <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected</span></div>
+        <div class="hm-it-acct">
+          <div class="hm-it-acct-top">
+            <div class="hm-it-who">
+              <span class="hm-it-ava is-empty">{{brand:streamlabs}}</span>
+              <div><div class="hm-it-kicker">Streamlabs</div><div class="hm-it-acct-name">Connected</div><div class="hm-it-state is-ok">Listening for donations</div></div>
+            </div>
+            <div class="hm-it-actions"><span class="hx-mi">logout</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">menu_book</span>How to connect</span></div>
+          </div>
+          <div class="hm-expansion hm-it-fold">
+            <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>Client ID &amp; secret<span class="hm-it-tag">Saved</span></div>
+            <div class="hm-expansion-body"></div>
+          </div>
         </div>
         <div class="hm-toast hm-ok"><span class="hx-mi">check_circle</span><span>Connected to Streamlabs</span></div>
         <div class="hm-footer">
@@ -145,7 +167,7 @@
           <span class="hm-footer-item">{{brand:streamlabs}} Streamlabs <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
         </div>
       </div>
-      <figcaption>Connected state. Streamlabs appears in the status footer once a Client ID is saved.</figcaption>
+      <figcaption>Connected state. <strong>Connect</strong> is hidden while connected; the {{icon:logout}} icon is <strong>Disconnect</strong>. Streamlabs appears in the status footer once a Client ID is saved.</figcaption>
     </figure>
     <p>Mycelian refreshes the Streamlabs token on its own and reconnects when the app starts. The next donation shows in the Activity Feed and plays a donation alert.</p>
   </div>
@@ -154,17 +176,17 @@
 
 <h2>Connection status</h2>
 
-<p>The Streamlabs tab and the bottom status bar show these states. When there is extra detail, the tab adds it after a colon, for example <em>Connecting: Reconnecting to Streamlabs.</em> The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+<p>The Streamlabs tab and the bottom status bar show these states. On the tab, the state is the name on the account card and the header pill; any extra detail is the card's state line, for example <em>Reconnecting to Streamlabs</em> under <strong>Connecting</strong>. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
 
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Footer</th><th>On the tab</th><th>Meaning</th></tr></thead>
 <tbody>
 <tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Connected</td><td>Donations are being received</td></tr>
 <tr><td><span class="help-status-swatch help-status-swatch-info"></span> Connecting</td><td>Connecting</td><td>Waiting for you to approve, or opening the donation socket</td></tr>
-<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Disconnected</td><td>Not connected. Click <strong>Connect</strong></td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Not connected</td><td>Not connected. Click <strong>Connect</strong></td></tr>
 <tr><td><span class="help-status-swatch help-status-swatch-error"></span> Expired</td><td>Token expired</td><td>The token could not be refreshed. Click <strong>Connect</strong> again</td></tr>
 <tr><td><span class="help-status-swatch help-status-swatch-error"></span> Auth Failed</td><td>Authentication failed</td><td>Streamlabs rejected the sign-in, or you did not finish it</td></tr>
-<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>Error</td><td>Something else failed. The detail after the colon says what</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>Error</td><td>Something else failed. The card's state line says what</td></tr>
 </tbody>
 </table></div>
 
@@ -181,22 +203,22 @@
 </details>
 
 <details class="hx-details">
-  <summary>"OAuth callback port 9975 is in use."</summary>
+  <summary>"Another app is using the port Streamlabs sign-in needs (9975)"</summary>
   <p>Another program on this computer is listening on port <code>9975</code>. Close it (often another copy of Mycelian or another streaming tool) and click <strong>Connect</strong> again.</p>
 </details>
 
 <details class="hx-details">
-  <summary>"Authorization was not completed."</summary>
+  <summary>"Streamlabs sign-in timed out"</summary>
   <p>The browser did not come back within 3 minutes, or the window was closed before approving. Click <strong>Connect</strong> and approve the prompt.</p>
 </details>
 
 <details class="hx-details">
-  <summary>"Streamlabs rejected the authorization code."</summary>
+  <summary>"Couldn't connect to Streamlabs" with "Streamlabs rejected the authorization code." in the details</summary>
   <p>The Client Secret is wrong or belongs to another app. Paste both values again from the same app and connect.</p>
 </details>
 
 <details class="hx-details">
-  <summary>Status says Token expired</summary>
+  <summary>The card says Token expired</summary>
   <p>The saved token could not be refreshed. Click <strong>Connect</strong> to sign in again.</p>
 </details>
 

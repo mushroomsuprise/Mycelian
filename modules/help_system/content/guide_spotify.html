@@ -67,7 +67,7 @@
 
   <div class="hx-step">
     <h3>Paste both values into Mycelian</h3>
-    <p>Open <span class="hx-path"><span>Settings</span><span>Spotify</span></span>, expand <strong>Advanced</strong> and paste the two values.</p>
+    <p>Open <span class="hx-path"><span>Settings</span><span>Spotify</span></span>. On the account card, open <strong>Client ID &amp; secret</strong> (it is already open until both values are saved) and paste the two values.</p>
 
     <figure class="hx-figure">
       <div class="hm">
@@ -79,41 +79,52 @@
           <span class="hm-subtab">{{brand:youtube}} YouTube</span>
           <span class="hm-subtab">{{brand:streamlabs}} Streamlabs</span>
         </div>
-        <div class="hm-frame">
-          <div class="hm-status-band">
-            <div class="hm-metric"><span>Status</span><span class="hm-err">Disconnected</span></div>
-            <div class="hm-metric"><span>Current track</span><span>Not connected</span></div>
+        <div class="hm-it">
+          <div class="hm-it-head">
+            <span class="hm-it-brand">{{brand:spotify}}</span>
+            <div><div class="hm-it-name">Spotify</div><div class="hm-it-sub">Now playing for overlays and chat commands</div></div>
+            <span class="hm-it-pill">Not connected</span>
+            <span class="hm-it-pill is-edit">Unsaved changes</span>
+            <span class="hm-it-tools"><span class="hx-mi">help_outline</span><span class="hm-btn hm-outline hm-dense">Discard</span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span></span>
           </div>
-          <div class="hm-expansion is-open">
-            <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>Advanced<span class="hm-marker" data-n="1"></span></div>
-            <div class="hm-expansion-body">
-              <span class="hm-muted hm-xs">Client ID and secret from the Spotify dashboard. Connect still uses these values.</span>
-              <div class="hm-grid-2">
-                <div class="hm-field is-focused" data-label="Client ID"><span class="hm-value hm-secret">••••••••••••</span></div>
-                <div class="hm-field" data-label="Client Secret"><span class="hm-placeholder">Spotify API Client Secret</span></div>
+          <div class="hm-it-body">
+            <div class="hm-it-col">
+              <div class="hm-it-sec"><span class="hx-mi">account_circle</span>Account</div>
+              <div class="hm-it-acct">
+                <div class="hm-it-acct-top">
+                  <div class="hm-it-who">
+                    <span class="hm-it-ava is-empty">{{brand:spotify}}</span>
+                    <div><div class="hm-it-kicker">Spotify</div><div class="hm-it-acct-name">Not connected</div><div class="hm-it-state">Add your app's Client ID and secret, then connect</div></div>
+                  </div>
+                  <div class="hm-it-actions"><span class="hx-mi">refresh</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">wifi_tethering</span>Test</span><span class="hm-btn hm-dense hm-pulse"><span class="hx-mi">login</span>Connect</span><span class="hm-marker" data-n="3"></span></div>
+                </div>
+                <div class="hm-expansion hm-it-fold is-open">
+                  <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>Client ID &amp; secret<span class="hm-it-tag is-missing">Needed to connect</span><span class="hm-marker" data-n="1"></span></div>
+                  <div class="hm-expansion-body">
+                    <div class="hm-grid-2">
+                      <div><div class="hm-it-label">Client ID <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel is-focused"><span class="hm-value hm-secret">••••••••••••</span><span class="hx-mi">visibility_off</span></div></div>
+                      <div><div class="hm-it-label">Client Secret <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel"><span class="hm-placeholder">Spotify API Client Secret</span></div></div>
+                    </div>
+                    <div class="hm-row hm-nowrap"><div class="hm-it-copy hm-grow"><span class="hm-it-copy-k">Redirect URI</span><span class="hm-it-copy-v">http://127.0.0.1:9973</span><span class="hx-mi">content_copy</span></div><span class="hm-marker" data-n="2"></span></div>
+                    <div class="hm-it-hint"><span class="hx-mi">info</span><span>Create an app, add the redirect URI above, then paste its Client ID and Secret here. <span class="hm-it-link">developer.spotify.com/dashboard</span></span></div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          <div class="hm-grid-3">
-            <div class="hm-field hm-select" data-label="Market country"><span class="hm-value">Auto (from account)</span></div>
-          </div>
-          <div class="hm-actions">
-            <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh</span>
-            <span class="hm-btn hm-outline"><span class="hx-mi">wifi_tethering</span>Test</span>
-            <span class="hm-btn hm-outline">Discard</span>
-            <span class="hm-btn">Save</span>
-            <span class="hm-btn hm-icon-only"><span class="hx-mi">content_copy</span></span>
-            <span class="hm-btn hm-pulse"><span class="hx-mi">login</span>Connect</span>
-            <span class="hm-marker" data-n="2"></span>
+            <div class="hm-it-col">
+              <div class="hm-it-sec"><span class="hx-mi">tune</span>Options</div>
+              <div class="hm-it-row"><div><div class="hm-it-row-title">Market country</div><div class="hm-it-row-sub">Region used for Spotify lookups</div></div><div class="hm-field hm-nolabel hm-select"><span class="hm-value">Auto (from account)</span></div></div>
+            </div>
           </div>
         </div>
       </div>
-      <figcaption>Settings → Spotify. Click <strong>Advanced</strong> to open or close it.</figcaption>
+      <figcaption>Settings → Spotify before the first sign-in. Click <strong>Client ID &amp; secret</strong> to fold it open or closed.</figcaption>
     </figure>
 
     <ol class="hx-annotations">
-      <li data-n="1"><strong>Advanced</strong> is collapsed by default. Both fields are masked; the eye icon shows the value.</li>
-      <li data-n="2">The copy button copies the redirect URI <code>http://127.0.0.1:9973</code>. <strong>Connect</strong> saves the Client ID and Client Secret, then opens your browser. <strong>Refresh</strong> only updates the status labels.</li>
+      <li data-n="1">The tag says <strong>Needed to connect</strong> until both values are saved, then <strong>Saved</strong>, and the section starts folded. Both fields are masked; the eye icon shows the value.</li>
+      <li data-n="2">The <strong>Redirect URI</strong> box shows <code>http://127.0.0.1:9973</code>; its copy icon copies it.</li>
+      <li data-n="3"><strong>Connect</strong> saves the Client ID and Client Secret, then opens your browser. <strong>Test</strong> checks the saved sign-in. The {{icon:refresh}} icon (<em>Check status now</em>) only re-reads the status.</li>
     </ol>
   </div>
 
@@ -121,17 +132,40 @@
     <h3>Click Connect and approve access</h3>
     <p>Mycelian opens Spotify's authorization page in your browser. Sign in and click <strong>Agree</strong>. Mycelian asks for two permissions: read your playback state and read your currently playing track. It cannot control playback or change your library.</p>
     <p>The browser then shows <em>"Authorization Successful!"</em>. Close the tab and return to Mycelian.</p>
-    <div class="hx-callout hx-note"><p>Mycelian waits 5 minutes for you to approve. After that the status shows <strong>Authorization Timeout</strong>; click <strong>Connect</strong> again. If <strong>Advanced</strong> is empty you get <em>"Please enter your Spotify Client ID and Client Secret first!"</em> instead.</p></div>
+    <div class="hx-callout hx-note"><p>While Mycelian waits, the button reads <strong>Connecting...</strong> and the card says <strong>Signing in…</strong>. Mycelian waits 5 minutes for you to approve. After that the card shows <strong>Authorization Timeout</strong>; click <strong>Connect</strong> again. If either credential field is empty you get <em>"Enter your Spotify Client ID and Client Secret first"</em> instead.</p></div>
   </div>
 
   <div class="hx-step">
     <h3>Check it worked</h3>
-    <p>Start a song in any Spotify app (desktop, web player or phone). Within a few seconds the tab should look like this:</p>
+    <p>Start a song in any Spotify app (desktop, web player or phone). Within a few seconds the account card should look like this:</p>
     <figure class="hx-figure hx-static">
       <div class="hm">
-        <div class="hm-status-band">
-          <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected</span></div>
-          <div class="hm-metric"><span>Current track</span><span>Artist Name - Song Title</span></div>
+        <div class="hm-it">
+          <div class="hm-it-head">
+            <span class="hm-it-brand">{{brand:spotify}}</span>
+            <div><div class="hm-it-name">Spotify</div><div class="hm-it-sub">Now playing for overlays and chat commands</div></div>
+            <span class="hm-it-pill is-ok">Connected</span>
+          </div>
+          <div class="hm-it-body">
+            <div class="hm-it-col">
+              <div class="hm-it-acct">
+                <div class="hm-it-acct-top">
+                  <div class="hm-it-who">
+                    <span class="hm-it-ava is-empty">{{brand:spotify}}</span>
+                    <div><div class="hm-it-kicker">Spotify</div><div class="hm-it-acct-name">Connected</div><div class="hm-it-state is-ok">Connected · now playing is available</div></div>
+                  </div>
+                  <div class="hm-it-actions"><span class="hx-mi">refresh</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">wifi_tethering</span>Test</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">login</span>Reconnect</span></div>
+                </div>
+                <div class="hm-it-extra">
+                  <div class="hm-it-media"><span class="hm-it-art"><span class="hx-mi">music_note</span></span><div><div class="hm-bold hm-sm">Song Title</div><div class="hm-xs hm-muted">Artist Name · Album Name</div></div></div>
+                </div>
+                <div class="hm-expansion hm-it-fold">
+                  <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>Client ID &amp; secret<span class="hm-it-tag">Saved</span></div>
+                  <div class="hm-expansion-body"></div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="hm-footer">
           <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
@@ -139,27 +173,27 @@
           <span class="hm-footer-item">{{brand:spotify}} Spotify <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
         </div>
       </div>
-      <figcaption>The Spotify item appears in the status footer once a Client ID and Client Secret are saved.</figcaption>
+      <figcaption>The now playing strip under the account shows the track, artist and album. The Spotify item appears in the status footer once a Client ID and Client Secret are saved.</figcaption>
     </figure>
-    <p>Click <strong>Test</strong> any time to check the saved token. It shows <em>"Spotify connection successful!"</em> or asks you to check your credentials. Mycelian refreshes the token on its own.</p>
+    <p>The button now reads <strong>Reconnect</strong>. Click <strong>Test</strong> any time to check the saved token. It ends with <em>"Connected to Spotify"</em>, or <em>"Couldn't reach Spotify with the saved sign-in"</em> if you need to connect again. Mycelian refreshes the token on its own.</p>
   </div>
 
 </section>
 
 <h2>Market country</h2>
 
-<p><strong>Market country</strong> sets the region used for Spotify API requests. Leave it on <strong>Auto (from account)</strong> unless tracks show up as unavailable. The other choices are <strong>US</strong>, <strong>GB</strong> and <strong>CA</strong>. Click <strong>Save</strong> after changing it.</p>
+<p><strong>Market country</strong>, under <strong>Options</strong> on the right, sets the region used for Spotify API requests. Leave it on <strong>Auto (from account)</strong> unless tracks show up as unavailable. The other choices are <strong>United States</strong>, <strong>United Kingdom</strong> and <strong>Canada</strong>. Click <strong>Save</strong> in the header after changing it.</p>
 
 <h2>Connection status</h2>
 
-<p>The Status label on the tab shows Mycelian's own text. The bottom status bar shortens it to one of these. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+<p>The state line on the account card shows Mycelian's own text, and the header pill a short version. The bottom status bar shortens it to one of these. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
 
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Footer</th><th>Tab shows</th><th>Meaning</th></tr></thead>
 <tbody>
 <tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Connected</td><td>Spotify is signed in</td></tr>
-<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Idle</td><td>Not Configured, Authorization Required, Awaiting Authorization, Opening Browser...</td><td>Waiting for you to sign in, or not set up</td></tr>
-<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Disconnected</td><td>Spotify is not connected</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Idle</td><td>Not connected (<em>"Add your app's Client ID and secret, then connect"</em>), Authorization Required, Signing in… (Opening Browser..., Awaiting Authorization)</td><td>Waiting for you to sign in, or not set up</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Not connected (<em>"Click Connect and approve Mycelian in your browser"</em>)</td><td>Spotify is not connected</td></tr>
 <tr><td><span class="help-status-swatch help-status-swatch-error"></span> Expired</td><td>Token Refresh Failed, Token Refresh Error</td><td>The token could not be refreshed. Click Connect again</td></tr>
 <tr><td><span class="help-status-swatch help-status-swatch-error"></span> Auth Failed</td><td>Authorization Timeout, Authorization Error: …, OAuth Failed</td><td>Authorization was denied, failed or timed out</td></tr>
 <tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>Authentication Error, OAuth Error, Server Error</td><td>Something else failed. Check the log</td></tr>
@@ -175,7 +209,7 @@
 </details>
 
 <details class="hx-details">
-  <summary>Status shows "Server Error"</summary>
+  <summary>The card shows "Server Error"</summary>
   <p>Mycelian could not open port <code>9973</code> for the sign-in callback. Another program, or a second copy of Mycelian, is using it. Close it and try again.</p>
 </details>
 
@@ -185,13 +219,13 @@
 </details>
 
 <details class="hx-details">
-  <summary>Current track says "Spotify connected (playback may be restricted by region)"</summary>
+  <summary>The now playing strip says "Spotify connected (playback may be restricted by region)"</summary>
   <p>Mycelian is signed in but Spotify reports nothing playing. Start playback, check that Spotify is not in offline mode, and make sure the right device is active. If it persists, try a specific <strong>Market country</strong>.</p>
 </details>
 
 <details class="hx-details">
   <summary>Status says Expired</summary>
-  <p>The saved token could not be refreshed, usually because the Client Secret was rotated or access was removed in your Spotify account under <strong>Manage apps</strong>. Paste the current secret and click <strong>Connect</strong>.</p>
+  <p>The saved token could not be refreshed, usually because the Client Secret was rotated or access was removed in your Spotify account under <strong>Manage apps</strong>. Paste the current secret under <strong>Client ID &amp; secret</strong> and click <strong>Connect</strong> (or <strong>Reconnect</strong>).</p>
 </details>
 
 <div class="hx-cards">

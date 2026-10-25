@@ -36,49 +36,59 @@
 
 <h2>Game mismatches and the game cache</h2>
 
-<p>PlayStation reports the game you are playing (presence) and your trophy lists separately, and the names do not always match. When Mycelian cannot find the presence name in your trophy data, the PSN tab shows a warning and the overlays may show no trophies.</p>
+<p>PlayStation reports the game you are playing (presence) and your trophy lists separately, and the names do not always match. When Mycelian cannot find the presence name in your trophy data, a <strong>Game mismatch</strong> banner appears across the top of the PSN tab and the overlays may show no trophies.</p>
 
 <figure class="hx-figure hx-static">
   <div class="hm">
-    <div class="hm-status-band">
-      <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected as YourPSN_ID</span></div>
-      <div class="hm-metric"><span>Tracking</span><span>YourPSN_ID (own account)</span></div>
+    <div class="hm-it">
+      <div class="hm-it-head">
+        <span class="hm-it-brand">{{brand:psn}}</span>
+        <div><div class="hm-it-name">PlayStation</div><div class="hm-it-sub">Trophies, presence and the current game for overlays</div></div>
+        <span class="hm-it-pill is-ok">Connected</span>
+        <span class="hm-it-pill is-edit">Unsaved changes</span>
+        <span class="hm-it-tools"><span class="hx-mi">help_outline</span><span class="hm-btn hm-outline hm-dense">Discard</span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span></span>
+      </div>
+      <div class="hm-it-body">
+        <div class="hm-it-col hm-it-wide">
+          <div class="hm-it-banner"><span class="hx-mi">warning_amber</span><div><b>Game mismatch:</b> “Example Game Remastered” isn’t in your trophy data, so trophy overlays show nothing for it. <span class="hm-it-link">Fix it in the game cache below</span>.</div><span class="hm-marker" data-n="1"></span></div>
+          <div class="hm-it-sec"><span class="hx-mi">sports_esports</span>Game cache<span class="hm-it-sec-right">3 of 214 games</span></div>
+          <div class="hm-it-hint"><span class="hx-mi">info</span><span>Fix names that don't match between presence and trophies. Removed games are cached again the next time you play them.</span></div>
+          <div class="hm-it-split">
+            <div class="hm-col">
+              <div class="hm-row hm-nowrap"><div class="hm-field hm-nolabel hm-grow is-focused"><span class="hx-mi">search</span><span class="hm-value">example</span><span class="hx-mi">cancel</span></div><span class="hm-marker" data-n="2"></span></div>
+              <div class="hm-it-list">
+                <div class="hm-it-li"><span class="hx-mi">sports_esports</span><span class="hm-it-li-main">Another Example Game</span><span class="hm-it-li-muted">PS4</span><span class="hx-mi">close</span></div>
+                <div class="hm-it-li is-active"><span class="hx-mi">sports_esports</span><span class="hm-it-li-main">Example Game</span><span class="hm-it-li-muted">PS5</span><span class="hx-mi">close</span><span class="hm-marker" data-n="3"></span></div>
+                <div class="hm-it-li"><span class="hx-mi">sports_esports</span><span class="hm-it-li-main">Example Game 2</span><span class="hm-it-li-muted">PS5</span><span class="hx-mi">close</span></div>
+              </div>
+            </div>
+            <div class="hm-it-detail">
+              <div class="hm-it-kv">
+                <span>Trophy name</span><span>Example Game</span>
+                <span>Platform</span><span>PS5</span>
+                <span>NP Communication ID</span><span class="hm-mono">NPWR00000_00</span>
+                <span>Cover art URL</span><span class="hm-mono">https://image.api.playstation.com/…</span>
+                <span>Last updated</span><span>2026-10-22 17:31</span>
+              </div>
+              <div class="hm-grid-2">
+                <div><div class="hm-it-label">Presence name <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel is-focused"><span class="hm-value">Example Game Remastered</span></div></div>
+                <div><div class="hm-it-label">NP Title ID <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel"><span class="hm-placeholder">e.g. PPSA01234_00</span></div></div>
+              </div>
+              <div class="hm-row hm-end"><span class="hm-marker" data-n="4"></span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save game</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="hm-hint-warn">
-      <span class="hx-mi">warning</span>
-      <span class="hm-col hm-tight hm-grow"><span class="hm-bold">Game Mismatch Detected</span><span class="hm-sm">Game: "Example Game Remastered" not found in trophy data</span></span>
-      <span class="hm-sm">Edit in Game Cache below</span>
-    </div>
-    <div class="hm-divider"></div>
-    <div class="hm-section">Game Cache<span class="hm-marker" data-n="1"></span></div>
-    <span class="hm-muted hm-xs">Edit cached game data to fix name mismatches. Remove chips to clear entries (re-cached on next play).</span>
-    <div class="hm-row">
-      <span class="hm-chip">Example Game <span class="hx-mi">close</span></span>
-      <span class="hm-chip">Another Game <span class="hx-mi">close</span></span>
-    </div>
-    <div class="hm-row hm-nowrap">
-      <span class="hm-muted hm-sm">Search game</span>
-      <div class="hm-field hm-select hm-grow hm-nolabel"><span class="hm-value">Example Game</span></div>
-    </div>
-    <span class="hm-sm hm-bold">Selected game</span>
-    <div class="hm-grid-2">
-      <div class="hm-metric"><span>Trophy name</span><span>Example Game</span></div>
-      <div class="hm-metric"><span>Platform</span><span>PS5</span></div>
-      <div class="hm-metric"><span>NP Communication ID</span><span class="hm-mono">NPWR00000_00</span></div>
-      <div class="hm-metric"><span>Last updated</span><span>2026-10-22 17:31</span></div>
-    </div>
-    <div class="hm-grid-2">
-      <div class="hm-field is-focused" data-label="Presence name"><span class="hm-value">Example Game Remastered</span></div>
-      <div class="hm-field" data-label="NP Title ID"><span class="hm-placeholder">e.g. PPSA01234_00</span></div>
-    </div>
-    <div class="hm-row hm-end"><span class="hm-marker" data-n="2"></span><span class="hm-btn">Save Changes</span></div>
   </div>
-  <figcaption>Settings → PSN with a mismatch, and the Game Cache section below it. Names and IDs are examples.</figcaption>
+  <figcaption>Settings → PSN with a mismatch, scrolled to the game cache (the Account and Tracking sections sit between the banner and the cache). Names and IDs are examples.</figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1">Each game Mycelian has seen gets a chip. Click the <strong>×</strong> on a chip to clear that entry; it is cached again the next time you play the game. With no games yet, the section shows <em>"No cached games yet. Play a game to populate the cache."</em></li>
-  <li data-n="2">Pick the game under <strong>Search game</strong>, set <strong>Presence name</strong> to the name in the warning (and the <strong>NP Title ID</strong> if you know it), then click <strong>Save Changes</strong>. The button stays disabled until you change a field.</li>
+  <li data-n="1">The banner names the presence name Mycelian could not match. Click <strong>Fix it in the game cache below</strong> to scroll to the cache.</li>
+  <li data-n="2">Every game Mycelian has seen is in the scrolling list, in name order. Type in <strong>Search cached games</strong> to filter by name, platform or ID; the heading then shows how many match. Only the first 150 matches are drawn, with <em>"Showing 150 of … — type to narrow the list"</em> under them.</li>
+  <li data-n="3">Click a game to open it in the panel on the right. The <strong>×</strong> on a row (<em>Remove from cache</em>) clears that entry; it is cached again the next time you play the game. With no games yet, the list shows <em>"No cached games yet. Play a game to fill the cache."</em></li>
+  <li data-n="4">Set <strong>Presence name</strong> to the name in the banner (and the <strong>NP Title ID</strong> if you know it), then click <strong>Save game</strong>. The button stays disabled until you change a field. <strong>Save</strong> in the header also saves a pending game edit.</li>
 </ol>
 
 <h2>Options on the PSN tab</h2>
@@ -86,11 +96,11 @@
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Control</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><strong>NPSSO code</strong></td><td>The sign-in token. <strong>Connect to PSN</strong> fills it in for you.</td></tr>
-<tr><td><strong>PSN username</strong></td><td>Optional. A PSN online ID to track instead of your own account. You can only track yourself or friends whose status is online.</td></tr>
-<tr><td><strong>How to Connect</strong></td><td>Shows the steps for getting a token by hand.</td></tr>
-<tr><td><strong>Save</strong></td><td>Saves both fields and reconnects PSN.</td></tr>
-<tr><td><strong>Connect to PSN</strong></td><td>Opens the PlayStation sign-in window and captures a new token.</td></tr>
+<tr><td><strong>NPSSO code</strong></td><td>The sign-in token, in the folded <strong>NPSSO code</strong> section on the account card. Its tag says <strong>Saved</strong> or <strong>Needed to connect</strong>. <strong>Connect to PSN</strong> fills it in for you.</td></tr>
+<tr><td><strong>PSN username to track</strong></td><td>Optional, under <strong>Tracking</strong>. A PSN online ID to track instead of your own account. You can only track yourself or friends whose status is online.</td></tr>
+<tr><td><strong>How to connect</strong></td><td>Shows the steps for getting a token by hand.</td></tr>
+<tr><td><strong>Connect to PSN</strong> / <strong>Sign in again</strong></td><td>Opens the PlayStation sign-in window and captures a new token. It reads <strong>Sign in again</strong> once a code is saved.</td></tr>
+<tr><td><strong>Save</strong> (header)</td><td>Saves the code and username, reconnects PSN, and saves a pending game cache edit.</td></tr>
 </tbody>
 </table></div>
 
@@ -115,12 +125,12 @@
 
 <details class="hx-details">
   <summary>Trophies do not show for the game I am playing</summary>
-  <p>Look for <strong>Game Mismatch Detected</strong> on the PSN tab and fix the entry in <strong>Game Cache</strong>. Also check that trophy sync is on for the console, and give PlayStation a few minutes to report new trophies.</p>
+  <p>Look for the <strong>Game mismatch</strong> banner on the PSN tab and fix the entry in the <strong>Game cache</strong>. Also check that trophy sync is on for the console, and give PlayStation a few minutes to report new trophies.</p>
 </details>
 
 <details class="hx-details">
   <summary>Nothing shows for another player</summary>
-  <p>Check the <strong>PSN username</strong> spelling. The player must be your friend, appear online, and allow friends to see their trophies and online status.</p>
+  <p>Check the <strong>PSN username to track</strong> spelling. The player must be your friend, appear online, and allow friends to see their trophies and online status.</p>
 </details>
 
 <details class="hx-details">
@@ -129,8 +139,8 @@
 </details>
 
 <details class="hx-details">
-  <summary>Status says Token Expired</summary>
-  <p>NPSSO tokens last about two months. Click <strong>Connect to PSN</strong> on the PSN tab to get a new one. See <a href="help:guide_psn">Connect PlayStation Network</a>.</p>
+  <summary>The card says Token Expired</summary>
+  <p>NPSSO tokens last about two months. Click <strong>Sign in again</strong> on the PSN tab to get a new one. See <a href="help:guide_psn">Connect PlayStation Network</a>.</p>
 </details>
 
 <h2>Security</h2>

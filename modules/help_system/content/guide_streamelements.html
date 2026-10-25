@@ -52,7 +52,7 @@
 
   <div class="hx-step">
     <h3>Paste it into Mycelian and click Connect</h3>
-    <p>Open <span class="hx-path"><span>Settings</span><span>StreamElements</span></span>. Pick your <strong>Alert currency</strong>, paste the token into <strong>JWT token</strong>, and click <strong>Connect</strong>.</p>
+    <p>Open <span class="hx-path"><span>Settings</span><span>StreamElements</span></span>. Paste the token into <strong>JWT token</strong> on the account card, pick your <strong>Alert currency</strong> on the right, and click <strong>Connect</strong>.</p>
 
     <figure class="hx-figure">
       <div class="hm">
@@ -75,54 +75,72 @@
             <span class="hm-subtab">{{brand:discord}} Discord</span>
             <span class="hm-subtab"><span class="hx-mi">memory</span> Game Hooks</span>
           </div>
-          <div class="hm-frame">
-            <div class="hm-col">
-              <div class="hm-status-band">
-                <div class="hm-metric"><span>Status</span><span class="hm-warn">Disconnected</span></div>
+          <div class="hm-it">
+            <div class="hm-it-head">
+              <span class="hm-it-brand">{{brand:streamelements}}</span>
+              <div><div class="hm-it-name">StreamElements</div><div class="hm-it-sub">Tips from StreamElements as alerts</div></div>
+              <span class="hm-it-pill is-error">Not connected</span>
+              <span class="hm-it-pill is-edit">Unsaved changes</span>
+              <span class="hm-it-tools"><span class="hx-mi">help_outline</span><span class="hm-btn hm-outline hm-dense">Discard</span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span></span>
+            </div>
+            <div class="hm-it-body">
+              <div class="hm-it-col">
+                <div class="hm-it-sec"><span class="hx-mi">account_circle</span>Account</div>
+                <div class="hm-it-acct">
+                  <div class="hm-it-acct-top">
+                    <div class="hm-it-who">
+                      <span class="hm-it-ava is-empty">{{brand:streamelements}}</span>
+                      <div><div class="hm-it-kicker">StreamElements</div><div class="hm-it-acct-name">Not connected</div><div class="hm-it-state">Paste your channel's JWT token, then connect</div></div>
+                    </div>
+                    <div class="hm-it-actions"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">menu_book</span>How to connect</span><span class="hm-btn hm-dense hm-pulse"><span class="hx-mi">login</span>Connect</span><span class="hm-marker" data-n="3"></span></div>
+                  </div>
+                  <div class="hm-expansion hm-it-fold is-open">
+                    <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>JWT token<span class="hm-it-tag is-missing">Needed to connect</span></div>
+                    <div class="hm-expansion-body">
+                      <div class="hm-row hm-nowrap">
+                        <div class="hm-grow"><div class="hm-it-label">JWT token <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel is-focused"><span class="hm-value hm-secret">••••••••••••••••••••</span><span class="hx-mi">visibility_off</span></div></div>
+                        <span class="hm-marker" data-n="2"></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="hm-col hm-tight">
-                <span class="hm-h2">Donations</span>
-                <span class="hm-muted hm-sm">Tips from StreamElements become donation alerts.</span>
-              </div>
-              <div class="hm-row hm-between">
-                <span class="hm-muted hm-xs">Alert amounts are matched in the currency below.</span>
-                <span class="hm-row"><span class="hm-btn hm-outline">How to connect</span><span class="hm-btn hm-flat hm-round hm-icon-only"><span class="hx-mi">help_outline</span></span></span>
-              </div>
-              <div class="hm-row hm-nowrap">
-                <div class="hm-field hm-select hm-grow" data-label="Alert currency"><span class="hm-value">USD</span></div>
-                <span class="hm-marker" data-n="1"></span>
-              </div>
-              <div class="hm-row hm-nowrap">
-                <div class="hm-field hm-grow is-focused" data-label="JWT token"><span class="hm-value hm-secret">••••••••••••••••••••</span><span class="hx-mi">visibility_off</span></div>
-                <span class="hm-marker" data-n="2"></span>
-              </div>
-              <div class="hm-row">
-                <span class="hm-btn hm-pulse">Connect</span>
-                <span class="hm-btn hm-outline">Disconnect</span>
-                <span class="hm-marker" data-n="3"></span>
+              <div class="hm-it-col">
+                <div class="hm-it-sec"><span class="hx-mi">payments</span>Donations</div>
+                <div class="hm-it-row"><div><div class="hm-it-row-title">Alert currency</div><div class="hm-it-row-sub">Donation alert amounts are matched in this currency (shared with Streamlabs)</div></div><div class="hm-field hm-nolabel hm-select"><span class="hm-value">USD</span></div><span class="hm-marker" data-n="1"></span></div>
+                <div class="hm-it-hint"><span class="hx-mi">info</span><span>Only tips come from StreamElements. Follows, subs and bits stay on Twitch.</span></div>
               </div>
             </div>
-            <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span></div>
           </div>
         </div>
       </div>
-      <figcaption>Settings → StreamElements. <strong>How to connect</strong> opens a short version of these steps.</figcaption>
+      <figcaption>Settings → StreamElements before connecting. <strong>How to connect</strong> opens a short version of these steps.</figcaption>
     </figure>
     <ol class="hx-annotations">
       <li data-n="1"><strong>Alert currency</strong> is shared with Streamlabs. Donation alert thresholds use it.</li>
-      <li data-n="2">The field is masked. Click the eye icon to check what you pasted.</li>
-      <li data-n="3"><strong>Connect</strong> saves the token and opens the connection. The status shows <strong>Connecting</strong>, then <strong>Connected</strong>; there is no pop-up when it works, and a notification says why if it can't connect. <strong>Disconnect</strong> also deletes the saved token.</li>
+      <li data-n="2">The <strong>JWT token</strong> field is in the folded <strong>JWT token</strong> section, which is open until a token is saved. The field is masked; click the eye icon to check what you pasted.</li>
+      <li data-n="3"><strong>Connect</strong> saves the token and opens the connection. The card shows <strong>Connecting</strong>, then <strong>Connected</strong>; there is no pop-up when it works, and a notification says why if it can't connect. <strong>Connect</strong> is hidden while connected, and a {{icon:logout}} <strong>Disconnect</strong> icon appears; it also deletes the saved token.</li>
     </ol>
     <div class="hx-callout hx-note"><p>If the field is empty you will see <em>"Paste a StreamElements JWT first."</em></p></div>
   </div>
 
   <div class="hx-step">
     <h3>Check it worked</h3>
-    <p>Within a few seconds the status turns green:</p>
+    <p>Within a few seconds the card and the header pill turn green:</p>
     <figure class="hx-figure hx-static">
       <div class="hm">
-        <div class="hm-status-band">
-          <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected</span></div>
+        <div class="hm-it-acct">
+          <div class="hm-it-acct-top">
+            <div class="hm-it-who">
+              <span class="hm-it-ava is-empty">{{brand:streamelements}}</span>
+              <div><div class="hm-it-kicker">StreamElements</div><div class="hm-it-acct-name">Connected</div><div class="hm-it-state is-ok">Listening for tips</div></div>
+            </div>
+            <div class="hm-it-actions"><span class="hx-mi">logout</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">menu_book</span>How to connect</span></div>
+          </div>
+          <div class="hm-expansion hm-it-fold">
+            <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>JWT token<span class="hm-it-tag">Saved</span></div>
+            <div class="hm-expansion-body"></div>
+          </div>
         </div>
         <div class="hm-footer">
           <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
@@ -139,34 +157,34 @@
 
 <h2>Connection status</h2>
 
-<p>The StreamElements tab and the bottom status bar show these states. When there is extra detail, the tab adds it after a colon. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+<p>The StreamElements tab and the bottom status bar show these states. On the tab, the state is the name on the account card and the header pill; any extra detail is the card's state line. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
 
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Footer</th><th>On the tab</th><th>Meaning</th></tr></thead>
 <tbody>
 <tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Connected</td><td>Tips are being received</td></tr>
 <tr><td><span class="help-status-swatch help-status-swatch-info"></span> Connecting</td><td>Connecting</td><td>Opening the connection, or reconnecting after a drop</td></tr>
-<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Disconnected</td><td>No JWT saved, or you clicked <strong>Disconnect</strong></td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Not connected</td><td>No JWT saved, or you clicked {{icon:logout}} <strong>Disconnect</strong></td></tr>
 <tr><td><span class="help-status-swatch help-status-swatch-error"></span> Expired</td><td>Token expired</td><td>The JWT has expired. Paste a new one</td></tr>
 <tr><td><span class="help-status-swatch help-status-swatch-error"></span> Auth Failed</td><td>Authentication failed</td><td>StreamElements rejected the JWT</td></tr>
-<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>Error</td><td>Something else failed. The detail after the colon says what</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>Error</td><td>Something else failed. The card's state line says what</td></tr>
 </tbody>
 </table></div>
 
 <h2>If something goes wrong</h2>
 
 <details class="hx-details">
-  <summary>"Authentication failed: StreamElements rejected the JWT."</summary>
+  <summary>The card says Authentication failed ("StreamElements rejected the JWT.")</summary>
   <p>The token is wrong, incomplete, or was regenerated in the dashboard. Copy the <strong>JWT Token</strong> again (not the Account ID), paste it, and click <strong>Connect</strong>.</p>
 </details>
 
 <details class="hx-details">
-  <summary>"Token expired: Paste a new JWT from the StreamElements dashboard."</summary>
+  <summary>The card says Token expired ("Paste a new JWT from the StreamElements dashboard.")</summary>
   <p>JWTs have an expiry date. Mycelian checks it and also shows a notification when it has passed. Copy a fresh token from <strong>Account → Channels</strong> and connect again.</p>
 </details>
 
 <details class="hx-details">
-  <summary>"Error: Could not read the channel id from the JWT."</summary>
+  <summary>The card says Error ("Could not read the channel id from the JWT.")</summary>
   <p>What you pasted is not a channel JWT, or StreamElements could not be reached to look up the channel. Check the token, then check your internet connection. Mycelian keeps retrying in the background.</p>
 </details>
 
