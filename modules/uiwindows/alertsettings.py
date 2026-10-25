@@ -744,7 +744,8 @@ def _refresh_alert_dims(alert_type: str) -> None:
         "tts_source": not tts,
         "tts_custom": not custom,
         "random": not on("randomized_switch"),
-        "extra": not on("randomized_extra_switch"),
+        "extra": not (on("randomized_switch") and on("randomized_extra_switch")),
+        "extra_switch": not on("randomized_switch"),
         "per_stream": not on("twitch_max_per_stream_switch"),
         "per_user": not on("twitch_max_per_user_switch"),
         "cooldown": not on("twitch_cooldown_switch"),
@@ -756,6 +757,10 @@ def _refresh_alert_dims(alert_type: str) -> None:
                 el.classes(add="is-dim")
             else:
                 el.classes(remove="is-dim")
+    # Extra random sounds only play together with random sounds.
+    extra = elements.get("randomized_extra_switch")
+    if extra is not None and hasattr(extra, "set_enabled"):
+        extra.set_enabled(on("randomized_switch"))
 
 
 def _dim_on(alert_type: str, key: str, element) -> None:
@@ -873,8 +878,9 @@ def create_randomizer_settings_section(alert_type: str):
         )
         _dim_on(alert_type, "random", card)
         ui.element("div").classes("alr-div")
-        with _row("Extra random sound", "Enable extra random sounds to play after the main sound"):
+        with _row("Extra random sound", "Play an extra random sound after the main sound (needs Random sounds on)") as extra_row:
             _switch_field(alert_type, "randomized_extra_switch")
+        _dim_on(alert_type, "extra_switch", extra_row)
         with _row("Chance", "Percentage chance to play an additional random sound after the primary/random sound") as row:
             _number_field(alert_type, "extra_chance_input",
                           "Percentage chance to play an additional random sound after the primary/random sound",
@@ -888,6 +894,16 @@ def create_randomizer_settings_section(alert_type: str):
         )
         _dim_on(alert_type, "extra", card)
     _watch_dims(alert_type, "randomized_switch", "randomized_extra_switch")
+    _el(alert_type)["randomized_switch"].on_value_change(lambda e, at=alert_type: _random_switch_changed(at, e.value))
+
+
+def _random_switch_changed(alert_type: str, enabled: bool) -> None:
+    """Turning Random sounds off also turns Extra random sound off (and counts as a change)."""
+    extra = _el(alert_type).get("randomized_extra_switch")
+    if enabled or extra is None or not extra.value:
+        return
+    extra.value = False
+    track_field_change("randomized_extra_switch", extra, False, alert_type)
 
 
 def create_twitch_options_section(alert_type: str):
@@ -2360,7 +2376,8 @@ def _collect_test_alert_data(alert_type: str, elements: dict) -> dict:
         "randomized_dir": str(_element_value(elements, "random_dir_input", "") or ""),
         "randomized_chance": int(_element_value(elements, "random_chance_input", 0)),
         "randomized_extra": bool(
-            _element_value(elements, "randomized_extra_switch", False)
+            _element_value(elements, "randomized_switch", False)
+            and _element_value(elements, "randomized_extra_switch", False)
         ),
         "randomized_extra_dir": str(
             _element_value(elements, "extra_dir_input", "") or ""
@@ -2573,9 +2590,9 @@ def save_alert(alert_type: str):
         random_chance = alert_settings_state.get_elements(alert_type)[
             "random_chance_input"
         ].value
-        randomized_extra = alert_settings_state.get_elements(alert_type)[
+        randomized_extra = bool(randomized and alert_settings_state.get_elements(alert_type)[
             "randomized_extra_switch"
-        ].value
+        ].value)
         extra_dir = (
             alert_settings_state.get_elements(alert_type)["extra_dir_input"].value or ""
         )
@@ -3792,7 +3809,7 @@ def save_point_alert(on_complete=None):
         randomized = elements["randomized_switch"].value
         random_dir = elements["random_dir_input"].value or ""
         random_chance = elements["random_chance_input"].value
-        randomized_extra = elements["randomized_extra_switch"].value
+        randomized_extra = bool(randomized and elements["randomized_extra_switch"].value)
         extra_dir = elements["extra_dir_input"].value or ""
         extra_chance = elements["extra_chance_input"].value
         gif_dir = elements["gif_dir_input"].value or ""

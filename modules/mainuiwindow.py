@@ -1957,9 +1957,24 @@ def create_ui_elements():
                     return known.get(id(tab), "")
 
                 main_unsaved_dialog_open = {"value": False}
+                # True while this code sets tabs.value itself: the change event that
+                # assignment fires must not run the handler again (it flip-flopped
+                # forever when an unsaved-changes dialog was open).
+                setting_tab = {"value": False}
+
+                def set_tab_quietly(tab) -> None:
+                    if tab is None or tabs.value == tab:
+                        return
+                    setting_tab["value"] = True
+                    try:
+                        tabs.value = tab
+                    finally:
+                        setting_tab["value"] = False
 
                 def on_main_tab_change(e):
                     nonlocal previous_tab
+                    if setting_tab["value"]:
+                        return
                     new_tab = getattr(e, "value", None)
                     leaving_tab = getattr(e, "previous_value", None)
                     if leaving_tab is None:
@@ -1968,8 +1983,7 @@ def create_ui_elements():
                     leaving = main_tab_name(leaving_tab)
                     arriving = main_tab_name(new_tab)
                     if main_unsaved_dialog_open["value"]:
-                        if leaving_tab is not None:
-                            tabs.value = leaving_tab
+                        set_tab_quietly(leaving_tab)
                         return
 
                     if leaving and leaving != arriving:
@@ -1984,7 +1998,7 @@ def create_ui_elements():
                                     save_settings_for_leave,
                                     discard_settings_for_leave,
                                 )
-                                tabs.value = leaving_tab
+                                set_tab_quietly(leaving_tab)
                                 return
                         elif leaving == "Alerts":
                             from .uiwindows.alertsettings import (
@@ -1999,7 +2013,7 @@ def create_ui_elements():
                                     save_alerts_for_leave,
                                     discard_alerts_for_leave,
                                 )
-                                tabs.value = leaving_tab
+                                set_tab_quietly(leaving_tab)
                                 return
                         elif leaving == "Source Settings":
                             from .uiwindows.customsources import source_settings_is_dirty
@@ -2012,13 +2026,13 @@ def create_ui_elements():
                                     save_source_settings_for_leave,
                                     discard_source_settings_for_leave,
                                 )
-                                tabs.value = leaving_tab
+                                set_tab_quietly(leaving_tab)
                                 return
 
                     # Allow the tab switch. Skip a redundant assignment so the
                     # value-change handler does not call itself again.
                     if main_tab_name(tabs.value) != arriving:
-                        tabs.value = new_tab
+                        set_tab_quietly(new_tab)
                     if arriving:
                         remember_ui_pref("last_main_tab", arriving)
 
@@ -2065,7 +2079,7 @@ def create_ui_elements():
                         # The tab already changed, but we need to check if it should be allowed
                         # Temporarily set tabs.value back to the old tab for the handler
                         old_current = previous_tab
-                        tabs.value = old_current  # Set back to old tab
+                        set_tab_quietly(old_current)  # Set back to old tab
                         # Create a mock event with the new tab
                         mock_event = type("MockEvent", (), {"value": current_tab})()
                         on_main_tab_change(mock_event)

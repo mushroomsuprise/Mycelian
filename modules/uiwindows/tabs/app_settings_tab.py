@@ -137,6 +137,7 @@ class AppSettingsTab:
     # ----- lifecycle -----
     def on_enter(self) -> None:
         self._refresh_plugin_ui(notify_if_outdated=True)
+        self._refresh_log_size()
 
     def on_exit(self) -> None:
         pass
@@ -172,6 +173,7 @@ class AppSettingsTab:
                             self._build_updates()
                         with ui.element("div").classes("aps-col"):
                             self._build_storage()
+                            self._build_logs()
         self._apply_plugin_status_display(initial_status)
         self._refresh_derived()
 
@@ -344,6 +346,49 @@ class AppSettingsTab:
                     lo=1, hi=3650, step=1, default=1, unit="days",
                 )
             self._storage_note = ui.html("", sanitize=False).classes("aps-foot")
+
+    def _build_logs(self) -> None:
+        with self._section("description", "Log file"):
+            with self._row("mycelian.log", "Mycelian writes warnings and errors here. It is capped at 15 MB, oldest lines first."):
+                self._log_size = ui.label("").classes("aps-unit")
+                outline_button("Clear log", self._confirm_clear_log, icon="delete_sweep").props("dense").classes("px-3")
+            ui.html("Clearing also empties the <b>Health check</b> list on the About tab.", sanitize=False).classes("aps-foot")
+        self._refresh_log_size()
+
+    def _refresh_log_size(self) -> None:
+        from ...log_parser import get_log_file_size
+
+        size = get_log_file_size()
+        if size >= 1024 * 1024:
+            text = f"{size / (1024 * 1024):.1f} MB"
+        elif size >= 1024:
+            text = f"{size / 1024:.0f} KB"
+        else:
+            text = f"{size} bytes"
+        label = getattr(self, "_log_size", None)
+        if label is not None and not label.is_deleted:
+            label.set_text(text)
+
+    def _confirm_clear_log(self) -> None:
+        with ui.dialog() as dialog, ui.card().classes("w-[420px] p-4"):
+            ui.label("Clear the log file?").classes("text-lg font-bold mb-1")
+            ui.label("This deletes everything in mycelian.log. Logging carries on from an empty file. "
+                     "If you are about to report a problem, send the log first.").classes("secondary-text mb-3")
+
+            def clear() -> None:
+                from ...log_parser import clear_log_file
+
+                dialog.close()
+                if clear_log_file():
+                    notify("Log file cleared", type="positive")
+                else:
+                    notify("Could not clear the log file", type="warning")
+                self._refresh_log_size()
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("Cancel", on_click=dialog.close).props("outline no-caps")
+                ui.button("Clear log", icon="delete_sweep", on_click=clear).props("color=negative unelevated no-caps")
+        dialog.open()
 
     def _build_streamdeck(self, initial_status) -> None:
         with self._section("grid_view", "Stream Deck plugin"):

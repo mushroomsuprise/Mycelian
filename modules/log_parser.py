@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -68,6 +69,60 @@ def get_log_file_path() -> Path:
 
 def get_log_dir() -> Path:
     return Path(get_data_path("logs"))
+
+
+def get_log_file_size(path: Optional[Path] = None) -> int:
+    """Size of the log file in bytes (0 when it doesn't exist)."""
+    try:
+        return (path or get_log_file_path()).stat().st_size
+    except OSError:
+        return 0
+
+
+def _same_file(handler_path: str, target: Path) -> bool:
+    try:
+        return Path(handler_path).resolve() == target.resolve()
+    except OSError:
+        return False
+
+
+def clear_log_file(path: Optional[Path] = None) -> bool:
+    """Empty the log file, including through any logging handler that has it open.
+
+    Each matching handler is locked, its stream closed, the file truncated, and the
+    stream left to reopen (in append mode) on the next record, so nothing is lost
+    mid-write and no handler keeps writing at the old offset.
+    """
+    target = path or get_log_file_path()
+    handlers = []
+    seen = set()
+    loggers = [logging.getLogger()] + [lg for lg in logging.Logger.manager.loggerDict.values() if isinstance(lg, logging.Logger)]
+    for lg in loggers:
+        for handler in lg.handlers:
+            if id(handler) in seen:
+                continue
+            seen.add(id(handler))
+            if isinstance(handler, logging.FileHandler) and _same_file(handler.baseFilename, target):
+                handlers.append(handler)
+    for handler in handlers:
+        handler.acquire()
+    try:
+        for handler in handlers:
+            try:
+                handler.flush()
+                if handler.stream:
+                    handler.stream.close()
+            finally:
+                handler.stream = None
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now():%Y-%m-%d %H:%M:%S},000 - modules.log_parser - WARNING - Log cleared from App Settings\n")
+        return True
+    except OSError:
+        return False
+    finally:
+        for handler in handlers:
+            handler.release()
 
 
 def _read_log_tail(path: Path, tail_bytes: int) -> str:
