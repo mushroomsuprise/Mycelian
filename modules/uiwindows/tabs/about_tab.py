@@ -27,6 +27,7 @@ from urllib.parse import urlsplit
 from nicegui import run, ui
 
 from ...build_info import resolve_build_number
+from ...notification_engine import notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_timer import layout_schedule
 from ..service_brand_icons import SERVICE_BRAND_SVG
@@ -242,8 +243,36 @@ class AboutTab:
                     ui.button(icon="folder_open", on_click=self.host.open_logs_folder).props("flat round dense").tooltip(
                         "Open the logs folder"
                     )
+                    ui.button(icon="delete_sweep", on_click=self._confirm_clear_log).props("flat round dense").tooltip(
+                        "Clear the log file"
+                    )
                     ui.button(icon="refresh", on_click=self.refresh_logs_async).props("flat round dense").tooltip("Check the log again")
             self.health_box = ui.element("div")
+
+    def _confirm_clear_log(self) -> None:
+        from ...log_parser import get_log_file_size
+
+        size = get_log_file_size()
+        size_text = f"{size / (1024 * 1024):.1f} MB" if size >= 1024 * 1024 else f"{max(size, 0) // 1024} KB"
+        with ui.dialog() as dialog, ui.card().classes("w-[420px] p-4"):
+            ui.label("Clear the log file?").classes("text-lg font-bold mb-1")
+            ui.label(f"This deletes everything in mycelian.log ({size_text}). Logging carries on from an empty file. "
+                     "If you are about to report a problem, copy the diagnostics report first.").classes("secondary-text mb-3")
+
+            async def clear() -> None:
+                from ...log_parser import clear_log_file
+
+                dialog.close()
+                if clear_log_file():
+                    notify("Log file cleared", type="positive")
+                else:
+                    notify("Could not clear the log file", type="warning")
+                await self.refresh_logs_async()
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("Cancel", on_click=dialog.close).props("outline no-caps")
+                ui.button("Clear log", icon="delete_sweep", on_click=clear).props("color=negative unelevated no-caps")
+        dialog.open()
 
     def _summary(self):
         from .. import settings as settings_module  # get_actionable_errors is imported there
