@@ -92,6 +92,8 @@ def manager_factory(db):
 
     yield make
     for manager in made:
+        # Finish queued background saves while the fake database is still patched in.
+        manager.flush_pending_saves()
         manager.cleanup()
 
 

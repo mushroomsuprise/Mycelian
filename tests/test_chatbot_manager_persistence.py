@@ -69,12 +69,17 @@ class _ManagerCase(unittest.TestCase):
             p.start()
 
     def tearDown(self):
+        # Finish queued background saves while the fake database is still patched in.
+        for manager in getattr(self, "_made", []):
+            manager.flush_pending_saves()
+            manager.cleanup()
         for p in reversed(self._patches):
             p.stop()
         self.tmp.cleanup()
 
     def _manager(self) -> cm.ChatbotManager:
         manager = cm.ChatbotManager()
+        self._made = getattr(self, "_made", []) + [manager]
         manager._save_data_now()
         self.db.writes.clear()
         return manager

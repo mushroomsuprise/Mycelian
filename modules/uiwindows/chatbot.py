@@ -932,9 +932,10 @@ def delete_chatbot_item(item_id: str, item_type: str):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
                 delete_btn = ui.button(
                     "Delete",
+                    # Close first: deleting refreshes the list this dialog was opened from.
                     on_click=lambda: [
-                        confirm_delete(),
                         dialog.close(),
+                        confirm_delete(),
                     ],
                 )
                 delete_btn.classes("btn-danger mycelian-btn")
