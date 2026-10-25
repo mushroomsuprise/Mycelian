@@ -650,13 +650,18 @@ def _fall_back_to_plain_window(reason: str) -> None:
         set_dock_visible(True)
 
     try:
-        from .notification_engine import notify
+        from .notification_engine import nav_actions_settings, notify
 
         notify(
-            "Mycelian could not use the system tray, so it will keep using a normal "
-            f"window. ({reason})",
+            "Mycelian keeps running in a normal window instead of the tray.",
             type="warning",
-            timeout=10000,
+            source="app",
+            title="The system tray isn't available",
+            hint="Closing the window now quits Mycelian. To stop seeing this, turn off Minimize to tray in Settings → App Settings.",
+            details=str(reason),
+            dedupe_key="app:tray_unavailable",
+            dedupe_cooldown_sec=3600.0,
+            actions=nav_actions_settings("App Settings"),
         )
     except Exception:
         pass
@@ -729,9 +734,7 @@ def shutdown() -> None:
 
 _FIREBASE_BANDWIDTH_WARNING = (
     "Running Mycelian in the background around the clock keeps your Firebase database "
-    "in constant use. That raises bandwidth consumption and can exhaust your Firebase "
-    "quota. Consider switching to the local SQLite database if you plan to leave "
-    "Mycelian running."
+    "in constant use, which raises bandwidth use and can use up your Firebase quota."
 )
 
 
@@ -755,15 +758,19 @@ def warn_background_database_usage() -> None:
 
     _database_warning_shown = True
 
-    if is_minimized():
-        from .system_notify import notify_async
-
-        notify_async(_FIREBASE_BANDWIDTH_WARNING, title="Firebase bandwidth")
-        return
-
+    # notify() also sends the desktop notification while minimized (user setting).
     try:
-        from .notification_engine import notify
+        from .notification_engine import nav_actions_settings, notify
 
-        notify(_FIREBASE_BANDWIDTH_WARNING, type="warning", timeout=12000)
+        notify(
+            _FIREBASE_BANDWIDTH_WARNING,
+            type="warning",
+            source="database",
+            title="Firebase bandwidth",
+            hint="If you plan to leave Mycelian running, switch to the local database in Settings → Database.",
+            dedupe_key="database:firebase_background",
+            dedupe_cooldown_sec=86400.0,
+            actions=nav_actions_settings("Database"),
+        )
     except Exception as e:
         logger.debug("Tray: could not show the Firebase bandwidth warning: %s", e)

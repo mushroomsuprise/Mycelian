@@ -41,6 +41,46 @@ from .dataobjects import YouTubeData, state_manager
 
 logger = logging.getLogger(__name__)
 
+
+def _notify_youtube_quota() -> None:
+    """YouTube's daily API quota ran out; video and chat updates pause for an hour at a time."""
+    try:
+        from .notification_engine import nav_actions_settings, notify
+
+        notify(
+            "New videos, live status and live chat stop updating until the quota resets "
+            "(Google resets it at midnight Pacific time).",
+            type="warning",
+            source="youtube",
+            title="YouTube's daily API quota is used up",
+            hint="Track fewer channels or turn off features you don't use in Settings → YouTube. "
+                 "You can also request more quota for your project in the Google Cloud console.",
+            dedupe_key="youtube:quota",
+            dedupe_cooldown_sec=6 * 3600.0,
+            actions=nav_actions_settings("YouTube"),
+        )
+    except Exception:
+        logger.debug("YouTube quota notice failed", exc_info=True)
+
+
+def _notify_youtube_signin_expired(details: str) -> None:
+    try:
+        from .notification_engine import nav_actions_settings, notify
+
+        notify(
+            "Live chat (reading and sending) stops until you sign in again.",
+            type="warning",
+            source="youtube",
+            title="YouTube sign-in expired",
+            hint="Open Settings → YouTube and sign in again.",
+            details=details,
+            dedupe_key="youtube:auth",
+            dedupe_cooldown_sec=3600.0,
+            actions=nav_actions_settings("YouTube"),
+        )
+    except Exception:
+        logger.debug("YouTube sign-in notice failed", exc_info=True)
+
 # Global variables
 youtube_client: Optional["YouTubeClient"] = None
 youtube_thread: Optional[threading.Thread] = None
@@ -674,6 +714,7 @@ class YouTubeClient:
                         logger.warning(
                             "YouTube API quota exceeded - will retry after 1 hour"
                         )
+                        _notify_youtube_quota()
                         return True
             except (ValueError, KeyError):
                 # If we can't parse the error, check if it's a 403
@@ -1451,6 +1492,12 @@ class YouTubeClient:
                     response.text[:300],
                 )
                 self.update_field("live_chat_status", "Token refresh failed")
+                if response.status_code in (400, 401):
+                    # invalid_grant: the refresh token was revoked or expired. 5xx is
+                    # Google's trouble and retries on its own.
+                    _notify_youtube_signin_expired(
+                        f"Token refresh: HTTP {response.status_code}: {response.text[:300]}"
+                    )
                 return False
 
             token_data = response.json()
@@ -1507,6 +1554,7 @@ class YouTubeClient:
                         self._quota_exceeded_until = time.time() + 3600
                         self.update_field("live_chat_status", "Quota exceeded")
                         logger.warning("YouTube live chat hit API quota")
+                        _notify_youtube_quota()
                         return None
                     if "liveChatEnded" in reasons or "liveChatDisabled" in reasons:
                         return {"__live_chat_ended__": True}

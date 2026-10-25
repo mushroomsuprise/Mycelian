@@ -586,6 +586,28 @@ def delete_psn_game_cache_in_db(np_communication_id: str) -> bool:
         return False
 
 
+def _notify_psn_forbidden(target: str, exc: BaseException) -> None:
+    """PlayStation refused access (private trophies, or a blocked network/IP)."""
+    try:
+        from .notification_engine import nav_actions_settings, notify
+
+        who = f"{target}'s" if target else "your"
+        notify(
+            f"PlayStation refused access to {who} trophy data, so trophy overlays won't update.",
+            type="warning",
+            source="psn",
+            title="PlayStation blocked trophy access",
+            hint="Make trophies visible to everyone in the PlayStation privacy settings, or check the "
+                 "PSN username in Settings → PSN. A VPN can also cause this.",
+            details=f"{type(exc).__name__}: {exc}",
+            dedupe_key="psn:forbidden",
+            dedupe_cooldown_sec=6 * 3600.0,
+            actions=nav_actions_settings("PSN"),
+        )
+    except Exception:
+        logger.debug("PSN forbidden notice failed", exc_info=True)
+
+
 class PSNClient:
     """Handles connection and data fetching from the PlayStation Network API."""
 
@@ -860,6 +882,12 @@ class PSNClient:
 
             self.authenticated = True
             self.psn_data.connection_status = "Connected"
+            try:
+                from .psn_service import clear_psn_npsso_expired_notice
+
+                clear_psn_npsso_expired_notice()
+            except Exception:
+                pass
             logger.info(
                 f"Successfully connected to PSN as user: {self.user_online_id} (Account ID: {self.account_id})"
             )
@@ -872,6 +900,7 @@ class PSNClient:
             )
             self.authenticated = False
             self.psn_data.connection_status = "Authentication Failed"
+            _notify_psn_forbidden("", e)
         except PSNAWPNotFoundError as e:
             logger.error(
                 f"PSN API Not Found: Endpoint or resource not found. Details: {e}"
@@ -917,7 +946,7 @@ class PSNClient:
         try:
             from .psn_service import notify_psn_npsso_expired
 
-            notify_psn_npsso_expired()
+            notify_psn_npsso_expired(self.npsso_code or "")
         except Exception as notify_err:
             logger.debug("PSN NPSSO expiry notification failed: %s", notify_err)
 
@@ -1318,6 +1347,7 @@ class PSNClient:
             logger.info(
                 "This may indicate authentication issues or the target user has private trophy data"
             )
+            _notify_psn_forbidden(self.psn_username or "", e)
         except PSNAWPNotFoundError as e:
             target_desc = (
                 self.psn_username if self.psn_username else "authenticated user"

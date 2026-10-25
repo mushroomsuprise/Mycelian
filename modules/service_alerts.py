@@ -109,6 +109,8 @@ def classify(key: str, status: Optional[str]) -> str:
         return "busy"
     if key == "psn" and s == "token expired":
         return "off"  # psn_service has its own sign-in notice
+    if key == "obs" and s == "auth failed":
+        return "off"  # obs_service has its own password notice
     if s.startswith("connected") or s in ("online", "running", "ready", "live"):
         return "ok"
     if any(w in s for w in _OFF_WORDS) and not any(w in s for w in ("auth", "token", "expired")):
@@ -230,7 +232,8 @@ class ServiceAlertTracker:
                 track.stable = before
                 track.candidate, track.count = "problem", 0
                 return []
-            raw = track.raw.lower()
+            # "Authenticated but Disconnected" is a network drop, not a sign-in problem.
+            raw = track.raw.lower().replace("authenticated but", "")
             auth = any(w in raw for w in _AUTH_WORDS) and key in AUTH_HINTS
             track.warned = True
             if key == "webengine":

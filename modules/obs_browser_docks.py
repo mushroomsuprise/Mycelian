@@ -654,20 +654,20 @@ def _notify_restart_obs_for_docks(titles: Sequence[str]) -> None:
         label = f"{titles[0]} and {titles[1]}"
     else:
         label = ", ".join(titles[:-1]) + f", and {titles[-1]}"
-    message = (
-        f"{label} could not load because OBS started before Mycelian. "
-        "Keep Mycelian running and restart OBS. Cmd+R on that error page "
-        "does not reload the Mycelian URL."
-    )
+    reload_key = "Cmd+R" if sys.platform == "darwin" else "Ctrl+R"
     try:
-        from .notification_engine import notify
+        from .notification_engine import nav_actions_settings, notify
 
         notify(
-            message,
+            f"{label} couldn't load because OBS started before Mycelian.",
             type="warning",
-            timeout=14.0,
+            source="obs",
+            title="Restart OBS to load Mycelian docks",
+            hint=f"Keep Mycelian running and restart OBS. {reload_key} on the dock's error page "
+                 "won't load the Mycelian page.",
             dedupe_key="obs:docks:restart-obs",
-            dedupe_cooldown_sec=120.0,
+            dedupe_cooldown_sec=600.0,
+            actions=nav_actions_settings("OBS"),
         )
     except Exception as exc:
         logger.debug("OBS dock restart notify failed: %s", exc)

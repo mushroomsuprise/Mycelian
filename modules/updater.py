@@ -35,7 +35,7 @@ from urllib.parse import quote
 import aiohttp
 
 from . import update_sync
-from .notification_engine import notify
+from .notification_engine import nav_actions_settings, notify, notify_progress
 from .ui_timer import app_schedule
 from packaging.version import \
     parse as parse_version  # For robust version comparison
@@ -51,8 +51,40 @@ GITHUB_API_BASE = "https://api.github.com"
 _GITHUB_RELEASE_CACHE_TTL_SEC = 60.0
 _github_release_cache_lock = threading.Lock()
 _github_release_cache: Optional[Tuple[float, Optional[Dict[str, Any]]]] = None
+# Why the last GitHub fetch returned nothing: (plain message, technical details), or None
+# when it worked or found no release worth offering. Manual checks report it.
+_last_fetch_error: Optional[Tuple[str, str]] = None
+
+
+def last_update_check_error() -> Optional[Tuple[str, str]]:
+    """(message, details) for the last failed GitHub fetch, or None."""
+    return _last_fetch_error
 
 # Ensure 'packaging' and 'aiohttp' libraries are installed: pip install packaging aiohttp
+
+
+def _notify_check_not_ready() -> None:
+    notify(
+        "Mycelian is still starting up.",
+        type="warning",
+        source="updates",
+        title="Can't check for updates yet",
+        hint="Wait a few seconds, then click Check for updates again.",
+    )
+
+
+def _notify_update_failed(message: str, details: str = "") -> None:
+    """The update failed after its window was closed, so nothing else will say so."""
+    notify(
+        message,
+        type="error",
+        source="updates",
+        title="The update didn't finish",
+        hint="Mycelian is unchanged. Try again from Settings → About.",
+        details=details,
+        dedupe_key="updates:apply_failed",
+        actions=nav_actions_settings("About"),
+    )
 
 def release_download_ref(commit_payload: Any) -> Optional[str]:
     """Commit SHA to download, taken only from a GitHub commits API payload.
@@ -119,7 +151,7 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
               ``commit_sha`` is the snapshot file sync downloads. The release
               ``target_commitish`` branch is ignored.
     """
-    global _github_release_cache
+    global _github_release_cache, _last_fetch_error
 
     if not force_refresh:
         now = time.monotonic()
@@ -141,6 +173,7 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
                 cached_fallback = copy.deepcopy(cached_value)
 
     result: Optional[Dict[str, Any]] = None
+    _last_fetch_error = None
     try:
         # Set a reasonable timeout to prevent hanging
         timeout = aiohttp.ClientTimeout(total=15.0)
@@ -166,11 +199,26 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
                     else:
                         pending = None
                         logger.warning(f"No valid version found in GitHub release data. Tag name: {tag_name}")
-                        
+                        _last_fetch_error = (
+                            "The latest release on GitHub has no version number.",
+                            f"{api_url}: tag_name={tag_name!r}",
+                        )
+
                 elif response.status == 404:
                     logger.warning(f"GitHub repository '{GITHUB_OWNER}/{GITHUB_REPO}' not found or has no releases")
+                    _last_fetch_error = (
+                        "GitHub didn't return a release for Mycelian.",
+                        f"{api_url}: HTTP 404",
+                    )
                 else:
-                    logger.error(f"GitHub API request failed with status {response.status}: {await response.text()}")
+                    body = await response.text()
+                    logger.error(f"GitHub API request failed with status {response.status}: {body}")
+                    limited = response.status in (403, 429)
+                    _last_fetch_error = (
+                        "GitHub is limiting requests right now." if limited
+                        else f"GitHub returned an error (HTTP {response.status}).",
+                        f"{api_url}: HTTP {response.status}: {body[:300]}",
+                    )
 
             if pending is not None:
                 commit_sha = await _fetch_release_commit_sha(session, pending["tag_name"])
@@ -188,6 +236,10 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
                         pending["latest_version"],
                         pending["tag_name"],
                     )
+                    _last_fetch_error = (
+                        f"Mycelian {pending['latest_version']} is on GitHub but can't be installed automatically.",
+                        f"Release tag {pending['tag_name']} did not resolve to a commit.",
+                    )
                     
     except (asyncio.TimeoutError, aiohttp.ServerTimeoutError) as e:
         logger.warning(
@@ -195,15 +247,20 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
         )
         if cached_fallback is not None:
             return cached_fallback
+        _last_fetch_error = ("GitHub didn't answer in time.", f"{api_url}: timed out after 15 s")
     except aiohttp.ClientError as e:
         logger.error(f"Network error while fetching update info from GitHub: {e}", exc_info=True)
+        _last_fetch_error = ("Mycelian couldn't reach GitHub.", f"{api_url}: {type(e).__name__}: {e}")
     except Exception as e:
         if isinstance(e, asyncio.CancelledError):
             logger.warning("GitHub update check cancelled or timed out")
             if cached_fallback is not None:
                 return cached_fallback
+            _last_fetch_error = ("The update check was interrupted.", f"{api_url}: cancelled")
         else:
             logger.error(f"Unexpected error fetching update info from GitHub: {e}", exc_info=True)
+            _last_fetch_error = ("Something went wrong reading the release from GitHub.",
+                                 f"{api_url}: {type(e).__name__}: {e}")
     finally:
         with _github_release_cache_lock:
             if result is not None:
@@ -530,6 +587,7 @@ class UpdateManager:
         if self._dialog_is_open():
             logger.info("UpdateManager: update dialog already open; skipping")
             return
+        work = None
         try:
             from nicegui import ui
 
@@ -537,6 +595,8 @@ class UpdateManager:
 
             if not database_manager.database_manager._initialized:
                 logger.warning("UpdateManager: database not initialized; skipping check")
+                if manual:
+                    _notify_check_not_ready()
                 return
 
             settings = dataobjects.state_manager.get_app_settings()
@@ -547,12 +607,14 @@ class UpdateManager:
             current_app_version = settings.version
             if not current_app_version:
                 logger.warning("UpdateManager: unknown current version; skipping check")
+                if manual:
+                    _notify_check_not_ready()
                 return
 
             self._check_running = True
 
             if manual:
-                notify("Checking for updates...", type="info", timeout=2000)
+                work = notify_progress("Checking for updates", source="updates")
 
             result_holder: Dict[str, Any] = {"completed": False, "update_info": None, "error": None}
 
@@ -563,9 +625,16 @@ class UpdateManager:
                             current_app_version, force_refresh=manual
                         )
                     )
+                    if result_holder["update_info"] is None:
+                        failure = last_update_check_error()
+                        if failure:
+                            result_holder["error"] = failure
                 except Exception as e:
                     logger.error(f"UpdateManager: error in async check: {e}", exc_info=True)
-                    result_holder["error"] = str(e)
+                    result_holder["error"] = (
+                        "Something went wrong while checking.",
+                        f"{type(e).__name__}: {e}",
+                    )
                 finally:
                     result_holder["completed"] = True
 
@@ -583,7 +652,15 @@ class UpdateManager:
                     if poll_counter["count"] >= max_polls:
                         logger.warning("UpdateManager: update check timed out")
                         self._record_check("error", error="The update check timed out")
-                        if not manual:
+                        if manual:
+                            work.done(
+                                "The update check timed out",
+                                "GitHub didn't answer within 30 seconds.",
+                                type="warning",
+                                hint="Check your internet connection, then try again from Settings → About.",
+                                actions=nav_actions_settings("About"),
+                            )
+                        else:
                             self._automatic_startup_check_done = True
                         self._check_running = False
                         return False
@@ -592,10 +669,17 @@ class UpdateManager:
                         return True
 
                     if result_holder["error"]:
-                        self._record_check("error", error=str(result_holder["error"]))
+                        message, details = result_holder["error"]
+                        self._record_check("error", error=message)
                         if manual:
-                            notify(f"Error checking for updates: {result_holder['error']}", type="negative")
-                        elif not manual:
+                            work.fail(
+                                "Couldn't check for updates",
+                                message,
+                                hint="Check your internet connection and try again from Settings → About in a few minutes.",
+                                details=details,
+                                actions=nav_actions_settings("About"),
+                            )
+                        else:
                             self._automatic_startup_check_done = True
                         self._check_running = False
                         return False
@@ -603,16 +687,20 @@ class UpdateManager:
                     update_info = result_holder["update_info"]
                     self._record_check("available" if update_info else "up_to_date", update_info)
                     if update_info and (manual or not self._session_suppressed):
-                        self._show_update_modal(update_info, manual=manual)
-                    else:
                         if manual:
-                            notify("You are running the latest version!", type="positive", timeout=3000)
+                            work.close()  # the update window takes over
+                        self._show_update_modal(update_info, manual=manual)
+                    elif manual:
+                        work.done("You're up to date", f"Mycelian {current_app_version} is the latest version.")
                     if not manual:
                         self._automatic_startup_check_done = True
                     self._check_running = False
                     return False
                 except Exception as e:
                     logger.error(f"UpdateManager: poll_result error: {e}", exc_info=True)
+                    if manual:
+                        work.fail("Couldn't check for updates", "Something went wrong while checking.",
+                                  hint="Try again from Settings → About.", details=f"{type(e).__name__}: {e}")
                     self._check_running = False
                     return False
 
@@ -634,6 +722,9 @@ class UpdateManager:
             app_schedule(1.0, ensure_timer_stops)
         except Exception as e:
             logger.error(f"UpdateManager.trigger_check_and_prompt error: {e}", exc_info=True)
+            if work is not None:
+                work.fail("Couldn't check for updates", "Something went wrong while checking.",
+                          hint="Try again from Settings → About.", details=f"{type(e).__name__}: {e}")
             self._check_running = False
 
     # ---------------- Modal and download flow ----------------
@@ -783,15 +874,24 @@ class UpdateManager:
                         try:
                             if not update_sync.can_apply_updates():
                                 notify(
-                                    "This checkout is running from source. "
-                                    "Install a packaged build to apply updates.",
+                                    "This copy of Mycelian runs from source code, so it can't update itself.",
                                     type="warning",
+                                    source="updates",
+                                    title="Updates need the installed app",
+                                    hint="Install the packaged build from the release page, or update your checkout with git.",
+                                    actions=[{"kind": "copy", "text": release_url, "label": "Copy release link"}]
+                                    if release_url else None,
                                 )
                                 return
                             if not commit_sha:
                                 notify(
-                                    "This release has no commit snapshot, so it cannot be installed.",
+                                    "This release can't be installed automatically.",
                                     type="warning",
+                                    source="updates",
+                                    title="Can't install this update",
+                                    hint="Download it from the release page on GitHub instead.",
+                                    actions=[{"kind": "copy", "text": release_url, "label": "Copy release link"}]
+                                    if release_url else None,
                                 )
                                 return
                             content_area.style("display: none;")
@@ -815,6 +915,14 @@ class UpdateManager:
                             )
                         except Exception as e:
                             logger.error(f"Error starting update: {e}", exc_info=True)
+                            notify(
+                                "The update couldn't start. Mycelian is unchanged.",
+                                type="error",
+                                source="updates",
+                                title="Couldn't start the update",
+                                hint="Close the update window and try again from Settings → About.",
+                                details=f"{type(e).__name__}: {e}",
+                            )
 
                     with button_row:
                         decline_btn = ui.button("Decline", on_click=on_decline).props("flat").classes("secondary-text").style("border: 1px solid rgba(255,255,255,0.2);")
@@ -839,6 +947,16 @@ class UpdateManager:
         except Exception as e:
             self._dialog_open = False
             logger.error(f"UpdateManager._show_update_modal error: {e}", exc_info=True)
+            notify(
+                f"Mycelian {update_info.get('latest_version') or 'update'} is available, but the update window couldn't open.",
+                type="warning",
+                source="updates",
+                title="Update available",
+                hint="Open Settings → About and click Check for updates to try again.",
+                details=f"{type(e).__name__}: {e}",
+                dedupe_key="updates:modal_failed",
+                actions=nav_actions_settings("About"),
+            )
 
     def _start_sync_flow(
         self,
@@ -961,6 +1079,11 @@ class UpdateManager:
                             _show_close()
                         else:
                             self._dialog_open = False
+                            if status == "failed":
+                                _notify_update_failed(
+                                    "Something went wrong while downloading the update.",
+                                    str(download_state.get("error") or ""),
+                                )
                         _stop_poll()
                         return
 
@@ -984,11 +1107,17 @@ class UpdateManager:
                             except Exception as e:
                                 logger.error(f"Error restarting after update: {e}", exc_info=True)
                                 try:
+                                    if _widget_gone(title_label) or _widget_gone(progress_label):
+                                        raise RuntimeError("update window closed")
                                     title_label.set_text("Update failed")
                                     progress_label.set_text(str(e))
                                     _show_close()
                                 except Exception:
                                     self._dialog_open = False
+                                    _notify_update_failed(
+                                        "The update downloaded, but Mycelian couldn't restart to apply it.",
+                                        f"{type(e).__name__}: {e}",
+                                    )
 
                         app_schedule(0.6, launch, once=True)
                         _stop_poll()

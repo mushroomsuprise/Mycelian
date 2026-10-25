@@ -356,6 +356,8 @@ def get_connection_status(key: str) -> str:
             base_status = "Connecting"
         elif phase == "disconnecting":
             base_status = "Disconnecting"
+        elif obs_service.auth_failed():
+            base_status = "Auth Failed"
         else:
             base_status = "Disconnected"
 

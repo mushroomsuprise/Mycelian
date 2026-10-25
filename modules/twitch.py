@@ -1816,6 +1816,8 @@ class Twitch_API:
                 logger.warning(
                     "Cannot refresh Twitch token: client id/secret not configured"
                 )
+                if self.client_id and not self.client_secret:
+                    _notify_twitch_client_credentials("missing")
                 return False
 
             if not self.refresh_token:
@@ -1858,6 +1860,7 @@ class Twitch_API:
                     "Cannot refresh Twitch token (check client id/secret in Settings): %s",
                     e,
                 )
+                _notify_twitch_client_credentials("rejected", f"{type(e).__name__}: {e}")
                 return False
             logger.warning("Twitch refresh token invalid: %s", e)
             self._clear_tokens_after_refresh_failure()
@@ -1868,6 +1871,7 @@ class Twitch_API:
                     "Cannot refresh Twitch token (check client secret in Settings): %s",
                     e,
                 )
+                _notify_twitch_client_credentials("rejected", f"{type(e).__name__}: {e}")
                 return False
             if is_definitive_refresh_failure(e):
                 logger.warning("Twitch refresh token invalid: %s", e)
@@ -1959,7 +1963,7 @@ class Twitch_API:
         if token_check.outcome == "client_id_mismatch":
             logger.warning("Twitch auth blocked: %s", token_check.message)
             if allow_oauth:
-                notify_twitch_connect_failed()
+                notify_twitch_connect_failed("client_id_changed")
                 return await self.authenticate_with_oauth()
             return False
 
@@ -2007,7 +2011,7 @@ class Twitch_API:
                         "Twitch auth still invalid after refresh: %s", retry_err
                     )
             if allow_oauth:
-                notify_twitch_connect_failed()
+                notify_twitch_connect_failed("signin_needed")
                 return await self.authenticate_with_oauth()
             return False
 
@@ -2048,7 +2052,7 @@ class Twitch_API:
             # If we don't have valid auth data, trigger OAuth flow
             if not auth_data_loaded or not self.auth_token or not self.refresh_token:
                 logger.info("No valid authentication data, starting OAuth flow")
-                notify_twitch_connect_failed()
+                notify_twitch_connect_failed("signin_needed")
                 oauth_success = await self.authenticate_with_oauth()
                 if not oauth_success:
                     logger.error("Failed to authenticate with OAuth")
@@ -2059,7 +2063,7 @@ class Twitch_API:
                 )
                 if token_check.outcome == "client_id_mismatch":
                     logger.warning("Twitch auth: %s", token_check.message)
-                    notify_twitch_connect_failed()
+                    notify_twitch_connect_failed("client_id_changed")
                     oauth_success = await self.authenticate_with_oauth()
                     if not oauth_success:
                         logger.error(
@@ -2123,7 +2127,7 @@ class Twitch_API:
                                 )
                                 refresh_success = False
                         if not refresh_success:
-                            notify_twitch_connect_failed()
+                            notify_twitch_connect_failed("signin_needed")
                             oauth_success = await self.authenticate_with_oauth()
                             if not oauth_success:
                                 logger.error(
@@ -3983,7 +3987,10 @@ class Twitch_API:
             shoutout_game = game_name or "Unknown"
             shoutout_message = f"HEY CHAT! Check out @{data.event.from_broadcaster_user_name} 's channel: https://twitch.tv/{data.event.from_broadcaster_user_name} . How was {shoutout_game}?"
             if self._raid_shoutout_enabled("helix"):
-                await self.send_shoutout(data.event.from_broadcaster_user_id)
+                await self.send_shoutout(
+                    data.event.from_broadcaster_user_id,
+                    raider_name=data.event.from_broadcaster_user_name,
+                )
             if self._raid_shoutout_enabled("chat"):
                 from .chatbot import send_chatbot_message
 
@@ -4481,7 +4488,7 @@ class Twitch_API:
         except Exception as e:
             logger.debug("Discord go-live offline hook failed: %s", e, exc_info=True)
 
-    async def send_shoutout(self, raider_id: str):
+    async def send_shoutout(self, raider_id: str, raider_name: str = ""):
         """Send a shoutout to a raider using the Twitch API"""
         try:
             if not self.user_id:
@@ -4508,6 +4515,24 @@ class Twitch_API:
                 f"Error sending shoutout to broadcaster ID {raider_id}: {str(e)}",
                 exc_info=True,
             )
+            try:
+                from .notification_engine import nav_actions_settings, notify
+
+                who = raider_name or "the raider"
+                notify(
+                    "The chat shoutout message (if turned on) is sent separately.",
+                    type="warning",
+                    source="twitch",
+                    title=f"Couldn't send a Twitch shoutout to {who}",
+                    hint="Twitch allows one shoutout every 2 minutes and one per streamer per hour, "
+                         "and only while you're live. Turn automatic raid shoutouts off in Settings → Twitch.",
+                    details=f"{type(e).__name__}: {e}",
+                    dedupe_key="twitch:shoutout_failed",
+                    dedupe_cooldown_sec=600.0,
+                    actions=nav_actions_settings("Twitch"),
+                )
+            except Exception:
+                logger.debug("Shoutout failure notice failed", exc_info=True)
             return False
 
     def start_health_check(self):
@@ -5029,7 +5054,7 @@ class Twitch_API:
                 logger.warning("Failed to stage Twitch API - authentication required")
                 self.is_connected = False
                 twitch_connected = False
-                notify_twitch_connect_failed()
+                # The status poller reports "Twitch needs you to sign in again".
                 return False  # Return False instead of raising exception
 
             if is_shutdown_in_progress() or self._connection_epoch != epoch:
@@ -5041,7 +5066,6 @@ class Twitch_API:
                 )
                 self.is_connected = False
                 twitch_connected = False
-                notify_twitch_connect_failed()
                 return False
 
             # Initialize the EventSub websocket with a revocation handler so a
@@ -5239,7 +5263,7 @@ class Twitch_API:
                 if self.eventsub is eventsub:
                     self._stop_eventsub_safely()
                     self._connection_epoch += 1
-                notify_twitch_connect_failed()
+                notify_twitch_connect_failed("eventsub", f"{type(e).__name__}: {e}")
                 return False  # Return False instead of raising exception
 
             if is_shutdown_in_progress() or self._connection_epoch != epoch:
@@ -5323,7 +5347,7 @@ class Twitch_API:
             self.is_connected = False
             twitch_connected = False
             self._stop_eventsub_safely()
-            notify_twitch_connect_failed()
+            # Logged above; the status poller reports the disconnected state.
             return False  # Return False instead of raising exception
 
     async def generic_api_call(
@@ -5675,7 +5699,7 @@ class Twitch_API:
             oauth_success = await self.authenticate_with_oauth()
             if not oauth_success:
                 logger.error("OAuth authentication failed during reconnect")
-                notify_twitch_connect_failed()
+                notify_twitch_connect_failed("signin_failed")
                 return False
 
             # Initialize the connection with new credentials
@@ -5686,7 +5710,7 @@ class Twitch_API:
             return True
         except Exception as e:
             logger.error(f"Error during OAuth reconnection: {str(e)}", exc_info=True)
-            notify_twitch_connect_failed()
+            notify_twitch_connect_failed("signin_failed", f"{type(e).__name__}: {e}")
             return False
 
     def get_token_status(self):
@@ -6329,22 +6353,98 @@ def can_proxy_helix_api_requests() -> bool:
         return False
 
 
-def notify_twitch_connect_failed() -> None:
-    """Prompt user to reconnect Twitch when connection or auth fails."""
+_TWITCH_CONNECT_NOTICES = {
+    # reason: (type, title, message, hint, dedupe_key, cooldown)
+    "signin_needed": (
+        "warning",
+        "Sign in to Twitch in your browser",
+        "Mycelian needs you to sign in to Twitch, so your browser opened. "
+        "Events and chat start once you approve Mycelian.",
+        "Didn't see a browser window? Click Reconnect in Settings → Twitch.",
+        "twitch:signin_prompt",
+        600.0,
+    ),
+    "client_id_changed": (
+        "warning",
+        "Sign in to Twitch again",
+        "The Twitch Client ID changed, so the saved sign-in no longer works. "
+        "Your browser opened to sign in with the new one.",
+        "Didn't see a browser window? Click Reconnect in Settings → Twitch.",
+        "twitch:signin_prompt",
+        600.0,
+    ),
+    "signin_failed": (
+        "error",
+        "Twitch sign-in didn't finish",
+        "Mycelian isn't connected to Twitch, so events, alerts and chat are paused.",
+        "Click Reconnect in Settings → Twitch and approve Mycelian in the browser window.",
+        "twitch:signin_failed",
+        600.0,
+    ),
+    "eventsub": (
+        "error",
+        "Twitch refused event subscriptions",
+        "Follows, subs, raids, cheers and other events won't arrive until this is fixed.",
+        "Click Reconnect in Settings → Twitch to grant permissions again. If it keeps "
+        "happening, Twitch may be having trouble; Mycelian retries on its own.",
+        "twitch:eventsub_failed",
+        3600.0,
+    ),
+}
+
+
+def notify_twitch_connect_failed(reason: str = "signin_needed", details: Optional[str] = None) -> None:
+    """Explain a Twitch sign-in/connection problem the status footer can't (see reasons above)."""
+    spec = _TWITCH_CONNECT_NOTICES.get(reason) or _TWITCH_CONNECT_NOTICES["signin_needed"]
+    level, title, message, hint, key, cooldown = spec
     try:
         from .notification_engine import nav_actions_settings, notify
 
         notify(
-            "Twitch is not connected. If your browser opened for authorization, "
-            "complete that login—or reconnect in Settings → Twitch.",
-            type="warning",
-            dedupe_key="twitch:connect_failed",
-            dedupe_cooldown_sec=3600.0,
-            timeout=12.0,
+            message,
+            type=level,
+            source="twitch",
+            title=title,
+            hint=hint,
+            details=details,
+            dedupe_key=key,
+            dedupe_cooldown_sec=cooldown,
             actions=nav_actions_settings("Twitch"),
         )
     except Exception as e:
         logger.warning("Could not show Twitch connect failed notification: %s", e)
+
+
+def _notify_twitch_client_credentials(problem: str, details: str = "") -> None:
+    """Client ID/Secret missing or rejected: sign-in can't be renewed."""
+    try:
+        from .notification_engine import nav_actions_settings, notify
+
+        if problem == "missing":
+            notify(
+                "Without it Mycelian can't renew your Twitch sign-in, so Twitch disconnects when it expires.",
+                type="warning",
+                source="twitch",
+                title="Twitch Client Secret is missing",
+                hint="Add the Client Secret from your app at dev.twitch.tv/console in Settings → Twitch.",
+                dedupe_key="twitch:no_client_secret",
+                dedupe_cooldown_sec=3600.0,
+                actions=nav_actions_settings("Twitch"),
+            )
+        else:
+            notify(
+                "Mycelian can't renew your Twitch sign-in, so Twitch disconnects when it expires.",
+                type="error",
+                source="twitch",
+                title="Twitch rejected your Client ID or Secret",
+                hint="Check both in Settings → Twitch match your app at dev.twitch.tv/console, then click Reconnect.",
+                details=details or None,
+                dedupe_key="twitch:bad_client_credentials",
+                dedupe_cooldown_sec=3600.0,
+                actions=nav_actions_settings("Twitch"),
+            )
+    except Exception:
+        logger.debug("Twitch client credentials notice failed", exc_info=True)
 
 
 def trigger_oauth_reconnection():

@@ -134,6 +134,7 @@ class GoLiveAnnouncer:
                 # Allow a later platform event to retry if send failed entirely
                 self.announcement_sent = False
             logger.warning("Discord go-live send failed for platform=%s", platform)
+            _notify_go_live_failed(platform)
         else:
             logger.info("Discord go-live announcement sent for platform=%s", platform)
         return ok
@@ -264,6 +265,8 @@ class DiscordService:
         self._token: str = ""
         self._status: str = "Disconnected"
         self.go_live = GoLiveAnnouncer()
+        # Why the last send_to_channels call failed, per channel (for notices).
+        self.last_send_errors: List[str] = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -331,6 +334,7 @@ class DiscordService:
             return False
         if not self.is_connected():
             logger.warning("Discord send failed: bot not connected")
+            self.last_send_errors = ["bot not connected"]
             return False
         result = self._run_coro(
             self._send_to_channels_async(message, channels),
@@ -651,7 +655,9 @@ class DiscordService:
         self, message: str, channels: List[Dict[str, str]]
     ) -> bool:
         client = self._client
+        self.last_send_errors = []
         if not client:
+            self.last_send_errors.append("bot not connected")
             return False
         any_ok = False
         for target in channels:
@@ -660,6 +666,7 @@ class DiscordService:
                 cid = int(channel_id)
             except (TypeError, ValueError):
                 logger.warning("Invalid Discord channel id: %s", channel_id)
+                self.last_send_errors.append(f"{channel_id!r}: not a channel id")
                 continue
             channel = client.get_channel(cid)
             if channel is None:
@@ -669,10 +676,12 @@ class DiscordService:
                     logger.warning(
                         "Could not fetch Discord channel %s: %s", channel_id, e
                     )
+                    self.last_send_errors.append(f"{channel_id}: can't open channel ({type(e).__name__}: {e})")
                     continue
             try:
                 if not hasattr(channel, "send"):
                     logger.warning("Discord target %s is not sendable", channel_id)
+                    self.last_send_errors.append(f"{channel_id}: not a text channel")
                     continue
                 await channel.send(message)
                 any_ok = True
@@ -683,7 +692,37 @@ class DiscordService:
                     e,
                     exc_info=True,
                 )
+                self.last_send_errors.append(f"{channel_id}: {type(e).__name__}: {e}")
         return any_ok
+
+
+def _notify_go_live_failed(platform: str) -> None:
+    """The go-live announcement didn't reach any Discord channel."""
+    errors = list(getattr(discord_service, "last_send_errors", None) or [])
+    not_connected = errors == ["bot not connected"]
+    if not_connected:
+        hint = ("The Discord bot isn't connected. Check the bot token in Settings → Discord; "
+                "Mycelian tries again on the next go-live event.")
+    else:
+        hint = ("Check that the bot is still in your server and has Send Messages permission in "
+                "the go-live channels (Settings → Discord).")
+    try:
+        from .notification_engine import nav_actions_settings, notify
+
+        name = {"twitch": "Twitch", "youtube": "YouTube"}.get(str(platform).lower(), str(platform))
+        notify(
+            f"Your {name} go-live announcement wasn't posted to Discord.",
+            type="warning",
+            source="discord",
+            title="Discord go-live announcement failed",
+            hint=hint,
+            details="\n".join(errors) or None,
+            dedupe_key="discord:golive_failed",
+            dedupe_cooldown_sec=1800.0,
+            actions=nav_actions_settings("Discord"),
+        )
+    except Exception:
+        logger.debug("Discord go-live notice failed", exc_info=True)
 
 
 # Module singleton + thin wrappers -------------------------------------------------

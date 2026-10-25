@@ -6,13 +6,53 @@ Deferred service manager for background initialization of non-critical services.
 
 import threading
 import time
-from typing import Callable, Dict
+from typing import Callable, Dict, Optional, Tuple
 import logging
 
-from .notification_engine import notify_critical, nav_actions_settings
+from .notification_engine import nav_actions_main_tab, nav_actions_settings, notify_critical
 from .startup_profiler import StartupTimer, log_startup_summary
 
 logger = logging.getLogger(__name__)
+
+# Deferred service name -> (what the user calls it, notification source, Settings sub-tab or main tab).
+_SERVICE_INFO: Dict[str, Tuple[str, str, Optional[str], Optional[str]]] = {
+    "twitch": ("Twitch", "twitch", "Twitch", None),
+    "chatbot": ("The chatbot", "chatbot", "Twitch", None),
+    "connectors": ("Connectors", "connectors", None, "Connectors"),
+    "spotify": ("Spotify", "spotify", "Spotify", None),
+    "psn": ("PlayStation", "psn", "PSN", None),
+    "youtube": ("YouTube", "youtube", "YouTube", None),
+    "streamlabs": ("Streamlabs", "streamlabs", "Streamlabs", None),
+    "streamelements": ("StreamElements", "streamelements", "StreamElements", None),
+    "discord": ("Discord", "discord", "Discord", None),
+    "obs": ("OBS", "obs", "OBS", None),
+    "statistics_saving": ("Statistics saving", "statistics", "Statistics", None),
+    "connection_monitor": ("The internet connection check", "app", None, None),
+    "background_ui_services": ("Background services", "app", None, None),
+    "tray": ("The system tray icon", "app", "App Settings", None),
+}
+
+
+def _notify_service_gave_up(name: str, exc: BaseException) -> None:
+    """One notice when a deferred service is still failing after its retries."""
+    label, source, subtab, main_tab = _SERVICE_INFO.get(
+        name, (name.replace("_", " ").capitalize(), "app", None, None)
+    )
+    actions = None
+    if subtab:
+        actions = nav_actions_settings(subtab)
+    elif main_tab:
+        actions = nav_actions_main_tab(main_tab)
+    notify_critical(
+        "It kept failing after several tries, so it stays off until Mycelian restarts.",
+        source=source,
+        title=f"{label} couldn't start",
+        hint="Check its settings, then restart Mycelian. If it keeps failing, send the details from the log to support.",
+        details=f"{name}: {type(exc).__name__}: {exc}",
+        dedupe_key=f"deferred_init:{name}",
+        dedupe_cooldown_sec=3600.0,
+        actions=actions,
+    )
 
 
 class DeferredServiceManager:
@@ -199,31 +239,7 @@ class DeferredServiceManager:
                                 name,
                                 attempts[name],
                             )
-                            notify_critical(
-                                f"A background service failed to start ({name}). "
-                                "Check logs.",
-                                dedupe_key=f"deferred_init:{name}",
-                                actions=nav_actions_settings("App Settings"),
-                            )
-                            try:
-                                from nicegui import Client
-
-                                from . import tray_controller
-                                from .system_notify import notify_async
-
-                                has_client = any(
-                                    getattr(c, "has_socket_connection", False)
-                                    and not getattr(c, "is_deleted", False)
-                                    for c in Client.instances.values()
-                                )
-                                if (not has_client) or tray_controller.is_minimized():
-                                    notify_async(
-                                        f"A background service failed to start ({name}). "
-                                        "Check logs.",
-                                        title="Mycelian",
-                                    )
-                            except Exception:
-                                pass
+                            _notify_service_gave_up(name, e)
                 pending = still_pending
                 delay = min(delay * 2, 60.0)
 

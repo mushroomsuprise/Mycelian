@@ -206,6 +206,20 @@ def _is_transient_connect_error(exc: BaseException) -> bool:
     return type(exc).__name__ in ("WebSocketTimeoutException", "WebSocketBadStatusException")
 
 
+def _obs_auth_problem(exc: BaseException) -> Optional[str]:
+    """``missing`` / ``wrong`` when OBS refused the WebSocket password, else None.
+
+    obsws-python raises "authentication enabled but no password provided" when no password
+    is set, and "failed to identify client…" when OBS closes the socket after a wrong one.
+    """
+    msg = str(exc).lower()
+    if "no password provided" in msg or "authentication enabled" in msg:
+        return "missing"
+    if "failed to identify client" in msg:
+        return "wrong"
+    return None
+
+
 class ObsServiceImpl:
     def __init__(self) -> None:
         self._stop = threading.Event()
@@ -237,6 +251,8 @@ class ObsServiceImpl:
         self._phase_lock = threading.Lock()
         self._phase = "disconnected"
         self._connect_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+        # (host, port, password hash) the user was last told OBS rejected; cleared on connect.
+        self._auth_notified_sig: Optional[Tuple[str, int, int]] = None
 
     # --- Public API ---
     def set_connector_loop(self, loop: Optional[asyncio.AbstractEventLoop]) -> None:
@@ -328,6 +344,10 @@ class ObsServiceImpl:
         """``disconnected`` | ``connecting`` | ``connected`` | ``disconnecting``."""
         with self._phase_lock:
             return self._phase
+
+    def auth_failed(self) -> bool:
+        """True after OBS refused the WebSocket password, until the next successful connect."""
+        return self._auth_notified_sig is not None
 
     def is_connected(self) -> bool:
         return self.get_connection_phase() == "connected" and self._req_client is not None
@@ -659,11 +679,45 @@ class ObsServiceImpl:
             self._replace_connect_executor()
             return None
         except Exception as e:
-            if _is_transient_connect_error(e):
+            auth = _obs_auth_problem(e)
+            if auth:
+                logger.info("OBS rejected the connection (%s password): %s", auth, e)
+                self._notify_auth_failed(auth, kw, e)
+            elif _is_transient_connect_error(e):
                 logger.debug("OBS unreachable: %s", e)
             else:
                 logger.info("OBS connect failed: %s", e)
             return None
+
+    def _notify_auth_failed(self, problem: str, kw: Dict[str, Any], exc: BaseException) -> None:
+        """Tell the user once per host/port/password that OBS refused the password."""
+        sig = (str(kw.get("host") or ""), int(kw.get("port") or 0), hash(str(kw.get("password") or "")))
+        if self._auth_notified_sig == sig:
+            return
+        self._auth_notified_sig = sig
+        try:
+            from .notification_engine import nav_actions_settings, notify
+
+            if problem == "missing":
+                title = "OBS needs a WebSocket password"
+                message = "OBS has WebSocket authentication turned on, but no password is set in Mycelian."
+            else:
+                title = "OBS rejected the WebSocket password"
+                message = "Mycelian can't connect to OBS until the password matches."
+            notify(
+                message,
+                type="error",
+                source="obs",
+                title=title,
+                hint="In OBS open Tools → WebSocket Server Settings, click Show Connect Info, "
+                     "and copy the password into Settings → OBS.",
+                details=f"{kw.get('host')}:{kw.get('port')}: {type(exc).__name__}: {exc}",
+                dedupe_key="obs:auth_failed",
+                dedupe_cooldown_sec=1800.0,
+                actions=nav_actions_settings("OBS"),
+            )
+        except Exception:
+            logger.debug("OBS auth notice failed", exc_info=True)
 
     def _connect_event_client(self, base_kw: Dict[str, Any]) -> None:
         from obsws_python import EventClient
@@ -688,8 +742,30 @@ class ObsServiceImpl:
         except concurrent.futures.TimeoutError:
             logger.warning("OBS EventClient connect timed out (triggers disabled)")
             self._replace_connect_executor()
+            self._notify_events_unavailable("Timed out opening the OBS event connection.")
         except Exception as e:
             logger.warning("OBS EventClient unavailable (triggers disabled): %s", e)
+            self._notify_events_unavailable(f"{type(e).__name__}: {e}")
+
+    @staticmethod
+    def _notify_events_unavailable(details: str) -> None:
+        try:
+            from .notification_engine import nav_actions_main_tab, notify
+
+            notify(
+                "Mycelian can send commands to OBS, but OBS events (scene changes, stream start/stop) "
+                "won't trigger connectors.",
+                type="warning",
+                source="obs",
+                title="OBS events aren't coming through",
+                hint="Restart OBS, or reconnect in Settings → OBS. If it keeps happening, update OBS.",
+                details=details,
+                dedupe_key="obs:event_client",
+                dedupe_cooldown_sec=3600.0,
+                actions=nav_actions_main_tab("Connectors"),
+            )
+        except Exception:
+            logger.debug("OBS event-client notice failed", exc_info=True)
 
     def _connect_blocking(self) -> None:
         if self._should_abort_connect():
@@ -722,6 +798,7 @@ class ObsServiceImpl:
         self._apply_ws_timeout(self._req_client, _RPC_TIMEOUT_SEC)
         self._obs_version = plug
         self._websocket_version = ws_v
+        self._auth_notified_sig = None
         self._set_phase("connected")
 
         logger.info(

@@ -5292,21 +5292,24 @@ class WebEngine:
         try:
             from .notification_engine import notify_critical
 
-            message = (
-                f"The overlay server could not bind to port {self.port} ({context}). "
-                "OBS browser sources and alerts may not work until the other "
-                "application releases that port. Mycelian will keep running and "
-                "retry automatically."
-            )
             if sys.platform == "darwin":
-                message += (
-                    " On macOS, disable AirPlay Receiver in System Settings → "
-                    "General → AirDrop & Handoff."
+                hint = (
+                    "Turn off AirPlay Receiver in System Settings → General → AirDrop & Handoff, "
+                    "or quit the app using that port. Mycelian starts the overlay server as soon as it's free."
+                )
+            else:
+                hint = (
+                    f"Quit the other app using port {self.port}. Mycelian starts the overlay "
+                    "server as soon as the port is free."
                 )
             notify_critical(
-                message,
-                dedupe_key=f"web_engine:port_conflict:{context}",
-                dedupe_cooldown_sec=120.0,
+                "OBS browser sources, alerts and Stream Deck won't work until the port is free.",
+                source="overlay_server",
+                title=f"Another app is using port {self.port}",
+                hint=hint,
+                details=f"Overlay server could not bind {self.host}:{self.port} ({context})",
+                dedupe_key="web_engine:port_conflict",
+                dedupe_cooldown_sec=1800.0,
             )
         except Exception as e:
             logger.debug("WebEngine port conflict notification failed: %s", e)
@@ -5426,7 +5429,6 @@ class WebEngine:
                                 self._restart_attempts = 0
                                 self._restart_giveup_notified = False
                             self._last_run_error = None
-                            self._notify_restart_recovered()
                             return
                     logger.warning(
                         "WebEngine port-wait: bind attempted but health not confirmed; "
@@ -5441,8 +5443,6 @@ class WebEngine:
         logger.error("WebEngine auto-restart (attempt %s): %s", attempt, reason)
         self._restart_in_progress = True
         try:
-            self._notify_restart_attempt()
-
             self._aggressive_stop()
 
             # Re-arm the lazily-started gevent workers so they restart when a
@@ -5534,7 +5534,6 @@ class WebEngine:
                     self._restart_attempts = 0
                     self._restart_giveup_notified = False
                 self._last_run_error = None
-                self._notify_restart_recovered()
             else:
                 logger.error(
                     "WebEngine auto-restart did not recover (attempt %s)", attempt
@@ -5596,44 +5595,24 @@ class WebEngine:
         thread.start()
         web_engine_instance = self
 
-    def _notify_restart_attempt(self) -> None:
-        try:
-            from .notification_engine import notify_critical
-
-            notify_critical(
-                "The overlay server (OBS browser sources, Stream Deck, and "
-                "alerts) stopped responding and is being restarted "
-                "automatically.",
-                dedupe_key="web_engine:restart_attempt",
-                dedupe_cooldown_sec=60.0,
-            )
-        except Exception as e:
-            logger.debug("WebEngine restart notification failed: %s", e)
-
-    def _notify_restart_recovered(self) -> None:
+    def _notify_restart_giveup(self) -> None:
+        # Restarts and recoveries are announced by the status poller
+        # (service_alerts). Giving up is not: say it once, sharing the poller's
+        # "problem" key so its "Overlay server crashed" notice updates this entry.
         try:
             from .notification_engine import notify
 
             notify(
-                "The overlay server recovered. OBS sources, Stream Deck, and "
-                "alerts should be working again.",
-                type="positive",
-                dedupe_key="web_engine:restart_recovered",
-                dedupe_cooldown_sec=60.0,
-            )
-        except Exception as e:
-            logger.debug("WebEngine recovery notification failed: %s", e)
-
-    def _notify_restart_giveup(self) -> None:
-        try:
-            from .notification_engine import notify_critical
-
-            notify_critical(
-                "The overlay server stopped responding and could not be "
-                "restarted automatically. Please restart Mycelian to restore "
-                "OBS sources, Stream Deck, and alerts.",
-                dedupe_key="web_engine:restart_giveup",
-                dedupe_cooldown_sec=300.0,
+                "Mycelian tried to restart it several times. OBS browser sources, "
+                "alerts and Stream Deck stay down until Mycelian restarts.",
+                type="error",
+                source="overlay_server",
+                title="The overlay server stopped",
+                hint="Quit and reopen Mycelian.",
+                details=f"Last error: {self._last_run_error}" if self._last_run_error else None,
+                dedupe_key="svc:webengine:problem",
+                dedupe_cooldown_sec=600.0,
+                sticky=True,
             )
         except Exception as e:
             logger.debug("WebEngine give-up notification failed: %s", e)
@@ -5757,6 +5736,47 @@ class WebEngine:
         response.headers["Content-Type"] = "text/html; charset=utf-8"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    def _notify_template_render_failed(
+        self, template: str, exc: BaseException, *, preview: bool = False
+    ) -> None:
+        """An overlay page failed to render, so OBS shows an error page instead.
+
+        Runs per request (OBS retries), so one notice per template per 30 minutes.
+        Editor previews are skipped: Spore Studio shows its own preview errors.
+        """
+        if preview:
+            return
+        try:
+            from .notification_engine import (
+                nav_source_template,
+                nav_spore_template,
+                notify,
+            )
+
+            name = str(template)
+            sidecar = os.path.join(self.template_dir, "_spore", f"{name}.spore.json")
+            if os.path.isfile(sidecar):
+                hint = ("Open it in Spore Studio, fix or remove the widget that changed last, and "
+                        "save. Then refresh the browser source in OBS.")
+                actions = nav_spore_template(name)
+            else:
+                hint = ("Check the template's HTML for errors (the details show the line), "
+                        "then refresh the browser source in OBS.")
+                actions = nav_source_template(name)
+            notify(
+                "OBS shows an error page instead of this overlay.",
+                type="error",
+                source="overlay_server",
+                title=f"Overlay “{name}” failed to load",
+                hint=hint,
+                details=f"{name}.html: {type(exc).__name__}: {exc}",
+                dedupe_key=f"overlay:render:{name}",
+                dedupe_cooldown_sec=1800.0,
+                actions=actions,
+            )
+        except Exception:
+            logger.debug("Template render notice failed for %s", template, exc_info=True)
 
     def _register_template_route(self, template_name):
         """Register a single template route"""
@@ -5896,6 +5916,9 @@ class WebEngine:
                             f"Error rendering template {template}: {str(e)}",
                             exc_info=True,
                         )
+                        engine_self._notify_template_render_failed(
+                            template, e, preview=bool(request.args.get("__preview_token"))
+                        )
                         return f"Error loading template {template}: {str(e)}", 500
 
                 return route_handler
@@ -5924,6 +5947,22 @@ class WebEngine:
                 f"Error registering route for template {template_name}: {str(e)}",
                 exc_info=True,
             )
+            try:
+                from .notification_engine import nav_spore_template, notify
+
+                notify(
+                    "Its OBS browser source URL won't work until Mycelian restarts.",
+                    type="error",
+                    source="overlay_server",
+                    title=f"Couldn't publish overlay “{template_name}”",
+                    hint="Restart Mycelian. If it keeps happening, check the template's name for unusual characters.",
+                    details=f"{type(e).__name__}: {e}",
+                    dedupe_key=f"overlay:route:{template_name}",
+                    dedupe_cooldown_sec=3600.0,
+                    actions=nav_spore_template(template_name),
+                )
+            except Exception:
+                logger.debug("Route registration notice failed", exc_info=True)
 
     def _register_template_fallback_route(self):
         """Register a one-time catch-all route for runtime-created templates.
@@ -6036,6 +6075,9 @@ class WebEngine:
                     template_name,
                     e,
                     exc_info=True,
+                )
+                engine_self._notify_template_render_failed(
+                    template_name, e, preview=bool(request.args.get("__preview_token"))
                 )
                 return (f"Error loading template {template_name}: {e}", 500)
 
@@ -10062,7 +10104,11 @@ class WebEngine:
                 return
             if persist.get("sync_dynamic_value", True):
                 ctrl["value"] = coerced
-            parser.save_config(template_name, config)
+            if not parser.save_config(template_name, config):
+                self._notify_control_persist_failed(
+                    template_name, "save_config returned False (see the log for the file error)"
+                )
+                return
             self._persist_absence_cache.pop(absence_key, None)
             self.invalidate_all_template_configs_cache()
             self._emit_source_controls_state_update(
@@ -10085,6 +10131,27 @@ class WebEngine:
                 e,
                 exc_info=True,
             )
+            self._notify_control_persist_failed(template_name, f"{type(e).__name__}: {e}")
+
+    @staticmethod
+    def _notify_control_persist_failed(template_name: str, details: str) -> None:
+        """A Source Controls / Stream Deck value change took effect but wasn't saved."""
+        try:
+            from .notification_engine import nav_actions_main_tab, notify
+
+            notify(
+                "The overlay shows the new value, but it goes back to the old one when the overlay reloads.",
+                type="warning",
+                source="source_controls",
+                title=f"Couldn't save the “{template_name}” control change",
+                hint="Check that the Mycelian templates folder isn't read-only or full, then change the control again.",
+                details=f"{template_name}: {details}",
+                dedupe_key=f"source_controls:persist:{template_name}",
+                dedupe_cooldown_sec=600.0,
+                actions=nav_actions_main_tab("Source Controls"),
+            )
+        except Exception:
+            logger.debug("Control persist notice failed", exc_info=True)
 
     def _overlay_html_cache_key(self, template: str):
         try:

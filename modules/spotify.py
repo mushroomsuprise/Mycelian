@@ -393,6 +393,25 @@ class SpotifyClient:
                 error_code,
                 SPOTIFY_OAUTH_REDIRECT_URI,
             )
+            if error_code == "invalid_client":
+                # The status poller says "sign in again", which can't fix a wrong ID/secret.
+                try:
+                    from .notification_engine import nav_actions_settings, notify
+
+                    notify(
+                        "Spotify rejected the app credentials, so now-playing info stops updating.",
+                        type="error",
+                        source="spotify",
+                        title="Spotify rejected your Client ID or Secret",
+                        hint="Copy both from your app at developer.spotify.com/dashboard into "
+                             "Settings → Spotify, then click Connect.",
+                        details=f"Token refresh: {error_code}",
+                        dedupe_key="spotify:bad_credentials",
+                        dedupe_cooldown_sec=3600.0,
+                        actions=nav_actions_settings("Spotify"),
+                    )
+                except Exception:
+                    logger.debug("Spotify credentials notice failed", exc_info=True)
 
     def _apply_rate_limit_backoff(
         self, response: requests.Response, default_sec: float = _API_BACKOFF_DEFAULT_SEC

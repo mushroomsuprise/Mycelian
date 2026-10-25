@@ -132,8 +132,28 @@ def emit_donation_alert(
     try:
         alert_processor.enqueue_alert(alert)
         alertutils.alert_state_manager.store_completed_alert(alert.alert_id, stored)
-    except Exception:
+    except Exception as exc:
         logger.error("Failed to enqueue donation alert", exc_info=True)
+        try:
+            from .notification_engine import nav_actions_main_tab, notify
+
+            service = {"streamlabs": "Streamlabs", "streamelements": "StreamElements"}.get(
+                str(source).lower(), str(source)
+            )
+            notify(
+                f"The {phrase} {service} donation from {donor} wasn't shown on stream. "
+                "Connectors for it still ran.",
+                type="error",
+                source="alerts",
+                title="A donation alert couldn't play",
+                hint="Check that the donation alert is set up in the Alerts tab. If it keeps happening, restart Mycelian.",
+                details=f"{alert_id}: {type(exc).__name__}: {exc}",
+                dedupe_key="alert:donation_enqueue",
+                dedupe_cooldown_sec=300.0,
+                actions=nav_actions_main_tab("Alerts"),
+            )
+        except Exception:
+            logger.debug("Donation alert failure notice failed", exc_info=True)
         return alert
 
     _send_instant(alert, source, phrase)

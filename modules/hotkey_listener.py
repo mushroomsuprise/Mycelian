@@ -25,11 +25,62 @@ SOFTWARE.
 
 import asyncio
 import logging
+import sys
 import threading
 import time
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Hotkey notices already shown this session (by key), so a rebuild never repeats one.
+_notified: set = set()
+
+
+def _notify_hotkeys(key: str, title: str, message: str, hint: str, *, level: str = "warning",
+                    details: Optional[str] = None) -> None:
+    if key in _notified:
+        return
+    _notified.add(key)
+    try:
+        from .notification_engine import nav_actions_main_tab, notify
+
+        notify(
+            message,
+            type=level,
+            source="connectors",
+            title=title,
+            hint=hint,
+            details=details,
+            dedupe_key=f"hotkeys:{key}",
+            dedupe_cooldown_sec=3600.0,
+            actions=nav_actions_main_tab("Connectors"),
+        )
+    except Exception:
+        logger.debug("Hotkey notice failed", exc_info=True)
+
+
+def _mac_accessibility_trusted() -> Optional[bool]:
+    """macOS: whether Mycelian may watch the keyboard (None when unknown / not macOS)."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        import HIServices  # pyobjc, installed with pynput on macOS
+
+        return bool(HIServices.AXIsProcessTrusted())
+    except Exception:
+        return None
+
+
+def _check_mac_permission() -> None:
+    if "mac_permission" not in _notified and _mac_accessibility_trusted() is False:
+        logger.warning("Hotkeys: macOS Accessibility permission missing; hotkeys will not fire")
+        _notify_hotkeys(
+            "mac_permission",
+            "Hotkeys need permission on macOS",
+            "macOS isn't letting Mycelian see key presses, so hotkey connectors won't run.",
+            "Open System Settings → Privacy & Security → Accessibility (and Input Monitoring), "
+            "turn Mycelian on (or the terminal you start it from), then restart Mycelian.",
+        )
 
 _MODIFIER_ORDER = ("ctrl", "alt", "shift", "cmd")
 _MODIFIER_ALIASES = {
@@ -173,6 +224,8 @@ class HotkeyListener:
         self._hotkeys_dirty = True
         self._wake = threading.Event()
         self._pynput_hotkeys = []
+        # (key, title, message, hint, details) when hotkeys can't work this session.
+        self._unavailable = None
 
     def start(self):
         """Start the hotkey listener"""
@@ -225,6 +278,7 @@ class HotkeyListener:
                     )
                 self._hotkeys_dirty = True
                 self._wake.set()
+            self._report_unavailable()
 
         except Exception as e:
             logger.error(f"Error registering hotkey: {e}", exc_info=True)
@@ -287,12 +341,43 @@ class HotkeyListener:
                     logger.error(
                         "Neither pynput nor keyboard library available for hotkey listening"
                     )
+                    self._unavailable = (
+                        "unavailable",
+                        "Hotkeys aren't available",
+                        "Hotkey connectors won't run on this computer because the keyboard "
+                        "library is missing.",
+                        "Reinstall Mycelian. If you run it from source, install pynput.",
+                        None,
+                    )
+                    self._report_unavailable()
                     return
 
         except Exception as e:
             logger.error(f"Error in hotkey listener: {e}", exc_info=True)
+            self._report_listener_crash(e)
         finally:
             self.is_running = False
+
+    def _report_listener_crash(self, exc: BaseException) -> None:
+        self._unavailable = (
+            "listener_crash",
+            "Hotkeys stopped working",
+            "The keyboard listener stopped, so hotkey connectors won't run until Mycelian restarts.",
+            "Restart Mycelian.",
+            f"{type(exc).__name__}: {exc}",
+        )
+        self._report_unavailable()
+
+    def _report_unavailable(self) -> None:
+        """Only bother the user once a hotkey connector actually exists."""
+        if not self._unavailable:
+            return
+        with self._lock:
+            has_hotkeys = bool(self.hotkey_mappings)
+        if not has_hotkeys:
+            return
+        key, title, message, hint, details = self._unavailable
+        _notify_hotkeys(key, title, message, hint, level="error", details=details)
 
     def _run_pynput_listener(self):
         """Run hotkey listener using pynput"""
@@ -342,11 +427,16 @@ class HotkeyListener:
                                 ),
                             )
                             hotkeys.append(hotkey)
+                        else:
+                            _notify_invalid_hotkey(key_combination)
                     except Exception as e:
                         logger.warning(
                             f"Failed to parse hotkey combination '{key_combination}': {e}"
                         )
+                        _notify_invalid_hotkey(key_combination, f"{type(e).__name__}: {e}")
                 self._pynput_hotkeys = hotkeys
+                if combos:
+                    _check_mac_permission()
 
             def on_press(key):
                 if self._hotkeys_dirty:
@@ -395,6 +485,7 @@ class HotkeyListener:
 
         except Exception as e:
             logger.error(f"Error in pynput listener: {e}", exc_info=True)
+            self._report_listener_crash(e)
 
     def _run_keyboard_listener(self):
         """Run hotkey listener using keyboard library"""
@@ -427,6 +518,9 @@ class HotkeyListener:
                             logger.warning(
                                 f"Failed to register hotkey '{key_combination}': {e}"
                             )
+                            _notify_invalid_hotkey(
+                                key_combination, f"{type(e).__name__}: {e}", maybe_taken=True
+                            )
                     last_combos = list(combos)
                 self._wake.wait()
                 self._wake.clear()
@@ -439,6 +533,7 @@ class HotkeyListener:
 
         except Exception as e:
             logger.error(f"Error in keyboard listener: {e}", exc_info=True)
+            self._report_listener_crash(e)
 
     def _parse_key_combination(self, key_combination: str) -> List:
         """Parse key combination string into pynput Key objects"""
@@ -569,6 +664,19 @@ class HotkeyListener:
         """Get all registered hotkeys"""
         with self._lock:
             return self.hotkey_mappings.copy()
+
+
+def _notify_invalid_hotkey(combo: str, details: Optional[str] = None, *, maybe_taken: bool = False) -> None:
+    hint = "Open the connector and record the hotkey again."
+    if maybe_taken:
+        hint = "Another app may already use it. Open the connector and pick a different hotkey."
+    _notify_hotkeys(
+        f"bad:{combo}",
+        f"Hotkey “{combo}” can't be used",
+        "Connectors with this hotkey won't run.",
+        hint,
+        details=details,
+    )
 
 
 def build_hotkey_event(combo: str) -> Dict[str, Any]:

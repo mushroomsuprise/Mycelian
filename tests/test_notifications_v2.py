@@ -110,3 +110,11 @@ def test_classify_and_service_tracker():
     assert [n.title for n in problems] == ["Twitch needs you to sign in again"] and problems[0].settings_tab == "Twitch"
     recovered = [n for _ in range(4) for n in tracker.observe({"internet": "Online", "twitch": "Connected", "discord": "Connected"})]
     assert [n.kind for n in recovered] == ["recovered"]
+
+
+def test_tracker_leaves_obs_password_and_twitch_network_drops_alone():
+    assert classify("obs", "Auth Failed") == "off"  # obs_service shows its own password notice
+    tracker = ServiceAlertTracker()
+    tracker.observe({"internet": "Online", "twitch": "Connected"})
+    notices = [n for _ in range(4) for n in tracker.observe({"internet": "Online", "twitch": "Authenticated but Disconnected"})]
+    assert [n.title for n in notices] == ["Twitch disconnected"]

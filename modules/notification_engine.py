@@ -776,33 +776,52 @@ def notify_critical(
     )
 
 
+# Exact Twitch category names (lowercase) per game hook. Remake, Rebirth, Crisis Core etc.
+# are different games the hooks can't read.
+_GAME_HOOK_CATEGORIES: Dict[str, frozenset] = {
+    "ff7": frozenset({"final fantasy vii", "final fantasy 7", "ff7", "ffvii"}),
+    "factorio": frozenset({"factorio", "factorio: space age"}),
+}
+_GAME_HOOK_HINTS: Dict[str, str] = {
+    "ff7": "Works with the Steam PC version (ff7_en.exe). Turn it on in Settings → Game Hooks.",
+    "factorio": "Turn it on in Settings → Game Hooks. It uses a small Factorio mod that Mycelian can install for you.",
+}
+_game_hook_suggested: set = set()
+
+
 def maybe_suggest_game_hook_for_category(category: Optional[str]) -> None:
-    """If Twitch category matches a supported hook game, nudge user toward Game Hooks."""
-    if not category or not str(category).strip():
+    """Once per session, suggest a game hook when the Twitch category is a game it supports.
+
+    Skipped when the hook is already on or doesn't run on this OS.
+    """
+    c = str(category or "").strip().lower()
+    hook_id = next((hid for hid, names in _GAME_HOOK_CATEGORIES.items() if c in names), None)
+    if not hook_id or hook_id in _game_hook_suggested:
         return
-    c = str(category).strip().lower()
-    hook_id: Optional[str] = None
-    game_label = ""
-    if "final fantasy vii" in c or c == "ff7" or " ff7" in f" {c}":
-        hook_id = "ff7"
-        game_label = category.strip()
-    if not hook_id:
+    try:
+        from .game_hooks import get_hook_class, is_hook_enabled
+        from .game_hooks.base import runtime_os_key
+
+        cls = get_hook_class(hook_id)
+        if cls is None or runtime_os_key() not in cls.ui.supported_platforms:
+            return
+        if is_hook_enabled(hook_id):
+            return
+        title = cls.ui.title
+    except Exception:
+        logger.debug("game hook suggestion check failed for %s", hook_id, exc_info=True)
         return
-    dk = f"game_hook_suggest:{hook_id}:{c}"
-    msg = f"Playing {game_label} on PC? Try the game hook out!"
+    _game_hook_suggested.add(hook_id)
     notify(
-        msg,
+        f"The {title} game hook can show live game data in your overlays.",
         type="info",
-        dedupe_key=dk,
-        dedupe_cooldown_sec=3600.0,
-        actions=[
-            {
-                "kind": "navigate",
-                "main_tab": "Settings",
-                "settings_subtab": "Game Hooks",
-            },
-            {"kind": "copy"},
-        ],
+        source="game_hooks",
+        title=f"Playing {category.strip()}? Try the game hook",
+        hint=_GAME_HOOK_HINTS.get(hook_id),
+        dedupe_key=f"game_hook_suggest:{hook_id}",
+        dedupe_cooldown_sec=86400.0,
+        actions=[{"kind": "navigate", "main_tab": "Settings", "settings_subtab": "Game Hooks",
+                  "label": "Open Game Hooks"}],
     )
 
 

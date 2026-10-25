@@ -86,27 +86,39 @@ _mismatch_notification_times: dict[
     str, float
 ] = {}  # Track last notification time per game
 
-_NPSSO_EXPIRED_NOTIFY_COOLDOWN_SEC = 45 * 60
-_npsso_expired_last_notified: float = 0.0
+# The NPSSO code the user was last told has expired; one notice per code, cleared on connect.
+_npsso_expired_notified_for: Optional[int] = None
 
 
-def notify_psn_npsso_expired() -> None:
-    """Notify the user once per cooldown that their NPSSO token needs updating."""
-    global _npsso_expired_last_notified
-    now = time.time()
-    if now - _npsso_expired_last_notified < _NPSSO_EXPIRED_NOTIFY_COOLDOWN_SEC:
+def notify_psn_npsso_expired(npsso_code: str = "") -> None:
+    """Tell the user once (per saved NPSSO code) that PSN needs a new sign-in code."""
+    global _npsso_expired_notified_for
+    marker = hash(npsso_code or "")
+    if _npsso_expired_notified_for == marker:
         return
-    _npsso_expired_last_notified = now
+    _npsso_expired_notified_for = marker
     try:
-        from .notification_engine import notify
+        from .notification_engine import nav_actions_settings, notify
 
         notify(
-            "PSN NPSSO token expired — open Settings → PSN and click Connect to update.",
+            "PlayStation trophies and presence stop updating until you sign in again.",
             type="warning",
-            timeout=10000,
+            source="psn",
+            title="PlayStation sign-in expired",
+            hint="Open Settings → PSN and click Connect to get a fresh NPSSO code.",
+            dedupe_key="psn:npsso_expired",
+            dedupe_cooldown_sec=6 * 3600.0,
+            sticky=True,
+            actions=nav_actions_settings("PSN"),
         )
     except Exception as e:
         logger.debug("PSN NPSSO expiry notification failed: %s", e)
+
+
+def clear_psn_npsso_expired_notice() -> None:
+    """A working sign-in: the next expiry gets a fresh notice."""
+    global _npsso_expired_notified_for
+    _npsso_expired_notified_for = None
 
 
 # --- Initialization and Management Functions ---

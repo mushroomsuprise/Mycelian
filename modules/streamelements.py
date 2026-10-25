@@ -37,8 +37,6 @@ _client: Optional["StreamElementsClient"] = None
 _start_lock = threading.Lock()
 
 
-_JWT_EXPIRED_NOTIFY_COOLDOWN_SEC = 45 * 60
-_jwt_expired_last_notified = 0.0
 
 
 def jwt_payload(token: str) -> dict:
@@ -66,26 +64,25 @@ def jwt_is_expired(token: str) -> bool:
         return False
 
 
-def notify_streamelements_jwt_expired() -> None:
-    """Tell the user once per cooldown that the StreamElements JWT needs replacing."""
-    global _jwt_expired_last_notified
-    now = time.time()
-    if now - _jwt_expired_last_notified < _JWT_EXPIRED_NOTIFY_COOLDOWN_SEC:
-        return
-    _jwt_expired_last_notified = now
+def _notify_channel_lookup_failed(details: str) -> None:
+    """The JWT was accepted but no StreamElements channel came back for it."""
     try:
         from .notification_engine import nav_actions_settings, notify
 
         notify(
-            "StreamElements JWT expired. Open Settings → StreamElements and paste a new token.",
+            "Mycelian couldn't find your StreamElements channel with the saved token, so tips won't arrive.",
             type="warning",
-            timeout=10000,
-            dedupe_key="streamelements:jwt_expired",
-            dedupe_cooldown_sec=_JWT_EXPIRED_NOTIFY_COOLDOWN_SEC,
+            source="streamelements",
+            title="StreamElements channel not found",
+            hint="Copy a fresh JWT from the StreamElements dashboard (Account → Channels) and paste it "
+                 "in Settings → StreamElements.",
+            details=details,
+            dedupe_key="streamelements:channel_lookup",
+            dedupe_cooldown_sec=3600.0,
             actions=nav_actions_settings("StreamElements"),
         )
     except Exception:
-        logger.debug("StreamElements JWT expiry notification failed", exc_info=True)
+        logger.debug("StreamElements channel lookup notice failed", exc_info=True)
 
 
 def channel_id_from_jwt(token: str) -> str:
@@ -274,7 +271,6 @@ class StreamElementsClient:
                     "Token expired",
                     "Paste a new JWT from the StreamElements dashboard.",
                 )
-                notify_streamelements_jwt_expired()
                 return
             self._stop.clear()
             self._realtime_authenticated = False
@@ -323,7 +319,6 @@ class StreamElementsClient:
                 "Token expired",
                 "Paste a new JWT from the StreamElements dashboard.",
             )
-            notify_streamelements_jwt_expired()
             self._stop.set()
             return
         self._note_failure(
@@ -361,7 +356,10 @@ class StreamElementsClient:
         if response.status_code in (401, 403):
             self._reject_jwt(jwt)
             return ""
+        if response.status_code >= 500:
+            return ""  # StreamElements is having trouble; the retry loop tries again
         if response.status_code >= 400:
+            _notify_channel_lookup_failed(f"GET {CHANNELS_ME}: HTTP {response.status_code}")
             return ""
         try:
             payload = response.json()
@@ -372,6 +370,8 @@ class StreamElementsClient:
             channel_id = str(payload.get("_id") or payload.get("id") or "").strip()
         if channel_id:
             update_settings(streamelements_channel_id=channel_id)
+        else:
+            _notify_channel_lookup_failed(f"GET {CHANNELS_ME}: no channel id in the response")
         return channel_id
 
     def _run(self) -> None:
