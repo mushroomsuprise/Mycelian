@@ -283,7 +283,7 @@ EVENTS: List[Dict[str, Any]] = [
     _e("youtube_superchat", "Super Chat", "YouTube", "Someone sends a Super Chat."),
     _e("youtube_supersticker", "Super Sticker", "YouTube", "Someone sends a Super Sticker."),
     _e("interval", "Timer", "Time", "Posts again and again; the first post comes after one full interval.",
-       [_f("interval", "Every", "duration", unit="seconds", default=600, help="Minimum 1 second")]),
+       [_f("interval", "Every", "duration", unit="seconds", default=600, help="At least 10 seconds")]),
     _e("specific_time", "At a time of day", "Time", "Posts once a day at this local time.",
        [_f("specific_time", "Time", "time", default="18:00", help="24-hour HH:MM")]),
 ]

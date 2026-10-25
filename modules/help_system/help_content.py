@@ -213,7 +213,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Creating Chat Commands',
         category=HelpCategory.CHATBOT,
         summary='How to create and manage custom chat commands',
-        keywords=['commands', 'chat', 'bot', 'custom', 'response', 'variables'],
+        keywords=['commands', 'chat', 'bot', 'custom', 'response', 'reply', 'variables', 'alias', 'aliases', 'counter', 'cooldown', 'permission', 'inputs', 'lookup', 'followage', 'uptime', 'shoutout', 'twitch api'],
         related_topics=['chatbot_events', 'chatbot_quotes', 'chatbot_greetings', 'chatbot_giveaways', 'chatbot_polls', 'chatbot_variables'],
     ),
     'chatbot_events': HelpTopic(
@@ -221,7 +221,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Chatbot Events and Automation',
         category=HelpCategory.CHATBOT,
         summary='Automated chatbot responses for stream events',
-        keywords=['events', 'automation', 'welcome', 'messages', 'responses'],
+        keywords=['events', 'automation', 'welcome', 'messages', 'responses', 'follow', 'raid', 'bits', 'subs', 'timer', 'interval', 'time of day', 'chat message'],
         related_topics=['chatbot_commands', 'chatbot_quotes', 'chatbot_variables', 'chatbot_greetings'],
     ),
     'chatbot_quotes': HelpTopic(
@@ -261,7 +261,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Chatbot Variables',
         category=HelpCategory.CHATBOT,
         summary='Placeholders for chatbot commands, events and messages',
-        keywords=['variables', 'placeholders', 'dynamic', 'text', 'formatting', 'custom'],
+        keywords=['variables', 'placeholders', 'dynamic', 'text', 'formatting', 'custom', 'custom variables', 'date format', 'time format', 'math', 'statistics', 'quotes'],
         related_topics=['chatbot_commands', 'chatbot_greetings', 'chatbot_events'],
     ),
     # =========================================

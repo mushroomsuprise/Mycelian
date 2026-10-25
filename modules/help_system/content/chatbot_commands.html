@@ -1,4 +1,4 @@
-<p class="hx-lead">A command is a word that starts with <code>!</code>. When someone types it in Twitch chat, the chatbot posts your response. Responses can include <a href="help:chatbot_variables">variables</a> such as the viewer's name or the words they typed after the command.</p>
+<p class="hx-lead">A command is a word that starts with <code>!</code>. When someone types it in Twitch chat, the chatbot posts your reply. Replies can include <a href="help:chatbot_variables">variables</a> such as the viewer's name, the words they typed after the command, or live Twitch info like how long they have followed.</p>
 
 <div class="hx-meta">
   <span>{{icon:schedule}} About 3 minutes</span>
@@ -23,7 +23,7 @@
       <span class="hm-tab">Settings</span>
       <span class="hm-tabs-tail"><span class="hx-mi">help_outline</span><span class="hx-mi">notifications</span></span>
     </div>
-    <div class="hm-frame">
+    <div class="hm-frame hm-stack">
       <div class="hm-subtabs">
         <span class="hm-subtab is-active">Commands</span>
         <span class="hm-subtab">Events</span>
@@ -32,82 +32,54 @@
         <span class="hm-subtab">Giveaways</span>
         <span class="hm-subtab">Polls</span>
       </div>
-      <div class="hm-frame">
-        <div class="hm-cb-toolbar">
-          <div class="hm-row">
-            <span class="hm-btn"><span class="hx-mi">add</span>New Command</span>
-            <span class="hm-marker" data-n="1"></span>
-            <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh</span>
-          </div>
-          <div class="hm-field hm-base" data-label="🔍 Search commands"><span class="hm-placeholder">Search by name, command, aliases, or description...</span></div>
-          <span class="hm-marker" data-n="2"></span>
+      <div class="hm-cx2-bar">
+        <span class="hm-cb2-baricon"><span class="hx-mi">chat</span></span>
+        <span class="hm-cb2-bartext"><span class="hm-cb2-bartitle">Commands <span class="hm-marker" data-n="1"></span></span><span class="hm-cb2-barsub">Viewers type these in chat. 4 commands, 3 on.</span></span>
+        <span class="hm-cx2-search"><span class="hx-mi">search</span>Search name, command or reply</span>
+        <span class="hm-cx2-filters"><span class="hm-cx2-filter is-on">All<span class="hm-cb2-count">4</span></span><span class="hm-cx2-filter">On<span class="hm-cb2-count">3</span></span><span class="hm-cx2-filter">Off<span class="hm-cb2-count">1</span></span></span>
+        <span class="hm-btn hm-outline hm-dense hm-icon-only"><span class="hx-mi">refresh</span></span>
+        <span class="hm-btn hm-dense"><span class="hx-mi">add</span>New command</span>
+      </div>
+      <div class="hm-cx2-grid">
+        <div class="hm-cx2-card">
+          <div class="hm-cx2-head"><span class="hm-cb2-tile"><span class="hx-mi">chat</span></span><span class="hm-cx2-title"><span class="hm-cx2-name">Discord link</span><span class="hm-cb2-cmdrow"><span class="hm-cb2-cmd">!discord</span><span class="hm-cb2-alias">!dc</span></span><span class="hm-cx2-desc">Posts the server invite</span></span><span class="hm-switch is-on"><i></i></span><span class="hm-marker" data-n="2"></span></div>
+          <div class="hm-cb2-reply">Join us on Discord: https://discord.gg/example</div>
+          <div class="hm-cb2-tags"><span class="hm-cb2-tag">{{brand:twitch}}Twitch</span><span class="hm-cb2-tag">{{brand:youtube}}YouTube</span></div>
+          <div class="hm-cx2-foot"><span class="hx-mi hm-cx2-bolt">bolt</span><b>12</b>&nbsp;uses · 2 days ago<span class="hm-grow"></span><span class="hx-mi">play_arrow</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
         </div>
-        <div class="hm-cb-grid">
-          <div class="hm-cb-card is-command">
-            <div class="hm-cb-card-head">
-              <div class="hm-col hm-tight">
-                <span class="hm-cb-card-title">Discord link</span>
-                <span class="hm-cb-sub">!discord (Aliases: !dc)</span>
-                <span class="hm-cb-desc">Posts the server invite</span>
-              </div>
-              <div class="hm-cb-status">
-                <span class="hm-cb-state">Enabled</span>
-                <span class="hm-switch is-on"><i></i></span>
-                <span class="hm-marker" data-n="3"></span>
-              </div>
-            </div>
-            <div class="hm-col hm-tight">
-              <span class="hm-muted hm-xs">Response:</span>
-              <span class="hm-cb-response">Join us on Discord: https://discord.gg/example</span>
-            </div>
-            <div class="hm-cb-stats"><span>Used: 12x</span><span>Last: 10/21 20:14</span></div>
-            <div class="hm-cb-actions">
-              <span class="hm-btn hm-cb-secondary"><span class="hx-mi">edit</span>Edit</span>
-              <span class="hm-btn hm-cb-secondary"><span class="hx-mi">content_copy</span>Duplicate</span>
-              <span class="hm-btn hm-success"><span class="hx-mi">play_arrow</span>Test</span>
-              <span class="hm-btn hm-danger"><span class="hx-mi">delete</span>Delete</span>
-            </div>
-          </div>
-          <div class="hm-cb-card is-command">
-            <div class="hm-cb-card-head">
-              <div class="hm-col hm-tight">
-                <span class="hm-cb-card-title">Death counter</span>
-                <span class="hm-cb-sub">!deaths</span>
-              </div>
-              <div class="hm-cb-status">
-                <span class="hm-cb-state">Enabled</span>
-                <span class="hm-switch is-on"><i></i></span>
-              </div>
-            </div>
-            <div class="hm-row"><span class="hm-cb-pill is-mod">Mod Only</span><span class="hm-cb-pill is-counter">Counter</span><span class="hm-marker" data-n="4"></span></div>
-            <div class="hm-col hm-tight">
-              <span class="hm-muted hm-xs">Response:</span>
-              <span class="hm-cb-response">Deaths this stream: <span class="hm-cb-var">7</span></span>
-            </div>
-            <div class="hm-cb-stats"><span>Count: 7</span><span>Last: 10/21 21:02</span></div>
-            <div class="hm-cb-actions">
-              <span class="hm-btn hm-cb-secondary"><span class="hx-mi">edit</span>Edit</span>
-              <span class="hm-btn hm-cb-secondary"><span class="hx-mi">content_copy</span>Duplicate</span>
-              <span class="hm-btn hm-cb-warn"><span class="hx-mi">replay</span>Reset</span>
-              <span class="hm-btn hm-success"><span class="hx-mi">play_arrow</span>Test</span>
-              <span class="hm-btn hm-danger"><span class="hx-mi">delete</span>Delete</span>
-            </div>
-          </div>
+        <div class="hm-cx2-card">
+          <div class="hm-cx2-head"><span class="hm-cb2-tile"><span class="hx-mi">plus_one</span></span><span class="hm-cx2-title"><span class="hm-cx2-name">Death counter</span><span class="hm-cb2-cmdrow"><span class="hm-cb2-cmd">!deaths</span></span><span class="hm-cx2-desc"><em>No description</em></span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-cb2-reply">Deaths this stream: 7 <span class="hm-marker" data-n="3"></span></div>
+          <div class="hm-cb2-tags"><span class="hm-cb2-tag is-count"><span class="hx-mi">plus_one</span>Counter · 7</span><span class="hm-cb2-tag is-mod"><span class="hx-mi">shield</span>Mods only</span><span class="hm-cb2-tag">{{brand:twitch}}Twitch</span></div>
+          <div class="hm-cx2-foot"><span class="hx-mi hm-cx2-bolt">bolt</span><b>7</b>&nbsp;uses · 1 hour ago<span class="hm-grow"></span><span class="hx-mi">restart_alt</span><span class="hx-mi">play_arrow</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span><span class="hm-marker" data-n="4"></span></div>
+        </div>
+        <div class="hm-cx2-card">
+          <div class="hm-cx2-head"><span class="hm-cb2-tile"><span class="hx-mi">travel_explore</span></span><span class="hm-cx2-title"><span class="hm-cx2-name">Follow age</span><span class="hm-cb2-cmdrow"><span class="hm-cb2-cmd">!followage</span><span class="hm-cb2-alias">!fa</span></span><span class="hm-cx2-desc">How long someone has followed</span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-cb2-reply">TestViewer has followed for 2 years, 3 months!</div>
+          <div class="hm-cb2-tags"><span class="hm-cb2-tag is-api"><span class="hx-mi">travel_explore</span>Looks up how long someone has followed</span><span class="hm-cb2-tag"><span class="hx-mi">timer</span>5 s cooldown</span><span class="hm-cb2-tag">{{brand:twitch}}Twitch</span></div>
+          <div class="hm-cx2-foot"><span class="hx-mi hm-cx2-bolt">bolt</span><b>31</b>&nbsp;uses · 5 minutes ago<span class="hm-grow"></span><span class="hx-mi">play_arrow</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
+        </div>
+        <div class="hm-cx2-card is-off">
+          <div class="hm-cx2-head"><span class="hm-cb2-tile"><span class="hx-mi">chat</span></span><span class="hm-cx2-title"><span class="hm-cx2-name">Hug</span><span class="hm-cb2-cmdrow"><span class="hm-cb2-cmd">!hug</span></span><span class="hm-cx2-desc"><em>No description</em></span></span><span class="hm-switch"><i></i></span></div>
+          <div class="hm-cb2-reply">{usr} gives hello a big hug!</div>
+          <div class="hm-cb2-tags"><span class="hm-cb2-tag is-warn"><span class="hx-mi">help_outline</span>Check {usr}</span><span class="hm-cb2-tag">{{brand:twitch}}Twitch</span><span class="hm-marker" data-n="5"></span></div>
+          <div class="hm-cx2-foot"><span class="hx-mi">schedule</span>Never used<span class="hm-grow"></span><span class="hx-mi">play_arrow</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
         </div>
       </div>
     </div>
   </div>
-  <figcaption>Chatbot → Commands with two saved commands. Click a switch to see the disabled look; the mock does not save anything.</figcaption>
+  <figcaption><span>Chatbot → Commands with four commands. A green stripe on the left means on, grey means off. The switches here only flip the picture.</span></figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1"><strong>New Command</strong> opens the editor. <strong>Refresh</strong> reloads the list.</li>
-  <li data-n="2">The search box filters cards by name, command, aliases or description.</li>
-  <li data-n="3">The switch turns a command on or off without deleting it. Disabled cards are dimmed and ignore chat.</li>
-  <li data-n="4">Badges show <strong>Mod Only</strong>, <strong>Counter</strong> and <strong>Limit</strong> (usage limit) at a glance. Counter commands get a <strong>Reset</strong> button.</li>
+  <li data-n="1"><strong>Search</strong> matches the name, description, command, aliases and reply. <strong>All</strong> / <strong>On</strong> / <strong>Off</strong> narrow the list and show how many are in each. {{icon:refresh}} reloads the list. <strong>New command</strong> opens the editor.</li>
+  <li data-n="2">The name, the command with its aliases, and the description. The switch turns the command on or off without deleting it; a command that is off ignores chat.</li>
+  <li data-n="3">The reply as it would look, filled in with sample values, and tags for what is set: <strong>Counter · 7</strong>, who can use it (<strong>Subscribers</strong>, <strong>VIPs</strong>, <strong>Mods only</strong>), a Twitch lookup, the cooldown, a use limit, and where the reply goes (Twitch, YouTube, Discord channels or <strong>Shows as banner</strong>).</li>
+  <li data-n="4">How many times it was used and how long ago. Then {{icon:restart_alt}} <strong>Reset the counter to 0</strong> (counters only), {{icon:play_arrow}} <strong>Test with sample data</strong>, {{icon:edit}} <strong>Edit</strong> (double-clicking the name also edits) and {{icon:more_horiz}} with <strong>Duplicate</strong> and <strong>Delete…</strong>.</li>
+  <li data-n="5"><strong>Check {usr}</strong> means a variable in the reply could not be filled, usually a typo. Here <code>{usr}</code> should be <code>{username}</code>; it would be posted exactly as written.</li>
 </ol>
 
-<p>The response preview on each card fills in variables with live or sample values, shown in italics.</p>
+<p>With no commands yet, the tab shows <em>No commands yet</em> and a <strong>Create a command</strong> button.</p>
 
 <h2>What viewers see</h2>
 
@@ -116,207 +88,328 @@
     <div class="hm-chat-title">{{brand:twitch}} Stream chat</div>
     <div class="hm-chat-line"><b>night_owl:</b> !dc</div>
     <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> Join us on Discord: https://discord.gg/example</div>
+    <div class="hm-chat-line"><b>night_owl:</b> !followage</div>
+    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> night_owl has followed for 1 year, 4 months!</div>
     <div class="hm-chat-line is-mod"><span class="hm-chat-badge is-mod">M</span><b>ModMika:</b> !deaths</div>
     <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> Deaths this stream: 8</div>
   </div>
-  <figcaption>An alias works the same as the main name. Each use of a counter command adds one before it replies.</figcaption>
+  <figcaption>An alias works the same as the main command. Each use of a counter adds one before it replies.</figcaption>
 </figure>
 
 <h2>Create a command</h2>
 
 <section class="hx-guide" data-guide="chatbot_commands_create" data-title="Create a command">
-
   <div class="hx-step">
-    <h3>Open the editor</h3>
-    <p>Click <strong>New Command</strong>. A large dialog titled <strong>Create New Command</strong> opens. When the list is empty, the <strong>Create First Command</strong> button does the same.</p>
+    <h3>Open the editor and name it</h3>
+    <p>Click <strong>New command</strong> (or <strong>Create a command</strong>). Click <em>Name this command</em> at the top and type a name for the card. <em>Add a short description (optional)</em> shows under it. The <strong>On</strong> switch decides whether the command works once saved.</p>
   </div>
-
   <div class="hx-step">
-    <h3>Fill in Basic Information</h3>
-
-    <figure class="hx-figure">
-      <div class="hm">
-        <div class="hm-cb-dialog">
-          <div class="hm-cb-dialog-head"><span class="hm-accent">Create New Command</span><span class="hx-mi">close</span></div>
-          <div class="hm-cb-dialog-body">
-            <span class="hm-cb-section-title">Basic Information</span>
-            <div class="hm-grid-2">
-              <div class="hm-field is-focused" data-label="Command Name (without !)"><span class="hm-value">discord</span></div>
-              <div class="hm-field" data-label="Aliases (comma-separated, without !)"><span class="hm-value">dc</span></div>
-              <div class="hm-field" data-label="Name"><span class="hm-value">Discord link</span></div>
-              <div class="hm-field" data-label="Description (optional)"><span class="hm-placeholder">What does this do?</span></div>
-              <span class="hm-switch is-on"><i></i>Enabled</span>
-              <span class="hm-switch"><i></i>Display as banner instead of a chat message</span>
-            </div>
-            <span class="hm-muted hm-xs hm-bold">Send reply to <span class="hm-marker" data-n="1"></span></span>
-            <div class="hm-row hm-gap-lg"><span class="hm-check is-on"><i></i>Twitch</span><span class="hm-check is-on"><i></i>YouTube</span></div>
-            <span class="hm-muted hm-xs hm-bold">Also send to Discord <span class="hm-marker" data-n="2"></span></span>
-            <div class="hm-grid-2">
-              <div class="hm-field hm-select" data-label="Discord server"><span class="hm-placeholder"></span></div>
-              <div class="hm-field hm-select" data-label="Discord channel"><span class="hm-placeholder"></span></div>
-            </div>
-            <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">add</span>Add Discord channel</span><span class="hm-muted hm-xs">Connect Discord in Settings to list servers.</span></div>
-          </div>
-        </div>
-      </div>
-      <figcaption>The top of the editor. Checkboxes and switches here can be clicked to preview them.</figcaption>
-    </figure>
-
-    <ol class="hx-annotations">
-      <li data-n="1">New commands reply to <strong>Twitch</strong> and <strong>YouTube</strong>. Untick one to skip it. At least Twitch stays selected if you untick both.</li>
-      <li data-n="2">Optional. Pick a server and channel and click <strong>Add Discord channel</strong> to post the reply there too. Needs <a href="help:guide_discord">Discord</a> connected.</li>
-    </ol>
-
-    <ul>
-      <li><strong>Command Name</strong> is what viewers type, without the <code>!</code>. Matching ignores upper and lower case.</li>
-      <li><strong>Name</strong> is the label on the card. Both are required.</li>
-      <li><code>quote</code> and <code>add_quote</code> are reserved for the <a href="help:chatbot_quotes">quote system</a> and cannot be used as names or aliases.</li>
-      <li>Turn on <strong>Display as banner instead of a chat message</strong> to show the reply on the chat overlay banner instead. Twitch, YouTube and Discord are then hidden and skipped.</li>
-    </ul>
+    <h3>Type the command</h3>
+    <p>In <strong>1 When · Command</strong>, type the word after the <code>!</code>, for example <code>discord</code>. Add other words under <strong>Also answers to</strong>; press <kbd>Enter</kbd>, space or comma after each. Pick <strong>Who can use it</strong>, and set a <strong>Cooldown</strong> or <strong>Limit</strong> if you want one.</p>
   </div>
-
   <div class="hx-step">
-    <h3>Set limits in Settings (optional)</h3>
-    <p>Expand <strong>Settings</strong> under Basic Information.</p>
-
-    <figure class="hx-figure">
-      <div class="hm">
-        <div class="hm-expansion is-open">
-          <div class="hm-expansion-head"><span class="hx-mi">settings</span>Settings</div>
-          <div class="hm-expansion-body">
-            <span class="hm-cb-section-title">Command Settings</span>
-            <div class="hm-grid-3">
-              <span class="hm-switch"><i></i>Mod Only</span>
-              <div class="hm-field" data-label="Cooldown (seconds)"><span class="hm-value">30</span></div>
-              <div class="hm-field" data-label="Usage Limit (0 = unlimited)"><span class="hm-value">0</span></div>
-            </div>
-            <span class="hm-muted hm-xs">Command Type</span>
-            <div class="hm-field hm-select" data-label="Command Type"><span class="hm-value">Basic Command</span></div>
-            <hr class="hm-divider">
-            <span class="hm-muted hm-xs">Argument Mappings</span>
-            <span class="hm-muted hm-xs"><em>No argument mappings defined</em></span>
-            <div class="hm-row hm-nowrap">
-              <div class="hm-field hm-grow" data-label="Variable Name"><span class="hm-placeholder">e.g., city</span></div>
-              <div class="hm-field hm-select" data-label="Argument Position"><span class="hm-value">Position 1</span></div>
-              <span class="hm-btn hm-success hm-dense"><span class="hx-mi">add</span>Add Mapping</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <figcaption>Click the <strong>Settings</strong> header to collapse or expand it.</figcaption>
-    </figure>
-
-    <div class="hx-table-wrap"><table>
-      <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
-      <tbody>
-        <tr><td><strong>Mod Only</strong></td><td>Only chatters with the moderator badge can use it.</td></tr>
-        <tr><td><strong>Cooldown (seconds)</strong></td><td>Time before anyone can use the command again. One cooldown per command, shared by all viewers. <code>0</code> means none.</td></tr>
-        <tr><td><strong>Usage Limit</strong></td><td>Total uses allowed. After that the command stops working. <code>0</code> means unlimited.</td></tr>
-        <tr><td><strong>Command Type</strong></td><td><strong>Basic Command</strong>, <strong>Counter Command</strong> or <strong>Reset Command</strong>. See below.</td></tr>
-        <tr><td><strong>Argument Mappings</strong></td><td>Name a word the viewer types after the command. Mapping <code>city</code> to Position 1 lets <code>!weather Paris</code> fill <code>{city}</code> with <em>Paris</em>. Up to Position 10.</td></tr>
-      </tbody>
-    </table></div>
-
-    <div class="hx-callout hx-note"><p>When a command is blocked, the bot says so in Twitch chat, for example <em>"Command is on cooldown (12s remaining)"</em>, <em>"Command has reached its usage limit"</em> or <em>"Command is mod-only"</em>.</p></div>
+    <h3>Add inputs and a lookup if you need them</h3>
+    <p><strong>2 With · Inputs</strong> names the words viewers type after the command. <strong>3 Look up · Twitch info</strong> fetches live info such as follow age or uptime. Skip both for a plain reply.</p>
   </div>
-
   <div class="hx-step">
-    <h3>Write the response</h3>
-    <p>Type the message in <strong>Response Text</strong>. <strong>Preview</strong> above it shows the result as you type. The <strong>Variables</strong> panel on the right lists what you can insert, grouped as Basic, Arguments, Command/Event, Statistics, YouTube, Quotes, API Response and Custom. Click a variable to add it to the end of the response.</p>
-    <p><strong>Custom Variable</strong> above that panel creates a reusable variable. See <a href="help:chatbot_variables">Chatbot Variables</a>.</p>
+    <h3>Write the reply</h3>
+    <p>In <strong>4 Then · Reply</strong>, type what the bot says. The <code>{ }</code> button inserts a variable, and the line under the text shows the reply with sample values. Choose where it goes with <strong>Send to</strong>.</p>
   </div>
-
   <div class="hx-step">
     <h3>Save and test</h3>
-    <p>Click <strong>Create Command</strong> at the bottom of the dialog (it reads <strong>Update Command</strong> when editing). Then click <strong>Test</strong> on the card.</p>
-    <div class="hx-callout hx-warning"><p><strong>Test</strong> sends the real response to your chat targets as if <em>TestUser</em> used the command. It counts as a use: it adds to <em>Used</em>, raises a counter and starts the cooldown.</p></div>
+    <p>The bottom left says <em>Ready to save</em>, or names the first thing still missing. Click <strong>Create command</strong>, or <strong>Save &amp; test</strong> to save and try it once with sample data. Nothing is posted by a test.</p>
   </div>
-
 </section>
+
+<h2>The command editor</h2>
+
+<figure class="hx-figure">
+  <div class="hm hm-cxe">
+    <div class="hm-cxe-head">
+      <span class="hm-cxe-tile"><span class="hx-mi">add_comment</span></span>
+      <div class="hm-cxe-headtext">
+        <div class="hm-cxe-namerow"><span class="hm-cxe-kicker">New</span><span class="hm-cxe-name">Follow age</span></div>
+        <span class="hm-cxe-desc">How long someone has followed</span>
+      </div>
+      <span class="hm-cxe-onoff">On<span class="hm-switch is-on"><i></i></span></span>
+      <span class="hx-mi">close</span>
+    </div>
+    <div class="hm-cxe-body">
+      <div class="hm-cxe-flow">
+        <div class="hm-cxe-step">
+          <div class="hm-cxe-rail"><span class="hm-cxe-n">1</span></div>
+          <div class="hm-cxe-main">
+            <div class="hm-cxe-stephead"><span class="hm-cxe-key">When</span><span class="hm-cxe-title">Command</span><span class="hm-cxe-sub">What viewers type</span><span class="hm-marker" data-n="1"></span></div>
+            <div class="hm-cb2-box">
+              <div class="hm-cb2-cmdgrid">
+                <div class="hm-cxe-f"><span class="hm-cxe-label">Command</span><span class="hm-cb2-bang"><b>!</b>followage</span></div>
+                <div class="hm-cxe-f"><span class="hm-cxe-label">Also answers to</span><span class="hm-cb2-chips"><span class="hm-cb2-chip">!fa<span class="hx-mi">close</span></span><span class="hm-placeholder">Add another…</span></span></div>
+              </div>
+              <div class="hm-cxe-row"><span class="hm-cb2-mini">Who can use it</span><span class="hm-cb2-seg"><span class="is-on"><span class="hx-mi">groups</span>Everyone</span><span><span class="hx-mi">star</span>Subscribers</span><span><span class="hx-mi">diamond</span>VIPs</span><span><span class="hx-mi">shield</span>Mods</span></span><span class="hm-cb2-sep"></span><span class="hm-cxe-opt"><span class="hm-cb2-mini">Cooldown</span><span class="hm-cxe-in">5</span><span class="hm-cxe-unit">sec</span></span><span class="hm-cb2-sep"></span><span class="hm-cxe-opt"><span class="hm-cb2-mini">Limit</span><span class="hm-cxe-in">0</span><span class="hm-cxe-unit">uses</span></span></div>
+              <div class="hm-cxe-row"><span class="hm-cb2-mini">Type</span><span class="hm-cb2-seg"><span class="is-on"><span class="hx-mi">chat</span>Reply</span><span><span class="hx-mi">plus_one</span>Counter</span><span><span class="hx-mi">restart_alt</span>Reset a counter</span></span><span class="hm-cb2-help"><span class="hx-mi">info</span><span>Counters add 1 each time and give you <code>{count}</code>.</span></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hm-cxe-step">
+          <div class="hm-cxe-rail"><span class="hm-cxe-n">2</span></div>
+          <div class="hm-cxe-main">
+            <div class="hm-cxe-stephead"><span class="hm-cxe-key">With</span><span class="hm-cxe-title">Inputs</span><span class="hm-cxe-sub">Optional. Words viewers add after the command.</span><span class="hm-marker" data-n="2"></span><span class="hm-cxe-tag">1 input</span></div>
+            <div class="hm-cb2-box">
+              <div class="hm-cb2-usage">Viewers type: <b>!followage</b> <i>&lt;target&gt;</i></div>
+              <div class="hm-cb2-arg"><span class="hm-cb2-argn">1</span><span class="hm-cxe-in is-select">Word 1</span><span class="hx-mi">arrow_forward</span><span class="hm-cxe-in">target</span><div class="hm-cxe-box">{username}<span class="hm-cxe-varbtn">{ }</span></div><span class="hx-mi is-danger">close</span></div>
+            </div>
+            <div class="hm-cxe-add"><span class="hx-mi">add</span>Add input</div>
+          </div>
+        </div>
+        <div class="hm-cxe-step">
+          <div class="hm-cxe-rail"><span class="hm-cxe-n">3</span></div>
+          <div class="hm-cxe-main">
+            <div class="hm-cxe-stephead"><span class="hm-cxe-key">Look up</span><span class="hm-cxe-title">Twitch info</span><span class="hm-cxe-sub">Optional. Fetch live info to use in the reply.</span></div>
+            <div class="hm-cb2-look">
+              <span class="hm-cb2-tile is-brand">{{brand:twitch}}</span>
+              <div class="hm-cb2-lookt">
+                <div class="hm-cb2-lookn">How long someone has followed<span class="hm-cb2-auto"><span class="hx-mi">verified</span>Uses your Twitch login · nothing to set up</span></div>
+                <span class="hm-cb2-lookd">Follow age of the viewer (or the user they name).</span>
+                <div class="hm-cxe-row"><span class="hm-cb2-mini">Check</span><span class="hm-cxe-in is-select">{target} (word 1, or whoever typed it)</span></div>
+                <div class="hm-cb2-gives"><em>Gives you</em><code>{followage}</code><code>{followed_since}</code><code>{follow_days}</code><code>{is_following}</code><code>{target_name}</code><code>{lookup_error}</code></div>
+                <div class="hm-cxe-row"><span class="hm-cb2-mini">If they don't follow</span><div class="hm-cxe-box hm-grow">{target_name} isn't following yet.<span class="hm-cxe-varbtn">{ }</span></div></div>
+              </div>
+              <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">swap_horiz</span>Change</span>
+              <span class="hx-mi">close</span>
+              <span class="hm-marker" data-n="3"></span>
+            </div>
+          </div>
+        </div>
+        <div class="hm-cxe-step">
+          <div class="hm-cxe-rail"><span class="hm-cxe-n">4</span></div>
+          <div class="hm-cxe-main">
+            <div class="hm-cxe-stephead"><span class="hm-cxe-key">Then</span><span class="hm-cxe-title">Reply</span><span class="hm-cxe-sub">What the bot says</span></div>
+            <div class="hm-cb2-box">
+              <div class="hm-cxe-box is-area is-focused">{target_name} has followed for {followage}!<span class="hm-cxe-varbtn">{ }</span></div>
+              <div class="hm-cxe-preview"><span class="hx-mi">visibility</span><span>TestViewer has followed for 2 years, 3 months!</span></div>
+              <div class="hm-cb2-out"><span class="hm-cb2-mini">Send to</span><span class="hm-cxe-pill is-on">{{brand:twitch}}Twitch</span><span class="hm-cxe-pill">{{brand:youtube}}YouTube</span><span class="hm-cb2-sep"></span><span class="hm-cb2-mini">Discord</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">add</span>Channel</span><span class="hm-grow"></span><span class="hm-cb2-mini">Show as banner</span><span class="hm-switch"><i></i></span><span class="hm-marker" data-n="4"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="hm-cxe-vars">
+        <div class="hm-cxe-varshead"><span class="hx-mi">data_object</span>Variables<span class="hm-cxe-tag">!followage</span></div>
+        <span class="hm-cxe-in"><span class="hx-mi">search</span>Search variables</span>
+        <span class="hm-cxe-vgroup">Command</span>
+        <div class="hm-cxe-var"><code>{command_message}</code><span>hello world</span></div>
+        <div class="hm-cxe-var"><code>{command_word_N}</code><span>hello</span></div>
+        <div class="hm-cxe-var"><code>{usage_left}</code><span>unlimited</span></div>
+        <span class="hm-cxe-vgroup">Arguments</span>
+        <div class="hm-cxe-var"><code>{target}</code><span>hello</span></div>
+        <span class="hm-cxe-vgroup">Lookup</span>
+        <div class="hm-cxe-var"><code>{followage}</code><span>2 years, 3 months</span></div>
+        <div class="hm-cxe-var"><code>{followed_since}</code><span>March 14, 2024</span><span class="hx-mi">tune</span></div>
+        <span class="hm-cxe-vgroup">Basics</span>
+        <div class="hm-cxe-var"><code>{username}</code><span>TestViewer</span></div>
+        <div class="hm-cxe-var"><code>{time}</code><span>19:30:45</span><span class="hx-mi">tune</span></div>
+        <span class="hm-cxe-vgroup">Custom</span>
+        <div class="hm-cb2-vadd"><span class="hx-mi">add</span>New custom variable</div>
+        <span class="hm-cxe-vgroup">Statistics</span>
+        <div class="hm-cxe-var"><code>{stats.alerts.raids}</code><span>9</span></div>
+        <span class="hm-marker" data-n="5"></span>
+      </div>
+    </div>
+    <div class="hm-cxe-foot">
+      <span class="hm-cxe-status is-ok"><span class="hx-mi">check_circle</span>Ready to save</span>
+      <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">play_arrow</span>Save &amp; test</span>
+      <span class="hm-btn hm-outline hm-dense">Cancel</span>
+      <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Create command</span>
+      <span class="hm-marker" data-n="6"></span>
+    </div>
+  </div>
+  <figcaption><span>A <code>!followage</code> command that checks the viewer it names, or whoever typed it. When you edit an existing command the tag reads <strong>Edit</strong> and the button reads <strong>Save</strong>. Nothing in the mock can be edited.</span></figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">The command (no spaces; the <code>!</code> and capitals are dropped for you), its aliases, who can use it, the cooldown, the use limit and the type. See the next two sections.</li>
+  <li data-n="2">Each input gives a word a name. Here the first word becomes <code>{target}</code>; if the viewer types nothing after the command, <code>{target}</code> is <code>{username}</code>. The <em>Viewers type</em> line shows the result.</li>
+  <li data-n="3">An optional Twitch lookup. Its <em>Gives you</em> chips are the variables it adds, and the last row is the text posted instead when it fails. See <strong>Twitch lookups</strong> below.</li>
+  <li data-n="4">The reply, with a live preview using sample values. <strong>Send to</strong> picks Twitch and/or YouTube, <strong>Channel</strong> adds Discord channels, and <strong>Show as banner</strong> shows the reply on the chat overlay banner instead of posting it.</li>
+  <li data-n="5"><strong>Variables</strong> lists everything this command can use, with example values. Click one to insert it where your cursor was; {{icon:tune}} picks a date format. <strong>New custom variable</strong> opens the builder (see <a href="help:chatbot_variables">Chatbot Variables</a>). The panel is hidden when the window is narrow.</li>
+  <li data-n="6">The status names the first problem, such as <em>Type the command viewers use.</em>, <em>!dc is already used by “Discord link”.</em> or <em>Write the reply.</em> <strong>Save &amp; test</strong> saves, then tests with sample data.</li>
+</ol>
+
+<p>Closing the editor with unsaved changes asks <em>Close this command without saving? Your edits will be lost.</em> Choose <strong>Keep editing</strong> or <strong>Discard</strong>. <code>!quote</code> and <code>!add_quote</code> are built in while <a href="help:chatbot_quotes">quotes</a> are on, so they can't be used as commands or aliases.</p>
+
+<h2>Who can use it, cooldown and limit</h2>
+
+<div class="hx-table-wrap"><table>
+  <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Everyone</strong></td><td>Anyone in chat.</td></tr>
+    <tr><td><strong>Subscribers</strong></td><td>Subscribers (and founders), plus VIPs and mods.</td></tr>
+    <tr><td><strong>VIPs</strong></td><td>VIPs and mods.</td></tr>
+    <tr><td><strong>Mods</strong></td><td>Moderators only. The card says <strong>Mods only</strong>.</td></tr>
+    <tr><td><strong>Cooldown</strong> sec</td><td>After the command runs, it is ignored for this many seconds. One cooldown per command, shared by everyone. <code>0</code> means none.</td></tr>
+    <tr><td><strong>Limit</strong> uses</td><td>Total uses allowed; after that the command stops answering. <code>0</code> means no limit. Once it has been used, the editor shows <em>used 12 · reset</em>; click it to start the count over.</td></tr>
+  </tbody>
+</table></div>
+
+<p>You, the broadcaster, can always use your own commands. Chat badges decide everyone else's level. When a command is blocked (not allowed, on cooldown or out of uses) the bot stays silent; nothing is posted in chat.</p>
 
 <h2>Command types</h2>
 
 <div class="hx-tabs">
   <div class="hx-tab-list">
-    <button data-tab="basic" class="is-active">Basic</button>
+    <button data-tab="basic" class="is-active">Reply</button>
     <button data-tab="counter">Counter</button>
-    <button data-tab="reset">Reset</button>
+    <button data-tab="reset">Reset a counter</button>
   </div>
   <div class="hx-tab-panel" data-panel="basic">
-    <p>Replies with the response text. The card shows how many times it was used.</p>
-<pre><code>Command Name: discord
-Response Text: Join us on Discord: https://discord.gg/example</code></pre>
+    <p>Posts the reply. The card shows how many times it was used.</p>
+<pre><code>Command: !discord
+Reply:   Join us on Discord: https://discord.gg/example</code></pre>
   </div>
   <div class="hx-tab-panel" data-panel="counter">
-    <p>Adds one every time it is used. <code>{count}</code> is the new total. The count is saved with the command and shows on the card. <strong>Reset</strong> on the card sets it back to 0.</p>
-<pre><code>Command Name: deaths
-Command Type: Counter Command
-Response Text: Deaths this stream: {count}</code></pre>
-    <p>Counter commands also show a <strong>Persistent Counter</strong> switch ("Counter will persist between app restarts").</p>
+    <p>Adds one every time it is used, and <code>{count}</code> is the new total. <strong>Count now</strong> sets the number by hand. <strong>Keep the count after a restart</strong> is on by default; turn it off to start from 0 each time Mycelian starts. {{icon:restart_alt}} on the card asks <em>Reset command counter?</em> and sets it back to 0.</p>
+<pre><code>Command: !deaths      Type: Counter
+Reply:   Deaths this stream: {count}</code></pre>
   </div>
   <div class="hx-tab-panel" data-panel="reset">
-    <p>Sets another counter command back to 0. Pick the target in <strong>Command to Reset</strong>. If you have no counter commands yet, type its name without <code>!</code>.</p>
-<pre><code>Command Name: resetdeaths
-Command Type: Reset Command
-Command to Reset: deaths
-Response Text: Reset !{target_command} (was {target_count})</code></pre>
-    <p><code>{target_command}</code> is the counter's name and <code>{target_count}</code> its value before the reset. Combine with <strong>Mod Only</strong> so viewers cannot clear it.</p>
+    <p>Sets a counter command back to 0. Pick it under <strong>Resets</strong>, which lists your counters (for example <em>!deaths · Death counter</em>). <code>{target_command}</code> is the counter's command and <code>{target_count}</code> its value before the reset. The reply is optional: leave it empty to reset silently.</p>
+<pre><code>Command: !resetdeaths   Type: Reset a counter   Resets: !deaths
+Reply:   Reset !{target_command} (was {target_count})</code></pre>
+    <p>Set <strong>Who can use it</strong> to <strong>Mods</strong> so viewers can't clear it.</p>
   </div>
 </div>
 
-<h2>Examples</h2>
+<h2>Inputs</h2>
 
-<div class="hx-tabs">
-  <div class="hx-tab-list">
-    <button data-tab="args" class="is-active">Words after the command</button>
-    <button data-tab="stats">Statistics</button>
-    <button data-tab="time">Time</button>
-  </div>
-  <div class="hx-tab-panel" data-panel="args">
-<pre><code>Command Name: hug
-Response Text: {username} gives {command_word_1} a big hug!</code></pre>
-    <p><code>!hug @friend</code> → <em>night_owl gives @friend a big hug!</em> Use <code>{command_message}</code> for everything after the command.</p>
-  </div>
-  <div class="hx-tab-panel" data-panel="stats">
-<pre><code>Command Name: raids
-Response Text: We have been raided {stats.alerts.raids} times. Thank you!</code></pre>
-  </div>
-  <div class="hx-tab-panel" data-panel="time">
-<pre><code>Command Name: time
-Response Text: It is {time.hh:mm.12.ampm.tz} for the streamer.</code></pre>
-  </div>
-</div>
+<p>Viewers can type words after a command, like <code>!hug @friend</code>. You can always use them as <code>{command_word_1}</code>, <code>{command_word_2}</code>… or <code>{command_message}</code> for everything after the command. Inputs give them friendlier names:</p>
 
-<p>The full list is in <a href="help:chatbot_variables">Chatbot Variables</a>.</p>
+<ul>
+  <li><strong>Add input</strong> adds a row: pick <strong>Word 1</strong> to <strong>Word 9</strong>, then type a name such as <code>target</code> (lowercase letters, digits and <code>_</code>). Use it in the reply as <code>{target}</code>.</li>
+  <li>The third box is <strong>If empty</strong>: what to use when the viewer typed fewer words. Leave it blank for empty text, or use variables, for example <code>{username}</code>.</li>
+  <li>Inputs can feed a lookup: <em>Check</em> can be <code>{target}</code> instead of the person who typed the command.</li>
+</ul>
 
-<h2>API Integration</h2>
+<h2>Twitch lookups</h2>
 
-<p>The editor also has an <strong>API Integration</strong> section. Turn on <strong>Enable API Call</strong> and pick from <strong>Select API Endpoint</strong> to call a Twitch API endpoint each time the command runs. Only endpoints your Twitch sign-in has permission for are listed. The response fields then appear under <strong>API Response</strong> in the Variables panel, along with <code>{api_status}</code> and <code>{api_success}</code>.</p>
+<p>Click <strong>Look up Twitch info</strong> in step 3 to fetch live info for the reply, or to have Twitch do something (change the title, raid, shout out). Lookups use the Twitch account you connected in <a href="help:twitch_setup">Twitch Setup</a>: ids, tokens and headers are filled in for you.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-cxe-picker">
+      <div class="hm-cxe-pickerhead"><span class="hm-cxe-title">Look up Twitch info</span><span class="hm-cxe-in"><span class="hx-mi">search</span>Search lookups</span><span class="hm-btn hm-flat hm-dense">Cancel</span></div>
+      <div class="hm-cxe-pgroup">
+        <div class="hm-cxe-pgrouphead"><span class="hx-mi">person</span>Viewers</div>
+        <div class="hm-cxe-pgrid">
+          <div class="hm-cxe-popt is-selected"><b>How long someone has followed</b><span>Follow age of the viewer (or the user they name).</span></div>
+          <div class="hm-cxe-popt"><b>How old an account is</b><span>When the viewer's Twitch account was created.</span></div>
+          <div class="hm-cxe-popt"><b>Someone's subscription</b><span>Whether the viewer subscribes, and at what tier.</span></div>
+        </div>
+      </div>
+      <div class="hm-cxe-pgroup">
+        <div class="hm-cxe-pgrouphead"><span class="hx-mi">live_tv</span>Your stream</div>
+        <div class="hm-cxe-pgrid">
+          <div class="hm-cxe-popt"><b>Stream uptime</b><span>How long you have been live, with viewers, title and game.</span></div>
+          <div class="hm-cxe-popt"><b>Top cheerer</b><span>Who has cheered the most bits.</span><em>Reconnect Twitch to allow: bits:read</em></div>
+          <div class="hm-cxe-popt"><b>…</b><span>Title and game, follower and sub counts</span></div>
+        </div>
+      </div>
+      <div class="hm-cxe-pgroup">
+        <div class="hm-cxe-pgrouphead"><span class="hx-mi">switch_account</span>Other channels</div>
+        <div class="hm-cxe-pgrid">
+          <div class="hm-cxe-popt"><b>Another channel's info</b><span>Name, game, title and link of a channel the viewer names.</span></div>
+          <div class="hm-cxe-popt"><b>Shout out a channel</b><span>Sends a Twitch shoutout (needs you to be live) and gives the channel's info.</span></div>
+        </div>
+      </div>
+      <div class="hm-cxe-pgroup">
+        <div class="hm-cxe-pgrouphead"><span class="hx-mi">bolt</span>Do something</div>
+        <div class="hm-cxe-pgrid">
+          <div class="hm-cxe-popt"><b>Change the stream title</b><span>Sets your stream title.</span></div>
+          <div class="hm-cxe-popt"><b>Raid a channel</b><span>Starts a raid to the named channel.</span></div>
+          <div class="hm-cxe-popt"><b>…</b><span>Change the game, add a marker, snooze an ad</span></div>
+        </div>
+      </div>
+      <div class="hm-cb2-note"><span class="hx-mi">verified</span><span>All of these use your connected Twitch account. Ids, tokens and headers are filled in for you.</span></div>
+      <div class="hm-cb2-note"><span class="hx-mi">tune</span><span>Need something else? <span class="hm-cb2-link">Use any Twitch API request (advanced)</span></span></div>
+    </div>
+  </div>
+  <figcaption>The lookup list, trimmed. A lookup that needs a Twitch permission you haven't granted says which one; reconnect Twitch in Settings to allow it.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+  <thead><tr><th>Lookup</th><th>Gives you</th></tr></thead>
+  <tbody>
+    <tr><td><strong>How long someone has followed</strong></td><td><code>{followage}</code> (2 years, 3 months), <code>{followed_since}</code>, <code>{follow_days}</code>, <code>{is_following}</code> (yes/no), <code>{target_name}</code></td></tr>
+    <tr><td><strong>How old an account is</strong></td><td><code>{account_age}</code>, <code>{account_created}</code>, <code>{account_age_days}</code>, <code>{display_name}</code></td></tr>
+    <tr><td><strong>Someone's subscription</strong></td><td><code>{is_subscribed}</code>, <code>{sub_tier}</code> (1–3, 0 = none), <code>{is_gift}</code>, <code>{gifter}</code>, <code>{target_name}</code></td></tr>
+    <tr><td><strong>Stream uptime</strong></td><td><code>{uptime}</code> (3 hours, 12 minutes, or <em>offline</em>), <code>{live_since}</code>, <code>{is_live}</code>, <code>{viewer_count}</code>, <code>{stream_title}</code>, <code>{stream_game}</code></td></tr>
+    <tr><td><strong>Current title and game</strong></td><td><code>{title}</code>, <code>{game}</code>, <code>{tags}</code>, <code>{language}</code></td></tr>
+    <tr><td><strong>Follower count</strong> / <strong>Subscriber count</strong></td><td><code>{follower_count}</code> / <code>{sub_count}</code>, <code>{sub_points}</code></td></tr>
+    <tr><td><strong>Top cheerer</strong></td><td><code>{top_cheerer}</code>, <code>{top_cheer_amount}</code>. <strong>Period</strong>: All time, This year, This month, This week or Today.</td></tr>
+    <tr><td><strong>Another channel's info</strong></td><td><code>{target_name}</code>, <code>{target_login}</code>, <code>{target_game}</code>, <code>{target_title}</code>, <code>{target_url}</code>, <code>{target_live}</code></td></tr>
+    <tr><td><strong>Shout out a channel</strong></td><td>The same, plus <code>{shoutout_sent}</code>. Twitch only sends shoutouts while you are live; the reply still posts with <code>{shoutout_sent}</code> = no.</td></tr>
+    <tr><td><strong>Change the stream title</strong> / <strong>Change the game</strong></td><td><code>{new_title}</code> / <code>{new_game}</code>. The text box below the lookup is the new title or game name (<code>{command_message}</code> by default). The game is the closest Twitch category.</td></tr>
+    <tr><td><strong>Add a stream marker</strong></td><td><code>{marker_time}</code> (1:23:45). You must be live.</td></tr>
+    <tr><td><strong>Raid a channel</strong></td><td><code>{target_name}</code>, <code>{target_login}</code>, <code>{target_url}</code></td></tr>
+    <tr><td><strong>Snooze the next ad</strong></td><td><code>{snooze_count}</code> (snoozes left). Pushes the next ad back 5 minutes.</td></tr>
+  </tbody>
+</table></div>
+
+<p>Every lookup also gives <code>{lookup_error}</code>, the reason it failed, for the fallback text. Viewer and channel lookups have a <strong>Check</strong> or <strong>Channel</strong> box: <em>Whoever typed the command</em>, one of your inputs, or <em>A name I type…</em> (a name or a variable such as <code>{command_word_1}</code>; <code>@</code> and twitch.tv links are cleaned up). When you pick an input and the viewer leaves it out, the lookup checks whoever typed the command instead.</p>
+
+<h3>When a lookup fails</h3>
+
+<ul>
+  <li><strong>It worked</strong>: the reply is posted.</li>
+  <li><strong>It failed and the fallback box has text</strong> (<em>If it fails</em>, or <em>If they don't follow</em> for follow age): the fallback text is posted instead.</li>
+  <li><strong>Follow age, not following, empty fallback</strong>: the normal reply is posted, with <code>{followage}</code> = <em>not following</em> and <code>{is_following}</code> = no.</li>
+  <li><strong>Any other failure with an empty fallback</strong> (name not found, Twitch not connected, no permission, no answer within 20 seconds): nothing is posted.</li>
+</ul>
+
+<p>A failed lookup still counts as a use: the cooldown starts, the limit goes down and a counter goes up.</p>
+
+<h3>Advanced: any Twitch API request</h3>
+
+<p><strong>Use any Twitch API request (advanced)</strong> calls any Twitch Helix endpoint. Pick the method (GET, POST, PUT, PATCH, DELETE), type the path after <code>helix</code> (for example <code>/channels/followers</code>), and add parameters with <strong>+ Add parameter</strong>. Other methods also get a body box for JSON. Values can use any variable plus <code>{broadcaster_id}</code>, <code>{chatter_id}</code> and <code>{chatter_login}</code>; <code>broadcaster_id</code> and <code>moderator_id</code> are filled in when you leave them out. The result gives you <code>{api_<em>field</em>}</code> from the first result (for example <code>{api_followed_at}</code>), <code>{api_total}</code>, <code>{api_count}</code> and <code>{api_status}</code>. A status outside 200–299 counts as a failure. Commands made with the old <em>API Integration</em> section were moved here automatically.</p>
+
+<h2>Testing a command</h2>
+
+<p>{{icon:play_arrow}} <strong>Test</strong> on a card, or <strong>Save &amp; test</strong> in the editor, runs the command once on a copy, as if you typed <code>!followage hello world example</code>. Lookups use example values. Nothing is posted, and uses, counters and cooldowns don't change. The result appears as a message, for example <em>Test reply: TestViewer has followed for 2 years, 3 months!</em>, or <em>Didn't run: Command is disabled</em>.</p>
+
+<h2>Managing commands</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Control</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>Switch</td><td>Turns the command on or off.</td></tr>
+<tr><td>{{icon:edit}} Edit</td><td>Opens the editor. Saving keeps the use count and counter, unless you changed <strong>Count now</strong>.</td></tr>
+<tr><td>{{icon:more_horiz}} → Duplicate</td><td>Saves a copy named <em>&lt;name&gt; copy</em> with the command <code>!&lt;command&gt;_copy</code>. Aliases are cleared so both don't answer the same word, and counts start at 0.</td></tr>
+<tr><td>{{icon:more_horiz}} → Delete…</td><td>Asks <em>Are you sure you want to delete this command? This action cannot be undone.</em></td></tr>
+</tbody>
+</table></div>
 
 <h2>Questions</h2>
 
 <details class="hx-details">
   <summary>Nothing happens when I type the command</summary>
-  <p>Check that the card says <strong>Enabled</strong>, that the message starts with <code>!</code> and the name has no typo, and that Twitch is connected. Commands only listen to <strong>Twitch</strong> chat. YouTube chat does not trigger them, even when YouTube is a reply target.</p>
+  <p>Check that the card is on, the message starts with <code>!</code> and the command has no typo, and that Twitch is connected. Commands only listen to <strong>Twitch</strong> chat; YouTube chat does not trigger them, even when YouTube is in <strong>Send to</strong>. A blocked command is silent too: check <strong>Who can use it</strong>, the cooldown and the limit, and whether a lookup failed with an empty fallback.</p>
 </details>
 
 <details class="hx-details">
-  <summary>My moderators can use a Mod Only command but I cannot</summary>
-  <p>Mod Only looks for the moderator badge on the chat message. The broadcaster badge is not the same badge, so the channel owner is treated as a regular viewer for this check.</p>
+  <summary>A variable shows up as plain text like {usr}</summary>
+  <p>A name the chatbot doesn't know is posted exactly as written. The card warns with <strong>Check {usr}</strong>, and the editor says <em>Not a variable here, so it is posted as written</em>, often with a suggestion such as <em>did you mean {username}?</em> Some variables only exist for one type: <code>{count}</code> on counters, <code>{target_count}</code> on reset commands.</p>
 </details>
 
 <details class="hx-details">
-  <summary>A variable shows up as plain text like {username}</summary>
-  <p>Check the spelling and the curly braces. Some variables only exist for certain command types: <code>{count}</code> only works on Counter commands, <code>{cooldown}</code> only when a cooldown is set, and <code>{usage_left}</code> only when a usage limit is set.</p>
+  <summary>My reply is very long</summary>
+  <p>Twitch allows 500 characters per message. The editor warns when the preview is longer, and the bot splits it at word breaks into up to 3 messages; anything beyond that is cut off and ends with <em>…</em>.</p>
 </details>
 
 <details class="hx-details">
-  <summary>Can a command run on a timer?</summary>
-  <p>Use an <strong>Interval</strong> event instead. See <a href="help:chatbot_events">Chatbot Events</a>.</p>
+  <summary>Can a command repeat on a timer?</summary>
+  <p>Use a <strong>Timer</strong> event instead. Older commands that repeated on a timer were turned into Timer events automatically. See <a href="help:chatbot_events">Chatbot Events</a>.</p>
 </details>
 
 <div class="hx-cards">
-  <a class="hx-card" href="help:chatbot_variables">{{icon:data_object}}<span><strong>Chatbot Variables</strong><span class="hx-card-text">Every placeholder you can use</span></span></a>
+  <a class="hx-card" href="help:chatbot_variables">{{icon:data_object}}<span><strong>Chatbot Variables</strong><span class="hx-card-text">Every placeholder, date formats and custom variables</span></span></a>
   <a class="hx-card" href="help:chatbot_events">{{icon:celebration}}<span><strong>Chatbot Events</strong><span class="hx-card-text">Automatic replies to follows, subs, raids and timers</span></span></a>
   <a class="hx-card" href="help:connectors_intro">{{icon:hub}}<span><strong>Connectors</strong><span class="hx-card-text">Trigger OBS, sounds and more from chat</span></span></a>
 </div>

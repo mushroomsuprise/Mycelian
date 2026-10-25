@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import copy
 import dataclasses
-import html as html_lib
 import json
 import logging
 import re
@@ -34,6 +33,10 @@ from ..ui_timer import layout_schedule
 from . import connector_action_schemas as schemas
 from .connector_action_schemas import Field
 from .connector_editor_styles import CONNECTOR_EDITOR_CSS, CONNECTOR_EDITOR_MENU_CSS
+from .editor_variables import DEFAULT_DATE_FORMATS, VariableKit
+from .editor_variables import esc as _esc
+from .editor_variables import icon_html as _ic
+from .editor_variables import raw_html as _html
 from .service_brand_icons import SERVICE_BRAND_SVG
 
 logger = logging.getLogger(__name__)
@@ -49,32 +52,12 @@ _GROUP_GLYPHS = {
 }
 _DAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _TIME_UNITS = {"sec": 1, "min": 60, "hr": 3600}
-_DEFAULT_DATE_FORMATS = (
-    {"format": "%H:%M", "label": "24-hour time"},
-    {"format": "%-I:%M %p", "label": "12-hour time"},
-    {"format": "%Y-%m-%d", "label": "ISO date"},
-    {"format": "%b %-d", "label": "Short date"},
-    {"format": "%A, %B %-d, %Y", "label": "Long date"},
-)
-_FORMAT_CODES = "%H hour · %-I hour (12h) · %M minute · %S second · %p AM/PM · %A weekday · %a Mon · %B month · %b Jan · %-d day · %Y year"
 _HHMM = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
-
-
-def _ic(name: str) -> str:
-    return f'<span class="ce-icon">{name}</span>'
 
 
 def _glyph(key: str) -> str:
     svg = SERVICE_BRAND_SVG.get(key)
     return f'<span class="ce-brand is-{key}">{svg}</span>' if svg else _ic(key)
-
-
-def _esc(text: Any) -> str:
-    return html_lib.escape(str(text if text is not None else ""))
-
-
-def _html(markup: str, classes: str = "contents") -> ui.html:
-    return ui.html(markup, sanitize=False).classes(classes)
 
 
 def _trigger_brand(trigger_type: Optional[str]) -> str:
@@ -111,10 +94,6 @@ def _as_float(value: Any, default: Any = 0) -> float:
             return float(default)
         except (TypeError, ValueError):
             return 0.0
-
-
-def _dom_id(element: ui.element) -> str:
-    return getattr(element, "html_id", None) or f"c{element.id}"
 
 
 def _hotkey_combo_from_event(event) -> str:
@@ -399,16 +378,14 @@ class ConnectorEditor:
             self.existing = connector_manager.get_manager().get_connector(connector_id)
         self.state = state_from_connector(self.existing, connector_id)
         self._baseline = ""
-        self._target: Optional[ui.element] = None
-        self._touched: set = set()
         self._live: List[Callable[[], None]] = []
         self._picking_trigger = self.state.trigger_type is None
         self._picking_action = False
-        self._var_query = ""
         self._ctx_cache: Tuple[Any, dict] = (None, {})
         self._obs_bootstrapped = False
         self._template_actions: Optional[dict] = None
         self.dialog: Optional[ui.dialog] = None
+        self.vars = VariableKit(self._variables, self.render_text, self._date_formats)
 
     # -- helpers ---------------------------------------------------------
 
@@ -443,12 +420,8 @@ class ConnectorEditor:
         out.extend(extra or [])
         return out
 
-    def _example(self, var: dict) -> str:
-        rendered = self.render_text("{" + var["key"] + "}")
-        return var.get("example", "") if rendered == "{" + var["key"] + "}" else rendered
-
     def _date_formats(self) -> List[dict]:
-        return list(getattr(cv, "DATE_FORMATS", None) or _DEFAULT_DATE_FORMATS)
+        return list(getattr(cv, "DATE_FORMATS", None) or DEFAULT_DATE_FORMATS)
 
     def _dirty(self) -> bool:
         return self.state.snapshot() != self._baseline
@@ -1290,8 +1263,8 @@ class ConnectorEditor:
             else:
                 inp = ui.input(value=text, placeholder=f.placeholder or None).props("outlined dense")
             if f.variables:
-                self._var_button(inp, idx, extra_vars)
-                inp.on("focus", lambda _e, el=inp: self._focus(el))
+                self.vars.button(inp, idx, extra_vars)
+                self.vars.track(inp)
         error = ui.label("").classes("ce-f-error") if f.kind == "json" else None
         preview = None
         if f.preview:
@@ -1404,155 +1377,13 @@ class ConnectorEditor:
 
     # variables -----------------------------------------------------------
 
-    def _focus(self, element: ui.element) -> None:
-        self._target = element
-        self._touched.add(element.id)
-
-    def _insert(self, element: Optional[ui.element], token: str) -> None:
-        if element is None or getattr(element, "is_deleted", False):
-            ui.clipboard.write(token)
-            notify(f"Copied {token}. Click into a text field to insert variables there.", type="info")
-            return
-        touched = element.id in self._touched
-        self._focus(element)
-        ui.run_javascript(f"""(() => {{
-            const root = document.getElementById({json.dumps(_dom_id(element))});
-            const el = root && (root.matches('textarea, input') ? root : root.querySelector('textarea, input'));
-            if (!el) return;
-            const t = {json.dumps(token)};
-            const touched = {json.dumps(touched)};
-            const s = touched && el.selectionStart != null ? el.selectionStart : el.value.length;
-            const e = touched && el.selectionEnd != null ? el.selectionEnd : s;
-            el.value = el.value.slice(0, s) + t + el.value.slice(e);
-            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            el.focus();
-            try {{ el.setSelectionRange(s + t.length, s + t.length); }} catch (_) {{}}
-        }})()""")
-
-    def _var_button(self, element: ui.element, idx: Optional[int], extra_vars: Optional[List[dict]]) -> None:
-        btn = ui.button("{ }").props("flat dense no-caps").classes("ce-varbtn")
-        btn.tooltip("Insert a variable")
-        with btn:
-            menu = ui.menu().props('anchor="bottom right" self="top right"').classes("ce-vmenu")
-
-        def build() -> None:
-            self._var_menu(menu, lambda token: self._insert(element, token), idx, extra_vars)
-
-        btn.on("click", build)
-
-    def _var_menu(self, menu: ui.menu, insert: Callable[[str], None], idx: Optional[int], extra_vars: Optional[List[dict]]) -> None:
-        menu.clear()
-        variables = self._variables(idx, extra_vars)
-        with menu:
-            search = ui.input(placeholder="Search variables").props("outlined dense clearable autofocus").classes("w-full")
-            with search.add_slot("prepend"):
-                ui.icon("search").classes("text-sm")
-            rows = ui.element("div").style("max-height: 320px; overflow: auto")
-
-        def pick(var: dict) -> None:
-            if var.get("date"):
-                self._format_view(menu, var["key"], lambda t: (insert(t), menu.close()),
-                                  back=lambda: self._var_menu(menu, insert, idx, extra_vars))
-            else:
-                insert("{" + var["key"] + "}")
-                menu.close()
-
-        def fill(query: str = "") -> None:
-            q = query.strip().lower()
-            rows.clear()
-            with rows:
-                last_group = None
-                count = 0
-                for var in variables:
-                    if q and q not in f"{var['key']} {var.get('label', '')}".lower():
-                        continue
-                    group = var.get("group") or "Event"
-                    if group != last_group:
-                        ui.label(group).classes("ce-vm-group")
-                        last_group = group
-                    row = ui.element("div").classes("ce-vm-row")
-                    with row:
-                        _html(f'<code>{{{_esc(var["key"])}}}</code><span class="ce-vm-label">{_esc(var.get("label", ""))}'
-                              f'{" · format…" if var.get("date") else ""}</span><span class="ce-vm-ex">{_esc(self._example(var))}</span>')
-                    row.on("click", lambda _e, v=var: pick(v))
-                    count += 1
-                if not count:
-                    ui.label("No variables match. Type any {name} your event sends.").classes("ce-vm-empty")
-
-        search.on_value_change(lambda e: fill(e.value or ""))
-        fill()
-
-    def _format_view(self, container: ui.element, key: str, insert: Callable[[str], None],
-                     back: Optional[Callable[[], None]] = None) -> None:
-        container.clear()
-        with container:
-            with ui.element("div").classes("flex items-center gap-1").style("padding: 2px 4px 4px"):
-                if back is not None:
-                    ui.button(icon="arrow_back", on_click=back).props("flat round dense size=sm")
-                _html(f'<span class="ce-vm-label">Format <code>{{{_esc(key)}}}</code></span>', "")
-            options = [{"format": "", "label": "As is"}] + self._date_formats()
-            for opt in options:
-                token = "{" + key + (":" + opt["format"] if opt["format"] else "") + "}"
-                row = ui.element("div").classes("ce-vm-row is-fmt")
-                with row:
-                    _html(f'<span class="ce-vm-label">{_esc(opt.get("label", ""))}</span><span class="ce-vm-ex">{_esc(self.render_text(token))}</span>')
-                row.on("click", lambda _e, t=token: insert(t))
-            ui.label("Custom").classes("ce-vm-group")
-            with ui.element("div").classes("flex items-center gap-1").style("padding: 0 4px"):
-                custom = ui.input(placeholder="%A at %-I:%M %p").props("outlined dense").classes("grow")
-                ui.button(icon="check", on_click=lambda: insert("{" + key + ":" + custom.value + "}") if (custom.value or "").strip()
-                          else None).props("flat round dense color=primary").tooltip("Insert")
-            example = ui.label("").classes("ce-vm-ex").style("padding: 2px 8px; max-width: none")
-            custom.on_value_change(lambda e: example.set_text(self.render_text("{" + key + ":" + e.value + "}") if (e.value or "").strip() else ""))
-            ui.label(_FORMAT_CODES).classes("ce-vm-empty").style("font-size: .66rem; line-height: 1.5")
-
     def render_vars(self) -> None:
-        panel = self.vars_panel
-        panel.clear()
         tt = self.state.trigger_type
-        with panel:
-            with ui.element("div").classes("ce-vars-head"):
-                _html(_ic("data_object"))
-                ui.label("Variables")
-                ui.element("div").classes("ce-spacer")
-                if tt:
-                    ui.label(_trigger_info(tt).get("label", tt)).classes("ce-tag")
-            if not tt:
-                _html(f'<div class="ce-vars-empty">{_ic("bolt")}<span>Choose a trigger to see the variables you can use in actions, '
-                      'like <code>{username}</code> or <code>{amount}</code>.</span></div>', "")
-            search = ui.input(placeholder="Search variables", value=self._var_query).props("outlined dense clearable")
-            with search.add_slot("prepend"):
-                ui.icon("search").classes("text-sm")
-            listing = ui.element("div").classes("flex flex-col")
-            ui.label("Click a variable to insert it where the cursor was. Date and time variables can be formatted with the tune button.").classes(
-                "ce-vars-tip")
-
-        def fill(query: str) -> None:
-            self._var_query = query
-            q = query.strip().lower()
-            listing.clear()
-            with listing:
-                last_group = None
-                for var in self._variables():
-                    if q and q not in f"{var['key']} {var.get('label', '')}".lower():
-                        continue
-                    group = var.get("group") or "Event"
-                    if group != last_group:
-                        ui.label(group).classes("ce-vgroup")
-                        last_group = group
-                    row = ui.element("div").classes("ce-var").tooltip(var.get("label", ""))
-                    with row:
-                        _html(f'<code>{{{_esc(var["key"])}}}</code><span class="ce-var-ex">{_esc(self._example(var))}</span>')
-                        if var.get("date"):
-                            tune = ui.button(icon="tune").props("flat round dense size=xs").tooltip("Insert with a date/time format")
-                            with tune:
-                                fmenu = ui.menu().props('anchor="bottom right" self="top right"').classes("ce-vmenu ce-fmenu")
-                            tune.on("click.stop", lambda _e, k=var["key"], m=fmenu: self._format_view(
-                                m, k, lambda t, mm=m: (self._insert(self._target, t), mm.close())))
-                    row.on("click", lambda _e, k=var["key"]: self._insert(self._target, "{" + k + "}"))
-
-        search.on_value_change(lambda e: fill(e.value or ""))
-        fill(self._var_query)
+        self.vars.panel(
+            self.vars_panel, tag=_trigger_info(tt).get("label", tt) if tt else "",
+            empty_html="" if tt else "Choose a trigger to see the variables you can use in actions, like "
+                                     "<code>{username}</code> or <code>{amount}</code>.",
+        )
 
     # custom action builders ---------------------------------------------
 

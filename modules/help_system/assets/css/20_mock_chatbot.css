@@ -1,7 +1,11 @@
 /* =========================================================================
-   Mycelian Help — Chatbot tab mock pieces (hm-cb-*) and chat transcripts.
-   Mirrors modules/uiwindows/chatbot.py CUSTOM_CSS (.chatbot-card, badges)
-   and polls_panel.py. Theme variables only.
+   Mycelian Help — Chatbot tab mock pieces and chat transcripts.
+   hm-cb-*: Quotes / Greetings / Giveaways / Polls cards and dialogs
+   (modules/uiwindows/chatbot.py, polls_panel.py).
+   hm-cb2-*: Commands / Events cards and the command/event editor
+   (chatbot_cards.py CHATBOT_CARDS_CSS, chatbot_editor_styles.py
+   CHATBOT_EDITOR_CSS), used together with the connector kits hm-cx2-* and
+   hm-cxe-* in 20_mock_connectors.css. Theme variables only.
    ========================================================================= */
 
 /* Tab header row: action buttons left, search right */
@@ -65,24 +69,7 @@
     color: var(--color-text-muted);
 }
 
-/* .mod-only-badge / .counter-badge / .repeating-badge / .usage-display */
-.help-doc .hm .hm-cb-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px 8px;
-    border-radius: 12px;
-    font-size: 0.68rem;
-    font-weight: 500;
-    border: 1px solid currentColor;
-    background: color-mix(in srgb, currentColor 14%, transparent);
-}
-
-.help-doc .hm .hm-cb-pill.is-mod { color: var(--color-error); }
-.help-doc .hm .hm-cb-pill.is-counter { color: var(--color-warning); }
-.help-doc .hm .hm-cb-pill.is-limit { color: var(--color-primary); border-radius: 4px; }
-
-/* Response preview with resolved variables (italic primary, like _wrap_variable_value) */
-.help-doc .hm .hm-cb-response { font-size: 0.75rem; color: var(--color-text-secondary); }
+/* Variable value inside a preview (italic primary) */
 .help-doc .hm .hm-cb-var { color: var(--color-primary); font-style: italic; }
 
 .help-doc .hm .hm-cb-quote {
@@ -111,7 +98,6 @@
 .help-doc .hm .hm-cb-actions .hm-btn { flex: 1 1 auto; min-height: 26px; padding: 2px 8px; font-size: 0.72rem; gap: 4px; }
 .help-doc .hm .hm-cb-actions .hm-btn .hx-mi { font-size: 1.1em; margin: 0; }
 .help-doc .hm .hm-btn.hm-cb-secondary { background: var(--color-bg-elevated); color: var(--color-text-primary); border-color: var(--color-border-default); }
-.help-doc .hm .hm-btn.hm-cb-warn { background: transparent; color: var(--color-warning); border-color: currentColor; }
 
 /* Empty-state block */
 .help-doc .hm .hm-cb-empty {
@@ -163,7 +149,7 @@
 .help-doc .hm .hm-cb-poll-bar { height: 8px; border-radius: 4px; background: var(--color-border-default); overflow: hidden; }
 .help-doc .hm .hm-cb-poll-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--color-primary); }
 
-/* Dialog-style card (Quote Settings, Greeting Settings, Create New Command) */
+/* Dialog-style card (Quote Settings, Greeting Settings, Add New Quote) */
 .help-doc .hm .hm-cb-dialog {
     background: var(--color-bg-elevated);
     border: 1px solid var(--color-border-default);
@@ -183,8 +169,6 @@
 
 .help-doc .hm .hm-cb-dialog-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 
-.help-doc .hm .hm-cb-section-title { font-size: 0.9rem; font-weight: 600; color: var(--color-text-primary); }
-
 .help-doc .hm .hm-cb-hint {
     font-size: 0.72rem;
     color: var(--color-text-secondary);
@@ -193,17 +177,6 @@
     border-radius: 6px;
     padding: 6px 8px;
 }
-
-/* Variables picker panel (right column of the command/event editor) */
-.help-doc .hm .hm-cb-varcat {
-    border: 1px solid var(--color-border-subtle);
-    border-radius: 6px;
-    background: var(--color-bg-surface);
-}
-
-.help-doc .hm .hm-cb-varcat > .hm-expansion-head { font-weight: 600; }
-.help-doc .hm .hm-cb-varitem { font-size: 0.72rem; color: var(--color-text-secondary); padding: 2px 4px; }
-.help-doc .hm .hm-cb-varitem code { color: var(--color-primary); background: transparent; padding: 0; }
 
 /* ---- Mock chat transcript (Twitch-style, theme colors only) ---------- */
 
@@ -288,3 +261,148 @@
 .help-doc .hm .hm-field.hm-cb-fixed-sm { flex: 0 0 auto; width: 6.5rem; }
 .help-doc .hm .hm-cb-side { flex: 0 0 11rem; width: 11rem; }
 .help-doc .hm .hm-field.hm-cb-fixed-lg { flex: 0 0 auto; width: 12.5rem; }
+
+/* ---- Commands / Events tabs and editor (chatbot_cards.py, chatbot_editor.py) ----
+   Cards reuse the connector card kit (hm-cx2-*) and the editor reuses the
+   connector editor kit (hm-cxe-*). These are the chatbot-only pieces from
+   CHATBOT_CARDS_CSS and CHATBOT_EDITOR_CSS. */
+
+/* Toolbar: icon tile + title/subtitle in front of the hm-cx2 search and chips */
+.help-doc .hm-cb2-baricon { width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    background: var(--color-primary-light); color: var(--color-primary); border: 1px solid var(--color-border-accent); }
+.help-doc .hm-cb2-baricon .hx-mi { font-size: 16px; }
+.help-doc .hm-cb2-bartext { display: flex; flex-direction: column; min-width: 0; flex: 1 1 150px; }
+.help-doc .hm-cb2-bartitle { font-size: .84rem; font-weight: 650; line-height: 1.15; color: var(--color-text-primary); }
+.help-doc .hm-cb2-barsub { font-size: .64rem; color: var(--color-text-muted); }
+.help-doc .hm-cb2-count { font-size: .6rem; font-weight: 700; padding: 0 4px; margin-left: 3px; border-radius: 5px; background: var(--color-bg-surface); color: var(--color-text-secondary); }
+.help-doc .hm-cx2-filter.is-on .hm-cb2-count { background: color-mix(in srgb, var(--color-bg-surface) 30%, transparent); color: #fff; }
+
+/* Card tile variants and the subtitle line (!command + aliases, or event + brand) */
+.help-doc .hm-cb2-tile { width: 26px; height: 26px; border-radius: 8px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    background: var(--color-primary-light); color: var(--color-primary); border: 1px solid var(--color-border-accent); }
+.help-doc .hm-cb2-tile .hx-mi { font-size: 15px; }
+.help-doc .hm-cb2-tile .hx-brand { font-size: 14px; }
+.help-doc .hm-cb2-tile.is-brand { background: var(--color-bg-base); border-color: var(--color-border-subtle); }
+.help-doc .hm-cb2-tile.is-tips { background: color-mix(in srgb, var(--color-success) 12%, transparent); color: var(--color-success);
+    border-color: color-mix(in srgb, var(--color-success) 30%, transparent); }
+.help-doc .hm-cb2-cmdrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px; min-width: 0; }
+.help-doc .hm-cb2-cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .68rem; font-weight: 700; color: var(--color-primary);
+    padding: 1px 6px; border-radius: 5px; background: var(--color-primary-light); }
+.help-doc .hm-cb2-alias { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .62rem; color: var(--color-text-muted); }
+.help-doc .hm-cb2-trig { display: inline-flex; align-items: center; gap: 5px; font-size: .66rem; font-weight: 600; color: var(--color-text-secondary); margin-top: 2px; }
+.help-doc .hm-cb2-trig .hx-mi, .help-doc .hm-cb2-trig .hx-brand { font-size: 12px; }
+
+/* Reply preview bubble and tags */
+.help-doc .hm-cb2-reply { margin: 0 10px 7px 12px; padding: 6px 9px; border-radius: 4px 10px 10px 10px; font-size: .7rem; line-height: 1.45;
+    background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.help-doc .hm-cb2-tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 10px 9px 12px; flex: 1 1 auto; align-content: flex-start; position: relative; }
+.help-doc .hm-cb2-tag { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 6px; font-size: .6rem; font-weight: 600; white-space: nowrap;
+    color: var(--color-text-secondary); background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); }
+.help-doc .hm-cb2-tag .hx-mi, .help-doc .hm-cb2-tag .hx-brand { font-size: 11px; }
+.help-doc .hm-cb2-tag.is-mod { color: var(--color-success); }
+.help-doc .hm-cb2-tag.is-count { color: var(--color-warning); }
+.help-doc .hm-cb2-tag.is-api { color: var(--color-info); }
+.help-doc .hm-cb2-tag.is-warn { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 40%, transparent); }
+.help-doc .hm-cx2-card.is-off .hm-cb2-reply,
+.help-doc .hm-cx2-card.is-off .hm-cb2-tags { opacity: .5; }
+
+/* Editor: boxed rows, small labels, separators, segmented control */
+.help-doc .hm-cb2-box { display: flex; flex-direction: column; gap: 7px; padding: 7px 9px; border-radius: 9px; background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle); position: relative; min-width: 0; }
+.help-doc .hm-cb2-mini { font-size: .66rem; font-weight: 600; color: var(--color-text-secondary); white-space: nowrap; }
+.help-doc .hm-cb2-sep { width: 1px; height: 18px; background: var(--color-border-subtle); flex: 0 0 auto; }
+.help-doc .hm-cb2-help { display: inline-flex; align-items: center; gap: 4px; font-size: .64rem; color: var(--color-text-muted); }
+.help-doc .hm-cb2-help .hx-mi { font-size: 13px; }
+.help-doc .hm-cb2-help code { font-size: .62rem; }
+.help-doc .hm-cb2-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; border: 1px solid var(--color-border-default); background: var(--color-bg-base); flex: 0 0 auto; }
+.help-doc .hm-cb2-seg > span { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; font-size: .66rem; font-weight: 600;
+    color: var(--color-text-muted); white-space: nowrap; }
+.help-doc .hm-cb2-seg > span .hx-mi { font-size: 13px; }
+.help-doc .hm-cb2-seg > span.is-on { background: var(--color-primary); color: #fff; }
+.help-doc .hm-cb2-link { font-size: .66rem; font-weight: 600; color: var(--color-primary); }
+
+/* Command word (big ! field) and "Also answers to" alias chips */
+.help-doc .hm-cb2-cmdgrid { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 6px 10px; align-items: end; }
+.help-doc .hm-cb2-cmdgrid > .hm-cxe-f { grid-column: auto; }
+.help-doc .hm-cb2-bang { display: flex; align-items: center; gap: 2px; height: 30px; padding: 0 8px; border-radius: 7px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .86rem; font-weight: 700; color: var(--color-text-primary); background: var(--color-bg-surface); border: 1px solid var(--color-border-default); }
+.help-doc .hm-cb2-bang > b { color: var(--color-primary); font-weight: 700; }
+.help-doc .hm-cb2-chips { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-height: 30px; padding: 2px 6px; border-radius: 7px;
+    background: var(--color-bg-surface); border: 1px solid var(--color-border-default); }
+.help-doc .hm-cb2-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 3px 0 7px; border-radius: 999px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .66rem; color: var(--color-text-primary); background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); }
+.help-doc .hm-cb2-chip .hx-mi { font-size: 12px; color: var(--color-text-muted); }
+.help-doc .hm-cb2-chips > .hm-placeholder { font-size: .66rem; color: var(--color-text-muted); }
+
+/* Inputs: "Viewers type" line and Word N -> name rows */
+.help-doc .hm-cb2-usage { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .68rem; padding: 3px 9px; border-radius: 7px;
+    background: var(--color-bg-base); border: 1px dashed var(--color-border-default); color: var(--color-text-secondary); }
+.help-doc .hm-cb2-usage b { color: var(--color-primary); font-weight: 700; }
+.help-doc .hm-cb2-usage i { font-style: normal; color: var(--color-warning); }
+.help-doc .hm-cb2-arg { display: grid; grid-template-columns: 14px 86px 16px 100px minmax(0, 1fr) 16px; gap: 5px; align-items: center; }
+.help-doc .hm-cb2-arg > .hm-cb2-argn { font-size: .64rem; font-weight: 700; color: var(--color-text-muted); text-align: center; }
+.help-doc .hm-cb2-arg > .hx-mi { font-size: 14px; color: var(--color-text-muted); text-align: center; }
+.help-doc .hm-cb2-arg > .hx-mi.is-danger { color: var(--color-error); }
+
+/* Look up step: the selected lookup card */
+.help-doc .hm-cb2-look { display: flex; gap: 8px; align-items: flex-start; padding: 7px 7px 7px 9px; border-radius: 9px; background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-accent); position: relative; min-width: 0; }
+.help-doc .hm-cb2-lookt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.help-doc .hm-cb2-lookn { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: .78rem; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm-cb2-lookd { font-size: .64rem; color: var(--color-text-muted); }
+.help-doc .hm-cb2-look > .hm-btn { flex: 0 0 auto; }
+.help-doc .hm-cb2-look > .hx-mi { font-size: 15px; color: var(--color-error); margin-top: 4px; }
+.help-doc .hm-cb2-auto { display: inline-flex; align-items: center; gap: 3px; font-size: .6rem; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+    color: var(--color-success); background: color-mix(in srgb, var(--color-success) 12%, transparent); }
+.help-doc .hm-cb2-auto.is-warn { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 12%, transparent); }
+.help-doc .hm-cb2-auto .hx-mi { font-size: 11px; }
+.help-doc .hm-cb2-gives { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.help-doc .hm-cb2-gives em { font-style: normal; font-size: .62rem; color: var(--color-text-muted); }
+.help-doc .hm-cb2-gives code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .62rem; font-weight: 600; color: var(--color-primary);
+    padding: 1px 5px; border-radius: 5px; background: var(--color-primary-light); border: 0; }
+.help-doc .hm-cb2-note { display: inline-flex; align-items: center; gap: 4px; font-size: .64rem; color: var(--color-text-muted); }
+.help-doc .hm-cb2-note .hx-mi { font-size: 13px; }
+
+/* Reply step: outputs row and Discord channel chips */
+.help-doc .hm-cb2-out { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; position: relative; }
+.help-doc .hm-cb2-dc { display: inline-flex; align-items: center; gap: 4px; padding: 1px 3px 1px 7px; border-radius: 999px; font-size: .64rem;
+    color: var(--color-text-primary); background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); }
+.help-doc .hm-cb2-dc .hx-brand { font-size: 12px; }
+.help-doc .hm-cb2-dc .hx-mi { font-size: 12px; color: var(--color-text-muted); }
+
+/* Variables panel: "+ New custom variable" */
+.help-doc .hm-cb2-vadd { display: flex; align-items: center; gap: 5px; font-size: .64rem; font-weight: 600; color: var(--color-primary); padding: 3px 7px; border-radius: 6px;
+    border: 1px dashed var(--color-border-accent); margin: 2px 0 3px; }
+.help-doc .hm-cb2-vadd .hx-mi { font-size: 13px; }
+
+/* Custom variable builder (wrap in .hm.hm-cxe; head/foot reuse hm-cxe-head/foot) */
+.help-doc .hm-cb2-cvbody { display: flex; flex-direction: column; gap: 9px; padding: 10px; background: var(--color-bg-base); position: relative; }
+.help-doc .hm-cb2-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; color: var(--color-text-muted); }
+.help-doc .hm-cb2-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; position: relative; }
+.help-doc .hm-cb2-kind { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border-radius: 9px; background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); }
+.help-doc .hm-cb2-kind.is-on { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+.help-doc .hm-cb2-kind > b { display: flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm-cb2-kind > b .hx-mi { font-size: 15px; color: var(--color-primary); }
+.help-doc .hm-cb2-kind > span { font-size: .6rem; color: var(--color-text-muted); }
+.help-doc .hm-cb2-builder { display: flex; flex-direction: column; gap: 7px; padding: 7px 9px; border-radius: 9px; background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle); position: relative; }
+.help-doc .hm-cb2-expr { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .66rem; color: var(--color-text-muted); word-break: break-all; }
+.help-doc .hm-cb2-expr b { color: var(--color-text-primary); font-weight: 600; }
+.help-doc .hm-cb2-result { display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 8px; font-size: .72rem; color: var(--color-text-secondary);
+    background: color-mix(in srgb, var(--color-success) 8%, var(--color-bg-surface)); border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent); position: relative; }
+.help-doc .hm-cb2-result > .hx-mi { font-size: 15px; color: var(--color-success); }
+.help-doc .hm-cb2-result b { color: var(--color-success); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.help-doc .hm-cb2-result.is-error { background: color-mix(in srgb, var(--color-warning) 8%, var(--color-bg-surface)); border-color: color-mix(in srgb, var(--color-warning) 30%, transparent); }
+.help-doc .hm-cb2-result.is-error b, .help-doc .hm-cb2-result.is-error > .hx-mi { color: var(--color-warning); }
+
+/* Plain text spans take their parent's color (the app's text rule would otherwise win) */
+.help-doc .hm-cb2-help > span:not([class]),
+.help-doc .hm-cb2-note > span:not([class]),
+.help-doc .hm-cb2-result > span:not([class]) { color: inherit; }
+
+@media (max-width: 640px) {
+    .help-doc .hm-cb2-cmdgrid { grid-template-columns: minmax(0, 1fr); }
+    .help-doc .hm-cb2-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .help-doc .hm-cb2-arg { grid-template-columns: 14px 1fr 16px 1fr 16px; }
+    .help-doc .hm-cb2-arg > :nth-child(5) { grid-column: 2 / -2; }
+}

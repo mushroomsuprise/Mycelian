@@ -1,4 +1,4 @@
-<p class="hx-lead">An event makes the chatbot post a message by itself when something happens: a follow, a sub, a raid, a chat phrase, a set time of day, or a repeating timer. For replies to <code>!commands</code>, see <a href="help:chatbot_commands">Creating Chat Commands</a>.</p>
+<p class="hx-lead">An event makes the chatbot post a message by itself when something happens: a follow, a sub, a raid, a tip, a chat phrase, a time of day, or a timer every few minutes. For replies to <code>!commands</code>, see <a href="help:chatbot_commands">Creating Chat Commands</a>.</p>
 
 <div class="hx-meta">
   <span>{{icon:schedule}} About 3 minutes</span>
@@ -17,66 +17,44 @@
       <span class="hm-subtab">Giveaways</span>
       <span class="hm-subtab">Polls</span>
     </div>
-    <div class="hm-frame">
-      <div class="hm-cb-toolbar">
-        <div class="hm-row">
-          <span class="hm-btn"><span class="hx-mi">celebration</span>New Event</span>
-          <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh</span>
-        </div>
-        <div class="hm-field hm-base" data-label="🔍 Search events"><span class="hm-placeholder">Search by name, event type, or description...</span></div>
+    <div class="hm-frame hm-stack">
+      <div class="hm-cx2-bar">
+        <span class="hm-cb2-baricon"><span class="hx-mi">celebration</span></span>
+        <span class="hm-cb2-bartext"><span class="hm-cb2-bartitle">Events</span><span class="hm-cb2-barsub">Automatic replies to follows, subs, raids, timers and more. 3 events, 2 on.</span></span>
+        <span class="hm-cx2-search"><span class="hx-mi">search</span>Search name, event or reply</span>
+        <span class="hm-cx2-filters"><span class="hm-cx2-filter is-on">All<span class="hm-cb2-count">3</span></span><span class="hm-cx2-filter">On<span class="hm-cb2-count">2</span></span><span class="hm-cx2-filter">Off<span class="hm-cb2-count">1</span></span></span>
+        <span class="hm-btn hm-outline hm-dense hm-icon-only"><span class="hx-mi">refresh</span></span>
+        <span class="hm-btn hm-dense"><span class="hx-mi">add</span>New event</span>
       </div>
-      <div class="hm-cb-grid">
-        <div class="hm-cb-card is-event">
-          <div class="hm-cb-card-head">
-            <div class="hm-col hm-tight">
-              <span class="hm-cb-card-title">Raid welcome</span>
-              <span class="hm-cb-sub is-event">Raid</span>
-              <span class="hm-marker" data-n="1"></span>
-            </div>
-            <div class="hm-cb-status"><span class="hm-cb-state">Enabled</span><span class="hm-switch is-on"><i></i></span></div>
-          </div>
-          <div class="hm-col hm-tight">
-            <span class="hm-muted hm-xs">Response:</span>
-            <span class="hm-cb-response">Welcome raiders! Thanks <span class="hm-cb-var">PreviewUser</span> for bringing <span class="hm-cb-var">25</span> viewers!</span>
-          </div>
-          <div class="hm-cb-stats"><span>Triggered: 3x</span><span>Last: 10/19 22:41</span></div>
-          <div class="hm-cb-actions">
-            <span class="hm-btn hm-cb-secondary"><span class="hx-mi">edit</span>Edit</span>
-            <span class="hm-btn hm-cb-secondary"><span class="hx-mi">content_copy</span>Duplicate</span>
-            <span class="hm-btn hm-cb-warn"><span class="hx-mi">play_arrow</span>Test</span>
-            <span class="hm-btn hm-danger"><span class="hx-mi">delete</span>Delete</span>
-          </div>
+      <div class="hm-cx2-grid">
+        <div class="hm-cx2-card">
+          <div class="hm-cx2-head"><span class="hm-cb2-tile is-brand">{{brand:twitch}}</span><span class="hm-cx2-title"><span class="hm-cx2-name">Raid welcome</span><span class="hm-cb2-trig">{{brand:twitch}}<span>Raid</span></span><span class="hm-cx2-desc">Thank bigger raids</span></span><span class="hm-switch is-on"><i></i></span><span class="hm-marker" data-n="1"></span></div>
+          <div class="hm-cb2-reply">Welcome raiders! Thanks FriendlyRaider for bringing 25 viewers!</div>
+          <div class="hm-cb2-tags"><span class="hm-cb2-tag is-count"><span class="hx-mi">filter_alt</span>10+ viewers</span><span class="hm-cb2-tag">{{brand:twitch}}Twitch</span><span class="hm-marker" data-n="2"></span></div>
+          <div class="hm-cx2-foot"><span class="hx-mi hm-cx2-bolt">bolt</span><b>3</b>&nbsp;runs · yesterday<span class="hm-grow"></span><span class="hx-mi">play_arrow</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
         </div>
-        <div class="hm-cb-card is-event">
-          <div class="hm-cb-card-head">
-            <div class="hm-col hm-tight">
-              <span class="hm-cb-card-title">Follow reminder</span>
-              <span class="hm-cb-sub is-event">Interval (30 min)</span>
-              <span class="hm-marker" data-n="2"></span>
-            </div>
-            <div class="hm-cb-status"><span class="hm-cb-state">Enabled</span><span class="hm-switch is-on"><i></i></span></div>
-          </div>
-          <div class="hm-col hm-tight">
-            <span class="hm-muted hm-xs">Response:</span>
-            <span class="hm-cb-response">Enjoying the stream? Hit follow so you know when we're live!</span>
-          </div>
-          <div class="hm-cb-stats"><span>Triggered: 41x</span><span>Last: 10/21 21:30</span></div>
-          <div class="hm-cb-actions">
-            <span class="hm-btn hm-cb-secondary"><span class="hx-mi">edit</span>Edit</span>
-            <span class="hm-btn hm-cb-secondary"><span class="hx-mi">content_copy</span>Duplicate</span>
-            <span class="hm-btn hm-cb-warn"><span class="hx-mi">play_arrow</span>Test</span>
-            <span class="hm-btn hm-danger"><span class="hx-mi">delete</span>Delete</span>
-          </div>
+        <div class="hm-cx2-card">
+          <div class="hm-cx2-head"><span class="hm-cb2-tile"><span class="hx-mi">timer</span></span><span class="hm-cx2-title"><span class="hm-cx2-name">Follow reminder</span><span class="hm-cb2-trig"><span class="hx-mi">timer</span><span>Every 20 minutes</span></span><span class="hm-cx2-desc"><em>No description</em></span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-cb2-reply">Enjoying the stream? Hit follow so you know when we're live!</div>
+          <div class="hm-cb2-tags"><span class="hm-cb2-tag">{{brand:twitch}}Twitch</span><span class="hm-cb2-tag">{{brand:youtube}}YouTube</span></div>
+          <div class="hm-cx2-foot"><span class="hx-mi hm-cx2-bolt">bolt</span><b>41</b>&nbsp;runs · 12 minutes ago<span class="hm-grow"></span><span class="hx-mi">play_arrow</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
+        </div>
+        <div class="hm-cx2-card is-off">
+          <div class="hm-cx2-head"><span class="hm-cb2-tile is-brand">{{brand:twitch}}</span><span class="hm-cx2-title"><span class="hm-cx2-name">Choo choo</span><span class="hm-cb2-trig">{{brand:twitch}}<span>Hype Train started</span></span><span class="hm-cx2-desc"><em>No description</em></span></span><span class="hm-switch"><i></i></span></div>
+          <div class="hm-cb2-reply">All aboard the hype train! Thanks TrainLeader!</div>
+          <div class="hm-cb2-tags"><span class="hm-cb2-tag is-warn"><span class="hx-mi">warning_amber</span>May not fire</span><span class="hm-cb2-tag">{{brand:twitch}}Twitch</span><span class="hm-marker" data-n="3"></span></div>
+          <div class="hm-cx2-foot"><span class="hx-mi">schedule</span>Never run<span class="hm-grow"></span><span class="hx-mi">play_arrow</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
         </div>
       </div>
     </div>
   </div>
-  <figcaption>Chatbot → Events. Each card works like a command card: switch, Edit, Duplicate, Test and Delete.</figcaption>
+  <figcaption><span>Chatbot → Events. The toolbar, switch, {{icon:play_arrow}} Test, {{icon:edit}} Edit and {{icon:more_horiz}} Duplicate / Delete… work like the <a href="help:chatbot_commands">Commands</a> tab. The switches here only flip the picture.</span></figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1">The line under the name is the event type.</li>
-  <li data-n="2">Interval events also show how often they run.</li>
+  <li data-n="1">The line under the name is the event, with its service. Timers show how often they post (<em>Every 20 minutes</em>), and time-of-day events show <em>Daily at 18:00</em>.</li>
+  <li data-n="2">The reply with sample values, then tags: the event's filter (<em>10+ viewers</em>, <em>Tier 2</em>, <em>Is “!lurk”</em>…), a Twitch lookup, and where the reply goes.</li>
+  <li data-n="3"><strong>May not fire</strong>: Twitch may no longer send Hype Train events, so these might never post.</li>
 </ol>
 
 <figure class="hx-figure hx-static">
@@ -92,83 +70,169 @@
 
 <section class="hx-guide" data-guide="chatbot_events_create" data-title="Create an event">
   <div class="hx-step">
-    <h3>Pick the event type</h3>
-    <p>Click <strong>New Event</strong>. In <strong>Basic Information</strong>, choose an <strong>Event Type</strong>, then give it a <strong>Name</strong>. The <strong>Enabled</strong>, banner and reply-target options are the same as for <a href="help:chatbot_commands">commands</a>.</p>
+    <h3>Choose the event</h3>
+    <p>Click <strong>New event</strong> (or <strong>Create an event</strong>). The editor opens on <strong>Choose an event</strong>; click one, or type in <em>Search events</em>. Then name it at the top.</p>
   </div>
   <div class="hx-step">
-    <h3>Narrow it down in Event Settings</h3>
-    <p>Many types add an <strong>Event Settings</strong> box with filters, such as a minimum bit amount or a specific reward. Leave a filter at 0 or empty to react to every event of that type. See the table below.</p>
+    <h3>Narrow it down</h3>
+    <p>Many events show an <strong>Only when</strong> row under the event, such as a minimum number of bits or a reward name. Leave it at <code>0</code> or empty to answer every event of that type. Timers and time-of-day events show <strong>Runs</strong> with their schedule instead.</p>
   </div>
   <div class="hx-step">
-    <h3>Write the response and save</h3>
-    <p>Write the message in <strong>Response Text</strong>. The <strong>Examples</strong> under it change with the event type. Click <strong>Create Event</strong>. Use <strong>Test</strong> on the card to send it once with sample data.</p>
-    <div class="hx-callout hx-warning"><p><strong>Test</strong> posts to your real chat targets with <em>TestUser</em> as the name, and adds to <em>Triggered</em>.</p></div>
+    <h3>Write the reply and save</h3>
+    <p>Write the message in <strong>Then · Reply</strong>; the Variables panel lists what this event gives you. New events send to Twitch only; click <strong>YouTube</strong> to add it. Click <strong>Create event</strong>, then {{icon:play_arrow}} <strong>Test</strong> on the card to see the reply with sample data. Tests never post.</p>
   </div>
 </section>
+
+<h2>The event editor</h2>
+
+<figure class="hx-figure">
+  <div class="hm hm-cxe">
+    <div class="hm-cxe-head">
+      <span class="hm-cxe-tile"><span class="hx-mi">celebration</span></span>
+      <div class="hm-cxe-headtext">
+        <div class="hm-cxe-namerow"><span class="hm-cxe-kicker">Edit</span><span class="hm-cxe-name">Raid welcome</span></div>
+        <span class="hm-cxe-desc">Thank bigger raids</span>
+      </div>
+      <span class="hm-cxe-onoff">On<span class="hm-switch is-on"><i></i></span></span>
+      <span class="hx-mi">close</span>
+    </div>
+    <div class="hm-cxe-body">
+      <div class="hm-cxe-flow">
+        <div class="hm-cxe-step">
+          <div class="hm-cxe-rail"><span class="hm-cxe-n">1</span></div>
+          <div class="hm-cxe-main">
+            <div class="hm-cxe-stephead"><span class="hm-cxe-key">When</span><span class="hm-cxe-title">Event</span><span class="hm-cxe-sub">What starts this reply</span></div>
+            <div class="hm-cxe-trig">
+              <span class="hm-cxe-tile">{{brand:twitch}}</span>
+              <div class="hm-cxe-trigtext"><span class="hm-cxe-trigname">Raid</span><span class="hm-cxe-trighint">Another channel raids you.</span></div>
+              <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">swap_horiz</span>Change</span>
+              <span class="hm-marker" data-n="1"></span>
+            </div>
+            <div class="hm-cb2-box">
+              <div class="hm-cxe-row"><span class="hm-cb2-mini">Only when</span><span class="hm-cxe-unit">At least</span><span class="hm-cxe-in">10</span><span class="hm-cxe-unit">viewers</span><span class="hm-cxe-unit">Only from</span><span class="hm-cxe-in"><span class="hm-placeholder">(any)</span></span><span class="hm-marker" data-n="2"></span></div>
+              <div class="hm-cxe-note"><span class="hx-mi">info</span><span>At least: 0 = any · Only from: Channel name; empty = anyone</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hm-cxe-step">
+          <div class="hm-cxe-rail"><span class="hm-cxe-n">2</span></div>
+          <div class="hm-cxe-main">
+            <div class="hm-cxe-stephead"><span class="hm-cxe-key">Look up</span><span class="hm-cxe-title">Twitch info</span><span class="hm-cxe-sub">Optional. Fetch live info to use in the reply.</span></div>
+            <div class="hm-cxe-add"><span class="hx-mi">travel_explore</span>Look up Twitch info<span class="hm-marker" data-n="3"></span></div>
+          </div>
+        </div>
+        <div class="hm-cxe-step">
+          <div class="hm-cxe-rail"><span class="hm-cxe-n">3</span></div>
+          <div class="hm-cxe-main">
+            <div class="hm-cxe-stephead"><span class="hm-cxe-key">Then</span><span class="hm-cxe-title">Reply</span><span class="hm-cxe-sub">What the bot says</span></div>
+            <div class="hm-cb2-box">
+              <div class="hm-cxe-box is-area is-focused">Welcome raiders! Thanks {username} for bringing {viewer_count} viewers!<span class="hm-cxe-varbtn">{ }</span></div>
+              <div class="hm-cxe-preview"><span class="hx-mi">visibility</span><span>Welcome raiders! Thanks FriendlyRaider for bringing 25 viewers!</span></div>
+              <div class="hm-cb2-out"><span class="hm-cb2-mini">Send to</span><span class="hm-cxe-pill is-on">{{brand:twitch}}Twitch</span><span class="hm-cxe-pill">{{brand:youtube}}YouTube</span><span class="hm-cb2-sep"></span><span class="hm-cb2-mini">Discord</span><span class="hm-cb2-dc">{{brand:discord}}My Server / #stream-log<span class="hx-mi">close</span></span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">add</span>Channel</span><span class="hm-grow"></span><span class="hm-cb2-mini">Show as banner</span><span class="hm-switch"><i></i></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="hm-cxe-vars">
+        <div class="hm-cxe-varshead"><span class="hx-mi">data_object</span>Variables<span class="hm-cxe-tag">Raid</span></div>
+        <span class="hm-cxe-in"><span class="hx-mi">search</span>Search variables</span>
+        <span class="hm-cxe-vgroup">Event</span>
+        <div class="hm-cxe-var"><code>{username}</code><span>FriendlyRaider</span></div>
+        <div class="hm-cxe-var"><code>{user_login}</code><span>friendlyraider</span></div>
+        <div class="hm-cxe-var"><code>{viewer_count}</code><span>25</span></div>
+        <div class="hm-cxe-var"><code>{game}</code><span>Celeste</span></div>
+        <span class="hm-cxe-vgroup">Basics</span>
+        <div class="hm-cxe-var"><code>{date}</code><span>2026-03-14</span><span class="hx-mi">tune</span></div>
+        <span class="hm-cxe-vgroup">Custom</span>
+        <div class="hm-cb2-vadd"><span class="hx-mi">add</span>New custom variable</div>
+        <span class="hm-marker" data-n="4"></span>
+      </div>
+    </div>
+    <div class="hm-cxe-foot">
+      <span class="hm-cxe-status is-ok"><span class="hx-mi">check_circle</span>Ready to save</span>
+      <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">play_arrow</span>Save &amp; test</span>
+      <span class="hm-btn hm-outline hm-dense">Cancel</span>
+      <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span>
+    </div>
+  </div>
+  <figcaption><span>Editing the Raid welcome event. A new event reads <strong>New</strong> and its button <strong>Create event</strong>. Nothing in the mock can be edited.</span></figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">The event and a one-line hint. <strong>Change</strong> opens the event list again; switching to another event resets the filters.</li>
+  <li data-n="2">The filters for this event. <code>0</code> or empty means any. Name and reward filters ignore upper and lower case.</li>
+  <li data-n="3">Optional. The same Twitch lookups as commands, such as follow age, account age or another channel's info. For events, <strong>Check</strong> is <em>The viewer from the event</em> (the follower, raider, subscriber…) or <em>A name I type…</em>. See <a href="help:chatbot_commands">Twitch lookups</a>.</li>
+  <li data-n="4">The variables this event gives you, with sample values. Choose an event first; until then the panel says <em>Choose an event to see its variables</em>.</li>
+</ol>
+
+<p>The reply step works like the command editor: <strong>Send to</strong> Twitch and/or YouTube, Discord channels, <strong>Show as banner</strong>, the 500-character warning and the <em>Not a variable here</em> warning. An event can post to Discord only, with Twitch and YouTube both off. The status at the bottom names problems such as <em>Choose an event.</em>, <em>Timers need at least 10 seconds between messages.</em> or <em>Set the time of day (HH:MM).</em></p>
 
 <h2>Event types</h2>
 
 <div class="hx-tabs">
   <div class="hx-tab-list">
     <button data-tab="twitch" class="is-active">Twitch</button>
-    <button data-tab="sched">Chat &amp; schedule</button>
     <button data-tab="yt">YouTube</button>
-    <button data-tab="tips">Donations</button>
+    <button data-tab="tips">Tips</button>
+    <button data-tab="time">Time</button>
   </div>
 
   <div class="hx-tab-panel" data-panel="twitch">
     <div class="hx-table-wrap"><table>
-      <thead><tr><th>Event Type</th><th>Event Settings filter</th><th>Values you can use</th></tr></thead>
+      <thead><tr><th>Event</th><th>Only when</th><th>Variables</th></tr></thead>
       <tbody>
-        <tr><td><strong>New Follower</strong></td><td>None</td><td><code>{username}</code></td></tr>
-        <tr><td><strong>New Subscription</strong></td><td><strong>Sub Tier</strong> (Any, Tier 1–3)</td><td><code>{username}</code> <code>{tier}</code> <code>{months}</code> <code>{message}</code></td></tr>
-        <tr><td><strong>Resubscription</strong></td><td><strong>Resub Months</strong> (at least), <strong>Resub Tier</strong></td><td><code>{username}</code> <code>{tier}</code> <code>{months}</code> (total months) <code>{message}</code></td></tr>
-        <tr><td><strong>Gift Subscription</strong></td><td><strong>Gift Sub Quantity</strong> (at least), <strong>Gift Sub Tier</strong></td><td><code>{username}</code> (the gifter) <code>{tier}</code> <code>{amount}</code> (number of gifts)</td></tr>
-        <tr><td><strong>Bits Donation</strong></td><td><strong>Bits Quantity</strong> (at least)</td><td><code>{username}</code> <code>{amount}</code> <code>{message}</code></td></tr>
-        <tr><td><strong>Raid</strong></td><td><strong>Raider Viewer Count</strong> (at least), <strong>Raider Name</strong> (exact)</td><td><code>{username}</code> (the raider) <code>{viewer_count}</code></td></tr>
-        <tr><td><strong>Channel Point Redemption</strong></td><td><strong>Point Reward Name</strong> (exact)</td><td><code>{username}</code> <code>{reward_name}</code> <code>{amount}</code> (point cost) <code>{message}</code> (viewer's text)</td></tr>
-        <tr><td><strong>Hype Train Start</strong></td><td>None</td><td><code>{username}</code> (conductor) <code>{level}</code></td></tr>
-        <tr><td><strong>Hype Train Progress</strong></td><td><strong>Hype Train Level</strong> (at least)</td><td><code>{level}</code> <code>{progress}</code> <code>{goal}</code></td></tr>
-        <tr><td><strong>Hype Train End</strong></td><td><strong>Hype Train End Level</strong> (at least)</td><td><code>{level}</code> <code>{amount}</code> (total contributions)</td></tr>
+        <tr><td><strong>New follower</strong></td><td>—</td><td><code>{username}</code> <code>{followed_at}</code></td></tr>
+        <tr><td><strong>New subscriber</strong></td><td>Tier</td><td><code>{username}</code> <code>{tier}</code> <code>{months}</code> <code>{message}</code></td></tr>
+        <tr><td><strong>Resubscription</strong></td><td>At least … months, Tier</td><td><code>{username}</code> <code>{tier}</code> <code>{months}</code> (total) <code>{streak_months}</code> (0 if hidden) <code>{message}</code></td></tr>
+        <tr><td><strong>Gifted subs</strong></td><td>At least … gifts, Tier</td><td><code>{username}</code> (gifter) <code>{tier}</code> <code>{amount}</code> (gifted now) <code>{total_gifts}</code> (lifetime, may be empty) <code>{recipient_name}</code> (single gifts) <code>{is_anonymous}</code></td></tr>
+        <tr><td><strong>Bits</strong></td><td>At least … bits</td><td><code>{username}</code> <code>{amount}</code> <code>{message}</code> <code>{power_up_type}</code> (empty for cheers)</td></tr>
+        <tr><td><strong>Raid</strong></td><td>At least … viewers, Only from</td><td><code>{username}</code> (raider) <code>{viewer_count}</code> <code>{game}</code></td></tr>
+        <tr><td><strong>Channel points</strong></td><td>Reward (name)</td><td><code>{username}</code> <code>{reward_name}</code> <code>{amount}</code> (cost) <code>{message}</code> (their text)</td></tr>
+        <tr><td><strong>Chat message</strong></td><td>Message Is exactly / Starts with / Contains …</td><td><code>{username}</code> <code>{message}</code></td></tr>
+        <tr><td><strong>Hype Train started</strong> <span class="hx-badge hx-warn">May not fire</span></td><td>—</td><td><code>{username}</code> (conductor, may be <em>A viewer</em>) <code>{level}</code></td></tr>
+        <tr><td><strong>Hype Train level</strong> <span class="hx-badge hx-warn">May not fire</span></td><td>At level … or higher</td><td><code>{level}</code> <code>{progress}</code> <code>{goal}</code></td></tr>
+        <tr><td><strong>Hype Train ended</strong> <span class="hx-badge hx-warn">May not fire</span></td><td>Reached level … or higher</td><td><code>{level}</code> <code>{amount}</code> (total contributions)</td></tr>
       </tbody>
     </table></div>
-    <p><code>{tier}</code> is <code>1</code>, <code>2</code> or <code>3</code>. Raider Name and Point Reward Name must match exactly, including capitals.</p>
-  </div>
-
-  <div class="hx-tab-panel" data-panel="sched">
-    <div class="hx-table-wrap"><table>
-      <thead><tr><th>Event Type</th><th>Event Settings</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><td><strong>Chat Message</strong></td><td><strong>Message Text *</strong> and <strong>Match Type *</strong>: Exact Match, Starts With, Contains</td><td>Matches Twitch chat. Matching is case-sensitive. <code>{username}</code> and <code>{message}</code> are the chatter and their message.</td></tr>
-        <tr><td><strong>Interval</strong></td><td><strong>Interval (hh:mm:ss) *</strong>, for example <code>00:30:00</code></td><td>Posts as soon as it is enabled (or the chatbot connects), then every interval, live or not. <code>{username}</code> is <em>System</em>.</td></tr>
-        <tr><td><strong>Specific Time</strong></td><td><strong>Time (HH:MM) *</strong>, 24-hour, for example <code>14:30</code></td><td>Posts once a day at that local time.</td></tr>
-      </tbody>
-    </table></div>
+    <p>Twitch events with a viewer also give <code>{user_login}</code> and <code>{user_id}</code>. <code>{tier}</code> is <code>1</code>, <code>2</code> or <code>3</code>.</p>
   </div>
 
   <div class="hx-tab-panel" data-panel="yt">
-    <p>Need <a href="help:guide_youtube">YouTube</a> connected and a live broadcast. New events reply to Twitch and YouTube by default; untick Twitch if the message only makes sense on YouTube.</p>
+    <p>Need <a href="help:guide_youtube">YouTube</a> connected and a live broadcast.</p>
     <div class="hx-table-wrap"><table>
-      <thead><tr><th>Event Type</th><th>Values you can use</th></tr></thead>
+      <thead><tr><th>Event</th><th>Only when</th><th>Variables</th></tr></thead>
       <tbody>
-        <tr><td><strong>YouTube Chat Message</strong></td><td><code>{username}</code> <code>{message}</code>. Fires on every YouTube chat message, with no text filter.</td></tr>
-        <tr><td><strong>YouTube Membership</strong></td><td><code>{username}</code> <code>{member_level}</code> <code>{message}</code></td></tr>
-        <tr><td><strong>YouTube Member Milestone</strong></td><td><code>{username}</code> <code>{member_level}</code> <code>{months}</code> <code>{message}</code></td></tr>
-        <tr><td><strong>YouTube Gift Membership</strong></td><td><code>{username}</code> <code>{member_level}</code> <code>{total_gifts}</code></td></tr>
-        <tr><td><strong>YouTube Super Chat</strong> / <strong>YouTube Super Sticker</strong></td><td><code>{username}</code> <code>{amount}</code> <code>{display_amount}</code> <code>{currency}</code></td></tr>
+        <tr><td><strong>YouTube chat message</strong></td><td>Message Is exactly / Starts with / Contains …</td><td><code>{username}</code> <code>{message}</code> <code>{user_id}</code> (channel id)</td></tr>
+        <tr><td><strong>New member</strong></td><td>—</td><td><code>{username}</code> <code>{member_level}</code> <code>{message}</code></td></tr>
+        <tr><td><strong>Member milestone</strong></td><td>—</td><td><code>{username}</code> <code>{months}</code> <code>{member_level}</code> <code>{message}</code></td></tr>
+        <tr><td><strong>Gifted memberships</strong></td><td>—</td><td><code>{username}</code> (gifter) <code>{amount}</code> <code>{member_level}</code></td></tr>
+        <tr><td><strong>Super Chat</strong> / <strong>Super Sticker</strong></td><td>—</td><td><code>{username}</code> <code>{amount}</code> <code>{currency}</code> <code>{formatted_amount}</code> <code>{message}</code></td></tr>
       </tbody>
     </table></div>
   </div>
 
   <div class="hx-tab-panel" data-panel="tips">
-    <p><strong>Donation</strong> fires for tips from <a href="help:integrations_streamlabs">Streamlabs</a> and <a href="help:integrations_streamelements">StreamElements</a>, and also for YouTube Super Chats and Super Stickers. Its filter is <strong>Donation Amount</strong> (at least). <code>{source}</code> tells you where the tip came from.</p>
-    <p>Values: <code>{username}</code> <code>{amount}</code> <code>{currency}</code> <code>{formatted_amount}</code> <code>{message}</code> <code>{donation_message}</code>.</p>
+    <p><strong>Tip / donation</strong> fires for tips from <a href="help:integrations_streamlabs">Streamlabs</a> and <a href="help:integrations_streamelements">StreamElements</a>, and for YouTube Super Chats and Super Stickers. Its filter is <strong>At least … amount</strong>.</p>
+    <p>Variables: <code>{username}</code> <code>{amount}</code> <code>{currency}</code> <code>{formatted_amount}</code> ($5.00) <code>{message}</code> <code>{source}</code> (the service) <code>{original_amount}</code> <code>{original_currency}</code>.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="time">
+    <div class="hx-table-wrap"><table>
+      <thead><tr><th>Event</th><th>Runs</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Timer</strong></td><td><strong>Every</strong> … seconds / minutes / hours (at least 10 seconds)</td><td>The first post comes after one full interval, then again every interval, live or not. A post is skipped while chat is not connected. Turning the event off and on starts the wait over.</td></tr>
+        <tr><td><strong>At a time of day</strong></td><td><strong>Time</strong>, 24-hour, for example <code>18:00</code></td><td>Posts once a day at that local time.</td></tr>
+      </tbody>
+    </table></div>
+    <p>There is no viewer for these, so <code>{username}</code> is <em>System</em>. Commands that used to repeat on their own were turned into Timer events.</p>
   </div>
 </div>
 
-<p>Every event can also use the shared variables: <code>{timestamp}</code>, <code>{date}</code>, <code>{time}</code>, <code>{source}</code>, statistics, YouTube and custom variables. See <a href="help:chatbot_variables">Chatbot Variables</a>.</p>
+<h3>Chat message matching</h3>
 
-<div class="hx-callout hx-note"><p>The Variables panel in the editor also lists names such as <code>{tier_name}</code>, <code>{raider_name}</code>, <code>{follower_count}</code> or <code>{gifter_name}</code>. The preview fills them with samples, but Twitch events do not send those values, so they stay as plain text in chat. Use the values in the table above.</p></div>
+<p><strong>Chat message</strong> and <strong>YouTube chat message</strong> compare the whole message with your text after trimming spaces, ignoring upper and lower case: <strong>Is exactly</strong>, <strong>Starts with</strong> or <strong>Contains</strong>. Leave the text empty to answer every message. The bot never answers its own messages.</p>
+
+<p>Every event can also use the basics (<code>{date}</code>, <code>{time}</code>, <code>{timestamp}</code>…), statistics, quotes, YouTube and custom variables. See <a href="help:chatbot_variables">Chatbot Variables</a>.</p>
 
 <h2>Example messages</h2>
 
@@ -183,38 +247,60 @@
 <pre><code>Thanks for following {username}! Welcome to the community!</code></pre>
   </div>
   <div class="hx-tab-panel" data-panel="ex_resub">
-<pre><code>Welcome back {username}! Thanks for {months} months of support!</code></pre>
+<pre><code>Welcome back {username}! {months} months, {streak_months} in a row. Thank you!</code></pre>
   </div>
   <div class="hx-tab-panel" data-panel="ex_gift">
 <pre><code>{username} gifted {amount} Tier {tier} subs! Thank you!</code></pre>
-    <p>Set <strong>Gift Sub Quantity</strong> to <code>5</code> to thank only bigger gift bombs.</p>
+    <p>Set <strong>At least</strong> to <code>5</code> gifts to thank only bigger gift bombs.</p>
   </div>
   <div class="hx-tab-panel" data-panel="ex_points">
 <pre><code>{username} spent {amount} points on {reward_name}: {message}</code></pre>
   </div>
 </div>
 
+<h2>Testing an event</h2>
+
+<p>{{icon:play_arrow}} <strong>Test</strong> on a card, or <strong>Save &amp; test</strong>, runs the event once on a copy with a sample event that passes its filters. Nothing is posted and the run count doesn't change. You see <em>Test reply: …</em>, or <em>Didn't run: …</em> with the reason. Test works even when the event is off.</p>
+
+<details class="hx-details">
+  <summary>Sample values used by Test and the previews</summary>
+  <div class="hx-table-wrap"><table>
+  <thead><tr><th>Event</th><th>Sample</th></tr></thead>
+  <tbody>
+  <tr><td>Follow, subscriber, chat message</td><td><code>TestViewer</code>; a sub is tier 1; chat text is your filter text (or <em>Hello chat!</em>)</td></tr>
+  <tr><td>Resubscription</td><td>12 months (or your minimum), 5 in a row</td></tr>
+  <tr><td>Gifted subs</td><td><code>GenerousGifter</code>, 5 gifts (or your minimum)</td></tr>
+  <tr><td>Bits</td><td>100 bits (or your minimum), <em>Cheer100 great play!</em></td></tr>
+  <tr><td>Raid</td><td><code>FriendlyRaider</code> (or your <strong>Only from</strong> name) with 25 viewers (or your minimum), playing Celeste</td></tr>
+  <tr><td>Channel points</td><td>Reward <em>Hydrate</em> (or your reward), 100 points, <em>Drink water!</em></td></tr>
+  <tr><td>Tip / donation</td><td><code>KindDonor</code>, $5.00 USD (or your minimum), <em>Keep it up!</em></td></tr>
+  <tr><td>YouTube</td><td>Super Chat $10.00, Super Sticker $2.00, milestone 6 months, 5 gifted memberships</td></tr>
+  <tr><td>Timer, time of day</td><td><code>System</code></td></tr>
+  </tbody>
+  </table></div>
+</details>
+
 <h2>Questions</h2>
 
 <details class="hx-details">
-  <summary>Two events posted for one follow</summary>
-  <p>Every enabled event that matches fires. If you have two New Follower events, both post. Turn one off, or give them different filters.</p>
+  <summary>Two messages posted for one follow</summary>
+  <p>Every event that is on and matches posts. If you have two New follower events, both post. Turn one off, or give them different filters.</p>
 </details>
 
 <details class="hx-details">
-  <summary>My Interval event posts while I am offline</summary>
-  <p>Interval events run whenever the event is enabled and the chatbot is connected. Turn the switch off on the card when you end the stream.</p>
+  <summary>My Timer posts while I am offline</summary>
+  <p>Timers run whenever the event is on and chat is connected. Turn the switch off on the card when you end the stream.</p>
 </details>
 
 <details class="hx-details">
   <summary>Nothing posts for subs, bits or raids</summary>
-  <p>Twitch must be connected with every permission accepted. See <a href="help:twitch_setup">Twitch Setup</a>. Then check the Event Settings filters: a Bits Quantity of 500 ignores a 100-bit cheer.</p>
+  <p>Twitch must be connected with every permission accepted. See <a href="help:twitch_setup">Twitch Setup</a>. Then check the filters: <strong>At least 500 bits</strong> ignores a 100-bit cheer. If the event has a lookup with an empty fallback, a failed lookup also posts nothing.</p>
 </details>
 
-<div class="hx-callout hx-tip"><p>For first-time chatters, use <a href="help:chatbot_greetings">Greetings</a> instead of a Chat Message event. To run OBS scenes, sounds or other actions on an event, use <a href="help:connectors_intro">Connectors</a>.</p></div>
+<div class="hx-callout hx-tip"><p>For first-time chatters, use <a href="help:chatbot_greetings">Greetings</a> instead of a Chat message event. To run OBS scenes, sounds or other actions on an event, use <a href="help:connectors_intro">Connectors</a>.</p></div>
 
 <div class="hx-cards">
   <a class="hx-card" href="help:chatbot_variables">{{icon:data_object}}<span><strong>Chatbot Variables</strong><span class="hx-card-text">All placeholders and formats</span></span></a>
   <a class="hx-card" href="help:chatbot_greetings">{{icon:waving_hand}}<span><strong>Greetings</strong><span class="hx-card-text">Welcome viewers on their first message</span></span></a>
-  <a class="hx-card" href="help:chatbot_commands">{{icon:terminal}}<span><strong>Commands</strong><span class="hx-card-text">Replies to !commands</span></span></a>
+  <a class="hx-card" href="help:chatbot_commands">{{icon:terminal}}<span><strong>Commands</strong><span class="hx-card-text">Replies to !commands, and Twitch lookups</span></span></a>
 </div>

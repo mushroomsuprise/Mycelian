@@ -832,3 +832,13 @@ def test_render_preview_uses_runtime(custom):
     assert text == "TestViewer gave 300 (600) 2 years, 3 months 2024"
     assert cv.render_preview("{command_word_2} {city}", "command", item={
         "command_name": "w", "argument_mappings": {"city": 4}}) == "world four"
+
+
+def test_lookup_input_target_falls_back_to_chatter():
+    from modules.chatbot_lookups import _target_login_or_id
+
+    config = {"id": "follow_age", "target": {"from": "input", "input": "target"}}
+    ctx = {"command_args": [], "target": "", "user_login": "mossymika", "username": "MossyMika", "user_id": "42"}
+    assert _target_login_or_id(config, ctx, "command") == ("mossymika", "42")
+    ctx["target"] = "@FriendlyStreamer"
+    assert _target_login_or_id(config, ctx, "command") == ("friendlystreamer", "")

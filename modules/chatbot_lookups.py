@@ -544,7 +544,10 @@ def _target_login_or_id(config: Dict[str, Any], context: Dict[str, Any], kind: s
             value = args[index] if 0 <= index < len(args) else ""
         else:
             value = context.get(str(wanted).strip().strip("{}"), "")
-        return clean_login(value), ""
+        if clean_login(value):
+            return clean_login(value), ""
+        # Nothing typed for that input: the lookup is about whoever used the command.
+        return clean_login(context.get("user_login") or context.get("username")), str(context.get("user_id") or context.get("userid") or "")
     return clean_login(render_template(spec.get("text") or "", context)), ""
 
 
