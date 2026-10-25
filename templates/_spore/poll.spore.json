@@ -2,8 +2,8 @@
   "advanced_js": "",
   "alert_system": "instant",
   "design": {
-    "height": 300,
-    "width": 300
+    "width": 460,
+    "height": 480
   },
   "duration_seconds": 5.0,
   "dynamic_controls": {
@@ -101,13 +101,31 @@
         "show_percent": true,
         "show_timer": true,
         "show_timer_bar": true,
-        "track_color": "rgba(255,255,255,0.15)",
+        "track_color": "rgba(255,255,255,0.12)",
         "winner_color": "#facc15",
-        "winner_mode": "highlight"
+        "winner_mode": "highlight",
+        "style": "bars",
+        "title": "Vote now!",
+        "foot_text": "Type a keyword in chat to vote",
+        "show_keywords": true,
+        "show_rank": true,
+        "show_total": true,
+        "bar_height": 12,
+        "bar_radius": 12,
+        "bar_color_2": "#ec4899",
+        "highlight_leader": true,
+        "animate_bars": true,
+        "winner_effect": "glow",
+        "dim_losers": true,
+        "panel_shadow": true,
+        "padding": 16,
+        "border_radius": 18,
+        "border_width": 1,
+        "border_color": "rgba(255,255,255,0.08)"
       },
       "size": {
-        "h": 300,
-        "w": 300
+        "w": 460,
+        "h": 480
       },
       "source_settings_expose": {
         "autohide_seconds": true,
@@ -131,7 +149,21 @@
         "show_timer_bar": true,
         "track_color": true,
         "winner_color": true,
-        "winner_mode": true
+        "winner_mode": true,
+        "style": true,
+        "title": true,
+        "foot_text": true,
+        "show_keywords": true,
+        "show_rank": true,
+        "show_total": true,
+        "bar_height": true,
+        "bar_radius": true,
+        "bar_color_2": true,
+        "highlight_leader": true,
+        "animate_bars": true,
+        "winner_effect": true,
+        "dim_losers": true,
+        "panel_shadow": true
       },
       "start_hidden": true,
       "type": "poll",

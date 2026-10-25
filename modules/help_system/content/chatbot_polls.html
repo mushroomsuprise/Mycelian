@@ -80,9 +80,10 @@
               <div class="hm-cb-gp-card-h"><span class="hx-mi">cast</span>Overlay<span class="hm-cb-gp-badge">Spore Studio</span><span class="hm-marker" data-n="7"></span></div>
               <div class="hm-cb-gp-card-b">
                 <div class="hm-cb-gp-widget">
-                  <div><div><span>Tacos</span><span>6 · 66.7%</span></div><div class="hm-cb-gp-track"><i style="width: 100%"></i></div></div>
-                  <div><div><span>Pizza Time</span><span>3 · 33.3%</span></div><div class="hm-cb-gp-track"><i style="width: 50%"></i></div></div>
-                  <div><div><span>Ramen</span><span>0 · 0%</span></div><div class="hm-cb-gp-track"><i style="width: 0%"></i></div></div>
+                  <div class="hm-cb-gp-widget-title">Vote now!</div>
+                  <div><div><span>Tacos<span class="hm-cb-gp-widget-kw">#Tacos</span></span><span>6 · 66.7%</span></div><div class="hm-cb-gp-track"><i style="width: 100%"></i></div></div>
+                  <div><div><span>Pizza Time<span class="hm-cb-gp-widget-kw">#PizzaTime</span></span><span>3 · 33.3%</span></div><div class="hm-cb-gp-track"><i style="width: 50%"></i></div></div>
+                  <div><div><span>Ramen<span class="hm-cb-gp-widget-kw">#Ramen</span></span><span>0 · 0%</span></div><div class="hm-cb-gp-track"><i style="width: 0%"></i></div></div>
                 </div>
                 <div class="hm-cb-gp-row"><span>Poll widget <b>poll1</b> in the <b>poll</b> template. Colours and layout are set in Spore Studio.</span></div>
                 <div class="hm-cb-gp-url"><span>http://127.0.0.1:5000/poll</span><span class="hx-mi">content_copy</span></div>
@@ -158,7 +159,7 @@
   <li data-n="4">How long the poll runs and how votes count.</li>
   <li data-n="5">Let a chat command start this poll.</li>
   <li data-n="6">What happens when the poll ends.</li>
-  <li data-n="7">A small preview in the widget's own colours, and the overlay address for OBS.</li>
+  <li data-n="7">A small preview in the widget's own colours, with its title, keyword chips and bar gradient, and the overlay address for OBS.</li>
 </ol>
 
 <p>If no overlay has a Poll widget yet, the tab says <em>No overlay has a Poll widget yet</em> with <strong>Open Spore Studio</strong> and <strong>Check again</strong>.</p>
@@ -267,9 +268,9 @@
 
 <h2>Overlay</h2>
 
-<p>The <strong>Overlay</strong> card shows a small preview of the results in the Poll widget's own colours, and names the widget and its template. Click the address to copy it for an OBS Browser Source. <strong>Edit in Spore Studio</strong> opens the template, and <strong>Preview</strong> opens the overlay in your browser.</p>
+<p>The <strong>Overlay</strong> card shows a small preview of the results in the Poll widget's own colours, with its title, keyword chips and bar gradient, and names the widget and its template. Click the address to copy it for an OBS Browser Source. <strong>Edit in Spore Studio</strong> opens the template, and <strong>Preview</strong> opens the overlay in your browser.</p>
 
-<p>The Poll widget draws the live results: font, horizontal or vertical list, bars or text, timer text and timer bar, colors, winner highlight or winner-only, autohide, and a rotator for extra options. Options are always ordered by votes, highest first. With the rotator off, only the top items are shown. With it on, the widget pages through that same order. The stock <code>poll</code> template is a Spore Studio template, so you can rearrange it like any other.</p>
+<p>The Poll widget draws the live results: a style (bars, labels inside thick bars, or side-by-side cards), a title, keyword chips, rank numbers, a countdown chip and timer bar, a footer with the vote total, colors and a bar gradient, a leader highlight, a winner effect or winner-only list, autohide, and a rotator for extra options. Options are always ordered by votes, highest first. With the rotator off, only the top items are shown. With it on, the widget pages through that same order. The stock <code>poll</code> template is a Spore Studio template, so you can rearrange it like any other.</p>
 
 <div class="hx-cards">
   <a class="hx-card" href="help:spore_studio_widgets">{{icon:widgets}}<span><strong>Spore Studio widgets</strong><span class="hx-card-text">Style the Poll widget</span></span></a>

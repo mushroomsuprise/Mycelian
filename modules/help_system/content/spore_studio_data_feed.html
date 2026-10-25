@@ -17,7 +17,7 @@
   <figcaption>The five parts of a feed card, in the order they run.</figcaption>
 </figure>
 
-<p>A block can have several feeds. Add one with <strong>+ Add feed</strong>. A new feed listens to <strong>Alert (instant)</strong> and <strong>Alert (queue)</strong>, except on a Poll (<strong>Poll update</strong>, <strong>Poll ended</strong>) and Now playing (<strong>Now playing (Spotify)</strong>). Nothing is sent to other blocks; each feed only changes its own block.</p>
+<p>A block can have several feeds. Add one with <strong>+ Add feed</strong>. A new feed listens to <strong>Alert (instant)</strong> and <strong>Alert (queue)</strong>, except on a Poll (<strong>Poll update</strong>, <strong>Poll ended</strong>), Now playing (<strong>Now playing (Spotify)</strong>) and Confetti (<strong>Giveaway winner</strong>). Nothing is sent to other blocks; each feed only changes its own block.</p>
 
 <h2>A feed card</h2>
 
@@ -124,7 +124,9 @@
     <button data-tab="out">Another template's output</button>
   </div>
   <div class="hx-tab-panel" data-panel="ev">
-    <p><strong>Run when: An event (alert, chat, giveaway...)</strong>. Tick one or more events. The feed runs once per event. Events include <strong>Alert (queue)</strong>, <strong>Alert (instant)</strong>, <strong>Giveaway entry</strong>, <strong>Giveaway winner</strong>, <strong>Poll update</strong>, <strong>Poll ended</strong>, <strong>Now playing (Spotify)</strong>, <strong>Refresh alerts</strong>, <strong>Alerts paused</strong>, <strong>Alerts resumed</strong>, <strong>Pause status update</strong>, <strong>Chat message (Twitch)</strong>, <strong>Chat banner</strong>, <strong>Chat message (connector)</strong>, <strong>Chat moderation event</strong> and <strong>Twitch API call (response)</strong>.</p>
+    <p><strong>Run when: An event (alert, chat, giveaway...)</strong>. Tick one or more events. The feed runs once per event. Events include <strong>Alert (queue)</strong>, <strong>Alert (instant)</strong>, <strong>Giveaway started</strong>, <strong>Giveaway entry</strong>, <strong>Giveaway entries closed</strong>, <strong>Giveaway cleared</strong>, <strong>Giveaway state</strong>, <strong>Giveaway winner</strong>, <strong>Poll update</strong>, <strong>Poll ended</strong>, <strong>Now playing (Spotify)</strong>, <strong>Refresh alerts</strong>, <strong>Alerts paused</strong>, <strong>Alerts resumed</strong>, <strong>Pause status update</strong>, <strong>Chat message (Twitch)</strong>, <strong>Chat banner</strong>, <strong>Chat message (connector)</strong>, <strong>Chat moderation event</strong> and <strong>Twitch API call (response)</strong>.</p>
+    <p>Feeds only hear events as they happen, with two exceptions so a refreshed overlay is not blank. A template whose feeds listen to any giveaway event asks for <strong>Giveaway state</strong> when it loads and after it reconnects. A Poll asks for the current poll the same way.</p>
+    <p>In <a href="help:spore_studio_advanced">Preview</a>, the <strong>Poll update</strong> and <strong>Poll ended</strong> mock buttons send a sample four-option poll, and <strong>Giveaway state</strong> sends a pool of demo names, so you can style a poll or giveaway without running one.</p>
   </div>
   <div class="hx-tab-panel" data-panel="val">
     <p><strong>Run when: A live value (a data source)</strong>. Pick a <strong>Data source</strong> such as a session statistic or another counter, then:</p>
@@ -182,8 +184,13 @@
 <tr><td><code>trim</code></td><td><code>{message|trim}</code></td><td>Spaces removed from the ends</td></tr>
 <tr><td><code>truncate:N</code></td><td><code>{message|truncate:40}</code></td><td>Cut to 40 characters with …</td></tr>
 <tr><td><code>default:text</code></td><td><code>{username|default:Anonymous}</code></td><td>Anonymous when empty</td></tr>
+<tr><td><code>plural:one,many</code></td><td><code>{pool_size|plural:entry,entries}</code></td><td>1 entry, 5 entries</td></tr>
+<tr><td><code>join:separator</code></td><td><code>{winners|join: &amp; }</code></td><td>Casey &amp; Sam (a list joined with the separator)</td></tr>
+<tr><td><code>count</code></td><td><code>{pool_entries|count}</code></td><td>How many are in a list</td></tr>
 </tbody>
 </table></div>
+
+<p>A list of names without a modifier reads <em>a, b, c</em>. Wrap part of a template in <code>[[double brackets]]</code> to highlight it in a Text block, for example <code>Type [[{keyword}]] to enter!</code> (see <a href="help:spore_studio_widgets">Text</a>).</p>
 
 <p><strong>Prefix</strong> and <strong>Suffix</strong> wrap the result. <strong>Decimals</strong> rounds numbers (0–10, empty keeps the value). <strong>If a field is missing</strong> is the text used when the payload has no value.</p>
 
@@ -194,7 +201,7 @@
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Block</th><th>Its own targets (default first)</th></tr></thead>
 <tbody>
-<tr><td>List</td><td>Add a row · Clear the list</td></tr>
+<tr><td>List</td><td>Add a row · Clear the list · Replace all rows (<strong>List field</strong>, default <code>pool_entries</code>: rebuilds the list from a list in the data, first entry newest, without add animations)</td></tr>
 <tr><td>Wheel</td><td>Spin the wheel (optional <strong>Fill slices from field</strong>, <strong>Land on field</strong>) · Add a slice</td></tr>
 <tr><td>Counter</td><td>Add to this counter · Subtract from this counter · Set this counter · Reset this counter</td></tr>
 <tr><td>Progress bar</td><td>Set the current value · Set the goal (max)</td></tr>
@@ -208,6 +215,7 @@
 <tr><td>QR code</td><td>Set the QR text</td></tr>
 <tr><td>Embed</td><td>Set the page URL</td></tr>
 <tr><td>Poll / Now playing</td><td>Paint from the data</td></tr>
+<tr><td>Confetti</td><td>Burst confetti</td></tr>
 </tbody>
 </table></div>
 

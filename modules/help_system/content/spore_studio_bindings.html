@@ -125,7 +125,11 @@
 <tbody>
 <tr><td>Alert (queue)</td><td><code>next_alert</code></td><td>Queued alerts: follows, subs, raids, bits, donations…</td><td><code>queue_seq</code>, <code>queue_holders</code>, <code>alert_type</code>, <code>username</code>, <code>message</code>, <code>amount</code>, <code>currency</code>, <code>tier</code>, <code>cumulative_months</code>, <code>raider_count</code>, <code>amt_cheered</code>, <code>quantity</code>, <code>gift_qty</code>, <code>recipient</code>, <code>alert_name</code>, <code>streak_count</code>, <code>level</code>, <code>total</code>, <code>gif_name</code>, <code>duration</code></td></tr>
 <tr><td>Alert (instant)</td><td><code>instant_alert</code></td><td>Non-blocking alerts for bars, counters, HUDs</td><td>Same alert fields, without the queue fields</td></tr>
-<tr><td>Giveaway entry</td><td><code>giveaway_entry</code></td><td>A chat user joins the giveaway pool</td><td><code>username</code>, <code>pool_size</code></td></tr>
+<tr><td>Giveaway started</td><td><code>giveaway_start</code></td><td>Entries open (Start giveaway or Reopen entries)</td><td><code>keyword</code></td></tr>
+<tr><td>Giveaway entry</td><td><code>giveaway_entry</code></td><td>A chat user joins the giveaway pool</td><td><code>username</code>, <code>pool_size</code>, <code>pool_entries</code> (newest first)</td></tr>
+<tr><td>Giveaway entries closed</td><td><code>giveaway_stop</code></td><td>Entries close. The pool stays.</td><td>(none)</td></tr>
+<tr><td>Giveaway cleared</td><td><code>giveaway_clear</code></td><td>New giveaway empties the pool and keyword</td><td>(none)</td></tr>
+<tr><td>Giveaway state</td><td><code>giveaway_sync</code></td><td>An overlay loads or refreshes, or an entrant is removed in Mycelian</td><td><code>keyword</code>, <code>accepting</code>, <code>pool_size</code>, <code>pool_entries</code></td></tr>
 <tr><td>Giveaway winner</td><td><code>giveaway_winner</code></td><td>Winners are drawn</td><td><code>winners</code>, <code>pool_size</code>, <code>pool_entries</code></td></tr>
 <tr><td>Poll update</td><td><code>poll_state</code></td><td>A poll starts, gets a vote, or changes</td><td><code>template</code>, <code>status</code>, <code>total_votes</code>, <code>options</code>, <code>winners</code>, <code>remaining_seconds</code></td></tr>
 <tr><td>Poll ended</td><td><code>poll_ended</code></td><td>A poll is stopped or runs out</td><td><code>template</code>, <code>status</code>, <code>total_votes</code>, <code>options</code>, <code>winners</code></td></tr>

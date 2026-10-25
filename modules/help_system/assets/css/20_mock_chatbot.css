@@ -140,6 +140,10 @@
     color: var(--color-text-primary); background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); }
 .help-doc .hm-cb-gp-widget > div > div:first-child { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
 .help-doc .hm-cb-gp-widget .hm-cb-gp-track { height: 6px; }
+.help-doc .hm-cb-gp-widget .hm-cb-gp-track > i { background: linear-gradient(90deg, var(--color-primary), color-mix(in srgb, var(--color-error) 70%, var(--color-primary))); }
+.help-doc .hm-cb-gp-widget-title { font-size: .78rem; font-weight: 800; margin-bottom: 2px; }
+.help-doc .hm-cb-gp-widget-kw { margin-left: 5px; padding: 0 4px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .56rem; font-weight: 700;
+    background: color-mix(in srgb, var(--color-text-primary) 12%, transparent); }
 
 @media (max-width: 760px) {
     .help-doc .hm-cb-gp-cols { grid-template-columns: minmax(0, 1fr); }

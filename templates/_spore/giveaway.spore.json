@@ -1,0 +1,1459 @@
+{
+  "template_name": "giveaway",
+  "alert_system": "instant",
+  "design": {
+    "width": 440,
+    "height": 620
+  },
+  "elements": [
+    {
+      "id": "panel",
+      "type": "container",
+      "category": "Panel",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "size": {
+        "w": 440,
+        "h": 620
+      },
+      "props": {
+        "background_color": "rgba(15,23,42,0.82)",
+        "border_radius": 16,
+        "border_width": 1,
+        "border_color": "rgba(255,255,255,0.08)"
+      },
+      "data_feed": [
+        {
+          "id": "feed1",
+          "enabled": true,
+          "label": "Entries open",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_start"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "show",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed2",
+          "enabled": true,
+          "label": "Overlay loaded mid-giveaway",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_sync"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [
+              {
+                "field": "accepting",
+                "op": "eq",
+                "value": "true"
+              },
+              {
+                "field": "pool_size",
+                "op": "gt",
+                "value": "0"
+              }
+            ],
+            "match": "any",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "show",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed3",
+          "enabled": true,
+          "label": "New giveaway",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_clear"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "hide",
+            "options": {}
+          }
+        }
+      ],
+      "bindings": [],
+      "animations": {
+        "anim_in": "fade",
+        "anim_out": "fade",
+        "anim_in_ms": 600,
+        "anim_out_ms": 1200,
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out"
+      },
+      "transforms": [],
+      "start_hidden": true
+    },
+    {
+      "id": "keyword",
+      "type": "text",
+      "category": "Keyword",
+      "position": {
+        "x": 20,
+        "y": 22
+      },
+      "size": {
+        "w": 400,
+        "h": 48
+      },
+      "props": {
+        "font_family": "Roboto-Bold.ttf",
+        "color": "#ffffff",
+        "text_align": "center",
+        "vertical_align": "center",
+        "text": "Type [[!enter]] to enter!",
+        "font_size": 28,
+        "accent_color": "#ffffff",
+        "accent_background": "#7c3aed"
+      },
+      "data_feed": [
+        {
+          "id": "feed4",
+          "enabled": true,
+          "label": "Keyword line",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_start",
+              "giveaway_sync"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [
+              {
+                "field": "keyword",
+                "op": "not_empty",
+                "value": ""
+              }
+            ],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "Type [[{keyword}]] to enter!",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "set_text",
+            "options": {}
+          }
+        }
+      ],
+      "bindings": [],
+      "animations": {
+        "anim_in": "none",
+        "anim_out": "none",
+        "anim_in_ms": 300,
+        "anim_out_ms": 300,
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out"
+      },
+      "transforms": [],
+      "parent_id": "panel"
+    },
+    {
+      "id": "count",
+      "type": "text",
+      "category": "Entry counter",
+      "position": {
+        "x": 20,
+        "y": 76
+      },
+      "size": {
+        "w": 400,
+        "h": 26
+      },
+      "props": {
+        "font_family": "Roboto-Bold.ttf",
+        "color": "#94a3b8",
+        "text_align": "center",
+        "vertical_align": "center",
+        "text": "0 entries",
+        "font_size": 15,
+        "letter_spacing": 1
+      },
+      "data_feed": [
+        {
+          "id": "feed5",
+          "enabled": true,
+          "label": "Entry counter",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_entry",
+              "giveaway_winner",
+              "giveaway_sync"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "{pool_size|plural:entry,entries}",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "set_text",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed6",
+          "enabled": true,
+          "label": "Reset on New giveaway",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_clear"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "0 entries",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "set_text",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed7",
+          "enabled": true,
+          "label": "Show while open",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_start"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "show",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed8",
+          "enabled": true,
+          "label": "Hide when closed",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_stop"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "hide",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed9",
+          "enabled": true,
+          "label": "Loaded while open",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_sync"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [
+              {
+                "field": "accepting",
+                "op": "eq",
+                "value": "true"
+              }
+            ],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "show",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed10",
+          "enabled": true,
+          "label": "Loaded while closed",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_sync"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [
+              {
+                "field": "accepting",
+                "op": "eq",
+                "value": "false"
+              }
+            ],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "hide",
+            "options": {}
+          }
+        }
+      ],
+      "bindings": [],
+      "animations": {
+        "anim_in": "none",
+        "anim_out": "none",
+        "anim_in_ms": 300,
+        "anim_out_ms": 300,
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out"
+      },
+      "transforms": [],
+      "parent_id": "panel"
+    },
+    {
+      "id": "closed",
+      "type": "text",
+      "category": "Closed message",
+      "position": {
+        "x": 20,
+        "y": 76
+      },
+      "size": {
+        "w": 400,
+        "h": 26
+      },
+      "props": {
+        "font_family": "Roboto-Bold.ttf",
+        "color": "#fbbf24",
+        "text_align": "center",
+        "vertical_align": "center",
+        "text": "Entries closed",
+        "font_size": 15,
+        "letter_spacing": 1
+      },
+      "data_feed": [
+        {
+          "id": "feed11",
+          "enabled": true,
+          "label": "Entries closed",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_stop"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "show",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed12",
+          "enabled": true,
+          "label": "Entries open / cleared",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_start",
+              "giveaway_clear"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "hide",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed13",
+          "enabled": true,
+          "label": "Loaded while closed",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_sync"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [
+              {
+                "field": "accepting",
+                "op": "eq",
+                "value": "false"
+              }
+            ],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "show",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed14",
+          "enabled": true,
+          "label": "Loaded while open",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_sync"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [
+              {
+                "field": "accepting",
+                "op": "eq",
+                "value": "true"
+              }
+            ],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "hide",
+            "options": {}
+          }
+        }
+      ],
+      "bindings": [],
+      "animations": {
+        "anim_in": "fade",
+        "anim_out": "fade",
+        "anim_in_ms": 300,
+        "anim_out_ms": 300,
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out"
+      },
+      "transforms": [],
+      "parent_id": "panel",
+      "start_hidden": true
+    },
+    {
+      "id": "entrants",
+      "type": "list",
+      "category": "Entrant list",
+      "position": {
+        "x": 20,
+        "y": 112
+      },
+      "size": {
+        "w": 400,
+        "h": 488
+      },
+      "props": {
+        "max_items": 200,
+        "newest": "top",
+        "row_template": "{username}",
+        "row_gap": 4,
+        "add_animation": "slide side",
+        "remove_animation": "fade",
+        "row_lifetime_s": 0,
+        "row_background": "rgba(255,255,255,0.06)",
+        "row_padding": 6,
+        "row_radius": 6,
+        "font_size": 16,
+        "color": "#e2e8f0",
+        "font_family": "Roboto-Regular.ttf",
+        "source": "giveaway",
+        "source_event": "giveaway_entry",
+        "text_field": "username",
+        "value_field": "value",
+        "alert_type": "any"
+      },
+      "data_feed": [
+        {
+          "id": "feed15",
+          "enabled": true,
+          "label": "New entrant",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_entry"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "username",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "list_add",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed16",
+          "enabled": true,
+          "label": "Rebuild from the pool",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_sync",
+              "giveaway_winner"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "list_replace",
+            "options": {
+              "items_field": "pool_entries"
+            }
+          }
+        },
+        {
+          "id": "feed17",
+          "enabled": true,
+          "label": "New giveaway",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_clear"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "list_clear",
+            "options": {}
+          }
+        }
+      ],
+      "bindings": [],
+      "animations": {
+        "anim_in": "none",
+        "anim_out": "none",
+        "anim_in_ms": 300,
+        "anim_out_ms": 300,
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out"
+      },
+      "transforms": [],
+      "parent_id": "panel"
+    },
+    {
+      "id": "winner_panel",
+      "type": "container",
+      "category": "Winner",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "size": {
+        "w": 440,
+        "h": 620
+      },
+      "props": {
+        "background_color": "rgba(0,0,0,0.85)",
+        "border_radius": 16
+      },
+      "data_feed": [
+        {
+          "id": "feed18",
+          "enabled": true,
+          "label": "Show the winner",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_winner"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "show_for",
+            "options": {
+              "seconds": 8
+            }
+          }
+        }
+      ],
+      "bindings": [],
+      "animations": {
+        "anim_in": "fade",
+        "anim_out": "fade",
+        "anim_in_ms": 300,
+        "anim_out_ms": 600,
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out"
+      },
+      "transforms": [],
+      "start_hidden": true
+    },
+    {
+      "id": "winner_heading",
+      "type": "text",
+      "category": "Winner",
+      "position": {
+        "x": 20,
+        "y": 200
+      },
+      "size": {
+        "w": 400,
+        "h": 60
+      },
+      "props": {
+        "font_family": "Roboto-Bold.ttf",
+        "color": "#ffffff",
+        "text_align": "center",
+        "vertical_align": "center",
+        "text": "Congratulations!",
+        "font_size": 42
+      },
+      "data_feed": [],
+      "bindings": [],
+      "animations": {
+        "anim_in": "none",
+        "anim_out": "none",
+        "anim_in_ms": 300,
+        "anim_out_ms": 300,
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out"
+      },
+      "transforms": [],
+      "parent_id": "winner_panel"
+    },
+    {
+      "id": "winner_names",
+      "type": "text",
+      "category": "Winner",
+      "position": {
+        "x": 20,
+        "y": 268
+      },
+      "size": {
+        "w": 400,
+        "h": 150
+      },
+      "props": {
+        "font_family": "Roboto-Bold.ttf",
+        "color": "#a78bfa",
+        "text_align": "center",
+        "vertical_align": "top",
+        "text": "",
+        "font_size": 36,
+        "white_space": "pre-line"
+      },
+      "data_feed": [
+        {
+          "id": "feed19",
+          "enabled": true,
+          "label": "Winner names",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_winner"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "{winners|join:\n}",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "set_text",
+            "options": {}
+          }
+        },
+        {
+          "id": "feed20",
+          "enabled": true,
+          "label": "Pop in",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_winner"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "flash_class",
+            "options": {
+              "class_name": "sporePop",
+              "duration_ms": 700
+            }
+          }
+        }
+      ],
+      "bindings": [],
+      "animations": {
+        "anim_in": "none",
+        "anim_out": "none",
+        "anim_in_ms": 300,
+        "anim_out_ms": 300,
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out"
+      },
+      "transforms": [],
+      "parent_id": "winner_panel"
+    },
+    {
+      "id": "confetti",
+      "type": "confetti",
+      "category": "Confetti",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "size": {
+        "w": 440,
+        "h": 620
+      },
+      "props": {
+        "particle_count": 150,
+        "duration_s": 5,
+        "spread": 70,
+        "origin": "sides",
+        "particle_size": 10,
+        "gravity": 1,
+        "colors": "#7c3aed\n#2563eb\n#e11d48\n#16a34a\n#d97706\n#facc15"
+      },
+      "data_feed": [
+        {
+          "id": "feed21",
+          "enabled": true,
+          "label": "Burst on a winner",
+          "source": {
+            "kind": "event",
+            "events": [
+              "giveaway_winner"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "confetti_burst",
+            "options": {}
+          }
+        }
+      ],
+      "bindings": [],
+      "animations": {
+        "anim_in": "none",
+        "anim_out": "none",
+        "anim_in_ms": 300,
+        "anim_out_ms": 300,
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out"
+      },
+      "transforms": []
+    }
+  ],
+  "advanced_js": "",
+  "queued": false,
+  "duration_seconds": 5.0,
+  "streamdeck_options": {
+    "actions": {},
+    "description": ""
+  },
+  "canvas_transforms": []
+}

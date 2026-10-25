@@ -433,3 +433,81 @@
 
 /* btn-warning (timer Stop, Spin) */
 .help-doc .hm .hm-btn.hm-ssb-warnbtn { background: var(--color-warning); border-color: var(--color-warning); color: #fff; }
+
+/* ---- Poll widget render (behavior_blocks WIDGET_CSS .spore-poll*) ----- */
+
+.help-doc .hm-sspoll {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    max-width: 22rem;
+    padding: 12px 14px;
+    border-radius: 14px;
+    font-size: 13px;
+    color: var(--color-text-primary);
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--color-bg-base) 60%, transparent);
+    --hm-sspoll-grad: linear-gradient(90deg, var(--color-primary), color-mix(in srgb, var(--color-error) 70%, var(--color-primary)));
+}
+.help-doc .hm-sspoll-head { display: flex; align-items: center; gap: 6px; }
+.help-doc .hm-sspoll-title { flex: 1 1 auto; font-weight: 800; font-size: 15px; }
+.help-doc .hm-sspoll-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+    font-variant-numeric: tabular-nums;
+}
+.help-doc .hm-sspoll-chip.is-live::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-success);
+}
+.help-doc .hm-sspoll-timer,
+.help-doc .hm-sspoll-bar {
+    overflow: hidden;
+    background: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
+}
+.help-doc .hm-sspoll-timer { height: 3px; margin-top: -4px; border-radius: 2px; }
+.help-doc .hm-sspoll-bar { height: 9px; margin-top: 4px; border-radius: 9px; }
+.help-doc .hm-sspoll-timer > i,
+.help-doc .hm-sspoll-bar > i { display: block; height: 100%; border-radius: inherit; background: var(--hm-sspoll-grad); }
+.help-doc .hm-sspoll-opt.is-leader .hm-sspoll-bar > i { box-shadow: 0 0 10px color-mix(in srgb, var(--color-error) 60%, transparent); }
+.help-doc .hm-sspoll-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.help-doc .hm-sspoll-rank {
+    flex: none;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    font-size: 10px;
+    font-weight: 800;
+    background: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
+}
+.help-doc .hm-sspoll-opt.is-leader .hm-sspoll-rank { background: var(--color-primary); color: #fff; }
+.help-doc .hm-sspoll-name { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.help-doc .hm-sspoll-kw {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 10px;
+    font-weight: 700;
+    background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+}
+.help-doc .hm-sspoll-meta { margin-left: auto; flex: none; font-size: 11.5px; white-space: nowrap; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.help-doc .hm-sspoll-foot { display: flex; justify-content: space-between; gap: 10px; font-size: 10.5px; font-weight: 600; color: var(--color-text-muted); }

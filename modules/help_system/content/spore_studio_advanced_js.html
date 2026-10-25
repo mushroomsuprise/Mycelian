@@ -83,13 +83,14 @@
 <tbody>
 <tr><td><code>sporeShow(id)</code></td><td>Show the element and play its entrance animation</td></tr>
 <tr><td><code>sporeHide(id)</code></td><td>Play the exit animation, then hide it</td></tr>
-<tr><td><code>sporeSetText(id, value)</code></td><td>Set an element's text. Marquee copies are updated too.</td></tr>
+<tr><td><code>sporeSetText(id, value)</code></td><td>Set an element's text. Marquee copies are updated too. Words in <code>[[double brackets]]</code> are highlighted.</td></tr>
 <tr><td><code>sporePlayMediaAudio(id, opts)</code></td><td>Play the element's audio. <code>opts</code> may set <code>volume</code> (0–1) and <code>fade_in_ms</code>.</td></tr>
 <tr><td><code>sporeCounterAdjust(counterId, operation, delta, payload)</code></td><td><code>operation</code>: <code>increment</code>, <code>decrement</code>, <code>set</code>, <code>reset</code>. <code>delta</code>: <code>{ kind: "fixed", value: 1 }</code>, <code>{ kind: "random_int", min: 1, max: 5 }</code>, <code>{ kind: "random_float", min, max, decimals }</code>, or <code>{ kind: "data_source", source: "alert.amt_cheered", fallback: 0 }</code>. Respects Min, Max and progressive goals, saves if the counter persists, and sends <code>counter_changed</code> / <code>goal_reached</code>.</td></tr>
 <tr><td><code>sporeTimerStart(id)</code> / <code>sporeTimerPause(id)</code> / <code>sporeTimerReset(id)</code></td><td>Control a Timer element</td></tr>
 <tr><td><code>sporeListAdd(id, payload, literal)</code></td><td>Add a row to a List, built from <code>payload</code> or the literal text</td></tr>
 <tr><td><code>sporeListClear(id)</code></td><td>Remove every row</td></tr>
 <tr><td><code>sporeWheelSpin(id, payload)</code></td><td>Spin a Wheel. If <code>payload.label</code> matches a slice, that slice wins.</td></tr>
+<tr><td><code>sporeConfetti(id)</code></td><td>Fire one burst from a Confetti block, with its own settings</td></tr>
 <tr><td><code>sporeDbGet(path, callback)</code></td><td>Read a database document. <code>callback(data)</code> runs with the data, or <code>null</code> on error or after 8 seconds.</td></tr>
 <tr><td><code>sporeDbSet(path, data, callback)</code></td><td>Write a database document. <code>callback</code> is optional.</td></tr>
 <tr><td><code>sporeLoadStatsCache()</code></td><td>Reload session statistics, then refresh data displays and stat cards</td></tr>

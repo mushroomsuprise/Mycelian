@@ -36,6 +36,7 @@
                     <div class="hm-ss-block"><span class="hm-ss-block-icon">&#127916;</span>Video</div>
                   </div>
                   <div class="hm-ss-group"><div class="hm-ss-group-title">Widgets</div>
+                    <div class="hm-ss-block"><span class="hm-ss-block-icon">&#10024;</span>Confetti</div>
                     <div class="hm-ss-block"><span class="hm-ss-block-icon">?</span>Counter</div>
                     <div class="hm-ss-block"><span class="hm-ss-block-icon">&#9776;</span>List</div>
                     <div class="hm-ss-block"><span class="hm-ss-block-icon">&#10003;</span>Poll</div>
@@ -68,7 +69,7 @@
 <tbody>
 <tr><td><strong>Element</strong></td><td><strong>ID</strong> (unique; renaming updates bindings), <strong>Category</strong>, <strong>Type</strong> (read-only), <strong>Parent</strong> and <strong>Move to canvas</strong></td></tr>
 <tr><td><strong>Layout</strong></td><td><strong>X</strong>, <strong>Y</strong>, <strong>W</strong>, <strong>H</strong> in pixels. Nested blocks add <strong>Placement in container</strong> (3 × 3 anchor plus offset).</td></tr>
-<tr><td><strong>Visibility</strong></td><td><strong>Start hidden until shown</strong>. Turned on automatically while a Show binding exists, unless you change it.</td></tr>
+<tr><td><strong>Visibility</strong></td><td><strong>Start hidden until shown</strong>. Turned on automatically while a Show binding exists, unless you change it. On a Poll it means hidden until a poll runs.</td></tr>
 <tr><td><strong>Transformations</strong></td><td>Map a live value to <strong>Size</strong>, <strong>Move X/Y</strong>, <strong>Rotate</strong> or <strong>Skew X/Y</strong></td></tr>
 <tr><td><strong>Data feed</strong></td><td>Drive the block from events, live values or another template's output. See <a href="help:spore_studio_data_feed">Data feeds</a>.</td></tr>
 <tr><td><strong>Animations</strong></td><td><strong>Entrance</strong> / <strong>Exit</strong> (<code>none</code>, <code>fade</code>, <code>slideIn</code>, <code>slideOut</code>, <code>scaleIn</code>, <code>scaleOut</code>), durations (default 300 ms, 0–120000), <strong>Delay before entrance (ms)</strong> (0–120000), <strong>Easing</strong> (<code>ease</code>, <code>ease-in</code>, <code>ease-out</code>, <code>ease-in-out</code>, <code>linear</code>; default <code>ease-out</code>)</td></tr>
@@ -124,8 +125,12 @@
 <tbody>
 <tr><td><strong>Text</strong></td><td>Hello</td><td>The copy this block shows</td></tr>
 <tr><td>Text style</td><td>32, <code>#ffffff</code>, Arial, V-align top</td><td>See Text style settings above</td></tr>
+<tr><td><strong>Highlight color</strong></td><td>empty</td><td>Text color of highlighted words. Empty uses the normal text color.</td></tr>
+<tr><td><strong>Highlight background</strong></td><td>empty</td><td>Fill behind highlighted words, with slightly rounded corners. Empty for none.</td></tr>
 </tbody>
 </table></div>
+
+<p><strong>Highlights.</strong> Wrap words in double brackets to highlight them: <span class="hx-copy" data-copy="Type [[!enter]] to enter!">Type [[!enter]] to enter!</span> shows <em>!enter</em> in the highlight colors, without the brackets. This also works in text a Data feed writes, for example a <strong>Template</strong> of <code>Type [[{keyword}]] to enter!</code>. Set <strong>Highlight color</strong> or <strong>Highlight background</strong>; with both empty, highlighted words look like the rest of the text.</p>
 
 <p>For a number use <strong>Counter</strong>, and for a live value use <strong>Data display</strong>. A Data feed can still replace Text's copy (<em>Replace this text</em>).</p>
 
@@ -341,6 +346,25 @@
 
 <h2>Widgets</h2>
 
+<h3>Confetti</h3>
+
+<p>Throws a burst of confetti across the block. It is drawn inside the overlay, so it needs no internet connection. The block is see-through and pieces stay inside it, so size it to the area the confetti should cover. Default size 640 × 360. On the canvas it shows a still scatter of pieces in its colors; bursts play in Preview and OBS.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Burst from</strong></td><td>sides</td><td><code>sides</code>: two cannons from the bottom corners. <code>center</code>: one burst from the middle. <code>top</code>: falls from the top edge.</td></tr>
+<tr><td><strong>Pieces</strong></td><td>150</td><td>How many pieces one burst throws, 1–2000</td></tr>
+<tr><td><strong>Duration (seconds)</strong></td><td>5</td><td>How long pieces keep coming, 0.2–60. Pieces then fall and fade out.</td></tr>
+<tr><td><strong>Spread (degrees)</strong></td><td>70</td><td>How wide each cannon sprays, 5–360</td></tr>
+<tr><td><strong>Piece size (px)</strong></td><td>10</td><td>2–60</td></tr>
+<tr><td><strong>Gravity</strong></td><td>1</td><td>How fast pieces fall, 0–5. 1 is normal, 0 floats.</td></tr>
+<tr><td><strong>Colors</strong></td><td>six colors</td><td>One color per line, or comma separated</td></tr>
+</tbody>
+</table></div>
+
+<p>A new Confetti block starts with a Data feed on <strong>Giveaway winner</strong> that runs <em>Burst confetti</em>. Change the feed's events to celebrate something else, such as a follow or another template's <code>goal_reached</code>. Bursts can overlap. From Advanced JS: <code>sporeConfetti('id')</code>.</p>
+
 <h3>Counter</h3>
 
 <p>A number with a format, limits and optional database persistence. When it changes is set under <strong>Data feed</strong> (add, subtract, set or reset). Full guide: <a href="help:spore_studio_counters">Counters in Spore Studio</a>.</p>
@@ -383,7 +407,7 @@
     <tr><td>Text style</td><td>Arial, 18, white</td><td>Applies to every row</td></tr>
     <tr><td><strong>Row spacing (px)</strong></td><td>4</td><td>Space between rows, 0–64</td></tr>
     <tr><td><strong>Row background</strong> / <strong>Row padding (px)</strong> / <strong>Row corner radius (px)</strong></td><td>none / 0 / 0</td><td>Give each row its own pill or card look</td></tr>
-    <tr><td><strong>Add animation</strong></td><td>fade</td><td><code>none</code>, <code>fade</code>, <code>slide</code></td></tr>
+    <tr><td><strong>Add animation</strong></td><td>fade</td><td><code>none</code>, <code>fade</code>, <code>slide</code>, <code>slide side</code> (in from the left), <code>bounce</code></td></tr>
     <tr><td><strong>Remove animation</strong></td><td>fade</td><td><code>none</code> or <code>fade</code>. Used when a row expires or is pushed out.</td></tr>
     </tbody>
     </table></div>
@@ -391,6 +415,7 @@
   <div class="hx-tab-panel" data-panel="use">
     <ul>
       <li>Giveaway winners add one row per winner when the feed maps <code>{username}</code> or splits the <code>winners</code> field.</li>
+      <li><em>Replace all rows</em> rebuilds the whole list from a list in the data, such as the giveaway pool (<code>pool_entries</code>), without add animations. The built-in <code>giveaway</code> template uses it so its entrant list survives a refresh.</li>
       <li>A list can listen to another template's output, such as a wheel's result.</li>
       <li>Bindings: <strong>Add list row</strong> (with optional literal text) and <strong>Clear list</strong>.</li>
       <li>Advanced JS: <code>sporeListAdd(id, payload, literal)</code> and <code>sporeListClear(id)</code>.</li>
@@ -402,16 +427,67 @@
 
 <p>A live view of the poll set up in <a href="help:chatbot_polls">Chatbot → Polls</a> for this template. The widget does not collect votes. Options arrive sorted by votes, highest first.</p>
 
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-sspoll">
+          <div class="hm-sspoll-head"><span class="hm-sspoll-title">Vote now!</span><span class="hm-sspoll-chip is-live">1:15</span><span class="hm-marker" data-n="1"></span></div>
+          <div class="hm-sspoll-timer"><i style="width: 62%"></i></div>
+          <div class="hm-sspoll-opt is-leader">
+            <div class="hm-sspoll-row"><span class="hm-sspoll-rank">1</span><span class="hm-sspoll-name">Hollow Knight</span><span class="hm-sspoll-kw">#hollowknight</span><span class="hm-sspoll-meta">24 · 48%</span><span class="hm-marker" data-n="2"></span></div>
+            <div class="hm-sspoll-bar"><i style="width: 100%"></i></div>
+          </div>
+          <div class="hm-sspoll-opt">
+            <div class="hm-sspoll-row"><span class="hm-sspoll-rank">2</span><span class="hm-sspoll-name">Celeste</span><span class="hm-sspoll-kw">#celeste</span><span class="hm-sspoll-meta">16 · 32%</span></div>
+            <div class="hm-sspoll-bar"><i style="width: 67%"></i></div>
+          </div>
+          <div class="hm-sspoll-opt">
+            <div class="hm-sspoll-row"><span class="hm-sspoll-rank">3</span><span class="hm-sspoll-name">Balatro</span><span class="hm-sspoll-kw">#balatro</span><span class="hm-sspoll-meta">10 · 20%</span></div>
+            <div class="hm-sspoll-bar"><i style="width: 42%"></i></div>
+          </div>
+          <div class="hm-sspoll-foot"><span>Type a keyword in chat to vote</span><span>50 votes</span><span class="hm-marker" data-n="3"></span></div>
+        </div>
+      </div>
+      <figcaption>The Bars style during a timed poll, as in the built-in <code>poll</code> template.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <ol class="hx-annotations">
+      <li data-n="1"><strong>Title</strong> and a chip with the time left. An open-ended poll shows <em>Live</em>, and an ended one <em>Poll closed</em>. The thin bar under it shrinks as a timed poll runs.</li>
+      <li data-n="2">Rank number, name, chat keyword, then votes and share. The leader glows while voting is open.</li>
+      <li data-n="3"><strong>Footer note</strong> (while voting is open) and the total votes.</li>
+    </ol>
+    <p>Bars grow smoothly as votes arrive. When the poll ends, the winner turns the winner color with a trophy, and the other options fade.</p>
+  </div>
+</div>
+
 <div class="hx-tabs">
-  <div class="hx-tab-list"><button data-tab="show" class="is-active">What to show</button><button data-tab="rot">Rotator</button><button data-tab="win">Winner</button><button data-tab="style">Style</button></div>
+  <div class="hx-tab-list"><button data-tab="look" class="is-active">Style</button><button data-tab="show">What to show</button><button data-tab="rot">Rotator</button><button data-tab="win">Winner</button><button data-tab="style">Panel and bars</button></div>
+  <div class="hx-tab-panel" data-panel="look">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Style</strong></td><td>bars</td><td><code>bars</code>: the name above a bar. <code>inside</code>: thick bars with the labels inside. <code>cards</code>: side-by-side tiles that fill from the bottom, best for 2–4 options.</td></tr>
+    <tr><td><strong>Title</strong></td><td>empty</td><td>Heading at the top, such as the question. Empty for no title.</td></tr>
+    <tr><td><strong>Footer note</strong></td><td>Type a keyword in chat to vote</td><td>Small note under the options while voting is open. Empty hides it.</td></tr>
+    <tr><td><strong>Highlight the leader</strong></td><td>on</td><td>The option in the lead glows while voting is open</td></tr>
+    <tr><td><strong>Animate bars</strong></td><td>on</td><td>Bars grow smoothly instead of jumping</td></tr>
+    </tbody>
+    </table></div>
+    <p><strong>Cards</strong> always sit side by side, and as many as fit the width are shown. With both <strong>Show counts</strong> and <strong>Show percent</strong> on, a card shows only the percentage.</p>
+  </div>
   <div class="hx-tab-panel" data-panel="show">
     <div class="hx-table-wrap"><table>
     <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-    <tr><td><strong>Layout</strong></td><td>vertical</td><td><code>vertical</code> stacks options, <code>horizontal</code> places them side by side</td></tr>
-    <tr><td><strong>Display</strong></td><td>bars</td><td><code>bars</code> draws a fill behind each option, <code>text</code> lists names and counts only</td></tr>
-    <tr><td><strong>Items to show</strong></td><td>6</td><td>Never more than fully fit in the height. 0 uses that maximum.</td></tr>
-    <tr><td><strong>Show timer</strong> / <strong>Show timer bar</strong></td><td>on / on</td><td>Time left. Both stay hidden on a permanent poll.</td></tr>
+    <tr><td><strong>Show keywords</strong></td><td>on</td><td>Each option's chat keyword, so viewers know what to type</td></tr>
+    <tr><td><strong>Show rank numbers</strong></td><td>off</td><td>Numbers the options 1, 2, 3 in vote order (Bars and Inside)</td></tr>
+    <tr><td><strong>Show total votes</strong></td><td>on</td><td>Total in the footer</td></tr>
+    <tr><td><strong>Layout</strong></td><td>vertical</td><td><code>vertical</code> stacks options, <code>horizontal</code> places them side by side. Cards are always side by side.</td></tr>
+    <tr><td><strong>Display</strong></td><td>bars</td><td><code>bars</code> draws a bar for each option, <code>text</code> lists names and counts only (Bars style only)</td></tr>
+    <tr><td><strong>Items to show</strong></td><td>6</td><td>Never more than fully fit. 0 uses that maximum.</td></tr>
+    <tr><td><strong>Show timer</strong> / <strong>Show timer bar</strong></td><td>on / on</td><td>The countdown chip (or <em>Live</em>) and the thin timer bar. The bar only shows on a timed poll.</td></tr>
     <tr><td><strong>Show counts</strong> / <strong>Show percent</strong></td><td>on / on</td><td>Vote total and share on each option</td></tr>
     </tbody>
     </table></div>
@@ -431,6 +507,8 @@
     <div class="hx-table-wrap"><table>
     <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
+    <tr><td><strong>Winner effect</strong></td><td>glow</td><td>How the winning option stands out after the poll ends: <code>glow</code>, <code>pulse</code> or <code>none</code></td></tr>
+    <tr><td><strong>Dim other options</strong></td><td>on</td><td>Fades the options that did not win</td></tr>
     <tr><td><strong>After a winner</strong></td><td>highlight</td><td><code>highlight</code> marks winners in the full list, <code>winner_only</code> clears the list down to the tied winners</td></tr>
     <tr><td><strong>Autohide after winner (seconds)</strong></td><td>0</td><td>Above 0, the widget is hidden whenever no poll is running. After a winner it stays up this long, then hides. 0 leaves the result up.</td></tr>
     </tbody>
@@ -442,11 +520,21 @@
     <tbody>
     <tr><td><strong>Size</strong> / <strong>Color</strong> / <strong>Font</strong> / <strong>Bold</strong></td><td>22 / white / Arial / off</td><td>Text style</td></tr>
     <tr><td><strong>Row spacing (px)</strong></td><td>8</td><td>Gap between options</td></tr>
-    <tr><td><strong>Background</strong> / <strong>Bar color</strong> / <strong>Track color</strong> / <strong>Winner color</strong></td><td>dark card / purple / faint / gold</td><td>Fills and the winner mark</td></tr>
+    <tr><td><strong>Background</strong></td><td>dark card</td><td>Panel fill</td></tr>
+    <tr><td><strong>Padding (px)</strong> / <strong>Corner radius (px)</strong></td><td>16 / 16</td><td>Space inside the panel and its rounded corners</td></tr>
+    <tr><td><strong>Border width (px)</strong> / <strong>Border color</strong></td><td>0 / faint white</td><td>Panel outline. 0 for none.</td></tr>
+    <tr><td><strong>Panel shadow</strong></td><td>on</td><td>Soft shadow under the panel</td></tr>
+    <tr><td><strong>Bar color</strong> / <strong>Bar gradient color</strong></td><td>purple / empty</td><td>Fill of the bars. A gradient color blends from the bar color into it; empty keeps the bar solid.</td></tr>
+    <tr><td><strong>Bar height (px)</strong> / <strong>Bar corner radius (px)</strong></td><td>12 / 12</td><td>Thickness of the bars (Bars style) and how round the bars and cards are</td></tr>
+    <tr><td><strong>Track color</strong> / <strong>Winner color</strong></td><td>faint / gold</td><td>Unfilled part of a bar, and the winner mark</td></tr>
     </tbody>
     </table></div>
   </div>
 </div>
+
+<p><strong>Start hidden until shown</strong> on a Poll keeps it hidden until a poll runs, then reveals it with its entrance animation. When the overlay loads it asks Mycelian for the current poll, so a refreshed browser source shows the live poll straight away. It only paints this template's poll, even when a Data feed drives it.</p>
+
+<p>Exposed Poll settings appear in Source Settings; Style, Winner effect, Layout, Display, Rotator animation and After a winner appear there as dropdowns. The built-in <code>poll</code> template uses the Bars style with the title <em>Vote now!</em>, rank numbers and a purple-to-pink gradient, at 460 × 480.</p>
 
 <h3>Progress bar</h3>
 

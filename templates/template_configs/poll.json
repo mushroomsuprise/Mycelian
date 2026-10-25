@@ -11,7 +11,7 @@
             "type": "number",
             "id": "DesignWidth",
             "label": "Design Width",
-            "value": 300,
+            "value": 460,
             "min": 50,
             "max": 7680,
             "description": "Logical canvas width in pixels."
@@ -20,7 +20,7 @@
             "type": "number",
             "id": "DesignHeight",
             "label": "Design Height",
-            "value": 300,
+            "value": 480,
             "min": 50,
             "max": 4320,
             "description": "Logical canvas height in pixels."
@@ -78,7 +78,7 @@
             "type": "color",
             "id": "poll1_track_color",
             "label": "poll1 track color",
-            "value": "rgba(255,255,255,0.15)",
+            "value": "rgba(255,255,255,0.12)",
             "description": "Track Color for 'poll1'."
         },
         {
@@ -98,18 +98,159 @@
             "description": "Font Size for 'poll1' (pixels)."
         },
         {
-            "type": "text",
-            "id": "poll1_layout",
-            "label": "poll1 layout",
-            "value": "vertical",
-            "description": "Layout for 'poll1'."
+            "type": "number",
+            "id": "poll1_border_radius",
+            "label": "poll1 border radius",
+            "value": 18,
+            "min": 0,
+            "max": 4096,
+            "description": "Border Radius for 'poll1' (pixels)."
+        },
+        {
+            "type": "number",
+            "id": "poll1_border_width",
+            "label": "poll1 border width",
+            "value": 1,
+            "min": 0,
+            "max": 4096,
+            "description": "Border Width for 'poll1' (pixels)."
+        },
+        {
+            "type": "color",
+            "id": "poll1_border_color",
+            "label": "poll1 border color",
+            "value": "rgba(255,255,255,0.08)",
+            "description": "Border color for 'poll1'."
+        },
+        {
+            "type": "select",
+            "id": "poll1_style",
+            "label": "poll1 style",
+            "value": "bars",
+            "description": "Style for 'poll1'.",
+            "options": [
+                "bars",
+                "inside",
+                "cards"
+            ]
         },
         {
             "type": "text",
+            "id": "poll1_title",
+            "label": "poll1 title",
+            "value": "Vote now!",
+            "description": "Title for 'poll1'."
+        },
+        {
+            "type": "text",
+            "id": "poll1_foot_text",
+            "label": "poll1 foot text",
+            "value": "Type a keyword in chat to vote",
+            "description": "Foot Text for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_show_keywords",
+            "label": "poll1 show keywords",
+            "value": true,
+            "description": "Show Keywords for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_show_rank",
+            "label": "poll1 show rank",
+            "value": true,
+            "description": "Show Rank for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_show_total",
+            "label": "poll1 show total",
+            "value": true,
+            "description": "Show Total for 'poll1'."
+        },
+        {
+            "type": "number",
+            "id": "poll1_bar_height",
+            "label": "poll1 bar height",
+            "value": 12.0,
+            "description": "Bar Height for 'poll1'."
+        },
+        {
+            "type": "number",
+            "id": "poll1_bar_radius",
+            "label": "poll1 bar radius",
+            "value": 12.0,
+            "description": "Bar Radius for 'poll1'."
+        },
+        {
+            "type": "color",
+            "id": "poll1_bar_color_2",
+            "label": "poll1 bar color 2",
+            "value": "#ec4899",
+            "description": "Bar Color 2 for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_highlight_leader",
+            "label": "poll1 highlight leader",
+            "value": true,
+            "description": "Highlight Leader for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_animate_bars",
+            "label": "poll1 animate bars",
+            "value": true,
+            "description": "Animate Bars for 'poll1'."
+        },
+        {
+            "type": "select",
+            "id": "poll1_winner_effect",
+            "label": "poll1 winner effect",
+            "value": "glow",
+            "description": "Winner Effect for 'poll1'.",
+            "options": [
+                "glow",
+                "pulse",
+                "none"
+            ]
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_dim_losers",
+            "label": "poll1 dim losers",
+            "value": true,
+            "description": "Dim Losers for 'poll1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "poll1_panel_shadow",
+            "label": "poll1 panel shadow",
+            "value": true,
+            "description": "Panel Shadow for 'poll1'."
+        },
+        {
+            "type": "select",
+            "id": "poll1_layout",
+            "label": "poll1 layout",
+            "value": "vertical",
+            "description": "Layout for 'poll1'.",
+            "options": [
+                "vertical",
+                "horizontal"
+            ]
+        },
+        {
+            "type": "select",
             "id": "poll1_display_mode",
             "label": "poll1 display mode",
             "value": "bars",
-            "description": "Display Mode for 'poll1'."
+            "description": "Display Mode for 'poll1'.",
+            "options": [
+                "bars",
+                "text"
+            ]
         },
         {
             "type": "number",
@@ -133,11 +274,17 @@
             "description": "Rotator Seconds for 'poll1'."
         },
         {
-            "type": "text",
+            "type": "select",
             "id": "poll1_rotator_animation",
             "label": "poll1 rotator animation",
             "value": "slide horizontal",
-            "description": "Rotator Animation for 'poll1'."
+            "description": "Rotator Animation for 'poll1'.",
+            "options": [
+                "slide horizontal",
+                "slide vertical",
+                "fade",
+                "none"
+            ]
         },
         {
             "type": "number",
@@ -175,11 +322,15 @@
             "description": "Show Percent for 'poll1'."
         },
         {
-            "type": "text",
+            "type": "select",
             "id": "poll1_winner_mode",
             "label": "poll1 winner mode",
             "value": "highlight",
-            "description": "Winner Mode for 'poll1'."
+            "description": "Winner Mode for 'poll1'.",
+            "options": [
+                "highlight",
+                "winner_only"
+            ]
         },
         {
             "type": "number",
@@ -241,7 +392,7 @@
             "type": "color",
             "id": "poll1_track_color",
             "label": "poll1 track color",
-            "value": "rgba(255,255,255,0.15)",
+            "value": "rgba(255,255,255,0.12)",
             "description": "Track Color for 'poll1'."
         },
         {

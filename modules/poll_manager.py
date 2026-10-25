@@ -263,6 +263,10 @@ _WIDGET_STYLE_DEFAULTS = {
     "show_counts": True,
     "show_percent": True,
     "winner_mode": "highlight",
+    "style": "bars",
+    "title": "",
+    "bar_color_2": "",
+    "show_keywords": True,
 }
 
 

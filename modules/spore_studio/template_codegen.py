@@ -247,6 +247,29 @@ _NON_STYLE_PROP_KEYS = frozenset(
         "rotator_animation_ms",
         "show_counts",
         "show_percent",
+        "style",
+        "title",
+        "show_keywords",
+        "show_rank",
+        "show_total",
+        "foot_text",
+        "bar_height",
+        "bar_radius",
+        "bar_color_2",
+        "highlight_leader",
+        "animate_bars",
+        "winner_effect",
+        "dim_losers",
+        "panel_shadow",
+        "accent_color",
+        "accent_background",
+        "particle_count",
+        "duration_s",
+        "spread",
+        "origin",
+        "particle_size",
+        "gravity",
+        "colors",
     }
 )
 
@@ -555,6 +578,11 @@ def _element_style(
     declarations.extend(
         _css_kv(element.get("props") or {}, font_map=font_map, element=element)
     )
+    props = element.get("props") or {}
+    if props.get("accent_color") not in (None, ""):
+        declarations.append(("--spore-accent", str(props["accent_color"])))
+    if props.get("accent_background") not in (None, ""):
+        declarations.append(("--spore-accent-bg", str(props["accent_background"])))
     return "; ".join(f"{k}: {v}" for k, v in declarations)
 
 
@@ -806,6 +834,20 @@ def _render_widget_element(
             + '<div class="spore-list-rows"></div></div>'
         )
 
+    if etype == "confetti":
+        return (
+            open_tag
+            + 'data-spore-type="confetti" '
+            + f'data-spore-confetti-count="{_widget_jinja(eid, "particle_count", _num_or(props.get("particle_count"), 150))}" '
+            + f'data-spore-confetti-duration="{_widget_jinja(eid, "duration_s", _num_or(props.get("duration_s"), 5))}" '
+            + f'data-spore-confetti-spread="{_widget_jinja(eid, "spread", _num_or(props.get("spread"), 70))}" '
+            + f'data-spore-confetti-origin="{_widget_jinja(eid, "origin", str(props.get("origin") or "sides"))}" '
+            + f'data-spore-confetti-size="{_widget_jinja(eid, "particle_size", _num_or(props.get("particle_size"), 10))}" '
+            + f'data-spore-confetti-gravity="{_widget_jinja(eid, "gravity", _num_or(props.get("gravity"), 1))}" '
+            + f'data-spore-confetti-colors="{_widget_jinja(eid, "colors", str(props.get("colors") or ""))}">'
+            + '<canvas class="spore-confetti-canvas"></canvas></div>'
+        )
+
     if etype == "wheel":
         raw_segments = element.get("wheel_segments")
         segments: List[Dict[str, Any]] = []
@@ -953,12 +995,28 @@ def _render_widget_element(
             + f'data-spore-poll-bg="{_widget_jinja(eid, "background_color", str(props.get("background_color") or "rgba(15,23,42,0.85)"))}" '
             + f'data-spore-poll-bar="{_widget_jinja(eid, "bar_color", str(props.get("bar_color") or "#a855f7"))}" '
             + f'data-spore-poll-track="{_widget_jinja(eid, "track_color", str(props.get("track_color") or "rgba(255,255,255,0.15)"))}" '
-            + f'data-spore-poll-winner="{_widget_jinja(eid, "winner_color", str(props.get("winner_color") or "#facc15"))}">'
+            + f'data-spore-poll-winner="{_widget_jinja(eid, "winner_color", str(props.get("winner_color") or "#facc15"))}" '
+            + f'data-spore-poll-style="{_widget_jinja(eid, "style", str(props.get("style") or "bars"))}" '
+            + f'data-spore-poll-title="{_widget_jinja(eid, "title", str(props.get("title") or ""))}" '
+            + f'data-spore-poll-keywords="{_widget_jinja(eid, "show_keywords", _flag("show_keywords", True))}" '
+            + f'data-spore-poll-rank="{_widget_jinja(eid, "show_rank", _flag("show_rank", False))}" '
+            + f'data-spore-poll-total="{_widget_jinja(eid, "show_total", _flag("show_total", True))}" '
+            + f'data-spore-poll-foot-text="{_widget_jinja(eid, "foot_text", str(props.get("foot_text") or ""))}" '
+            + f'data-spore-poll-bar-height="{_widget_jinja(eid, "bar_height", _num_or(props.get("bar_height"), 12))}" '
+            + f'data-spore-poll-bar-radius="{_widget_jinja(eid, "bar_radius", _num_or(props.get("bar_radius"), 12))}" '
+            + f'data-spore-poll-bar2="{_widget_jinja(eid, "bar_color_2", str(props.get("bar_color_2") or ""))}" '
+            + f'data-spore-poll-leader="{_widget_jinja(eid, "highlight_leader", _flag("highlight_leader", True))}" '
+            + f'data-spore-poll-animate="{_widget_jinja(eid, "animate_bars", _flag("animate_bars", True))}" '
+            + f'data-spore-poll-winner-fx="{_widget_jinja(eid, "winner_effect", str(props.get("winner_effect") or "glow"))}" '
+            + f'data-spore-poll-dim="{_widget_jinja(eid, "dim_losers", _flag("dim_losers", True))}" '
+            + f'data-spore-poll-shadow="{_widget_jinja(eid, "panel_shadow", _flag("panel_shadow", True))}">'
+            + '<div class="spore-poll-head" hidden><div class="spore-poll-title"></div><div class="spore-poll-chip" hidden></div></div>'
             + '<div class="spore-poll-timer" hidden>'
-            + '<div class="spore-poll-timer-text"></div>'
             + '<div class="spore-poll-timer-track"><div class="spore-poll-timer-fill"></div></div>'
             + "</div>"
-            + '<div class="spore-poll-options"></div></div>'
+            + '<div class="spore-poll-options"></div>'
+            + '<div class="spore-poll-foot" hidden><span class="spore-poll-foot-text"></span><span class="spore-poll-total"></span></div>'
+            + "</div>"
         )
 
     return None
@@ -2206,7 +2264,8 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
     return base
 
 
-_WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[str, str]]] = {
+# (key, kind) or (key, "select", options)
+_WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[Any, ...]]] = {
     "list": [
         ("max_items", "number"),
         ("newest", "text"),
@@ -2262,19 +2321,42 @@ _WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[str, str]]] = {
         ("value_color", "color"),
         ("label_color", "color"),
     ],
+    "confetti": [
+        ("particle_count", "number"),
+        ("duration_s", "number"),
+        ("spread", "number"),
+        ("origin", "select", ["sides", "center", "top"]),
+        ("particle_size", "number"),
+        ("gravity", "number"),
+        ("colors", "text"),
+    ],
     "poll": [
-        ("layout", "text"),
-        ("display_mode", "text"),
+        ("style", "select", ["bars", "inside", "cards"]),
+        ("title", "text"),
+        ("foot_text", "text"),
+        ("show_keywords", "checkbox"),
+        ("show_rank", "checkbox"),
+        ("show_total", "checkbox"),
+        ("bar_height", "number"),
+        ("bar_radius", "number"),
+        ("bar_color_2", "color"),
+        ("highlight_leader", "checkbox"),
+        ("animate_bars", "checkbox"),
+        ("winner_effect", "select", ["glow", "pulse", "none"]),
+        ("dim_losers", "checkbox"),
+        ("panel_shadow", "checkbox"),
+        ("layout", "select", ["vertical", "horizontal"]),
+        ("display_mode", "select", ["bars", "text"]),
         ("max_items", "number"),
         ("rotator_enabled", "checkbox"),
         ("rotator_seconds", "number"),
-        ("rotator_animation", "text"),
+        ("rotator_animation", "select", ["slide horizontal", "slide vertical", "fade", "none"]),
         ("rotator_animation_ms", "number"),
         ("show_timer", "checkbox"),
         ("show_timer_bar", "checkbox"),
         ("show_counts", "checkbox"),
         ("show_percent", "checkbox"),
-        ("winner_mode", "text"),
+        ("winner_mode", "select", ["highlight", "winner_only"]),
         ("autohide_seconds", "number"),
         ("font_size", "number"),
         ("color", "color"),
@@ -2301,7 +2383,7 @@ def _append_widget_config_fields(
         return
     props = element.get("props") if isinstance(element.get("props"), dict) else {}
     label_base = str(element.get("id") or eid)
-    for key, kind in fields:
+    for key, kind, *extra in fields:
         if not _expose_field(element, key):
             continue
         value = props.get(key)
@@ -2314,15 +2396,16 @@ def _append_widget_config_fields(
                 stored = 0
         else:
             stored = "" if value is None else str(value)
-        elements_out.append(
-            {
-                "type": kind,
-                "id": f"{eid}_{key}",
-                "label": f"{label_base} {key.replace('_', ' ')}",
-                "value": stored,
-                "description": f"{key.replace('_', ' ').title()} for '{label_base}'.",
-            }
-        )
+        field = {
+            "type": kind,
+            "id": f"{eid}_{key}",
+            "label": f"{label_base} {key.replace('_', ' ')}",
+            "value": stored,
+            "description": f"{key.replace('_', ' ').title()} for '{label_base}'.",
+        }
+        if kind == "select" and extra:
+            field["options"] = list(extra[0])
+        elements_out.append(field)
 
 
 def _clone_dynamic_controls(dc: Dict[str, Any]) -> Dict[str, Any]:

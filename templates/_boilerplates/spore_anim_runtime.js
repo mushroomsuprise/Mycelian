@@ -77,6 +77,8 @@
         function sporeShow(id, override) {
             var el = document.getElementById(id);
             if (!el) { return; }
+            /* A show cancels a hide whose fade-out is still running. */
+            el._sporeVisToken = (el._sporeVisToken || 0) + 1;
             el.removeAttribute('data-spore-hidden');
             var cfg = sporeReadAnimConfig(el, override);
             var run = function () { sporeAnimateIn(el, override, null); };
@@ -95,6 +97,9 @@
             } else {
                 au = el.querySelector('audio');
             }
+            /* Already hidden: nothing to fade (audio still gets paused below). */
+            if (!au && el.getAttribute('data-spore-hidden') === 'true') { return; }
+            var token = el._sporeVisToken = (el._sporeVisToken || 0) + 1;
             function applyHidden() {
                 var cfg = sporeReadAnimConfig(el, override);
                 var cls = sporeAnimClassFor(cfg.animOut, 'out');
@@ -103,7 +108,7 @@
                     return;
                 }
                 sporeAnimateOut(el, override, function () {
-                    el.setAttribute('data-spore-hidden', 'true');
+                    if (el._sporeVisToken === token) { el.setAttribute('data-spore-hidden', 'true'); }
                 });
             }
             if (!au) {

@@ -164,7 +164,10 @@ GP_CSS = """
 .gp-widget-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
 .gp-widget-top span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gp-widget-track { height: 7px; border-radius: 4px; overflow: hidden; }
-.gp-widget-fill { height: 100%; }
+.gp-widget-fill { height: 100%; border-radius: inherit; }
+.gp-widget-title { font-weight: 800; font-size: .9rem; margin-bottom: 8px; }
+.gp-widget-kw { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .62rem; font-weight: 700; padding: 0 5px;
+    margin-left: 6px; border-radius: 4px; background: rgba(255,255,255,0.12); }
 .gp-picker.q-field { width: 190px; }
 """
 
@@ -208,6 +211,15 @@ def overlay_url(template: str) -> str:
     except Exception:
         pass
     return f"http://{host}:{port}/{template}"
+
+
+def open_in_spore_studio(template: str) -> None:
+    from ..help_system.contextual_help import navigate_to_main_tab
+    from .spore_studio.editor_view import open_template
+
+    navigate_to_main_tab("Spore Studio")
+    if template:
+        open_template(template)
 
 
 def copy_text(text: str, message: str = "Copied") -> None:

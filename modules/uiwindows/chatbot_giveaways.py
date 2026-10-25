@@ -19,7 +19,7 @@ from nicegui import ui
 from ..giveaway_manager import DEFAULT_CONFIG, format_winners_message, get_giveaway_manager
 from ..notification_engine import notify
 from ..ui_timer import layout_schedule
-from .chatbot_gp_styles import avatar_color, card, copy_text, esc, icon, inject_styles, overlay_rows, plural, toggle
+from .chatbot_gp_styles import avatar_color, card, copy_text, esc, icon, inject_styles, open_in_spore_studio, overlay_rows, plural, toggle
 from .chatbot_gp_styles import ago as _ago
 from .editor_variables import VariableKit, raw_html
 from .tab_visibility import chatbot_subtab_hidden, on_chatbot_subtab_shown
@@ -497,12 +497,11 @@ class GiveawaysPanel:
     # -- overlay -------------------------------------------------------------------
 
     def _overlay_card(self) -> None:
-        from .customsources import open_source_settings
-
-        _head, body = card("Overlay", "cast", OVERLAY_TEMPLATE)
+        _head, body = card("Overlay", "cast", "Spore Studio")
         with body:
-            ui.label("Shows the keyword, entrants and winners on stream.").classes("gp-row")
-            overlay_rows(OVERLAY_TEMPLATE, lambda: open_source_settings(OVERLAY_TEMPLATE), "Customize look", "palette")
+            ui.label("Shows the keyword, entrants and winners on stream, with confetti for the winner. "
+                     "Change its look in Spore Studio.").classes("gp-row")
+            overlay_rows(OVERLAY_TEMPLATE, lambda: open_in_spore_studio(OVERLAY_TEMPLATE), "Edit in Spore Studio", "auto_awesome")
 
     # -- actions ---------------------------------------------------------------------
 

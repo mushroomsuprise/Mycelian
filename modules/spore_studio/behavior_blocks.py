@@ -941,9 +941,15 @@ WIDGET_CSS = """
 .spore-list-row.spore-list-in-fade { animation: sporeListIn 0.35s ease-out; }
 .spore-list-row.spore-list-in-slide { animation: sporeListSlide 0.35s ease-out; }
 .spore-list-row.spore-list-out-fade { animation: sporeListOut 0.3s ease-in forwards; }
+.spore-list-row.spore-list-in-side { animation: sporeListSide 0.35s ease-out; }
+.spore-list-row.spore-list-in-bounce { animation: sporeListBounce 0.55s cubic-bezier(.2,1.4,.4,1); }
+@keyframes sporeListSide { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: none; } }
+@keyframes sporeListBounce { 0% { opacity: 0; transform: scale(0.6); } 70% { opacity: 1; transform: scale(1.06); } 100% { transform: scale(1); } }
 @keyframes sporeListOut { from { opacity: 1; } to { opacity: 0; } }
 @keyframes sporeListIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sporeListSlide { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.spore-confetti { pointer-events: none; overflow: hidden; }
+.spore-confetti-canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
 .spore-wheel { position: relative; overflow: visible; }
 .spore-wheel-rotor {
   position: relative; z-index: 1; width: 100%; height: 100%;
@@ -981,16 +987,28 @@ WIDGET_CSS = """
 .spore-stat-value { line-height: 1.1; }
 .spore-stat-label, .spore-stat-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .spore-poll {
+  --sp-bar: #a855f7; --sp-bar2: #a855f7; --sp-track: rgba(255,255,255,0.15); --sp-win: #facc15;
+  --sp-barh: 12px; --sp-radius: 12px;
   display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
-  padding: 8px; gap: 6px;
+  padding: 14px 16px; gap: 10px;
 }
-.spore-poll-timer { display: flex; flex-direction: column; gap: 4px; font-size: 0.75em; line-height: 1.2; }
+.spore-poll.has-shadow { box-shadow: 0 10px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08); }
+.spore-poll-head { display: flex; align-items: center; gap: 0.5em; min-width: 0; }
+.spore-poll-head[hidden], .spore-poll-chip[hidden], .spore-poll-foot[hidden],
+.spore-poll-kw[hidden], .spore-poll-meta[hidden] { display: none !important; }
+.spore-poll-title { flex: 1 1 auto; min-width: 0; font-weight: 800; font-size: 1.05em; line-height: 1.15; overflow-wrap: anywhere; }
+.spore-poll-title:empty { display: none; }
+.spore-poll-chip { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 0.4em; padding: 0.2em 0.65em; border-radius: 999px;
+  font-size: 0.62em; font-weight: 700; white-space: nowrap; background: rgba(255,255,255,0.1); font-variant-numeric: tabular-nums; }
+.spore-poll-chip.is-live::before { content: ''; width: 0.6em; height: 0.6em; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 0.2em rgba(34,197,94,0.3); }
+.spore-poll-timer { display: flex; flex-direction: column; margin-top: -4px; }
 .spore-poll-timer[hidden] { display: none !important; }
-.spore-poll-timer-track { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.15); overflow: hidden; }
-.spore-poll-timer-fill { height: 100%; width: 0; border-radius: 3px; }
+.spore-poll-timer-text { display: none; }
+.spore-poll-timer-track { height: 4px; border-radius: 2px; background: var(--sp-track); overflow: hidden; }
+.spore-poll-timer-fill { height: 100%; width: 0; border-radius: 2px; background: linear-gradient(90deg, var(--sp-bar), var(--sp-bar2)); }
 .spore-poll-options { position: relative; overflow: hidden; min-height: 0; }
 .spore-poll-page { display: flex; flex-direction: column; width: 100%; }
-.spore-poll-page.is-horizontal { flex-direction: row; align-items: stretch; }
+.spore-poll-page.is-horizontal { flex-direction: row; align-items: stretch; height: 100%; }
 .spore-poll-page.is-exiting {
   position: absolute; left: 0; right: 0; top: 0; pointer-events: none;
 }
@@ -1006,17 +1024,60 @@ WIDGET_CSS = """
 @keyframes sporePollSlideYOut { from { transform: translateY(0); } to { transform: translateY(-100%); } }
 @keyframes sporePollFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sporePollFadeOut { from { opacity: 1; } to { opacity: 0; } }
-.spore-poll-option { min-width: 0; flex: 0 0 auto; }
+@keyframes sporePollPulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.35); } }
+.spore-poll-option { position: relative; min-width: 0; flex: 0 0 auto; transition: opacity 0.4s ease; }
 .spore-poll-page.is-horizontal .spore-poll-option { flex: 1 1 0; }
-.spore-poll-name, .spore-poll-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.spore-poll-meta { opacity: 0.85; margin-left: 0.4em; font-size: 0.85em; }
-.spore-poll-bar { height: 8px; margin-top: 4px; border-radius: 4px; overflow: hidden; }
-.spore-poll-bar-fill { height: 100%; width: 0; border-radius: 4px; }
-.spore-poll-option.is-winner .spore-poll-name { font-weight: 700; }
+.spore-poll-row { display: flex; align-items: baseline; gap: 0.4em; min-width: 0; }
+.spore-poll-name { flex: 0 1 auto; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.spore-poll-kw { flex: 0 12 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.62em; font-weight: 700; padding: 0.15em 0.5em;
+  border-radius: 0.4em; background: rgba(255,255,255,0.1); opacity: 0.9; white-space: nowrap; }
+.spore-poll-meta { margin-left: auto; flex: none; padding-left: 0.4em; font-size: 0.82em; opacity: 0.9; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.spore-poll-rank { flex: none; align-self: center; width: 1.4em; height: 1.4em; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.62em; font-weight: 800; background: rgba(255,255,255,0.12); }
+.spore-poll-bar { height: var(--sp-barh); margin-top: 0.3em; border-radius: var(--sp-radius); background: var(--sp-track); overflow: hidden; }
+.spore-poll-bar-fill { height: 100%; width: var(--sp-fill, 0%); border-radius: inherit; background: linear-gradient(90deg, var(--sp-bar), var(--sp-bar2)); }
+.spore-poll.is-animated .spore-poll-bar-fill { transition: width 0.6s cubic-bezier(.2,.8,.2,1), height 0.6s cubic-bezier(.2,.8,.2,1); }
+.spore-poll-foot { display: flex; justify-content: space-between; gap: 1em; font-size: 0.62em; font-weight: 600; opacity: 0.75; }
+.spore-poll-total { margin-left: auto; white-space: nowrap; }
+/* Leader while voting, winner after. */
+.spore-poll.is-leader-on:not(.is-ended) .spore-poll-option.is-leader .spore-poll-bar-fill { box-shadow: 0 0 14px var(--sp-bar2); }
+.spore-poll.is-leader-on:not(.is-ended) .spore-poll-option.is-leader .spore-poll-rank { background: var(--sp-bar); }
+.spore-poll-option.is-winner .spore-poll-name { color: var(--sp-win); font-weight: 800; }
+.spore-poll-option.is-winner .spore-poll-name::before { content: '\\1F3C6  '; }
+.spore-poll-option.is-winner .spore-poll-bar-fill { background: var(--sp-win); }
+.spore-poll.fx-glow .spore-poll-option.is-winner .spore-poll-bar-fill { box-shadow: 0 0 22px var(--sp-win); }
+.spore-poll.fx-pulse .spore-poll-option.is-winner .spore-poll-bar-fill { animation: sporePollPulse 1.4s ease-in-out infinite; }
+.spore-poll.is-ended.is-dim-losers .spore-poll-option:not(.is-winner) { opacity: 0.45; }
+/* Inside: thick bars with the labels on top. */
+.spore-poll.is-style-inside .spore-poll-bar { height: 2.1em; margin: 0; }
+.spore-poll.is-style-inside .spore-poll-row { position: absolute; left: 0; right: 0; top: 0; height: 2.1em; align-items: center; padding: 0 0.7em;
+  z-index: 1; text-shadow: 0 1px 2px rgba(0,0,0,0.5); box-sizing: border-box; }
+.spore-poll.is-style-inside .spore-poll-option.is-winner .spore-poll-name,
+.spore-poll.is-style-cards .spore-poll-option.is-winner .spore-poll-name { color: inherit; }
+/* Cards: side-by-side tiles, the fill rises from the bottom. */
+.spore-poll.is-style-cards .spore-poll-option { border-radius: var(--sp-radius); background: var(--sp-track); overflow: hidden; display: flex; flex-direction: column;
+  justify-content: flex-end; min-height: 4.5em; padding: 0.5em; box-sizing: border-box; }
+.spore-poll.is-style-cards .spore-poll-row { position: relative; z-index: 1; flex-direction: column; align-items: flex-start; gap: 0.15em; }
+.spore-poll.is-style-cards .spore-poll-meta { order: -1; margin: 0; padding: 0; font-size: 1.15em; font-weight: 900; opacity: 1; }
+.spore-poll.is-style-cards .spore-poll-name { font-size: 0.78em; max-width: 100%; }
+.spore-poll.is-style-cards .spore-poll-kw { max-width: 100%; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+.spore-poll.is-style-cards .spore-poll-bar { position: absolute; inset: 0; height: auto; margin: 0; border-radius: inherit; background: transparent; }
+.spore-poll.is-style-cards .spore-poll-bar-fill { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: var(--sp-fill, 0%);
+  border-radius: 0; background: linear-gradient(0deg, var(--sp-bar), var(--sp-bar2)); opacity: 0.85; }
+.spore-poll.is-style-cards .spore-poll-option.is-winner .spore-poll-bar-fill { background: var(--sp-win); }
 """.strip()
 
 
-_WIDGET_TYPES = frozenset({"list", "wheel", "now_playing", "qr", "embed", "stat_card", "poll"})
+# Text wrapped in [[double brackets]] (sporeAccentHtml in the data runtime).
+ACCENT_CSS = """
+.spore-accent {
+  color: var(--spore-accent, inherit); background: var(--spore-accent-bg, transparent);
+  padding: 0 0.25em; border-radius: 0.3em; box-decoration-break: clone; -webkit-box-decoration-break: clone;
+}
+""".strip()
+
+
+_WIDGET_TYPES = frozenset({"list", "wheel", "now_playing", "qr", "embed", "stat_card", "poll", "confetti"})
 
 
 def _elements_need_widget_css(elements: List[Dict[str, Any]]) -> bool:
@@ -1228,7 +1289,8 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
     if twitch_emits:
         js = js + "\n\n" + "\n\n".join(twitch_emits)
 
-    css_parts: List[str] = []
+    # Hidden must beat inline display (centred text blocks are inline display:flex).
+    css_parts: List[str] = ['.spore-element[data-spore-hidden="true"] { display: none !important; }']
     if use_animation or _bindings_need_preset_css(elements):
         css_parts.append(ANIMATION_CSS)
     if _elements_need_value_change_css(elements):
@@ -1241,5 +1303,7 @@ def compile_bindings(elements: List[Dict[str, Any]]) -> Dict[str, str]:
         css_parts.append(WIDGET_CSS)
     if _elements_need_marquee_css(elements):
         css_parts.append(MARQUEE_CSS)
+    if any(str(el.get("type") or "").lower() in ("text", "marquee") for el in elements if isinstance(el, dict)):
+        css_parts.append(ACCENT_CSS)
     css = "\n\n".join(css_parts)
     return {"js": js, "css": css}

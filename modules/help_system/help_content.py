@@ -245,7 +245,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Chatbot Giveaways',
         category=HelpCategory.CHATBOT,
         summary='Keyword-based giveaways, draws, and winner announcements',
-        keywords=['giveaway', 'giveaways', 'contest', 'winner', 'raffle', 'chatbot', 'announcement', 'entrants', 'draw', 'keyword', 'blocked', 'overlay'],
+        keywords=['giveaway', 'giveaways', 'contest', 'winner', 'raffle', 'chatbot', 'announcement', 'entrants', 'draw', 'keyword', 'blocked', 'overlay', 'confetti', 'spore studio'],
         related_topics=['chatbot_commands', 'chatbot_variables', 'integrations_twitch'],
     ),
     'chatbot_polls': HelpTopic(
@@ -392,7 +392,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Widget Reference',
         category=HelpCategory.SPORE_STUDIO,
         summary='Every Spore Studio block, grouped by category, with each setting explained',
-        keywords=['widget', 'blocks', 'list', 'wheel', 'qr', 'embed', 'now playing', 'stat card', 'poll', 'progress bar', 'spore studio'],
+        keywords=['widget', 'blocks', 'list', 'wheel', 'qr', 'embed', 'now playing', 'stat card', 'poll', 'progress bar', 'confetti', 'highlight', 'spore studio'],
         related_topics=['spore_studio_design', 'spore_studio_counters', 'spore_studio_data_feed', 'spore_studio_data_sources', 'spore_studio_bindings', 'spore_studio_advanced_js'],
     ),
     'spore_studio_bindings': HelpTopic(
@@ -440,7 +440,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Data Feeds',
         category=HelpCategory.SPORE_STUDIO,
         summary='The shared source, filter, format, and target setup every Spore Studio block uses',
-        keywords=['data feed', 'filter', 'template output', 'roulette result', 'wheel result', 'formatting', 'spore studio'],
+        keywords=['data feed', 'filter', 'template output', 'roulette result', 'wheel result', 'formatting', 'plural', 'giveaway_sync', 'replace all rows', 'spore studio'],
         related_topics=['spore_studio_widgets', 'spore_studio_data_sources', 'spore_studio_counters', 'spore_studio_bindings'],
         ui_context='spore_studio',
     ),

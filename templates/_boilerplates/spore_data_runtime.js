@@ -1120,17 +1120,37 @@
         return (n < 10 ? '0' : '') + n;
     }
 
+    /* [[word]] in text shows that part highlighted (the block's highlight colours). */
+    function sporeAccentHtml(text) {
+        var safe = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        /* One wrapper keeps the line together in centred (flex) text blocks. */
+        return '<span class="spore-accent-line">' +
+            safe.replace(/\[\[([\s\S]*?)\]\]/g, '<span class="spore-accent">$1</span>') + '</span>';
+    }
+
     function sporeSetTextContent(el, value) {
         if (!el) { return; }
         var t = (value == null ? '' : String(value));
+        var accent = t.indexOf('[[') >= 0 && t.indexOf(']]') > t.indexOf('[[');
         if (el.classList && el.classList.contains('spore-marquee')) {
             var nodes = el.querySelectorAll('.spore-marquee-text');
             for (var i = 0; i < nodes.length; i++) {
-                nodes[i].textContent = t;
+                if (accent) { nodes[i].innerHTML = sporeAccentHtml(t); } else { nodes[i].textContent = t; }
             }
             return;
         }
-        el.textContent = t;
+        if (accent) { el.innerHTML = sporeAccentHtml(t); } else { el.textContent = t; }
+    }
+
+    /* Static text is rendered by the server; turn its [[...]] into highlights once. */
+    function sporeAccentStaticText() {
+        var nodes = document.querySelectorAll('.spore-element[data-spore-type="text"], .spore-marquee-text');
+        for (var i = 0; i < nodes.length; i++) {
+            var html = nodes[i].innerHTML;
+            if (html.indexOf('[[') < 0) { continue; }
+            nodes[i].innerHTML = '<span class="spore-accent-line">' +
+                html.replace(/\[\[([\s\S]*?)\]\]/g, '<span class="spore-accent">$1</span>') + '</span>';
+        }
     }
 
     function sporePatchSetText() {
@@ -1341,16 +1361,18 @@
         return el ? el.querySelector('.spore-list-rows') : null;
     }
 
-    function sporeListPush(el, text) {
+    function sporeListPush(el, text, quiet) {
         var rows = sporeListRows(el);
         if (!rows) { return; }
         var max = parseInt(sporeAttr(el, 'data-spore-list-max', '8'), 10) || 8;
         var newest = sporeAttr(el, 'data-spore-list-newest', 'top');
         var gap = parseInt(sporeAttr(el, 'data-spore-list-gap', '4'), 10) || 0;
-        var addAnim = sporeAttr(el, 'data-spore-list-add', 'fade');
+        var addAnim = quiet ? 'none' : sporeAttr(el, 'data-spore-list-add', 'fade');
         var row = document.createElement('div');
         row.className = 'spore-list-row';
         if (addAnim === 'slide') { row.classList.add('spore-list-in-slide'); }
+        else if (addAnim === 'slide side') { row.classList.add('spore-list-in-side'); }
+        else if (addAnim === 'bounce') { row.classList.add('spore-list-in-bounce'); }
         else if (addAnim !== 'none') { row.classList.add('spore-list-in-fade'); }
         row.style.marginBottom = gap + 'px';
         var rowBg = sporeAttr(el, 'data-spore-list-row-bg', '');
@@ -1376,6 +1398,20 @@
                 if (row.parentNode) { sporeListDrop(el, row); }
             }, lifetime * 1000);
         }
+    }
+
+    /* Replace every row from a list (first entry = newest), without add animations. */
+    function sporeListReplace(el, entries) {
+        var rows = sporeListRows(el);
+        if (!rows) { return; }
+        rows.textContent = '';
+        var max = parseInt(sporeAttr(el, 'data-spore-list-max', '8'), 10) || 8;
+        var list = (entries || []).slice(0, max);
+        if (sporeAttr(el, 'data-spore-list-newest', 'top') !== 'bottom') { list.reverse(); }
+        list.forEach(function (entry) {
+            var payload = (entry && typeof entry === 'object') ? entry : { username: entry };
+            sporeListPush(el, sporeListItem(el, payload, ''), true);
+        });
     }
 
     function sporeListDrop(el, row) {
@@ -2141,36 +2177,53 @@
         return pad(minutes) + ':' + pad(secs);
     }
 
+    function sporePollChild(el, cls) {
+        return el.querySelector('.' + cls);
+    }
+
     function sporeUpdatePollClock(el) {
         var data = el._sporePollLast || {};
-        var timer = el.querySelector('.spore-poll-timer');
-        if (!timer) { return; }
+        var timer = sporePollChild(el, 'spore-poll-timer');
+        var chip = sporePollChild(el, 'spore-poll-chip');
         var showText = sporeOn(el, 'data-spore-poll-timer', true);
         var showBar = sporeOn(el, 'data-spore-poll-timer-bar', true);
         var remain = sporePollRemaining(el, data);
-        var visible = data.status === 'open' && !data.permanent && remain != null && (showText || showBar);
-        if (!visible) {
+        var open = data.status === 'open';
+        var timed = open && !data.permanent && remain != null;
+        if (chip) {
+            var chipText = '';
+            chip.classList.remove('is-live');
+            if (open && showText) {
+                chipText = timed ? sporeFormatPollClock(remain) : 'Live';
+                chip.classList.add('is-live');
+            } else if (data.status === 'ended') {
+                chipText = 'Poll closed';
+            }
+            chip.hidden = !chipText;
+            if (chip.textContent !== chipText) { chip.textContent = chipText; }
+        }
+        sporePollSyncHead(el);
+        if (!timer) { return; }
+        if (!timed || !showBar) {
             timer.hidden = true;
             return;
         }
         timer.hidden = false;
-        var text = timer.querySelector('.spore-poll-timer-text');
-        var track = timer.querySelector('.spore-poll-timer-track');
         var fill = timer.querySelector('.spore-poll-timer-fill');
-        if (text) {
-            text.style.display = showText ? '' : 'none';
-            if (showText) { text.textContent = sporeFormatPollClock(remain); }
-        }
-        if (track) {
-            track.style.display = showBar ? '' : 'none';
-            track.style.background = sporeAttr(el, 'data-spore-poll-track', 'rgba(255,255,255,0.15)');
-        }
-        if (fill && showBar) {
+        if (fill) {
             var duration = Number(data.duration_seconds || 0);
             var pct = duration > 0 ? Math.max(0, Math.min(100, (remain / duration) * 100)) : 0;
             fill.style.width = pct + '%';
-            fill.style.background = sporeAttr(el, 'data-spore-poll-bar', '#a855f7');
         }
+    }
+
+    function sporePollSyncHead(el) {
+        var head = sporePollChild(el, 'spore-poll-head');
+        if (!head) { return; }
+        var title = sporePollChild(el, 'spore-poll-title');
+        var chip = sporePollChild(el, 'spore-poll-chip');
+        var hasTitle = !!(title && title.textContent);
+        head.hidden = !hasTitle && !(chip && !chip.hidden);
     }
 
     function sporeArmPollClock(el, data) {
@@ -2213,44 +2266,126 @@
         return 'slide_horizontal';
     }
 
-    function sporePollMakeOption(row, showBars, showCounts, showPercent, barColor, trackColor, winnerColor, leader) {
+    /* Read every look setting once per paint. Colours and sizes become CSS variables
+       on the widget so the stylesheet (and smooth bar growth) does the rest. */
+    function sporePollConfig(el) {
+        var style = String(sporeAttr(el, 'data-spore-poll-style', 'bars')).toLowerCase();
+        if (style !== 'inside' && style !== 'cards') { style = 'bars'; }
+        var bar = sporeAttr(el, 'data-spore-poll-bar', '#a855f7');
+        return {
+            style: style,
+            showBars: sporeAttr(el, 'data-spore-poll-display', 'bars') !== 'text' || style !== 'bars',
+            showCounts: sporeOn(el, 'data-spore-poll-counts', true),
+            showPercent: sporeOn(el, 'data-spore-poll-percent', true),
+            showKeywords: sporeOn(el, 'data-spore-poll-keywords', true),
+            showRank: sporeOn(el, 'data-spore-poll-rank', false),
+            showTotal: sporeOn(el, 'data-spore-poll-total', true),
+            footText: sporeAttr(el, 'data-spore-poll-foot-text', ''),
+            title: sporeAttr(el, 'data-spore-poll-title', ''),
+            bar: bar,
+            bar2: sporeAttr(el, 'data-spore-poll-bar2', '') || bar,
+            track: sporeAttr(el, 'data-spore-poll-track', 'rgba(255,255,255,0.15)'),
+            winner: sporeAttr(el, 'data-spore-poll-winner', '#facc15'),
+            barHeight: parseFloat(sporeAttr(el, 'data-spore-poll-bar-height', '12')),
+            barRadius: parseFloat(sporeAttr(el, 'data-spore-poll-bar-radius', '12')),
+            leader: sporeOn(el, 'data-spore-poll-leader', true),
+            animate: sporeOn(el, 'data-spore-poll-animate', true),
+            winnerFx: String(sporeAttr(el, 'data-spore-poll-winner-fx', 'glow')).toLowerCase(),
+            dim: sporeOn(el, 'data-spore-poll-dim', true),
+            shadow: sporeOn(el, 'data-spore-poll-shadow', true)
+        };
+    }
+
+    function sporePollApplyLook(el, cfg, status) {
+        var s = el.style;
+        s.setProperty('--sp-bar', cfg.bar);
+        s.setProperty('--sp-bar2', cfg.bar2);
+        s.setProperty('--sp-track', cfg.track);
+        s.setProperty('--sp-win', cfg.winner);
+        s.setProperty('--sp-barh', (isFinite(cfg.barHeight) && cfg.barHeight >= 0 ? cfg.barHeight : 12) + 'px');
+        s.setProperty('--sp-radius', (isFinite(cfg.barRadius) && cfg.barRadius >= 0 ? cfg.barRadius : 12) + 'px');
+        var cls = el.classList;
+        ['bars', 'inside', 'cards'].forEach(function (name) { cls.toggle('is-style-' + name, cfg.style === name); });
+        cls.toggle('is-animated', cfg.animate);
+        cls.toggle('is-leader-on', cfg.leader);
+        cls.toggle('is-dim-losers', cfg.dim);
+        cls.toggle('has-shadow', cfg.shadow);
+        cls.toggle('fx-glow', cfg.winnerFx === 'glow');
+        cls.toggle('fx-pulse', cfg.winnerFx === 'pulse');
+        cls.toggle('is-ended', status === 'ended');
+        var title = sporePollChild(el, 'spore-poll-title');
+        if (title && title.textContent !== cfg.title) { title.textContent = cfg.title; }
+    }
+
+    function sporePollMeta(row, cfg) {
+        var bits = [];
+        /* Cards are narrow: the share alone reads best when both are on. */
+        var counts = cfg.showCounts && !(cfg.style === 'cards' && cfg.showPercent);
+        if (counts) { bits.push(String(Number(row && row.votes || 0))); }
+        if (cfg.showPercent) { bits.push(String(row && row.percent != null ? row.percent : 0) + '%'); }
+        return bits.join(' · ');
+    }
+
+    function sporePollMakeOption(row, cfg, rank) {
         var option = document.createElement('div');
         option.className = 'spore-poll-option';
-        if (row && row.winner) { option.classList.add('is-winner'); }
-        var heading = document.createElement('div');
+        option.setAttribute('data-option-id', String(row && row.id != null ? row.id : (row && row.name) || ''));
+        var line = document.createElement('div');
+        line.className = 'spore-poll-row';
+        if (cfg.showRank && cfg.style !== 'cards') {
+            var badge = document.createElement('span');
+            badge.className = 'spore-poll-rank';
+            badge.textContent = String(rank);
+            line.appendChild(badge);
+        }
         var name = document.createElement('span');
         name.className = 'spore-poll-name';
-        name.textContent = row && row.name ? String(row.name) : '';
-        if (row && row.winner) { name.style.color = winnerColor; }
-        heading.appendChild(name);
-        var metaBits = [];
-        if (showCounts) { metaBits.push(String(Number(row && row.votes || 0))); }
-        if (showPercent) {
-            metaBits.push(String(row && row.percent != null ? row.percent : 0) + '%');
+        line.appendChild(name);
+        if (cfg.showKeywords) {
+            var kw = document.createElement('span');
+            kw.className = 'spore-poll-kw';
+            line.appendChild(kw);
         }
-        if (metaBits.length) {
-            var meta = document.createElement('span');
-            meta.className = 'spore-poll-meta';
-            meta.textContent = metaBits.join(' · ');
-            heading.appendChild(meta);
-        }
-        option.appendChild(heading);
-        if (showBars) {
+        var meta = document.createElement('span');
+        meta.className = 'spore-poll-meta';
+        line.appendChild(meta);
+        option.appendChild(line);
+        if (cfg.showBars) {
             var track = document.createElement('div');
             track.className = 'spore-poll-bar';
-            track.style.background = trackColor;
             var fill = document.createElement('div');
             fill.className = 'spore-poll-bar-fill';
-            fill.style.background = barColor;
-            var votes = Number(row && row.votes || 0);
-            fill.style.width = (leader > 0 ? (votes / leader) * 100 : 0) + '%';
+            fill.style.setProperty('--sp-fill', '0%');
             track.appendChild(fill);
             option.appendChild(track);
         }
         return option;
     }
 
-    function sporePollFitCount(el, host, probe, gap, horizontal) {
+    function sporePollUpdateOption(option, row, cfg, leader, status) {
+        var votes = Number(row && row.votes || 0);
+        option.classList.toggle('is-winner', !!(row && row.winner));
+        option.classList.toggle('is-leader', status === 'open' && leader > 0 && votes === leader);
+        var name = option.querySelector('.spore-poll-name');
+        var label = row && row.name ? String(row.name) : '';
+        if (name && name.textContent !== label) { name.textContent = label; }
+        var kw = option.querySelector('.spore-poll-kw');
+        if (kw) {
+            var word = row && row.keyword ? String(row.keyword) : '';
+            kw.textContent = word;
+            kw.hidden = !word;
+        }
+        var meta = option.querySelector('.spore-poll-meta');
+        if (meta) {
+            var text = sporePollMeta(row, cfg);
+            if (meta.textContent !== text) { meta.textContent = text; }
+            meta.hidden = !text;
+        }
+        var fill = option.querySelector('.spore-poll-bar-fill');
+        if (fill) { fill.style.setProperty('--sp-fill', (leader > 0 ? (votes / leader) * 100 : 0) + '%'); }
+    }
+
+    function sporePollFitCount(el, host, probe, gap, horizontal, reserved) {
         probe.style.visibility = 'hidden';
         probe.style.flex = '0 0 auto';
         probe.style.width = horizontal ? 'auto' : '100%';
@@ -2261,17 +2396,56 @@
         var style = window.getComputedStyle(el);
         var padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
         var padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-        var outerGap = parseFloat(style.rowGap || style.gap) || 0;
-        var timer = el.querySelector('.spore-poll-timer');
-        var timerH = 0;
-        if (timer && !timer.hidden) { timerH = timer.offsetHeight + outerGap; }
-        var availH = Math.max(0, el.clientHeight - padY - timerH);
+        var availH = Math.max(0, el.clientHeight - padY - reserved);
         var availW = Math.max(0, el.clientWidth - padX);
         var fitH = Math.floor((availH + gap) / (rowH + gap));
         var fitW = Math.floor((availW + gap) / (rowW + gap));
         var fit = horizontal ? fitW : fitH;
-        if (!isFinite(fit) || fit < 1) { fit = availH >= rowH || availW >= rowW ? 1 : 1; }
+        if (!isFinite(fit) || fit < 1) { fit = 1; }
         return fit;
+    }
+
+    /* Height used by the header, timer bar and footer, so the options get the rest. */
+    function sporePollReserved(el) {
+        var style = window.getComputedStyle(el);
+        var outerGap = parseFloat(style.rowGap || style.gap) || 0;
+        var total = 0;
+        ['spore-poll-head', 'spore-poll-timer', 'spore-poll-foot'].forEach(function (cls) {
+            var part = sporePollChild(el, cls);
+            if (part && !part.hidden) { total += part.offsetHeight + outerGap; }
+        });
+        return total;
+    }
+
+    function sporePollPaintFoot(el, cfg, data) {
+        var foot = sporePollChild(el, 'spore-poll-foot');
+        if (!foot) { return; }
+        var left = foot.querySelector('.spore-poll-foot-text');
+        var right = foot.querySelector('.spore-poll-total');
+        var note = data.status === 'open' ? cfg.footText : '';
+        var total = Number(data.total_votes || 0);
+        var totalText = cfg.showTotal ? (total + (total === 1 ? ' vote' : ' votes')) : '';
+        if (left) { left.textContent = note; }
+        if (right) { right.textContent = totalText; }
+        foot.hidden = !note && !totalText;
+    }
+
+    /* Hide/show a poll. One that started hidden goes back to hidden (attribute + Out
+       animation) so the next poll plays its In animation again. */
+    function sporePollSetVisible(el, visible) {
+        if (visible) {
+            el.style.display = '';
+            if (el.getAttribute('data-spore-hidden') === 'true') {
+                el._sporePollStartHidden = true;
+                sporeFeedShow(el);
+            }
+            return;
+        }
+        if (el._sporePollStartHidden) {
+            if (el.getAttribute('data-spore-hidden') !== 'true') { sporeFeedHide(el); }
+        } else {
+            el.style.display = 'none';
+        }
     }
 
     function sporePaintPoll(el, data, fromRotator) {
@@ -2285,7 +2459,7 @@
             el._sporePollHideEndsAt = null;
         }
         if (status === 'idle') {
-            el.style.display = 'none';
+            sporePollSetVisible(el, false);
             sporeArmPollRotator(el, 1, 5, false);
             sporeArmPollClock(el, data);
             return;
@@ -2299,21 +2473,22 @@
             var age = endedAt ? ((Date.now() / 1000) + skew) - endedAt : autohide;
             var stillShowingWinner = status === 'ended' && endedAt && age < autohide;
             if (!stillShowingWinner) {
-                el.style.display = 'none';
+                sporePollSetVisible(el, false);
                 sporeArmPollRotator(el, 1, 5, false);
                 sporeArmPollClock(el, data);
                 return;
             }
-            el.style.display = '';
+            sporePollSetVisible(el, true);
             if (el._sporePollHideEndsAt !== endedAt) {
                 if (el._sporePollHide) { clearTimeout(el._sporePollHide); }
                 el._sporePollHideEndsAt = endedAt;
                 el._sporePollHide = setTimeout(function () {
-                    el.style.display = 'none';
+                    sporePollSetVisible(el, false);
                 }, Math.max(0, (autohide - age) * 1000));
             }
         } else {
-            el.style.display = '';
+            /* "Start hidden" means hidden until a poll runs: this reveals it with its In animation. */
+            sporePollSetVisible(el, true);
         }
 
         var size = sporeAttr(el, 'data-spore-poll-font-size', '');
@@ -2325,52 +2500,40 @@
         var bg = sporeAttr(el, 'data-spore-poll-bg', '');
         if (bg) { el.style.background = bg; }
 
+        var cfg = sporePollConfig(el);
+        sporePollApplyLook(el, cfg, status);
         var options = Array.isArray(data.options) ? data.options.slice() : [];
         var winnerMode = sporeAttr(el, 'data-spore-poll-winner-mode', 'highlight');
         if (status === 'ended' && winnerMode === 'winner_only') {
             options = options.filter(function (row) { return row && row.winner; });
         }
-        var host = el.querySelector('.spore-poll-options');
+        var host = sporePollChild(el, 'spore-poll-options');
         if (!host) { return; }
         sporeUpdatePollClock(el);
         sporeArmPollClock(el, data);
-        var horizontal = sporeAttr(el, 'data-spore-poll-layout', 'vertical') === 'horizontal';
+        sporePollPaintFoot(el, cfg, data);
+        var horizontal = cfg.style === 'cards' || sporeAttr(el, 'data-spore-poll-layout', 'vertical') === 'horizontal';
         var gap = parseFloat(sporeAttr(el, 'data-spore-poll-gap', '8'));
         if (!isFinite(gap) || gap < 0) { gap = 0; }
-        var showBars = sporeAttr(el, 'data-spore-poll-display', 'bars') !== 'text';
-        var showCounts = sporeOn(el, 'data-spore-poll-counts', true);
-        var showPercent = sporeOn(el, 'data-spore-poll-percent', true);
-        var barColor = sporeAttr(el, 'data-spore-poll-bar', '#a855f7');
-        var trackColor = sporeAttr(el, 'data-spore-poll-track', 'rgba(255,255,255,0.15)');
-        var winnerColor = sporeAttr(el, 'data-spore-poll-winner', '#facc15');
         var leader = 0;
         options.forEach(function (row) {
             var count = Number(row && row.votes || 0);
             if (count > leader) { leader = count; }
         });
-        var heldPage = null;
-        if (fromRotator) {
-            heldPage = host.querySelector('.spore-poll-page:not(.is-exiting)');
-            if (heldPage) { heldPage.remove(); }
-        }
-        host.textContent = '';
-        host.style.position = 'relative';
-        host.style.overflow = 'hidden';
-        host.style.transform = 'translateZ(0)';
+        var reserved = sporePollReserved(el);
         var style = window.getComputedStyle(el);
         var padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
-        var outerGap = parseFloat(style.rowGap || style.gap) || 0;
-        var timer = el.querySelector('.spore-poll-timer');
-        var timerH = timer && !timer.hidden ? timer.offsetHeight + outerGap : 0;
-        var availH = Math.max(0, el.clientHeight - padY - timerH);
+        var availH = Math.max(0, el.clientHeight - padY - reserved);
         host.style.height = availH + 'px';
-        var probe = sporePollMakeOption(
-            options[0] || { name: 'Option', votes: 0, percent: 0 },
-            showBars, showCounts, showPercent, barColor, trackColor, winnerColor, leader
-        );
-        var fit = options.length
-            ? sporePollFitCount(el, host, probe, gap, horizontal)
-            : 1;
+        var probe = sporePollMakeOption(options[0] || { name: 'Option', votes: 0, percent: 0 }, cfg, 1);
+        sporePollUpdateOption(probe, options[0] || { name: 'Option', votes: 0, percent: 0 }, cfg, leader, status);
+        var fit = options.length ? sporePollFitCount(el, host, probe, gap, horizontal, reserved) : 1;
+        if (cfg.style === 'cards' && options.length) {
+            /* Tiles share the width, so fit by a minimum tile width rather than the probe's. */
+            var tileW = (parseFloat(window.getComputedStyle(el).fontSize) || 22) * 4.5;
+            var padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+            fit = Math.max(1, Math.floor((Math.max(0, el.clientWidth - padX) + gap) / (tileW + gap)));
+        }
         var maxItems = parseInt(sporeAttr(el, 'data-spore-poll-max', '6'), 10);
         if (!isFinite(maxItems) || maxItems < 0) { maxItems = 0; }
         var pageSize = maxItems > 0 ? Math.min(maxItems, fit) : fit;
@@ -2383,9 +2546,50 @@
         sporeArmPollRotator(el, pageCount, rotSeconds, rotatorOn);
         var page = rotatorOn ? (el._sporePollPage || 0) : 0;
         var slice = options.slice(page * pageSize, (page * pageSize) + pageSize);
+        var shape = [cfg.style, cfg.showBars, cfg.showKeywords, cfg.showRank, horizontal, page].join('|');
+
+        /* Same options on the same page: update in place so bars grow smoothly. */
+        var current = host.querySelector('.spore-poll-page:not(.is-exiting)');
+        if (!fromRotator && current && current._sporeShape === shape) {
+            var known = {};
+            Array.prototype.forEach.call(current.children, function (node) {
+                known[node.getAttribute('data-option-id')] = node;
+            });
+            var ids = slice.map(function (row) { return String(row && row.id != null ? row.id : (row && row.name) || ''); });
+            var allKnown = ids.length === current.children.length && ids.every(function (id) { return !!known[id]; });
+            if (allKnown) {
+                slice.forEach(function (row, i) {
+                    var node = known[ids[i]];
+                    current.appendChild(node);
+                    var badge = node.querySelector('.spore-poll-rank');
+                    if (badge) { badge.textContent = String(page * pageSize + i + 1); }
+                    sporePollUpdateOption(node, row, cfg, leader, status);
+                });
+                current.style.gap = gap + 'px';
+                return;
+            }
+        }
+
+        var previousWidths = {};
+        if (current) {
+            Array.prototype.forEach.call(current.children, function (node) {
+                var fillOld = node.querySelector('.spore-poll-bar-fill');
+                if (fillOld) { previousWidths[node.getAttribute('data-option-id')] = fillOld.style.getPropertyValue('--sp-fill'); }
+            });
+        }
+        var heldPage = null;
+        if (fromRotator) {
+            heldPage = current;
+            if (heldPage) { heldPage.remove(); }
+        }
+        host.textContent = '';
+        host.style.position = 'relative';
+        host.style.overflow = 'hidden';
+        host.style.transform = 'translateZ(0)';
         var pageEl = document.createElement('div');
         pageEl.className = 'spore-poll-page' + (horizontal ? ' is-horizontal' : '');
         pageEl.style.gap = gap + 'px';
+        pageEl._sporeShape = shape;
         var anim = 'none';
         var animMs = 400;
         if (fromRotator) {
@@ -2393,10 +2597,14 @@
             animMs = parseFloat(sporeAttr(el, 'data-spore-poll-rotator-anim-ms', '400'));
             if (!isFinite(animMs) || animMs < 0) { animMs = 400; }
         }
-        slice.forEach(function (row) {
-            pageEl.appendChild(sporePollMakeOption(
-                row, showBars, showCounts, showPercent, barColor, trackColor, winnerColor, leader
-            ));
+        var fresh = [];
+        slice.forEach(function (row, i) {
+            var node = sporePollMakeOption(row, cfg, page * pageSize + i + 1);
+            var id = node.getAttribute('data-option-id');
+            var fillNew = node.querySelector('.spore-poll-bar-fill');
+            if (fillNew && previousWidths[id]) { fillNew.style.setProperty('--sp-fill', previousWidths[id]); }
+            pageEl.appendChild(node);
+            fresh.push([node, row]);
         });
         var previous = heldPage;
         if (previous && anim !== 'none') {
@@ -2420,21 +2628,31 @@
             pageEl.style.animationDuration = (animMs / 1000) + 's';
         }
         host.appendChild(pageEl);
+        /* Lay out the old widths first (forced reflow) so a reorder still animates to the
+           new widths. No requestAnimationFrame: browsers pause it for hidden sources. */
+        if (cfg.animate) { void pageEl.offsetWidth; }
+        fresh.forEach(function (pair) { sporePollUpdateOption(pair[0], pair[1], cfg, leader, status); });
     }
 
-    function sporeBindPoll(el) {
+    function sporePollIsMine(payload) {
+        var mine = sporePollTemplateName();
+        return !!(payload && payload.template && mine && String(payload.template) === mine);
+    }
+
+    /* feedDriven: a Data feed repaints the poll, so only replay state on load and
+       announce the result here (the feed handles poll_state / poll_ended). */
+    function sporeBindPoll(el, feedDriven) {
         if (!el || el.getAttribute('data-spore-poll-bound') === '1') { return; }
         el.setAttribute('data-spore-poll-bound', '1');
         function onPayload(payload) {
             payload = payload || {};
-            var mine = sporePollTemplateName();
-            if (!payload.template || !mine || String(payload.template) !== mine) { return; }
+            if (!sporePollIsMine(payload)) { return; }
             sporePaintPoll(el, payload);
         }
         if (typeof socket !== 'undefined' && socket && socket.on) {
-            socket.on('poll_state', onPayload);
+            if (!feedDriven) { socket.on('poll_state', onPayload); }
             socket.on('poll_ended', function (payload) {
-                onPayload(payload);
+                if (!feedDriven) { onPayload(payload); }
                 payload = payload || {};
                 var mine = sporePollTemplateName();
                 if (payload.template && mine && String(payload.template) === mine) {
@@ -2454,6 +2672,144 @@
         sporePaintPoll(el, { status: 'idle', options: [] });
     }
 
+    /* Confetti block: a canvas the size of the block. Each burst adds pieces over the
+       block's duration; several bursts can overlap. Draws with requestAnimationFrame when
+       the browser runs it, otherwise with a timer. */
+    function sporeConfettiConfig(el) {
+        function num(attr, fallback, min, max) {
+            var v = parseFloat(sporeAttr(el, attr, String(fallback)));
+            if (!isFinite(v)) { v = fallback; }
+            return Math.max(min, Math.min(max, v));
+        }
+        var colors = String(sporeAttr(el, 'data-spore-confetti-colors', '')).split(/[\n,]+/).map(function (c) {
+            return c.trim();
+        }).filter(Boolean);
+        return {
+            count: num('data-spore-confetti-count', 150, 1, 2000),
+            duration: num('data-spore-confetti-duration', 5, 0.2, 60),
+            spread: num('data-spore-confetti-spread', 70, 5, 360),
+            size: num('data-spore-confetti-size', 10, 2, 60),
+            gravity: num('data-spore-confetti-gravity', 1, 0, 5),
+            origin: String(sporeAttr(el, 'data-spore-confetti-origin', 'sides')).toLowerCase(),
+            colors: colors.length ? colors : ['#7c3aed', '#2563eb', '#e11d48', '#16a34a', '#d97706', '#facc15']
+        };
+    }
+
+    function sporeConfettiPiece(cfg, w, h, side) {
+        var rad = Math.PI / 180;
+        var angle;
+        var x;
+        var y;
+        var speed = (0.55 + Math.random() * 0.6) * Math.max(w, h) * 0.022;
+        if (cfg.origin === 'top') {
+            x = Math.random() * w;
+            y = -cfg.size;
+            angle = 90 + (Math.random() - 0.5) * Math.min(cfg.spread, 90);
+            speed *= 0.35;
+        } else if (cfg.origin === 'center') {
+            x = w / 2;
+            y = h / 2;
+            angle = 270 + (Math.random() - 0.5) * cfg.spread;
+        } else {
+            x = side ? w : 0;
+            y = h * 0.85;
+            angle = (side ? 240 : 300) + (Math.random() - 0.5) * cfg.spread;
+        }
+        return {
+            x: x, y: y,
+            vx: Math.cos(angle * rad) * speed,
+            vy: Math.sin(angle * rad) * speed,
+            rot: Math.random() * 360, vr: (Math.random() - 0.5) * 18,
+            tilt: Math.random() * Math.PI, vt: 0.05 + Math.random() * 0.1,
+            w: cfg.size * (0.6 + Math.random() * 0.6), h: cfg.size * (0.35 + Math.random() * 0.4),
+            color: cfg.colors[Math.floor(Math.random() * cfg.colors.length)],
+            round: Math.random() < 0.25,
+            g: cfg.gravity,
+            age: 0, life: 2.6 + Math.random() * 1.8
+        };
+    }
+
+    function sporeConfettiBurst(el) {
+        var canvas = el && el.querySelector('.spore-confetti-canvas');
+        if (!canvas || !canvas.getContext) { return; }
+        var cfg = sporeConfettiConfig(el);
+        var state = el._sporeConfetti || (el._sporeConfetti = { pieces: [], spawns: [], running: false });
+        var started = Date.now();
+        state.spawns.push({ cfg: cfg, started: started, made: 0 });
+        if (state.running) { return; }
+        state.running = true;
+        var ctx = canvas.getContext('2d');
+        var last = Date.now();
+        var raf = window.requestAnimationFrame;
+        function schedule() {
+            if (raf && !document.hidden) { raf(step); } else { setTimeout(step, 16); }
+        }
+        function step() {
+            var now = Date.now();
+            var dt = Math.min(0.05, (now - last) / 1000);
+            last = now;
+            var dpr = window.devicePixelRatio || 1;
+            var w = el.clientWidth || 1;
+            var h = el.clientHeight || 1;
+            if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+                canvas.width = Math.round(w * dpr);
+                canvas.height = Math.round(h * dpr);
+            }
+            state.spawns = state.spawns.filter(function (spawn) {
+                var t = (now - spawn.started) / 1000;
+                var emitFor = spawn.cfg.duration * 0.6;
+                var due = Math.min(spawn.cfg.count, Math.ceil(spawn.cfg.count * Math.min(1, t / emitFor)));
+                while (spawn.made < due) {
+                    state.pieces.push(sporeConfettiPiece(spawn.cfg, w, h, spawn.made % 2 === 1));
+                    spawn.made++;
+                }
+                return spawn.made < spawn.cfg.count;
+            });
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, w, h);
+            var frame = dt * 60;
+            state.pieces = state.pieces.filter(function (p) {
+                p.age += dt;
+                p.vy += 0.32 * p.g * frame;
+                p.vx *= Math.pow(0.985, frame);
+                p.vy *= Math.pow(0.985, frame);
+                p.x += p.vx * frame;
+                p.y += p.vy * frame;
+                p.rot += p.vr * frame;
+                p.tilt += p.vt * frame;
+                var fade = Math.max(0, Math.min(1, (p.life - p.age) / 0.6));
+                if (fade <= 0 || p.y > h + 40) { return false; }
+                ctx.save();
+                ctx.globalAlpha = fade;
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.rot * Math.PI / 180);
+                ctx.scale(1, Math.abs(Math.cos(p.tilt)) * 0.8 + 0.2);
+                ctx.fillStyle = p.color;
+                if (p.round) {
+                    ctx.beginPath();
+                    ctx.arc(0, 0, p.h * 0.6, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+                }
+                ctx.restore();
+                return true;
+            });
+            if (state.pieces.length || state.spawns.length) {
+                schedule();
+            } else {
+                state.running = false;
+                ctx.clearRect(0, 0, w, h);
+            }
+        }
+        schedule();
+    }
+
+    window.sporeConfetti = function (id) {
+        var el = document.getElementById(id);
+        if (el) { sporeConfettiBurst(el); }
+    };
+
     function sporeFeedDrives(elementId, targetId) {
         return (window.__sporeFeeds || []).some(function (feed) {
             return feed && feed.enabled && feed.elementId === elementId &&
@@ -2462,6 +2818,7 @@
     }
 
     function sporeInitWidgets() {
+        sporeAccentStaticText();
         var lists = document.querySelectorAll('[data-spore-type="list"]');
         /* Generated templates drive lists through Data feeds; the legacy binder is for old HTML. */
         for (var i = 0; i < lists.length; i++) {
@@ -2508,9 +2865,7 @@
         for (var q = 0; q < qrs.length; q++) { sporePaintQr(qrs[q]); }
         var polls = document.querySelectorAll('[data-spore-type="poll"]');
         for (var pollIndex = 0; pollIndex < polls.length; pollIndex++) {
-            if (!sporeFeedDrives(polls[pollIndex].id, 'repaint')) {
-                sporeBindPoll(polls[pollIndex]);
-            }
+            sporeBindPoll(polls[pollIndex], sporeFeedDrives(polls[pollIndex].id, 'repaint'));
         }
         var embeds = document.querySelectorAll('[data-spore-type="embed"]');
         for (var e = 0; e < embeds.length; e++) { sporePaintEmbed(embeds[e]); }
@@ -2571,6 +2926,10 @@
 
     function sporeFeedText(raw) {
         if (raw == null) { return ''; }
+        /* A list of names reads as "a, b, c" rather than JSON. */
+        if (Array.isArray(raw) && raw.every(function (v) { return v == null || typeof v !== 'object'; })) {
+            return raw.join(', ');
+        }
         if (typeof raw === 'object') {
             try { return JSON.stringify(raw); } catch (e) { return String(raw); }
         }
@@ -2684,6 +3043,11 @@
         var cut = mod.indexOf(':');
         var name = (cut >= 0 ? mod.slice(0, cut) : mod).trim().toLowerCase();
         var arg = cut >= 0 ? mod.slice(cut + 1) : '';
+        if (Array.isArray(value)) {
+            if (name === 'join') { return value.join(arg === '' ? ', ' : arg); }
+            if (name === 'count') { return String(value.length); }
+            value = sporeFeedText(value);
+        }
         var n = Number(value);
         var isNum = value !== '' && value != null && !isNaN(n);
         var s = value == null ? '' : String(value);
@@ -2723,6 +3087,14 @@
                 var len = parseInt(arg, 10);
                 return (len > 0 && s.length > len) ? s.slice(0, Math.max(0, len - 1)) + '\u2026' : s;
             case 'default': return s === '' ? arg : s;
+            case 'join': return s;
+            case 'count': return s === '' ? '0' : String(s.split(',').length);
+            case 'plural':
+                /* {count|plural:entry,entries} -> "1 entry" / "5 entries" */
+                var forms = arg.split(',');
+                var one = (forms[0] || '').trim();
+                var many = (forms.length > 1 ? forms[1] : one + 's').trim();
+                return isNum ? (n.toLocaleString('en-US') + ' ' + (Math.abs(n) === 1 ? one : many)) : s;
         }
         return s;
     }
@@ -2732,12 +3104,13 @@
             /\{([^{}|]+)((?:\|[^{}|]*)*)\}/g,
             function (all, field, mods) {
                 var raw = sporeFeedGet(data, field.trim());
-                var value = raw == null ? '' : (typeof raw === 'object' ? sporeFeedText(raw) : raw);
+                var value = raw == null ? '' : (typeof raw === 'object' && !Array.isArray(raw) ? sporeFeedText(raw) : raw);
                 if (mods) {
                     mods.split('|').slice(1).forEach(function (mod) {
                         if (mod !== '') { value = sporeFeedMod(value, mod); }
                     });
                 }
+                if (Array.isArray(value)) { value = sporeFeedText(value); }
                 return value == null ? '' : String(value);
             }
         );
@@ -2864,6 +3237,11 @@
             if (item.text !== '') { sporeListPush(el, item.text); }
         },
         list_clear: function (feed, el) { sporeListClear(el.id); },
+        confetti_burst: function (feed, el) { sporeConfettiBurst(el); },
+        list_replace: function (feed, el, item, raw, opt) {
+            var entries = sporeFeedGet(raw, (opt && opt.items_field) || 'pool_entries');
+            sporeListReplace(el, Array.isArray(entries) ? entries : []);
+        },
         wheel_spin: function (feed, el, item, raw, opt) {
             if (opt.segments_field) {
                 var names = sporeFeedGet(raw, opt.segments_field);
@@ -2950,7 +3328,11 @@
         },
         repaint: function (feed, el, item, raw) {
             var type = el.getAttribute('data-spore-type');
-            if (type === 'poll') { sporePaintPoll(el, raw || {}); }
+            if (type === 'poll') {
+                /* Every overlay hears every poll; only paint this template's. */
+                if (raw && raw.template && sporePollTemplateName() && !sporePollIsMine(raw)) { return; }
+                sporePaintPoll(el, raw || {});
+            }
             else if (type === 'now_playing') { sporePaintNowPlaying(el, raw || {}); }
         },
         show: function (feed, el) { sporeFeedShow(el); },
@@ -3118,6 +3500,29 @@
             setInterval(sporeLoadStatsCache, 15000);
         }
         feeds.forEach(sporeFeedBind);
+        sporeRequestFeedState(feeds);
+    }
+
+    /* Feeds only hear events as they happen. For sources that can replay their current
+       state, ask once on load (and after a reconnect) so a refreshed overlay is not blank. */
+    var SPORE_STATE_REQUESTS = { giveaway_: 'giveaway_request_state' };
+
+    function sporeRequestFeedState(feeds) {
+        if (typeof socket === 'undefined' || !socket || !socket.emit) { return; }
+        var wanted = {};
+        feeds.forEach(function (feed) {
+            if (!feed || !feed.enabled || !feed.source || feed.source.kind !== 'event') { return; }
+            (feed.source.events || []).forEach(function (ev) {
+                Object.keys(SPORE_STATE_REQUESTS).forEach(function (prefix) {
+                    if (String(ev).indexOf(prefix) === 0) { wanted[SPORE_STATE_REQUESTS[prefix]] = true; }
+                });
+            });
+        });
+        Object.keys(wanted).forEach(function (request) {
+            var ask = function () { socket.emit(request, {}); };
+            ask();
+            if (socket.on) { socket.on('connect', ask); }
+        });
     }
 
     function sporeTransformOriginCss(origin) {

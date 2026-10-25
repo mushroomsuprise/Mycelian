@@ -218,6 +218,15 @@
             border_color: "#000000",
             border_radius: 8
         },
+        confetti: {
+            particle_count: 150,
+            duration_s: 5,
+            spread: 70,
+            origin: "sides",
+            particle_size: 10,
+            gravity: 1,
+            colors: "#7c3aed\n#2563eb\n#e11d48\n#16a34a\n#d97706\n#facc15"
+        },
         poll: {
             font_size: 22,
             color: "#ffffff",
@@ -240,11 +249,30 @@
             rotator_animation: "slide horizontal",
             rotator_animation_ms: 400,
             show_counts: true,
-            show_percent: true
+            show_percent: true,
+            style: "bars",
+            title: "",
+            foot_text: "Type a keyword in chat to vote",
+            show_keywords: true,
+            show_rank: false,
+            show_total: true,
+            bar_height: 12,
+            bar_radius: 12,
+            bar_color_2: "",
+            highlight_leader: true,
+            animate_bars: true,
+            winner_effect: "glow",
+            dim_losers: true,
+            panel_shadow: true,
+            padding: 16,
+            border_radius: 16,
+            border_width: 0,
+            border_color: "rgba(255,255,255,0.12)"
         }
     };
 
     var DEFAULT_SIZE = {
+        confetti: { w: 640, h: 360 },
         text: { w: 320, h: 60 },
         counter: { w: 220, h: 60 },
         data_display: { w: 280, h: 60 },
@@ -300,8 +328,13 @@
     var ELEMENT_PROP_SCHEMA = {
         text: [
             { key: "text", label: "Text", type: "textarea",
-              tooltip: "The text this block shows" }
-        ].concat(TEXT_STYLE_SCHEMA),
+              tooltip: "The text this block shows. Wrap words in [[double brackets]] to highlight them, e.g. Type [[!enter]] to enter." }
+        ].concat(TEXT_STYLE_SCHEMA, [
+            { key: "accent_color", label: "Highlight color", type: "color",
+              tooltip: "Text color for words wrapped in [[double brackets]]" },
+            { key: "accent_background", label: "Highlight background", type: "color",
+              tooltip: "Background behind words wrapped in [[double brackets]]. Leave empty for none." }
+        ]),
         image: [
             { key: "src", label: "Source URL", type: "text",
               tooltip: "Image file or URL. Pick from this template's assets, or paste a custom URL." },
@@ -483,7 +516,7 @@
               tooltip: "Rounds each row's background" },
             { key: "add_animation", label: "Add animation", type: "select",
               tooltip: "How a new row appears",
-              options: ["none", "fade", "slide"] },
+              options: ["none", "fade", "slide", "slide side", "bounce"] },
             { key: "remove_animation", label: "Remove animation", type: "select",
               tooltip: "How a row leaves when it expires or is pushed out",
               options: ["none", "fade"] }
@@ -582,7 +615,46 @@
             { key: "border_radius", label: "Corner radius (px)", type: "number",
               tooltip: "Rounds the card corners" }
         ],
+        confetti: [
+            { key: "origin", label: "Burst from", type: "select",
+              tooltip: "sides: two cannons from the bottom corners. center: one burst from the middle. top: falls from the top edge.",
+              options: ["sides", "center", "top"] },
+            { key: "particle_count", label: "Pieces", type: "number", min: 1, max: 2000,
+              tooltip: "How many pieces one burst throws" },
+            { key: "duration_s", label: "Duration (seconds)", type: "number", min: 0.2, max: 60, step: 0.1,
+              tooltip: "How long pieces keep coming. Pieces then fall and fade out." },
+            { key: "spread", label: "Spread (degrees)", type: "number", min: 5, max: 360,
+              tooltip: "How wide each cannon sprays" },
+            { key: "particle_size", label: "Piece size (px)", type: "number", min: 2, max: 60,
+              tooltip: "Size of each piece" },
+            { key: "gravity", label: "Gravity", type: "number", min: 0, max: 5, step: 0.1,
+              tooltip: "How fast pieces fall. 1 is normal, 0 floats." },
+            { key: "colors", label: "Colors", type: "textarea",
+              tooltip: "One color per line (or comma separated)" }
+        ],
         poll: [
+            { key: "style", label: "Style", type: "select",
+              tooltip: "Bars: name above a bar. Inside: thick bars with the labels inside. Cards: side-by-side tiles that fill from the bottom (best for 2-4 options).",
+              options: ["bars", "inside", "cards"] },
+            { key: "title", label: "Title", type: "text",
+              tooltip: "Heading at the top, like the poll question. Leave empty for no title." },
+            { key: "foot_text", label: "Footer note", type: "text",
+              tooltip: "Small note under the options while voting is open. Leave empty to hide it." },
+            { key: "show_keywords", label: "Show keywords", type: "checkbox",
+              tooltip: "Show each option's chat keyword so viewers know what to type" },
+            { key: "show_rank", label: "Show rank numbers", type: "checkbox",
+              tooltip: "Number the options 1, 2, 3 in vote order (Bars and Inside)" },
+            { key: "show_total", label: "Show total votes", type: "checkbox",
+              tooltip: "Show the total number of votes in the footer" },
+            { key: "highlight_leader", label: "Highlight the leader", type: "checkbox",
+              tooltip: "Make the option in the lead glow while voting is open" },
+            { key: "animate_bars", label: "Animate bars", type: "checkbox",
+              tooltip: "Bars grow smoothly as votes come in instead of jumping" },
+            { key: "winner_effect", label: "Winner effect", type: "select",
+              tooltip: "How the winning option stands out after the poll ends",
+              options: ["glow", "pulse", "none"] },
+            { key: "dim_losers", label: "Dim other options", type: "checkbox",
+              tooltip: "Fade the options that did not win after the poll ends" },
             { key: "layout", label: "Layout", type: "select",
               tooltip: "Stack options in a column, or place them side by side",
               options: ["vertical", "horizontal"] },
@@ -625,8 +697,24 @@
               tooltip: "Gap between options" },
             { key: "background_color", label: "Background", type: "color",
               tooltip: "Fill behind the poll" },
+            { key: "padding", label: "Padding (px)", type: "number", min: 0, max: 120,
+              tooltip: "Space between the panel edge and its contents" },
+            { key: "border_radius", label: "Corner radius (px)", type: "number", min: 0, max: 200,
+              tooltip: "Rounds the panel corners" },
+            { key: "border_width", label: "Border width (px)", type: "number", min: 0, max: 40,
+              tooltip: "Outline around the panel. 0 for none." },
+            { key: "border_color", label: "Border color", type: "color",
+              tooltip: "Color of the panel outline" },
+            { key: "panel_shadow", label: "Panel shadow", type: "checkbox",
+              tooltip: "Soft shadow under the panel" },
             { key: "bar_color", label: "Bar color", type: "color",
               tooltip: "Fill color of each vote bar" },
+            { key: "bar_color_2", label: "Bar gradient color", type: "color",
+              tooltip: "Second color for a gradient along each bar. Leave empty for a solid bar." },
+            { key: "bar_height", label: "Bar height (px)", type: "number", min: 2, max: 80,
+              tooltip: "Thickness of the vote bars (Bars style)" },
+            { key: "bar_radius", label: "Bar corner radius (px)", type: "number", min: 0, max: 80,
+              tooltip: "Rounds the bars and cards" },
             { key: "track_color", label: "Track color", type: "color",
               tooltip: "Color behind the unfilled part of a bar" },
             { key: "winner_color", label: "Winner color", type: "color",
@@ -643,6 +731,7 @@
     var BLOCK_LABELS = {
         audio: "Audio",
         clock: "Clock",
+        confetti: "Confetti",
         counter: "Counter",
         data_display: "Data display",
         container: "Container",
@@ -668,7 +757,7 @@
         { group: "Layout", types: ["container", "divider", "gradient", "shape"] },
         { group: "Media", types: ["audio", "embed", "image", "qr", "video"] },
         { group: "Text", types: ["text"] },
-        { group: "Widgets", types: ["counter", "list", "poll", "progress_bar", "stat_card", "wheel"] }
+        { group: "Widgets", types: ["confetti", "counter", "list", "poll", "progress_bar", "stat_card", "wheel"] }
     ];
     var stagePreviewIntervals = [];
 
@@ -2249,7 +2338,8 @@
             qr: "\u25A6",
             embed: "\u25A3",
             stat_card: "#",
-            poll: "\u2713"
+            poll: "\u2713",
+            confetti: "\u2728"
         };
         return '<span class="ss-block__icon">' + (icons[type] || "?") + "</span>";
     }
@@ -4541,9 +4631,50 @@
             paintStatCardPreview(node, el);
             return;
         }
+        if (el.type === "confetti") {
+            paintConfettiPreview(node, el);
+            return;
+        }
         if (el.type === "poll") {
             paintPollPreview(node, el, pollPreviewBucket(el.id));
         }
+    }
+
+    /* A still scatter of pieces in the block's colors (bursts play in Preview and OBS). */
+    function paintConfettiPreview(node, el) {
+        var props = el.props || {};
+        var colors = String(props.colors || "").split(/[\n,]+/).map(function (c) { return c.trim(); }).filter(Boolean);
+        if (!colors.length) { colors = ["#7c3aed", "#2563eb", "#e11d48", "#16a34a", "#d97706", "#facc15"]; }
+        var size = Math.max(2, Number(props.particle_size) || 10);
+        node.style.overflow = "hidden";
+        node.style.outline = "1px dashed rgba(255,255,255,0.25)";
+        node.textContent = "";
+        var count = Math.min(60, Math.max(12, Math.round((Number(props.particle_count) || 150) / 4)));
+        for (var i = 0; i < count; i++) {
+            var piece = document.createElement("i");
+            piece.style.position = "absolute";
+            piece.style.left = ((i * 53) % 97) + "%";
+            piece.style.top = ((i * 37) % 91) + "%";
+            piece.style.width = size + "px";
+            piece.style.height = Math.round(size * 0.55) + "px";
+            piece.style.borderRadius = "2px";
+            piece.style.background = colors[i % colors.length];
+            piece.style.transform = "rotate(" + ((i * 47) % 360) + "deg)";
+            piece.style.opacity = "0.85";
+            node.appendChild(piece);
+        }
+        var label = document.createElement("div");
+        label.textContent = "Confetti";
+        label.style.cssText = "position:absolute;left:8px;bottom:6px;font:600 12px system-ui;color:rgba(255,255,255,0.7)";
+        node.appendChild(label);
+        node.title = "Bursts when its Data feed fires (Giveaway winner by default).";
+    }
+
+    /* Same markup as the overlay runtime's sporeAccentHtml. */
+    function accentPreviewHtml(text) {
+        var safe = String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return '<span class="spore-accent-line">' +
+            safe.replace(/\[\[([\s\S]*?)\]\]/g, '<span class="spore-accent">$1</span>') + '</span>';
     }
 
     var pollPreviewBuckets = {};
@@ -4572,6 +4703,14 @@
         return pad(minutes) + ":" + pad(secs);
     }
 
+    /* Mirrors the overlay runtime (sporePaintPoll): same classes, so editor.css's poll
+       rules (copied from behavior_blocks.WIDGET_CSS) give the same look on the canvas. */
+    function pollPreviewOn(value, fallback) {
+        if (value == null || value === "") { return fallback; }
+        if (typeof value === "string") { return ["false", "0", "no", "off"].indexOf(value.toLowerCase()) < 0; }
+        return !!value;
+    }
+
     function paintPollPreview(node, el, bucket, animate) {
         var props = el.props || {};
         bucket = bucket || pollPreviewBucket(el.id);
@@ -4579,20 +4718,35 @@
         var handle = node.querySelector(".ss-element__handle");
         var oldPage = null;
         if (animate) {
-            oldPage = node.querySelector(".ss-poll-page");
+            oldPage = node.querySelector(".spore-poll-page");
             if (oldPage) { oldPage.remove(); }
         }
+        var style = ["inside", "cards"].indexOf(props.style) >= 0 ? props.style : "bars";
+        var bar = props.bar_color || "#a855f7";
+        node.className = node.className.replace(/\b(spore-poll|is-style-\w+|is-ended|is-leader-on|is-dim-losers|has-shadow|fx-\w+)\b/g, "").trim();
+        node.classList.add("spore-poll", "is-style-" + style);
+        node.classList.toggle("is-ended", data.status === "ended");
+        node.classList.toggle("is-leader-on", pollPreviewOn(props.highlight_leader, true));
+        node.classList.toggle("is-dim-losers", pollPreviewOn(props.dim_losers, true));
+        node.classList.toggle("has-shadow", pollPreviewOn(props.panel_shadow, true));
+        var fx = props.winner_effect || "glow";
+        if (fx === "glow" || fx === "pulse") { node.classList.add("fx-" + fx); }
+        node.style.setProperty("--sp-bar", bar);
+        node.style.setProperty("--sp-bar2", props.bar_color_2 || bar);
+        node.style.setProperty("--sp-track", props.track_color || "rgba(255,255,255,0.15)");
+        node.style.setProperty("--sp-win", props.winner_color || "#facc15");
+        node.style.setProperty("--sp-barh", (props.bar_height != null ? props.bar_height : 12) + "px");
+        node.style.setProperty("--sp-radius", (props.bar_radius != null ? props.bar_radius : 12) + "px");
         node.style.display = "flex";
-        node.style.flexDirection = "column";
-        node.style.gap = "6px";
-        node.style.padding = "8px";
-        node.style.boxSizing = "border-box";
-        node.style.overflow = "hidden";
+        node.style.padding = props.padding != null && props.padding !== "" ? props.padding + "px" : "";
+        node.style.gap = "";
         node.style.color = props.color || "#ffffff";
         node.style.fontSize = (props.font_size || 22) + "px";
         node.style.fontFamily = props.font_family || "Arial";
         node.style.fontWeight = props.font_weight || "normal";
         node.style.background = props.background_color || "rgba(15,23,42,0.85)";
+        node.style.borderRadius = (props.border_radius != null ? props.border_radius : 0) + "px";
+        node.style.border = Number(props.border_width) > 0 ? props.border_width + "px solid " + (props.border_color || "transparent") : "";
         node.textContent = "";
         if (handle) { node.appendChild(handle); }
         var options = Array.isArray(data.options) ? data.options.slice() : [];
@@ -4600,116 +4754,140 @@
             options = options.filter(function (row) { return row && row.winner; });
         }
         var remain = pollPreviewRemaining(bucket);
-        var showTimer = props.show_timer !== false && data.status === "open" && !data.permanent && remain != null;
-        var showBar = props.show_timer_bar !== false && showTimer;
-        var timerEl = null;
-        if (showTimer || showBar) {
-            timerEl = document.createElement("div");
-            timerEl.className = "ss-poll-timer";
-            timerEl.style.fontSize = "0.7em";
-            if (showTimer) {
-                var text = document.createElement("div");
-                text.className = "ss-poll-timer-text";
-                text.textContent = pollPreviewClockText(remain);
-                timerEl.appendChild(text);
-            }
-            if (showBar) {
-                var track = document.createElement("div");
-                track.style.height = "6px";
-                track.style.marginTop = "4px";
-                track.style.borderRadius = "3px";
-                track.style.background = props.track_color || "rgba(255,255,255,0.15)";
-                track.style.overflow = "hidden";
-                var fill = document.createElement("div");
-                fill.className = "ss-poll-timer-fill";
-                var duration = Number(data.duration_seconds || 0);
-                var pct = duration > 0 ? Math.max(0, Math.min(100, (remain / duration) * 100)) : 0;
-                fill.style.height = "100%";
-                fill.style.width = pct + "%";
-                fill.style.background = props.bar_color || "#a855f7";
-                track.appendChild(fill);
-                timerEl.appendChild(track);
-            }
-            node.appendChild(timerEl);
+        var open = data.status === "open";
+        var timed = open && !data.permanent && remain != null;
+
+        var head = document.createElement("div");
+        head.className = "spore-poll-head";
+        var title = document.createElement("div");
+        title.className = "spore-poll-title";
+        title.textContent = props.title || "";
+        head.appendChild(title);
+        var chip = document.createElement("div");
+        chip.className = "spore-poll-chip";
+        var chipText = "";
+        if (open && props.show_timer !== false) {
+            chipText = timed ? pollPreviewClockText(remain) : "Live";
+            chip.classList.add("is-live");
+        } else if (data.status === "ended") {
+            chipText = "Poll closed";
         }
+        chip.textContent = chipText;
+        chip.hidden = !chipText;
+        head.appendChild(chip);
+        head.hidden = !props.title && !chipText;
+        node.appendChild(head);
+
+        var timer = document.createElement("div");
+        timer.className = "spore-poll-timer";
+        timer.innerHTML = '<div class="spore-poll-timer-track"><div class="spore-poll-timer-fill"></div></div>';
+        var duration = Number(data.duration_seconds || 0);
+        timer.querySelector(".spore-poll-timer-fill").style.width =
+            (timed && duration > 0 ? Math.max(0, Math.min(100, (remain / duration) * 100)) : 0) + "%";
+        timer.hidden = !(timed && props.show_timer_bar !== false);
+        node.appendChild(timer);
+
         var stage = document.createElement("div");
-        stage.className = "ss-poll-stage";
-        stage.style.position = "relative";
+        stage.className = "spore-poll-options";
         stage.style.flex = "1";
-        stage.style.minHeight = "0";
-        stage.style.width = "100%";
-        stage.style.overflow = "hidden";
         stage.style.transform = "translateZ(0)";
         node.appendChild(stage);
+
+        var foot = document.createElement("div");
+        foot.className = "spore-poll-foot";
+        var note = open || data.status === "idle" ? (props.foot_text || "") : "";
+        var total = Number(data.total_votes || 0);
+        var totalText = pollPreviewOn(props.show_total, true) ? total + (total === 1 ? " vote" : " votes") : "";
+        foot.innerHTML = '<span class="spore-poll-foot-text"></span><span class="spore-poll-total"></span>';
+        foot.firstChild.textContent = note;
+        foot.lastChild.textContent = totalText;
+        foot.hidden = !note && !totalText;
+        node.appendChild(foot);
+
+        var horizontal = style === "cards" || props.layout === "horizontal";
         var list = document.createElement("div");
-        list.className = "ss-poll-page";
-        list.style.position = "relative";
-        list.style.display = "flex";
-        list.style.flexDirection = props.layout === "horizontal" ? "row" : "column";
-        list.style.gap = (props.row_gap != null ? props.row_gap : 8) + "px";
-        list.style.width = "100%";
-        list.style.minHeight = "0";
-        list.style.overflow = "hidden";
-        list.style.flex = "1";
+        list.className = "spore-poll-page" + (horizontal ? " is-horizontal" : "");
+        var gap = props.row_gap != null ? Number(props.row_gap) : 8;
+        list.style.gap = gap + "px";
         if (!options.length) {
             var empty = document.createElement("div");
-            empty.textContent = "No poll categories yet";
+            empty.textContent = "No poll options yet";
             empty.style.opacity = "0.7";
             empty.style.fontSize = "0.75em";
             list.appendChild(empty);
             stage.appendChild(list);
-            node.title = "Live poll for this template. Add categories in Chatbot → Polls.";
+            node.title = "Live poll for this template. Add options in Chatbot → Polls.";
             return;
         }
         stage.appendChild(list);
-        var gap = props.row_gap != null ? Number(props.row_gap) : 8;
-        var horizontal = props.layout === "horizontal";
         var leader = 0;
         options.forEach(function (row) {
             var count = Number(row && row.votes || 0);
             if (count > leader) { leader = count; }
         });
-        function makeRow(sample) {
-            var row = document.createElement("div");
-            row.style.flex = horizontal ? "0 0 auto" : "0 0 auto";
-            row.style.minWidth = "0";
-            row.style.width = horizontal ? "auto" : "100%";
-            var label = document.createElement("div");
-            var meta = [];
-            if (props.show_counts !== false) { meta.push(String(Number(sample.votes || 0))); }
-            if (props.show_percent !== false) { meta.push(String(sample.percent != null ? sample.percent : 0) + "%"); }
-            label.textContent = (sample.name || "") + (meta.length ? "  " + meta.join(" · ") : "");
-            label.style.whiteSpace = "nowrap";
-            label.style.overflow = "hidden";
-            label.style.textOverflow = "ellipsis";
-            if (sample.winner) { label.style.color = props.winner_color || "#facc15"; }
-            row.appendChild(label);
-            if (props.display_mode !== "text") {
-                var bar = document.createElement("div");
-                bar.style.height = "8px";
-                bar.style.marginTop = "4px";
-                bar.style.borderRadius = "4px";
-                bar.style.background = props.track_color || "rgba(255,255,255,0.15)";
-                bar.style.overflow = "hidden";
-                var fillBar = document.createElement("div");
-                fillBar.style.height = "100%";
-                var votes = Number(sample.votes || 0);
-                fillBar.style.width = (leader > 0 ? (votes / leader) * 100 : 0) + "%";
-                fillBar.style.background = props.bar_color || "#a855f7";
-                bar.appendChild(fillBar);
-                row.appendChild(bar);
+        var showBars = props.display_mode !== "text" || style !== "bars";
+        function makeRow(sample, rank) {
+            var votes = Number(sample.votes || 0);
+            var option = document.createElement("div");
+            option.className = "spore-poll-option";
+            if (sample.winner) { option.classList.add("is-winner"); }
+            if (open && leader > 0 && votes === leader) { option.classList.add("is-leader"); }
+            var line = document.createElement("div");
+            line.className = "spore-poll-row";
+            if (pollPreviewOn(props.show_rank, false) && style !== "cards") {
+                var badge = document.createElement("span");
+                badge.className = "spore-poll-rank";
+                badge.textContent = String(rank);
+                line.appendChild(badge);
             }
-            return row;
+            var name = document.createElement("span");
+            name.className = "spore-poll-name";
+            name.textContent = sample.name || "";
+            line.appendChild(name);
+            if (pollPreviewOn(props.show_keywords, true) && sample.keyword) {
+                var kw = document.createElement("span");
+                kw.className = "spore-poll-kw";
+                kw.textContent = sample.keyword;
+                line.appendChild(kw);
+            }
+            var meta = [];
+            if (props.show_counts !== false && !(style === "cards" && props.show_percent !== false)) { meta.push(String(votes)); }
+            if (props.show_percent !== false) { meta.push(String(sample.percent != null ? sample.percent : 0) + "%"); }
+            if (meta.length) {
+                var metaEl = document.createElement("span");
+                metaEl.className = "spore-poll-meta";
+                metaEl.textContent = meta.join(" · ");
+                line.appendChild(metaEl);
+            }
+            option.appendChild(line);
+            if (showBars) {
+                var track = document.createElement("div");
+                track.className = "spore-poll-bar";
+                var fillBar = document.createElement("div");
+                fillBar.className = "spore-poll-bar-fill";
+                fillBar.style.setProperty("--sp-fill", (leader > 0 ? (votes / leader) * 100 : 0) + "%");
+                track.appendChild(fillBar);
+                option.appendChild(track);
+            }
+            return option;
         }
-        var probe = makeRow(options[0]);
+        var probe = makeRow(options[0], 1);
         probe.style.visibility = "hidden";
         list.appendChild(probe);
         var rowH = probe.offsetHeight || 1;
         var rowW = probe.offsetWidth || 1;
         list.removeChild(probe);
-        var timerH = timerEl ? timerEl.offsetHeight + 6 : 0;
-        var availH = Math.max(0, node.clientHeight - 16 - timerH);
-        var availW = Math.max(0, node.clientWidth - 16);
+        var cs = window.getComputedStyle(node);
+        var padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+        var padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+        var outerGap = parseFloat(cs.rowGap || cs.gap) || 0;
+        var reserved = 0;
+        [head, timer, foot].forEach(function (part) {
+            if (!part.hidden) { reserved += part.offsetHeight + outerGap; }
+        });
+        var availH = Math.max(0, node.clientHeight - padY - reserved);
+        var availW = Math.max(0, node.clientWidth - padX);
+        if (style === "cards") { rowW = (props.font_size || 22) * 4.5; }
         var fit = horizontal
             ? Math.floor((availW + gap) / (rowW + gap))
             : Math.floor((availH + gap) / (rowH + gap));
@@ -4725,7 +4903,7 @@
         bucket.pageCount = pageCount;
         bucket.pageSize = pageSize;
         var slice = options.slice(page * pageSize, page * pageSize + pageSize);
-        slice.forEach(function (sample) { list.appendChild(makeRow(sample)); });
+        slice.forEach(function (sample, i) { list.appendChild(makeRow(sample, page * pageSize + i + 1)); });
         if (animate && oldPage && props.rotator_animation !== "none") {
             var anim = props.rotator_animation || "slide horizontal";
             var ms = Number(props.rotator_animation_ms);
@@ -4751,10 +4929,11 @@
     function tickPollPreviewClock(node, el, bucket) {
         if (!node || !bucket || !bucket.data) { return; }
         var remain = pollPreviewRemaining(bucket);
-        var text = node.querySelector(".ss-poll-timer-text");
-        if (text && remain != null) { text.textContent = pollPreviewClockText(remain); }
-        var fill = node.querySelector(".ss-poll-timer-fill");
-        if (fill && remain != null) {
+        if (remain == null) { return; }
+        var chip = node.querySelector(".spore-poll-chip.is-live");
+        if (chip) { chip.textContent = pollPreviewClockText(remain); }
+        var fill = node.querySelector(".spore-poll-timer-fill");
+        if (fill) {
             var duration = Number(bucket.data.duration_seconds || 0);
             var pct = duration > 0 ? Math.max(0, Math.min(100, (remain / duration) * 100)) : 0;
             fill.style.width = pct + "%";
@@ -6500,9 +6679,13 @@
                     var spd = (el.props && el.props.speed) != null ? el.props.speed : 8;
                     node.style.setProperty("--ss-marquee-duration", spd + "s");
                     node.dataset.marqueeDir = (el.props && el.props.direction) || "left";
+                } else if (displayText.indexOf("[[") >= 0) {
+                    node.innerHTML = accentPreviewHtml(displayText);
                 } else {
                     node.textContent = displayText;
                 }
+                if (el.props && el.props.accent_color) { node.style.setProperty("--spore-accent", el.props.accent_color); }
+                if (el.props && el.props.accent_background) { node.style.setProperty("--spore-accent-bg", el.props.accent_background); }
             } else if (el.type === "clock") {
                 ensureClockDefaults(el);
                 node.textContent = formatClockTime(
@@ -6564,7 +6747,7 @@
                 track.appendChild(fill);
                 node.appendChild(track);
             } else if (el.type === "list" || el.type === "wheel" || el.type === "now_playing" ||
-                    el.type === "qr" || el.type === "embed" || el.type === "stat_card" ||
+                    el.type === "qr" || el.type === "embed" || el.type === "stat_card" || el.type === "confetti" ||
                     el.type === "poll") {
                 paintWidgetPreview(node, el);
             }
@@ -8959,7 +9142,7 @@
             }
             if (type === "wheel") { ensureWheelDefaults(el); }
             if (type === "stat_card") { ensureStatCardDefaults(el); }
-            if (type === "list" || type === "poll" || type === "now_playing") {
+            if (type === "list" || type === "poll" || type === "now_playing" || type === "confetti") {
                 el.data_feed = [newFeedFor(el, {})];
             } else if (type === "stat_card") {
                 el.data_feed = [newValueFeedFor(el, "set_value", el.stat_source, 1000)];

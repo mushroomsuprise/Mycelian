@@ -77,11 +77,11 @@
             </div>
           </div>
           <div class="hm-cb-gp-card">
-            <div class="hm-cb-gp-card-h"><span class="hx-mi">cast</span>Overlay<span class="hm-cb-gp-badge">giveaway</span><span class="hm-marker" data-n="7"></span></div>
+            <div class="hm-cb-gp-card-h"><span class="hx-mi">cast</span>Overlay<span class="hm-cb-gp-badge">Spore Studio</span><span class="hm-marker" data-n="7"></span></div>
             <div class="hm-cb-gp-card-b">
-              <div class="hm-cb-gp-row">Shows the keyword, entrants and winners on stream.</div>
+              <div class="hm-cb-gp-row">Shows the keyword, entrants and winners on stream, with confetti for the winner. Change its look in Spore Studio.</div>
               <div class="hm-cb-gp-url"><span>http://127.0.0.1:5000/giveaway</span><span class="hx-mi">content_copy</span></div>
-              <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">palette</span>Customize look</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">open_in_new</span>Preview</span></div>
+              <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">auto_awesome</span>Edit in Spore Studio</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">open_in_new</span>Preview</span></div>
             </div>
           </div>
         </div>
@@ -98,7 +98,7 @@
   <li data-n="4">Hover an entrant to see {{icon:close}} <strong>Remove from the pool</strong> and {{icon:block}} <strong>Remove and block from future giveaways</strong>.</li>
   <li data-n="5">The keyword, how many win per draw and the winner announcement.</li>
   <li data-n="6">Who can enter and how draws work. Defaults shown.</li>
-  <li data-n="7">The <code>giveaway</code> overlay for OBS.</li>
+  <li data-n="7">The <code>giveaway</code> overlay for OBS, a Spore Studio template.</li>
 </ol>
 
 <h2>The three states</h2>
@@ -313,15 +313,32 @@
 
 <h2>Overlay</h2>
 
-<p>The built-in <code>giveaway</code> overlay template shows the keyword, entrants and winners on stream. In the <strong>Overlay</strong> card:</p>
+<p>The built-in <code>giveaway</code> overlay is a <a href="help:spore_studio_overview">Spore Studio</a> template, 440 × 620. In the <strong>Overlay</strong> card:</p>
 
 <ul>
   <li>Click the address to copy it, then add it to OBS as a Browser Source.</li>
-  <li><strong>Customize look</strong> opens <span class="hx-path"><span>Source Settings</span></span> with the giveaway template selected. See <a href="help:template_configuration">Configuring Template Settings</a>.</li>
+  <li><strong>Edit in Spore Studio</strong> opens the template in Spore Studio.</li>
   <li><strong>Preview</strong> opens the overlay in your browser.</li>
 </ul>
 
+<div class="hx-table-wrap"><table>
+  <thead><tr><th>Block</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><strong>panel</strong></td><td>The background card. Hidden until a giveaway starts, or shown at once when the overlay loads mid-giveaway. <strong>New giveaway</strong> hides it. Fades in over 0.6 s and out over 1.2 s.</td></tr>
+    <tr><td><strong>keyword</strong></td><td><em>Type <b>!enter</b> to enter!</em> with the keyword highlighted</td></tr>
+    <tr><td><strong>count</strong></td><td>The entry count, such as <em>6 entries</em>, while entries are open</td></tr>
+    <tr><td><strong>closed</strong></td><td><em>Entries closed</em> once you stop entries</td></tr>
+    <tr><td><strong>entrants</strong></td><td>Entrants, newest on top, sliding in from the side. Up to 200 rows. Rebuilt from the pool when the overlay loads and after a draw, and cleared by <strong>New giveaway</strong>.</td></tr>
+    <tr><td><strong>winner_panel</strong></td><td>Covers the card for 8 seconds after a draw: <em>Congratulations!</em> and the winners' names, one per line, popping in</td></tr>
+    <tr><td><strong>confetti</strong></td><td>A <a href="help:spore_studio_widgets">Confetti</a> burst on each draw. It is drawn by the overlay, so no internet is needed.</td></tr>
+  </tbody>
+</table></div>
+
+<p>Fonts, colors, sizes, texts and animations are all set in Spore Studio. The wording that changes with the giveaway lives in each block's <a href="help:spore_studio_data_feed">Data feed</a> template, for example <code>Type [[{keyword}]] to enter!</code> on <strong>keyword</strong> and <code>{pool_size|plural:entry,entries}</code> on <strong>count</strong>. Edit the template there, not only the block's <strong>Text</strong>, or the feed writes the old wording back.</p>
+
 <p>Refreshing the browser source keeps the current keyword and entrants. Removing an entrant on the tab updates the overlay's list, and <strong>New giveaway</strong> clears the overlay. See <a href="help:templates_intro">Templates</a>.</p>
+
+<div class="hx-callout hx-note"><p>The older giveaway overlay's options in Source Settings are gone. If you had changed them, they reset; set the look again in Spore Studio.</p></div>
 
 <h2>Statistics</h2>
 

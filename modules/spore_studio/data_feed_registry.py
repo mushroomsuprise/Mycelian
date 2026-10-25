@@ -67,6 +67,9 @@ FORMATTERS: List[Dict[str, Any]] = [
     {"id": "trim", "label": "Trim spaces", "example": "{message|trim}"},
     {"id": "truncate", "label": "Truncate", "arg": "length", "example": "{message|truncate:40}"},
     {"id": "default", "label": "Fallback text", "arg": "text", "example": "{username|default:Anonymous}"},
+    {"id": "plural", "label": "Count with a word (1 entry, 5 entries)", "arg": "one,many", "example": "{pool_size|plural:entry,entries}"},
+    {"id": "join", "label": "Join a list", "arg": "separator", "example": "{winners|join: & }"},
+    {"id": "count", "label": "How many in a list", "example": "{pool_entries|count}"},
 ]
 
 SAMPLE_PAYLOAD_FALLBACKS: Dict[str, Any] = {
@@ -177,6 +180,18 @@ BLOCK_TARGETS: Dict[str, List[Dict[str, Any]]] = {
             "Adds one row for every matching item. Placement, row limit, lifetime and animations are set in the List section.",
         ),
         _target("list_clear", "Clear the list", accepts="trigger"),
+        _target(
+            "list_replace",
+            "Replace all rows",
+            "Rebuilds the list from a list in the data (first entry is the newest), for example the giveaway pool on giveaway_sync.",
+            options=[
+                _opt(
+                    "items_field", "List field", "text", default="pool_entries",
+                    tooltip="Payload field holding the list of rows, newest first (for example pool_entries).",
+                ),
+            ],
+            accepts="trigger",
+        ),
     ],
     "wheel": [
         _target(
@@ -263,6 +278,9 @@ BLOCK_TARGETS: Dict[str, List[Dict[str, Any]]] = {
     "poll": [
         _target("repaint", "Paint from the data", "Repaints the poll from a poll-shaped payload."),
     ],
+    "confetti": [
+        _target("confetti_burst", "Burst confetti", "Fires a burst using this block's count, duration, spread and colors.", accepts="trigger"),
+    ],
     "now_playing": [
         _target("repaint", "Paint from the data", "Repaints from a now-playing-shaped payload."),
     ],
@@ -286,16 +304,18 @@ DEFAULT_TARGET: Dict[str, str] = {
     "embed": "set_embed_url",
     "poll": "repaint",
     "now_playing": "repaint",
+    "confetti": "confetti_burst",
 }
 
 # Sources a block starts with when a feed is added from scratch.
 DEFAULT_SOURCE_EVENTS: Dict[str, List[str]] = {
     "poll": ["poll_state", "poll_ended"],
+    "confetti": ["giveaway_winner"],
     "now_playing": ["spotify_data_update"],
 }
 
 BLOCK_TYPES = (
-    "audio", "clock", "container", "counter", "data_display", "divider", "embed",
+    "audio", "clock", "confetti", "container", "counter", "data_display", "divider", "embed",
     "gradient", "image", "list", "marquee", "now_playing", "poll", "progress_bar",
     "qr", "shape", "stat_card", "text", "timer", "video", "wheel",
 )

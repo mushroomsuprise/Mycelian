@@ -32,12 +32,17 @@ TEMPLATE_STEMS = (
     "title",
     "alerts",
     "giveaway",
+    "poll",
     "ff7",
     "factorio",
     "bitcounter",
     "spotify",
     "trophies",
 )
+
+# Spore Studio sidecars shipped with their built-in templates (needed to open them in
+# Spore Studio and, for poll, to list the overlay in Chatbot -> Polls).
+SPORE_SIDECARS = ("bitcounter", "giveaway", "poll")
 
 # Directories copied in full on every install (Inno ``ignoreversion``).
 ALWAYS_DIRS = (
@@ -92,11 +97,12 @@ def iter_payload_files(project_root: Path):
         "templates/_boilerplates",
         "replace",
     )
-    yield from _one_file(
-        root / "templates" / "_spore" / "bitcounter.spore.json",
-        "templates/_spore/bitcounter.spore.json",
-        "replace",
-    )
+    for stem in SPORE_SIDECARS:
+        yield from _one_file(
+            root / "templates" / "_spore" / f"{stem}.spore.json",
+            f"templates/_spore/{stem}.spore.json",
+            "replace",
+        )
 
     for relative in ONLY_IF_MISSING:
         yield from _tree(root / relative, relative, "if-missing")
@@ -158,10 +164,11 @@ def stage_install_payload(dest: Path, project_root: Path) -> None:
         project_root / "templates" / "_boilerplates",
         templates / "_boilerplates",
     )
-    _require_copy(
-        project_root / "templates" / "_spore" / "bitcounter.spore.json",
-        templates / "_spore" / "bitcounter.spore.json",
-    )
+    for stem in SPORE_SIDECARS:
+        _require_copy(
+            project_root / "templates" / "_spore" / f"{stem}.spore.json",
+            templates / "_spore" / f"{stem}.spore.json",
+        )
 
     defaults = dest / "installer_defaults"
     for relative in ONLY_IF_MISSING:

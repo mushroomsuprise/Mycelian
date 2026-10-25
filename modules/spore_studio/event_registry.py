@@ -125,6 +125,15 @@ _EVENTS: List[Dict[str, Any]] = [
         ],
     },
     {
+        "event": "giveaway_start",
+        "label": "Giveaway started",
+        "alert_system": "either",
+        "description": "Fired when entries open (Start giveaway or Reopen entries). keyword is what viewers type.",
+        "payload": [
+            {"key": "keyword", "label": "Keyword", "type": "string"},
+        ],
+    },
+    {
         "event": "giveaway_entry",
         "label": "Giveaway entry",
         "alert_system": "either",
@@ -132,6 +141,36 @@ _EVENTS: List[Dict[str, Any]] = [
         "payload": [
             {"key": "username", "label": "Username", "type": "string"},
             {"key": "pool_size", "label": "Pool size", "type": "number"},
+            {"key": "pool_entries", "label": "Pool entries (newest first)", "type": "array"},
+        ],
+    },
+    {
+        "event": "giveaway_stop",
+        "label": "Giveaway entries closed",
+        "alert_system": "either",
+        "description": "Fired when entries close. The pool stays until a new giveaway.",
+        "payload": [],
+    },
+    {
+        "event": "giveaway_clear",
+        "label": "Giveaway cleared",
+        "alert_system": "either",
+        "description": "Fired by New giveaway: the pool and keyword are cleared.",
+        "payload": [],
+    },
+    {
+        "event": "giveaway_sync",
+        "label": "Giveaway state",
+        "alert_system": "either",
+        "description": (
+            "The whole giveaway at once: sent when an overlay loads or refreshes, and when an "
+            "entrant is removed in Mycelian. Use it to rebuild lists and labels."
+        ),
+        "payload": [
+            {"key": "keyword", "label": "Keyword", "type": "string"},
+            {"key": "accepting", "label": "Accepting entries", "type": "boolean"},
+            {"key": "pool_size", "label": "Pool size", "type": "number"},
+            {"key": "pool_entries", "label": "Pool entries (newest first)", "type": "array"},
         ],
     },
     {

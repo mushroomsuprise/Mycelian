@@ -277,9 +277,47 @@ def _giveaway_start_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _giveaway_entry_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
+    name = random.choice(pools["usernames"])
+    others = [n for n in pools["usernames"] if n != name][:6]
     return {
-        "username": random.choice(pools["usernames"]),
-        "pool_size": 1,
+        "username": name,
+        "pool_size": len(others) + 1,
+        "pool_entries": [name] + others,
+    }
+
+
+def _giveaway_sync_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
+    names = list(pools["usernames"])[:8]
+    return {
+        "keyword": random.choice(_giveaway_keywords()),
+        "accepting": True,
+        "pool_size": len(names),
+        "pool_entries": names,
+    }
+
+
+def _poll_payload(ended: bool) -> Dict[str, Any]:
+    """A sample poll (no template name, so every Poll widget in the preview paints it)."""
+    now = time.time()
+    rows = [("Hollow Knight", "#hollowknight"), ("Celeste", "#celeste"), ("Hades II", "#hadesii"), ("Balatro", "#balatro")]
+    votes = sorted((random.randint(0, 50) for _ in rows), reverse=True)
+    total = sum(votes)
+    options = [
+        {"id": f"mock{i}", "name": name, "keyword": kw, "votes": v,
+         "percent": round(v * 100 / total, 1) if total else 0, "winner": ended and i == 0 and v > 0}
+        for i, ((name, kw), v) in enumerate(zip(rows, votes))
+    ]
+    return {
+        "status": "ended" if ended else "open",
+        "permanent": False,
+        "duration_seconds": 120,
+        "ends_at": None if ended else now + 75,
+        "ended_at": now if ended else None,
+        "server_now": now,
+        "remaining_seconds": None if ended else 75,
+        "options": options,
+        "total_votes": total,
+        "winners": [o for o in options if o["winner"]],
     }
 
 
@@ -444,6 +482,18 @@ _BUILDERS: Dict[str, Tuple[str, Any]] = {
     "giveaway_clear": (
         "giveaway_clear",
         lambda pools: {},
+    ),
+    "giveaway_sync": (
+        "giveaway_sync",
+        lambda pools: _giveaway_sync_payload(pools),
+    ),
+    "poll_state": (
+        "poll_state",
+        lambda pools: _poll_payload(False),
+    ),
+    "poll_ended": (
+        "poll_ended",
+        lambda pools: _poll_payload(True),
     ),
     "streamer-info": (
         "streamer-info",

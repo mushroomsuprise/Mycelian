@@ -26,7 +26,7 @@ from ..poll_manager import (
     poll_widget_info,
 )
 from ..ui_timer import layout_schedule
-from .chatbot_gp_styles import card, clock, duration_text, esc, icon, inject_styles, overlay_rows, plural, seg, toggle
+from .chatbot_gp_styles import card, clock, duration_text, esc, icon, inject_styles, open_in_spore_studio, overlay_rows, plural, seg, toggle
 from .editor_variables import VariableKit, raw_html
 from .tab_visibility import chatbot_subtab_hidden, on_chatbot_subtab_shown
 
@@ -99,25 +99,31 @@ def bars_html(snapshot: Dict[str, Any], style: Dict[str, Any], live: bool) -> st
 
 
 def widget_html(snapshot: Dict[str, Any], style: Dict[str, Any]) -> str:
-    """A small stand-in for the Spore Studio Poll widget, in its own colours."""
+    """A small stand-in for the Spore Studio Poll widget (title, keyword chips, bars) in its own colours."""
     options = list(snapshot.get("options") or [])
     if not options:
         options = [{"name": "Option 1", "votes": 0, "percent": 0}, {"name": "Option 2", "votes": 0, "percent": 0}]
     top = max((int(o.get("votes") or 0) for o in options), default=0)
+    bar = esc(style.get("bar_color"))
+    bar2 = esc(style.get("bar_color_2") or style.get("bar_color"))
     parts = []
+    if style.get("title"):
+        parts.append(f'<div class="gp-widget-title">{esc(style.get("title"))}</div>')
     for row in options[:6]:
         votes = int(row.get("votes") or 0)
         width = (votes / top * 100) if top else 0
-        fill = style.get("winner_color") if row.get("winner") else style.get("bar_color")
+        fill = esc(style.get("winner_color")) if row.get("winner") else f"linear-gradient(90deg, {bar}, {bar2})"
         numbers = []
         if style.get("show_counts", True):
             numbers.append(f"{votes:,}")
         if style.get("show_percent", True):
             numbers.append(f"{float(row.get('percent') or 0):g}%")
+        chip = (f'<span class="gp-widget-kw">{esc(row.get("keyword"))}</span>'
+                if style.get("show_keywords", True) and row.get("keyword") else "")
         parts.append(
-            f'<div class="gp-widget-row"><div class="gp-widget-top"><span>{esc(row.get("name"))}</span><span>{" · ".join(numbers)}</span></div>'
+            f'<div class="gp-widget-row"><div class="gp-widget-top"><span>{esc(row.get("name"))}{chip}</span><span>{" · ".join(numbers)}</span></div>'
             f'<div class="gp-widget-track" style="background:{esc(style.get("track_color"))}">'
-            f'<div class="gp-widget-fill" style="width:{width:.2f}%;background:{esc(fill)}"></div></div></div>'
+            f'<div class="gp-widget-fill" style="width:{width:.2f}%;background:{fill}"></div></div></div>'
         )
     return (f'<div class="gp-widget" style="background:{esc(style.get("background_color"))};--gp-widget-text:{esc(style.get("color"))}">'
             + "".join(parts) + "</div>")
@@ -563,12 +569,7 @@ class PollsPanel:
         self._set_html(self.widget, "widget", widget_html(snapshot, self._style))
 
     def _open_spore(self) -> None:
-        from ..help_system.contextual_help import navigate_to_main_tab
-        from .spore_studio.editor_view import open_template
-
-        navigate_to_main_tab("Spore Studio")
-        if self.template:
-            open_template(self.template)
+        open_in_spore_studio(self.template)
 
     # -- actions ---------------------------------------------------------------------
 
