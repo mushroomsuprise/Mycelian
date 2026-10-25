@@ -50,6 +50,9 @@ body:not(.body--dark) .itg :is(p, span, div, label):not([class]) { color: inheri
   color: var(--color-text-primary);
   background: color-mix(in srgb, var(--brand) 14%, transparent); border: 1px solid color-mix(in srgb, var(--brand) 38%, transparent); }
 .itg-brand svg { width: 19px; height: 19px; }
+.itg-tile { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  background: var(--color-primary-light); border: 1px solid var(--color-border-accent); }
+.itg-tile .itg-icon { font-size: 19px; color: var(--color-primary); }
 .itg-title-name { font-size: .95rem; font-weight: 650; line-height: 1.15; color: var(--color-text-primary); }
 .itg-title-sub { font-size: .72rem; color: var(--color-text-muted); }
 .itg-pills { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -225,6 +228,122 @@ body:not(.body--dark) .itg :is(p, span, div, label):not([class]) { color: inheri
 .itg-split { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 14px; align-items: start; }
 @media (max-width: 900px) { .itg-split { grid-template-columns: 1fr; } }
 .itg-actions-end { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+
+/* Choice cards (one of several, e.g. database type) */
+.itg-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 760px) { .itg-choices { grid-template-columns: 1fr; } }
+.itg-choice { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; cursor: pointer;
+  background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); }
+.itg-choice:hover { border-color: var(--color-border-default); }
+.itg-choice.is-on { border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 9%, var(--color-bg-base));
+  box-shadow: 0 0 0 1px var(--color-primary) inset; }
+.itg-choice-top { display: flex; align-items: center; gap: 8px; }
+.itg-choice-top .itg-icon { font-size: 18px; color: var(--color-text-muted); }
+.itg-choice.is-on .itg-choice-top .itg-icon { color: var(--color-primary); }
+.itg-choice-name { font-size: .84rem; font-weight: 650; color: var(--color-text-primary); }
+.itg-choice-sub { font-size: .72rem; line-height: 1.35; color: var(--color-text-muted); }
+.itg-choice-check { margin-left: auto; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--color-border-default); flex: 0 0 auto; }
+.itg-choice.is-on .itg-choice-check { border: 5px solid var(--color-primary); }
+.itg-choice-tag { position: absolute; top: -8px; right: 10px; padding: 0 7px; height: 16px; display: inline-flex; align-items: center;
+  border-radius: 999px; font-size: .6rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--color-success); background: var(--color-bg-surface); border: 1px solid color-mix(in srgb, var(--color-success) 40%, transparent); }
+
+/* Tool rows (an action with a title and description) */
+.itg-tool { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--color-bg-base);
+  border: 1px solid var(--color-border-subtle); }
+.itg-tool + .itg-tool { margin-top: 8px; }
+.itg-tool-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  background: var(--color-primary-light); flex: 0 0 auto; }
+.itg-tool-icon .itg-icon { font-size: 20px; color: var(--color-primary); }
+.itg-tool-text { flex: 1 1 auto; min-width: 0; }
+.itg-tool-title { font-size: .84rem; font-weight: 650; color: var(--color-text-primary); }
+.itg-tool-sub { font-size: .72rem; line-height: 1.35; color: var(--color-text-muted); }
+.itg-tool .q-btn { min-height: 30px; font-size: .78rem; }
+
+/* Icon tile in an account card (pages without a brand) */
+.itg-acct-tile { width: 40px; height: 40px; border-radius: 10px; }
+.itg-acct-tile .itg-icon { font-size: 21px; }
+.itg-choice:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.itg-num { width: 86px; }
+.itg-unit { width: 40px; font-size: .72rem; color: var(--color-text-muted); }
+
+/* Small dialogs (wrap in a div with class itg and style width:auto) */
+.itg-dialog { width: 460px; max-width: calc(100vw - 48px); padding: 16px; }
+.itg-dialog.is-wide { width: 520px; }
+.itg-dialog.is-danger { border-color: color-mix(in srgb, var(--color-error) 45%, var(--color-border-subtle)); }
+.itg-dialog-title { display: flex; align-items: center; gap: 8px; font-size: 1.02rem; font-weight: 700; color: var(--color-text-primary); }
+.itg-dialog-title .itg-icon { font-size: 20px; color: var(--color-error); }
+.itg-dialog-sub { margin-top: 4px; font-size: .78rem; line-height: 1.45; color: var(--color-text-muted); }
+.itg-dialog .itg-actions-end { margin-top: 16px; }
+.itg-dialog .q-btn { min-height: 30px; font-size: .8rem; }
+.itg-dialog-arrow { padding-bottom: 8px; }
+.itg-dialog-arrow .itg-icon { font-size: 18px; color: var(--color-text-muted); }
+
+/* Database Explorer */
+.dbx { display: flex; flex-direction: column; height: 100%; background: var(--color-bg-base); }
+.dbx-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; background: var(--color-bg-surface);
+  border-bottom: 1px solid var(--color-border-subtle); }
+.dbx-head .q-btn { min-height: 30px; font-size: .8rem; }
+.dbx-main { flex: 1 1 auto; display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: 0; }
+.dbx-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--color-border-subtle); background: var(--color-bg-surface); }
+.dbx-search { padding: 10px; border-bottom: 1px solid var(--color-border-subtle); }
+.dbx-tree { flex: 1 1 auto; overflow-y: auto; padding: 6px; min-height: 0; }
+.dbx-node { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; font-size: .8rem;
+  color: var(--color-text-secondary); cursor: pointer; white-space: nowrap; min-width: 0; }
+.dbx-node:hover { background: color-mix(in srgb, var(--color-primary) 7%, transparent); color: var(--color-text-primary); }
+.dbx-node.is-on { background: color-mix(in srgb, var(--color-primary) 16%, transparent); color: var(--color-text-primary); font-weight: 600; }
+.dbx-node .itg-icon { font-size: 16px; color: var(--color-text-muted); }
+.dbx-node .chev { width: 16px; flex: 0 0 auto; border-radius: 4px; }
+.dbx-node .chev:hover { color: var(--color-text-primary); }
+.dbx-node .fold { color: var(--color-warning); }
+.dbx-node .leaf { color: var(--color-info); }
+.dbx-node .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: inherit; }
+.dbx-node .n { margin-left: auto; padding-left: 8px; font-size: .66rem; color: var(--color-text-muted); }
+.dbx-node.is-more { font-size: .74rem; font-weight: 600; color: color-mix(in srgb, var(--color-primary) 60%, var(--color-text-primary)); }
+.dbx-tree-note { padding: 14px 10px; font-size: .76rem; text-align: center; color: var(--color-text-muted); }
+.dbx-side-foot { padding: 7px 12px; font-size: .7rem; color: var(--color-text-muted); border-top: 1px solid var(--color-border-subtle); }
+.dbx-content { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.dbx-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 8px 14px; font-size: .78rem; min-height: 37px;
+  border-bottom: 1px solid var(--color-border-subtle); color: var(--color-text-muted); }
+.dbx-crumbs .itg-icon { font-size: 16px; color: var(--color-text-muted); }
+.dbx-crumb { color: color-mix(in srgb, var(--color-primary) 60%, var(--color-text-primary)); font-weight: 600; cursor: pointer; }
+.dbx-crumb:hover { text-decoration: underline; }
+.dbx-crumb-sep { color: var(--color-text-muted); }
+.dbx-crumb-cur { color: var(--color-text-primary); font-weight: 650; }
+.dbx-body { flex: 1 1 auto; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.dbx-item { display: flex; align-items: flex-start; gap: 12px; }
+.dbx-item-name { font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbx-item-path { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.dbx-path-text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .76rem; color: var(--color-text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbx-item-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.dbx-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: .66rem; font-weight: 650;
+  color: var(--color-text-secondary); background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); }
+.dbx-editor { border: 1px solid var(--color-border-subtle); border-radius: 10px; overflow: hidden; background: var(--color-bg-surface);
+  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 420px; }
+.dbx-editor-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--color-border-subtle);
+  font-size: .76rem; color: var(--color-text-secondary); }
+.dbx-editor-bar .q-btn { min-height: 26px; font-size: .74rem; }
+.dbx-bar-label { font-size: .76rem; font-weight: 650; color: var(--color-text-primary); }
+.dbx-valid { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 650; color: var(--color-success);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbx-valid .itg-icon { font-size: 14px; color: inherit; }
+.dbx-valid.is-bad { color: var(--color-error); }
+.dbx-valid span { color: inherit; }
+.dbx-cm { flex: 1 1 auto; min-height: 0; }
+.dbx-cm .cm-editor { height: 100%; font-size: 13px; background: var(--color-bg-base); }
+.dbx-cm .cm-gutters { background: var(--color-bg-surface); border-right: 1px solid var(--color-border-subtle); color: var(--color-text-muted); }
+.dbx-cm.is-small { flex: none; height: 120px; border: 1px solid var(--color-border-subtle); border-radius: 8px; overflow: hidden; }
+.dbx-editor-foot { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--color-border-subtle); }
+.dbx-editor-foot .q-btn { min-height: 30px; font-size: .78rem; }
+.dbx-kbd { font-size: .7rem; color: var(--color-text-muted); }
+.dbx-kbd kbd { font-family: inherit; padding: 1px 5px; border-radius: 4px; color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-default); background: var(--color-bg-base); }
+.dbx-del.q-btn, .dbx-del.q-btn .q-icon, .dbx-del.q-btn span { color: var(--color-error); }
+.dbx-empty { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 40px 16px; }
+.dbx-empty .itg-icon { font-size: 44px; color: var(--color-text-muted); opacity: .6; }
+.dbx-empty-title { font-size: .98rem; font-weight: 650; color: var(--color-text-secondary); }
+.dbx-empty-sub { font-size: .76rem; color: var(--color-text-muted); }
 """
 
 _STYLE_ID = "mycelian-integrations"
@@ -304,7 +423,10 @@ class IntegrationPage:
         is_dirty: Callable[[], bool],
         help_topic: str = "",
         help_tooltip: str = "",
+        icon: str = "",
     ) -> None:
+        """``key`` picks the brand mark and colour; pass ``icon`` (a Material icon) for pages
+        without a brand (Game Hooks, Database)."""
         inject_integration_styles()
         self._is_dirty = is_dirty
         self._last_dirty: Optional[bool] = None
@@ -314,8 +436,13 @@ class IntegrationPage:
             with self.root:
                 with ui.element("div").classes("itg-shell"):
                     with ui.element("div").classes("itg-head"):
+                        mark = (
+                            f'<span class="itg-tile">{icon_html(icon)}</span>'
+                            if icon
+                            else f'<span class="itg-brand">{brand_svg(key)}</span>'
+                        )
                         ui.html(
-                            f'<span class="itg-brand">{brand_svg(key)}</span>'
+                            f'{mark}'
                             f'<span><div class="itg-title-name">{esc(title)}</div>'
                             f'<div class="itg-title-sub">{esc(subtitle)}</div></span>',
                             sanitize=False,
@@ -367,6 +494,16 @@ class IntegrationPage:
         self._timer.active = active
 
 
+def tool_row(icon: str, title: str, sub: str) -> Any:
+    """An action line (icon, title, description); returns the container for its button(s)."""
+    with ui.element("div").classes("itg-tool"):
+        ui.html(f'<span class="itg-tool-icon">{icon_html(icon)}</span>', sanitize=False)
+        ui.html(f'<div class="itg-tool-title">{esc(title)}</div><div class="itg-tool-sub">{esc(sub)}</div>', sanitize=False).classes(
+            "itg-tool-text"
+        )
+        return ui.element("div").classes("flex items-center gap-2")
+
+
 def section(icon: str, title: str, right: str = "") -> Any:
     """A titled block in a column. ``right``: small HTML shown at the end of the heading."""
     sec = ui.element("div").classes("itg-sec")
@@ -399,9 +536,14 @@ class AccountCard:
             self._meta.set_visibility(False)
         self.set("", "off", "")
 
-    def set(self, name: str, state_kind: str, state_text: str, *, initial: Optional[str] = None) -> None:
-        """``initial``: a letter for the avatar; None shows the muted brand mark."""
-        if initial:
+    def set(
+        self, name: str, state_kind: str, state_text: str, *, initial: Optional[str] = None, icon: Optional[str] = None
+    ) -> None:
+        """``initial``: a letter for the avatar; ``icon``: a Material icon tile instead (pages
+        without a brand); neither shows the muted brand mark."""
+        if icon:
+            ava = f'<span class="itg-tile itg-acct-tile">{icon_html(icon)}</span>'
+        elif initial:
             ava = f'<div class="itg-ava">{esc(initial[:1].upper())}</div>'
         else:
             ava = f'<div class="itg-ava is-empty">{brand_svg(self.key)}</div>'
@@ -705,4 +847,5 @@ __all__: List[str] = [
     "steps_html",
     "switch_row",
     "tokens",
+    "tool_row",
 ]

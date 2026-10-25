@@ -4,14 +4,17 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import logging
+from functools import lru_cache
 from typing import Any, Dict, Optional, Tuple
 
 from nicegui import run, ui
 import time
 
 from ...notification_engine import nav_actions_settings, notify
-from ...ui_buttons import outline_button, primary_button
+from ...ui_buttons import outline_button
 from ...ui_timer import layout_schedule
 
 from ...database_manager import (
@@ -29,6 +32,7 @@ from ...game_hooks.registry import (
     set_hook_enabled_cached,
 )
 from ..os_brand_icons import OS_BRAND_ROW
+from .integration_ui import IntegrationPage, esc, section
 
 logger = logging.getLogger(__name__)
 
@@ -37,22 +41,70 @@ logger = logging.getLogger(__name__)
 _HOOK_ERROR_TOASTED: Dict[str, float] = {}
 _HOOK_ERROR_TOAST_GAP_SEC = 600.0
 
-_CARD_BASE = (
-    "content-card w-full min-w-0 p-3 border-2 border-solid transition-colors"
-)
-_STATE_NEUTRAL = "border-transparent"
-_STATE_SUCCESS = "border-theme-success"
-_STATE_WARNING = "border-theme-warning"
-_STATE_ERROR = "border-theme-error"
-_STATE_UNSUPPORTED = "opacity-60 border-theme-error"
+_OS_LABELS = {key: label for _c, _g, key, label in OS_BRAND_ROW}
 
-_CARD_STATE_CLASSES = {
-    "neutral": _STATE_NEUTRAL,
-    "success": _STATE_SUCCESS,
-    "warning": _STATE_WARNING,
-    "error": _STATE_ERROR,
-    "unsupported": _STATE_UNSUPPORTED,
-}
+GAME_HOOKS_CSS = """
+.itg-hooks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 1000px) { .itg-hooks { grid-template-columns: 1fr; } }
+.itg-hook { display: flex; flex-direction: column; border: 1px solid var(--color-border-subtle); border-radius: 10px;
+  background: var(--color-bg-base); overflow: hidden; transition: border-color .15s; }
+.itg-hook.is-success { border-color: color-mix(in srgb, var(--color-success) 50%, var(--color-border-subtle)); }
+.itg-hook.is-warning { border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border-subtle)); }
+.itg-hook.is-error { border-color: color-mix(in srgb, var(--color-error) 50%, var(--color-border-subtle)); }
+.itg-hook.is-unsupported .itg-hook-top { opacity: .6; }
+.itg-hook-top { display: flex; align-items: center; gap: 12px; padding: 11px 12px; flex: 1 1 auto; }
+.itg-hook-cover { width: 52px; height: 52px; border-radius: 9px; flex: 0 0 auto; overflow: hidden; display: flex; align-items: center;
+  justify-content: center; font-weight: 800; font-size: .9rem; color: #fff; background: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-border-subtle); }
+.itg-hook-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.itg-hook-text { flex: 1 1 auto; min-width: 0; }
+.itg-hook-name { font-size: .92rem; font-weight: 650; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.itg-os { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.itg-os-chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px 0 5px; border-radius: 999px; font-size: .66rem;
+  font-weight: 600; color: var(--color-text-secondary); background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); }
+.itg-os-chip svg { width: 12px; height: 12px; }
+.itg-os-chip.is-no { opacity: .45; text-decoration: line-through; }
+.itg-hook-state { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 8px 4px 12px; border-top: 1px solid var(--color-border-subtle);
+  font-size: .76rem; color: var(--color-text-secondary); }
+.itg-hook-line { display: flex; align-items: center; gap: 7px; flex: 1 1 auto; min-width: 0; }
+.itg-hook-line span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.itg-hook-line .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--st, var(--color-text-muted)); flex: 0 0 auto; }
+.itg-hook-line.is-success { --st: var(--color-success); }
+.itg-hook-line.is-warning { --st: var(--color-warning); }
+.itg-hook-line.is-error { --st: var(--color-error); }
+.itg-hook-acts { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.itg-hook-acts .q-btn { min-height: 26px; font-size: .72rem; padding: 0 8px; }
+.itg-hook-detail { font-size: .7rem; color: var(--color-text-muted); white-space: nowrap; }
+.itg-hook-detail.is-ok { color: var(--color-success); }
+.itg-hook-detail.is-warning { color: var(--color-warning); }
+"""
+
+_STYLE_ID = "mycelian-game-hooks"
+
+
+@lru_cache(maxsize=None)
+def _cover_data_uri(hook_id: str) -> Optional[str]:
+    """Game cover from assets/default_assets/images/game_hooks/<hook_id>.jpg, as a small data URI."""
+    try:
+        from PIL import Image
+
+        from ...path_utils import get_assets_path
+
+        path = get_assets_path(f"default_assets/images/game_hooks/{hook_id}.jpg")
+        with Image.open(path) as im:
+            im = im.convert("RGB")
+            im.thumbnail((112, 112))
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=88)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception as e:
+        logger.debug("Game Hooks: no cover for %s: %s", hook_id, e)
+        return None
+
+
+def _initials(title: str) -> str:
+    words = [w for w in str(title or "").replace("(", " ").split() if w[:1].isalnum()]
+    return "".join(w[0] for w in words[:3]).upper() or "?"
 
 
 class GameHooksTab:
@@ -67,6 +119,8 @@ class GameHooksTab:
         self._hook_supported: Dict[str, bool] = {}
         self._last_error_notified: Dict[str, str] = {}
         self._refresh_inflight: bool = False
+        self._card_state: Dict[str, Tuple[str, str]] = {}
+        self._page: Optional[IntegrationPage] = None
 
     def _load_from_db(self) -> None:
         for meta in list_hooks_for_ui():
@@ -83,23 +137,19 @@ class GameHooksTab:
             self._hook_supported[hid] = runtime_os_key() in meta.supported_platforms
         self.dirty = False
 
-    def _render_os_strip(self, supported: frozenset) -> None:
-        with ui.row().classes("items-center gap-2 shrink-0"):
-            for svg_color, svg_grey, os_key, os_label in OS_BRAND_ROW:
-                supported_here = os_key in supported
-                tip = (
-                    f"{os_label} — supported"
-                    if supported_here
-                    else f"{os_label} — not supported"
-                )
-                svg = svg_color if supported_here else svg_grey
-                cls = (
-                    "inline-flex items-center leading-none opacity-100 drop-shadow-sm"
-                    if supported_here
-                    else "inline-flex items-center leading-none opacity-55"
-                )
-                with ui.element("div").classes(cls).tooltip(tip):
-                    ui.html(svg, tag="span", sanitize=False)
+    @staticmethod
+    def _os_chips_html(supported: frozenset) -> str:
+        chips = []
+        for svg_color, svg_grey, os_key, os_label in OS_BRAND_ROW:
+            ok = os_key in supported
+            # The lit Apple mark is near-white; draw it in the chip's text colour so it shows in light themes.
+            svg_color = svg_color.replace('fill="#f5f5f7"', 'fill="currentColor"')
+            tip = f"{os_label}: supported" if ok else f"{os_label}: not supported"
+            chips.append(
+                f'<span class="itg-os-chip{"" if ok else " is-no"}" title="{esc(tip)}">'
+                f'{svg_color if ok else svg_grey}{esc(os_label)}</span>'
+            )
+        return '<div class="itg-os">' + "".join(chips) + "</div>"
 
     @staticmethod
     def _truncate(msg: str, max_len: int = 120) -> str:
@@ -151,12 +201,49 @@ class GameHooksTab:
 
         return "error", GameHooksTab._truncate(err)
 
-    def _apply_card_state(self, hook_id: str, state: str) -> None:
-        card = self.ui_elements.get(f"{hook_id}_card")
-        if card is None:
+    def _unsupported_text(self, hook_id: str) -> str:
+        here = _OS_LABELS.get(runtime_os_key(), "this computer")
+        meta = {m.hook_id: m for m in list_hooks_for_ui()}.get(hook_id)
+        where = ", ".join(_OS_LABELS.get(k, k) for k in sorted(meta.supported_platforms)) if meta else ""
+        return f"Not available on {here}" + (f" · {where} only" if where else "")
+
+    def _waiting_text(self, hook_id: str) -> str:
+        cls = get_hook_class(hook_id)
+        names = tuple(getattr(cls, "process_names", ()) or ())
+        return f"Waiting for the game · looking for {names[0]}" if names else "Waiting for the game to start"
+
+    def _apply_card_state(self, hook_id: str, state: str, text: str = "") -> None:
+        """Card border + status line. ``state``: neutral | success | warning | error | unsupported."""
+        if state == "neutral" and not text:
+            text = "Off" if not self._loaded_enabled.get(hook_id) else "Starting…"
+        if self._card_state.get(hook_id) == (state, text):
             return
-        state_classes = _CARD_STATE_CLASSES.get(state, _STATE_NEUTRAL)
-        card.classes(replace=f"{_CARD_BASE} {state_classes}")
+        self._card_state[hook_id] = (state, text)
+        card = self.ui_elements.get(f"{hook_id}_card")
+        if card is not None:
+            card.classes(replace=f"itg-hook is-{state}")
+        line = self.ui_elements.get(f"{hook_id}_line")
+        if line is not None:
+            line.set_content(f'<span class="dot"></span><span>{esc(text)}</span>')
+            line.classes(replace=f"itg-hook-line is-{state}")
+            tip = self.ui_elements.get(f"{hook_id}_line_tip")
+            if tip is not None:
+                tip.set_text(text)
+
+    def _refresh_header(self) -> None:
+        if self._page is None:
+            return
+        attached = sum(1 for st, _t in self._card_state.values() if st == "success")
+        problems = sum(1 for st, _t in self._card_state.values() if st == "error")
+        on = sum(1 for hid, v in self._loaded_enabled.items() if v and self._hook_supported.get(hid, True))
+        pills = []
+        if attached:
+            pills.append(("ok", f"{attached} game{'s' if attached != 1 else ''} running"))
+        if problems:
+            pills.append(("error", f"{problems} with a problem"))
+        if not pills:
+            pills.append(("warn", "Waiting for a game") if on else ("off", "No hooks on"))
+        self._page.set_status(pills)
 
     def _maybe_notify_error(self, hook_id: str, err_msg: Optional[str], title: str) -> None:
         # Driven by the status timer: the card shows the error; the pop-up is rate-limited.
@@ -169,7 +256,7 @@ class GameHooksTab:
                 if last is None or now - last >= _HOOK_ERROR_TOAST_GAP_SEC:
                     _HOOK_ERROR_TOASTED[hook_id] = now
                     notify(
-                        "Its card below shows the latest status.",
+                        "Its card shows the latest status.",
                         type="warning",
                         source="game_hooks",
                         title=f"The {title} hook has a problem",
@@ -186,39 +273,61 @@ class GameHooksTab:
         meta_by_id = {m.hook_id: m for m in list_hooks_for_ui()}
         title = meta_by_id.get(hook_id).title if hook_id in meta_by_id else hook_id
 
+        if not self._hook_supported.get(hook_id, True):
+            self._apply_card_state(hook_id, "unsupported", self._unsupported_text(hook_id))
+            self._last_error_notified.pop(hook_id, None)
+            return
+
         try:
             from ...game_hooks_service import game_hooks_service
 
             info = game_hooks_service.get_hook_ui_snapshot(hook_id)
         except Exception as e:
             logger.debug("%s runtime status: %s", hook_id, e)
-            self._apply_card_state(hook_id, "error")
+            self._apply_card_state(hook_id, "error", "Status unavailable")
             self._maybe_notify_error(hook_id, "Status unavailable", title)
             return
 
         snap = info.get(hook_id)
         if self._is_unsupported(hook_id, snap if isinstance(snap, dict) else None):
-            self._apply_card_state(hook_id, "unsupported")
+            self._apply_card_state(hook_id, "unsupported", self._unsupported_text(hook_id))
+            self._last_error_notified.pop(hook_id, None)
+            return
+
+        if not self._loaded_enabled.get(hook_id):
+            self._apply_card_state(hook_id, "neutral", "Off")
             self._last_error_notified.pop(hook_id, None)
             return
 
         if not info.get("service_running"):
-            self._apply_card_state(hook_id, "warning")
+            self._apply_card_state(hook_id, "warning", "Waiting for the game hooks service to start")
             self._last_error_notified.pop(hook_id, None)
             return
 
         if not isinstance(snap, dict):
-            self._apply_card_state(hook_id, "neutral")
+            self._apply_card_state(hook_id, "neutral", "Starting…")
             return
 
         state, err_msg = self._state_from_snapshot(snap)
-        self._apply_card_state(hook_id, state)
+        self._apply_card_state(hook_id, state, self._state_text(hook_id, state, err_msg))
         self._maybe_notify_error(hook_id, err_msg, title)
+
+    def _state_text(self, hook_id: str, state: str, err_msg: Optional[str]) -> str:
+        if state == "success":
+            return "Attached · reading live data"
+        if state == "warning":
+            return self._waiting_text(hook_id)
+        if state == "error":
+            return f"Problem: {err_msg}"
+        if state == "unsupported":
+            return self._unsupported_text(hook_id)
+        return "Off"
 
     def _refresh_all_runtime_status(self) -> None:
         for meta in list_hooks_for_ui():
             self._refresh_runtime_status(meta.hook_id)
             self._refresh_hook_actions(meta.hook_id)
+        self._refresh_header()
 
     def _collect_hook_ui_actions(self, hook_ids: list) -> Dict[str, list]:
         return {hid: self._hook_ui_actions(hid) for hid in hook_ids}
@@ -233,6 +342,7 @@ class GameHooksTab:
             hook_ids = [meta.hook_id for meta in list_hooks_for_ui()]
             for hid in hook_ids:
                 self._refresh_runtime_status(hid)
+            self._refresh_header()
             actions = await run.io_bound(self._collect_hook_ui_actions, hook_ids) or {}
             for hid in hook_ids:
                 self._refresh_hook_actions(hid, actions.get(hid, []))
@@ -240,66 +350,64 @@ class GameHooksTab:
             self._refresh_inflight = False
 
     def build(self, parent_container) -> None:
+        from ...help_system.help_render import inject_page_stylesheet, promote_color_importance, scope_selectors
+
+        inject_page_stylesheet(_STYLE_ID, promote_color_importance(scope_selectors(GAME_HOOKS_CSS, ".itg")))
         self._load_from_db()
         hook_metas = list_hooks_for_ui()
-        with parent_container:
-            with ui.column().classes("w-full gap-3 settings-tab-content"):
-                ui.label(
-                    "When enabled, Mycelian reads live data from supported PC games "
-                    "and broadcasts it to browser templates."
-                ).classes("settings-description mb-4")
-
-                with ui.grid(columns=3).classes("w-full gap-4"):
+        self._page = page = IntegrationPage(
+            parent_container,
+            "game_hooks",
+            "Game Hooks",
+            "Live data from PC games for your overlays",
+            icon="sports_esports",
+            on_save=self.save,
+            on_discard=self.discard,
+            is_dirty=lambda: self.dirty,
+            help_topic="game_hooks",
+            help_tooltip="How game hooks work",
+        )
+        count = len(hook_metas)
+        with page.wide(top=True):
+            with section("extension", "Hooks", f"{count} game{'s' if count != 1 else ''}"):
+                with ui.element("div").classes("itg-hooks"):
                     for meta in hook_metas:
-                        hid = meta.hook_id
-                        hook_supported = self._hook_supported.get(hid, True)
-                        initial_state = (
-                            "unsupported" if not hook_supported else "neutral"
-                        )
-                        with ui.column().classes(
-                            f"{_CARD_BASE} {_CARD_STATE_CLASSES[initial_state]}"
-                        ) as card_col:
-                            self.ui_elements[f"{hid}_card"] = card_col
-                            with ui.row().classes(
-                                "w-full items-center justify-between gap-2 min-w-0"
-                            ):
-                                with ui.row().classes(
-                                    "items-center gap-2 min-w-0 flex-1"
-                                ):
-                                    ui.label(meta.title).classes(
-                                        "font-semibold text-sm shrink-0"
-                                    )
-                                    self._render_os_strip(meta.supported_platforms)
-                                sw = (
-                                    ui.switch(
-                                        value=(
-                                            self._buffer_enabled.get(hid, False)
-                                            if hook_supported
-                                            else False
-                                        ),
-                                    )
-                                    .classes("shrink-0 ml-auto")
-                                    .on(
-                                        "update:model-value",
-                                        lambda e, h=hid: self._on_toggle(
-                                            h, bool(e.args)
-                                        ),
-                                    )
-                                )
-                                if not hook_supported:
-                                    sw.disable()
-                                self.ui_elements[f"{hid}_toggle"] = sw
-                            self._render_hook_actions(hid)
+                        self._build_card(meta)
 
-                self._status_timer = layout_schedule(
-                    0.5, self._refresh_all_runtime_status_async, active=True
-                )
-
-            with ui.row().classes("justify-end gap-2 mt-4 w-full"):
-                outline_button("Discard", self.discard)
-                primary_button("Save", self.save)
-
+        self._status_timer = layout_schedule(0.5, self._refresh_all_runtime_status_async, active=True)
+        self._refresh_header()
         layout_schedule(0.05, self._refresh_all_runtime_status_async, once=True)
+
+    def _build_card(self, meta: Any) -> None:
+        hid = meta.hook_id
+        hook_supported = self._hook_supported.get(hid, True)
+        initial_state = "unsupported" if not hook_supported else "neutral"
+        with ui.element("div").classes(f"itg-hook is-{initial_state}") as card:
+            self.ui_elements[f"{hid}_card"] = card
+            with ui.element("div").classes("itg-hook-top"):
+                cover = _cover_data_uri(hid)
+                cover_html = f'<img src="{cover}" alt="">' if cover else esc(_initials(meta.title))
+                ui.html(f'<div class="itg-hook-cover">{cover_html}</div>', sanitize=False)
+                ui.html(
+                    f'<div class="itg-hook-name">{esc(meta.title)}</div>{self._os_chips_html(meta.supported_platforms)}',
+                    sanitize=False,
+                ).classes("itg-hook-text")
+                sw = (
+                    ui.switch(value=self._buffer_enabled.get(hid, False) if hook_supported else False)
+                    .props("dense")
+                    .on("update:model-value", lambda e, h=hid: self._on_toggle(h, bool(e.args)))
+                )
+                if not hook_supported:
+                    sw.disable()
+                    sw.tooltip(self._unsupported_text(hid))
+                self.ui_elements[f"{hid}_toggle"] = sw
+            with ui.element("div").classes("itg-hook-state"):
+                line = ui.html("", sanitize=False).classes("itg-hook-line")
+                self.ui_elements[f"{hid}_line"] = line
+                # Full status text on hover (the line is cut off when long).
+                self.ui_elements[f"{hid}_line_tip"] = ui.tooltip("")
+                self._render_hook_actions(hid)
+        self._apply_card_state(hid, initial_state, self._unsupported_text(hid) if not hook_supported else "")
 
     def _hook_ui_actions(self, hook_id: str) -> list:
         cls = get_hook_class(hook_id)
@@ -316,16 +424,17 @@ class GameHooksTab:
     @staticmethod
     def _detail_classes(tone: str) -> str:
         if tone == "warning":
-            return "text-xs font-semibold text-theme-warning"
+            return "itg-hook-detail is-warning"
         if tone == "ok":
-            return "text-xs opacity-80"
-        return "text-xs opacity-60"
+            return "itg-hook-detail is-ok"
+        return "itg-hook-detail"
 
     def _render_hook_actions(self, hook_id: str) -> None:
+        """Hook-specific buttons (e.g. Factorio's mod install), compact at the end of the status line."""
         actions = self._hook_ui_actions(hook_id)
         if not actions:
             return
-        with ui.row().classes("w-full items-center gap-2 mt-1 flex-wrap"):
+        with ui.element("div").classes("itg-hook-acts"):
             for action in actions:
                 if not isinstance(action, dict):
                     continue
@@ -334,21 +443,19 @@ class GameHooksTab:
                 tooltip = str(action.get("tooltip") or "")
                 enabled = bool(action.get("enabled", True))
                 run = action.get("run")
+                detail = str(action.get("detail") or "").strip()
+                tone = str(action.get("detail_tone") or "")
+                lbl = ui.label(detail).classes(self._detail_classes(tone))
+                self.ui_elements[f"{hook_id}_action_{aid}_detail"] = lbl
                 btn = outline_button(
                     label,
                     lambda _e=None, h=hook_id, a=aid: self._run_hook_action(h, a),
-                    extra_classes="text-xs",
-                )
+                ).props("dense")
                 if tooltip:
                     self._set_action_tooltip(hook_id, aid, btn, tooltip)
                 if not enabled or not callable(run):
                     btn.disable()
                 self.ui_elements[f"{hook_id}_action_{aid}"] = btn
-                detail = str(action.get("detail") or "").strip()
-                if detail:
-                    tone = str(action.get("detail_tone") or "")
-                    lbl = ui.label(detail).classes(self._detail_classes(tone))
-                    self.ui_elements[f"{hook_id}_action_{aid}_detail"] = lbl
 
     def _set_action_tooltip(self, hook_id: str, aid: str, btn: Any, text: str) -> None:
         """Create the button tooltip once, then only update its text.
@@ -473,11 +580,15 @@ class GameHooksTab:
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
+        if self._page is not None:
+            self._page.set_active(True)
         layout_schedule(0.05, self._refresh_all_runtime_status_async, once=True)
 
     def on_exit(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = False
+        if self._page is not None:
+            self._page.set_active(False)
 
     def save(self) -> None:
         try:

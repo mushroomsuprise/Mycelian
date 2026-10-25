@@ -138,8 +138,8 @@ body:not(.body--dark) .q-page-container {
 
 /* Light mode text colors */
 body:not(.body--dark) p,
-body:not(.body--dark) span,
-body:not(.body--dark) div,
+body:not(.body--dark) span:not(:where(.cm-editor *)),
+body:not(.body--dark) div:not(:where(.cm-editor *)),
 body:not(.body--dark) label,
 body:not(.body--dark) .q-field__native,
 body:not(.body--dark) .q-field__label,

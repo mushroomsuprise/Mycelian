@@ -4,20 +4,33 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 import threading
 from dataclasses import replace
-from typing import Dict, Any, Optional, List
+from datetime import datetime
+from typing import Dict, Any, Optional, List, Set, Tuple
+from urllib.parse import urlparse
 
 from nicegui import run, ui
 from ...notification_engine import nav_actions_settings, notify, notify_progress
 from ...ui_buttons import outline_button, primary_button
-from ...ui_form_controls import form_input, form_number, form_select, form_sensitive_input
 from ...ui_timer import layout_schedule
-from ...ui_settings_layout import (
-    settings_form_grid,
-    settings_section,
-    settings_status_band,
-    settings_surface,
+from .integration_ui import (
+    AccountCard,
+    IntegrationPage,
+    esc,
+    field,
+    field_label,
+    fields,
+    hint,
+    icon_html,
+    inject_integration_styles,
+    pill_html,
+    row,
+    section,
+    tool_row,
+    copy_to_clipboard,
 )
 
 from ... import dataobjects
@@ -34,6 +47,29 @@ from ...database_manager import (
 logger = logging.getLogger(__name__)
 
 _DB_NAV = nav_actions_settings("Database")
+
+# Friendly names for the database types (config values: sql, firebase, mongodb).
+_DB_SHORT = {"sql": "Local file", "firebase": "Firebase", "mongodb": "MongoDB"}
+_DB_NAMES = {"sql": "Local file (SQLite)", "firebase": "Firebase", "mongodb": "MongoDB"}
+_DB_ICONS = {"sql": "folder", "firebase": "cloud", "mongodb": "dns"}
+_DB_CHOICES = (
+    ("sql", "SQLite on this computer. Nothing to set up."),
+    ("firebase", "Google's Realtime Database. Use the same data on several PCs."),
+    ("mongodb", "Your own MongoDB server or Atlas cluster."),
+)
+
+# Explorer tree: rows are plain HTML in one element; a click reports the row's kind and path.
+_TREE_CLICK_JS = (
+    "(e) => { const t = e.target.closest('[data-k]');"
+    " if (t) emit({k: t.dataset.k, p: t.dataset.p}); }"
+)
+_TREE_FOLDER_LIMIT = 300  # rows per folder before a "Show more" row
+_TREE_ROW_LIMIT = 2000  # rows in the whole tree
+_SAVE_KEY_JS = (
+    "(e) => { if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 's' || e.key === 'S'))"
+    " { e.preventDefault(); emit(); } }"
+)
+_ACTIVATE_KEY_JS = "(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); emit(); } }"
 
 
 def _reported_write(fn, *args) -> tuple:
@@ -77,6 +113,87 @@ def _notify_invalid_json(e: json.JSONDecodeError) -> None:
     )
 
 
+def _format_bytes(size: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
+def _ago(value: Any) -> str:
+    """'just now', '12 s ago', '3 min ago'... from an ISO timestamp; '' if unreadable."""
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return ""
+    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+    secs = max(0, int((now - dt).total_seconds()))
+    if secs < 5:
+        return "just now"
+    if secs < 60:
+        return f"{secs} s ago"
+    if secs < 3600:
+        return f"{secs // 60} min ago"
+    if secs < 86400:
+        return f"{secs // 3600} h ago"
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def _live_type() -> str:
+    cfg = database_manager.get_config()
+    return (getattr(cfg, "database_type", "") or "sql") if cfg else "sql"
+
+
+def _resolved_sql_path(path: str) -> str:
+    from ...path_utils import get_data_path
+
+    return path if not path or os.path.isabs(path) else get_data_path(path)
+
+
+def _live_where(cfg: Any) -> str:
+    """Short location of the database in use (never the Mongo connection string)."""
+    if cfg is None:
+        return ""
+    if cfg.database_type == "sql":
+        return os.path.basename(cfg.sql_database_path or "")
+    if cfg.database_type == "firebase":
+        url = cfg.firebase_database_url or ""
+        return urlparse(url).netloc or url
+    return cfg.mongodb_database_name or ""
+
+
+def _text(value: Any) -> str:
+    return "" if value is None else str(value)
+
+
+def _value_text(data: Any) -> str:
+    return json.dumps(data, indent=2, default=str) if data is not None else "{}"
+
+
+def _describe_value(data: Any) -> str:
+    if isinstance(data, dict):
+        return f"Object · {len(data)} key{'' if len(data) == 1 else 's'}"
+    if isinstance(data, list):
+        return f"Array · {len(data)} item{'' if len(data) == 1 else 's'}"
+    if isinstance(data, str):
+        return f"Text · {len(data)} character{'' if len(data) == 1 else 's'}"
+    if isinstance(data, bool):
+        return "True / false"
+    if isinstance(data, (int, float)):
+        return "Number"
+    return "Empty"
+
+
+def _chips_html(data: Any) -> str:
+    try:
+        size = len(json.dumps(data, default=str, separators=(",", ":")).encode("utf-8"))
+    except (TypeError, ValueError):
+        size = 0
+    chips = [_describe_value(data)] + ([_format_bytes(size)] if size else [])
+    return "".join(f'<span class="dbx-chip">{esc(c)}</span>' for c in chips)
+
+
 class DatabaseViewer:
     """A file-browser-like database viewer and editor dialog"""
 
@@ -86,47 +203,72 @@ class DatabaseViewer:
         self.all_paths: List[str] = []
         self.current_path: str = ""
         self.pending_changes: Dict[str, Any] = {}
+        self._loaded_ok: bool = True
+
+        # Tree state: built once per snapshot; only expanded folders are rendered.
+        self._tree_cache: Optional[Dict[str, Any]] = None
+        self._folder_count: int = 0
+        self._expanded: Set[str] = set()
+        self._show_all: Set[str] = set()
+        self._search_collapsed: Set[str] = set()
+        self._filter_text: str = ""
+        self._filter_generation: int = 0
+
+        # Editor state
+        self._original_text: str = ""
+        self._edit_generation: int = 0
+        self._cm_theme: str = "vscodeDark"
 
         # UI element references
-        self._tree_container: Optional[ui.column] = None
-        self._content_container: Optional[ui.column] = None
-        self._breadcrumb_container: Optional[ui.row] = None
+        self._tree_html: Optional[ui.html] = None
+        self._tree_foot: Optional[ui.label] = None
+        self._pill: Optional[ui.html] = None
+        self._search_input: Optional[ui.input] = None
+        self._content_container: Optional[ui.element] = None
+        self._breadcrumb_container: Optional[ui.element] = None
         self._path_label: Optional[ui.label] = None
-        self._json_editor: Optional[ui.textarea] = None
+        self._meta_html: Optional[ui.html] = None
+        self._json_editor: Optional[ui.codemirror] = None
+        self._valid_html: Optional[ui.html] = None
+        self._dirty_html: Optional[ui.html] = None
         self._save_btn: Optional[ui.button] = None
-        self._status_label: Optional[ui.label] = None
 
     async def show(self) -> None:
         """Show the database viewer dialog"""
         await self._load_snapshot()
+        await self._detect_editor_theme()
+        inject_integration_styles()
 
         with ui.dialog().props("maximized persistent") as self.dialog:
-            with (
-                ui.card()
-                .classes("w-full h-full flex flex-col")
-                .style(
-                    "max-width: 100vw; max-height: 100vh; background: var(--color-bg-base);"
-                )
-            ):
-                # Header
+            # Focusable so Ctrl/Cmd+S works wherever the user clicked inside the explorer;
+            # the listener lives on this element, so it goes away with the dialog.
+            root = (
+                ui.element("div")
+                .classes("itg")
+                .props("tabindex=-1")
+                .style("height: 100%; outline: none; background: var(--color-bg-base);")
+            )
+            root.on("keydown", self._on_save_key, js_handler=_SAVE_KEY_JS)
+            with root, ui.element("div").classes("dbx"):
                 self._build_header()
-
-                # Main content area
-                with (
-                    ui.row()
-                    .classes("flex-1 w-full gap-0")
-                    .style("min-height: 0; overflow: hidden;")
-                ):
-                    # Left sidebar - tree navigation
+                with ui.element("div").classes("dbx-main"):
                     self._build_sidebar()
-
-                    # Right content area
                     self._build_content_area()
 
-                # Footer with status
-                self._build_footer()
-
         self.dialog.open()
+
+    async def _detect_editor_theme(self) -> None:
+        """Pick the code editor theme from the page's dark/light mode."""
+        try:
+            dark = await ui.run_javascript("document.body.classList.contains('body--dark')", timeout=2.0)
+        except Exception:
+            try:
+                from ...theme_manager import get_theme_manager
+
+                dark = get_theme_manager().get_theme().theme_type != "light"
+            except Exception:
+                dark = True
+        self._cm_theme = "vscodeDark" if dark else "githubLight"
 
     def _fetch_snapshot(self) -> tuple:
         snapshot, error = database_manager.get_snapshot_checked()
@@ -145,6 +287,9 @@ class DatabaseViewer:
             snapshot, paths, error = {}, [], str(e)
         self.snapshot = snapshot
         self.all_paths = paths
+        self._tree_cache = None
+        self._loaded_ok = not error
+        self._update_pill()
         if error:
             logger.error("Database snapshot failed: %s", error)
             notify(
@@ -164,83 +309,111 @@ class DatabaseViewer:
 
     def _build_header(self) -> None:
         """Build the dialog header"""
-        with (
-            ui.row()
-            .classes("w-full items-center justify-between p-4")
-            .style(
-                "background: var(--color-bg-elevated); border-bottom: 1px solid var(--color-border-default);"
+        with ui.element("div").classes("dbx-head"):
+            ui.html(
+                f'<span class="itg-tile">{icon_html("travel_explore")}</span>'
+                '<span><div class="itg-title-name">Database Explorer</div>'
+                '<div class="itg-title-sub">Browse and edit what Mycelian has stored</div></span>',
+                sanitize=False,
+            ).classes("itg-title")
+            self._pill = ui.html("", sanitize=False)
+            self._update_pill()
+            ui.element("div").classes("itg-spacer")
+            outline_button("Refresh", self._refresh_snapshot, icon="refresh").props("dense").classes("px-3")
+            outline_button("New item", self._show_create_dialog, icon="add").props("dense").classes("px-3")
+            ui.button(icon="close", on_click=self._close_dialog).props("flat round dense").classes("itg-ibtn").tooltip(
+                "Close"
             )
-        ):
-            with ui.row().classes("items-center gap-3"):
-                ui.icon("storage", size="md").classes("text-theme-primary")
-                ui.label("Database Explorer").classes("text-xl font-bold")
-                cfg = database_manager.get_config()
-                db_type = (cfg.database_type if cfg else "unknown").title()
-                ui.badge(db_type, color="primary").classes("ml-2")
 
-            with ui.row().classes("gap-2"):
-                ui.button(
-                    "Refresh",
-                    icon="refresh",
-                    on_click=self._refresh_snapshot,
-                ).props("flat color=white").classes("")
-                ui.button(
-                    "New Path",
-                    icon="add",
-                    on_click=self._show_create_dialog,
-                ).props("flat color=white").classes("")
-                ui.button(
-                    "",
-                    icon="close",
-                    on_click=self._close_dialog,
-                ).props("flat round color=white").classes("")
+    def _update_pill(self) -> None:
+        """Header pill naming the database in use; red when it couldn't be read."""
+        if self._pill is None:
+            return
+        cfg = database_manager.get_config()
+        db_type = _live_type()
+        where = _live_where(cfg)
+        text = _DB_SHORT.get(db_type, db_type) + (f" · {where}" if where else "")
+        self._pill.set_content(pill_html("ok" if self._loaded_ok else "error", text))
 
     def _build_sidebar(self) -> None:
         """Build the left sidebar with tree navigation"""
-        with (
-            ui.column()
-            .classes("h-full")
-            .style(
-                "width: 320px; background: var(--color-bg-base); border-right: 1px solid var(--color-border-default); overflow: hidden;"
-            )
-        ):
-            # Search box
-            with (
-                ui.row()
-                .classes("w-full p-3")
-                .style("border-bottom: 1px solid var(--color-border-default);")
-            ):
+        with ui.element("div").classes("dbx-side"):
+            with ui.element("div").classes("dbx-search"):
                 self._search_input = (
-                    ui.input(
-                        placeholder="Search paths...",
-                    )
-                    .classes("w-full")
-                    .props("dense outlined")
-                    .style("background: var(--color-bg-elevated);")
+                    ui.input(placeholder="Search paths").props("outlined dense clearable").classes("w-full")
                 )
+                with self._search_input.add_slot("prepend"):
+                    ui.icon("search", size="18px")
                 self._search_input.on("update:model-value", self._filter_tree)
 
-            # Tree container with scroll
-            with ui.scroll_area().classes("flex-1 w-full"):
-                self._tree_container = ui.column().classes("w-full p-2 gap-1")
-                self._build_tree()
+            self._tree_html = (
+                ui.html("", sanitize=False).classes("dbx-tree").props('role=tree aria-label="Stored items"')
+            )
+            self._tree_html.on("click", self._on_tree_click, js_handler=_TREE_CLICK_JS)
+            self._tree_foot = ui.label("").classes("dbx-side-foot")
+            self._build_tree()
 
-    def _build_tree(self, filter_text: str = "") -> None:
-        """Build the tree structure from paths"""
-        if self._tree_container is None:
+    def _tree_structure(self) -> Dict[str, Any]:
+        """The nested tree for the current snapshot (cached until the next load)."""
+        if self._tree_cache is None:
+            tree = self._build_tree_structure()
+            _leaves, self._folder_count = self._annotate_counts(tree)
+            self._tree_cache = tree
+        return self._tree_cache
+
+    @classmethod
+    def _annotate_counts(cls, level: Dict[str, Any]) -> Tuple[int, int]:
+        """Store each node's item count (items below it); return (items, folders) in ``level``."""
+        leaves = folders = 0
+        for node in level.values():
+            children = node["__children__"]
+            child_leaves, child_folders = cls._annotate_counts(children) if children else (0, 0)
+            node["__count__"] = child_leaves
+            leaves += child_leaves + (1 if node.get("__is_leaf__") else 0)
+            folders += child_folders + (1 if children else 0)
+        return leaves, folders
+
+    def _build_tree(self, filter_text: Optional[str] = None) -> None:
+        """Render the tree (expanded folders only; while searching, every match is shown)."""
+        if filter_text is not None:
+            if filter_text != self._filter_text:
+                self._search_collapsed.clear()
+            self._filter_text = filter_text
+        if self._tree_html is None:
             return
 
-        self._tree_container.clear()
+        tree = self._tree_structure()
+        if self._tree_foot is not None:
+            items = len(self.all_paths)
+            self._tree_foot.set_text(
+                f"{items} item{'' if items == 1 else 's'} · "
+                f"{self._folder_count} folder{'' if self._folder_count == 1 else 's'}"
+            )
+        if not tree:
+            note = "Nothing stored yet" if self._loaded_ok else "Couldn't read the database"
+            self._tree_html.set_content(f'<div class="dbx-tree-note">{note}</div>')
+            return
 
-        # Build tree structure from flat paths
-        tree_structure = self._build_tree_structure()
-
-        with self._tree_container:
-            if not tree_structure:
-                ui.label("No data in database").classes("secondary-text italic p-4")
-                return
-
-            self._render_tree_level(tree_structure, "", filter_text.lower())
+        query = self._filter_text.strip().lower()
+        visible: Optional[Set[str]] = None
+        if query:
+            visible = set()
+            for path in self.all_paths:
+                if query in path.lower():
+                    parts = path.split("/")
+                    for i in range(1, len(parts) + 1):
+                        visible.add("/".join(parts[:i]))
+        rows: List[str] = []
+        budget = [_TREE_ROW_LIMIT]
+        self._render_tree_level(tree, "", rows, visible, 0, budget)
+        if query and not rows:
+            rows.append(f'<div class="dbx-tree-note">Nothing matches “{esc(self._filter_text.strip())}”.</div>')
+        elif budget[0] <= 0:
+            rows.append(
+                f'<div class="dbx-tree-note">Showing the first {_TREE_ROW_LIMIT:,} rows. '
+                "Search to narrow it down.</div>"
+            )
+        self._tree_html.set_content("".join(rows))
 
     def _build_tree_structure(self) -> Dict[str, Any]:
         """Convert flat paths to nested tree structure"""
@@ -264,108 +437,77 @@ class DatabaseViewer:
         self,
         level: Dict[str, Any],
         parent_path: str,
-        filter_text: str,
-        depth: int = 0,
+        rows: List[str],
+        visible: Optional[Set[str]],
+        depth: int,
+        budget: List[int],
     ) -> None:
-        """Render a level of the tree"""
-        for name, node in sorted(level.items()):
+        """Append the HTML rows for one level (and its open folders) to ``rows``."""
+        names = sorted(level)
+        if visible is not None:
+            names = [n for n in names if (f"{parent_path}/{n}" if parent_path else n) in visible]
+        limit = None if (visible is not None or parent_path in self._show_all) else _TREE_FOLDER_LIMIT
+        pad = 8 + depth * 18
+        for index, name in enumerate(names):
+            if budget[0] <= 0:
+                return
+            if limit is not None and index >= limit:
+                rows.append(
+                    f'<div class="dbx-node is-more" data-k="m" data-p="{esc(parent_path)}" '
+                    f'style="padding-left:{pad + 22}px">Show {len(names) - index:,} more…</div>'
+                )
+                return
+            budget[0] -= 1
+            node = level[name]
             full_path = f"{parent_path}/{name}" if parent_path else name
-
-            # Filter check
-            if filter_text and filter_text not in full_path.lower():
-                # Check if any children match
-                has_matching_children = self._has_matching_children(
-                    node.get("__children__", {}), full_path, filter_text
-                )
-                if not has_matching_children:
-                    continue
-
-            is_leaf = node.get("__is_leaf__", False)
-            has_children = bool(node.get("__children__", {}))
-            is_selected = self.current_path == node.get("__path__", full_path)
-
-            # Create tree item row
-            indent = depth * 16
-            bg_class = "btn-selected" if is_selected else "hover-theme-surface"
-
-            with (
-                ui.row()
-                .classes(
-                    f"w-full items-center py-1 px-2 rounded cursor-pointer {bg_class}"
-                )
-                .style(f"margin-left: {indent}px;") as row
-            ):
-                # Folder/file icon
-                if is_leaf:
-                    ui.icon("description", size="xs").classes("text-blue-400 mr-2")
-                elif has_children:
-                    ui.icon("folder", size="xs").classes("text-yellow-400 mr-2")
+            children = node["__children__"]
+            leaf_path = node.get("__path__")
+            selected = " is-on" if leaf_path is not None and leaf_path == self.current_path else ""
+            if children:
+                if visible is not None:
+                    is_open = full_path not in self._search_collapsed
                 else:
-                    ui.icon("folder_open", size="xs").classes("text-yellow-600 mr-2")
-
-                # Name label
-                ui.label(name).classes("flex-1 text-sm truncate").style(
-                    "max-width: 200px;"
+                    is_open = full_path in self._expanded
+                # A folder that is also an item: the row opens the item, the chevron folds.
+                row_kind, row_path = ("s", leaf_path) if leaf_path is not None else ("t", full_path)
+                rows.append(
+                    f'<div class="dbx-node{selected}" role="treeitem" aria-expanded="{"true" if is_open else "false"}" '
+                    f'data-k="{row_kind}" data-p="{esc(row_path)}" title="{esc(full_path)}" style="padding-left:{pad}px">'
+                    f'<span class="itg-icon chev" data-k="t" data-p="{esc(full_path)}">'
+                    f'{"expand_more" if is_open else "chevron_right"}</span>'
+                    f'<span class="itg-icon fold">{"folder_open" if is_open else "folder"}</span>'
+                    f'<span class="nm">{esc(name)}</span><span class="n">{node.get("__count__", 0):,}</span></div>'
+                )
+                if is_open:
+                    self._render_tree_level(children, full_path, rows, visible, depth + 1, budget)
+            else:
+                path = leaf_path if leaf_path is not None else full_path
+                rows.append(
+                    f'<div class="dbx-node{selected}" role="treeitem" data-k="s" data-p="{esc(path)}" '
+                    f'title="{esc(path)}" style="padding-left:{pad + 22}px">'
+                    f'<span class="itg-icon leaf">data_object</span><span class="nm">{esc(name)}</span></div>'
                 )
 
-                # Click handler
-                if is_leaf:
-                    actual_path = node.get("__path__", full_path)
-                    row.on("click", lambda p=actual_path: self._select_path(p))
-                else:
-                    row.on(
-                        "click",
-                        lambda fp=full_path: self._toggle_folder(fp),
-                    )
-
-            # Render children
-            if has_children:
-                self._render_tree_level(
-                    node["__children__"],
-                    full_path,
-                    filter_text,
-                    depth + 1,
-                )
-
-    def _has_matching_children(
-        self, children: Dict[str, Any], parent_path: str, filter_text: str
-    ) -> bool:
-        """Check if any children match the filter"""
-        for name, node in children.items():
-            full_path = f"{parent_path}/{name}" if parent_path else name
-            if filter_text in full_path.lower():
-                return True
-            if self._has_matching_children(
-                node.get("__children__", {}), full_path, filter_text
-            ):
-                return True
-        return False
+    def _on_tree_click(self, e: Any) -> None:
+        args = e.args if isinstance(e.args, dict) else {}
+        kind, path = args.get("k"), args.get("p")
+        if path is None:
+            return
+        if kind == "t":
+            self._toggle_folder(path)
+        elif kind == "s":
+            self._select_path(path)
+        elif kind == "m":
+            self._show_all.add(path)
+            self._build_tree()
 
     def _build_content_area(self) -> None:
         """Build the main content area"""
-        with (
-            ui.column()
-            .classes("flex-1 h-full")
-            .style("background: var(--color-bg-base); overflow: hidden;")
-        ):
-            # Breadcrumb
-            with (
-                ui.row()
-                .classes("w-full p-3 items-center gap-2")
-                .style(
-                    "background: var(--color-bg-elevated); border-bottom: 1px solid var(--color-border-default);"
-                )
-            ):
-                ui.icon("folder_open", size="sm").classes("secondary-text")
-                self._breadcrumb_container = ui.row().classes(
-                    "flex-1 items-center gap-1 flex-wrap"
-                )
-                self._update_breadcrumb()
-
-            # Content area
-            with ui.scroll_area().classes("flex-1 w-full"):
-                self._content_container = ui.column().classes("w-full p-4 gap-4")
-                self._show_welcome_content()
+        with ui.element("div").classes("dbx-content"):
+            self._breadcrumb_container = ui.element("div").classes("dbx-crumbs")
+            self._update_breadcrumb()
+            self._content_container = ui.element("div").classes("dbx-body")
+            self._show_welcome_content()
 
     def _show_welcome_content(self) -> None:
         """Show welcome/empty state content"""
@@ -373,16 +515,28 @@ class DatabaseViewer:
             return
 
         self._content_container.clear()
+        self._json_editor = None
+        self._save_btn = None
 
         with self._content_container:
-            with ui.column().classes("w-full items-center justify-center py-12"):
-                ui.icon("storage", size="xl").classes("muted-text mb-4")
-                ui.label("Select a path from the tree").classes(
-                    "text-lg secondary-text"
-                )
-                ui.label(f"{len(self.all_paths)} paths available in database").classes(
-                    "text-sm muted-text mt-2"
-                )
+            with ui.element("div").classes("dbx-empty"):
+                ui.html(icon_html("travel_explore" if self._loaded_ok else "cloud_off"), sanitize=False)
+                if not self._loaded_ok:
+                    ui.label("Couldn't read the database").classes("dbx-empty-title")
+                    ui.label("Check the connection in Settings → Database, then press Refresh.").classes(
+                        "dbx-empty-sub"
+                    )
+                elif not self.all_paths:
+                    ui.label("Nothing stored yet").classes("dbx-empty-title")
+                    ui.label("Use New item to add something.").classes("dbx-empty-sub")
+                else:
+                    self._tree_structure()
+                    items = len(self.all_paths)
+                    ui.label("Pick an item on the left").classes("dbx-empty-title")
+                    ui.label(
+                        f"{items} item{'' if items == 1 else 's'} in "
+                        f"{self._folder_count} folder{'' if self._folder_count == 1 else 's'}"
+                    ).classes("dbx-empty-sub")
 
     def _update_breadcrumb(self) -> None:
         """Update the breadcrumb navigation"""
@@ -392,13 +546,11 @@ class DatabaseViewer:
         self._breadcrumb_container.clear()
 
         with self._breadcrumb_container:
-            # Root button
-            ui.button(
-                "Root",
-                on_click=lambda: self._select_path(""),
-            ).props("flat dense").classes("text-theme-primary-light text-xs")
-
+            ui.html(icon_html("home"), sanitize=False)
+            root = ui.label("Root").classes("dbx-crumb" if self.current_path else "dbx-crumb-cur")
             if self.current_path:
+                root.on("click", lambda: self._select_path(""))
+
                 parts = self.current_path.split("/")
                 accumulated_path = ""
 
@@ -407,22 +559,20 @@ class DatabaseViewer:
                         f"{accumulated_path}/{part}" if accumulated_path else part
                     )
 
-                    ui.label("/").classes("muted-text mx-1")
+                    ui.label("/").classes("dbx-crumb-sep")
 
                     if i == len(parts) - 1:
-                        ui.label(part).classes("text-sm font-medium")
+                        ui.label(part).classes("dbx-crumb-cur")
                     else:
-                        path_copy = accumulated_path
-                        ui.button(
-                            part,
-                            on_click=lambda p=path_copy: self._select_path(p),
-                        ).props("flat dense").classes(
-                            "text-theme-primary-light text-xs"
-                        )
+                        crumb = ui.label(part).classes("dbx-crumb")
+                        crumb.on("click", lambda p=accumulated_path: self._select_path(p))
 
     def _select_path(self, path: str) -> None:
         """Select and display a path"""
         self.current_path = path
+        if path:
+            parts = path.split("/")
+            self._expanded.update("/".join(parts[:i]) for i in range(1, len(parts)))
         self._update_breadcrumb()
         self._build_tree()  # Rebuild to show selection
         self._load_path_content()
@@ -440,77 +590,55 @@ class DatabaseViewer:
 
         # Get data for this path
         data = self._get_data_from_snapshot(self.current_path)
+        json_str = _value_text(data)
+        self._original_text = json_str
+        path = self.current_path
 
         with self._content_container:
-            # Path info header
-            with ui.row().classes("w-full items-center justify-between mb-4"):
-                with ui.column().classes("gap-1"):
-                    ui.label(self.current_path.split("/")[-1]).classes(
-                        "text-xl font-bold"
-                    )
-                    self._path_label = ui.label(f"Path: {self.current_path}").classes(
-                        "text-sm secondary-text font-mono"
-                    )
-
-                with ui.row().classes("gap-2"):
-                    ui.button(
-                        "Delete",
-                        icon="delete",
-                        on_click=lambda: self._confirm_delete(self.current_path),
-                    ).props("flat color=negative").classes("text-red-400")
-
-            # JSON Editor
-            with (
-                ui.card()
-                .classes("w-full")
-                .style(
-                    "background: var(--color-bg-base); border: 1px solid var(--color-border-default);"
-                )
-            ):
-                with (
-                    ui.row()
-                    .classes("w-full items-center justify-between p-3")
-                    .style("border-bottom: 1px solid var(--color-border-default);")
-                ):
-                    ui.label("JSON Data").classes("font-medium")
-                    with ui.row().classes("gap-2"):
+            with ui.element("div").classes("dbx-item"):
+                with ui.element("div").classes("flex-1").style("min-width: 0"):
+                    ui.label(path.split("/")[-1]).classes("dbx-item-name")
+                    with ui.element("div").classes("dbx-item-path"):
+                        self._path_label = ui.label(path).classes("dbx-path-text")
                         ui.button(
-                            "Format",
-                            icon="code",
-                            on_click=self._format_json,
-                        ).props("flat dense").classes("text-theme-primary-light")
-                        ui.button(
-                            "Reset",
-                            icon="undo",
-                            on_click=lambda: self._reset_editor(),
-                        ).props("flat dense").classes("secondary-text")
+                            icon="content_copy",
+                            on_click=lambda: copy_to_clipboard(path, "Path copied"),
+                        ).props("flat round dense size=xs").classes("itg-ibtn").tooltip("Copy path")
+                    self._meta_html = ui.html(_chips_html(data), sanitize=False).classes("dbx-item-meta")
+                ui.button(
+                    "Delete",
+                    icon="delete_outline",
+                    on_click=lambda: self._confirm_delete(self.current_path),
+                ).props("flat dense no-caps").classes("dbx-del px-2")
 
-                # Editor textarea
-                json_str = json.dumps(data, indent=2, default=str) if data else "{}"
+            with ui.element("div").classes("dbx-editor"):
+                with ui.element("div").classes("dbx-editor-bar"):
+                    ui.label("JSON").classes("dbx-bar-label")
+                    self._valid_html = ui.html("", sanitize=False).classes("dbx-valid")
+                    ui.element("div").classes("itg-spacer")
+                    ui.button("Format", icon="data_object", on_click=self._format_json).props(
+                        "flat dense no-caps"
+                    ).classes("itg-ibtn")
+                    ui.button("Undo changes", icon="undo", on_click=lambda: self._reset_editor()).props(
+                        "flat dense no-caps"
+                    ).classes("itg-ibtn")
 
-                self._json_editor = (
-                    ui.textarea(value=json_str)
-                    .classes("w-full font-mono")
-                    .props("outlined rows=20")
-                    .style(
-                        "font-family: 'Fira Code', 'Consolas', monospace; "
-                        "font-size: 13px; background: var(--color-bg-base);"
-                    )
-                )
-                self._json_editor.on("update:model-value", self._on_editor_change)
+                self._json_editor = ui.codemirror(
+                    value=json_str,
+                    language="JSON",
+                    theme=self._cm_theme,
+                    on_change=self._on_editor_change,
+                ).classes("dbx-cm w-full")
 
-                # Save button row
-                with (
-                    ui.row()
-                    .classes("w-full justify-end p-3 gap-2")
-                    .style("border-top: 1px solid var(--color-border-default);")
-                ):
-                    self._save_btn = ui.button(
-                        "Save Changes",
-                        icon="save",
-                        on_click=self._save_current_path,
-                    ).props("color=primary")
-                    self._save_btn.disable()
+                with ui.element("div").classes("dbx-editor-foot"):
+                    self._dirty_html = ui.html("", sanitize=False)
+                    ui.element("div").classes("itg-spacer")
+                    mod = "⌘" if sys.platform == "darwin" else "Ctrl"
+                    ui.html(f'<span class="dbx-kbd"><kbd>{mod}</kbd> <kbd>S</kbd> to save</span>', sanitize=False)
+                    self._save_btn = primary_button("Save item", self._save_current_path, icon="check").props(
+                        "dense"
+                    ).classes("px-3")
+        self._update_editor_state()
 
     def _get_data_from_snapshot(self, path: str) -> Any:
         """Get data for a path from the snapshot"""
@@ -537,10 +665,48 @@ class DatabaseViewer:
 
         return current
 
-    def _on_editor_change(self, e) -> None:
-        """Handle editor content change"""
-        if self._save_btn:
-            self._save_btn.enable()
+    def _on_editor_change(self, e=None) -> None:
+        """Handle editor content change (validity and the save state follow shortly after)."""
+        self._edit_generation += 1
+        generation = self._edit_generation
+
+        def _apply() -> None:
+            if generation == self._edit_generation:
+                self._update_editor_state()
+
+        layout_schedule(0.25, _apply, once=True)
+
+    def _update_editor_state(self) -> None:
+        """Validity line, "Unsaved changes" tag and the Save button from the editor text."""
+        if self._json_editor is None:
+            return
+        text = self._json_editor.value or ""
+        error: Optional[json.JSONDecodeError] = None
+        try:
+            json.loads(text)
+        except json.JSONDecodeError as ex:
+            error = ex
+        changed = text != self._original_text
+        if self._valid_html is not None:
+            if error is None:
+                self._valid_html.set_content(f'{icon_html("check_circle")}<span>Valid JSON</span>')
+                self._valid_html.classes(remove="is-bad")
+            else:
+                self._valid_html.set_content(
+                    f'{icon_html("error_outline")}<span>Invalid JSON: {esc(error.msg)} (line {error.lineno})</span>'
+                )
+                self._valid_html.classes(add="is-bad")
+        if self._dirty_html is not None:
+            self._dirty_html.set_content(pill_html("edit", "Unsaved changes", "edit") if changed else "")
+        if self._save_btn is not None:
+            self._save_btn.set_enabled(changed and error is None)
+
+    async def _on_save_key(self, _e: Any = None) -> None:
+        """Ctrl+S / Cmd+S while the explorer is open: save the item if it changed."""
+        if self._json_editor is None or not self.current_path:
+            return
+        if (self._json_editor.value or "") != self._original_text:
+            await self._save_current_path()
 
     def _format_json(self) -> None:
         """Format the JSON in the editor"""
@@ -560,19 +726,21 @@ class DatabaseViewer:
             return
 
         data = self._get_data_from_snapshot(self.current_path)
-        json_str = json.dumps(data, indent=2, default=str) if data else "{}"
+        json_str = _value_text(data)
+        self._original_text = json_str
         self._json_editor.value = json_str
-
-        if self._save_btn:
-            self._save_btn.disable()
+        if self._meta_html is not None:
+            self._meta_html.set_content(_chips_html(data))
+        self._update_editor_state()
 
     async def _save_current_path(self) -> None:
         """Save the current path data to database"""
         if self._json_editor is None or not self.current_path:
             return
 
+        text = self._json_editor.value
         try:
-            data = json.loads(self._json_editor.value)
+            data = json.loads(text)
         except json.JSONDecodeError as e:
             _notify_invalid_json(e)
             return
@@ -590,8 +758,10 @@ class DatabaseViewer:
             else:
                 self._set_data_in_snapshot(self.current_path, data)
 
-            if self._save_btn:
-                self._save_btn.disable()
+            self._original_text = text
+            if self._meta_html is not None:
+                self._meta_html.set_content(_chips_html(data))
+            self._update_editor_state()
         else:
             _notify_write_failed(f"Couldn't save {self.current_path}", reason)
 
@@ -610,28 +780,22 @@ class DatabaseViewer:
 
     def _confirm_delete(self, path: str) -> None:
         """Show delete confirmation dialog"""
-        with ui.dialog() as confirm_dialog:
-            with ui.card().style(
-                "background: var(--color-bg-base); border: 1px solid var(--color-error);"
-            ):
-                with ui.column().classes("p-4 gap-4"):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("warning", size="md").classes("text-red-400")
-                        ui.label("Confirm Delete").classes("text-lg font-bold")
-
-                    ui.label(f"Delete path: {path}?").classes("secondary-text")
-                    ui.label("This action cannot be undone.").classes(
-                        "text-red-400 text-sm"
-                    )
-
-                    with ui.row().classes("justify-end gap-2 mt-4"):
-                        ui.button("Cancel", on_click=confirm_dialog.close).props(
-                            "flat color=white"
-                        )
-                        ui.button(
-                            "Delete",
-                            on_click=lambda: self._execute_delete(path, confirm_dialog),
-                        ).props("color=negative")
+        name = path.split("/")[-1]
+        with ui.dialog() as confirm_dialog, ui.element("div").classes("itg").style("width: auto"):
+            with ui.element("div").classes("itg-shell itg-dialog is-danger"):
+                ui.html(
+                    f'<div class="itg-dialog-title">{icon_html("warning_amber")}<span>Delete “{esc(name)}”?</span></div>'
+                    f'<div class="itg-dialog-sub">{esc(path)} and everything in it is removed from the database. '
+                    "This can't be undone.</div>",
+                    sanitize=False,
+                )
+                with ui.element("div").classes("itg-actions-end"):
+                    outline_button("Cancel", confirm_dialog.close).props("dense").classes("px-3")
+                    ui.button(
+                        "Delete",
+                        icon="delete",
+                        on_click=lambda: self._execute_delete(path, confirm_dialog),
+                    ).props("unelevated no-caps dense color=negative").classes("px-3")
 
         confirm_dialog.open()
 
@@ -642,8 +806,8 @@ class DatabaseViewer:
             notify("", type="success", source="database", title=f"Deleted {path}")
             # Refresh snapshot
             await self._load_snapshot()
-            self._build_tree()
             self.current_path = ""
+            self._build_tree()
             self._update_breadcrumb()
             self._show_welcome_content()
         else:
@@ -653,43 +817,33 @@ class DatabaseViewer:
 
     def _show_create_dialog(self) -> None:
         """Show dialog to create a new path"""
-        with ui.dialog() as create_dialog:
-            with ui.card().style(
-                "background: var(--color-bg-base); border: 1px solid var(--color-border-default); min-width: 400px;"
-            ):
-                with ui.column().classes("p-4 gap-4"):
-                    ui.label("Create New Path").classes("text-lg font-bold")
+        with ui.dialog() as create_dialog, ui.element("div").classes("itg").style("width: auto"):
+            with ui.element("div").classes("itg-shell itg-dialog"):
+                ui.html(
+                    '<div class="itg-dialog-title">New item</div>'
+                    '<div class="itg-dialog-sub">Creates a new path. Folders are made automatically from the slashes.</div>',
+                    sanitize=False,
+                )
+                with ui.element("div").style("margin-top: 12px"):
+                    with fields(one=True):
+                        path_input = field("Path", placeholder="e.g. Settings/MyData")
+                        with ui.element("div").style("min-width: 0"):
+                            field_label("Starting value (JSON)")
+                            data_input = ui.codemirror(value="{}", language="JSON", theme=self._cm_theme).classes(
+                                "dbx-cm is-small w-full"
+                            )
 
-                    path_input = (
-                        ui.input(
-                            label="Path",
-                            placeholder="e.g., Settings/MyData",
-                        )
-                        .classes("w-full")
-                        .props("outlined")
-                    )
-
-                    data_input = (
-                        ui.textarea(
-                            label="Initial JSON Data",
-                            value="{}",
-                        )
-                        .classes("w-full font-mono")
-                        .props("outlined rows=6")
-                    )
-
-                    with ui.row().classes("justify-end gap-2 mt-4"):
-                        ui.button("Cancel", on_click=create_dialog.close).props(
-                            "flat color=white"
-                        )
-                        ui.button(
-                            "Create",
-                            on_click=lambda: self._execute_create(
-                                path_input.value,
-                                data_input.value,
-                                create_dialog,
-                            ),
-                        ).props("color=primary")
+                with ui.element("div").classes("itg-actions-end"):
+                    outline_button("Cancel", create_dialog.close).props("dense").classes("px-3")
+                    primary_button(
+                        "Create",
+                        lambda: self._execute_create(
+                            path_input.value,
+                            data_input.value,
+                            create_dialog,
+                        ),
+                        icon="add",
+                    ).props("dense").classes("px-3")
 
         create_dialog.open()
 
@@ -742,41 +896,23 @@ class DatabaseViewer:
         """Filter the tree based on search input"""
         filter_text = (
             e.args if isinstance(e.args, str) else (e.args[0] if e.args else "")
-        )
-        self._filter_generation = getattr(self, "_filter_generation", 0) + 1
+        ) or ""
+        self._filter_generation += 1
         generation = self._filter_generation
 
         def _apply() -> None:
-            if generation != getattr(self, "_filter_generation", 0):
+            if generation != self._filter_generation:
                 return
             self._build_tree(filter_text)
-
-        from ...ui_timer import layout_schedule
 
         layout_schedule(0.2, _apply, once=True)
 
     def _toggle_folder(self, path: str) -> None:
-        """Toggle folder expansion (placeholder for future enhancement)"""
-        # For now, folders auto-expand in the tree
-        pass
-
-    def _build_footer(self) -> None:
-        """Build the footer status bar"""
-        with (
-            ui.row()
-            .classes("w-full items-center justify-between p-2 px-4")
-            .style(
-                "background: var(--color-bg-elevated); border-top: 1px solid var(--color-border-default);"
-            )
-        ):
-            self._status_label = ui.label(
-                f"{len(self.all_paths)} paths loaded"
-            ).classes("text-sm secondary-text")
-
-            with ui.row().classes("gap-4 text-sm muted-text"):
-                ui.label("Click path to view/edit")
-                ui.label("•")
-                ui.label("Ctrl+S to save")
+        """Open or close a folder in the tree."""
+        # While searching every match starts open, so a click records a fold instead.
+        state = self._search_collapsed if self._filter_text.strip() else self._expanded
+        state.symmetric_difference_update({path})
+        self._build_tree()
 
     def _close_dialog(self) -> None:
         """Close the dialog"""
@@ -796,10 +932,20 @@ class DatabaseTab:
         # periodic status timer does not spam the same toast every tick.
         self._last_firebase_issues_signature: Optional[str] = None
         self._status_refresh_inflight: bool = False
+        self._last_status: Dict[str, Any] = {}
+        self._page: Optional[IntegrationPage] = None
+        self._card: Optional[AccountCard] = None
+        self._choices: Dict[str, Tuple[Any, Any]] = {}
+        self._choice_state: Optional[Tuple[str, str]] = None
+        self._type_boxes: Dict[str, Any] = {}
+        self._firebase_issues: Optional[ui.html] = None
+        self._switch_hint: Optional[Any] = None
 
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
+        if self._page is not None:
+            self._page.set_active(True)
         layout_schedule(0.05, self._refresh_status_async, once=True)
 
     def _refresh_status(self) -> None:
@@ -828,42 +974,8 @@ class DatabaseTab:
             self._status_refresh_inflight = False
 
     def _apply_status_info(self, status_info: Dict[str, Any]) -> None:
-        # Update status label and color
-        if "status_label" in self.ui_elements:
-            status_text = status_info.get("status", "Unknown")
-            is_connected = status_info.get("is_connected", False)
-
-            self.ui_elements["status_label"].set_text(status_text)
-
-            # Update color based on status
-            if is_connected:
-                self.ui_elements["status_label"].classes(
-                    replace="font-semibold text-theme-success"
-                )
-            else:
-                self.ui_elements["status_label"].classes(
-                    replace="font-semibold text-theme-error"
-                )
-
-        # Update database type label
-        if "type_label" in self.ui_elements:
-            db_type = status_info.get("database_type", "N/A")
-            self.ui_elements["type_label"].set_text(db_type)
-
-        # Update last check label
-        if "last_check_label" in self.ui_elements:
-            last_check = status_info.get("last_check", "Never")
-            # Format the timestamp if it's an ISO string
-            try:
-                if last_check != "Never":
-                    from datetime import datetime
-
-                    dt = datetime.fromisoformat(last_check.replace("Z", "+00:00"))
-                    last_check = dt.strftime("%Y-%m-%d %H:%M:%S")
-            except (ValueError, TypeError):
-                pass  # Keep original value if parsing fails
-
-            self.ui_elements["last_check_label"].set_text(last_check)
+        self._last_status = dict(status_info or {})
+        self._render_status()
 
         # Show specific Firebase configuration issues if present. Notify only
         # when the issue set changes so the periodic status timer does not
@@ -890,17 +1002,69 @@ class DatabaseTab:
         else:
             self._last_firebase_issues_signature = None
 
-    def _show_status_error(self, e: Exception) -> None:
-        import logging
+    def _render_status(self) -> None:
+        """Card, header pill and Firebase hint from the last status of the database in use."""
+        cfg = database_manager.get_config()
+        live = _live_type()
+        short = _DB_SHORT.get(live, live)
+        st = self._last_status
+        connected = bool(st.get("is_connected"))
+        checked = _ago(st.get("last_check"))
+        when = f" · last checked {checked}" if checked else ""
+        if not st:
+            kind, text, pill = "busy", "Checking…", ("busy", f"Checking · {short}")
+        elif connected:
+            kind, text, pill = "ok", f"Connected{when}", ("ok", f"Connected · {short}")
+        else:
+            status = str(st.get("status") or "Not connected")
+            if status.startswith("Configuration issues"):
+                status = "Not set up correctly"
+            if len(status) > 90:
+                status = status[:89] + "…"
+            kind, text, pill = "error", f"{status}{when}", ("error", f"Can't connect · {short}")
 
-        logger = logging.getLogger(__name__)
+        if self._page is not None:
+            self._page.set_status([pill])
+        if self._card is not None:
+            self._card.set(_DB_NAMES.get(live, live), kind, text, icon=_DB_ICONS.get(live, "storage"))
+            self._card.set_meta(self._meta_rows(cfg, live))
+
+        if self._firebase_issues is not None:
+            issues = (st.get("config_issues") or []) if live == "firebase" and not connected else []
+            if issues:
+                self._firebase_issues.set_content(
+                    f'{icon_html("warning_amber")}<span>{esc("; ".join(str(i) for i in issues))}. '
+                    "Fix the Firebase fields, press <b>Save</b>, then <b>Test</b>.</span>"
+                )
+            self._firebase_issues.set_visibility(bool(issues))
+        self._sync_choices()
+
+    @staticmethod
+    def _meta_rows(cfg: Any, live: str) -> List[Tuple[str, str, str, str]]:
+        if cfg is None:
+            return []
+        if live == "sql":
+            configured = cfg.sql_database_path or ""
+            path = _resolved_sql_path(configured)
+            where = "data folder" if configured and not os.path.isabs(configured) else os.path.dirname(path)
+            rows = [("Type", "SQLite", "", ""), ("Location", os.path.basename(path) or "—", where, "")]
+            try:
+                rows.append(("Size", _format_bytes(os.path.getsize(path)), "", ""))
+            except (OSError, TypeError, ValueError):
+                pass
+            return rows
+        if live == "firebase":
+            return [("Type", "Firebase", "Realtime Database", ""), ("Location", _live_where(cfg) or "—", "", "")]
+        # The connection string can hold a password: show only the database name.
+        return [("Type", "MongoDB", "", ""), ("Location", cfg.mongodb_database_name or "—", "database name", "")]
+
+    def _show_status_error(self, e: Exception) -> None:
         logger.error(f"Error refreshing database status: {str(e)}", exc_info=True)
-        # Set error status
-        if "status_label" in self.ui_elements:
-            self.ui_elements["status_label"].set_text("Status Error")
-            self.ui_elements["status_label"].classes(
-                replace="font-semibold text-theme-error"
-            )
+        self._last_status = {"status": "Couldn't check the connection", "is_connected": False}
+        self._render_status()
+        label = self.ui_elements.get("status_label")  # older layouts
+        if label is not None:
+            label.set_text("Status Error")
 
     async def _test_connection(self) -> None:
         """Test database connection"""
@@ -953,63 +1117,67 @@ class DatabaseTab:
                 )
                 return
 
-            with ui.dialog() as migration_dialog:
-                with (
-                    ui.card()
-                    .classes("w-full max-w-lg")
-                    .style(
-                        "background: var(--color-bg-base); border: 1px solid var(--color-border-default);"
+            live = database_manager.get_config().database_type
+            names = {key: _DB_SHORT.get(key, key) for key in available_dbs}
+            source_names = {key: name + (" (in use)" if key == live else "") for key, name in names.items()}
+            with ui.dialog() as migration_dialog, ui.element("div").classes("itg").style("width: auto"):
+                with ui.element("div").classes("itg-shell itg-dialog is-wide"):
+                    ui.html(
+                        '<div class="itg-dialog-title">Move my data</div>'
+                        '<div class="itg-dialog-sub">Copies every stored item to another database, '
+                        "then switches to it.</div>",
+                        sanitize=False,
                     )
-                ):
-                    ui.label("Migrate database").classes("text-xl font-bold mb-2")
-                    ui.label(
-                        "Copies all paths from the source database to the target using "
-                        "the connection details below. Configure those fields before starting."
-                    ).classes("secondary-text mb-4")
+                    with ui.element("div").style(
+                        "display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); "
+                        "gap: 10px; align-items: end; margin-top: 14px"
+                    ):
+                        with ui.element("div").style("min-width: 0"):
+                            field_label("From")
+                            source_select = (
+                                ui.select(
+                                    source_names,
+                                    value=live if live in available_dbs else available_dbs[0],
+                                )
+                                .props("outlined dense options-dense")
+                                .classes("w-full")
+                                .tooltip("Source database to copy data from")
+                            )
+                        ui.html(icon_html("arrow_forward"), sanitize=False).classes("itg-dialog-arrow")
+                        with ui.element("div").style("min-width: 0"):
+                            field_label("To")
+                            target_select = (
+                                ui.select(
+                                    names,
+                                    value=(
+                                        available_dbs[1]
+                                        if len(available_dbs) > 1
+                                        else available_dbs[0]
+                                    ),
+                                )
+                                .props("outlined dense options-dense")
+                                .classes("w-full")
+                                .tooltip("Target database to receive migrated data")
+                            )
 
-                    with ui.row().classes("w-full items-center mb-2"):
-                        ui.label("From:").classes("w-20")
-                        source_select = form_select(
-                            tooltip="Source database to copy data from",
-                            options=available_dbs,
-                            value=(
-                                database_manager.get_config().database_type
-                                if database_manager.get_config().database_type
-                                in available_dbs
-                                else available_dbs[0]
-                            ),
-                            classes="flex-1",
-                        )
+                    hint(
+                        "Items at the same paths in the target are overwritten. "
+                        "Uses the connection details from the Database tab.",
+                        "warning_amber",
+                        warn=True,
+                    )
 
-                    with ui.row().classes("w-full items-center mb-4"):
-                        ui.label("To:").classes("w-20")
-                        target_select = form_select(
-                            tooltip="Target database to receive migrated data",
-                            options=available_dbs,
-                            value=(
-                                available_dbs[1]
-                                if len(available_dbs) > 1
-                                else available_dbs[0]
-                            ),
-                            classes="flex-1",
-                        )
-
-                    ui.label(
-                        "Existing data at the same paths on the target may be overwritten."
-                    ).classes("text-theme-warning mb-4")
-
-                    with ui.row().classes("w-full justify-end gap-2"):
-                        ui.button("Cancel", on_click=migration_dialog.close).props(
-                            "outline"
-                        )
-                        ui.button(
-                            "Start migration",
-                            on_click=lambda: self._start_migration(
+                    with ui.element("div").classes("itg-actions-end"):
+                        outline_button("Cancel", migration_dialog.close).props("dense").classes("px-3")
+                        primary_button(
+                            "Start moving",
+                            lambda: self._start_migration(
                                 source_select.value or "sql",
                                 target_select.value or "sql",
                                 migration_dialog,
                             ),
-                        ).props("color=primary")
+                            icon="sync_alt",
+                        ).props("dense").classes("px-3")
 
             migration_dialog.open()
 
@@ -1197,6 +1365,7 @@ class DatabaseTab:
                         for key, element in self.ui_elements.items():
                             if hasattr(element, "value") and hasattr(self.buffer, key):
                                 element.value = getattr(self.buffer, key)
+                        self._update_config_visibility()
                         self.dirty = False
                     else:
                         failure = dict(migration_status.get("failure") or {})
@@ -1223,6 +1392,7 @@ class DatabaseTab:
                 work.fail("Couldn't start the migration", **fail_kwargs)
             else:
                 notify("", type="error", source="database", title="Couldn't start the migration", **fail_kwargs)
+
 
     async def _show_data_viewer_dialog(self) -> None:
         """Show database data viewer and editor dialog"""
@@ -1265,8 +1435,6 @@ class DatabaseTab:
         if not value.strip():
             return True  # Empty is allowed
         try:
-            import json
-
             json.loads(value)
             return True
         except json.JSONDecodeError:
@@ -1275,199 +1443,201 @@ class DatabaseTab:
     def on_exit(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = False
+        if self._page is not None:
+            self._page.set_active(False)
 
     def _update_config_visibility(self) -> None:
+        """Show only the selected database type's fields."""
         if not self.buffer:
             return
         db_type = self.buffer.database_type
-        sql_keys = ("sql_database_path",)
-        firebase_keys = (
-            "firebase_service_account_path",
-            "firebase_database_url",
-        )
-        mongo_keys = ("mongodb_connection_string", "mongodb_database_name")
-        for key, visible in (
-            *[(k, db_type == "sql") for k in sql_keys],
-            *[(k, db_type == "firebase") for k in firebase_keys],
-            *[(k, db_type == "mongodb") for k in mongo_keys],
-        ):
-            el = self.ui_elements.get(key)
-            if el is not None:
-                el.visible = visible
+        for key, box in self._type_boxes.items():
+            box.set_visibility(key == db_type)
+        self._sync_choices()
 
-    def _on_database_type_change(self, e) -> None:
-        self._set(
-            "database_type",
-            self._event_select_value(e) or self.ui_elements["database_type"].value,
+    def _choice_html(self, key: str, sub: str, live: str) -> str:
+        tag = '<span class="itg-choice-tag">In use</span>' if key == live else ""
+        return (
+            f'{tag}<div class="itg-choice-top">{icon_html(_DB_ICONS[key])}'
+            f'<span class="itg-choice-name">{esc(_DB_SHORT[key])}</span><span class="itg-choice-check"></span></div>'
+            f'<div class="itg-choice-sub">{esc(sub)}</div>'
         )
+
+    def _sync_choices(self) -> None:
+        """Selected card, "In use" tag and the switching hint (only when something changed)."""
+        if not self.buffer or not self._choices:
+            return
+        selected, live = self.buffer.database_type, _live_type()
+        if self._choice_state == (selected, live):
+            return
+        self._choice_state = (selected, live)
+        for key, sub in _DB_CHOICES:
+            card, inner = self._choices[key]
+            inner.set_content(self._choice_html(key, sub, live))
+            on = key == selected
+            card.classes(add="is-on") if on else card.classes(remove="is-on")
+            card.props(f"aria-checked={'true' if on else 'false'}")
+        if self._switch_hint is not None:
+            self._switch_hint.set_visibility(selected != live)
+
+    def _on_database_type_change(self, value: str) -> None:
+        self._set("database_type", value)
         self._update_config_visibility()
+
+    def _build_choices(self) -> None:
+        with ui.element("div").classes("itg-choices").props('role=radiogroup aria-label="Database type"'):
+            for key, _sub in _DB_CHOICES:
+                card = ui.element("div").classes("itg-choice").props("role=radio tabindex=0")
+                with card:
+                    inner = ui.html("", sanitize=False).style("display: contents")
+                card.on("click", lambda _e, k=key: self._on_database_type_change(k))
+                card.on("keydown", lambda _e, k=key: self._on_database_type_change(k), js_handler=_ACTIVATE_KEY_JS)
+                self._choices[key] = (card, inner)
+
+    def _number_row(
+        self, key: str, title: str, sub: str, tip: str, lo: int, hi: int, step: int, unit: str, default: int
+    ) -> None:
+        _row, ctrl = row(title, sub)
+        with ctrl:
+            el = (
+                ui.number(value=getattr(self.buffer, key), min=lo, max=hi, step=step, format="%d")
+                .props("outlined dense")
+                .classes("itg-num")
+                .tooltip(tip)
+            )
+            el.on_value_change(lambda e: self._set(key, int(e.value or default)))
+            ui.label(unit).classes("itg-unit")
+        self.ui_elements[key] = el
 
     def build(self, parent_container) -> None:
         self._load_from_config()
-        with settings_surface(parent_container):
+        self._page = page = IntegrationPage(
+            parent_container,
+            "database",
+            "Database",
+            "Where Mycelian keeps your settings, alerts and history",
+            on_save=self.save,
+            on_discard=self.discard,
+            is_dirty=lambda: self.dirty,
+            help_topic="settings_overview",
+            help_tooltip="Database settings help",
+            icon="storage",
+        )
+        with page.column():
+            with section("cable", "Connection"):
+                self._card = AccountCard("database", "In use")
+                with self._card.actions:
+                    self.ui_elements["refresh_button"] = (
+                        ui.button(icon="refresh", on_click=lambda: self._refresh_status_async(force=True))
+                        .props("flat round dense")
+                        .classes("itg-ibtn")
+                        .tooltip("Check now")
+                    )
+                    self.ui_elements["test_button"] = (
+                        outline_button("Test", self._test_connection, icon="wifi_tethering")
+                        .props("dense")
+                        .classes("px-3")
+                        .tooltip("Try connecting to the database in use")
+                    )
 
-            with settings_status_band():
-                with ui.column().classes("gap-0"):
-                    ui.label("Status").classes("text-xs secondary-text")
-                    self.ui_elements["status_label"] = ui.label(
-                        "Loading..."
-                    ).classes("font-semibold text-sm")
-                with ui.column().classes("gap-0"):
-                    ui.label("Type").classes("text-xs secondary-text")
-                    self.ui_elements["type_label"] = ui.label("N/A").classes(
-                        "font-semibold text-sm"
-                    )
-                with ui.column().classes("gap-0"):
-                    ui.label("Last check").classes("text-xs secondary-text")
-                    self.ui_elements["last_check_label"] = ui.label(
-                        "Never"
-                    ).classes("secondary-text text-sm")
-                with ui.column().classes("gap-0 min-w-[10rem] flex-1"):
-                    self.ui_elements["database_type"] = form_select(
-                        tooltip="Storage backend for Mycelian settings and data",
-                        label="Database type",
-                        options=["sql", "firebase", "mongodb"],
-                        value=self.buffer.database_type,
-                        classes="w-full min-w-[10rem]",
-                        on_change=self._on_database_type_change,
-                    )
+            with section("storage", "Storage"):
+                self._build_choices()
+                with ui.element("div").style("margin-top: 12px"):
+                    with ui.element("div") as box:
+                        with fields(one=True):
+                            self.ui_elements["sql_database_path"] = field(
+                                "Database file",
+                                value=self.buffer.sql_database_path,
+                                placeholder="mycelian.db",
+                                tip="Path to the SQLite database file",
+                                on_change=lambda e: self._set("sql_database_path", _text(e.value) or "mycelian.db"),
+                            )
+                        hint("Relative paths are inside Mycelian's data folder.")
+                    self._type_boxes["sql"] = box
 
-            with settings_section("Configuration"):
-                with settings_form_grid(columns=3):
-                    self.ui_elements["sql_database_path"] = form_sensitive_input(
-                        tooltip="Path to the SQLite database file",
-                        label="SQLite path",
-                        value=self.buffer.sql_database_path,
-                        placeholder="mycelian.db",
-                    )
-                    self.ui_elements["sql_database_path"].on(
-                        "change",
-                        lambda e: self._set(
-                            "sql_database_path",
-                            self._event_select_value(e) or "mycelian.db",
-                        ),
-                    )
-                    self.ui_elements["firebase_service_account_path"] = form_sensitive_input(
-                        tooltip="Path to Firebase service account JSON key file",
-                        label="Firebase key file",
-                        value=self.buffer.firebase_service_account_path,
-                        placeholder="ServiceAccountKey.json",
-                    )
-                    self.ui_elements["firebase_service_account_path"].on(
-                        "change",
-                        lambda e: self._set(
-                            "firebase_service_account_path",
-                            self._event_select_value(e) or "",
-                        ),
-                    )
+                    with ui.element("div") as box:
+                        with fields(one=True):
+                            self.ui_elements["firebase_service_account_path"] = field(
+                                "Service account key file",
+                                value=self.buffer.firebase_service_account_path,
+                                placeholder="ServiceAccountKey.json",
+                                tip="The .json key from Firebase console → Project settings → Service accounts",
+                                on_change=lambda e: self._set("firebase_service_account_path", _text(e.value)),
+                            )
+                            self.ui_elements["firebase_database_url"] = field(
+                                "Realtime Database URL",
+                                value=self.buffer.firebase_database_url,
+                                placeholder="https://…firebaseio.com/",
+                                tip="Firebase Realtime Database URL",
+                                on_change=lambda e: self._set("firebase_database_url", _text(e.value)),
+                            )
+                        self._firebase_issues = ui.html("", sanitize=False).classes("itg-hint is-warn")
+                        self._firebase_issues.set_visibility(False)
+                    self._type_boxes["firebase"] = box
+
+                    with ui.element("div") as box:
+                        with fields(one=True):
+                            self.ui_elements["mongodb_connection_string"] = field(
+                                "Connection string",
+                                value=self.buffer.mongodb_connection_string,
+                                placeholder="mongodb://localhost:27017/",
+                                tip="MongoDB connection URI. It can contain your password, so it's hidden.",
+                                password=True,
+                                on_change=lambda e: self._set("mongodb_connection_string", _text(e.value)),
+                            )
+                            self.ui_elements["mongodb_database_name"] = field(
+                                "Database name",
+                                value=self.buffer.mongodb_database_name,
+                                placeholder="mycelian",
+                                tip="MongoDB database name",
+                                on_change=lambda e: self._set("mongodb_database_name", _text(e.value) or "mycelian"),
+                            )
+                    self._type_boxes["mongodb"] = box
+
                     self._attach_db_browse("sql_database_path", "Choose a SQLite database",
                                            "A .db file anywhere on this computer", (".db", ".sqlite", ".sqlite3"),
                                            "storage", "mycelian.db")
                     self._attach_db_browse("firebase_service_account_path", "Choose a Firebase key file",
                                            "The service account .json key from the Firebase console", (".json",),
                                            "key", "")
-                    self.ui_elements["firebase_database_url"] = form_sensitive_input(
-                        tooltip="Firebase Realtime Database URL",
-                        label="Firebase URL",
-                        value=self.buffer.firebase_database_url,
-                        placeholder="https://...firebaseio.com/",
-                    )
-                    self.ui_elements["firebase_database_url"].on(
-                        "change",
-                        lambda e: self._set(
-                            "firebase_database_url",
-                            self._event_select_value(e) or "",
-                        ),
-                    )
-                    self.ui_elements["mongodb_connection_string"] = form_sensitive_input(
-                        tooltip="MongoDB connection URI",
-                        label="Mongo URI",
-                        value=self.buffer.mongodb_connection_string,
-                        placeholder="mongodb://localhost:27017/",
-                    )
-                    self.ui_elements["mongodb_connection_string"].on(
-                        "change",
-                        lambda e: self._set(
-                            "mongodb_connection_string",
-                            self._event_select_value(e) or "",
-                        ),
-                    )
-                    self.ui_elements["mongodb_database_name"] = form_sensitive_input(
-                        tooltip="MongoDB database name",
-                        label="Mongo DB name",
-                        value=self.buffer.mongodb_database_name,
-                        placeholder="mycelian",
-                    )
-                    self.ui_elements["mongodb_database_name"].on(
-                        "change",
-                        lambda e: self._set(
-                            "mongodb_database_name",
-                            self._event_select_value(e) or "mycelian",
-                        ),
-                    )
-                    self.ui_elements["connection_timeout"] = form_number(
-                        tooltip="Seconds to wait before a connection attempt times out",
-                        label="Timeout (s)",
-                        value=self.buffer.connection_timeout,
-                        min=5,
-                        max=300,
-                        step=5,
-                        classes="w-full",
-                    )
-                    self.ui_elements["connection_timeout"].on(
-                        "change",
-                        lambda e: self._set(
-                            "connection_timeout",
-                            int(self._event_select_value(e) or 30),
-                        ),
-                    )
-                    self.ui_elements["retry_attempts"] = form_number(
-                        tooltip="Number of times to retry a failed connection",
-                        label="Retry attempts",
-                        value=self.buffer.retry_attempts,
-                        min=1,
-                        max=10,
-                        step=1,
-                        classes="w-full",
-                    )
-                    self.ui_elements["retry_attempts"].on(
-                        "change",
-                        lambda e: self._set(
-                            "retry_attempts",
-                            int(self._event_select_value(e) or 3),
-                        ),
+                    self._switch_hint = hint(
+                        "Switching only changes which database Mycelian reads. To bring your data along, "
+                        "use <b>Move my data</b> on the right."
                     )
 
-            self._update_config_visibility()
+            with section("tune", "Connection settings"):
+                self._number_row(
+                    "connection_timeout", "Timeout", "How long to wait before a connection attempt gives up",
+                    "Seconds to wait before a connection attempt times out", 5, 300, 5, "s", 30,
+                )
+                self._number_row(
+                    "retry_attempts", "Retry attempts", "How many times to retry a failed connection",
+                    "Number of times to retry a failed connection", 1, 10, 1, "times", 3,
+                )
 
-            with ui.row().classes(
-                "button-row w-full justify-end gap-2 mt-1 flex-wrap"
-            ):
-                self.ui_elements["test_button"] = outline_button(
-                    "Test",
-                    self._test_connection,
-                    icon="wifi_tethering",
-                )
-                self.ui_elements["migrate_button"] = outline_button(
-                    "Migrate",
-                    self._show_migration_dialog,
-                    icon="sync_alt",
-                )
-                self.ui_elements["refresh_button"] = outline_button(
-                    "Refresh",
-                    lambda: self._refresh_status_async(force=True),
-                    icon="refresh",
-                )
-                self.ui_elements["view_data_button"] = outline_button(
-                    "View Data",
-                    self._show_data_viewer_dialog,
-                    icon="visibility",
-                )
-                outline_button("Discard", self.discard)
-                primary_button("Save", self.save)
-            self._status_timer = layout_schedule(
-                3.0, self._refresh_status_async, active=True
-            )
+        with page.column():
+            with section("build", "Your data"):
+                with tool_row("travel_explore", "Database Explorer", "Browse and edit the raw stored data. For advanced fixes."):
+                    self.ui_elements["view_data_button"] = (
+                        outline_button("Open", self._show_data_viewer_dialog, icon="open_in_new")
+                        .props("dense")
+                        .classes("px-3")
+                    )
+                with tool_row("sync_alt", "Move my data", "Copy everything to another database, then switch to it."):
+                    self.ui_elements["migrate_button"] = (
+                        outline_button("Migrate…", self._show_migration_dialog, icon="arrow_forward")
+                        .props("dense")
+                        .classes("px-3")
+                    )
+            with section("info", "Good to know"):
+                hint("Saving checks the new connection first. If it can't connect, Mycelian keeps using the database that works.")
+                hint("Firebase and MongoDB keep your data online, so a crash or a new PC doesn't lose it. A local file is faster.")
+
+        self._update_config_visibility()
+        self._render_status()
+        self._status_timer = layout_schedule(
+            3.0, self._refresh_status_async, active=True
+        )
 
     def _load_from_config(self) -> None:
         cfg = config_manager.get_database_config()
@@ -1498,8 +1668,6 @@ class DatabaseTab:
         element = self.ui_elements[field]
 
         def pick() -> None:
-            import os
-
             from ...path_utils import get_data_path
             from ..file_picker import open_file_picker
 
