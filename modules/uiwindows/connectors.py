@@ -259,7 +259,8 @@ def _open_folder_floating_window(folder_id: str) -> None:
     )
     spec = (layout.get("folders") or {}).get(folder_id)
     if not spec or not isinstance(spec, dict):
-        notify("Folder not found", type="warning")
+        notify("That folder no longer exists. The list was refreshed.", type="info", source="connectors")
+        refresh_connectors()
         return
     title = str(spec.get("name") or "Folder")
     member_ids = [cid for cid in spec.get("connector_ids") or [] if cid in connectors]
@@ -269,7 +270,7 @@ def _open_folder_floating_window(folder_id: str) -> None:
     if existing:
         sh = existing.get("shell")
         if sh is not None and not sh.is_deleted:
-            notify("This folder is already open", type="info", timeout=1.5)
+            notify("This folder is already open", type="info", source="connectors")
             return
         _folder_floaters.pop(folder_id, None)
 
@@ -612,16 +613,22 @@ def set_folder_connectors_enabled(folder_id: str, enabled: bool) -> None:
         spec = (layout.get("folders") or {}).get(folder_id) or {}
         title = str(spec.get("name") or "Folder")
         if not member_ids:
-            notify("Folder is empty", type="warning", timeout=2000)
+            notify(f"“{title}” has no connectors yet", type="info", source="connectors")
             return
         changed = mgr.set_connectors_enabled(member_ids, enabled)
         if changed:
-            verb = "Enabled" if enabled else "Disabled"
-            notify(f'{verb} {changed} connector(s) in "{title}"', type="positive")
+            verb = "Turned on" if enabled else "Turned off"
+            notify(f"{verb} {changed} connector{'s' if changed != 1 else ''} in “{title}”", type="success",
+                   source="connectors")
+        else:
+            notify(f"All connectors in “{title}” were already {'on' if enabled else 'off'}", type="info",
+                   source="connectors")
         refresh_connectors()
     except Exception as e:
         logger.error(f"Error setting folder connectors enabled: {e}", exc_info=True)
-        notify(f"Error updating folder connectors: {str(e)}", type="negative")
+        notify("", type="error", source="connectors",
+               title=f"Couldn't turn the folder's connectors {'on' if enabled else 'off'}",
+               hint="Try again.", details=f"{type(e).__name__}: {e}")
 
 
 def load_connectors():
@@ -1092,7 +1099,8 @@ def duplicate_connector(connector_id: str) -> None:
         manager = connector_manager.get_manager()
         existing = manager.get_connector(connector_id)
         if existing is None:
-            notify("Connector not found", type="negative")
+            notify("That connector no longer exists. The list was refreshed.", type="info", source="connectors")
+            refresh_connectors()
             return
         data = manager._serialize_connector(existing)
         new_id = str(uuid.uuid4())
@@ -1115,14 +1123,17 @@ def duplicate_connector(connector_id: str) -> None:
                 action["action_id"] = str(uuid.uuid4())
         cloned = manager._deserialize_connector(data)
         if cloned is None or not manager.add_connector(cloned):
-            notify("Could not duplicate connector", type="negative")
+            notify("", type="error", source="connectors", title="Couldn't duplicate the connector",
+                   hint="Open the connector, save it once, then try again.")
             return
         load_connectors()
         update_search_visibility()
-        notify(f"Duplicated connector '{data['name']}'.", type="positive")
+        if manager.last_save_ok:  # a failed save already showed its own error
+            notify(f"Duplicated as “{data['name']}”", type="success", source="connectors")
     except Exception as exc:
         logger.error("Error duplicating connector: %s", exc, exc_info=True)
-        notify("Could not duplicate connector", type="negative")
+        notify("", type="error", source="connectors", title="Couldn't duplicate the connector",
+               hint="Try again.", details=f"{type(exc).__name__}: {exc}")
 
 
 _CONDITION_SYMBOLS = {
@@ -1172,7 +1183,8 @@ def show_connector_dialog(connector_id: str = None):
         _active_editor = open_connector_editor(connector_id, on_saved=refresh_connectors)
     except Exception as exc:
         logger.error("Could not open the connector editor: %s", exc, exc_info=True)
-        notify("Could not open the connector editor", type="negative")
+        notify("", type="error", source="connectors", title="Couldn't open the connector editor",
+               hint="Try again. If it keeps happening, restart Mycelian.", details=f"{type(exc).__name__}: {exc}")
 
 
 def test_connector(connector_id: str):
@@ -1188,17 +1200,27 @@ def toggle_connector(connector_id: str, enabled: bool):
     """Toggle a connector's enabled state"""
     try:
         manager = connector_manager.get_manager()
-        success = manager.toggle_connector(connector_id)
+        connector = manager.get_connector(connector_id)
+        if connector is None:
+            notify("That connector no longer exists. The list was refreshed.", type="info", source="connectors")
+            refresh_connectors()
+            return
+        # toggle_connector flips the stored state; only flip when it differs from the switch.
+        success = connector.enabled == bool(enabled) or manager.toggle_connector(connector_id)
 
         if success:
-            status = "enabled" if enabled else "disabled"
-            notify(f"Connector {status}", type="positive")
-            refresh_connectors()
+            if manager.last_save_ok:  # a failed save already showed its own error
+                state = "on" if connector.enabled else "off"
+                notify(f"“{connector.name}” turned {state}", type="success", source="connectors")
         else:
-            notify("Failed to toggle connector", type="negative")
+            notify("", type="error", source="connectors",
+                   title=f"Couldn't turn “{connector.name}” {'on' if enabled else 'off'}", hint="Try again.")
+        refresh_connectors()
     except Exception as e:
         logger.error(f"Error toggling connector: {e}", exc_info=True)
-        notify(f"Error toggling connector: {str(e)}", type="negative")
+        notify("", type="error", source="connectors", title="Couldn't change the connector",
+               hint="Try again.", details=f"{type(e).__name__}: {e}")
+        refresh_connectors()
 
 
 def delete_connector(connector_id: str):
@@ -1207,19 +1229,26 @@ def delete_connector(connector_id: str):
     def confirm_delete():
         try:
             manager = connector_manager.get_manager()
+            existing = manager.get_connector(connector_id)
+            name = existing.name if existing is not None else "connector"
             success = manager.remove_connector(connector_id)
 
             if success:
-                notify("Connector deleted", type="positive")
+                if manager.last_save_ok:  # a failed save already showed its own error
+                    notify(f"Deleted “{name}”", type="success", source="connectors")
                 # Remove from card references before refreshing
                 if connector_id in connector_cards:
                     del connector_cards[connector_id]
                 refresh_connectors()
+            elif existing is None:
+                notify("That connector no longer exists. The list was refreshed.", type="info", source="connectors")
+                refresh_connectors()
             else:
-                notify("Failed to delete connector", type="negative")
+                notify("", type="error", source="connectors", title=f"Couldn't delete “{name}”", hint="Try again.")
         except Exception as e:
             logger.error(f"Error deleting connector: {e}", exc_info=True)
-            notify(f"Error deleting connector: {str(e)}", type="negative")
+            notify("", type="error", source="connectors", title="Couldn't delete the connector",
+                   hint="Try again.", details=f"{type(e).__name__}: {e}")
 
     # Show confirmation dialog
     with ui.dialog().props("persistent") as dialog:

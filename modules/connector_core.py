@@ -24,6 +24,7 @@ SOFTWARE.
 """
 
 import asyncio
+import contextvars
 import logging
 import re
 import time
@@ -33,6 +34,106 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
+
+# --- Why a connector action failed -------------------------------------------
+# Connector.process_event opens a slot per action; the action (or anything it
+# calls, including asyncio.to_thread work) fills it through report_action_problem.
+# Warnings and errors logged while the action runs are kept as technical details.
+_action_problem: "contextvars.ContextVar[Optional[Dict[str, Any]]]" = contextvars.ContextVar(
+    "connector_action_problem", default=None
+)
+_MAX_CAPTURED_LOG_LINES = 6
+
+
+def report_action_problem(reason: str, hint: str = "", details: str = "") -> None:
+    """Explain why the running connector action is about to return False.
+
+    *reason* is plain language ("the overlay server isn't running"); *hint* says how
+    to fix it; *details* is technical text for "Copy details". No-op outside an action.
+    """
+    slot = _action_problem.get()
+    if slot is None:
+        return
+    slot["reason"] = str(reason or "").strip()
+    if hint:
+        slot["hint"] = str(hint).strip()
+    if details:
+        slot["details"] = str(details)
+
+
+def current_action_connector() -> Optional[tuple]:
+    """(connector_id, connector name) of the action running now, or None."""
+    slot = _action_problem.get()
+    if slot is None or "connector_id" not in slot:
+        return None
+    return slot["connector_id"], slot.get("connector_name", "")
+
+
+def mark_action_skipped() -> None:
+    """The running action returned False on purpose (nothing to do); don't report it."""
+    slot = _action_problem.get()
+    if slot is not None:
+        slot["skipped"] = True
+
+
+class _ActionLogCapture(logging.Handler):
+    """Keeps warnings/errors logged while a connector action runs (details only)."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            slot = _action_problem.get()
+            if slot is None:
+                return
+            lines = slot.setdefault("log", [])
+            if len(lines) < _MAX_CAPTURED_LOG_LINES:
+                lines.append(f"{record.levelname}: {record.getMessage()}")
+        except Exception:
+            pass
+
+
+_log_capture = _ActionLogCapture(level=logging.WARNING)
+if not any(isinstance(h, _ActionLogCapture) for h in logging.getLogger().handlers):
+    logging.getLogger().addHandler(_log_capture)
+
+_ACTION_LABELS = {
+    "websocket_emit": "Send overlay event",
+    "api_call": "API call",
+    "obs_control": "OBS control",
+}
+
+
+def action_label(action: Any) -> str:
+    """Readable action name for messages."""
+    name = str(getattr(action, "name", "") or "").strip()
+    if name:
+        return name
+    value = getattr(getattr(action, "action_type", None), "value", "") or "action"
+    return _ACTION_LABELS.get(value, value.replace("_", " ").capitalize())
+
+
+def _notify_action_failure(connector: "Connector", failure: Dict[str, Any]) -> None:
+    """One deduplicated notification per connector + action slot."""
+    try:
+        from .notification_engine import nav_actions_main_tab, notify
+
+        reason = failure.get("reason") or ""
+        label = failure["label"]
+        index = failure["index"]
+        message = f"Action {index} ({label}) didn't work" + (f": {reason}." if reason else ".")
+        notify(
+            message,
+            type="warning",
+            source="connectors",
+            title=f"Connector “{connector.name}” had a problem",
+            hint=failure.get("hint")
+            or "Open the connector in the Connectors tab and check this action's settings, then use Test.",
+            details=failure.get("details") or None,
+            actions=nav_actions_main_tab("Connectors"),
+            dedupe_key=f"connector:{connector.connector_id}:{index}",
+            dedupe_cooldown_sec=600,
+        )
+    except Exception:
+        logger.debug("Could not show the connector failure notification", exc_info=True)
 
 _REGEX_CACHE_MAX = 256
 _regex_match_cache: Dict[str, Any] = {}
@@ -521,8 +622,14 @@ class Connector:
                 return True
         return False
 
-    async def process_event(self, event_data: Dict[str, Any]) -> bool:
-        """Process an event and potentially trigger actions"""
+    async def process_event(self, event_data: Dict[str, Any], *, report_failures: bool = True) -> bool:
+        """Process an event and potentially trigger actions.
+
+        Actions that fail are collected in ``self.last_action_failures`` and, when
+        *report_failures* is True (live events), each one is shown as a notification
+        (deduplicated per connector and action). Tests pass False and show the list.
+        """
+        self.last_action_failures = []
         if not self.enabled or not self.trigger:
             return False
 
@@ -554,6 +661,9 @@ class Connector:
             delay = float(getattr(action, "delay_seconds", 0) or 0)
             if delay > 0:
                 await asyncio.sleep(delay)
+            slot: Dict[str, Any] = {"connector_id": self.connector_id, "connector_name": self.name}
+            token = _action_problem.set(slot)
+            success = False
             try:
                 success = await action.execute(
                     trigger_data={
@@ -577,6 +687,22 @@ class Connector:
                     f"Error executing action '{action.name}' in connector '{self.name}': {e}",
                     exc_info=True,
                 )
+                slot.setdefault("reason", "it stopped with an error")
+                slot.setdefault("details", f"{type(e).__name__}: {e}")
+            finally:
+                _action_problem.reset(token)
+            if not success and not slot.get("skipped"):
+                details = slot.get("details") or "\n".join(slot.get("log") or [])
+                failure = {
+                    "index": action_index,
+                    "label": action_label(action),
+                    "reason": slot.get("reason", ""),
+                    "hint": slot.get("hint", ""),
+                    "details": details,
+                }
+                self.last_action_failures.append(failure)
+                if report_failures:
+                    _notify_action_failure(self, failure)
 
         logger.info(
             f"Connector '{self.name}' executed {success_count}/{len(self.actions)} actions"

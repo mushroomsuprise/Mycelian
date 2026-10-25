@@ -126,10 +126,15 @@ def test_failed_announcement_marks_last_draw(gm, monkeypatch):
         raise RuntimeError("offline")
 
     sys.modules["modules.chatbot"].send_chatbot_announcement = boom
+    shown = []
     monkeypatch.setitem(sys.modules, "modules.notification_engine", types.SimpleNamespace(
-        nav_actions_main_tab=lambda tab: [], notify_critical=lambda *a, **k: None))
+        nav_actions_main_tab=lambda tab: [], nav_chatbot=lambda tab: [],
+        notify_critical=lambda *a, **k: shown.append(a), notify=lambda *a, **k: shown.append(a)))
     gm.update_config({"keyword": "!enter", "announce_winners_as_banner": False})
     _enter(gm, "1", "Mika", 10)
-    gm.draw_winners()
+    ok, msg, _winners = gm.draw_winners()
     draw = gm.get_status()["last_draw"]
     assert draw["announced"] is False and draw["banner"] is False
+    # The Giveaways tab shows the single warning; the manager adds no second one.
+    assert ok and "didn't send" in msg and shown == []
+    assert "offline" in gm.get_last_error()

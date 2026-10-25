@@ -65,6 +65,118 @@ _OWN_CHAT_ECHO_SECONDS = 20.0
 _recent_sent_chat: list = []
 _recent_sent_chat_lock = threading.Lock()
 
+_CHATBOT_SIGNIN_HINT = (
+    "Open Settings → Twitch and click Connect Chatbot to sign the chatbot account in again."
+)
+
+
+def _notify_chatbot(
+    message: str,
+    *,
+    title: str,
+    hint: str,
+    dedupe_key: str,
+    cooldown: float,
+    details: str = "",
+    type: str = "warning",
+    subtab: Optional[str] = "Twitch",
+) -> None:
+    """Show a deduplicated chatbot problem (background paths; never raises)."""
+    try:
+        from .notification_engine import nav_actions_settings, notify
+
+        notify(
+            message,
+            type=type,
+            source="chatbot",
+            title=title,
+            hint=hint,
+            details=details or None,
+            actions=nav_actions_settings(subtab) if subtab else None,
+            dedupe_key=dedupe_key,
+            dedupe_cooldown_sec=cooldown,
+        )
+    except Exception:
+        logger.debug("Could not show a chatbot notification", exc_info=True)
+
+
+def notify_chatbot_signin_failed(details: str = "") -> None:
+    """The dedicated chatbot account could not sign in (startup or auto-reconnect)."""
+    _notify_chatbot(
+        "Commands, timers and replies can't post to Twitch chat until it is signed in again.",
+        title="The chatbot account isn't signed in",
+        hint=_CHATBOT_SIGNIN_HINT,
+        details=details,
+        dedupe_key="chatbot:auth_failed",
+        cooldown=3600,
+    )
+
+
+def _twitch_drop_reason(response: Any) -> Optional[str]:
+    """Why Twitch accepted a chat message but did not show it, or None when it was shown.
+
+    Helix ``POST /chat/messages`` answers 200 with ``is_sent: false`` and a
+    ``drop_reason`` when AutoMod, a blocked term or a chat mode holds it back.
+    """
+    try:
+        data = response.get("data") if isinstance(response, dict) else None
+        first_item = data[0] if isinstance(data, list) and data else None
+        if not isinstance(first_item, dict) or first_item.get("is_sent") is not False:
+            return None
+        drop = first_item.get("drop_reason") or {}
+        if isinstance(drop, dict):
+            text = str(drop.get("message") or "").strip()
+            code = str(drop.get("code") or "").strip()
+            if text and code:
+                return f"{text} ({code})"
+            return text or code or "no reason given"
+        return str(drop or "no reason given")
+    except Exception:
+        return None
+
+
+def _report_twitch_send_problem(problem: Optional[tuple], message: str) -> None:
+    """Tell the user why a chatbot post didn't reach Twitch chat (deduplicated)."""
+    kind, info = problem if problem else ("error", "")
+    preview = str(message or "").strip()
+    if len(preview) > 200:
+        preview = preview[:200] + "…"
+    details = f"Message: {preview}" + (f"\n{info}" if info else "")
+    if kind == "dropped":
+        _notify_chatbot(
+            "Twitch accepted a chatbot message but didn't show it in chat.",
+            title="Twitch held back a chatbot message",
+            hint=(
+                "AutoMod, a blocked term or a chat mode (followers-only, emote-only, slow mode) "
+                "usually causes this. Check Twitch's AutoMod queue and chat settings, or reword the reply."
+            ),
+            details=details,
+            dedupe_key=f"chatbot:dropped:{info[:60]}",
+            cooldown=1800,
+            subtab=None,
+        )
+        return
+    if kind == "auth":
+        text = "The chatbot account isn't signed in, so the message wasn't sent."
+        hint = _CHATBOT_SIGNIN_HINT
+    elif kind == "channel":
+        text = "Your Twitch account isn't connected, so the chatbot has no channel to post in."
+        hint = "Open Settings → Twitch and connect your Twitch account."
+    else:
+        text = "Twitch didn't accept the message."
+        hint = (
+            "Check that the chatbot account is signed in (Settings → Twitch) and isn't banned "
+            "or timed out in your channel. Copy the details to see Twitch's reply."
+        )
+    _notify_chatbot(
+        text,
+        title="The chatbot couldn't post in Twitch chat",
+        hint=hint,
+        details=details,
+        dedupe_key="chatbot:send_failed:twitch",
+        cooldown=600,
+    )
+
 
 def note_sent_chat_message(message: str) -> None:
     """Remember a chat message this app is sending (for echo detection)."""
@@ -212,6 +324,9 @@ class Chatbot_API:
         # Token refresh synchronization
         self._refresh_lock = threading.Lock()
         self._last_refresh_attempt = None
+        # Why the last chat send failed: (kind, technical text) or None.
+        # kind: auth / channel / refused / dropped (see _report_twitch_send_problem).
+        self.last_send_problem: Optional[tuple] = None
 
     def _sync_client_credentials(self) -> None:
         """Reload chatbot client id/secret from the credential store."""
@@ -257,6 +372,7 @@ class Chatbot_API:
             logger.error(
                 "Failed to save cleared chatbot token state: %s", save_error
             )
+        notify_chatbot_signin_failed("Twitch rejected the chatbot's saved sign-in (refresh token invalid)")
 
     def load_auth_data(self):
         """Load chatbot-specific authentication data from the state manager"""
@@ -386,10 +502,10 @@ class Chatbot_API:
                 logger.warning(
                     "Failed to save changes to database when saving chatbot auth data"
                 )
+                self._notify_auth_not_saved("state_manager.save_changes() returned False")
 
-            # Update connection status
-            chatbot_connected = True
-            self.is_connected = True
+            # Update connection status (cleared tokens are not a connection)
+            chatbot_connected = self.is_connected = bool(self.auth_token)
 
             logger.debug("Successfully saved chatbot authentication data")
             return True
@@ -397,10 +513,21 @@ class Chatbot_API:
             logger.error(
                 f"Error saving chatbot authentication data: {str(e)}", exc_info=True
             )
+            self._notify_auth_not_saved(f"{type(e).__name__}: {e}")
             # Still update connection status flags even if save fails
-            chatbot_connected = True
-            self.is_connected = True
+            chatbot_connected = self.is_connected = bool(self.auth_token)
             return False
+
+    @staticmethod
+    def _notify_auth_not_saved(details: str) -> None:
+        _notify_chatbot(
+            "The chatbot works now, but you may need to click Connect Chatbot again after a restart.",
+            title="Couldn't save the chatbot sign-in",
+            hint="Check Settings → Database. If it keeps happening, reconnect the chatbot in Settings → Twitch.",
+            details=details,
+            dedupe_key="chatbot:auth_save_failed",
+            cooldown=3600,
+        )
 
     def is_token_expired(self):
         """Check if the current auth token is expired."""
@@ -938,6 +1065,7 @@ class Chatbot_API:
         self, message: str, reply_to_message_id: Optional[str] = None
     ) -> bool:
         """Send a chat message as the chatbot"""
+        self.last_send_problem = None
         try:
             logger.debug(f"send_chat_message called with message: {message[:50]}...")
             note_sent_chat_message(message)
@@ -960,12 +1088,14 @@ class Chatbot_API:
                     self.twitch is not None,
                     self.user_id,
                 )
+                self.last_send_problem = ("auth", "Chatbot account has no working sign-in")
                 return False
 
             if self.is_token_expired():
                 logger.info("Token expired before sending message, attempting refresh")
                 if not await self.refresh_auth_token():
                     logger.error("Failed to refresh token before sending message")
+                    self.last_send_problem = ("auth", "Chatbot token refresh failed")
                     return False
 
             # Always use the main Twitch account's channel ID as broadcaster_id
@@ -976,6 +1106,7 @@ class Chatbot_API:
                 logger.error(
                     "Main Twitch API not available - cannot get broadcaster_id"
                 )
+                self.last_send_problem = ("channel", "Main Twitch account not connected")
                 return False
 
             main_channel_id = twitch.twitch_api.user_id
@@ -999,14 +1130,23 @@ class Chatbot_API:
             response = await self.generic_api_call(url, "POST", json_data=message_data)
 
             if response:
+                dropped = _twitch_drop_reason(response)
+                if dropped:
+                    logger.warning("Twitch did not deliver chatbot message (%s): %s", dropped, message)
+                    self.last_send_problem = ("dropped", dropped)
+                    return False
                 logger.info(f"✅essage sent successfully: {message}")
                 return True
             else:
                 logger.error(f"Failed to send message: {message}")
+                self.last_send_problem = ("refused", "Twitch returned an empty response")
                 return False
 
         except Exception as e:
             logger.error(f"Error sending chatbot message: {str(e)}", exc_info=True)
+            text = str(e)
+            kind = "auth" if "authentication" in text.lower() else "refused"
+            self.last_send_problem = (kind, text)
             return False
 
     async def _send_via_main_twitch_api(
@@ -1018,6 +1158,7 @@ class Chatbot_API:
 
             if not twitch.twitch_api or not twitch.twitch_api.is_connected:
                 logger.error("Main Twitch API not available for chatbot fallback")
+                self.last_send_problem = ("channel", "Main Twitch account not connected")
                 return False
 
             # Prepare the message data using the main Twitch API's user ID
@@ -1038,12 +1179,20 @@ class Chatbot_API:
             )
 
             if response:
+                dropped = _twitch_drop_reason(response)
+                if dropped:
+                    logger.warning(
+                        "Twitch did not deliver chatbot message (fallback, %s): %s", dropped, message
+                    )
+                    self.last_send_problem = ("dropped", dropped)
+                    return False
                 logger.debug("Message sent successfully (fallback): %s", message)
                 logger.debug(f"Chatbot sent message via main Twitch API: {message}")
                 return True
             else:
                 logger.error("Failed to send message (fallback): %s", message)
                 logger.error("Failed to send chatbot message via main Twitch API")
+                self.last_send_problem = ("refused", "Twitch rejected the message (main account)")
                 return False
 
         except Exception as e:
@@ -1051,6 +1200,7 @@ class Chatbot_API:
                 f"Error sending chatbot message via main Twitch API: {str(e)}",
                 exc_info=True,
             )
+            self.last_send_problem = ("refused", str(e))
             return False
 
     async def send_chat_announcement(
@@ -1545,9 +1695,11 @@ def attempt_auto_reconnect() -> bool:
     def _run_reconnect() -> None:
         global _chatbot_reconnect_in_progress
         try:
-            asyncio.run(chatbot_api.stage_chatbot_api())
-        except Exception:
+            if not asyncio.run(chatbot_api.stage_chatbot_api()):
+                notify_chatbot_signin_failed("Automatic chatbot reconnect failed")
+        except Exception as e:
             logger.error("Chatbot auto-reconnect failed", exc_info=True)
+            notify_chatbot_signin_failed(f"{type(e).__name__}: {e}")
         finally:
             _chatbot_reconnect_in_progress = False
 
@@ -1609,7 +1761,9 @@ def _run_chatbot_init() -> None:
         logger.warning(
             "Timed out waiting for Twitch staging; proceeding with chatbot init"
         )
-    asyncio.run(chatbot_api.stage_chatbot_api())
+    if not asyncio.run(chatbot_api.stage_chatbot_api()) and not chatbot_api.using_fallback:
+        # Fallback mode (no dedicated credentials) posts as the main account instead.
+        notify_chatbot_signin_failed("Chatbot sign-in failed at startup")
 
 
 def get_chatbot_api():
@@ -1755,6 +1909,7 @@ def send_chatbot_message(
         # Check if chatbot is available (either dedicated or fallback mode)
         if not chatbot_api:
             logger.warning("Chatbot API not initialized")
+            _report_twitch_send_problem(("refused", "Chatbot not started yet"), message)
             return False
 
         # If we have a dedicated chatbot API, check if it's connected
@@ -1763,6 +1918,7 @@ def send_chatbot_message(
             # For dedicated credentials, check both the global flag and instance status
             if not chatbot_connected and not chatbot_api.is_connected:
                 logger.error("Chatbot API not connected (dedicated mode)")
+                _report_twitch_send_problem(("auth", "Chatbot account not connected"), message)
                 return False
             # If either flag indicates connection, proceed (dedicated API)
             logger.info("Connection check passed, proceeding with dedicated API")
@@ -1773,6 +1929,7 @@ def send_chatbot_message(
 
             if not twitch.twitch_api or not twitch.twitch_api.is_connected:
                 logger.error("Main Twitch API not available for chatbot fallback")
+                _report_twitch_send_problem(("channel", "Main Twitch account not connected"), message)
                 return False
         else:
             logger.error("Chatbot API not connected")
@@ -1781,10 +1938,12 @@ def send_chatbot_message(
         if _running_asyncio_loop():
             enqueue_chatbot_send(message, reply_to_message_id)
             return True
+        # Failures are reported (once, deduplicated) by _send_chatbot_message_blocking.
         return _send_chatbot_message_blocking(message, reply_to_message_id)
 
     except Exception as e:
         logger.error(f"Error sending chatbot message: {str(e)}", exc_info=True)
+        _report_twitch_send_problem(("refused", f"{type(e).__name__}: {e}"), message)
         return False
 
 
@@ -1803,10 +1962,22 @@ def _send_chatbot_message_blocking(
     if not parts or not chatbot_api:
         return False
     ok = True
+    problem: Optional[tuple] = None
     for index, part in enumerate(parts):
-        ok = _send_one_chatbot_message_blocking(
-            part, reply_to_message_id if index == 0 else None
-        ) and ok
+        try:
+            sent = _send_one_chatbot_message_blocking(
+                part, reply_to_message_id if index == 0 else None
+            )
+        except Exception as e:
+            logger.error("Chatbot send error: %s", e, exc_info=True)
+            sent = False
+            chatbot_api.last_send_problem = ("refused", f"{type(e).__name__}: {e}")
+        if not sent and problem is None:
+            problem = getattr(chatbot_api, "last_send_problem", None) or ("refused", "")
+        ok = sent and ok
+    if not ok:
+        # Single choke point for every Twitch chat post (replies, timers, connectors).
+        _report_twitch_send_problem(problem, message)
     return ok
 
 
@@ -1966,6 +2137,7 @@ def _dispatch_chatbot_response_blocking(
         except Exception as e:
             logger.error("Chatbot YouTube dispatch error: %s", e, exc_info=True)
     if discord_channels:
+        discord_error = ""
         try:
             from . import discord_service
 
@@ -1973,8 +2145,23 @@ def _dispatch_chatbot_response_blocking(
                 any_ok = True
             else:
                 logger.warning("Chatbot Discord send failed")
+                discord_error = "Discord send returned no success"
         except Exception as e:
             logger.error("Chatbot Discord dispatch error: %s", e, exc_info=True)
+            discord_error = f"{type(e).__name__}: {e}"
+        if discord_error:
+            _notify_chatbot(
+                "A chatbot reply meant for Discord wasn't posted.",
+                title="The chatbot couldn't post to Discord",
+                hint=(
+                    "Open Settings → Discord and check that the bot is connected and can post in "
+                    "the channels picked for this command or event."
+                ),
+                details=discord_error,
+                dedupe_key="chatbot:send_failed:discord",
+                cooldown=600,
+                subtab="Discord",
+            )
     return any_ok
 
 

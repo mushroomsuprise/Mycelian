@@ -792,7 +792,24 @@ def load_custom_variables() -> dict:
     with _cache_lock:
         if not ok:
             _cache_failed_at = time.monotonic()
-            return {}
+    if not ok:
+        try:
+            from .notification_engine import nav_chatbot, notify
+
+            notify(
+                "Replies that use {custom_…} variables show them unfilled until they can be read.",
+                type="warning",
+                source="chatbot",
+                title="Couldn't load your custom variables",
+                hint="Check Settings → Database. Mycelian tries again shortly.",
+                actions=nav_chatbot("Commands"),
+                dedupe_key="chatbot:custom_vars_load",
+                dedupe_cooldown_sec=3600,
+            )
+        except Exception:
+            logger.debug("Could not show the custom variables notification", exc_info=True)
+        return {}
+    with _cache_lock:
         _cache = dict(data) if isinstance(data, dict) else {}
         logger.debug("Loaded %d custom variables", len(_cache))
         return dict(_cache)

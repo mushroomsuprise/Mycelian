@@ -224,7 +224,7 @@ def open_in_spore_studio(template: str) -> None:
 
 def copy_text(text: str, message: str = "Copied") -> None:
     ui.clipboard.write(text)
-    notify(message, type="positive")
+    notify(message, type="success", source="chatbot")
 
 
 def card(title: str, icon_name: str, badge: str = "", badge_live: bool = False) -> tuple:

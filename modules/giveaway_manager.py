@@ -143,6 +143,12 @@ class GiveawayManager:
             pending = self._recover_after_failed_load()
             if pending is None:
                 self._save_blocked = True
+                self._notify_save_problem(
+                    "Giveaway changes not saved yet",
+                    "Your giveaway settings are kept and saved once the database can be read.",
+                    f"Not saving {DATA_PATH}: it could not be read",
+                    critical=False,
+                )
                 return
         self._save_blocked = False
         seq, payload = pending
@@ -189,21 +195,47 @@ class GiveawayManager:
 
     def _write_config(self, payload: Dict[str, Any]) -> None:
         try:
-            from .database_manager import set_data
+            from .database_manager import last_write_problem, quiet_notifications, set_data
 
-            set_data(DATA_PATH, payload)
+            # Reported here with giveaway context, not by the database layer.
+            with quiet_notifications():
+                ok = set_data(DATA_PATH, payload)
+                problem = last_write_problem()
+            if ok is False:
+                logger.error("Giveaway config save failed: database write returned False")
+                reason = ": ".join(str(p) for p in problem if p) if problem else ""
+                self._notify_save_problem(
+                    "Couldn't save giveaway settings",
+                    "Your latest giveaway changes may be lost when Mycelian closes.",
+                    f"Database write returned no success for {DATA_PATH}" + (f" ({reason})" if reason else ""),
+                )
         except Exception as e:
             logger.error("Giveaway config save failed: %s", e)
-            try:
-                from .notification_engine import nav_actions_main_tab, notify_critical
+            self._notify_save_problem(
+                "Couldn't save giveaway settings",
+                "Your latest giveaway changes may be lost when Mycelian closes.",
+                f"{type(e).__name__}: {e}",
+            )
 
-                notify_critical(
-                    "Could not save giveaway settings to the database.",
-                    dedupe_key="giveaway:save_config",
-                    actions=nav_actions_main_tab("Chatbot"),
-                )
-            except Exception:
-                pass
+    @staticmethod
+    def _notify_save_problem(title: str, message: str, details: str, *, critical: bool = True) -> None:
+        try:
+            from .notification_engine import nav_chatbot, notify
+
+            notify(
+                message,
+                type="error" if critical else "warning",
+                source="chatbot",
+                title=title,
+                hint="Check Settings → Database, then change the setting again.",
+                details=details,
+                actions=nav_chatbot("Giveaways"),
+                dedupe_key="giveaway:save_config" if critical else "giveaway:save_blocked",
+                dedupe_cooldown_sec=120 if critical else 600,
+                sticky=critical,
+            )
+        except Exception:
+            logger.debug("Could not show the giveaway save notification", exc_info=True)
 
     def flush(self) -> None:
         """Retry a config write that was held back because the load had failed."""
@@ -495,20 +527,11 @@ class GiveawayManager:
                     self._last_draw["announced"] = False
                 logger.warning("Giveaway announcement failed; overlay winners still emitted")
         except Exception as e:
+            # Only the Giveaways tab draws; it reports this result (one notification).
             announce_ok = False
             logger.error("Giveaway announcement error: %s", e, exc_info=True)
-            try:
-                from .notification_engine import nav_actions_main_tab, notify_critical
-
-                notify_critical(
-                    "Giveaway winner announcement failed to send. Check chatbot connection.",
-                    dedupe_key="giveaway:announce_failed",
-                    actions=nav_actions_main_tab("Chatbot"),
-                )
-            except Exception:
-                pass
             with self._lock:
-                self._last_error = str(e)
+                self._last_error = f"{type(e).__name__}: {e}"
                 self._last_draw["announced"] = False
 
         if bool(self._config.get("announce_winners_as_banner")):
@@ -540,6 +563,7 @@ class GiveawayManager:
             },
         )
         if not announce_ok:
-            return True, "Drew winner(s) but announcement failed.", winners
+            # Callers check get_status()["last_draw"]["announced"] for this case.
+            return True, "Winners drawn, but the chat announcement didn't send.", winners
         return True, f"Drew {len(winners)} winner(s).", winners
 

@@ -33,7 +33,13 @@ import threading
 from dataclasses import dataclass, field, fields
 from typing import Any, Dict, List, Optional, Union
 
-from .connector_core import ActionType, BaseAction
+from .connector_core import (
+    ActionType,
+    BaseAction,
+    current_action_connector,
+    mark_action_skipped,
+    report_action_problem,
+)
 from .connector_placeholders import (
     build_connector_placeholder_context,
     substitute_connector_placeholders,
@@ -76,7 +82,31 @@ def resolve_json_field(
         if allow_text:
             return substitute_connector_placeholders(text, ctx)
         logger.error("%s is not valid JSON (%s); using {}", label, e)
+        _notify_bad_json(label, f"{label}: {e}\n{text[:300]}")
         return {}
+
+
+def _notify_bad_json(label: str, details: str) -> None:
+    """An action field that should be JSON isn't; the action ran without it."""
+    connector = current_action_connector()
+    if connector is None:
+        return
+    try:
+        from .notification_engine import nav_actions_main_tab, notify
+
+        notify(
+            f"Connector “{connector[1]}”: the {label.lower()} field isn't valid JSON, so it was ignored.",
+            type="warning",
+            source="connectors",
+            title="A connector field isn't valid JSON",
+            hint="Open the connector in the Connectors tab and fix the field (for example, keys need double quotes).",
+            details=details,
+            actions=nav_actions_main_tab("Connectors"),
+            dedupe_key=f"connector:{connector[0]}:badjson:{label}",
+            dedupe_cooldown_sec=3600,
+        )
+    except Exception:
+        logger.debug("Could not show the invalid JSON notification", exc_info=True)
 
 
 def _float_or(value: Any, default: float) -> float:
@@ -119,6 +149,7 @@ class TemplateControlAction(BaseAction):
                 or not web_engine.web_engine_instance.socketio
             ):
                 logger.error("Web engine not available for template control action")
+                report_action_problem("the overlay server isn't running", "Check that the overlay server is running (see the status footer at the bottom of the window).")
                 return False
 
             # Prepare control data with event context
@@ -185,6 +216,7 @@ class WebSocketEmitAction(BaseAction):
                 or not web_engine.web_engine_instance.socketio
             ):
                 logger.error("Web engine not available for WebSocket emit action")
+                report_action_problem("the overlay server isn't running", "Check that the overlay server is running (see the status footer at the bottom of the window).")
                 return False
 
             # Prepare event data
@@ -372,6 +404,11 @@ class TriggerAlertAction(BaseAction):
                 logger.error(
                     "Trigger alert action: unsupported alert type %r", self.alert_type
                 )
+                report_action_problem(
+                    "its alert type isn't supported",
+                    "Open the connector and pick an alert type again.",
+                    f"alert_type={self.alert_type!r}",
+                )
                 return False
 
             ctx = build_connector_placeholder_context(event_data, trigger_data)
@@ -397,11 +434,20 @@ class TriggerAlertAction(BaseAction):
                     alert_type,
                     f" for {raw_amount}" if raw_amount not in (None, "") else "",
                 )
+                report_action_problem(
+                    "no matching alert is set up" + (f" for {raw_amount}" if raw_amount not in (None, "") else ""),
+                    "Add an alert for this type and amount in the Alerts tab, or change the amount in the connector.",
+                    f"alert_type={alert_type!r} amount={raw_amount!r}",
+                )
                 return False
             if alert_type == "point" and not getattr(alert, "enable_alert", True):
                 logger.warning(
                     "Trigger alert action: the point alert %r is switched off; nothing played",
                     getattr(alert, "alert_name", ""),
+                )
+                report_action_problem(
+                    f"the channel point alert “{getattr(alert, 'alert_name', '')}” is turned off",
+                    "Turn the alert on in Alerts → Channel Points.",
                 )
                 return False
 
@@ -564,6 +610,7 @@ class DisplayBannerAction(BaseAction):
                 logger.info("Displayed chat banner: %s", message)
                 return True
             logger.error("Failed to display chat banner")
+            report_action_problem("the banner couldn't be shown on the overlay", "Check that the overlay server is running (see the status footer at the bottom of the window).")
             return False
         except Exception as e:
             logger.error(f"Error executing display banner action: {e}", exc_info=True)
@@ -610,6 +657,10 @@ class SendAnnouncementAction(BaseAction):
                 logger.info("Sent chat announcement via chatbot (color=%s)", color)
                 return True
             logger.error("Failed to send chat announcement via chatbot")
+            report_action_problem(
+                "Twitch didn't accept the announcement",
+                "Check that the chatbot account is signed in (Settings → Twitch) and is a moderator in your channel.",
+            )
             return False
         except Exception as e:
             logger.error(
@@ -663,6 +714,10 @@ class SendDiscordMessageAction(BaseAction):
                 )
                 return True
             logger.error("Failed to send Discord message to any configured channel")
+            report_action_problem(
+                "Discord didn't accept the message",
+                "Open Settings → Discord and check that the bot is connected and can post in the chosen channels.",
+            )
             return False
         except Exception as e:
             logger.error(
@@ -737,10 +792,20 @@ class ApiCallAction(BaseAction):
                         logger.error(
                             f"API call failed: {self.method} {url} -> {response.status}"
                         )
+                        report_action_problem(
+                            f"the server answered with error {response.status}",
+                            "Check the URL, method, headers and body in this action.",
+                            f"{self.method} {url} -> HTTP {response.status}",
+                        )
                         return False
 
         except Exception as e:
             logger.error(f"Error executing API call action: {e}", exc_info=True)
+            report_action_problem(
+                "the request couldn't be sent",
+                "Check the URL in this action and your internet connection.",
+                f"{type(e).__name__}: {e}",
+            )
             return False
 
     def validate_parameters(self) -> bool:
@@ -805,6 +870,11 @@ class WriteFileAction(BaseAction):
 
         except Exception as e:
             logger.error(f"Error executing write file action: {e}", exc_info=True)
+            report_action_problem(
+                "the file couldn't be written",
+                "Check that the folder exists and Mycelian is allowed to write there.",
+                f"{type(e).__name__}: {e}",
+            )
             return False
 
     def validate_parameters(self) -> bool:
@@ -861,10 +931,19 @@ class ExecuteCommandAction(BaseAction):
             else:
                 logger.error(f"Command failed: {command} -> {result.returncode}")
                 logger.error(f"stderr: {result.stderr}")
+                report_action_problem(
+                    f"the command ended with exit code {result.returncode}",
+                    "Run the command in a terminal to check it, and check the working folder in this action.",
+                    f"{command}\nexit code {result.returncode}\n{(result.stderr or '')[:1000]}",
+                )
                 return False
 
         except subprocess.TimeoutExpired:
             logger.error(f"Command timed out: {self.command}")
+            report_action_problem(
+                f"the command didn't finish within {self.timeout_seconds} seconds",
+                "Raise the timeout in this action, or check why the command hangs.",
+            )
             return False
         except Exception as e:
             logger.error(f"Error executing command action: {e}", exc_info=True)
@@ -905,6 +984,11 @@ class KeyPressAction(BaseAction):
                 from pynput.mouse import Button  # noqa: F401
             except ImportError as e:
                 logger.error(f"pynput library not available for key press action: {e}")
+                report_action_problem(
+                    "key presses aren't available on this system",
+                    "Reinstall Mycelian; the keyboard control component is missing.",
+                    f"{type(e).__name__}: {e}",
+                )
                 return False
 
             logger.info(
@@ -2276,6 +2360,11 @@ class AudioControlAction(BaseAction):
             logger.warning(
                 "Audio control may require administrator privileges on Windows"
             )
+            report_action_problem(
+                "audio control isn't available on this system",
+                "Reinstall Mycelian; the Windows audio component (pycaw) is missing. "
+                "Audio control may also need Mycelian to run as administrator.",
+            )
             return False
         except Exception as e:
             error_msg = str(e).lower()
@@ -2289,6 +2378,11 @@ class AudioControlAction(BaseAction):
                 )
                 logger.warning(
                     "Try running the application as administrator for full audio control"
+                )
+                report_action_problem(
+                    "Windows didn't allow the audio change",
+                    "Try running Mycelian as administrator for full audio control.",
+                    f"{type(e).__name__}: {e}",
                 )
             else:
                 logger.error(f"Error controlling Windows device: {e}", exc_info=True)
@@ -2358,6 +2452,11 @@ class AudioControlAction(BaseAction):
                 logger.warning(
                     "Check System Preferences > Security & Privacy > Microphone"
                 )
+                report_action_problem(
+                    "macOS didn't allow the audio change",
+                    "Allow Mycelian in System Settings → Privacy & Security → Microphone, then try again.",
+                    f"{type(e).__name__}: {e}",
+                )
             else:
                 logger.error(f"Error controlling macOS device: {e}", exc_info=True)
             return False
@@ -2419,6 +2518,11 @@ class AudioControlAction(BaseAction):
         except ImportError:
             logger.error("pulsectl library not available for Linux device control")
             logger.warning("Audio control may require user to be in 'audio' group")
+            report_action_problem(
+                "audio control isn't available on this system",
+                "Install PulseAudio/PipeWire support (pulsectl) and make sure your user is in the "
+                "'audio' group: sudo usermod -a -G audio $USER, then log out and back in.",
+            )
             return False
         except Exception as e:
             error_msg = str(e).lower()
@@ -2429,6 +2533,11 @@ class AudioControlAction(BaseAction):
             ):
                 logger.warning("Audio control failed - user may not be in audio group")
                 logger.warning("Try: sudo usermod -a -G audio $USER")
+                report_action_problem(
+                    "Linux didn't allow the audio change",
+                    "Add your user to the 'audio' group: sudo usermod -a -G audio $USER, then log out and back in.",
+                    f"{type(e).__name__}: {e}",
+                )
             else:
                 logger.error(f"Error controlling Linux device: {e}", exc_info=True)
             return False
@@ -2847,6 +2956,13 @@ class AddGreetingAction(BaseAction):
                 return True
             else:
                 logger.error(f"Failed to add greeting: {error_msg}")
+                if "already has a greeting" in str(error_msg or ""):
+                    mark_action_skipped()  # nothing to do for a viewer who has one
+                else:
+                    report_action_problem(
+                        str(error_msg or "the greeting couldn't be added").rstrip(".").lower(),
+                        "Check the user and greeting fields in this action.",
+                    )
                 return False
 
         except Exception as e:
@@ -3056,6 +3172,7 @@ class GameHookAction(BaseAction):
                     self.game_id,
                     self.operation,
                 )
+                mark_action_skipped()  # same rule as the connector-level hook check
                 return False
 
             resolved = self._substitute_hook_arguments(
@@ -3087,9 +3204,18 @@ class GameHookAction(BaseAction):
                     self.operation,
                     _safe_console_str(err_msg),
                 )
+                report_action_problem(
+                    "the game didn't accept the change",
+                    "Check that the game is running and the hook is attached in Settings → Game Hooks.",
+                    f"{self.game_id} {self.operation}: {err_msg}",
+                )
             return bool(ok)
         except asyncio.TimeoutError:
             logger.error("Game hook write timed out: %s", self.operation)
+            report_action_problem(
+                "the game didn't respond in time",
+                "Check that the game is running and the hook is attached in Settings → Game Hooks.",
+            )
             return False
         except Exception as e:
             logger.error("Game hook action error: %s", e, exc_info=True)
@@ -3150,9 +3276,18 @@ class ObsControlAction(BaseAction):
                     self.operation,
                     err or "unknown error",
                 )
+                report_action_problem(
+                    "OBS didn't accept the request",
+                    "Check that OBS is connected (Settings → OBS) and the scene or source in this action still exists.",
+                    f"{self.operation}: {err or 'unknown error'}",
+                )
             return ok
         except asyncio.TimeoutError:
             logger.error("OBS action timed out: %s", self.operation)
+            report_action_problem(
+                "OBS didn't respond in time",
+                "Check that OBS is running and connected in Settings → OBS.",
+            )
             return False
         except Exception as e:
             logger.error("OBS action error: %s", e, exc_info=True)

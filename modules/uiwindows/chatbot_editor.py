@@ -336,28 +336,50 @@ def run_item_test(kind: str, item_id: str) -> None:
     manager = get_manager()
     fn = getattr(manager, "test_command" if kind == "command" else "test_event", None)
 
-    async def go() -> None:
-        try:
-            if callable(fn):
-                result = fn(item_id)
-                if hasattr(result, "__await__"):
-                    result = await result
-            else:
-                from .chatbot import test_chatbot_item
+    def _test_failed(details: str) -> None:
+        notify(
+            "",
+            type="error",
+            source="chatbot",
+            title=f"The {kind} test couldn't run",
+            hint="Save the item and try again. If it keeps happening, copy the details and report it.",
+            details=details,
+        )
 
-                await test_chatbot_item(item_id, kind)
-                return
+    async def go() -> None:
+        if not callable(fn):
+            # The chatbot manager always has test_command/test_event; guard only.
+            logger.error("Chatbot manager has no test function for %s", kind)
+            _test_failed(f"No test function for {kind}")
+            return
+        try:
+            result = fn(item_id)
+            if hasattr(result, "__await__"):
+                result = await result
         except Exception as exc:
             logger.error("Chatbot test failed: %s", exc, exc_info=True)
-            notify(f"Test failed: {exc}", type="negative")
+            _test_failed(f"{type(exc).__name__}: {exc}")
             return
         result = result or {}
-        if result.get("triggered") and result.get("response"):
-            notify(f"Test reply: {result['response']}", type="positive", timeout=8000)
+        if not result.get("ok", True) and result.get("reason") not in (None, "", "Command not found", "Event not found"):
+            _test_failed(str(result.get("reason")))  # an exception inside the test
+        elif result.get("triggered") and result.get("response"):
+            notify(
+                result["response"],
+                type="success",
+                source="chatbot",
+                title="Test reply",
+                actions=[{"kind": "copy", "text": str(result["response"]), "label": "Copy reply"}],
+            )
         elif result.get("ok", True) and result.get("triggered"):
-            notify("Test ran with sample data.", type="positive")
+            notify("Test ran with sample data", type="success", source="chatbot")
         else:
-            notify(f"Didn't run: {result.get('reason') or 'its filters did not match the sample'}", type="info")
+            notify(
+                result.get("reason") or "Its filters didn't match the sample.",
+                type="info",
+                source="chatbot",
+                title="Test didn't run",
+            )
 
     background_tasks.create(go(), name=f"chatbot_test_{kind}")
 
@@ -663,10 +685,12 @@ class ChatbotEditor:
     def _reset_usage(self) -> None:
         fn = getattr(get_manager(), "reset_usage", None)
         if callable(fn) and not self.state.is_new:
-            fn(self.state.item_id)
-            notify("Uses reset to 0", type="positive")
+            if fn(self.state.item_id):
+                notify("Uses reset to 0", type="success", source="chatbot")
+            else:
+                notify("This command was deleted, so there's nothing to reset.", type="info", source="chatbot")
         else:
-            notify("Save the command first", type="info")
+            notify("Save the command first, then reset its uses.", type="info", source="chatbot")
 
     def _aliases_editor(self) -> None:
         s = self.state
@@ -1332,12 +1356,13 @@ class ChatbotEditor:
 
             def add() -> None:
                 if not gsel.value or not csel.value:
-                    notify("Choose a server and a channel", type="warning")
+                    notify("Choose a server and a channel first", type="warning", source="chatbot",
+                           hint="Pick both, then click Add.")
                     return
                 entry = {"guild_id": gsel.value, "channel_id": csel.value, "guild_name": guilds.get(gsel.value, gsel.value),
                          "channel_name": channels.get(csel.value, csel.value).lstrip("#")}
                 if any((e.get("guild_id"), e.get("channel_id")) == (entry["guild_id"], entry["channel_id"]) for e in self.state.discord_channels):
-                    notify("That channel is already added", type="info")
+                    notify("That channel is already added", type="info", source="chatbot")
                     return
                 self.state.discord_channels.append(entry)
                 menu.close()
@@ -1381,13 +1406,17 @@ class ChatbotEditor:
         s = self.state
         problems = state_problems(s)
         if problems:
-            notify(problems[0], type="warning")
+            more = f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""
+            notify(problems[0] + more, type="warning", source="chatbot", title=f"Can't save the {self.kind} yet",
+                   hint="Fix this, then save again.")
             return
         try:
             item = build_item(s, self.existing)
         except Exception as exc:
             logger.error("Could not build chatbot %s: %s", self.kind, exc, exc_info=True)
-            notify(f"Could not save: {exc}", type="negative")
+            notify("Nothing was saved. Your changes are still in the editor.", type="error", source="chatbot",
+                   title=f"Couldn't save the {self.kind}", hint="Check the fields for unusual values and try again.",
+                   details=f"{type(exc).__name__}: {exc}")
             return
         manager = get_manager()
         validate = getattr(manager, "validate_command" if self.kind == "command" else "validate_event", None)
@@ -1397,8 +1426,10 @@ class ChatbotEditor:
             except Exception:
                 message = None
             if message:
-                notify(message, type="warning")
+                notify(message, type="warning", source="chatbot", title=f"Can't save the {self.kind} yet",
+                       hint="Change it, then save again.")
                 return
+        error_details = ""
         try:
             if self.kind == "command":
                 if s.is_new:
@@ -1412,10 +1443,20 @@ class ChatbotEditor:
         except Exception as exc:
             logger.error("Saving chatbot %s failed: %s", self.kind, exc, exc_info=True)
             ok = False
+            error_details = f"{type(exc).__name__}: {exc}"
         if not ok:
-            notify(f"Could not save the {self.kind}. Check the log for details.", type="negative")
+            gone = not s.is_new and not error_details
+            notify(
+                f"This {self.kind} was deleted while you were editing it. Close the editor and create it again."
+                if gone else "Nothing was saved. Your changes are still in the editor.",
+                type="error",
+                source="chatbot",
+                title=f"Couldn't save the {self.kind}",
+                hint="Copy your text, close the editor and create a new one." if gone else "Try again.",
+                details=error_details or None,
+            )
             return
-        notify(f"{'Created' if s.is_new else 'Saved'} “{item.name}”", type="positive")
+        notify(f"{'Created' if s.is_new else 'Saved'} “{item.name}”", type="success", source="chatbot")
         self._baseline = s.snapshot()
         self.dialog.close()
         try:
@@ -1530,9 +1571,11 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
                 def delete() -> None:
                     fn = getattr(mod, "delete_custom_definition", None) if mod else None
                     if callable(fn) and fn(key):
-                        notify(f"Deleted {{{key}}}", type="positive")
+                        notify(f"Deleted {{{key}}}", type="success", source="chatbot")
                         dialog.close()
                         on_saved()
+                    else:
+                        error.set_text("Couldn't delete the variable. Check Settings → Database and try again.")
 
                 ui.button("Delete", icon="delete", on_click=delete).props("flat no-caps color=negative")
             ui.button("Cancel", on_click=dialog.close).props("outline no-caps color=primary")
@@ -1768,9 +1811,9 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
         definition = {"kind": state["kind"], "params": state["params"], "expression": compile_expr(), "description": state["description"]}
         fn = getattr(mod, "save_custom_definition", None) if mod else None
         if not callable(fn) or not fn(full, definition):
-            error.set_text("Could not save the variable.")
+            error.set_text("Couldn't save the variable. Check Settings → Database and try again.")
             return
-        notify(f"Saved {{{full}}}", type="positive")
+        notify(f"Saved {{{full}}}", type="success", source="chatbot")
         dialog.close()
         on_saved()
 

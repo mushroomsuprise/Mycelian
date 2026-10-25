@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 from nicegui import ui
 
 from ..giveaway_manager import DEFAULT_CONFIG, format_winners_message, get_giveaway_manager
-from ..notification_engine import notify
+from ..notification_engine import nav_actions_settings, notify
 from ..ui_timer import layout_schedule
 from .chatbot_gp_styles import avatar_color, card, copy_text, esc, icon, inject_styles, open_in_spore_studio, overlay_rows, plural, toggle
 from .chatbot_gp_styles import ago as _ago
@@ -67,6 +67,20 @@ def names_text(names: List[str], limit: int = 3) -> str:
     if len(names) <= limit:
         return ", ".join(names)
     return f"{', '.join(names[:limit])} and {len(names) - limit} more"
+
+
+def _warn_announce_failed(message: str, details: str = "") -> None:
+    """Winners exist but the chat announcement (a Twitch announcement) didn't send."""
+    notify(
+        message,
+        type="warning",
+        source="chatbot",
+        title="Giveaway announcement didn't send",
+        hint="Check that the chatbot account is signed in (Settings → Twitch) and is a moderator "
+             "in your channel, then click Announce again.",
+        details=details or None,
+        actions=nav_actions_settings("Twitch"),
+    )
 
 
 class GiveawaysPanel:
@@ -319,7 +333,9 @@ class GiveawaysPanel:
 
     def _remove(self, row: Dict[str, Any], block: bool) -> None:
         if get_giveaway_manager().remove_entry(str(row.get("user_id") or ""), block=block):
-            notify(f"{row.get('name')} {'removed and blocked' if block else 'removed'}", type="positive")
+            notify(f"{row.get('name')} {'removed and blocked' if block else 'removed'}", type="success", source="chatbot")
+        else:
+            notify(f"{row.get('name')} is no longer in the pool.", type="info", source="chatbot")
         if block:
             self._render_blocked()
         self._render_live(force=True)
@@ -327,7 +343,7 @@ class GiveawaysPanel:
     def _copy_entrants(self) -> None:
         names = [r["name"] for r in group_entrants(get_giveaway_manager().get_pool_details())]
         if not names:
-            notify("No entrants to copy yet", type="info")
+            notify("No entrants to copy yet", type="info", source="chatbot")
             return
         copy_text("\n".join(names), f"Copied {plural(len(names), 'name')}")
 
@@ -357,8 +373,14 @@ class GiveawaysPanel:
                         "outline no-caps dense color=primary")
 
     def _announce_again(self) -> None:
-        ok, msg = get_giveaway_manager().announce_last_draw()
-        notify(msg, type="positive" if ok else "negative")
+        gm = get_giveaway_manager()
+        ok, msg = gm.announce_last_draw()
+        if ok:
+            notify(msg, type="success", source="chatbot")
+        elif not (gm.get_status().get("last_draw") or {}).get("winners"):
+            notify(msg, type="info", source="chatbot")
+        else:
+            _warn_announce_failed("The winners weren't announced in chat.")
 
     # -- setup -------------------------------------------------------------------
 
@@ -416,7 +438,7 @@ class GiveawaysPanel:
         get_giveaway_manager().set_config_field(field, value)
         self._render_live(force=True)
 
-    def _save_keyword(self) -> None:
+    def _save_keyword(self, announce: bool = True) -> None:
         if self.keyword_input is None:
             return
         gm = get_giveaway_manager()
@@ -428,10 +450,13 @@ class GiveawaysPanel:
         # Keep the overlay in step: a new keyword re-announces it, an empty one closes entries.
         if before["accepting"]:
             if keyword:
-                gm.start_giveaway()
+                ok, _msg = gm.start_giveaway()
+                if ok and announce:
+                    notify(f"Keyword changed: viewers now type {gm.get_status()['keyword']}", type="info", source="chatbot")
             else:
                 gm.stop_accepting()
-                notify("Entries closed: the keyword is empty", type="warning")
+                notify("Entries closed because the keyword is empty.", type="warning", source="chatbot",
+                       title="Giveaway entries closed", hint="Type a keyword and click Start to reopen entries.")
         self._render_live(force=True)
 
     def _step(self, delta: int) -> None:
@@ -506,25 +531,35 @@ class GiveawaysPanel:
     # -- actions ---------------------------------------------------------------------
 
     def _start(self) -> None:
-        self._save_keyword()
+        self._save_keyword(announce=False)
         gm = get_giveaway_manager()
         ok, msg = gm.start_giveaway()
         if ok:
-            notify(f"Accepting entries: viewers type {gm.get_status()['keyword']}", type="positive")
+            notify(f"Accepting entries: viewers type {gm.get_status()['keyword']}", type="success", source="chatbot")
         else:
-            notify(msg or "Couldn't start the giveaway", type="negative")
+            notify(msg or "", type="warning", source="chatbot", title="Couldn't start the giveaway",
+                   hint="Type an entry keyword, then click Start.")
             if self.keyword_input is not None:
                 self.keyword_input.run_method("focus")
         self._render_live(force=True)
 
     def _stop(self) -> None:
         get_giveaway_manager().stop_accepting()
-        notify("Entries closed", type="info")
+        notify("Entries closed", type="info", source="chatbot")
         self._render_live(force=True)
 
     def _draw(self) -> None:
-        ok, msg, _winners = get_giveaway_manager().draw_winners()
-        notify(msg, type="positive" if ok else "negative")
+        gm = get_giveaway_manager()
+        ok, msg, winners = gm.draw_winners()
+        if not ok:
+            notify(msg, type="info", source="chatbot", title="No winners drawn")
+        elif (gm.get_status().get("last_draw") or {}).get("announced", True):
+            notify(f"Drew {plural(len(winners), 'winner')}", type="success", source="chatbot")
+        else:
+            _warn_announce_failed(
+                f"Drew {plural(len(winners), 'winner')}, but the chat announcement didn't send.",
+                details=gm.get_last_error(),
+            )
         if self.preview is not None:
             self.preview.set_text(format_winners_message(get_giveaway_manager().get_config().get("winning_message_template") or "",
                                                          self._sample()))
@@ -543,7 +578,7 @@ class GiveawaysPanel:
                 gm.clear_giveaway()
                 if self.keyword_input is not None:
                     self.keyword_input.value = ""
-                notify("Cleared. Set a keyword to start the next giveaway.", type="info")
+                notify("Cleared. Set a keyword to start the next giveaway.", type="info", source="chatbot")
                 self._render_all()
 
             with ui.row().classes("w-full justify-end gap-2"):

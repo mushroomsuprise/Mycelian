@@ -129,6 +129,12 @@ def widget_html(snapshot: Dict[str, Any], style: Dict[str, Any]) -> str:
             + "".join(parts) + "</div>")
 
 
+def _warn_option(msg: str) -> None:
+    """A poll option change was refused (validation, e.g. a duplicate keyword)."""
+    notify(msg or "", type="warning", source="chatbot", title="Poll option not changed",
+           hint="Change the value and try again.")
+
+
 class PollsPanel:
     def __init__(self) -> None:
         self.root: Optional[ui.element] = None
@@ -398,7 +404,7 @@ class PollsPanel:
             manager = get_poll_manager()
             ok, msg = manager.update_category(self.template, cid, name=name.value, keyword=keyword.value)
             if not ok:
-                notify(msg, type="negative")
+                _warn_option(msg)
             match = next((c for c in manager.get_config(self.template).get("categories") or [] if c["id"] == cid), None)
             if match:
                 follow["syncing"] = True
@@ -410,7 +416,7 @@ class PollsPanel:
             manager = get_poll_manager()
             ok, msg = manager.set_category_votes(self.template, cid, int(votes.value or 0))
             if not ok:
-                notify(msg, type="negative")
+                _warn_option(msg)
             self._update_hero(manager.get_config(self.template), manager.get_overlay_state(self.template))
             self._refresh_widget()
 
@@ -424,19 +430,19 @@ class PollsPanel:
     def _add_option(self) -> None:
         ok, msg = get_poll_manager().add_category(self.template)
         if not ok:
-            notify(msg, type="negative")
+            _warn_option(msg)
         self._render()
 
     def _move(self, cid: str, delta: int) -> None:
         ok, msg = get_poll_manager().move_category(self.template, cid, delta)
         if not ok and msg:
-            notify(msg, type="negative")
+            _warn_option(msg)
         self._render()
 
     def _remove(self, cid: str) -> None:
         ok, msg = get_poll_manager().remove_category(self.template, cid)
         if not ok:
-            notify(msg, type="negative")
+            _warn_option(msg)
         self._render()
 
     # -- side cards ---------------------------------------------------------------
@@ -575,10 +581,17 @@ class PollsPanel:
 
     def _start(self) -> None:
         ok, msg = get_poll_manager().start_poll(self.template)
-        notify(msg, type="positive" if ok else "negative")
+        if ok:
+            notify(msg, type="success", source="chatbot")
+        else:
+            notify(msg, type="warning", source="chatbot", title="Can't start the poll yet",
+                   hint="Fix the poll options, then click Start.")
         self._render()
 
     def _stop(self) -> None:
         ok, msg = get_poll_manager().stop_poll(self.template)
-        notify(msg, type="positive" if ok else "warning")
+        if ok:
+            notify(msg, type="success", source="chatbot")
+        else:
+            notify(msg, type="info", source="chatbot")
         self._render()

@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from nicegui import ui
 
+from ..notification_engine import notify
 from .service_brand_icons import SERVICE_BRAND_SVG
 
 logger = logging.getLogger(__name__)
@@ -343,6 +344,16 @@ class ItemsPanel:
         except Exception as exc:
             logger.error("Could not load chatbot %s: %s", self.kind, exc, exc_info=True)
             items = {}
+            notify(
+                f"The list may look empty, but your {self.kind} haven't been deleted.",
+                type="error",
+                source="chatbot",
+                title=f"Couldn't show your {self.kind}",
+                hint="Switch to another tab and back to retry. If it keeps happening, restart Mycelian.",
+                details=f"{type(exc).__name__}: {exc}",
+                dedupe_key=f"chatbot:list_failed:{self.kind}",
+                dedupe_cooldown_sec=300,
+            )
         on = sum(1 for i in items.values() if getattr(i, "enabled", True))
         counts = {"all": len(items), "on": on, "off": len(items) - on}
         for key, badge in self._badges.items():
@@ -371,6 +382,16 @@ class ItemsPanel:
                             (self._command_card if self.kind == "commands" else self._event_card)(iid, item)
                         except Exception as exc:
                             logger.error("Could not draw chatbot card %s: %s", iid, exc, exc_info=True)
+                            notify(
+                                f"“{getattr(item, 'name', '') or iid}” is missing from the list but still works.",
+                                type="warning",
+                                source="chatbot",
+                                title=f"Couldn't show one of your {self.kind}",
+                                hint="Restart Mycelian. If it keeps happening, copy the details and report it.",
+                                details=f"{iid}: {type(exc).__name__}: {exc}",
+                                dedupe_key=f"chatbot:card_failed:{iid}",
+                                dedupe_cooldown_sec=300,
+                            )
 
     def _empty(self) -> None:
         icon, *_rest = _KIND_TEXT[self.kind]

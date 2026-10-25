@@ -292,6 +292,27 @@ _poll_manager: Optional["PollManager"] = None
 _poll_lock = threading.Lock()
 
 
+def _notify_poll_problem(title: str, message: str, hint: str, details: str, key: str,
+                         *, critical: bool = False) -> None:
+    """Deduplicated poll problem (background paths; never raises)."""
+    try:
+        from .notification_engine import nav_chatbot, notify
+
+        notify(
+            message,
+            type="error" if critical else "warning",
+            source="chatbot",
+            title=title,
+            hint=hint,
+            details=details,
+            actions=nav_chatbot("Polls"),
+            dedupe_key=key,
+            dedupe_cooldown_sec=600,
+        )
+    except Exception:
+        logger.debug("Could not show a poll notification", exc_info=True)
+
+
 def _register_shutdown_flush(name: str, func) -> None:
     try:
         from .shutdown import register_shutdown_flush
@@ -404,6 +425,13 @@ class PollManager:
             ok = False
         if not ok:
             logger.warning("Not saving %s: it could not be read from the database", DATA_PATH)
+            _notify_poll_problem(
+                "Poll changes not saved yet",
+                "Your poll settings and votes are kept and saved once the database can be read.",
+                "Check Settings → Database. Don't close Mycelian until this clears.",
+                f"Not saving {DATA_PATH}: it could not be read",
+                "poll:save_blocked",
+            )
             return False
         restored, pending_timers = self._parse_stored(
             raw if isinstance(raw, dict) else {}, self._now()
@@ -557,12 +585,29 @@ class PollManager:
             if seq <= self._written_seq:
                 return
             self._written_seq = seq
+            error = ""
             try:
-                from .database_manager import set_data
+                from .database_manager import last_write_problem, quiet_notifications, set_data
 
-                set_data(DATA_PATH, payload)
+                # Reported below with poll context, not by the database layer.
+                with quiet_notifications():
+                    ok = set_data(DATA_PATH, payload)
+                    problem = last_write_problem()
+                if ok is False:
+                    reason = ": ".join(str(p) for p in problem if p) if problem else ""
+                    error = f"Database write returned no success for {DATA_PATH}" + (f" ({reason})" if reason else "")
             except Exception as exc:
-                logger.error("Poll config save failed: %s", exc)
+                error = f"{type(exc).__name__}: {exc}"
+            if error:
+                logger.error("Poll config save failed: %s", error)
+                _notify_poll_problem(
+                    "Couldn't save polls",
+                    "Your latest poll settings or votes may be lost when Mycelian closes.",
+                    "Check Settings → Database, then change the poll again.",
+                    error,
+                    "poll:save_failed",
+                    critical=True,
+                )
 
     def _schedule_vote_persist_locked(self) -> None:
         if not self._persist_enabled:
@@ -1084,6 +1129,13 @@ class PollManager:
                 emit_chat_banner(message, duration=duration, source="poll")
             except Exception as exc:
                 logger.error("Poll winner banner failed: %s", exc, exc_info=True)
+                _notify_poll_problem(
+                    "Couldn't show the poll result banner",
+                    f"The winner of “{template}” wasn't shown on the overlay.",
+                    "Check that the overlay server is running (see the status footer at the bottom of the window).",
+                    f"{type(exc).__name__}: {exc}",
+                    "poll:banner_failed",
+                )
         if config.get("announce_winners_in_chat"):
             try:
                 from .chatbot import dispatch_chatbot_response

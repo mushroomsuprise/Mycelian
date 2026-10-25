@@ -258,9 +258,11 @@ class QuotesPanel:
 
     def _quick_enabled(self, enabled: bool) -> None:
         manager = get_manager()
-        manager.save_quote_settings(enabled=enabled, cooldown_seconds=manager.get_quote_cooldown(),
-                                    add_permission=manager.add_quote_permission, reply_format=manager.quote_reply_format)
-        notify(f"Quotes turned {'on' if enabled else 'off'}", type="positive")
+        if manager.save_quote_settings(enabled=enabled, cooldown_seconds=manager.get_quote_cooldown(),
+                                       add_permission=manager.add_quote_permission, reply_format=manager.quote_reply_format):
+            notify(f"Quotes turned {'on' if enabled else 'off'}", type="success", source="chatbot")
+        else:
+            notify("", type="error", source="chatbot", title="Couldn't change the quote setting", hint="Try again.")
         self._render_strip()
 
     def _render_grid(self) -> None:
@@ -322,17 +324,18 @@ class QuotesPanel:
                 ui.button(icon="edit", on_click=lambda q=quote: open_quote_editor(q.quote_id, self.refresh)).props("flat round dense").tooltip("Edit")
                 with ui.button(icon="more_horiz").props("flat round dense").tooltip("More"):
                     with ui.menu().props("auto-close"):
-                        ui.menu_item("Copy the quote text", on_click=lambda q=quote: (ui.clipboard.write(q.text), notify("Copied", type="positive")))
+                        ui.menu_item("Copy the quote text", on_click=lambda q=quote: (
+                            ui.clipboard.write(q.text), notify(f"Quote #{q.quote_number} copied", type="success", source="chatbot")))
                         ui.menu_item("Delete…", on_click=lambda q=quote: confirm_delete_quote(q, self.refresh))
         return None
 
     def _duplicate(self, quote: Quote) -> None:
         ok, error, number = get_manager().add_quote(quote.text, quote.author, quote.added_by or "UI")
         if ok:
-            notify(f"Duplicated as #{number}", type="positive")
+            notify(f"Duplicated as quote #{number}", type="success", source="chatbot")
             self.refresh()
         else:
-            notify(error or "Could not duplicate the quote", type="negative")
+            notify(error or "", type="error", source="chatbot", title="Couldn't duplicate the quote", hint="Try again.")
 
 
 def post_quote(quote: Quote) -> None:
@@ -342,7 +345,9 @@ def post_quote(quote: Quote) -> None:
         from ..chatbot import send_chatbot_message
 
         ok = await run.io_bound(send_chatbot_message, text)
-        notify("Posted in chat" if ok else "Chat isn't connected, so the quote wasn't posted", type="positive" if ok else "warning")
+        if ok:
+            notify(f"Quote #{quote.quote_number} posted in chat", type="success", source="chatbot")
+        # On failure the chatbot already showed why and how to fix it (one notification).
 
     background_tasks.create(go(), name="post_quote")
 
@@ -356,9 +361,10 @@ def confirm_delete_quote(quote: Quote, on_done: Callable[[], None]) -> None:
         def delete() -> None:
             dialog.close()
             if get_manager().delete_quote(quote.quote_id):
-                notify(f"Deleted quote #{quote.quote_number}", type="positive")
+                notify(f"Deleted quote #{quote.quote_number}", type="success", source="chatbot")
             else:
-                notify("Could not delete the quote", type="negative")
+                # delete_quote is False when the quote is already gone; the refresh shows that.
+                notify("That quote no longer exists. The list was refreshed.", type="info", source="chatbot")
             on_done()
 
         with ui.row().classes("w-full justify-end gap-2"):
@@ -372,7 +378,8 @@ def open_quote_editor(quote_id: Optional[str], on_saved: Callable[[], None]) -> 
     manager = get_manager()
     quote = manager.get_quote_by_id(quote_id) if quote_id else None
     if quote_id and quote is None:
-        notify("Quote not found", type="negative")
+        notify("That quote no longer exists. The list was refreshed.", type="info", source="chatbot")
+        on_saved()
         return
     numbers = {q.quote_number for q in manager.get_all_quotes().values() if q is not quote}
     next_number = (max(numbers) + 1) if numbers else 1
@@ -444,9 +451,9 @@ def open_quote_editor(quote_id: Optional[str], on_saved: Callable[[], None]) -> 
                 added = manager.get_quote_by_number(number)
                 ok = bool(added) and manager.update_quote(added.quote_id, number=state["number"])
         if not ok:
-            status.set_text("Could not save the quote.")
+            status.set_text("Couldn't save the quote. Try again.")
             return
-        notify("Quote saved" if quote else f"Added quote #{state['number']}", type="positive")
+        notify(f"Quote #{state['number']} saved" if quote else f"Added quote #{state['number']}", type="success", source="chatbot")
         dialog.close()
         on_saved()
 
@@ -511,7 +518,7 @@ def open_quote_settings(on_saved: Callable[[], None]) -> None:
 
                     def renumber() -> None:
                         changed = manager.renumber_quotes()
-                        notify(f"Renumbered {changed} quote{'s' if changed != 1 else ''}", type="positive")
+                        notify(f"Renumbered {changed} quote{'s' if changed != 1 else ''}", type="success", source="chatbot")
                         dialog.close()
                         on_saved()
 
@@ -522,9 +529,12 @@ def open_quote_settings(on_saved: Callable[[], None]) -> None:
         ui.button("Cancel", on_click=dialog.close).props("outline no-caps color=primary")
 
         def save() -> None:
-            manager.save_quote_settings(enabled=state["enabled"], cooldown_seconds=state["cooldown"],
-                                        add_permission=state["permission"], reply_format=state["format"])
-            notify("Quote settings saved", type="positive")
+            if not manager.save_quote_settings(enabled=state["enabled"], cooldown_seconds=state["cooldown"],
+                                               add_permission=state["permission"], reply_format=state["format"]):
+                notify("Your changes are still in the dialog.", type="error", source="chatbot",
+                       title="Couldn't save quote settings", hint="Try again.")
+                return
+            notify("Quote settings saved", type="success", source="chatbot")
             dialog.close()
             on_saved()
 
@@ -645,7 +655,11 @@ class GreetingsPanel:
                   "default_text": manager.get_default_greeting(), "reset_interval_hours": manager.get_greeting_reset_interval()}
         values.update(changes)
         if manager.save_greeting_settings(**values):
-            notify("Greeting settings saved", type="positive")
+            notify("Greeting settings saved", type="success", source="chatbot")
+        else:
+            # Only an empty default greeting is refused; the refresh puts the switch back.
+            notify("The greeting for everyone else is empty.", type="warning", source="chatbot",
+                   title="Couldn't save greeting settings", hint="Click Edit next to “Everyone else” and write a greeting first.")
         self.refresh()
 
     def _confirm_reset_all(self) -> None:
@@ -657,7 +671,7 @@ class GreetingsPanel:
             def reset() -> None:
                 dialog.close()
                 get_manager().reset_all_greeting_flags()
-                notify("Everyone will be greeted again", type="positive")
+                notify("Everyone will be greeted again", type="success", source="chatbot")
                 self.refresh()
 
             with ui.row().classes("w-full justify-end gap-2"):
@@ -726,8 +740,10 @@ class GreetingsPanel:
 
     def _reset_one(self, greeting: Greeting) -> None:
         if get_manager().reset_greeting_for(greeting.greeting_id):
-            notify(f"{greeting.username} will be greeted next time they chat", type="positive")
-            self.refresh()
+            notify(f"{greeting.username} will be greeted next time they chat", type="success", source="chatbot")
+        else:
+            notify("That greeting no longer exists. The list was refreshed.", type="info", source="chatbot")
+        self.refresh()
 
 
 def confirm_delete_greeting(greeting: Greeting, on_done: Callable[[], None]) -> None:
@@ -738,9 +754,9 @@ def confirm_delete_greeting(greeting: Greeting, on_done: Callable[[], None]) -> 
         def delete() -> None:
             dialog.close()
             if get_manager().remove_greeting(greeting.greeting_id):
-                notify("Greeting deleted", type="positive")
+                notify(f"Deleted {greeting.username}'s greeting", type="success", source="chatbot")
             else:
-                notify("Could not delete the greeting", type="negative")
+                notify("That greeting no longer exists. The list was refreshed.", type="info", source="chatbot")
             on_done()
 
         with ui.row().classes("w-full justify-end gap-2"):
@@ -762,7 +778,8 @@ def open_greeting_editor(greeting_id: Optional[str], on_saved: Callable[[], None
     manager = get_manager()
     greeting = manager.get_greeting(greeting_id) if greeting_id else None
     if greeting_id and greeting is None:
-        notify("Greeting not found", type="negative")
+        notify("That greeting no longer exists. The list was refreshed.", type="info", source="chatbot")
+        on_saved()
         return
     state = {"login": greeting.username if greeting else "", "text": greeting.greeting_text if greeting else "",
              "enabled": greeting.enabled if greeting else True, "user": (greeting.user_id, greeting.username) if greeting else None,
@@ -866,9 +883,9 @@ def open_greeting_editor(greeting_id: Optional[str], on_saved: Callable[[], None
             user_id, display = state["user"]
             ok, error, _gid = manager.add_greeting(user_id, display, state["text"].strip(), state["enabled"])
         if not ok:
-            status.set_text(error or "Could not save the greeting.")
+            status.set_text(error or "Couldn't save the greeting. Try again.")
             return
-        notify("Greeting saved", type="positive")
+        notify(f"Greeting for {state['user'][1] if state.get('user') else state['login']} saved", type="success", source="chatbot")
         dialog.close()
         on_saved()
 
@@ -905,9 +922,11 @@ def open_default_greeting(on_saved: Callable[[], None]) -> None:
             if not state["text"].strip():
                 status.set_text("Write the greeting.")
                 return
-            manager.save_greeting_settings(default_enabled=state["enabled"], custom_enabled=manager.get_custom_greeting_enabled(),
-                                           default_text=state["text"], reset_interval_hours=state["hours"])
-            notify("Greeting saved", type="positive")
+            if not manager.save_greeting_settings(default_enabled=state["enabled"], custom_enabled=manager.get_custom_greeting_enabled(),
+                                                  default_text=state["text"], reset_interval_hours=state["hours"]):
+                status.set_text("Couldn't save the greeting. Try again.")
+                return
+            notify("Greeting for everyone else saved", type="success", source="chatbot")
             dialog.close()
             on_saved()
 

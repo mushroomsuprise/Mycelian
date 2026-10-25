@@ -14,7 +14,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from . import database_manager
-from .notification_engine import nav_actions_main_tab, notify_critical
+from .notification_engine import nav_actions_main_tab, notify
 
 logger = logging.getLogger(__name__)
 
@@ -139,15 +139,37 @@ def save_layout(layout: Dict[str, Any]) -> bool:
                 if isinstance(v, dict)
             },
         }
-        return database_manager.set_data(LAYOUT_PATH, payload)
+        # Reported here with layout context, not by the database layer.
+        with database_manager.quiet_notifications():
+            ok = database_manager.set_data(LAYOUT_PATH, payload)
+            problem = database_manager.last_write_problem()
+        if ok is False:
+            logger.error("Saving the connectors layout failed: the database write returned False")
+            reason = ": ".join(str(p) for p in problem if p) if problem else ""
+            _notify_layout_save_failed(
+                f"Database write returned no success for {LAYOUT_PATH}" + (f" ({reason})" if reason else "")
+            )
+            return False
+        return True
     except Exception as e:
         logger.error(f"Error saving connectors layout: {e}", exc_info=True)
-        notify_critical(
-            "Could not save Connectors tab layout.",
-            dedupe_key="connectors:layout_save",
-            actions=nav_actions_main_tab("Connectors"),
-        )
+        _notify_layout_save_failed(f"{type(e).__name__}: {e}")
         return False
+
+
+def _notify_layout_save_failed(details: str) -> None:
+    notify(
+        "Folders and the order of your connectors may go back to how they were after a restart. "
+        "The connectors themselves are not affected.",
+        type="warning",
+        source="connectors",
+        title="Couldn't save the Connectors layout",
+        hint="Check Settings → Database, then move a connector again to retry.",
+        details=details,
+        actions=nav_actions_main_tab("Connectors"),
+        dedupe_key="connectors:layout_save",
+        dedupe_cooldown_sec=300,
+    )
 
 
 def _normalize_root_item(item: Any) -> Optional[Tuple[str, str]]:

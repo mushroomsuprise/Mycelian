@@ -47,7 +47,7 @@ from .chatbot_core import (
     render_template,
 )
 from .statistics_manager import get_statistics_manager
-from .notification_engine import nav_actions_main_tab, notify_critical
+from .notification_engine import nav_chatbot, notify, notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +237,17 @@ class GreetingFlagManager:
             with self._lock:
                 self._dirty = True
             logger.error(f"Failed to save greeting flags to {self.file_path}: {e}")
+            notify(
+                "Viewers who were already greeted may be greeted again after a restart.",
+                type="warning",
+                source="chatbot",
+                title="Couldn't save who has been greeted",
+                hint="Check that the Mycelian data folder isn't read-only and the disk isn't full. Mycelian keeps retrying.",
+                details=f"{self.file_path}: {e}",
+                actions=nav_chatbot("Greetings"),
+                dedupe_key="chatbot:greeting_flags_save",
+                dedupe_cooldown_sec=3600,
+            )
 
     def _background_save_loop(self):
         """Background thread to periodically save flags"""
@@ -434,9 +445,13 @@ class ChatbotManager:
         except Exception as e:
             logger.error(f"Error during migration: {e}")
             notify_critical(
-                "Chatbot data migration from old files failed. Check logs.",
+                "Some commands, events, quotes or settings from the old chatbot files may be missing.",
+                source="chatbot",
+                title="Couldn't import the old chatbot files",
+                hint="Check your commands in the Chatbot tab. The old files in the data folder were left as they were.",
+                details=f"{type(e).__name__}: {e}",
                 dedupe_key="chatbot:migrate_failed",
-                actions=nav_actions_main_tab("Chatbot"),
+                actions=nav_chatbot("Commands"),
             )
 
     def _load_data(self):
@@ -450,6 +465,7 @@ class ChatbotManager:
                 commands_data = preloaded_commands
             else:
                 commands_data = self._read_checked("BotData/Commands")
+            skipped: List[str] = []
             if commands_data and isinstance(commands_data, list):
                 for cmd_data in commands_data:
                     try:
@@ -459,6 +475,7 @@ class ChatbotManager:
                         logger.error(
                             f"Error loading command {cmd_data.get('command_id', 'unknown')}: {e}"
                         )
+                        skipped.append(f"command {cmd_data.get('command_id', '?') if isinstance(cmd_data, dict) else '?'}: {e}")
 
             # Load events
             events_data = self._read_checked("BotData/Events")
@@ -471,6 +488,7 @@ class ChatbotManager:
                         logger.error(
                             f"Error loading event {event_data.get('event_id', 'unknown')}: {e}"
                         )
+                        skipped.append(f"event {event_data.get('event_id', '?') if isinstance(event_data, dict) else '?'}: {e}")
 
             migrated = self._apply_load_migrations(commands_data, events_data)
 
@@ -485,6 +503,7 @@ class ChatbotManager:
                         logger.error(
                             f"Error loading quote {quote_data.get('quote_id', 'unknown')}: {e}"
                         )
+                        skipped.append(f"quote {quote_data.get('quote_id', '?') if isinstance(quote_data, dict) else '?'}: {e}")
 
             # Load settings with defensive type validation
             settings_data = self._read_checked("BotData/Settings")
@@ -507,6 +526,22 @@ class ChatbotManager:
                         logger.error(
                             f"Error loading greeting {greeting_data.get('greeting_id', 'unknown')}: {e}"
                         )
+                        skipped.append(f"greeting {greeting_data.get('greeting_id', '?') if isinstance(greeting_data, dict) else '?'}: {e}")
+
+            if skipped:
+                count = len(skipped)
+                notify(
+                    f"{count} chatbot item{'s' if count != 1 else ''} couldn't be read and "
+                    f"{'were' if count != 1 else 'was'} skipped. They'll be dropped the next time chatbot changes are saved.",
+                    type="warning",
+                    source="chatbot",
+                    title="Some chatbot items couldn't be loaded",
+                    hint="Copy the details to see which items failed. Recreate them in the Chatbot tab if they're gone.",
+                    details="\n".join(skipped),
+                    actions=nav_chatbot("Commands"),
+                    dedupe_key="chatbot:items_skipped",
+                    dedupe_cooldown_sec=3600,
+                )
 
             logger.info(
                 f"Loaded {len(self.commands)} commands, {len(self.events)} events, {len(self.quotes)} quotes, and {len(self.greetings)} greetings"
@@ -527,9 +562,13 @@ class ChatbotManager:
         except Exception as e:
             logger.error(f"Error loading chatbot data: {e}")
             notify_critical(
-                "Could not load chatbot commands and settings from the database.",
+                "Commands, events, quotes and greetings may be missing until this is fixed.",
+                source="chatbot",
+                title="Couldn't load the chatbot from the database",
+                hint="Check Settings → Database, then restart Mycelian.",
+                details=f"{type(e).__name__}: {e}",
                 dedupe_key="chatbot:load_failed",
-                actions=nav_actions_main_tab("Chatbot"),
+                actions=nav_chatbot("Commands"),
             )
 
     def _apply_load_migrations(self, commands_data: Any, events_data: Any) -> bool:
@@ -804,11 +843,12 @@ class ChatbotManager:
         """Save commands and events to database manager"""
         try:
             # Import database manager here to avoid circular imports
-            from .database_manager import set_data
+            from .database_manager import last_write_problem, quiet_notifications, set_data
 
             blocked = self._recover_unreadable_paths() if self._unreadable_paths else set()
             self._blocked_save_pending = bool(blocked)
             payloads = self._build_save_payloads()
+            failed: List[str] = []
             with self._save_write_lock:
                 # A different backend (or streamer) has none of our blobs yet.
                 backend = _database_backend_token()
@@ -822,18 +862,50 @@ class ChatbotManager:
                     if fingerprint is not None and self._saved_json.get(path) == fingerprint:
                         continue
                     self._saved_json.pop(path, None)
-                    if set_data(path, data) and fingerprint is not None:
-                        self._saved_json[path] = fingerprint
+                    # The failure is reported below with chatbot context, not by the database layer.
+                    with quiet_notifications():
+                        ok = set_data(path, data)
+                        problem = last_write_problem()
+                    if ok:
+                        if fingerprint is not None:
+                            self._saved_json[path] = fingerprint
+                    else:
+                        reason = ": ".join(str(p) for p in problem if p) if problem else ""
+                        failed.append(f"{path} ({reason})" if reason else path)
 
-            logger.debug("Saved chatbot data")
+            if failed:
+                logger.error("Chatbot data not saved for: %s", ", ".join(failed))
+                self._notify_save_failed(f"Database write returned no success for: {', '.join(failed)}")
+            elif blocked:
+                notify(
+                    "Your latest chatbot changes are kept in memory and saved once the database can be read.",
+                    type="warning",
+                    source="chatbot",
+                    title="Chatbot changes not saved yet",
+                    hint="Check Settings → Database. Don't close Mycelian until this clears, or the changes may be lost.",
+                    details=f"Could not read before saving: {', '.join(sorted(blocked))}",
+                    actions=nav_chatbot("Commands"),
+                    dedupe_key="chatbot:save_blocked",
+                    dedupe_cooldown_sec=600,
+                )
+            else:
+                logger.debug("Saved chatbot data")
 
         except Exception as e:
             logger.error(f"Error saving chatbot data: {e}")
-            notify_critical(
-                "Could not save chatbot data to the database.",
-                dedupe_key="chatbot:save_failed",
-                actions=nav_actions_main_tab("Chatbot"),
-            )
+            self._notify_save_failed(f"{type(e).__name__}: {e}")
+
+    @staticmethod
+    def _notify_save_failed(details: str) -> None:
+        notify_critical(
+            "Your latest chatbot changes may be lost when Mycelian closes.",
+            source="chatbot",
+            title="Couldn't save chatbot changes",
+            hint="Check Settings → Database, then make the change again.",
+            details=details,
+            dedupe_key="chatbot:save_failed",
+            actions=nav_chatbot("Commands"),
+        )
 
     def get_manager(self):
         """Get the manager instance (for compatibility)"""
@@ -1504,6 +1576,7 @@ class ChatbotManager:
                         )
                 except Exception as e:
                     logger.error(f"Error in interval timer for event {event.name}: {e}", exc_info=True)
+                    self._notify_timer_stopped(event, e)
 
             thread = threading.Thread(target=interval_loop, daemon=True, name=f"Event-{event.name}")
             self._repeating_stops[event.event_id] = stop
@@ -1571,6 +1644,7 @@ class ChatbotManager:
                         stop.wait(1.0)
                 except Exception as e:
                     logger.error("Error in specific time thread for event %s: %s", event.name, e)
+                    self._notify_timer_stopped(event, e)
 
             thread = threading.Thread(
                 target=specific_time_loop, daemon=True, name=f"SpecificTime-{event.name}"
@@ -1579,6 +1653,20 @@ class ChatbotManager:
             self.repeating_tasks[event.event_id] = thread
             thread.start()
             logger.debug("Started specific time timer for %s at %s", event.name, event.specific_time)
+
+    @staticmethod
+    def _notify_timer_stopped(event: ChatEvent, exc: Exception) -> None:
+        notify(
+            f"The timer event “{event.name}” stopped and won't post again until it's restarted.",
+            type="warning",
+            source="chatbot",
+            title="A chatbot timer stopped",
+            hint="Turn the event off and on again in Chatbot → Events, or restart Mycelian.",
+            details=f"{type(exc).__name__}: {exc}",
+            actions=nav_chatbot("Events"),
+            dedupe_key=f"chatbot:timer:{event.event_id}",
+            dedupe_cooldown_sec=3600,
+        )
 
     def _fire_timer_event(self, event: ChatEvent, data: Dict[str, Any]) -> bool:
         """Post a timer event's reply. False when skipped."""

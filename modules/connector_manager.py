@@ -36,7 +36,7 @@ from .connector_core import ActionType, Connector, EventData, TriggerType
 from .connector_triggers import create_trigger
 from .hotkey_listener import get_listener
 from .statistics_manager import get_statistics_manager
-from .notification_engine import nav_actions_main_tab, notify_critical
+from .notification_engine import nav_actions_main_tab, notify, notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +126,7 @@ class ConnectorManager:
         # like no connectors). They are re-read before the next save.
         self._load_failed = False
         self._save_blocked = False
+        self.last_save_ok = True  # result of the last save_connectors()
 
         # Statistics
         self.stats = {
@@ -234,10 +235,12 @@ class ConnectorManager:
                     backoff,
                 )
                 notify_critical(
-                    "Connector background processing stopped and is restarting "
-                    "automatically. If connectors keep failing, restart the app.",
+                    "Connectors are paused while Mycelian restarts them automatically.",
+                    source="connectors",
+                    title="Connectors stopped unexpectedly",
+                    hint="If connectors keep failing to run, restart Mycelian.",
                     dedupe_key="connector:thread_restart",
-                    dedupe_cooldown_sec=120.0,
+                    dedupe_cooldown_sec=900.0,
                     actions=nav_actions_main_tab("Connectors"),
                 )
                 time.sleep(backoff)
@@ -486,6 +489,7 @@ class ConnectorManager:
 
                 self.connectors.clear()
 
+                skipped = []
                 for connector_id, connector_data in connectors_data.items():
                     try:
                         connector = self._deserialize_connector(connector_data)
@@ -502,6 +506,26 @@ class ConnectorManager:
                             f"Error loading connector {connector_id}: {e}",
                             exc_info=True,
                         )
+                        name = (
+                            connector_data.get("name") if isinstance(connector_data, dict) else None
+                        ) or connector_id
+                        skipped.append((str(name), f"{connector_id}: {type(e).__name__}: {e}"))
+
+                if skipped:
+                    names = ", ".join(f"“{name}”" for name, _ in skipped[:3])
+                    more = f" and {len(skipped) - 3} more" if len(skipped) > 3 else ""
+                    notify(
+                        f"{names}{more} couldn't be read and won't run. "
+                        "Saving any connector removes them from the database.",
+                        type="warning",
+                        source="connectors",
+                        title="Some connectors couldn't be loaded",
+                        hint="Recreate them in the Connectors tab. Copy the details to see what failed.",
+                        details="\n".join(detail for _, detail in skipped),
+                        actions=nav_actions_main_tab("Connectors"),
+                        dedupe_key="connector:load_skipped",
+                        dedupe_cooldown_sec=3600,
+                    )
 
                 logger.info(
                     f"🔌 Loaded {len(self.connectors)} connectors from database"
@@ -514,7 +538,11 @@ class ConnectorManager:
         except Exception as e:
             logger.error(f"Error loading connectors: {e}", exc_info=True)
             notify_critical(
-                "Could not load connectors from the database.",
+                "Your connectors won't run until they can be loaded.",
+                source="connectors",
+                title="Couldn't load connectors from the database",
+                hint="Check Settings → Database, then restart Mycelian.",
+                details=f"{type(e).__name__}: {e}",
                 dedupe_key="connector:load_failed",
                 actions=nav_actions_main_tab("Connectors"),
             )
@@ -562,13 +590,28 @@ class ConnectorManager:
         if self._save_blocked:
             self.save_connectors()
 
-    def save_connectors(self):
-        """Save connectors to database"""
+    def save_connectors(self) -> bool:
+        """Save connectors to database. False (and a notification) when it failed.
+
+        ``last_save_ok`` keeps the result so the UI can skip its "Saved" pop-up.
+        """
+        self.last_save_ok = False
         try:
             if self._load_failed:
                 self._save_blocked = not self._recover_after_failed_load()
                 if self._save_blocked:
-                    return
+                    notify(
+                        "Your connector changes are kept and saved once the database can be read.",
+                        type="warning",
+                        source="connectors",
+                        title="Connector changes not saved yet",
+                        hint="Check Settings → Database. Don't close Mycelian until this clears.",
+                        details="Not saving connectors: they could not be read from the database",
+                        actions=nav_actions_main_tab("Connectors"),
+                        dedupe_key="connector:save_blocked",
+                        dedupe_cooldown_sec=600,
+                    )
+                    return False
             with self._lock:
                 # Serialize all connectors
                 connectors_data = {}
@@ -584,16 +627,37 @@ class ConnectorManager:
                         )
 
                 # Save to database
-                database_manager.set_data("connectors", connectors_data)
+                # Reported here with connector context, not by the database layer.
+                with database_manager.quiet_notifications():
+                    ok = database_manager.set_data("connectors", connectors_data)
+                    problem = database_manager.last_write_problem()
+                if ok is False:
+                    logger.error("Saving connectors failed: the database write returned False")
+                    reason = ": ".join(str(p) for p in problem if p) if problem else ""
+                    self._notify_save_failed(
+                        "Database write returned no success for 'connectors'" + (f" ({reason})" if reason else "")
+                    )
+                    return False
                 logger.info(f"Saved {len(connectors_data)} connectors")
+                self.last_save_ok = True
+                return True
 
         except Exception as e:
             logger.error(f"Error saving connectors: {e}", exc_info=True)
-            notify_critical(
-                "Could not save connectors to the database.",
-                dedupe_key="connector:save_failed",
-                actions=nav_actions_main_tab("Connectors"),
-            )
+            self._notify_save_failed(f"{type(e).__name__}: {e}")
+            return False
+
+    @staticmethod
+    def _notify_save_failed(details: str) -> None:
+        notify_critical(
+            "Your latest connector changes work for now but may be lost when Mycelian closes.",
+            source="connectors",
+            title="Couldn't save connectors",
+            hint="Check Settings → Database, then save the connector again.",
+            details=details,
+            dedupe_key="connector:save_failed",
+            actions=nav_actions_main_tab("Connectors"),
+        )
 
     def add_connector(self, connector: Connector) -> bool:
         """Add a new connector"""
@@ -1135,10 +1199,12 @@ class ConnectorManager:
             )
 
         async def _run_test() -> Dict[str, Any]:
-            result = await connector.process_event(test_event_data)
+            # The editor shows the outcome; no per-action pop-ups for a test.
+            result = await connector.process_event(test_event_data, report_failures=False)
             return {
                 "success": True,
                 "triggered": result,
+                "failures": list(getattr(connector, "last_action_failures", []) or []),
                 "connector_name": connector.name,
                 "trigger_type": connector.trigger.trigger_type.value
                 if connector.trigger
@@ -1283,7 +1349,11 @@ def initialize():
     except Exception as e:
         logger.error(f"Error initializing connector system: {e}", exc_info=True)
         notify_critical(
-            "Connector system failed to initialize (hotkeys/connectors may be unavailable).",
+            "Connectors and hotkeys may not run this session.",
+            source="connectors",
+            title="Connectors couldn't start",
+            hint="Restart Mycelian. If it keeps happening, copy the details and report it.",
+            details=f"{type(e).__name__}: {e}",
             dedupe_key="connector:init_failed",
             actions=nav_actions_main_tab("Connectors"),
         )

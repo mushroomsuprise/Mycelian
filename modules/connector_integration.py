@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .connector_core import EventData
 from .connector_manager import get_manager
-from .notification_engine import nav_actions_main_tab, notify_critical
+from .notification_engine import nav_actions_main_tab, nav_actions_settings, notify, notify_critical
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +149,17 @@ class ConnectorIntegration:
                 logger.warning(
                     "Twitch API never became ready; connector integration not wired"
                 )
+                if _has_enabled_twitch_connectors():
+                    notify(
+                        "Connectors with Twitch triggers (follows, subs, bits…) won't run this session.",
+                        type="warning",
+                        source="connectors",
+                        title="Twitch connectors aren't active",
+                        hint="Connect Twitch in Settings → Twitch, then restart Mycelian.",
+                        actions=nav_actions_settings("Twitch"),
+                        dedupe_key="connector:twitch_unwired",
+                        dedupe_cooldown_sec=12 * 3600,
+                    )
 
         self._twitch_retry_thread = threading.Thread(
             target=_retry_loop,
@@ -677,6 +688,21 @@ def _enqueue_connector_event(event_data: Dict[str, Any]) -> bool:
 connector_integration = ConnectorIntegration()
 
 
+def _has_enabled_twitch_connectors() -> bool:
+    """True when an enabled connector waits for a Twitch event (worth a warning)."""
+    try:
+        from .connector_manager import get_manager
+
+        for connector in list(get_manager().connectors.values()):
+            trigger = getattr(connector, "trigger", None)
+            value = str(getattr(getattr(trigger, "trigger_type", None), "value", "") or "")
+            if connector.enabled and value.startswith("twitch"):
+                return True
+    except Exception:
+        logger.debug("Could not check for Twitch connectors", exc_info=True)
+    return False
+
+
 def initialize_integration():
     """Initialize the connector integration system"""
     global connector_integration
@@ -691,7 +717,11 @@ def initialize_integration():
     except Exception as e:
         logger.error(f"Error initializing connector integration: {e}", exc_info=True)
         notify_critical(
-            "Connector integration failed to start (Twitch events may not trigger connectors).",
+            "Twitch events may not trigger your connectors this session.",
+            source="connectors",
+            title="Connectors couldn't link to Twitch",
+            hint="Restart Mycelian. If it keeps happening, copy the details and report it.",
+            details=f"{type(e).__name__}: {e}",
             dedupe_key="connector:integration_init",
             actions=nav_actions_main_tab("Connectors"),
         )

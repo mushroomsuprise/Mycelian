@@ -726,7 +726,14 @@ def show_chatbot_dialog(item_id: Optional[str] = None, item_type: Optional[str] 
         _active_editor = open_chatbot_editor(kind, item_id, on_saved=lambda: refresh_tab_content(f"{kind}s"))
     except Exception as e:
         logger.error("Could not open the chatbot editor: %s", e, exc_info=True)
-        notify("Could not open the editor", type="negative")
+        notify(
+            "",
+            type="error",
+            source="chatbot",
+            title=f"Couldn't open the {kind} editor",
+            hint="Try again. If it keeps happening, restart Mycelian.",
+            details=f"{type(e).__name__}: {e}",
+        )
 
 
 def close_dialog_and_refresh():
@@ -752,21 +759,45 @@ def test_chatbot_item(item_id: str, item_type: str):
     run_item_test("event" if item_type == "event" else "command", item_id)
 
 
+def _item_label(manager, item_id: str) -> str:
+    """“!name” for a command, the name for an event, "" when it is gone."""
+    command = manager.commands.get(item_id)
+    if command is not None:
+        return f"!{command.command_name}" if command.command_name else (command.name or "command")
+    event = manager.events.get(item_id)
+    if event is not None:
+        return event.name or "event"
+    quote = manager.quotes.get(item_id)
+    if quote is not None:
+        return f"quote #{quote.quote_number}"
+    return ""
+
+
 def toggle_chatbot_item(item_id: str, enabled: bool):
     """Toggle a chatbot item's enabled state"""
     try:
         manager = get_chatbot_manager()
+        label = _item_label(manager, item_id)
         success = manager.toggle_item(item_id, enabled)
 
         if success:
-            status = "enabled" if enabled else "disabled"
-            notify(f"Item {status}", type="positive")
+            notify(f"“{label}” turned {'on' if enabled else 'off'}", type="success", source="chatbot")
             refresh_chatbot_items()
         else:
-            notify("Failed to toggle item", type="negative")
+            # The item is gone (deleted elsewhere); the refresh drops its card.
+            notify("That item no longer exists. The list was refreshed.", type="info", source="chatbot")
+            refresh_chatbot_items()
     except Exception as e:
         logger.error(f"Error toggling chatbot item: {e}", exc_info=True)
-        notify(f"Error toggling item: {str(e)}", type="negative")
+        notify(
+            "",
+            type="error",
+            source="chatbot",
+            title=f"Couldn't turn the item {'on' if enabled else 'off'}",
+            hint="Try again.",
+            details=f"{type(e).__name__}: {e}",
+        )
+        refresh_chatbot_items()  # put the switch back to the stored state
 
 
 def reset_command_counter(command_id: str):
@@ -779,13 +810,23 @@ def reset_command_counter(command_id: str):
             success = manager.reset_command_counter(command_id)
 
             if success:
-                notify("Command counter reset", type="positive")
+                notify(f"Counter for “{label}” reset to 0", type="success", source="chatbot")
                 refresh_chatbot_items()
             else:
-                notify("Failed to reset counter", type="negative")
+                notify("That command no longer exists. The list was refreshed.", type="info", source="chatbot")
+                refresh_chatbot_items()
         except Exception as e:
             logger.error(f"Error resetting command counter: {e}", exc_info=True)
-            notify(f"Error resetting counter: {str(e)}", type="negative")
+            notify(
+                "",
+                type="error",
+                source="chatbot",
+                title="Couldn't reset the counter",
+                hint="Try again.",
+                details=f"{type(e).__name__}: {e}",
+            )
+
+    label = _item_label(get_chatbot_manager(), command_id) or "command"
 
     with ui.dialog().props("persistent") as dialog, ui.card().classes("w-[420px] p-4"):
         ui.label("Reset command counter?").classes("text-lg font-bold mb-2")
@@ -829,7 +870,7 @@ def duplicate_chatbot_item(item_id: str, item_type: str) -> None:
         if item_type == "command":
             source = manager.commands.get(item_id)
             if source is None:
-                notify("Command not found", type="negative")
+                _notify_item_gone("commands")
                 return
             data = source.to_dict()
             taken = set()
@@ -849,11 +890,13 @@ def duplicate_chatbot_item(item_id: str, item_type: str) -> None:
             data["trigger_count"] = 0
             data["last_triggered"] = 0
             if not manager.add_command(ChatCommand.from_dict(data)):
-                notify("Could not duplicate command", type="negative")
+                _notify_duplicate_failed("command")
                 return
             notify(
-                f"Duplicated command as !{data['command_name']}. Aliases were cleared so both do not fire together.",
-                type="positive",
+                "Aliases were cleared so both don't fire together.",
+                type="success",
+                source="chatbot",
+                title=f"Duplicated as !{data['command_name']}",
             )
             refresh_tab_content("commands")
             return
@@ -861,7 +904,7 @@ def duplicate_chatbot_item(item_id: str, item_type: str) -> None:
         if item_type == "event":
             source = manager.events.get(item_id)
             if source is None:
-                notify("Event not found", type="negative")
+                _notify_item_gone("events")
                 return
             data = source.to_dict()
             data["event_id"] = str(uuid.uuid4())
@@ -871,31 +914,48 @@ def duplicate_chatbot_item(item_id: str, item_type: str) -> None:
             data["trigger_count"] = 0
             data["last_triggered"] = 0
             if not manager.add_event(ChatEvent.from_dict(data)):
-                notify("Could not duplicate event", type="negative")
+                _notify_duplicate_failed("event")
                 return
-            notify(f"Duplicated event '{data['name']}'.", type="positive")
+            notify(f"Duplicated as “{data['name']}”", type="success", source="chatbot")
             refresh_tab_content("events")
             return
 
         if item_type == "quote":
             source = manager.quotes.get(item_id)
             if source is None:
-                notify("Quote not found", type="negative")
+                _notify_item_gone("quotes")
                 return
             success, error, number = manager.add_quote(
                 source.text, source.author, getattr(source, "added_by", "") or ""
             )
             if not success:
-                notify(error or "Could not duplicate quote", type="negative")
+                _notify_duplicate_failed("quote", error)
                 return
-            notify(f"Duplicated quote as #{number}.", type="positive")
+            notify(f"Duplicated as quote #{number}", type="success", source="chatbot")
             refresh_tab_content("quotes")
             return
 
-        notify("This item cannot be duplicated.", type="warning")
+        logger.warning("Duplicate requested for unsupported chatbot item type %r", item_type)
     except Exception as exc:
         logger.error("Error duplicating chatbot item: %s", exc, exc_info=True)
-        notify("Could not duplicate this item.", type="negative")
+        _notify_duplicate_failed(item_type, details=f"{type(exc).__name__}: {exc}")
+
+
+def _notify_item_gone(tab: str) -> None:
+    """A card's item was deleted elsewhere: say so and redraw the list."""
+    notify("That item no longer exists. The list was refreshed.", type="info", source="chatbot")
+    refresh_tab_content(tab)
+
+
+def _notify_duplicate_failed(kind: str, reason: Optional[str] = None, details: Optional[str] = None) -> None:
+    notify(
+        reason or "",
+        type="error",
+        source="chatbot",
+        title=f"Couldn't duplicate the {kind}",
+        hint="Try again. If it keeps happening, restart Mycelian.",
+        details=details,
+    )
 
 
 def delete_chatbot_item(item_id: str, item_type: str):
@@ -904,6 +964,7 @@ def delete_chatbot_item(item_id: str, item_type: str):
     def confirm_delete():
         try:
             manager = get_chatbot_manager()
+            label = _item_label(manager, item_id) or item_type
             if item_type == "command":
                 success = manager.remove_command(item_id)
             elif item_type == "event":
@@ -912,13 +973,22 @@ def delete_chatbot_item(item_id: str, item_type: str):
                 success = manager.delete_quote(item_id)
 
             if success:
-                notify(f"{item_type.title()} deleted", type="positive")
+                notify(f"Deleted “{label}”", type="success", source="chatbot")
                 refresh_chatbot_items()
             else:
-                notify(f"Failed to delete {item_type}", type="negative")
+                # remove_* is False only when the item is already gone.
+                notify("That item no longer exists. The list was refreshed.", type="info", source="chatbot")
+                refresh_chatbot_items()
         except Exception as e:
             logger.error(f"Error deleting chatbot item: {e}", exc_info=True)
-            notify(f"Error deleting item: {str(e)}", type="negative")
+            notify(
+                "",
+                type="error",
+                source="chatbot",
+                title=f"Couldn't delete the {item_type}",
+                hint="Try again.",
+                details=f"{type(e).__name__}: {e}",
+            )
 
     # Show confirmation dialog
     with ui.dialog().props("persistent") as dialog:

@@ -28,7 +28,7 @@ from .. import connector_actions, connector_integration, connector_manager, conn
 from .. import connector_variables as cv
 from ..connector_core import ActionType, ComparisonOperator, Connector, TriggerCondition, TriggerType
 from ..connector_placeholders import substitute_connector_placeholders
-from ..notification_engine import notify
+from ..notification_engine import nav_actions_settings, notify
 from ..ui_timer import layout_schedule
 from . import connector_action_schemas as schemas
 from .connector_action_schemas import Field
@@ -201,20 +201,28 @@ def state_from_connector(connector: Optional[Connector], connector_id: Optional[
     actions = []
     for action in connector.actions or []:
         at = getattr(getattr(action, "action_type", None), "value", None) or ""
+        unreadable = False
         try:
             cfg = schemas.action_to_config(action)
         except Exception as exc:
             logger.warning("Could not read action %s for editing: %s", at, exc)
             cfg = {}
+            unreadable = True
         spec = schemas.spec_for(at)
         if spec is not None and spec.fields and not spec.custom:
             schemas.apply_defaults(spec, cfg)
-        actions.append({
+        entry = {
             "type": at, "config": cfg, "delay_seconds": float(getattr(action, "delay_seconds", 0) or 0),
             "enabled": bool(getattr(action, "enabled", True)), "action_id": getattr(action, "action_id", "") or "",
             "description": getattr(action, "description", "") or "", "metadata": dict(getattr(action, "metadata", None) or {}),
             "open": False,
-        })
+        }
+        if unreadable:
+            # The form shows defaults; build_connector keeps the stored action
+            # unless the user changes this config (no silent reset on save).
+            entry["unreadable"] = True
+            entry["loaded_config"] = copy.deepcopy(cfg)
+        actions.append(entry)
     if actions and len(actions) == 1:
         actions[0]["open"] = True
     return EditorState(
@@ -317,9 +325,23 @@ def build_connector(state: EditorState, existing: Optional[Connector] = None) ->
     trigger_id = getattr(old_trigger, "trigger_id", None) or str(uuid.uuid4())
     trigger = connector_triggers.create_trigger(tt, trigger_id, f"{state.name} Trigger", **trigger_kwargs)
 
+    stored_actions = {getattr(a, "action_id", ""): a for a in (getattr(existing, "actions", None) or [])}
     actions = []
     for n, action in enumerate(state.actions, 1):
         at = action["type"]
+        original = stored_actions.get(action.get("action_id") or "")
+        if (
+            action.get("unreadable")
+            and original is not None
+            and getattr(getattr(original, "action_type", None), "value", None) == at
+            and (action.get("config") or {}) == action.get("loaded_config")
+        ):
+            # Couldn't be shown in the form and wasn't changed: keep it exactly as stored.
+            actions.append(dataclasses.replace(
+                original, delay_seconds=max(0.0, float(action.get("delay_seconds") or 0)),
+                enabled=bool(action.get("enabled", True)), description=action.get("description") or "",
+            ))
+            continue
         kwargs = schemas.config_to_kwargs(at, action.get("config") or {})
         actions.append(connector_actions.create_action(
             ActionType(at), action.get("action_id") or str(uuid.uuid4()), f"{state.name} Action {n}",
@@ -340,27 +362,50 @@ def run_connector_test(connector_id: str) -> None:
     try:
         manager = connector_manager.get_manager()
         connector = manager.get_connector(connector_id)
-        if not connector or not connector.trigger:
-            notify("Connector not found", type="negative")
+        if not connector:
+            notify("Save the connector first, then test it.", type="info", source="connectors")
+            return
+        if not connector.trigger:
+            notify("Choose a trigger and save the connector before testing.", type="info", source="connectors")
             return
         if not connector.enabled:
-            notify("Turn the connector on to test it.", type="info")
+            notify("Turn the connector on to test it.", type="info", source="connectors")
             return
         data = cv.sample_event(connector.trigger.trigger_type.value, trigger=connector.trigger)
     except Exception as exc:
         logger.error("Error preparing connector test: %s", exc, exc_info=True)
-        notify(f"Could not test: {exc}", type="negative")
+        notify("", type="error", source="connectors", title="Couldn't build a sample event for this trigger",
+               hint="Check the trigger settings, save, and try again.", details=f"{type(exc).__name__}: {exc}")
         return
 
     async def go() -> None:
         result = await manager.test_connector(connector_id, data)
+        failures = result.get("failures") or []
         if not result.get("success"):
-            notify(f"Test failed: {result.get('error', 'unknown error')}", type="negative")
+            notify("", type="error", source="connectors", title="The connector test couldn't run",
+                   hint="Try again. If it keeps happening, restart Mycelian.",
+                   details=str(result.get("error") or "") or None)
+        elif failures:
+            lines = [f"Action {f['index']} ({f['label']})" + (f": {f['reason']}" if f.get("reason") else "") for f in failures]
+            hints = [f["hint"] for f in failures if f.get("hint")]
+            details = "\n\n".join(
+                f"Action {f['index']} ({f['label']}):\n{f.get('details') or 'no details'}" for f in failures
+            )
+            count = len(failures)
+            notify(
+                "; ".join(lines) + ".",
+                type="warning",
+                source="connectors",
+                title=f"Test ran, but {count} action{'s' if count != 1 else ''} didn't work",
+                hint=hints[0] if hints else "Check the settings of the action(s) listed, then test again.",
+                details=details,
+            )
         elif result.get("triggered"):
             count = result.get("action_count", 0)
-            notify(f"Test ran {count} action{'s' if count != 1 else ''} with sample data.", type="positive")
+            notify(f"Test ran {count} action{'s' if count != 1 else ''} with sample data", type="success", source="connectors")
         else:
-            notify("Test event didn't pass the conditions, so nothing ran.", type="info")
+            notify("The sample event didn't pass the conditions, so nothing ran.", type="info", source="connectors",
+                   title="Test didn't run")
 
     background_tasks.create(go(), name="connector_test")
 
@@ -370,6 +415,26 @@ def run_connector_test(connector_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+class _LogCapture(logging.Handler):
+    """Collect warnings/errors one logger writes during a call (for "Copy details")."""
+
+    def __init__(self, logger_name: str) -> None:
+        super().__init__(level=logging.WARNING)
+        self._logger = logging.getLogger(logger_name)
+        self.lines: List[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if len(self.lines) < 8:
+            self.lines.append(f"{record.levelname}: {record.getMessage()}")
+
+    def __enter__(self) -> "_LogCapture":
+        self._logger.addHandler(self)
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self._logger.removeHandler(self)
+
+
 class ConnectorEditor:
     def __init__(self, connector_id: Optional[str], on_saved: Callable[[], None]):
         self.on_saved = on_saved
@@ -377,6 +442,16 @@ class ConnectorEditor:
         if connector_id:
             self.existing = connector_manager.get_manager().get_connector(connector_id)
         self.state = state_from_connector(self.existing, connector_id)
+        unreadable = [(n, a.get("type") or "action") for n, a in enumerate(self.state.actions, 1) if a.get("unreadable")]
+        if unreadable:
+            listed = ", ".join(f"action {n} ({t.replace('_', ' ')})" for n, t in unreadable)
+            notify(
+                f"The editor shows default settings for {listed}. Saving keeps the stored settings unless you change them.",
+                type="warning",
+                source="connectors",
+                title="Some action settings couldn't be read",
+                hint="Leave these actions as they are to keep them. If you change them, check every field before saving.",
+            )
         self._baseline = ""
         self._live: List[Callable[[], None]] = []
         self._picking_trigger = self.state.trigger_type is None
@@ -672,7 +747,9 @@ class ConnectorEditor:
             elif trigger_type == "hotkey":
                 s.trigger["key_combination"] = ""
             if dropped:
-                notify(f"Removed {dropped} condition{'s' if dropped != 1 else ''} that don't apply to this trigger.", type="info")
+                notify(f"Removed {dropped} condition{'s' if dropped != 1 else ''} that don't apply to this trigger.",
+                       type="warning", source="connectors",
+                       hint="Close without saving to keep them, or add new conditions for this trigger.")
         self.render_flow()
         self.render_vars()
 
@@ -788,7 +865,7 @@ class ConnectorEditor:
 
             def copy() -> None:
                 ui.clipboard.write(url_label.text)
-                notify("Webhook URL copied", type="positive")
+                notify("Webhook URL copied", type="success", source="connectors")
 
             def regenerate() -> None:
                 tcfg["secret_key"] = _new_secret()
@@ -1435,12 +1512,12 @@ class ConnectorEditor:
             def add() -> None:
                 gid, chid = guild_sel.value, chan_sel.value
                 if not gid or not chid:
-                    notify("Choose a server and a channel first", type="warning")
+                    notify("Choose a server and a channel first", type="warning", source="connectors", hint="Pick both, then click Add.")
                     return
                 entry = {"guild_id": gid, "channel_id": chid, "guild_name": guilds.get(gid, gid),
                          "channel_name": channel_opts.get(chid, chid).lstrip("#")}
                 if any(key_of(e) == key_of(entry) for e in channels):
-                    notify("That channel is already added", type="info")
+                    notify("That channel is already added", type="info", source="connectors")
                     return
                 channels.append(entry)
                 render_chips()
@@ -1555,7 +1632,10 @@ class ConnectorEditor:
             async def job() -> None:
                 ok, err = await run.io_bound(obs_service.refresh_snapshot_blocking, 25.0)
                 if not ok and err:
-                    notify(f"Could not refresh OBS lists: {err}", type="warning")
+                    notify("The scene and source lists may be out of date.", type="warning", source="obs",
+                           title="Couldn't load scenes and sources from OBS",
+                           hint="Check that OBS is running and connected in Settings → OBS, then refresh again.",
+                           details=str(err), actions=nav_actions_settings("OBS"))
                 self._rerender_action_body(idx)
 
             layout_schedule(0, job, once=True)
@@ -1658,7 +1738,9 @@ class ConnectorEditor:
         s = self.state
         problems = state_problems(s, self._context())
         if problems:
-            notify(problems[0], type="warning")
+            more = f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""
+            notify(problems[0] + more, type="warning", source="connectors", title="Can't save the connector yet",
+                   hint="Fix this, then save again.")
             bad = {int(m.group(1)) - 1 for p in problems if (m := re.match(r"Action (\d+):", p))}
             if bad:
                 for i, action in enumerate(s.actions):
@@ -1669,14 +1751,21 @@ class ConnectorEditor:
             connector = build_connector(s, self.existing)
         except Exception as exc:
             logger.error("Could not build connector: %s", exc, exc_info=True)
-            notify(f"Could not save: {exc}", type="negative")
+            notify("Nothing was saved. Your changes are still in the editor.", type="error", source="connectors",
+                   title="Couldn't save the connector", hint="Check the trigger and actions for unusual values and try again.",
+                   details=f"{type(exc).__name__}: {exc}")
             return
         manager = connector_manager.get_manager()
-        ok = manager.add_connector(connector) if s.is_new else manager.update_connector(s.connector_id, connector, keep_stats=True)
+        with _LogCapture("modules.connector_manager") as captured:
+            ok = manager.add_connector(connector) if s.is_new else manager.update_connector(s.connector_id, connector, keep_stats=True)
         if not ok:
-            notify("Could not save the connector. Check the log for details.", type="negative")
+            notify("Nothing was saved. Your changes are still in the editor.", type="error", source="connectors",
+                   title="Couldn't save the connector",
+                   hint="Check the trigger and each action, then try again. Copy the details if it keeps happening.",
+                   details="\n".join(captured.lines) or None)
             return
-        notify(f"{'Created' if s.is_new else 'Saved'} “{connector.name}”", type="positive")
+        if manager.last_save_ok:  # a failed database write already showed its own error
+            notify(f"{'Created' if s.is_new else 'Saved'} “{connector.name}”", type="success", source="connectors")
         self._baseline = s.snapshot()
         self.dialog.close()
         try:
