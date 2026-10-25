@@ -1433,10 +1433,13 @@ class ChatbotEditor:
 _CV_KINDS = (
     ("math", "calculate", "Math", "Add, subtract, multiply, divide"),
     ("if", "rule", "If / else", "Pick text by a rule"),
-    ("age", "cake", "Date → age", "“2 years, 3 months”"),
+    ("age", "history", "How long ago", "Time since a date"),
     ("text", "text_fields", "Text", "Join variables and text"),
+    ("twitch", "travel_explore", "Twitch data", "A value from Twitch"),
 )
-_CV_OPS = {"+": "+ add", "-": "− subtract", "*": "× multiply", "/": "÷ divide"}
+_CV_OPS = {"+": "+ add", "-": "− subtract", "*": "× multiply", "/": "÷ divide", "random": "🎲 random between"}
+_CV_AGE_STYLES = {"long": "2 years, 3 months", "years": "Years (2)", "months": "Months (27)", "days": "Days (812)", "hours": "Hours (19488)"}
+_CV_DATE_OTHER = "__typed__"
 _CV_COMPARE = {"equal": "is", "not_equal": "is not", "greater_than": "more than", "greater_than_or_equal": "at least",
                "less_than": "less than", "less_than_or_equal": "at most", "contains": "contains"}
 
@@ -1490,9 +1493,12 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
         if not callable(fn):
             return True, render(compile_expr())
         try:
-            return True, str(fn({"kind": state["kind"], "params": state["params"], "expression": compile_expr()}, None))
+            text = str(fn({"kind": state["kind"], "params": state["params"], "expression": compile_expr()}, None))
         except Exception as exc:
             return False, str(exc)
+        if text.startswith("Error:"):
+            return False, text[6:].strip()
+        return True, text
 
     with ui.dialog().props("persistent") as dialog, ui.card().classes("cxe cv"):
         with ui.element("div").classes("cv-head"):
@@ -1515,7 +1521,7 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
             expr_label = ui.html("", sanitize=False).classes("cv-expr")
             result = ui.element("div").classes("cv-result")
             with result:
-                _html(_ic("visibility"))
+                result_icon = _html(_ic("visibility"))
                 result_text = ui.html("", sanitize=False)
         with ui.element("div").classes("cv-foot"):
             error = ui.label("").classes("ce-f-error")
@@ -1540,11 +1546,129 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
             kit.button(inp)
             kit.track(inp)
 
-    def select(pkey: str, options: Dict[Any, str], default: Any, width: str = "140px") -> None:
+    def select(pkey: str, options: Dict[Any, str], default: Any, width: str = "140px", rebuild: bool = False) -> None:
         if pkey not in state["params"] or state["params"][pkey] not in options:
             state["params"][pkey] = default
-        ui.select(options, value=state["params"][pkey], on_change=lambda e: (state["params"].__setitem__(pkey, e.value), refresh())).props(
-            "outlined dense options-dense").style(f"width: {width}")
+
+        def changed(e) -> None:
+            state["params"][pkey] = e.value
+            if rebuild:
+                render_builder()
+            refresh()
+
+        ui.select(options, value=state["params"][pkey], on_change=changed).props("outlined dense options-dense").style(f"width: {width}")
+
+    def date_options() -> Dict[str, str]:
+        opts: Dict[str, str] = {}
+        clock = {"time", "date", "datetime", "timestamp", "triggered_at"}  # "now": always 0
+        for var in variables():
+            if var.get("date") and var["key"] not in clock:
+                opts["{" + var["key"] + "}"] = f"{var.get('label') or var['key']}  {{{var['key']}}}"
+        lk = _lk()
+        for entry in (getattr(lk, "LOOKUPS", None) or []) if lk else []:
+            for var in entry.get("variables") or []:
+                if var.get("date"):
+                    opts.setdefault("{" + var["key"] + "}", f"{var.get('label') or var['key']}  {{{var['key']}}}  · {entry.get('label', '')}")
+        preferred = "{followed_since}"
+        if preferred in opts:
+            opts = {preferred: opts.pop(preferred), **opts}
+        opts[_CV_DATE_OTHER] = "A date I type…"
+        return opts
+
+    def twitch_builder() -> None:
+        params = state["params"]
+        params.setdefault("source", "lookup")
+        with ui.element("div").classes("ce-row"):
+            ui.label("Get it from").classes("ce-mini")
+            with ui.element("div").classes("ce-seg"):
+                for value, icon, label in (("lookup", "travel_explore", "A Twitch lookup"), ("request", "tune", "An API request (advanced)")):
+                    opt = ui.element("div").classes("is-on" if params["source"] == value else "")
+                    with opt:
+                        _html(_ic(icon))
+                        ui.label(label)
+                    opt.on("click", lambda _e, v=value: (params.update(source=v, field=""), render_builder(), refresh()))
+        if params["source"] == "lookup":
+            entries = [e for e in lookups_catalog() if e.get("group") != "Do something"]
+            opts = {e["id"]: f"{e.get('group', '')} · {e.get('label', e['id'])}" for e in entries}
+            if not opts:
+                ui.label("Twitch lookups aren't available right now.").classes("ce-f-help")
+                return
+            with ui.element("div").classes("ce-row"):
+                ui.label("Look up").classes("ce-mini")
+                select("lookup", opts, next(iter(opts)), "300px", rebuild=True)
+            entry = lookup_info(params.get("lookup"))
+            fields = {v["key"]: f"{v.get('label') or v['key']}  {{{v['key']}}}" for v in entry.get("variables") or [] if v.get("key") != "lookup_error"}
+            if entry.get("target"):
+                target = params.setdefault("target", {"from": "chatter"})
+                with ui.element("div").classes("ce-row"):
+                    ui.label("About").classes("ce-mini")
+
+                    def set_from(e) -> None:
+                        params["target"] = {"from": e.value, "text": params.get("target", {}).get("text", "")}
+                        render_builder()
+                        refresh()
+
+                    ui.select({"chatter": "Whoever triggered the reply", "text": "A name I type…"}, value=target.get("from", "chatter"),
+                              on_change=set_from).props("outlined dense options-dense").style("width: 230px")
+                    if target.get("from") == "text":
+                        with ui.element("div").classes("ce-varhost").style("flex: 1 1 200px"):
+                            inp = ui.input(value=target.get("text", ""), placeholder="friendlystreamer or {command_word_1}",
+                                           on_change=lambda e: (params["target"].update(text=e.value or ""), refresh())).props("outlined dense")
+                            kit.button(inp)
+                            kit.track(inp)
+            for opt in entry.get("options") or []:
+                choices = opt.get("choices") or {}
+                if choices:
+                    with ui.element("div").classes("ce-row"):
+                        ui.label(opt.get("label", "Option")).classes("ce-mini")
+                        select(opt.get("key", "period"), dict(choices), opt.get("default", next(iter(choices))), "170px")
+            with ui.element("div").classes("ce-row"):
+                ui.label("Use").classes("ce-mini")
+                if fields:
+                    select("field", fields, next(iter(fields)), "300px")
+        else:
+            with ui.element("div").classes("ce-row"):
+                ui.label("GET").classes("ce-mini")
+                ui.input(value=params.get("path", ""), placeholder="/users",
+                         on_change=lambda e: (params.update(path=(e.value or "").strip()), refresh())).props('outlined dense prefix="helix"').style(
+                    "flex: 1 1 240px")
+            rows = list((params.get("params") or {}).items())
+            box = ui.element("div").classes("ce-stack")
+
+            def write() -> None:
+                params["params"] = {k.strip(): v for k, v in rows if str(k).strip()}
+                refresh()
+
+            def render_rows() -> None:
+                box.clear()
+                with box:
+                    for idx, (k, v) in enumerate(rows):
+                        with ui.element("div").classes("ce-kv"):
+                            ui.input(value=k, placeholder="parameter",
+                                     on_change=lambda e, i=idx: (rows.__setitem__(i, (e.value or "", rows[i][1])), write())).props("outlined dense")
+                            with ui.element("div").classes("ce-varhost"):
+                                val = ui.input(value=str(v), placeholder="value or {variable}",
+                                               on_change=lambda e, i=idx: (rows.__setitem__(i, (rows[i][0], e.value or "")), write())).props("outlined dense")
+                                kit.button(val)
+                                kit.track(val)
+                            ui.button(icon="close", on_click=lambda _e, i=idx: (rows.pop(i), write(), render_rows())).props(
+                                "flat round dense").classes("is-danger")
+                    add = ui.label("+ Add parameter").classes("ce-link").style("font-size: .74rem")
+                    add.on("click", lambda: (rows.append(("", "")), render_rows()))
+
+            render_rows()
+            with ui.element("div").classes("ce-row"):
+                ui.label("Use").classes("ce-mini")
+                ui.input(value=params.get("field", ""), placeholder="total, title, created_at…",
+                         on_change=lambda e: (params.update(field=(e.value or "").strip()), refresh())).props("outlined dense").style("width: 240px")
+                ui.label("from the first result").classes("ce-unit")
+            _html(f'<div class="ce-note">{_ic("info")}<span>broadcaster_id and moderator_id are filled in for you; use '
+                  '<code>{chatter_id}</code>, <code>{chatter_login}</code> or any variable in values.</span></div>', "")
+        with ui.element("div").classes("ce-row"):
+            ui.label("If it fails").classes("ce-mini")
+            field("Text", "fallback", "Leave empty for nothing", "260px")
+        _html(f'<div class="ce-note">{_ic("info")}<span>The preview uses example data. The real value comes from Twitch when a reply '
+              'uses this variable (kept for 30 seconds). To change it, use this variable inside a Math or If / else variable.</span></div>', "")
 
     def render_kinds() -> None:
         kinds.clear()
@@ -1569,10 +1693,16 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
         with builder:
             kind = state["kind"]
             if kind == "math":
+                rand = state["params"].get("op") == "random"
                 with ui.element("div").classes("ce-row"):
-                    field("Number or variable", "left", "{stats.session.session_duration}", "220px")
-                    select("op", _CV_OPS, "/", "130px")
-                    field("Number or variable", "right", "3600", "120px")
+                    if rand:
+                        ui.label("Between").classes("ce-mini")
+                    field("Lowest" if rand else "Number or variable", "left", "1" if rand else "{stats.session.session_duration}", "180px" if rand else "220px")
+                    select("op", _CV_OPS, "/", "170px", rebuild=True)
+                    field("Highest" if rand else "Number or variable", "right", "100" if rand else "3600", "160px" if rand else "120px")
+                if rand:
+                    _html(f'<div class="ce-note">{_ic("casino")}<span>Picks a new number every time. Whole numbers give whole results; '
+                          'use 0.5 or 2.25 for decimals.</span></div>', "")
                 with ui.element("div").classes("ce-row"):
                     ui.label("Round to").classes("ce-mini")
                     select("decimals", {None: "Don't round", 0: "Whole number", 1: "1 decimal", 2: "2 decimals"}, None, "150px")
@@ -1588,13 +1718,32 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
                     ui.label("Else").classes("ce-mini")
                     field("Text", "else", "Still going strong", "220px")
             elif kind == "age":
+                opts = date_options()
+                current = str(state["params"].get("date") or "")
+                choice = current if current in opts else (_CV_DATE_OTHER if current else next(iter(opts)))
+                if not current and choice != _CV_DATE_OTHER:
+                    state["params"]["date"] = choice
                 with ui.element("div").classes("ce-row"):
-                    ui.label("Date").classes("ce-mini")
-                    field("Date or variable", "date", "{followed_since}", "260px")
+                    ui.label("Since").classes("ce-mini")
+
+                    def pick_date(e) -> None:
+                        state["params"]["date"] = "" if e.value == _CV_DATE_OTHER else e.value
+                        render_builder()
+                        refresh()
+
+                    ui.select(opts, value=choice, on_change=pick_date).props("outlined dense options-dense").style("width: 380px")
+                    if choice == _CV_DATE_OTHER:
+                        ui.input(value=current, on_change=lambda e: (state["params"].__setitem__("date", e.value or ""), refresh())).props(
+                            "outlined dense type=date").style("width: 170px")
+                with ui.element("div").classes("ce-row"):
                     ui.label("Show as").classes("ce-mini")
-                    select("style", {"long": "2 years, 3 months", "days": "Days (812)", "years": "Years (2)"}, "long", "170px")
+                    select("style", _CV_AGE_STYLES, "long", "190px")
+                _html(f'<div class="ce-note">{_ic("info")}<span>Shows how long ago the date was. Dates from a Twitch lookup (follow date, '
+                      'account created, live since) only have a value in replies that use that lookup.</span></div>', "")
             elif kind == "text":
                 field("Text", "template", "{username} has {count} points", "100%")
+            elif kind == "twitch":
+                twitch_builder()
             else:
                 field("Expression", "expression", "math({count} * 2)", "100%")
 
@@ -1603,7 +1752,8 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
         expr_label.set_content(f"Expression: <b>{_esc(expr)}</b>")
         ok, text = preview()
         result.classes(remove="is-error", add="" if ok else "is-error")
-        result_text.set_content(f"Right now this gives <b>{_esc(text) or '(empty)'}</b>" if ok else f"Can't calculate yet: <b>{_esc(text)}</b>")
+        result_icon.set_content(_ic("visibility" if ok else "error_outline"))
+        result_text.set_content(f"Right now this gives <b>{_esc(text) or '(empty)'}</b>" if ok else f"Can't work this out yet: <b>{_esc(text)}</b>")
         error.set_text("")
 
     def save() -> None:

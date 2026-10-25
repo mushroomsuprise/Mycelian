@@ -213,8 +213,9 @@
       <div class="hm-cb2-kinds">
         <div class="hm-cb2-kind is-on"><b><span class="hx-mi">calculate</span>Math</b><span>Add, subtract, multiply, divide</span></div>
         <div class="hm-cb2-kind"><b><span class="hx-mi">rule</span>If / else</b><span>Pick text by a rule</span></div>
-        <div class="hm-cb2-kind"><b><span class="hx-mi">cake</span>Date → age</b><span>“2 years, 3 months”</span></div>
+        <div class="hm-cb2-kind"><b><span class="hx-mi">history</span>How long ago</b><span>Time since a date</span></div>
         <div class="hm-cb2-kind"><b><span class="hx-mi">text_fields</span>Text<span class="hm-marker" data-n="2"></span></b><span>Join variables and text</span></div>
+        <div class="hm-cb2-kind"><b><span class="hx-mi">travel_explore</span>Twitch data</b><span>A value from Twitch</span></div>
       </div>
       <div class="hm-cb2-builder">
         <div class="hm-cxe-row"><div class="hm-cxe-box hm-grow">{stats.session.session_duration}<span class="hm-cxe-varbtn">{ }</span></div><span class="hm-cxe-in is-select">÷ divide</span><div class="hm-cxe-box">3600<span class="hm-cxe-varbtn">{ }</span></div></div>
@@ -235,22 +236,25 @@
 <ol class="hx-annotations">
   <li data-n="1">The name: lowercase letters, digits and <code>_</code>, starting with a letter. It can't be changed after the variable is created.</li>
   <li data-n="2">Pick a kind. Each kind shows its own boxes, and every box has a <code>{ }</code> button.</li>
-  <li data-n="3">The value right now, using sample values. While something is missing it shows the problem instead, for example <em>Error: Math needs a value on both sides</em>.</li>
+  <li data-n="3">The value right now, using sample values. When something is wrong the box turns red and says why, for example <em>The first value is “TestViewer”, not a number</em> or <em>Can't divide by zero</em>.</li>
 </ol>
 
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Kind</th><th>Example</th><th>Result</th></tr></thead>
 <tbody>
-<tr><td><strong>Math</strong>: two values with <strong>+ add</strong>, <strong>− subtract</strong>, <strong>× multiply</strong> or <strong>÷ divide</strong>, and <strong>Round to</strong> (Don't round, Whole number, 1 or 2 decimals)</td><td><code>{custom_hours_live}</code>: <code>{stats.session.session_duration}</code> ÷ <code>3600</code>, 1 decimal</td><td>2.5</td></tr>
+<tr><td><strong>Math</strong>: two values with <strong>+ add</strong>, <strong>− subtract</strong>, <strong>× multiply</strong>, <strong>÷ divide</strong> or <strong>random between</strong> (the boxes become <strong>Lowest</strong> and <strong>Highest</strong>; a new number every time), and <strong>Round to</strong> (Don't round, Whole number, 1 or 2 decimals)</td><td><code>{custom_hours_live}</code>: <code>{stats.session.session_duration}</code> ÷ <code>3600</code>, 1 decimal</td><td>2.5</td></tr>
 <tr><td><strong>If / else</strong>: <strong>If</strong> a value is / is not / more than / at least / less than / at most / contains another, <strong>Then</strong> one text, <strong>Else</strong> another</td><td><code>{custom_death_mood}</code>: If <code>{count}</code> at least <code>100</code> Then <em>That's a lot of deaths!</em> Else <em>Still going strong</em></td><td>Still going strong</td></tr>
-<tr><td><strong>Date → age</strong>: a date, shown as <strong>2 years, 3 months</strong>, <strong>Days (812)</strong> or <strong>Years (2)</strong></td><td><code>{custom_follow_time}</code>: <code>{followed_since}</code> from a follow-age lookup, long style</td><td>2 years, 3 months</td></tr>
+<tr><td><strong>Math, random</strong>: <strong>Between</strong> a lowest and highest value</td><td><code>{custom_dice}</code>: between <code>1</code> and <code>6</code></td><td>4</td></tr>
+<tr><td><strong>How long ago</strong>: <strong>Since</strong> a date (pick a date variable such as a follow date, or type a date), <strong>Show as</strong> 2 years, 3 months / Years / Months / Days / Hours</td><td><code>{custom_follow_time}</code>: since <code>{followed_since}</code>, long style</td><td>2 years, 3 months</td></tr>
 <tr><td><strong>Text</strong>: text and variables joined together</td><td><code>{custom_so_link}</code>: <em>twitch.tv/{command_first_word}</em></td><td>twitch.tv/coolstreamer (for <code>!so coolstreamer</code>)</td></tr>
+<tr><td><strong>Twitch data</strong>: one value from <strong>A Twitch lookup</strong> (what to look up, about whom, which value) or <strong>An API request (advanced)</strong> (a Helix path, parameters, and the field to use from the first result), plus <strong>If it fails</strong> text</td><td><code>{custom_follow_days}</code>: How long someone has followed, about whoever triggered the reply, use <code>{follow_days}</code></td><td>812</td></tr>
 </tbody>
 </table></div>
 
 <ul>
   <li>A custom variable is worked out each time a reply is sent, with that reply's values: <code>{username}</code> is the chatter or event viewer, and <code>{count}</code>, inputs and lookup variables are available when the command has them.</li>
-  <li>Math only works with numbers: if a value isn't a number (or you divide by zero), the result is <code>0</code>. If / else compares numbers when both sides are numbers, otherwise text, ignoring upper and lower case.</li>
+  <li>Twitch data is fetched when a reply uses the variable, with your connected Twitch account, and kept for 30 seconds. The editor preview uses example data. To change a Twitch value (say, days to weeks), use the Twitch data variable inside a Math or If / else variable: <code>{custom_follow_days}</code> ÷ <code>7</code>.</li>
+  <li>Math only works with numbers: in a reply, a value that isn't a number (or dividing by zero) gives <code>0</code>. If / else compares numbers when both sides are numbers, otherwise text, ignoring upper and lower case.</li>
   <li>Custom variables are shared by every command and event, and can use each other. Click {{icon:edit}} next to one in the Custom group to edit it or <strong>Delete</strong> it.</li>
   <li>Variables made with the old expression box open as <strong>Expression</strong> (<em>Written by hand</em>) and keep working, including <code>math()</code>, <code>compare()</code>, <code>if()</code> and <code>date_to_age()</code>.</li>
 </ul>

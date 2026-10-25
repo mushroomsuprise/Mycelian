@@ -31,9 +31,11 @@ numbers, ``+ - * / // % **``, parentheses, unary minus and the functions
 from __future__ import annotations
 
 import ast
+import json
 import logging
 import math
 import operator
+import random
 import re
 import threading
 import time
@@ -43,10 +45,30 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 CUSTOM_VARIABLES_PATH = "chatbot_custom_variables"
-KINDS = ("math", "if", "age", "text", "expression")
+KINDS = ("math", "if", "age", "text", "twitch", "expression")
 _LEGACY_SEPARATOR = " - Custom: "
 _NAME_RE = re.compile(r"^[a-z0-9_]+$")
 _MAX_DEPTH = 8
+
+# Previews (editor, cards) must never call Twitch: Twitch variables use example data then.
+_preview_state = threading.local()
+
+
+class preview_mode:
+    """Context manager: custom variables evaluated inside use example data, no network."""
+
+    def __enter__(self):
+        self._previous = getattr(_preview_state, "on", False)
+        _preview_state.on = True
+        return self
+
+    def __exit__(self, *exc):
+        _preview_state.on = self._previous
+        return False
+
+
+def in_preview() -> bool:
+    return bool(getattr(_preview_state, "on", False))
 
 # --------------------------------------------------------------------------
 # Safe math
@@ -69,7 +91,16 @@ def _round(value, digits=None):
     return round(value, int(digits))
 
 
+def _random(low, high):
+    """Random number between *low* and *high* (whole numbers when both are whole)."""
+    low, high = (low, high) if low <= high else (high, low)
+    if float(low).is_integer() and float(high).is_integer():
+        return random.randint(int(low), int(high))
+    return random.uniform(low, high)
+
+
 _FUNCS: Dict[str, Callable[..., Any]] = {
+    "random": _random,
     "round": _round,
     "min": min,
     "max": max,
@@ -79,7 +110,7 @@ _FUNCS: Dict[str, Callable[..., Any]] = {
     "int": int,
     "float": float,
 }
-_FUNC_ARITY = {"round": (1, 2), "abs": (1, 1), "floor": (1, 1), "ceil": (1, 1),
+_FUNC_ARITY = {"random": (2, 2), "round": (1, 2), "abs": (1, 1), "floor": (1, 1), "ceil": (1, 1),
                "int": (1, 1), "float": (1, 1), "min": (1, 50), "max": (1, 50)}
 
 
@@ -464,10 +495,10 @@ def evaluate_expression(expression: str, context: Optional[Dict[str, Any]] = Non
 # Structured definitions
 # --------------------------------------------------------------------------
 
-_MATH_OPS = ("+", "-", "*", "/")
+_MATH_OPS = ("+", "-", "*", "/", "random")
 _IF_OPS = ("equal", "not_equal", "greater_than", "greater_than_or_equal",
            "less_than", "less_than_or_equal", "contains")
-_AGE_STYLES = ("long", "days", "years")
+_AGE_STYLES = ("long", "years", "months", "days", "hours")
 _OP_SYMBOL = {"equal": "==", "not_equal": "!=", "greater_than": ">",
               "greater_than_or_equal": ">=", "less_than": "<",
               "less_than_or_equal": "<=", "contains": "contains"}
@@ -497,12 +528,12 @@ def compile_custom_variable(kind: str, params: Dict[str, Any]) -> str:
     if kind == "math":
         op = str(params.get("op") or "+").strip()
         if op not in _MATH_OPS:
-            raise ValueError("Math operator must be one of + - * /")
+            raise ValueError("Math operator must be one of + - * / random")
         left = str(params.get("left", "")).strip()
         right = str(params.get("right", "")).strip()
         if not left or not right:
-            raise ValueError("Math needs a value on both sides")
-        body = f"{left} {op} {right}"
+            raise ValueError("Random needs a lowest and a highest value" if op == "random" else "Math needs a value on both sides")
+        body = f"random({left}, {right})" if op == "random" else f"{left} {op} {right}"
         decimals = params.get("decimals")
         if decimals not in (None, ""):
             return f"math(round({body}, {int(decimals)}))"
@@ -519,10 +550,26 @@ def compile_custom_variable(kind: str, params: Dict[str, Any]) -> str:
     if kind == "age":
         style = str(params.get("style") or "long")
         if style not in _AGE_STYLES:
-            raise ValueError("Age style must be long, days or years")
+            raise ValueError("Unknown way to show the time")
         if not str(params.get("date") or "").strip():
             raise ValueError("Age needs a date")
         return f"date_to_age({params.get('date')})"
+    if kind == "twitch":
+        source = params.get("source") or "lookup"
+        field = str(params.get("field") or "").strip()
+        if source == "request":
+            path = str(params.get("path") or "").strip()
+            if not path:
+                raise ValueError("Enter the Twitch API path, e.g. /users")
+            if not field:
+                raise ValueError("Choose which value to use from the response")
+            return f"twitch(GET {path} -> {field})"
+        lookup_id = str(params.get("lookup") or "").strip()
+        if not lookup_id:
+            raise ValueError("Choose what to look up")
+        if not field:
+            raise ValueError("Choose which value to use")
+        return f"twitch({lookup_id} -> {field})"
     raise ValueError(f"Unknown custom variable kind: {kind!r}")
 
 
@@ -557,19 +604,47 @@ def normalize_definition(raw: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _evaluate_definition(definition: Dict[str, Any], context: Dict[str, Any], depth: int) -> str:
+def _shown(value: Any, limit: int = 40) -> str:
+    text = " ".join(str(value).split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _math_side(template: str, context: Dict[str, Any], depth: int, label: str) -> str:
+    """Rendered math operand, or a friendly ValueError when it isn't a number."""
+    rendered = _render(str(template or ""), context, depth).strip()
+    if as_number(rendered) is None:
+        try:
+            safe_eval_math(_math_operand_text(str(template or ""), context, depth))
+        except ValueError:
+            if rendered == str(template or "").strip() and "{" in rendered:
+                raise ValueError(f"{label} {_shown(template)} isn't a variable here") from None
+            raise ValueError(f"{label} is “{_shown(rendered) or 'empty'}”, not a number") from None
+    return rendered
+
+
+def _evaluate_definition(definition: Dict[str, Any], context: Dict[str, Any], depth: int, *, strict: bool = False) -> str:
+    """Value of a structured definition. ``strict`` raises ValueError with a friendly reason."""
     kind = definition.get("kind")
     params = definition.get("params") or {}
     if kind == "text":
         return _render(str(params.get("template") or ""), context, depth)
     if kind == "math":
-        expr = f"({params.get('left', '')}) {params.get('op', '+')} ({params.get('right', '')})"
+        op = params.get("op", "+")
+        decimals = params.get("decimals")
+        if strict:
+            _math_side(params.get("left", ""), context, depth, "Lowest" if op == "random" else "The first value")
+            _math_side(params.get("right", ""), context, depth, "Highest" if op == "random" else "The second value")
+        if op == "random":
+            expr = f"random(({params.get('left', '')}), ({params.get('right', '')}))"
+        else:
+            expr = f"({params.get('left', '')}) {op} ({params.get('right', '')})"
         try:
             value = safe_eval_math(_math_operand_text(expr, context, depth))
         except ValueError as exc:
+            if strict:
+                raise ValueError("Can't divide by zero" if "zero" in str(exc) else str(exc).capitalize()) from None
             logger.debug("Custom math failed: %s", exc)
             return "0"
-        decimals = params.get("decimals")
         return format_number(value, None if decimals in (None, "") else int(decimals))
     if kind == "if":
         left = _render(str(params.get("left", "")), context, depth)
@@ -582,19 +657,99 @@ def _evaluate_definition(definition: Dict[str, Any], context: Dict[str, Any], de
     if kind == "age":
         from .chatbot_core import resolve_raw_template_value
 
-        raw = resolve_raw_template_value(str(params.get("date") or ""), context, depth)
+        source = str(params.get("date") or "")
+        raw = resolve_raw_template_value(source, context, depth)
         moment = to_local_naive(raw)
         if moment is None:
+            if strict:
+                if not source.strip():
+                    raise ValueError("Choose a date")
+                if raw in (None, "") or (str(raw) == source and "{" in source):
+                    raise ValueError(f"{_shown(source)} isn't available here")
+                raise ValueError(f"Couldn't read “{_shown(raw)}” as a date")
             return ""
         style = params.get("style") or "long"
-        days = (datetime.now() - moment).days
+        seconds = max((datetime.now() - moment).total_seconds(), 0)
         if style == "days":
-            return str(max(days, 0))
+            return str(int(seconds // 86400))
+        if style == "hours":
+            return str(int(seconds // 3600))
+        if style == "months":
+            now = datetime.now()
+            months = (now.year - moment.year) * 12 + now.month - moment.month - (1 if now.day < moment.day else 0)
+            return str(max(months, 0))
         if style == "years":
-            return str(max(days, 0) // 365)
+            return str(int(seconds // 86400) // 365)
         return friendly_duration(moment)
+    if kind == "twitch":
+        return _evaluate_twitch(params, context, depth, strict=strict)
     expression = params.get("expression") if "expression" in params else definition.get("expression")
     return evaluate_expression(str(expression or ""), context, depth)
+
+
+# Twitch data for custom variables -----------------------------------------------
+
+_TWITCH_CACHE_SECONDS = 30.0
+_TWITCH_TIMEOUT_SECONDS = 8.0
+_twitch_cache: Dict[str, Any] = {}
+_twitch_cache_lock = threading.Lock()
+
+
+def twitch_lookup_config(params: Dict[str, Any], context: Dict[str, Any], depth: int = 0) -> Dict[str, Any]:
+    """The lookup dict a ``twitch`` custom variable runs (targets rendered for this context)."""
+    if (params.get("source") or "lookup") == "request":
+        rendered = {str(k): _render(str(v), context, depth) for k, v in (params.get("params") or {}).items() if str(k).strip()}
+        return {"id": "advanced", "method": "GET", "path": str(params.get("path") or ""), "params": rendered}
+    config: Dict[str, Any] = {"id": str(params.get("lookup") or "")}
+    target = params.get("target") if isinstance(params.get("target"), dict) else {}
+    if target.get("from") == "text":
+        config["target"] = {"from": "text", "text": _render(str(target.get("text") or ""), context, depth)}
+    elif target:
+        config["target"] = {"from": "event_user" if target.get("from") == "event_user" else "chatter"}
+    if params.get("period"):
+        config["period"] = params["period"]
+    return config
+
+
+def _pick_field(variables: Dict[str, Any], field: str) -> Any:
+    field = str(field or "").strip().strip("{}")
+    for key in (field, f"api_{field}", f"api_{field.replace('.', '_')}"):
+        if key in variables:
+            return variables[key]
+    return None
+
+
+def _evaluate_twitch(params: Dict[str, Any], context: Dict[str, Any], depth: int, *, strict: bool = False) -> str:
+    from . import chatbot_lookups
+
+    config = twitch_lookup_config(params, context, depth)
+    field = str(params.get("field") or "")
+    if in_preview():
+        values = chatbot_lookups.example_variables(config)
+        if config.get("id") == "advanced":
+            values.setdefault(f"api_{field}", "(example)")
+        value = _pick_field(values, field)
+        return "" if value is None else str(value)
+    who = str(context.get("user_id") or context.get("userid") or context.get("user_login") or context.get("username") or "")
+    key = json.dumps([config, field, who], sort_keys=True, default=str)
+    now = time.monotonic()
+    with _twitch_cache_lock:
+        hit = _twitch_cache.get(key)
+        if hit and now - hit[0] < _TWITCH_CACHE_SECONDS:
+            return hit[1]
+    result = chatbot_lookups.run_lookup_blocking(config, context, kind="command", timeout=_TWITCH_TIMEOUT_SECONDS)
+    if result.get("lookup_ok", False):
+        value = _pick_field(result, field)
+        text = "" if value is None else str(value)
+    else:
+        if strict:
+            raise ValueError(result.get("lookup_error") or "Twitch didn't answer")
+        text = _render(str(params.get("fallback") or ""), {**context, **result}, depth)
+    with _twitch_cache_lock:
+        if len(_twitch_cache) > 200:
+            _twitch_cache.clear()
+        _twitch_cache[key] = (now, text)
+    return text
 
 
 # --------------------------------------------------------------------------
@@ -833,11 +988,31 @@ def evaluate_custom_variable(
         return ""
 
 
+def preview_context() -> Dict[str, Any]:
+    """Example command context plus example values of every Twitch lookup (dates included)."""
+    try:
+        from .chatbot_variables import example_context
+
+        context = dict(example_context("command"))
+    except Exception:
+        context = {}
+    try:
+        from . import chatbot_lookups
+
+        for entry in chatbot_lookups.LOOKUPS:
+            for key, value in chatbot_lookups.example_variables(entry).items():
+                if not key.startswith("lookup_"):
+                    context.setdefault(key, value)
+    except Exception:
+        pass
+    return context
+
+
 def preview_custom_variable(definition: Any, context: Optional[Dict[str, Any]] = None) -> str:
     """Evaluate an unsaved definition (dict or legacy string) for the editor.
 
-    ``context=None`` uses the example command context of the variable catalog.
-    Errors come back as ``"Error: ..."``.
+    ``context=None`` uses example values (including Twitch lookup examples); Twitch
+    variables never call the network here. Problems come back as ``"Error: ..."``.
     """
     normalized = normalize_definition(definition)
     if normalized is None:
@@ -846,16 +1021,10 @@ def preview_custom_variable(definition: Any, context: Optional[Dict[str, Any]] =
         error = validate_custom_definition(definition)
         if error:
             return f"Error: {error}"
-    if context is None:
-        try:
-            from .chatbot_variables import example_context
-
-            context = example_context("command")
-        except Exception:
-            context = {}
-    ctx = {**get_live_basic_variables(), **context}
+    ctx = {**get_live_basic_variables(), **(preview_context() if context is None else context)}
     try:
-        return _evaluate_definition(normalized, ctx, 1)
+        with preview_mode():
+            return _evaluate_definition(normalized, ctx, 1, strict=True)
     except Exception as exc:
         return f"Error: {exc}"
 

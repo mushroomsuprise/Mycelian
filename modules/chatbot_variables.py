@@ -540,7 +540,10 @@ def example_context(kind: str, event_type: Any = None, item: Any = None) -> Dict
 
 def render_preview(text: str, kind: str, event_type: Any = None, item: Any = None) -> str:
     """*text* rendered by the real runtime with sample data (no side effects)."""
-    return render_template(text, example_context(kind, event_type, item))
+    from .chatbot_custom_variables import preview_mode
+
+    with preview_mode():  # Twitch custom variables use example data, never the network
+        return render_template(text, example_context(kind, event_type, item))
 
 
 def preview_event_types() -> List[str]:

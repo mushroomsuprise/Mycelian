@@ -842,3 +842,38 @@ def test_lookup_input_target_falls_back_to_chatter():
     assert _target_login_or_id(config, ctx, "command") == ("mossymika", "42")
     ctx["target"] = "@FriendlyStreamer"
     assert _target_login_or_id(config, ctx, "command") == ("friendlystreamer", "")
+
+
+def test_custom_variable_random_age_twitch_and_errors(monkeypatch):
+    from modules import chatbot_custom_variables as c
+
+    for _ in range(20):
+        value = c.preview_custom_variable({"kind": "math", "params": {"left": "1", "op": "random", "right": "6"}})
+        assert value in {"1", "2", "3", "4", "5", "6"}
+    assert c.compile_custom_variable("math", {"left": "1", "op": "random", "right": "6"}) == "math(random(1, 6))"
+    assert c.preview_custom_variable({"kind": "math", "params": {"left": "{username}", "op": "+", "right": "1"}}).startswith("Error:")
+    assert c.preview_custom_variable({"kind": "math", "params": {"left": "5", "op": "/", "right": "0"}}) == "Error: Can't divide by zero"
+    age = c.preview_custom_variable({"kind": "age", "params": {"date": "{followed_since}", "style": "long"}})
+    assert age and not age.startswith("Error") and "year" in age
+    assert c.preview_custom_variable({"kind": "age", "params": {"date": "2020-01-01", "style": "months"}}).isdigit()
+    assert c.preview_custom_variable({"kind": "age", "params": {"date": "nonsense", "style": "long"}}).startswith("Error: Couldn't read")
+
+    twitch = {"source": "lookup", "lookup": "follow_age", "target": {"from": "chatter"}, "field": "follow_days"}
+    assert c.preview_custom_variable({"kind": "twitch", "params": twitch}).isdigit()  # example data, no network
+
+    calls = []
+
+    def fake_run(config, context, **kw):
+        calls.append(config)
+        return {"lookup_ok": True, "follow_days": "500"}
+
+    monkeypatch.setattr("modules.chatbot_lookups.run_lookup_blocking", fake_run)
+    c._twitch_cache.clear()
+    ctx = {"user_login": "mossy", "user_id": "1"}
+    assert c._evaluate_definition({"kind": "twitch", "params": twitch}, ctx, 1) == "500"
+    assert c._evaluate_definition({"kind": "twitch", "params": twitch}, ctx, 1) == "500"
+    assert len(calls) == 1  # cached for 30 s
+    monkeypatch.setattr("modules.chatbot_lookups.run_lookup_blocking", lambda *a, **k: {"lookup_ok": False, "lookup_error": "nope"})
+    c._twitch_cache.clear()
+    failing = dict(twitch, fallback="unknown")
+    assert c._evaluate_definition({"kind": "twitch", "params": failing}, ctx, 1) == "unknown"
