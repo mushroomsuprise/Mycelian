@@ -24,6 +24,7 @@ SOFTWARE.
 """
 
 import asyncio
+import contextlib
 import copy
 import json
 import logging
@@ -139,6 +140,30 @@ StreakAlerts = {}
 StreakRangeAlerts = {}
 
 
+class _ConfigWriteFailed(RuntimeError):
+    """The database reported a queued alert-config write as failed."""
+
+
+def _notify_history_store_failed(alert_id: str, reason: str = "") -> None:
+    """An alert played but its Activity Feed entry wasn't saved (background, deduped)."""
+    try:
+        from .notification_engine import nav_actions_settings, notify
+
+        notify(
+            "Alerts still play, but new ones may be missing from the Activity Feed after a restart.",
+            type="warning",
+            source="activity_feed",
+            title="Activity Feed history couldn't be saved",
+            hint="Check your database connection in Settings → Database.",
+            details=f"alert_id={alert_id}" + (f"\n{reason}" if reason else ""),
+            actions=nav_actions_settings("Database"),
+            dedupe_key="activity:store_failed",
+            dedupe_cooldown_sec=1800.0,
+        )
+    except Exception as e:
+        logger.debug("Could not report the Activity Feed save failure: %s", e)
+
+
 # Alert state manager class to handle alert state synchronization
 class AlertStateManager:
     """Manages the state of all alert configurations and provides methods to access and update them.
@@ -188,6 +213,9 @@ class AlertStateManager:
         }
         self._initialized = False
         self._changes_pending = False
+        # Why the last save_alert / delete_alert returned False ("unreadable",
+        # "write_failed" or exception text), so the Alerts tab can explain it.
+        self.last_write_error: str = ""
         self._resub_fallback_enabled: Optional[bool] = None
         self._startup_trim_done = False
         self._trim_lock = threading.Lock()
@@ -398,10 +426,16 @@ class AlertStateManager:
     # ------------------------------------------------------------------
     # Ordered config writer (WE-25)
     # ------------------------------------------------------------------
-    def _queue_config_writes(self, ops: List[tuple], state_key: str) -> dict:
+    def _queue_config_writes(
+        self, ops: List[tuple], state_key: str, quiet: bool = False
+    ) -> dict:
         """Queue (kind, path, data) writes. Call with ``self._lock`` held, so
-        queue order is mutation order. Returns a waiter for _wait_config_writes."""
-        waiter = {"done": threading.Event(), "error": None}
+        queue order is mutation order. Returns a waiter for _wait_config_writes.
+
+        ``quiet``: the caller reports a failed write itself, so the database
+        layer's own "couldn't save" notice is skipped for these writes.
+        """
+        waiter = {"done": threading.Event(), "error": None, "quiet": quiet}
         with self._writer_lock:
             self._pending_writes += 1
             self._write_queue.put((ops, state_key, waiter))
@@ -433,11 +467,17 @@ class AlertStateManager:
                         self._own_write_paths[path] = (
                             self._own_write_paths.get(path, 0) + 1
                         )
+                    quiet = getattr(database_manager, "quiet_notifications", None)
                     try:
-                        if kind == "delete":
-                            ok = database_manager.delete_data(path)
-                        else:
-                            ok = database_manager.set_data(path, data)
+                        with (
+                            quiet()
+                            if waiter.get("quiet") and quiet is not None
+                            else contextlib.nullcontext()
+                        ):
+                            if kind == "delete":
+                                ok = database_manager.delete_data(path)
+                            else:
+                                ok = database_manager.set_data(path, data)
                     except Exception as e:
                         waiter["error"] = e
                         ok = False
@@ -452,6 +492,14 @@ class AlertStateManager:
                         # The store may now differ from memory: re-read when empty.
                         with self._loaded_lock:
                             self._loaded_state_keys.discard(state_key)
+                        if "failed" not in waiter:
+                            problem = None
+                            try:
+                                problem = database_manager.last_write_problem()
+                            except Exception:
+                                pass
+                            reason = ": ".join(str(p) for p in problem if p) if problem else ""
+                            waiter["failed"] = f"{path} ({reason})" if reason else path
                     if waiter["error"] is not None:
                         break
             except Exception as e:
@@ -463,9 +511,15 @@ class AlertStateManager:
                     self._writes_idle.notify_all()
 
     def _wait_config_writes(self, waiter: dict) -> Optional[BaseException]:
-        """Wait (hub-cooperatively on the overlay server) for queued writes."""
+        """Wait (hub-cooperatively on the overlay server) for queued writes.
+
+        A write the database reported as failed (returned False) comes back as
+        an error too, so callers never report a save that didn't happen.
+        """
         done = waiter["done"]
         self._wait_event(done)
+        if waiter["error"] is None and waiter.get("failed"):
+            return _ConfigWriteFailed(f"Database write failed: {waiter['failed']}")
         return waiter["error"]
 
     @staticmethod
@@ -614,9 +668,11 @@ class AlertStateManager:
             bool: True if the setting was saved successfully.
         """
         try:
-            database_manager.set_data(
+            if not database_manager.set_data(
                 "Alerts/Settings/resub_fallback_enabled", {"enabled": enabled}
-            )
+            ):
+                logger.error("Could not save the resub fallback setting")
+                return False
             self._resub_fallback_enabled = enabled
             logger.debug(f"Resub fallback alert {'enabled' if enabled else 'disabled'}")
             return True
@@ -1013,6 +1069,7 @@ class AlertStateManager:
         alert_id: str,
         alert_data: dict,
         update_collection: bool = True,
+        quiet_db_notices: bool = False,
     ) -> bool:
         """Save an alert to the state and sync with Firebase
 
@@ -1021,6 +1078,7 @@ class AlertStateManager:
             alert_id (str): The ID of the alert
             alert_data (dict): The alert data to save
             update_collection (bool): Whether to update the collection after saving (default True)
+            quiet_db_notices (bool): The caller reports a failure itself (see last_write_error)
 
         Returns:
             bool: True if successful, False otherwise
@@ -1033,9 +1091,12 @@ class AlertStateManager:
             state_key, firebase_path, _ = self._get_state_and_firebase_keys(
                 alert_type, alert_id
             )
+            self.last_write_error = ""
             if not state_key or not firebase_path:
+                self.last_write_error = f"unknown alert type {alert_type!r}"
                 return False
             if not self._recover_unreadable_collection(state_key):
+                self.last_write_error = "unreadable"
                 return False
 
             with self._lock:
@@ -1069,7 +1130,7 @@ class AlertStateManager:
                     # Update the global collections
                     self._update_global_collections()
 
-                waiter = self._queue_config_writes(ops, state_key)
+                waiter = self._queue_config_writes(ops, state_key, quiet=quiet_db_notices)
 
             error = self._wait_config_writes(waiter)
             if error is not None:
@@ -1081,14 +1142,18 @@ class AlertStateManager:
                 f"Error saving alert {alert_id} for type {alert_type}: {str(e)}",
                 exc_info=True,
             )
+            self.last_write_error = str(e) if isinstance(e, _ConfigWriteFailed) else f"{type(e).__name__}: {e}"
             return False
 
-    def delete_alert(self, alert_type: str, alert_id: str) -> bool:
+    def delete_alert(
+        self, alert_type: str, alert_id: str, quiet_db_notices: bool = False
+    ) -> bool:
         """Delete an alert from the state and sync with Firebase
 
         Args:
             alert_type (str): The type of alert (bits, subs, etc.)
             alert_id (str): The ID of the alert
+            quiet_db_notices (bool): The caller reports a failure itself (see last_write_error)
 
         Returns:
             bool: True if successful, False otherwise
@@ -1101,9 +1166,12 @@ class AlertStateManager:
             state_key, firebase_path, _ = self._get_state_and_firebase_keys(
                 alert_type, alert_id
             )
+            self.last_write_error = ""
             if not state_key or not firebase_path:
+                self.last_write_error = f"unknown alert type {alert_type!r}"
                 return False
             if not self._recover_unreadable_collection(state_key):
+                self.last_write_error = "unreadable"
                 return False
 
             with self._lock:
@@ -1127,7 +1195,7 @@ class AlertStateManager:
                 # Update the global collections
                 self._update_global_collections()
 
-                waiter = self._queue_config_writes(ops, state_key)
+                waiter = self._queue_config_writes(ops, state_key, quiet=quiet_db_notices)
 
             error = self._wait_config_writes(waiter)
             if error is not None:
@@ -1139,6 +1207,7 @@ class AlertStateManager:
                 f"Error deleting alert {alert_id} for type {alert_type}: {str(e)}",
                 exc_info=True,
             )
+            self.last_write_error = str(e) if isinstance(e, _ConfigWriteFailed) else f"{type(e).__name__}: {e}"
             return False
 
     def get_default_alert_id(self, alert_type: str) -> str:
@@ -1508,9 +1577,12 @@ class AlertStateManager:
                 return False
 
         try:
-            database_manager.set_data(
+            if not database_manager.set_data(
                 f"Alerts/AlertStorage/{alert_id}", complete_alert_data
-            )
+            ):
+                # (The database layer reports the failed write itself.)
+                logger.error("Could not store completed alert %s", alert_id)
+                return False
 
             logger.debug(
                 f"Stored completed alert {alert_id} with data keys: {list(complete_alert_data.keys())}"
@@ -1536,6 +1608,7 @@ class AlertStateManager:
             logger.error(
                 f"Error storing completed alert {alert_id}: {str(e)}", exc_info=True
             )
+            _notify_history_store_failed(alert_id, f"{type(e).__name__}: {e}")
             return False
 
     def _read_alert_storage_trim_settings(self) -> Dict[str, Any]:

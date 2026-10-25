@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 from nicegui import ui
-from ..notification_engine import notify
+from ..notification_engine import nav_actions_main_tab, nav_actions_settings, nav_alerts, notify, notify_progress
 from ..ui_buttons import destructive_button, outline_button, primary_button
 from ..ui_form_controls import form_input, form_number, form_select
 from ..ui_timer import app_schedule, layout_schedule, run_on_ui_loop
@@ -113,6 +113,82 @@ ALERT_TAB_TO_TYPE = {
     "Follows": "follows",
     "Channel Points": "points",
 }
+_ALERT_TYPE_TO_TAB = {t: name for name, t in ALERT_TAB_TO_TYPE.items()}
+
+
+def _alerts_nav(alert_type: str) -> list:
+    """Notification action that opens the Alerts sub-tab for ``alert_type``."""
+    return nav_alerts(_ALERT_TYPE_TO_TAB.get(alert_type, "Bits"))
+
+
+def _alert_name(alert_type: str, alert_id: str, alert_data=None) -> str:
+    """The name the alert list shows (never the internal id when avoidable)."""
+    try:
+        return alertutils.alert_state_manager.get_display_name(alert_type, alert_id, alert_data)
+    except Exception:
+        return str(alert_id)
+
+
+def _alerts_paused() -> bool:
+    try:
+        from .. import web_engine
+
+        return bool(web_engine.ALERTS_PAUSED)
+    except Exception:
+        return False
+
+
+def _overlay_running() -> bool:
+    try:
+        from .. import web_engine
+
+        return web_engine.web_engine_instance is not None
+    except Exception:
+        return False
+
+
+def _notify_write_failed(title: str, message: str, alert_type: str, details: str = "") -> None:
+    """An alert save or delete didn't reach the database."""
+    reason = getattr(alertutils.alert_state_manager, "last_write_error", "") or ""
+    if reason == "unreadable":
+        message = (
+            f"{message} Mycelian couldn't read your saved alerts from the database, "
+            "so it didn't overwrite them."
+        ).strip()
+    notify(
+        message,
+        type="error",
+        source="alerts",
+        title=title,
+        hint="Check your database connection in Settings → Database, then try again.",
+        details="\n".join(x for x in (reason, details) if x) or None,
+        actions=nav_actions_settings("Database") + _alerts_nav(alert_type),
+    )
+
+
+def _notify_tab_not_ready(alert_type: str) -> None:
+    notify(
+        "",
+        type="warning",
+        source="alerts",
+        title="This alert tab is still loading",
+        hint="Wait a moment, then try again. If it keeps happening, switch to another alert tab and back.",
+        actions=_alerts_nav(alert_type),
+        dedupe_key=f"alerts:not_ready:{alert_type}",
+    )
+
+
+def _set_resub_fallback(enabled: bool) -> None:
+    if alertutils.alert_state_manager.set_resub_fallback_enabled(enabled):
+        return
+    notify(
+        "The switch will go back to its saved position after a restart.",
+        type="error",
+        source="alerts",
+        title="Couldn't save the Resub Fallback setting",
+        hint="Check your database connection in Settings → Database, then flip the switch again.",
+        actions=nav_actions_settings("Database"),
+    )
 
 _ALERT_DIRTY_SKIP = {
     "alert_select",
@@ -311,10 +387,7 @@ def _prompt_unsaved_alert(alert_type: str, message: str, on_discard, on_saved) -
             def finished(ok: bool) -> None:
                 busy["value"] = False
                 if not ok:
-                    notify(
-                        "Could not save this alert. Your changes are still here.",
-                        type="warning",
-                    )
+                    # The save already said why; the dialog stays open with the edits.
                     return
                 dialog.close()
                 on_saved()
@@ -1096,7 +1169,9 @@ def _build_alert_list(alert_type: str, select) -> None:
 
             search.on_value_change(on_search)
             if alert_type == "points":
-                refresh_btn = ui.button(icon="refresh", on_click=lambda: load_twitch_point_rewards()).props(
+                refresh_btn = ui.button(
+                    icon="refresh", on_click=lambda: load_twitch_point_rewards(user_initiated=True)
+                ).props(
                     "flat round dense size=sm"
                 )
                 refresh_btn.tooltip("Refresh the list of Twitch point rewards")
@@ -1114,7 +1189,7 @@ def _build_alert_list(alert_type: str, select) -> None:
                 with _row("Resub fallback", "When enabled, the Resub Fallback alert plays for resubs that don't match any configured month alert"):
                     _el(alert_type)["fallback_toggle"] = ui.switch(
                         value=alertutils.alert_state_manager.get_resub_fallback_enabled(),
-                        on_change=lambda e: alertutils.alert_state_manager.set_resub_fallback_enabled(e.value),
+                        on_change=lambda e: _set_resub_fallback(bool(e.value)),
                     ).props("dense")
     select.on_value_change(lambda _e, at=alert_type: _render_alert_list(at))
 
@@ -1466,7 +1541,7 @@ def initialize_tab_values(tab_name):
                     logger.debug(
                         f"Reloading currently selected alert: {selected_alert_id}"
                     )
-                    load_alert_settings(alert_type, selected_alert_id)
+                    load_alert_settings(alert_type, selected_alert_id, quiet=True)
                 except Exception as reload_err:
                     logger.error(
                         f"Error reloading selected alert: {str(reload_err)}",
@@ -1630,6 +1705,17 @@ def get_alerts_for_type(alert_type: str) -> dict:
         logger.error(
             f"Error getting alerts for type {alert_type}: {str(e)}", exc_info=True
         )
+        notify(
+            "The list may look empty even though your alerts are still saved.",
+            type="error",
+            source="alerts",
+            title="Couldn't load your alerts",
+            hint="Check your database connection in Settings → Database, then reopen the Alerts tab.",
+            details=f"{alert_type}: {type(e).__name__}: {e}",
+            actions=nav_actions_settings("Database"),
+            dedupe_key="alerts:list_failed",
+            dedupe_cooldown_sec=600.0,
+        )
         return {}
 
 
@@ -1706,7 +1792,13 @@ def duplicate_current_alert(alert_type: str) -> None:
         or selected == "new"
         or selected in POINTS_REWARD_SELECT_PLACEHOLDERS
     ):
-        notify("Choose an existing alert to duplicate.", type="warning")
+        notify(
+            "",
+            type="warning",
+            source="alerts",
+            title="Choose an alert to duplicate",
+            hint="Pick an existing alert in the list, then click Duplicate.",
+        )
         return
 
     snapshot = {}
@@ -1754,18 +1846,24 @@ def duplicate_current_alert(alert_type: str) -> None:
 
     if alert_type == "follows":
         notify(
-            "Copied into a new follow alert. Saving replaces the existing follow alert, because follows use one slot.",
+            "Saving replaces the existing follow alert, because follows use one slot.",
             type="info",
+            source="alerts",
+            title="Copied into a new follow alert",
         )
     elif alert_type == "points":
         notify(
-            "Copied into a new reward. Review the title and cost, then click Save.",
+            "Review the title and cost, then click Save.",
             type="info",
+            source="alerts",
+            title="Copied into a new reward",
         )
     else:
         notify(
-            "Copied into a new alert. The amount was shifted so saving does not replace the original.",
+            "The amount was shifted so saving doesn't replace the original.",
             type="info",
+            source="alerts",
+            title="Copied into a new alert",
         )
 
 
@@ -1796,8 +1894,6 @@ def handle_alert_selection(e, alert_type: str):
         is_fallback = alert_type == "subs" and e.value == fallback_id
 
         if e.value == "new":
-            # Show notification for creating new alert
-            notify("Creating new alert...", type="info")
             # Load default values for new alert
             set_default_values_for_new_alert(alert_type)
             # Store initial values as originals
@@ -1808,15 +1904,11 @@ def handle_alert_selection(e, alert_type: str):
                 alert_type, fallback_id
             )
             if fallback_data:
-                notify("Loading Resub Fallback alert...", type="info")
                 load_alert_settings(alert_type, fallback_id)
             else:
-                notify("Configuring new Resub Fallback alert...", type="info")
                 set_default_values_for_new_alert(alert_type)
                 store_original_values(alert_type)
         else:
-            # Show notification for loading selected alert
-            notify(f"Loading alert: {e.value}", type="info")
             # Load selected alert settings
             load_alert_settings(alert_type, e.value)
 
@@ -1828,7 +1920,20 @@ def handle_alert_selection(e, alert_type: str):
 
     except Exception as e:
         logger.error(f"Error handling alert selection: {str(e)}", exc_info=True)
-        notify("Error loading alert settings", type="negative")
+        _notify_load_failed(alert_type, e)
+
+
+def _notify_load_failed(alert_type: str, exc: Exception) -> None:
+    notify(
+        "",
+        type="error",
+        source="alerts",
+        title="Couldn't open this alert",
+        hint="Select it again. If it keeps failing, copy the details and check the log.",
+        details=f"{type(exc).__name__}: {exc}",
+        actions=_alerts_nav(alert_type),
+        dedupe_key="alerts:load_failed",
+    )
 
 
 def _update_amount_inputs_visibility(alert_type: str, hide: bool):
@@ -1989,12 +2094,13 @@ def clear_alert_inputs(tab_type: str):
     update_tts_custom_message_visibility(tab_type)
 
 
-def load_alert_settings(alert_type: str, alert_id: str):
+def load_alert_settings(alert_type: str, alert_id: str, quiet: bool = False):
     """Load alert settings from AlertStateManager
 
     Args:
         alert_type (str): The type of alert (bits, subs, etc.)
         alert_id (str): The ID of the alert to load
+        quiet (bool): Automatic reload (tab switch): log problems, don't toast.
     """
     try:
         # Ensure the current tab is set correctly
@@ -2006,7 +2112,16 @@ def load_alert_settings(alert_type: str, alert_id: str):
         )
         if not alert_data:
             logger.error(f"Alert {alert_id} not found for type {alert_type}")
-            notify(f"Alert {alert_id} not found for type {alert_type}", type="negative")
+            if not quiet:
+                notify(
+                    "It may have been deleted.",
+                    type="warning",
+                    source="alerts",
+                    title="That alert no longer exists",
+                    hint="Pick another alert in the list, or create a new one.",
+                    details=f"{alert_type}/{alert_id}",
+                    actions=_alerts_nav(alert_type),
+                )
             return
 
         logger.debug(f"Loading alert data: {alert_data}")
@@ -2038,10 +2153,13 @@ def load_alert_settings(alert_type: str, alert_id: str):
         ]
         if missing_elements:
             logger.error(f"Missing UI elements for {alert_type}: {missing_elements}")
-            notify(
-                f"UI elements not ready for {alert_type}. Please try again.",
-                type="warning",
-            )
+            if not quiet:
+                # The form is still being built: try once more shortly, silently.
+                layout_schedule(
+                    0.4,
+                    lambda: load_alert_settings(alert_type, alert_id, quiet=True),
+                    once=True,
+                )
             return
 
         # Update UI with alert data - use get with defaults to handle missing fields
@@ -2266,7 +2384,8 @@ def load_alert_settings(alert_type: str, alert_id: str):
 
     except Exception as e:
         logger.error(f"Error loading alert settings: {str(e)}", exc_info=True)
-        notify("Error loading alert settings", type="negative")
+        if not quiet:
+            _notify_load_failed(alert_type, e)
 
 
 # Browse targets: (title, subtitle, kind, extensions, mode, dir field, file field)
@@ -2290,23 +2409,22 @@ def handle_browse(folder_type: str, alert_type: str = None):
         alert_type (str): Alert type tab to write into (falls back to current_tab)
     """
     try:
-        from pathlib import Path
-
         from .file_picker import assets_root, open_file_picker
 
         current_alert_type = alert_type or alert_settings_state.current_tab
         if not current_alert_type:
-            notify("No alert type selected", type="warning")
+            logger.error("Browse clicked with no alert type selected")
             return
         target = _BROWSE_TARGETS.get(folder_type)
         if target is None:
-            notify(f"Unknown folder type: {folder_type}", type="negative")
+            logger.error("Unknown browse folder type: %s", folder_type)
             return
         title, subtitle, kind, extensions, mode, dir_field, file_field = target
         elements = alert_settings_state.get_elements(current_alert_type)
         missing = [f for f in (dir_field, file_field) if f and elements.get(f) is None]
         if missing:
-            notify(f"Required UI fields not found: {missing}", type="negative")
+            logger.error("Browse fields not found for %s: %s", current_alert_type, missing)
+            _notify_tab_not_ready(current_alert_type)
             return
 
         directory = str(elements[dir_field].value or "")
@@ -2326,14 +2444,12 @@ def handle_browse(folder_type: str, alert_type: str = None):
                 els[dir_field].value = result.web_path
                 track_field_change(dir_field, els[dir_field], result.web_path, at)
                 logger.info(f"Selected directory: {result.web_path}")
-                notify(f"Selected folder: {Path(result.path).name}", type="positive")
                 return
             els[dir_field].value = result.web_dir
             els[file_field].value = result.filename
             track_field_change(dir_field, els[dir_field], result.web_dir, at)
             track_field_change(file_field, els[file_field], result.filename, at)
             logger.info(f"Selected file: {result.web_dir}{result.filename}")
-            notify(f"Selected file: {result.filename}", type="positive")
 
         # The overlay looks random-sound folders up under assets/alerts/ only.
         within = root / "alerts" if mode == "folder" else None
@@ -2354,7 +2470,14 @@ def handle_browse(folder_type: str, alert_type: str = None):
         logger.error(
             f"Error handling browse for {folder_type}: {str(e)}", exc_info=True
         )
-        notify(f"Error opening file browser for {folder_type}", type="negative")
+        notify(
+            "",
+            type="error",
+            source="files",
+            title="Couldn't open the file picker",
+            hint="Try again. If it keeps failing, switch to another alert tab and back.",
+            details=f"{folder_type}: {type(e).__name__}: {e}",
+        )
 
 
 def _collect_test_alert_data(alert_type: str, elements: dict) -> dict:
@@ -2478,7 +2601,8 @@ def test_alert(alert_type: str):
         logger.info("test_alert invoked for tab=%s", alert_type)
         elements = alert_settings_state.get_elements(alert_type)
         if not elements:
-            notify(f"UI elements not initialized for {alert_type} tab", type="warning")
+            logger.warning("test_alert: no form elements yet for %s", alert_type)
+            _notify_tab_not_ready(alert_type)
             return
 
         missing_elements = [
@@ -2490,7 +2614,7 @@ def test_alert(alert_type: str):
             logger.warning(
                 "test_alert missing elements for %s: %s", alert_type, missing_elements
             )
-            notify(f"Missing UI elements: {missing_elements}", type="warning")
+            _notify_tab_not_ready(alert_type)
             return
 
         alert_data = _collect_test_alert_data(alert_type, elements)
@@ -2523,6 +2647,15 @@ def test_alert(alert_type: str):
                     instant_err,
                     exc_info=True,
                 )
+                notify(
+                    "The follow test couldn't reach the overlay.",
+                    type="error",
+                    source="alerts",
+                    title="Couldn't send the follow test",
+                    hint="Check that the overlay server is running (see the footer), then try again.",
+                    details=f"{type(instant_err).__name__}: {instant_err}",
+                )
+                return
 
         logger.info(
             "Queued test alert tab=%s runtime=%s id=%s",
@@ -2530,10 +2663,30 @@ def test_alert(alert_type: str):
             runtime_type,
             alert.alert_id,
         )
-        notify(f"Testing {alert_type} alert...", type="info")
+        tab_label = _ALERT_TYPE_TO_TAB.get(alert_type, "alert")
+        if _alerts_paused():
+            notify(
+                type="warning",
+                source="alerts",
+                title="Alerts are paused",
+                message=f"The {tab_label} test alert will play when you resume alerts.",
+                hint="Resume alerts with the pause button in the Activity Feed.",
+                actions=nav_actions_main_tab("Activity Feed"),
+            )
+        elif _overlay_running():
+            # (If the overlay server is down, the alert queue reports the skipped alert.)
+            notify("", type="info", source="alerts", title=f"Test alert sent ({tab_label})")
     except Exception as e:
         logger.error(f"Error testing alert: {str(e)}", exc_info=True)
-        notify("Error testing alert", type="negative")
+        notify(
+            "",
+            type="error",
+            source="alerts",
+            title="Couldn't send the test alert",
+            hint="Check the alert's settings and that the overlay server is running (see the footer), then try again.",
+            details=f"{type(e).__name__}: {e}",
+            actions=_alerts_nav(alert_type),
+        )
 
 
 def save_alert(alert_type: str):
@@ -2765,12 +2918,15 @@ def save_alert(alert_type: str):
 
         # Save alert using AlertStateManager
         success = alertutils.alert_state_manager.save_alert(
-            alert_type, alert_id, alert_data
+            alert_type, alert_id, alert_data, quiet_db_notices=True
         )
 
         if success:
             notify(
-                f'Saved {alert_type} alert: {alert_data["alert_name"]}', type="positive"
+                "",
+                type="success",
+                source="alerts",
+                title=f"Saved “{_alert_name(alert_type, alert_id, alert_data)}”",
             )
 
             # Ensure we update the dropdown to show all alerts including the new one
@@ -2826,18 +2982,50 @@ def save_alert(alert_type: str):
                 logger.error(
                     f"Error updating alert dropdown: {str(dropdown_err)}", exc_info=True
                 )
-                # This shouldn't prevent the alert from being saved, so we continue
+                # The alert is saved; only the list is stale.
+                notify(
+                    "The alert is saved, but the list didn't refresh.",
+                    type="warning",
+                    source="alerts",
+                    title="Alert list out of date",
+                    hint="Switch to another alert tab and back to see it.",
+                    details=f"{type(dropdown_err).__name__}: {dropdown_err}",
+                    actions=_alerts_nav(alert_type),
+                )
 
             # Store the new values as original values
             store_original_values(alert_type)
             # Clear changed styling
             clear_changed_styling(alert_type)
         else:
-            notify("Error saving alert settings", type="negative")
+            _notify_write_failed(
+                "Couldn't save the alert",
+                "Your changes are still in the form.",
+                alert_type,
+            )
 
+    except (TypeError, ValueError) as e:
+        # int("") / int(None): an empty or non-numeric amount field.
+        logger.warning(f"Alert not saved, invalid amount: {e}")
+        notify(
+            "Nothing was saved.",
+            type="warning",
+            source="alerts",
+            title="Check the amount",
+            hint="Enter a whole number for the amount (or for both ends of the range), then click Save.",
+            details=f"{type(e).__name__}: {e}",
+        )
     except Exception as e:
         logger.error(f"Error saving alert: {str(e)}", exc_info=True)
-        notify("Error saving alert settings", type="negative")
+        notify(
+            "Your changes are still in the form.",
+            type="error",
+            source="alerts",
+            title="Couldn't save the alert",
+            hint="Try again. If it keeps failing, copy the details and check the log.",
+            details=f"{type(e).__name__}: {e}",
+            actions=_alerts_nav(alert_type),
+        )
 
 
 # Add the following functions for change detection and styling
@@ -3092,10 +3280,6 @@ def handle_point_reward_selection(e, alert_type: str):
             return
 
         if e.value == "new":
-            notify(
-                "New reward: fill in the Twitch reward and alert settings, then click Save.",
-                type="info",
-            )
             set_default_values_for_new_point_reward(alert_type)
             store_original_values(alert_type)
         elif e.value in POINTS_REWARD_SELECT_PLACEHOLDERS:
@@ -3103,20 +3287,30 @@ def handle_point_reward_selection(e, alert_type: str):
         else:
             # Validate that it's a valid reward ID (should be a UUID-like string)
             if len(e.value) > 5:  # Basic validation - real reward IDs are much longer
-                # Show notification for loading selected reward
-                notify(f"Loading point reward: {e.value}", type="info")
                 # Load selected point reward settings
                 load_point_reward_settings(alert_type, e.value)
             else:
                 logger.warning(f"Invalid reward ID format: {e.value}")
-                notify("Invalid reward selection", type="warning")
 
         # Update delete button visibility based on selection
         update_delete_button_visibility(alert_type)
 
     except Exception as e:
         logger.error(f"Error handling point reward selection: {str(e)}", exc_info=True)
-        notify("Error loading point reward settings", type="negative")
+        _notify_reward_load_failed(e)
+
+
+def _notify_reward_load_failed(exc: Exception) -> None:
+    notify(
+        "",
+        type="error",
+        source="alerts",
+        title="Couldn't load this reward from Twitch",
+        hint="Check your Twitch connection in Settings → Twitch, then pick the reward again.",
+        details=f"{type(exc).__name__}: {exc}",
+        actions=nav_actions_settings("Twitch") + nav_alerts("Channel Points"),
+        dedupe_key="alerts:points:reward_load_failed",
+    )
 
 
 def _schedule_point_reward_select_refresh(select_element):
@@ -3139,12 +3333,71 @@ def _schedule_point_reward_select_refresh(select_element):
     app_schedule(0.5, force_refresh, once=True)
 
 
-def load_twitch_point_rewards():
+# One reward fetch at a time: panel build and tab switches ask for it several times.
+_points_load_state = {"inflight": False, "last_auto_error": None}
+_POINTS_AUTO_ERROR_COOLDOWN_SEC = 600.0
+
+
+def _notify_rewards_unavailable(status: str, user_initiated: bool) -> None:
+    """Explain why the reward list is empty. Automatic loads stay quiet (the list
+    already says so), except real errors, which show at most every 10 minutes."""
+    twitch_nav = nav_actions_settings("Twitch")
+    if status == "not_unlocked":
+        if user_initiated:
+            notify(
+                "This Twitch account doesn't have Channel Points (custom rewards) unlocked.",
+                type="warning",
+                source="alerts",
+                title="Channel Points aren't available",
+                hint="Channel Points need Twitch Affiliate or Partner status.",
+                actions=twitch_nav,
+                dedupe_key="alerts:points:locked",
+                dedupe_cooldown_sec=3600.0,
+            )
+        return
+    if status == "not_connected":
+        if user_initiated:
+            notify(
+                "Connect Twitch to manage Channel Points rewards.",
+                type="warning",
+                source="alerts",
+                title="Twitch isn't connected",
+                hint="Open Settings → Twitch and connect your account.",
+                actions=twitch_nav,
+                dedupe_key="alerts:points:not_connected",
+                dedupe_cooldown_sec=600.0,
+            )
+        return
+    if not user_initiated:
+        last = _points_load_state["last_auto_error"]
+        now = time.monotonic()
+        if last is not None and now - last < _POINTS_AUTO_ERROR_COOLDOWN_SEC:
+            return
+        _points_load_state["last_auto_error"] = now
+    notify(
+        "",
+        type="error",
+        source="alerts",
+        title="Couldn't load your Channel Points rewards",
+        hint="Check your Twitch connection in Settings → Twitch, then click Refresh in the reward list.",
+        details=f"status={status}",
+        actions=twitch_nav,
+        dedupe_key="alerts:points:load_failed",
+        dedupe_cooldown_sec=600.0,
+    )
+
+
+def load_twitch_point_rewards(user_initiated: bool = False, force: bool = False):
     """Load Twitch point rewards from the API and update the dropdown.
 
     Helix fetch is done on a worker; dropdown updates hop back to the NiceGUI loop.
+    ``user_initiated`` (the Refresh button) also explains an empty list in a toast.
+    ``force`` fetches even while another load is running (after a save or delete).
     """
     alert_type = "points"
+    if _points_load_state["inflight"] and not (user_initiated or force):
+        logger.debug("Point rewards already loading; skipping duplicate request")
+        return
     with suppress_alert_selection_handler():
         try:
             from .. import twitch
@@ -3186,10 +3439,7 @@ def load_twitch_point_rewards():
                         }
                         if hasattr(select_element, "update"):
                             select_element.update()
-                        notify(
-                            "This Twitch account does not have Channel Points (custom rewards) unlocked.",
-                            type="warning",
-                        )
+                        _notify_rewards_unavailable(status, user_initiated)
                         _schedule_point_reward_select_refresh(select_element)
                         return
 
@@ -3202,17 +3452,7 @@ def load_twitch_point_rewards():
                         }
                         if hasattr(select_element, "update"):
                             select_element.update()
-                        notify(
-                            "Twitch is not connected. Please connect to Twitch in the Settings tab first.",
-                            type="warning",
-                            actions=[
-                                {
-                                    "kind": "navigate",
-                                    "main_tab": "Settings",
-                                    "settings_subtab": "Twitch",
-                                }
-                            ],
-                        )
+                        _notify_rewards_unavailable(status, user_initiated)
                         _schedule_point_reward_select_refresh(select_element)
                         return
 
@@ -3223,10 +3463,7 @@ def load_twitch_point_rewards():
                         }
                         if hasattr(select_element, "update"):
                             select_element.update()
-                        notify(
-                            "Error loading Twitch point rewards. Please check your Twitch connection and authentication in Settings.",
-                            type="negative",
-                        )
+                        _notify_rewards_unavailable("error", user_initiated)
                         _schedule_point_reward_select_refresh(select_element)
                         return
 
@@ -3242,17 +3479,9 @@ def load_twitch_point_rewards():
                             reward_cost = reward.get("cost", 0)
                             display_name = f"{reward_title} ({reward_cost} points)"
                             reward_options[reward_id] = display_name
-                        notify(
-                            f"Loaded {len(rewards)} point rewards from Twitch",
-                            type="positive",
-                        )
                     else:
                         reward_options["no_rewards"] = (
                             "No rewards yet. Click New reward, fill in the Twitch reward section, then click Save."
-                        )
-                        notify(
-                            "No point rewards on Twitch yet. Click New reward, fill in the Twitch reward section, then click Save.",
-                            type="info",
                         )
 
                     select_element.options = reward_options
@@ -3270,11 +3499,18 @@ def load_twitch_point_rewards():
                         exc_info=True,
                     )
                     result = {"status": "error", "rewards": None}
+                finally:
+                    _points_load_state["inflight"] = False
                 run_on_ui_loop(lambda: _apply_result(result))
 
-            threading.Thread(
-                target=_worker, daemon=True, name="LoadPointRewards"
-            ).start()
+            _points_load_state["inflight"] = True
+            try:
+                threading.Thread(
+                    target=_worker, daemon=True, name="LoadPointRewards"
+                ).start()
+            except Exception:
+                _points_load_state["inflight"] = False
+                raise
 
         except Exception as e:
             logger.error(
@@ -3299,10 +3535,7 @@ def load_twitch_point_rewards():
                 if hasattr(select_element, "update"):
                     select_element.update()
                 _schedule_point_reward_select_refresh(select_element)
-            notify(
-                "Error loading Twitch point rewards. Please check your Twitch connection and authentication in Settings.",
-                type="negative",
-            )
+            _notify_rewards_unavailable("error", user_initiated)
 
 
 def set_default_values_for_new_point_reward(alert_type: str):
@@ -3409,7 +3642,16 @@ def load_point_reward_settings(alert_type: str, reward_id: str):
         # First, get the Twitch reward data
         reward_data = twitch.get_point_reward_by_id(reward_id)
         if not reward_data:
-            notify(f"Point reward {reward_id} not found on Twitch", type="negative")
+            notify(
+                "It may have been deleted on Twitch, or Twitch couldn't be reached.",
+                type="warning",
+                source="alerts",
+                title="Couldn't find this reward on Twitch",
+                hint="Click Refresh in the reward list. If it's gone, create a new reward.",
+                details=f"reward_id={reward_id}",
+                actions=nav_alerts("Channel Points"),
+                dedupe_key=f"alerts:points:missing:{reward_id}",
+            )
             return
 
         # Load Twitch settings into UI
@@ -3659,7 +3901,7 @@ def load_point_reward_settings(alert_type: str, reward_id: str):
 
     except Exception as e:
         logger.error(f"Error loading point reward settings: {str(e)}", exc_info=True)
-        notify("Error loading point reward settings", type="negative")
+        _notify_reward_load_failed(e)
 
 
 def _twitch_ui_values_equal(orig, cur) -> bool:
@@ -3728,6 +3970,7 @@ def build_twitch_reward_payload_from_ui(alert_type: str) -> dict:
 def save_point_alert(on_complete=None):
     """Save the current point alert settings (creates or updates Twitch reward when needed)."""
     completed = {"done": False}
+    work = None  # progress notice while Twitch is contacted
 
     def finish(ok: bool) -> None:
         if completed["done"]:
@@ -3749,21 +3992,24 @@ def save_point_alert(on_complete=None):
 
         if not twitch.twitch_api or not twitch.twitch_api.is_connected:
             notify(
-                "Twitch is not connected. Please connect to Twitch in Settings first.",
-                type="negative",
-                actions=[
-                    {
-                        "kind": "navigate",
-                        "main_tab": "Settings",
-                        "settings_subtab": "Twitch",
-                    }
-                ],
+                "Channel Points rewards are saved on Twitch, so Twitch must be connected. Nothing was saved.",
+                type="warning",
+                source="alerts",
+                title="Connect Twitch to save this reward",
+                hint="Open Settings → Twitch and connect your account, then click Save again.",
+                actions=nav_actions_settings("Twitch"),
             )
             finish(False)
             return
 
         if selected in POINTS_REWARD_SELECT_PLACEHOLDERS and selected != "new":
-            notify("Please select a valid point reward", type="warning")
+            notify(
+                "",
+                type="warning",
+                source="alerts",
+                title="Pick a reward first",
+                hint="Pick a reward in the list, or click New reward to create one.",
+            )
             finish(False)
             return
 
@@ -3774,18 +4020,30 @@ def save_point_alert(on_complete=None):
             title = (elements["twitch_title_input"].value or "").strip()
             if not title:
                 notify(
-                    "Please enter a reward title in the Twitch reward section.",
+                    "",
                     type="warning",
+                    source="alerts",
+                    title="Enter a reward title",
+                    hint="Fill in the title in the Twitch reward section, then click Save.",
                 )
                 finish(False)
                 return
             cost_val = elements["twitch_cost_input"].value
-            if cost_val is None or int(cost_val) < 1:
-                notify("Point cost must be at least 1.", type="warning")
+            try:
+                cost_ok = cost_val is not None and int(cost_val) >= 1
+            except (TypeError, ValueError):
+                cost_ok = False
+            if not cost_ok:
+                notify(
+                    "",
+                    type="warning",
+                    source="alerts",
+                    title="Point cost must be at least 1",
+                    hint="Enter a whole number of points in the Twitch reward section, then click Save.",
+                )
                 finish(False)
                 return
             reward_payload = build_twitch_reward_payload_from_ui(alert_type)
-            notify("Creating reward on Twitch...", type="info")
         elif twitch_reward_fields_changed(alert_type):
             update_twitch = True
             reward_payload = build_twitch_reward_payload_from_ui(alert_type)
@@ -3855,17 +4113,17 @@ def save_point_alert(on_complete=None):
             }
 
             success = alertutils.alert_state_manager.save_alert(
-                alert_type, selected_reward_id, alert_data
+                alert_type, selected_reward_id, alert_data, quiet_db_notices=True
             )
 
             if success:
-                notify(f'Saved point alert: {alert_data["title"]}', type="positive")
+                work.done(f"Saved “{alert_data['title'] or 'reward'}”")
                 if on_complete is not None:
                     store_original_values(alert_type)
                     clear_changed_styling(alert_type)
                     finish(True)
                     return
-                load_twitch_point_rewards()
+                load_twitch_point_rewards(force=True)
                 rid = selected_reward_id
 
                 def after_list_refresh():
@@ -3886,54 +4144,145 @@ def save_point_alert(on_complete=None):
                         )
                         store_original_values(alert_type)
                         clear_changed_styling(alert_type)
+                        notify(
+                            "The reward is saved, but the list didn't refresh.",
+                            type="warning",
+                            source="alerts",
+                            title="Reward list out of date",
+                            hint="Click Refresh in the reward list to see it.",
+                            details=f"{type(refresh_err).__name__}: {refresh_err}",
+                            actions=nav_alerts("Channel Points"),
+                        )
 
                 layout_schedule(0.85, after_list_refresh, once=True)
             else:
-                notify("Error saving point alert settings", type="negative")
+                reason = getattr(alertutils.alert_state_manager, "last_write_error", "") or ""
+                message = (
+                    "The reward was saved on Twitch, but the alert settings weren't saved in Mycelian."
+                    if (create_new or update_twitch)
+                    else "Your changes are still in the form."
+                )
+                if reason == "unreadable":
+                    message += " Mycelian couldn't read your saved alerts from the database, so it didn't overwrite them."
+                work.fail(
+                    "Couldn't save the alert",
+                    message,
+                    hint="Check your database connection in Settings → Database, then click Save again.",
+                    details=reason or None,
+                    actions=nav_actions_settings("Database"),
+                )
                 finish(False)
 
-        def _fail_on_ui(message: str, notice_type: str = "negative") -> None:
+        def _persist_local_safe(selected_reward_id) -> None:
+            try:
+                _persist_local(selected_reward_id)
+            except Exception as persist_err:
+                logger.error("Error saving point alert locally: %s", persist_err, exc_info=True)
+                work.fail(
+                    "Couldn't save the alert",
+                    "Your changes are still in the form.",
+                    hint="Try again. If it keeps failing, copy the details and check the log.",
+                    details=f"{type(persist_err).__name__}: {persist_err}",
+                )
+                finish(False)
+
+        twitch_hint = (
+            "Reward titles must be unique on your channel. If the title is fine, reconnect "
+            "Twitch in Settings → Twitch so Mycelian can manage rewards."
+        )
+
+        def _fail_on_ui(title: str, message: str, *, level: str = "error", **kwargs) -> None:
             def _do() -> None:
-                notify(message, type=notice_type)
+                if level == "error":
+                    work.fail(title, message, **kwargs)
+                else:
+                    work.done(title, message, type=level, **kwargs)
                 finish(False)
 
             run_on_ui_loop(_do)
 
         def _worker() -> None:
-            fetch = twitch.fetch_channel_point_rewards()
-            if fetch["status"] == "not_unlocked":
-                _fail_on_ui(
-                    "Channel Points are not unlocked for this Twitch account.",
-                    "warning",
-                )
-                return
-            if fetch["status"] not in ("ok",):
-                _fail_on_ui(
-                    "Cannot reach Twitch Channel Points right now. Try Refresh Rewards.",
-                    "warning",
-                )
-                return
-
-            selected_reward_id = captured_reward_id
-            if create_new:
-                new_reward = twitch.create_point_reward(reward_payload)
-                if not new_reward or not new_reward.get("id"):
-                    _fail_on_ui("Failed to create reward on Twitch.")
-                    return
-                selected_reward_id = new_reward["id"]
-            elif update_twitch:
-                if not twitch.update_point_reward(selected_reward_id, reward_payload):
+            try:
+                fetch = twitch.fetch_channel_point_rewards()
+                if fetch["status"] == "not_unlocked":
                     _fail_on_ui(
-                        "Error updating Twitch point reward. Local alert was not saved."
+                        "Channel Points aren't available",
+                        "This Twitch account doesn't have Channel Points (custom rewards) unlocked. Nothing was saved.",
+                        level="warning",
+                        hint="Channel Points need Twitch Affiliate or Partner status.",
+                        actions=nav_actions_settings("Twitch"),
                     )
                     return
-            run_on_ui_loop(lambda rid=selected_reward_id: _persist_local(rid))
+                if fetch["status"] not in ("ok",):
+                    _fail_on_ui(
+                        "Couldn't reach Twitch Channel Points",
+                        "Nothing was saved.",
+                        level="warning",
+                        hint="Check your Twitch connection in Settings → Twitch, click Refresh in the reward list, then save again.",
+                        details=f"status={fetch.get('status')}",
+                        actions=nav_actions_settings("Twitch"),
+                    )
+                    return
 
+                selected_reward_id = captured_reward_id
+                if create_new:
+                    work.update("Creating the reward on Twitch…")
+                    new_reward = twitch.create_point_reward(reward_payload)
+                    if not new_reward or not new_reward.get("id"):
+                        _fail_on_ui(
+                            "Twitch didn't create the reward",
+                            "Nothing was saved.",
+                            hint=twitch_hint,
+                            details=f"title={reward_title!r} cost={point_cost!r}",
+                            actions=nav_actions_settings("Twitch"),
+                        )
+                        return
+                    selected_reward_id = new_reward["id"]
+                elif update_twitch:
+                    work.update("Updating the reward on Twitch…")
+                    if not twitch.update_point_reward(selected_reward_id, reward_payload):
+                        _fail_on_ui(
+                            "Twitch didn't accept the reward changes",
+                            "The alert settings weren't saved either.",
+                            hint=twitch_hint,
+                            details=f"reward_id={selected_reward_id}",
+                            actions=nav_actions_settings("Twitch"),
+                        )
+                        return
+                run_on_ui_loop(lambda rid=selected_reward_id: _persist_local_safe(rid))
+            except Exception as worker_err:
+                logger.error("Error saving point alert: %s", worker_err, exc_info=True)
+                _fail_on_ui(
+                    "Couldn't save the reward",
+                    "Your changes are still in the form.",
+                    hint="Try again. If it keeps failing, check your Twitch connection in Settings → Twitch.",
+                    details=f"{type(worker_err).__name__}: {worker_err}",
+                    actions=nav_actions_settings("Twitch"),
+                )
+
+        work = notify_progress(
+            f"Saving “{reward_title or 'reward'}”",
+            source="alerts",
+            message="Checking Channel Points on Twitch…",
+        )
         threading.Thread(target=_worker, daemon=True, name="SavePointAlert").start()
 
     except Exception as e:
         logger.error(f"Error saving point alert: {str(e)}", exc_info=True)
-        notify("Error saving point alert settings", type="negative")
+        kwargs = dict(
+            hint="Check the reward's numbers (cost, limits, cooldown) and try again.",
+            details=f"{type(e).__name__}: {e}",
+        )
+        if work is not None:
+            work.fail("Couldn't save the reward", "Your changes are still in the form.", **kwargs)
+        else:
+            notify(
+                "Your changes are still in the form.",
+                type="error",
+                source="alerts",
+                title="Couldn't save the reward",
+                **kwargs,
+            )
         finish(False)
 
 
@@ -3953,7 +4302,13 @@ def show_delete_confirmation(alert_type: str):
             not selected_alert_id
             or selected_alert_id in POINTS_REWARD_SELECT_PLACEHOLDERS
         ):
-            notify("No valid alert selected for deletion", type="warning")
+            notify(
+                "",
+                type="warning",
+                source="alerts",
+                title="Select an alert to delete",
+                hint="Pick an alert in the list first.",
+            )
             return
 
         # Get alert data to show in confirmation
@@ -3961,7 +4316,12 @@ def show_delete_confirmation(alert_type: str):
             alert_type, selected_alert_id
         )
         if not alert_data:
-            notify("Alert not found", type="negative")
+            notify(
+                "It may already have been deleted.",
+                type="info",
+                source="alerts",
+                title="That alert no longer exists",
+            )
             return
 
         # Get display name for the alert using the centralized method
@@ -4009,7 +4369,14 @@ def show_delete_confirmation(alert_type: str):
 
     except Exception as e:
         logger.error(f"Error showing delete confirmation: {str(e)}", exc_info=True)
-        notify("Error showing delete confirmation dialog", type="negative")
+        notify(
+            "Nothing was deleted.",
+            type="error",
+            source="alerts",
+            title="Couldn't open the delete dialog",
+            hint="Try again.",
+            details=f"{type(e).__name__}: {e}",
+        )
 
 
 def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
@@ -4024,22 +4391,32 @@ def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
         # Close the dialog first
         dialog.close()
 
-        # Show deletion in progress
-        notify("Deleting alert...", type="info")
+        alert_name = _alert_name(
+            alert_type,
+            alert_id,
+            alertutils.alert_state_manager.get_alert_by_id(alert_type, alert_id),
+        )
 
         # Delete the alert using AlertStateManager
-        success = alertutils.alert_state_manager.delete_alert(alert_type, alert_id)
+        success = alertutils.alert_state_manager.delete_alert(
+            alert_type, alert_id, quiet_db_notices=True
+        )
 
         if success:
             notify(
-                f"Successfully deleted {alert_type} alert: {alert_id}", type="positive"
+                "The reward still exists on Twitch. Remove it there if you no longer need it."
+                if alert_type == "points"
+                else "",
+                type="success",
+                source="alerts",
+                title=f"Deleted “{alert_name}”",
             )
 
             # Update the dropdown to remove the deleted alert
             try:
                 with suppress_alert_selection_handler():
                     if alert_type == "points":
-                        load_twitch_point_rewards()
+                        load_twitch_point_rewards(force=True)
                         alert_settings_state.get_elements(alert_type)[
                             "alert_select"
                         ].value = "new"
@@ -4094,11 +4471,23 @@ def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
                 )
                 # This shouldn't prevent the deletion from being successful
         else:
-            notify("Error deleting alert", type="negative")
+            _notify_write_failed(
+                "Couldn't delete the alert",
+                f"“{alert_name}” is still saved.",
+                alert_type,
+            )
 
     except Exception as e:
         logger.error(f"Error confirming alert deletion: {str(e)}", exc_info=True)
-        notify("Error deleting alert", type="negative")
+        notify(
+            "",
+            type="error",
+            source="alerts",
+            title="Couldn't delete the alert",
+            hint="Try again. If it keeps failing, check your database connection in Settings → Database.",
+            details=f"{type(e).__name__}: {e}",
+            actions=nav_actions_settings("Database"),
+        )
 
 
 def refresh_alert_dropdowns():

@@ -29,7 +29,7 @@ import time
 from collections import deque
 
 from .alertutils import AlertObj, initialize_alert_state
-from .notification_engine import nav_actions_settings, notify_critical
+from .notification_engine import nav_actions_main_tab, nav_actions_settings, notify, notify_critical
 from .shutdown import is_shutdown_in_progress
 
 ALERT_QUEUE: deque[AlertObj] = deque()
@@ -128,6 +128,28 @@ def _overlay_engine():
     return web_engine.web_engine_instance or web_engine_instance
 
 
+def _alert_label(alert) -> str:
+    """Short plain name for an alert in notifications ("follow alert from TestUser")."""
+    kind = str(getattr(alert, "alert_type", "") or "").replace("_", " ").strip() or "an"
+    user = str(getattr(alert, "username", "") or "").strip()
+    return f"{kind} alert from {user}" if user else f"{kind} alert"
+
+
+def _notify_alert_dropped(alert, reason: str) -> None:
+    """The overlay never got this alert, so it was skipped."""
+    notify(
+        f"The {_alert_label(alert)} was skipped because the overlay server isn't running.",
+        type="warning",
+        source="alerts",
+        title="An alert couldn't be shown",
+        hint="Check the overlay server in the footer. New alerts will play once it is running again.",
+        details=f"reason={reason} alert_id={getattr(alert, 'alert_id', '')}",
+        actions=nav_actions_main_tab("Activity Feed"),
+        dedupe_key="alert:dropped",
+        dedupe_cooldown_sec=300.0,
+    )
+
+
 def process_alert(alert: AlertObj):
     """
     Process an alert by emitting it over the next_alert websocket
@@ -192,11 +214,13 @@ def process_alert(alert: AlertObj):
         if engine is None:
             logger.error("No web engine instance; cannot process alert")
             web_engine.abort_alert_playback("no_engine")
+            _notify_alert_dropped(alert, "no_engine")
             return
         web_engine.set_alert_playing(True)
         if not engine.next_alert(alert_data):
             logger.error("Failed to emit next_alert; not marking ALERT_PLAYING")
             web_engine.abort_alert_playback("emit_failed")
+            _notify_alert_dropped(alert, "emit_failed")
             return
         session = get_session()
         if session is None or session.seq != queue_seq or session.finished:
@@ -230,11 +254,64 @@ def process_alert(alert: AlertObj):
     except Exception as e:
         logger.error(f"Error processing alert: {str(e)}", exc_info=True)
         web_engine.abort_alert_playback("process_failed")
-        notify_critical(
-            "An alert failed to process. Check logs if this keeps happening.",
+        notify(
+            f"The {_alert_label(alert)} couldn't play and was skipped.",
+            type="error",
+            source="alerts",
+            title="An alert couldn't play",
+            hint="Check the alert's media files in the Alerts tab. If this keeps happening, copy the details for support.",
+            details=f"{type(e).__name__}: {e}",
+            actions=nav_actions_main_tab("Alerts"),
             dedupe_key="alert:process_failed",
-            dedupe_cooldown_sec=60.0,
+            dedupe_cooldown_sec=300.0,
         )
+
+
+# The queue loop retries every second, so a lasting fault must not toast each pass.
+_QUEUE_ERROR_NOTIFY_COOLDOWN_SEC = 900.0
+_QUEUE_ERROR_ESCALATE_AFTER = 30  # consecutive failed passes (about 30 s)
+_queue_error_state = {"streak": 0, "last_notified": None, "escalated": False}
+
+
+def _note_queue_error(exc: Exception) -> None:
+    """Tell the user once per fault streak, and once more if alerts stay stuck."""
+    state = _queue_error_state
+    state["streak"] += 1
+    now = time.monotonic()
+    details = f"{type(exc).__name__}: {exc}"
+    last = state["last_notified"]
+    if state["streak"] == 1 and (last is None or now - last >= _QUEUE_ERROR_NOTIFY_COOLDOWN_SEC):
+        state["last_notified"] = now
+        notify(
+            "Alerts may be delayed while Mycelian retries.",
+            type="warning",
+            source="alerts",
+            title="The alert queue hit an error",
+            hint="Nothing to do yet. If alerts stop playing, restart Mycelian.",
+            details=details,
+            actions=nav_actions_main_tab("Activity Feed"),
+            dedupe_key="alert:queue_error",
+            dedupe_cooldown_sec=_QUEUE_ERROR_NOTIFY_COOLDOWN_SEC,
+        )
+    elif state["streak"] >= _QUEUE_ERROR_ESCALATE_AFTER and not state["escalated"]:
+        state["escalated"] = True
+        notify_critical(
+            "New alerts won't play until this is fixed.",
+            source="alerts",
+            title="Alerts are stuck",
+            hint="Restart Mycelian. If it happens again, copy the details for support.",
+            details=details,
+            actions=nav_actions_main_tab("Activity Feed"),
+            dedupe_key="alert:queue_stuck",
+            dedupe_cooldown_sec=_QUEUE_ERROR_NOTIFY_COOLDOWN_SEC,
+        )
+
+
+def _note_queue_ok() -> None:
+    state = _queue_error_state
+    if state["streak"]:
+        state["streak"] = 0
+        state["escalated"] = False
 
 
 def alert_queue():
@@ -308,14 +385,11 @@ def alert_queue():
                     )
                 else:
                     wait_for_alert_queue(playing=False, paused=False)
+            _note_queue_ok()
 
         except Exception as e:
             logger.error(f"Error in alert queue processor: {str(e)}", exc_info=True)
-            notify_critical(
-                "Alert queue hit an error and may be stalled. Check logs.",
-                dedupe_key="alert:queue_error",
-                dedupe_cooldown_sec=90.0,
-            )
+            _note_queue_error(e)
             time.sleep(1.0)  # Sleep longer on error
 
 
@@ -425,7 +499,11 @@ def initialize():
     except Exception as e:
         logger.error("Failed to start game hooks service: %s", e, exc_info=True)
         notify_critical(
-            "Game hooks service failed to start. In-game overlays may not work.",
+            "In-game overlays may not work until it starts.",
+            source="game_hooks",
+            title="Game hooks couldn't start",
+            hint="Open Settings → Game Hooks and turn the hook off and on again, or restart Mycelian.",
+            details=f"{type(e).__name__}: {e}",
             dedupe_key="game_hooks:start_failed",
             actions=nav_actions_settings("Game Hooks"),
         )

@@ -157,6 +157,8 @@ class TemplateConfigParser:
         self._hidden_cache: Dict[str, Tuple[float, bool]] = {}
         self._listing_cache: Optional[Tuple[float, List[str]]] = None
         self._cache_lock = threading.Lock()
+        # Why the last save_config failed (for "Copy details" in the UI's error).
+        self.last_error: str = ""
 
     @staticmethod
     def _sanitize_config_name(config_name: str) -> str:
@@ -415,6 +417,7 @@ class TemplateConfigParser:
             config_path = self.get_config_path(config_name)
         except ValueError:
             logger.error("Refusing to save config with invalid name %r", config_name)
+            self.last_error = f"Invalid template name: {config_name!r}"
             return False
 
         tmp_path = config_path + ".tmp"
@@ -433,6 +436,7 @@ class TemplateConfigParser:
             logger.error(
                 "Error saving config for %s: %s", config_name, e, exc_info=True
             )
+            self.last_error = f"{config_path}\n{type(e).__name__}: {e}"
             try:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)

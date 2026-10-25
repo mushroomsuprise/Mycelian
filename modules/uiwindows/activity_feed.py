@@ -35,7 +35,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from nicegui import app, background_tasks, run, ui
 
-from ..notification_engine import notify
+from ..notification_engine import nav_actions_main_tab, nav_actions_settings, notify
 from .. import alertutils
 from ..ui_timer import app_schedule, run_on_ui_loop
 
@@ -1909,7 +1909,8 @@ class ActivityFeedViewManager:
         self.revision += 1
         if self._read_failed:
             self._unsaved_fields |= changed & set(self._VIEW_FIELDS)
-        self.save()
+        if not self.save():
+            _notify_view_not_saved()
         if self._restored_fields:
             # Stored fields brought back by a late successful read repaint too.
             changed = changed | self._restored_fields
@@ -1937,7 +1938,8 @@ class ActivityFeedViewManager:
         self.revision = revision
         if self._read_failed:
             self._unsaved_fields |= set(self._VIEW_FIELDS)
-        self.save()
+        if not self.save():
+            _notify_view_not_saved()
         self._sync_state()
         return True
 
@@ -2093,6 +2095,25 @@ def _animate_pause_button_border() -> None:
         logger.debug("activity_feed: pause button breath update failed: %s", exc)
 
 
+def _notify_view_not_saved() -> None:
+    """Filter / page changes still apply now but won't survive a restart."""
+    notify(
+        "Your filter and page choices work for now, but will reset after a restart.",
+        type="warning",
+        source="activity_feed",
+        title="Couldn't save your Activity Feed filters",
+        hint="Check your database connection in Settings → Database.",
+        actions=nav_actions_settings("Database"),
+        dedupe_key="activity_feed:view_save_failed",
+        dedupe_cooldown_sec=300.0,
+    )
+
+
+def _alert_kind(alert_data) -> str:
+    kind = str((alert_data or {}).get("type") or "").replace("_", " ").strip()
+    return kind or "alert"
+
+
 def replay_alert(alert_data):
     """Replay a specific alert by fetching stored data directly from database"""
     try:
@@ -2104,9 +2125,13 @@ def replay_alert(alert_data):
         alert_id = alert_data.get("alert_id")
         if not alert_id:
             logger.error("No alert_id found in alert data, cannot replay")
-            from nicegui import ui
-
-            notify("Cannot replay alert: no alert ID available", type="negative")
+            notify(
+                "It was saved without the details needed to play it again.",
+                type="warning",
+                source="activity_feed",
+                title="This alert can't be replayed",
+                hint="Replay works for alerts that were stored with their settings. Newer alerts can be replayed.",
+            )
             return
 
         # First try to get stored alert data from the alert data itself (for current alerts)
@@ -2121,9 +2146,15 @@ def replay_alert(alert_data):
 
         if not stored_alert_data:
             logger.error(f"No stored alert data found for alert_id: {alert_id}")
-            from nicegui import ui
-
-            notify("Cannot replay alert: stored data not found", type="negative")
+            notify(
+                "Its saved details were cleaned up or couldn't be read from the database.",
+                type="warning",
+                source="activity_feed",
+                title="This alert can't be replayed",
+                hint="Older alerts are trimmed by the Activity Feed history settings. Check Settings → Database if this happens for recent alerts.",
+                details=f"alert_id={alert_id}",
+                actions=nav_actions_settings("Database"),
+            )
             return
 
         logger.debug(
@@ -2145,15 +2176,31 @@ def replay_alert(alert_data):
         )
 
         # Show user feedback
-        from nicegui import ui
+        from modules import web_engine
 
-        notify(f"Replaying {alert_data.get('type', 'alert')} alert", type="info")
+        if getattr(web_engine, "ALERTS_PAUSED", False):
+            notify(
+                f"The {_alert_kind(alert_data)} replay will play when you resume alerts.",
+                type="warning",
+                source="activity_feed",
+                title="Alerts are paused",
+                hint="Resume alerts with the pause button at the top of the Activity Feed.",
+                actions=nav_actions_main_tab("Activity Feed"),
+            )
+        elif getattr(web_engine, "web_engine_instance", None) is not None:
+            # (If the overlay server is down, the alert queue reports the skipped alert.)
+            notify("", type="info", source="activity_feed", title=f"Replaying the {_alert_kind(alert_data)} alert")
 
     except Exception as e:
         logger.error(f"Error replaying alert: {str(e)}", exc_info=True)
-        from nicegui import ui
-
-        notify(f"Error replaying alert: {str(e)}", type="negative")
+        notify(
+            "",
+            type="error",
+            source="activity_feed",
+            title="Couldn't replay this alert",
+            hint="Try again. If it keeps failing, copy the details and check the log.",
+            details=f"{type(e).__name__}: {e}",
+        )
 
 
 def extract_username_from_message(message):
@@ -2186,6 +2233,15 @@ def skip_alert(alert_data):
         # Method 1: Use web engine to skip current alert if it's playing
         from modules import web_engine
 
+        if not getattr(web_engine, "web_engine_instance", None):
+            notify(
+                "Nothing was skipped.",
+                type="warning",
+                source="activity_feed",
+                title="The overlay server isn't running",
+                hint="Check the overlay server in the footer.",
+            )
+            return
         if (
             hasattr(web_engine, "web_engine_instance")
             and web_engine.web_engine_instance
@@ -2212,12 +2268,20 @@ def skip_alert(alert_data):
         # we mainly just provide user feedback
 
         # Show user feedback
-        from nicegui import ui
-
-        notify(f"Skipped {alert_data.get('type', 'alert')} alert", type="warning")
+        kind = _alert_kind(alert_data)
+        title = "Skipped the current alert" if kind == "current" else f"Skipped the {kind} alert"
+        notify("", type="info", source="activity_feed", title=title)
 
     except Exception as e:
         logger.error(f"Error skipping alert: {str(e)}", exc_info=True)
+        notify(
+            "",
+            type="error",
+            source="activity_feed",
+            title="Couldn't skip the alert",
+            hint="Try again. If the alert is stuck, pause and resume alerts.",
+            details=f"{type(e).__name__}: {e}",
+        )
 
 
 def format_watch_streak_message(
@@ -4393,6 +4457,17 @@ def load_restored_alerts(page=1):
 
     except Exception as e:
         logger.error(f"Error loading restored alerts: {str(e)}", exc_info=True)
+        notify(
+            "The Previous tab may look empty even though your history is still saved.",
+            type="warning",
+            source="activity_feed",
+            title="Couldn't load earlier alerts",
+            hint="Check your database connection in Settings → Database, then open the Previous tab again.",
+            details=f"page={page}: {type(e).__name__}: {e}",
+            actions=nav_actions_settings("Database"),
+            dedupe_key="activity_feed:history_failed",
+            dedupe_cooldown_sec=60.0,
+        )
         return [], {
             "total_count": 0,
             "total_pages": 1,

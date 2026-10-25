@@ -40,7 +40,7 @@ from .. import web_engine as web_engine_module
 
 # Use proper relative import for template_config_parser
 from ..custom_sources_preview_mocks import get_mock_actions
-from ..notification_engine import notify
+from ..notification_engine import nav_actions_settings, nav_source_template, nav_spore_template, notify
 from ..template_copy_progress import (
     mark_template_copy_idle as _mark_template_copy_idle,
     set_template_copy_state as _set_template_copy_state,
@@ -1474,6 +1474,73 @@ def _push_hot_preview_overrides() -> None:
         inst.emit_preview_config_refresh(CUSTOM_SOURCES_PREVIEW_TOKEN)
     except Exception as e:
         logger.warning("Hot preview config push failed: %s", e)
+        _notify_preview_push_failed(config_name, e)
+
+
+def _emit_preview_mock(event_name: str, mock_alert_type: Any, config_name: str) -> None:
+    """Send one sample event to the preview (mock toolbar button)."""
+    eng = getattr(web_engine_module, "web_engine_instance", None)
+    if not eng or not getattr(eng, "is_running", False):
+        notify(
+            "Sample events need the overlay server.",
+            type="warning",
+            source="source_settings",
+            title="The overlay server isn't running yet",
+            hint="Wait for it to start (see the footer), then try again.",
+            dedupe_key="source_settings:mock:no_server",
+        )
+        return
+    ok, err, _ = eng.emit_preview_mock(
+        CUSTOM_SOURCES_PREVIEW_TOKEN,
+        event_name,
+        None,
+        alert_type=mock_alert_type,
+    )
+    if ok:
+        return
+    text = str(err or "")
+    if text.startswith("No preview iframe"):
+        notify(
+            "",
+            type="warning",
+            source="source_settings",
+            title="Open the preview first",
+            hint="The sample event plays in the preview. Show the preview, then click the button again.",
+            details=text,
+        )
+    elif text.startswith("No mock payload"):
+        notify(
+            "",
+            type="warning",
+            source="source_settings",
+            title="No sample data for this event",
+            hint="This template has no sample data for that button. Try another event.",
+            details=text,
+        )
+    else:
+        notify(
+            "",
+            type="error",
+            source="source_settings",
+            title="Couldn't send the sample event",
+            hint="Reload the preview and try again.",
+            details=text or None,
+            actions=nav_source_template(config_name),
+        )
+
+
+def _notify_preview_push_failed(config_name: str, exc: Exception) -> None:
+    """The preview kept the old values (background, deduped)."""
+    notify(
+        "The preview may show old values.",
+        type="warning",
+        source="source_settings",
+        title="The preview didn't update",
+        hint="Click Reload preview above the preview.",
+        details=f"{config_name}: {type(exc).__name__}: {exc}",
+        dedupe_key="source_settings:preview_push",
+        dedupe_cooldown_sec=60.0,
+    )
 
 
 def _rebuild_preview_mock_toolbar(config_name: str) -> None:
@@ -1499,18 +1566,7 @@ def _rebuild_preview_mock_toolbar(config_name: str) -> None:
                 event_name: str = ev,
                 mock_alert_type: Any = alert_type,
             ) -> None:
-                eng = getattr(web_engine_module, "web_engine_instance", None)
-                if not eng or not getattr(eng, "is_running", False):
-                    notify("Overlay server is not ready.", type="warning")
-                    return
-                ok, err, _ = eng.emit_preview_mock(
-                    CUSTOM_SOURCES_PREVIEW_TOKEN,
-                    event_name,
-                    None,
-                    alert_type=mock_alert_type,
-                )
-                if not ok:
-                    notify(str(err or "Mock emit failed"), type="negative")
+                _emit_preview_mock(event_name, mock_alert_type, config_name)
 
             ui.button(label, on_click=_emit_mock).props("dense flat size=sm").tooltip(
                 str(act.get("tooltip") or f"Emit mock «{ev}»")
@@ -1540,18 +1596,7 @@ def _rebuild_popout_mock_toolbar(config_name: str) -> None:
                 event_name: str = ev,
                 mock_alert_type: Any = alert_type,
             ) -> None:
-                eng = getattr(web_engine_module, "web_engine_instance", None)
-                if not eng or not getattr(eng, "is_running", False):
-                    notify("Overlay server is not ready.", type="warning")
-                    return
-                ok, err, _ = eng.emit_preview_mock(
-                    CUSTOM_SOURCES_PREVIEW_TOKEN,
-                    event_name,
-                    None,
-                    alert_type=mock_alert_type,
-                )
-                if not ok:
-                    notify(str(err or "Mock emit failed"), type="negative")
+                _emit_preview_mock(event_name, mock_alert_type, config_name)
 
             ui.button(label, on_click=_emit_mock).props("dense flat size=sm").tooltip(
                 str(act.get("tooltip") or f"Emit mock «{ev}»")
@@ -1585,6 +1630,7 @@ def _flush_template_preview() -> None:
                 )
             except Exception as e:
                 logger.warning("Template preview push failed: %s", e)
+                _notify_preview_push_failed(config_name, e)
             _sync_preview_iframe(inline_inner_id, ph, config_name, fd)
             if _popout_preview_is_open and popout_inner_id:
                 _load_popout_preview(config_name, fd)
@@ -1826,9 +1872,15 @@ def create_custom_sources_tab():
                         pmr = _custom_sources_ctx.get("popout_mock_toolbar_row")
                         if pmr is not None:
                             pmr.visible = bool(preview_toolbar_switch.value)
-                        notify("Preview settings saved.", type="positive")
+                        notify("", type="success", source="source_settings", title="Preview settings saved")
                     else:
-                        notify("Could not save preview settings.", type="negative")
+                        notify(
+                            "",
+                            type="error",
+                            source="source_settings",
+                            title="Couldn't save preview settings",
+                            hint="Check that Mycelian's data folder is writable, then try again.",
+                        )
 
                 def open_preview_settings_dialog() -> None:
                     st = load_template_preview_settings()
@@ -2171,10 +2223,7 @@ def _prompt_unsaved_config(
             _suppress_and_select(config_select, previous_name)
             save_config(config_parser, config_select, config_container)
             if _config_is_dirty(previous_name):
-                notify(
-                    "Could not save this template. Your changes are still here.",
-                    type="warning",
-                )
+                # save_config already said why; the dialog stays open with the edits.
                 return
             dialog.close()
             _suppress_and_select(config_select, next_name)
@@ -2973,11 +3022,26 @@ def reset_original_values(config_name):
     clear_changed_styling()
 
 
+def _notify_no_template() -> None:
+    notify(
+        "",
+        type="warning",
+        source="source_settings",
+        title="Choose a template first",
+        hint="Pick a template in the list at the top of Source Settings.",
+    )
+
+
+def _is_technical_error(error: BaseException) -> bool:
+    """SporeStudioError text is plain for name checks, but wraps OS errors otherwise."""
+    return error.__cause__ is not None or "Errno" in str(error) or "\\" in str(error)
+
+
 def save_config(config_parser, config_select, config_container):
     """Save the current config"""
     config_name = config_select.value
     if not config_name:
-        notify("No configuration selected.", type="negative")
+        _notify_no_template()
         return
 
     try:
@@ -3064,20 +3128,33 @@ def save_config(config_parser, config_select, config_container):
                     f"Element {element_id} not found in form data for {config_name}, keeping original value: {element.get('value')}"
                 )
 
-        # Report missing elements
         if missing_element_ids:
             logger.warning(
                 f"Config save for {config_name}: {len(missing_element_ids)} elements missing from form data: {missing_element_ids}"
             )
-            # Show a notification to the user about this issue
-            notify(
-                f"Warning: Some configuration values may not have been updated due to UI tracking issues. Missing: {', '.join(missing_element_ids[:3])}{'...' if len(missing_element_ids) > 3 else ''}",
-                type="warning",
-            )
+        labels_by_id = {
+            el.get("id"): str(el.get("label") or el.get("id"))
+            for el in original_config.get("elements", [])
+            if isinstance(el, dict)
+        }
+        missing_labels = [labels_by_id.get(i, i) for i in missing_element_ids]
 
         # Save the config
         if config_parser.save_config(config_name, original_config):
-            notify(f"Configuration saved for {config_name}.", type="positive")
+            if missing_labels:
+                # One notice for this save: saved, but some fields kept their old value.
+                shown = ", ".join(missing_labels[:3]) + ("…" if len(missing_labels) > 3 else "")
+                notify(
+                    f"These fields kept their previous value: {shown}.",
+                    type="warning",
+                    source="source_settings",
+                    title=f"Saved {config_name}, but some fields weren't updated",
+                    hint="Reopen the template, change those fields again, and click Save.",
+                    details=", ".join(missing_element_ids),
+                    actions=nav_source_template(config_name),
+                )
+            else:
+                notify("", type="success", source="source_settings", title=f"Saved {config_name}")
             if config_name in ("ff7", "factorio"):
                 try:
                     from ..game_hooks_service import game_hooks_service
@@ -3090,6 +3167,15 @@ def save_config(config_parser, config_select, config_container):
                         e,
                         exc_info=True,
                     )
+                    notify(
+                        "The running game hook is still using the old values.",
+                        type="warning",
+                        source="game_hooks",
+                        title=f"Saved {config_name}, but the game hook didn't pick it up",
+                        hint="Turn the hook off and on again in Settings → Game Hooks.",
+                        details=f"{type(e).__name__}: {e}",
+                        actions=nav_actions_settings("Game Hooks"),
+                    )
             # Reset original values to current values
             reset_original_values(config_name)
             _remember_disk_baseline(
@@ -3099,19 +3185,35 @@ def save_config(config_parser, config_select, config_container):
             _invalidate_preview_route_cache(config_name)
             _flush_template_preview()
         else:
-            notify(f"Failed to save configuration for {config_name}.", type="negative")
+            notify(
+                "Your changes are still in the form.",
+                type="error",
+                source="source_settings",
+                title=f"Couldn't save {config_name}",
+                hint="Check that the templates folder is writable and the file isn't open in another program, then try again.",
+                details=getattr(config_parser, "last_error", "") or None,
+                actions=nav_source_template(config_name),
+            )
     except Exception as e:
         logger.error(
             f"Error saving configuration for {config_name}: {str(e)}", exc_info=True
         )
-        notify(f"Error saving configuration: {str(e)}", type="negative")
+        notify(
+            "Your changes are still in the form.",
+            type="error",
+            source="source_settings",
+            title=f"Couldn't save {config_name}",
+            hint="Try again. If it keeps failing, copy the details and check the log.",
+            details=f"{type(e).__name__}: {e}",
+            actions=nav_source_template(config_name),
+        )
 
 
 def reset_config(config_parser, config_select, config_container):
     """Reset the current config to the saved version"""
     config_name = config_select.value
     if not config_name:
-        notify("No configuration selected.", type="negative")
+        _notify_no_template()
         return
 
     if not _config_is_dirty(config_name):
@@ -3147,7 +3249,7 @@ def _perform_config_reset(config_parser, config_name, config_container) -> None:
     # Re-render the config UI
     render_config_ui(config_parser, config_name, config_container, "")
     _flush_template_preview()
-    notify(f"Configuration reset for {config_name}.", type="positive")
+    notify("", type="success", source="source_settings", title=f"Reverted {config_name} to the last saved version")
 
 
 def _spore_sidecar_file(template_name: str) -> str:
@@ -3490,6 +3592,7 @@ def _rename_template_files(source_name: str, raw_name: str, config_parser) -> st
                     pass
         raise SporeStudioError(f"Could not rename '{source_name}': {e}") from e
 
+    leftovers: List[str] = []
     for src, dst in (
         (src_json, dst_json),
         (src_html, dst_html),
@@ -3498,10 +3601,20 @@ def _rename_template_files(source_name: str, raw_name: str, config_parser) -> st
         if os.path.isfile(src) and not _same_existing_file(src, dst):
             try:
                 os.remove(src)
-            except OSError:
+            except OSError as exc:
                 logger.warning(
                     "Could not remove old template file %s", src, exc_info=True
                 )
+                leftovers.append(f"{src}: {exc}")
+    if leftovers:
+        notify(
+            f"The old files for {source_name} couldn't be removed, so a copy may still show up.",
+            type="warning",
+            source="source_settings",
+            title=f"Renamed to {new_name}, but old files remain",
+            hint="Close any program using those files, then delete them from the templates folder.",
+            details="\n".join(leftovers),
+        )
 
     config_parser.invalidate_cache()
     _invalidate_preview_route_cache(source_name)
@@ -3512,7 +3625,7 @@ def _rename_template_files(source_name: str, raw_name: str, config_parser) -> st
 
 
 def _show_duplicated_config(
-    name, config_parser, config_select, config_container
+    name, config_parser, config_select, config_container, verb: str = "Created"
 ) -> None:
     configs = sorted(config_parser.get_non_hidden_config_files())
     config_select.options = configs
@@ -3520,8 +3633,12 @@ def _show_duplicated_config(
     _disk_baselines.pop(name, None)
     if name not in configs:
         notify(
-            f"Created {name}, but it is hidden from the template list.",
+            "Its configuration is marked as hidden, so it doesn't appear in the template list.",
             type="warning",
+            source="source_settings",
+            title=f"{verb} {name}, but it's hidden",
+            hint="To show it here, remove \"hidden\": true from its configuration file.",
+            actions=nav_spore_template(name),
         )
         return
     _suppress_and_select(config_select, name)
@@ -3532,10 +3649,10 @@ def duplicate_config(config_parser, config_select, config_container):
     """Ask for a name, then copy the selected template's files."""
     config_name = config_select.value
     if not config_name:
-        notify("No configuration selected.", type="negative")
+        _notify_no_template()
         return
     if _config_is_dirty(config_name):
-        notify("Save this template before duplicating.", type="warning")
+        _notify_save_first("duplicating")
         return
 
     with ui.dialog() as dialog, ui.card():
@@ -3569,6 +3686,26 @@ def duplicate_config(config_parser, config_select, config_container):
     dialog.open()
 
 
+def _notify_save_first(action: str) -> None:
+    notify(
+        "",
+        type="warning",
+        source="source_settings",
+        title=f"Save this template before {action}",
+        hint="Click Save (or Reset to drop your edits), then try again.",
+    )
+
+
+def _notify_copy_busy() -> None:
+    notify(
+        "",
+        type="warning",
+        source="source_settings",
+        title="A template copy or delete is already running",
+        hint="Wait for it to finish (see the progress in the footer), then try again.",
+    )
+
+
 def _finish_template_copy(
     error: Optional[BaseException],
     source_name: str,
@@ -3586,13 +3723,28 @@ def _finish_template_copy(
     _mark_template_copy_idle()
     _refresh_template_copy_footer()
     if error is not None:
-        if isinstance(error, SporeStudioError):
-            notify(str(error), type="negative")
-        else:
+        if not isinstance(error, SporeStudioError):
             logger.error(
                 "Failed to duplicate template %s", source_name, exc_info=error
             )
-            notify(f"Failed to duplicate template: {error}", type="negative")
+        if isinstance(error, SporeStudioError) and not _is_technical_error(error):
+            notify(
+                str(error),
+                type="warning",
+                source="source_settings",
+                title=f"Couldn't copy {source_name}",
+                hint="Fix the problem above, then try Duplicate again.",
+            )
+        else:
+            notify(
+                "",
+                type="error",
+                source="source_settings",
+                title=f"Couldn't copy {source_name}",
+                hint="Check free disk space and that no other program is using the template's files, then try again.",
+                details=f"{type(error).__name__}: {error}",
+                actions=nav_source_template(source_name),
+            )
         return
 
     config_parser.invalidate_cache()
@@ -3600,18 +3752,23 @@ def _finish_template_copy(
     _invalidate_preview_route_cache(new_name)
     _refresh_web_engine_routes()
     _invalidate_webengine_template_cache()
-    notify(f"Duplicated {source_name} as {new_name}.", type="positive")
+    notify("", type="success", source="source_settings", title=f"Duplicated {source_name} as {new_name}")
     try:
         _show_duplicated_config(
             new_name, config_parser, config_select, config_container
         )
-    except Exception:
+    except Exception as e:
         logger.error(
             "Copied %s but could not select it", new_name, exc_info=True
         )
         notify(
-            f"Copied {new_name}. Refresh the template list to open it.",
+            "The copy is saved, but the template list didn't refresh.",
             type="warning",
+            source="source_settings",
+            title=f"Couldn't open {new_name}",
+            hint="Click the button below, or switch tabs and come back to Source Settings.",
+            details=f"{type(e).__name__}: {e}",
+            actions=nav_source_template(new_name),
         )
 
 
@@ -3622,10 +3779,10 @@ def duplicate_config_action(
     from ..spore_studio.save_pipeline import SporeStudioError, _validate_name
 
     if _config_is_dirty(source_name):
-        notify("Save this template before duplicating.", type="warning")
+        _notify_save_first("duplicating")
         return
     if template_copy_is_active():
-        notify("A template copy or delete is already running.", type="warning")
+        _notify_copy_busy()
         return
 
     try:
@@ -3637,7 +3794,13 @@ def duplicate_config_action(
         if not os.path.isfile(config_parser.get_config_path(source_name)):
             raise SporeStudioError(f"No configuration file for '{source_name}'.")
     except SporeStudioError as e:
-        notify(str(e), type="negative")
+        notify(
+            str(e),
+            type="warning",
+            source="source_settings",
+            title="Choose another name",
+            hint="Type a different name for the copy, then click Duplicate.",
+        )
         return
 
     dialog.close()
@@ -3681,18 +3844,29 @@ def duplicate_config_action(
         except Exception:
             _mark_template_copy_idle()
             logger.exception("Could not return template copy result to the UI")
+            _notify_result_lost("copy")
 
     threading.Thread(target=work, name="TemplateDuplicate", daemon=True).start()
+
+
+def _notify_result_lost(action: str) -> None:
+    notify(
+        "",
+        type="warning",
+        source="source_settings",
+        title=f"The template {action} finished, but the screen didn't update",
+        hint="Switch to another tab and back to Source Settings to see the result.",
+    )
 
 
 def rename_config(config_parser, config_select, config_container):
     """Ask for a new name, then rename the selected template's files."""
     config_name = config_select.value
     if not config_name:
-        notify("No configuration selected.", type="negative")
+        _notify_no_template()
         return
     if _config_is_dirty(config_name):
-        notify("Save this template before renaming.", type="warning")
+        _notify_save_first("renaming")
         return
 
     with ui.dialog() as dialog, ui.card():
@@ -3731,17 +3905,26 @@ def rename_config_action(
     from ..spore_studio.save_pipeline import SporeStudioError
 
     if _config_is_dirty(source_name):
-        notify("Save this template before renaming.", type="warning")
+        _notify_save_first("renaming")
         return
 
     try:
         new_name = _rename_template_files(source_name, raw_name, config_parser)
     except SporeStudioError as e:
-        notify(str(e), type="negative")
+        if not _is_technical_error(e):
+            notify(
+                str(e),
+                type="warning",
+                source="source_settings",
+                title="Choose another name",
+                hint="Type a different name, then click Rename.",
+            )
+            return
+        _notify_rename_failed(source_name, e)
         return
     except Exception as e:
         logger.error("Failed to rename template %s", source_name, exc_info=True)
-        notify(f"Failed to rename template: {e}", type="negative")
+        _notify_rename_failed(source_name, e)
         return
 
     form_data_store.pop(source_name, None)
@@ -3749,9 +3932,23 @@ def rename_config_action(
     if _active_config_name == source_name:
         _active_config_name = None
 
-    notify(f"Renamed {source_name} to {new_name}.", type="positive")
+    notify("", type="success", source="source_settings", title=f"Renamed {source_name} to {new_name}")
     dialog.close()
-    _show_duplicated_config(new_name, config_parser, config_select, config_container)
+    _show_duplicated_config(
+        new_name, config_parser, config_select, config_container, verb="Renamed"
+    )
+
+
+def _notify_rename_failed(source_name: str, error: BaseException) -> None:
+    notify(
+        "",
+        type="error",
+        source="source_settings",
+        title=f"Couldn't rename {source_name}",
+        hint="Close any program using the template's files, then try again.",
+        details=f"{type(error).__name__}: {error}",
+        actions=nav_source_template(source_name),
+    )
 
 
 def _legacy_sidecar_file(template_name: str) -> str:
@@ -3824,7 +4021,7 @@ def delete_config(config_parser, config_select, config_container):
     """Delete the current config"""
     config_name = config_select.value
     if not config_name:
-        notify("No configuration selected.", type="negative")
+        _notify_no_template()
         return
 
     # Create a confirmation dialog
@@ -3899,13 +4096,19 @@ def _finish_template_delete(
             exc_info=True,
         )
     if error is None:
-        notify(f"Deleted {config_name}.", type="positive")
+        notify("", type="success", source="source_settings", title=f"Deleted {config_name}")
         return
-    if isinstance(error, SporeStudioError):
-        notify(str(error), type="negative")
-        return
-    logger.error("Failed to delete template %s", config_name, exc_info=error)
-    notify(f"Failed to delete template: {error}", type="negative")
+    if not isinstance(error, SporeStudioError):
+        logger.error("Failed to delete template %s", config_name, exc_info=error)
+    notify(
+        "Some of its files may remain.",
+        type="error",
+        source="source_settings",
+        title=f"Couldn't fully delete {config_name}",
+        hint="Close any program using the template's files, then delete it again.",
+        details=f"{type(error).__name__}: {error}",
+        actions=nav_source_template(config_name),
+    )
 
 
 def delete_config_action(
@@ -3914,7 +4117,7 @@ def delete_config_action(
     """Delete the template files on a background thread, including its assets."""
     global _active_config_name
     if template_copy_is_active():
-        notify("A template copy or delete is already running.", type="warning")
+        _notify_copy_busy()
         return
 
     dialog.close()
@@ -3966,6 +4169,7 @@ def delete_config_action(
         except Exception:
             _mark_template_copy_idle()
             logger.exception("Could not return template delete result to the UI")
+            _notify_result_lost("delete")
 
     threading.Thread(target=work, name="TemplateDelete", daemon=True).start()
 

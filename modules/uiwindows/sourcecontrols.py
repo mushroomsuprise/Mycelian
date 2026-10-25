@@ -24,11 +24,12 @@ SOFTWARE.
 """
 
 import logging
+import time
 
 from nicegui import ui
 
 from .. import template_config_parser, web_engine
-from ..notification_engine import notify
+from ..notification_engine import nav_source_template, notify
 from ..spore_studio.spore_data_codegen import timer_control_event
 from ..ui_buttons import apply_flat_btn_props, outline_button, themed_control_button
 from ..ui_form_controls import form_input, form_number
@@ -285,6 +286,17 @@ def load_source_controls():
         except Exception as e:
             logger.error(
                 f"Error processing config {config_name}: {str(e)}", exc_info=True
+            )
+            notify(
+                "Its controls aren't shown here until its configuration can be read.",
+                type="warning",
+                source="source_controls",
+                title=f"Couldn't read the controls for {config_name}",
+                hint="Open the template in Source Settings to check its configuration, then refresh this page.",
+                details=f"{type(e).__name__}: {e}",
+                actions=nav_source_template(config_name),
+                dedupe_key=f"source_controls:config:{config_name}",
+                dedupe_cooldown_sec=600.0,
             )
 
     with source_controls_container:
@@ -766,13 +778,40 @@ def create_number_input_control(template_name, element, tooltip: str = ""):
     )
 
 
+# Sliders send many events; say "it didn't reach the overlay" at most this often.
+_EMIT_FAIL_NOTIFY_INTERVAL_SEC = 30.0
+_emit_fail_last = {"t": None}
+
+
+def _notify_control_not_sent(template_name, action, reason: str, details: str = "") -> None:
+    now = time.monotonic()
+    last = _emit_fail_last["t"]
+    if last is not None and now - last < _EMIT_FAIL_NOTIFY_INTERVAL_SEC:
+        return
+    _emit_fail_last["t"] = now
+    what = str(action or "control").replace("_", " ")
+    notify(
+        reason,
+        type="warning",
+        source="source_controls",
+        title=f"“{what}” wasn't sent to {template_name}",
+        hint="Check the overlay server in the footer. Controls work again once it is running.",
+        details=details or None,
+        dedupe_key="source_controls:emit_failed",
+        dedupe_cooldown_sec=_EMIT_FAIL_NOTIFY_INTERVAL_SEC,
+    )
+
+
 def send_websocket_event(template_name, action, data):
     """Send websocket event to overlay clients (same delivery path as OBS dock relay)."""
     event_name = f"{template_name}_{action}"
     try:
         engine = web_engine.web_engine_instance
-        if not engine:
+        if not engine or not getattr(engine, "is_running", True):
             logger.error("Web engine not available for sending websocket events")
+            _notify_control_not_sent(
+                template_name, action, "The overlay server isn't running, so the overlay didn't change."
+            )
             return
         engine.emit_template_control_event(template_name, action, data)
         logger.debug("Sent websocket event: %s with data: %s", event_name, data)
@@ -780,6 +819,12 @@ def send_websocket_event(template_name, action, data):
         logger.error(
             f"Error sending websocket event {action} for {template_name}: {str(e)}",
             exc_info=True,
+        )
+        _notify_control_not_sent(
+            template_name,
+            action,
+            "The overlay didn't change.",
+            f"{event_name}: {type(e).__name__}: {e}",
         )
 
 
@@ -814,7 +859,20 @@ def show_debug_info():
 
             dialog.open()
         else:
-            notify("Web engine not available", type="negative")
+            notify(
+                "",
+                type="warning",
+                source="overlay_server",
+                title="The overlay server isn't running yet",
+                hint="Wait for it to start (see the footer), then try again.",
+            )
     except Exception as e:
         logger.error(f"Error showing debug info: {str(e)}", exc_info=True)
-        notify(f"Error: {str(e)}", type="negative")
+        notify(
+            "",
+            type="error",
+            source="source_controls",
+            title="Couldn't show the handler list",
+            hint="Try again in a moment.",
+            details=f"{type(e).__name__}: {e}",
+        )

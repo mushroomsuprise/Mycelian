@@ -17,6 +17,7 @@ can be tested) the same on Windows, macOS and Linux, from source or frozen.
 
 from __future__ import annotations
 
+import asyncio
 import html as html_lib
 import logging
 import os
@@ -485,6 +486,7 @@ class _FilePicker:
         self.query = ""
         self.only_usable = not self.folder_mode
         self.view = "grid" if config.kind == "image" else "list"
+        self._upload_batch = _new_upload_batch()
 
     # ----- building -----
     def open(self) -> None:
@@ -612,7 +614,13 @@ class _FilePicker:
 
     def _load_folder(self, folder: Path, *, select: Optional[Path] = None) -> None:
         if self.root is not None and not is_inside(folder, self.root):
-            notify("The picker only shows files inside the assets folder.", type="warning")
+            notify(
+                "",
+                type="warning",
+                source="files",
+                title="The picker only shows files inside the assets folder",
+                hint="Move the file into Mycelian's assets folder, then pick it from there.",
+            )
             return
         self.folder = folder
         self.entries, error = list_entries(folder, self.cfg.extensions, root=self.root)
@@ -903,13 +911,26 @@ class _FilePicker:
     def _confirm(self) -> None:
         result = self._result()
         if result is None:
-            notify("Choose a file first.", type="warning")
+            notify(
+                "",
+                type="warning",
+                source="files",
+                title="Choose a folder first" if self.folder_mode else "Choose a file first",
+                hint="Click an item in the list, then click the confirm button.",
+            )
             return
         try:
             self.cfg.on_pick(result)
-        except Exception:
+        except Exception as exc:
             logger.error("File picker callback failed", exc_info=True)
-            notify("Could not use that file.", type="negative")
+            notify(
+                "The field wasn't changed.",
+                type="error",
+                source="files",
+                title=f"Couldn't use {result.path.name}",
+                hint="Try another file, or close the picker and try again.",
+                details=f"{result.path}\n{type(exc).__name__}: {exc}",
+            )
             return
         self.dialog.close()
 
@@ -923,11 +944,11 @@ class _FilePicker:
         name = getattr(upload, "name", None) or getattr(e, "name", "")
         ext = os.path.splitext(name)[1].lower()
         if ext not in self.cfg.extensions:
-            notify(f"{name} isn't a supported file here.", type="warning")
+            self._note_upload("rejected", name)
             return
         folder = self.folder
         if self.root is None or not is_inside(folder, self.root) or is_temp_bundle(folder) or not os.access(folder, os.W_OK):
-            notify("Files can't be added to this folder.", type="warning")
+            self._note_upload("blocked", name)
             return
         target = folder / safe_upload_name(name, _safe_listdir_all(folder))
         try:
@@ -937,12 +958,74 @@ class _FilePicker:
                 target.write_bytes(e.content.read())
         except Exception as exc:
             logger.error("Could not add %s to %s", name, folder, exc_info=True)
-            notify(f"Could not add {name}: {exc}", type="negative")
+            self._note_upload("failed", f"{name}: {type(exc).__name__}: {exc}")
             return
-        notify(f"Added {target.name}", type="positive")
+        self._upload_batch["folder"] = folder.name
+        self._note_upload("added", target.name)
         self._load_folder(folder, select=target)
         if self.upload is not None:
             self.upload.reset()
+
+
+    # One upload of several files fires one event per file: sum them up in one notice each.
+    def _note_upload(self, kind: str, item: str) -> None:
+        batch = self._upload_batch
+        batch[kind].append(item)
+        timer = batch.get("timer")
+        if timer is not None:
+            timer.cancel()
+        try:
+            batch["timer"] = asyncio.get_running_loop().call_later(
+                _UPLOAD_SUMMARY_DELAY_SEC, self._flush_upload_notices
+            )
+        except RuntimeError:
+            self._flush_upload_notices()
+
+    def _flush_upload_notices(self) -> None:
+        batch, self._upload_batch = self._upload_batch, _new_upload_batch()
+        added, rejected, blocked, failed = (batch[k] for k in ("added", "rejected", "blocked", "failed"))
+        if added:
+            where = f" to {batch['folder']}" if batch.get("folder") else ""
+            title = f"Added {added[0]}" if len(added) == 1 else f"Added {len(added)} files{where}"
+            notify("", type="success", source="files", title=title)
+        if rejected:
+            exts = ", ".join(self.cfg.extensions)
+            notify(
+                _short_list(rejected),
+                type="warning",
+                source="files",
+                title="1 file wasn't added" if len(rejected) == 1 else f"{len(rejected)} files weren't added",
+                hint=f"Only these file types can be used here: {exts}.",
+            )
+        if blocked:
+            notify(
+                _short_list(blocked),
+                type="warning",
+                source="files",
+                title="Files can't be added to this folder",
+                hint="Open one of your own folders inside the assets folder (not a built-in one), then add the files again.",
+            )
+        if failed:
+            notify(
+                "",
+                type="error",
+                source="files",
+                title="Couldn't add 1 file" if len(failed) == 1 else f"Couldn't add {len(failed)} files",
+                hint="Check free disk space and that you can write to the assets folder, then try again.",
+                details="\n".join(failed),
+            )
+
+
+_UPLOAD_SUMMARY_DELAY_SEC = 0.8
+
+
+def _new_upload_batch() -> dict:
+    return {"added": [], "rejected": [], "blocked": [], "failed": [], "folder": "", "timer": None}
+
+
+def _short_list(names: List[str], limit: int = 3) -> str:
+    shown = ", ".join(names[:limit])
+    return shown + (f" and {len(names) - limit} more" if len(names) > limit else "")
 
 
 def _safe_listdir_all(path: Path) -> List[str]:

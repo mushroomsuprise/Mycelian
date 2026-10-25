@@ -189,3 +189,20 @@ def test_within_limits_results(root, monkeypatch):
     assert picker._result() is None
     picker.selected = fp.Entry(path=alerts / "bits" / "random", name="random", is_dir=True)
     assert picker._result().web_path == "/assets/alerts/bits/random/"
+
+
+def test_multi_file_upload_gives_one_summary(root, monkeypatch):
+    picker, _loaded = _picker(root, monkeypatch)
+    seen = []
+    monkeypatch.setattr(fp, "notify", lambda *a, **k: seen.append(k))
+    monkeypatch.setattr(fp, "_UPLOAD_SUMMARY_DELAY_SEC", 0.01)
+
+    async def run() -> None:
+        for name in ("one.mp3", "two.mp3", "three.mp3", "bad.exe"):
+            await picker._on_upload(SimpleNamespace(file=_FakeUpload(name)))
+        await asyncio.sleep(0.05)
+
+    asyncio.run(run())
+    titles = [k["title"] for k in seen]
+    assert titles == ["Added 3 files to sounds", "1 file wasn't added"]
+    assert all(k["source"] == "files" for k in seen)
