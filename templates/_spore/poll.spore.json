@@ -76,6 +76,7 @@
         }
       ],
       "id": "poll1",
+      "output_settings": {},
       "position": {
         "x": 0,
         "y": 0
@@ -132,9 +133,9 @@
         "winner_color": true,
         "winner_mode": true
       },
-      "start_hidden": false,
+      "start_hidden": true,
       "type": "poll",
-      "output_settings": {}
+      "transforms": []
     }
   ],
   "preview_mocks": [
@@ -206,5 +207,6 @@
     "actions": {},
     "description": ""
   },
-  "template_name": "poll"
+  "template_name": "poll",
+  "canvas_transforms": []
 }
