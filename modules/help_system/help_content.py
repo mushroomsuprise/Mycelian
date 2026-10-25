@@ -488,7 +488,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         category=HelpCategory.SETTINGS,
         summary='Understanding and configuring Mycelian settings',
         keywords=['settings', 'configuration', 'preferences', 'setup', 'about', 'theme', 'database', 'backup'],
-        related_topics=['integrations_twitch', 'getting_started_intro', 'game_hooks', 'status_footer', 'notifications'],
+        related_topics=['integrations_twitch', 'getting_started_intro', 'game_hooks', 'database', 'status_footer', 'notifications'],
     ),
     'settings_statistics': HelpTopic(
         id='settings_statistics',
@@ -518,13 +518,23 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         related_topics=['settings_overview', 'status_footer', 'troubleshooting_connections', 'source_controls', 'obs_setup'],
         ui_context='settings.notifications',
     ),
+    'database': HelpTopic(
+        id='database',
+        title='Database and Database Explorer',
+        category=HelpCategory.SETTINGS,
+        summary='Where Mycelian keeps your data, switching to Firebase or MongoDB, moving your data, and editing items in the Database Explorer',
+        keywords=['database', 'sqlite', 'local file', 'mycelian.db', 'firebase', 'mongodb', 'mongo', 'migrate', 'move my data',
+                  'explorer', 'json', 'backup', 'service account', 'connection string', 'timeout', 'retry', "can't connect"],
+        related_topics=['settings_overview', 'notifications', 'troubleshooting_connections', 'game_hooks'],
+        ui_context='settings.database',
+    ),
     'game_hooks': HelpTopic(
         id='game_hooks',
         title='Game Hooks (live game data)',
         category=HelpCategory.SETTINGS,
         summary='Read party and battle stats from supported games, optional crowd-control writes, and browser overlays.',
-        keywords=['ff7', 'factorio', 'memory', 'overlay', 'battle', 'gil', 'crowd control', 'connectors'],
-        related_topics=['settings_overview', 'connector_actions', 'templates_intro'],
+        keywords=['ff7', 'factorio', 'memory', 'overlay', 'battle', 'gil', 'crowd control', 'connectors', 'game hooks', 'install mod', 'mod'],
+        related_topics=['settings_overview', 'connector_actions', 'templates_intro', 'database'],
     ),
     # =========================================
     # Troubleshooting

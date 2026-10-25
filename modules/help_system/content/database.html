@@ -1,0 +1,324 @@
+<p class="hx-lead">Mycelian keeps your settings, alerts and history in one database. By default that is a <strong>local file</strong> on this computer, and you never need to touch it. The <strong>Database</strong> tab shows whether it is connected, lets you switch to <strong>Firebase</strong> or <strong>MongoDB</strong>, move your data between them, and open the <strong>Database Explorer</strong>.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Database</span></span></span>
+  <span>{{icon:info}} Most people never need to change anything here</span>
+</div>
+
+<h2>The Database tab</h2>
+
+<p>The left column is about the connection: the database in use, where to store data, and connection settings. The right column holds the tools for your data. Click the three storage cards in the mock to see the fields each type needs.</p>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-it">
+      <div class="hm-it-head">
+        <span class="hm-it-brand is-tile"><span class="hx-mi">storage</span></span>
+        <div><div class="hm-it-name">Database</div><div class="hm-it-sub">Where Mycelian keeps your settings, alerts and history</div></div>
+        <span class="hm-it-pill is-ok">Connected · Local file</span>
+        <span class="hm-marker" data-n="1"></span>
+        <span class="hm-it-tools"><span class="hx-mi">help_outline</span><span class="hm-btn hm-outline hm-dense is-disabled">Discard</span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span></span>
+      </div>
+      <div class="hm-it-body">
+        <div class="hm-it-col">
+          <div class="hm-it-sec"><span class="hx-mi">cable</span>Connection</div>
+          <div class="hm-it-acct">
+            <div class="hm-it-acct-top">
+              <div class="hm-it-who">
+                <span class="hm-it-brand is-tile"><span class="hx-mi">folder</span></span>
+                <div><div class="hm-it-kicker">In use</div><div class="hm-it-acct-name">Local file (SQLite)</div><div class="hm-it-state is-ok">Connected · last checked 2 s ago</div></div>
+              </div>
+              <div class="hm-it-actions"><span class="hx-mi">refresh</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">wifi_tethering</span>Test</span><span class="hm-marker" data-n="2"></span></div>
+            </div>
+            <div class="hm-it-meta">
+              <div><span class="hm-it-k">Type</span><span class="hm-it-v">SQLite</span></div>
+              <div><span class="hm-it-k">Location</span><span class="hm-it-v">mycelian.db</span><span class="hm-it-s">data folder</span></div>
+              <div><span class="hm-it-k">Size</span><span class="hm-it-v">3.4 MB</span></div>
+            </div>
+          </div>
+
+          <div class="hm-it-sec"><span class="hx-mi">storage</span>Storage<span class="hm-marker" data-n="3"></span></div>
+          <div class="hm-col" data-tabs>
+            <div class="hm-it-choices">
+              <div class="hm-it-choice is-active" data-tab="sql"><span class="hm-it-choice-tag">In use</span><div class="hm-it-choice-top"><span class="hx-mi">folder</span><span class="hm-it-choice-name">Local file</span><span class="hm-it-choice-check"></span></div><div class="hm-it-choice-sub">SQLite on this computer. Nothing to set up.</div></div>
+              <div class="hm-it-choice" data-tab="firebase"><div class="hm-it-choice-top"><span class="hx-mi">cloud</span><span class="hm-it-choice-name">Firebase</span><span class="hm-it-choice-check"></span></div><div class="hm-it-choice-sub">Google's Realtime Database. Use the same data on several PCs.</div></div>
+              <div class="hm-it-choice" data-tab="mongodb"><div class="hm-it-choice-top"><span class="hx-mi">dns</span><span class="hm-it-choice-name">MongoDB</span><span class="hm-it-choice-check"></span></div><div class="hm-it-choice-sub">Your own MongoDB server or Atlas cluster.</div></div>
+            </div>
+            <div class="hm-col" data-panel="sql">
+              <div><div class="hm-it-label">Database file <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel"><span class="hm-value">mycelian.db</span><span class="hx-mi">folder_open</span></div></div>
+              <div class="hm-it-hint"><span class="hx-mi">info</span><span>Relative paths are inside Mycelian's data folder.</span></div>
+            </div>
+            <div class="hm-col" data-panel="firebase">
+              <div><div class="hm-it-label">Service account key file <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel"><span class="hm-value">ServiceAccountKey.json</span><span class="hx-mi">folder_open</span></div></div>
+              <div><div class="hm-it-label">Realtime Database URL <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel"><span class="hm-placeholder">https://…firebaseio.com/</span></div></div>
+              <div class="hm-it-hint"><span class="hx-mi">info</span><span>Switching only changes which database Mycelian reads. To bring your data along, use <b>Move my data</b> on the right.</span></div>
+            </div>
+            <div class="hm-col" data-panel="mongodb">
+              <div><div class="hm-it-label">Connection string <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel"><span class="hm-value hm-secret">••••••••••••••••</span><span class="hx-mi">visibility_off</span></div></div>
+              <div><div class="hm-it-label">Database name <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel"><span class="hm-value">mycelian</span></div></div>
+              <div class="hm-it-hint"><span class="hx-mi">info</span><span>Switching only changes which database Mycelian reads. To bring your data along, use <b>Move my data</b> on the right.</span></div>
+            </div>
+          </div>
+
+          <div class="hm-it-sec"><span class="hx-mi">tune</span>Connection settings</div>
+          <div>
+            <div class="hm-it-row"><div><div class="hm-it-row-title">Timeout</div><div class="hm-it-row-sub">How long to wait before a connection attempt gives up</div></div><span class="hm-it-num"><span class="hm-field hm-nolabel"><span class="hm-value">30</span></span><span>s</span></span></div>
+            <div class="hm-it-row"><div><div class="hm-it-row-title">Retry attempts</div><div class="hm-it-row-sub">How many times to retry a failed connection</div></div><span class="hm-it-num"><span class="hm-field hm-nolabel"><span class="hm-value">3</span></span><span>times</span></span></div>
+          </div>
+        </div>
+
+        <div class="hm-it-col">
+          <div class="hm-it-sec"><span class="hx-mi">build</span>Your data</div>
+          <div class="hm-it-tool"><span class="hm-it-tool-icon"><span class="hx-mi">travel_explore</span></span><div class="hm-it-tool-text"><div class="hm-it-tool-title">Database Explorer</div><div class="hm-it-tool-sub">Browse and edit the raw stored data. For advanced fixes.</div></div><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">open_in_new</span>Open</span><span class="hm-marker" data-n="4"></span></div>
+          <div class="hm-it-tool"><span class="hm-it-tool-icon"><span class="hx-mi">sync_alt</span></span><div class="hm-it-tool-text"><div class="hm-it-tool-title">Move my data</div><div class="hm-it-tool-sub">Copy everything to another database, then switch to it.</div></div><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">arrow_forward</span>Migrate…</span><span class="hm-marker" data-n="5"></span></div>
+          <div class="hm-it-sec"><span class="hx-mi">info</span>Good to know</div>
+          <div class="hm-it-hint"><span class="hx-mi">info</span><span>Saving checks the new connection first. If it can't connect, Mycelian keeps using the database that works.</span></div>
+          <div class="hm-it-hint"><span class="hx-mi">info</span><span>Firebase and MongoDB keep your data online, so a crash or a new PC doesn't lose it. A local file is faster.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Settings → Database with the default local file in use. Click <strong>Local file</strong>, <strong>Firebase</strong> or <strong>MongoDB</strong> to see their fields; the mock does not change any setting.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">The header pill names the database <em>in use</em>: <strong>Connected · Local file</strong>, <strong>Can't connect · Firebase</strong>, or <strong>Checking · …</strong> while the first check runs.</li>
+  <li data-n="2">The <strong>Connection</strong> card always describes the database Mycelian is using now, not the one selected below. The refresh icon (<em>Check now</em>) checks the connection again; <strong>Test</strong> tries a full connection and reports the result as a notification. The cells below show the type, location (the file name and folder, the Firebase host, or the MongoDB database name) and, for a local file, its size. While the tab is open the status is checked every few seconds.</li>
+  <li data-n="3">Pick where to store data. The <strong>In use</strong> tag marks the database in use; only the selected type's fields are shown. The folder button (<span class="hx-mi">folder_open</span>) next to <strong>Database file</strong> and <strong>Service account key file</strong> opens a file picker that can browse anywhere on this computer.</li>
+  <li data-n="4"><strong>Open</strong> starts the <a href="#database-explorer">Database Explorer</a>.</li>
+  <li data-n="5"><strong>Migrate…</strong> opens <a href="#move-your-data-to-another-database">Move my data</a>.</li>
+</ol>
+
+<h2>Storage types</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Card</th><th>Fields</th><th>Good for</th></tr></thead>
+<tbody>
+<tr><td>{{icon:folder}} <strong>Local file</strong> (default)</td><td><strong>Database file</strong>: <code>mycelian.db</code> by default. A relative path is inside Mycelian's data folder; use the folder button to pick a <code>.db</code>, <code>.sqlite</code> or <code>.sqlite3</code> file anywhere</td><td>One PC, fastest, nothing to set up</td></tr>
+<tr><td>{{icon:cloud}} <strong>Firebase</strong></td><td><strong>Service account key file</strong>: the <code>.json</code> key from Firebase console → Project settings → Service accounts. <strong>Realtime Database URL</strong>: ends in <code>firebaseio.com/</code></td><td>The same data on several PCs; survives a crash or new PC</td></tr>
+<tr><td>{{icon:dns}} <strong>MongoDB</strong></td><td><strong>Connection string</strong> (hidden, because it can contain your password; for example <code>mongodb://localhost:27017/</code>) and <strong>Database name</strong> (<code>mycelian</code> by default)</td><td>Your own MongoDB server or an Atlas cluster</td></tr>
+</tbody>
+</table></div>
+
+<p><strong>Connection settings</strong> apply to all types: <strong>Timeout</strong> (5 to 300 seconds, default 30) and <strong>Retry attempts</strong> (1 to 10, default 3).</p>
+
+<h2>Save, test and switch</h2>
+
+<ul>
+  <li>Changes on this tab take effect when you click <strong>Save</strong>. An <strong>Unsaved changes</strong> tag shows until then; <strong>Discard</strong> puts the saved values back.</li>
+  <li><strong>Save checks the new connection first.</strong> If it works you see <em>"Database settings saved"</em>. If you changed the connection details of the database already in use, the notice adds <em>"Restart Mycelian to use the new connection details."</em></li>
+  <li>If the new database can't be reached, nothing is switched: you see <em>"Couldn't connect to the … database"</em> with <em>"Mycelian kept using the local database. Your edits are still in the form."</em> Fix the fields, click <strong>Test</strong>, then <strong>Save</strong> again.</li>
+  <li><strong>Test</strong> shows <em>"Testing the … database connection"</em>, then <em>"Connected to the … database"</em> or <em>"Couldn't connect to the … database"</em> with the reason under details. Test checks the database in use, so save first if you just changed the fields.</li>
+</ul>
+
+<div class="hx-callout hx-warning"><p>Switching to another type <strong>does not copy anything</strong>. Mycelian starts reading the other database, which may be empty. To take your settings, alerts and history with you, use <strong>Move my data</strong> instead.</p></div>
+
+<h2>Move your data to another database</h2>
+
+<p><strong>Move my data</strong> copies every stored item from one database to another, then switches Mycelian to the target. The source is left as it was, so it doubles as a backup.</p>
+
+<section class="hx-guide" data-guide="database_move" data-title="Move my data">
+  <div class="hx-step"><h3>Fill in the target's details</h3><p>Click the target's card under <strong>Storage</strong> (for example <strong>Firebase</strong>) and fill in its fields. Move my data uses the connection details on this tab, so you do not have to save first.</p></div>
+  <div class="hx-step">
+    <h3>Open Move my data</h3>
+    <p>Click <strong>Migrate…</strong> under <strong>Your data</strong>. <strong>From</strong> starts on the database in use (marked <em>(in use)</em>); choose the target under <strong>To</strong>.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-it-dialog">
+          <div class="hm-it-dialog-title">Move my data</div>
+          <div class="hm-it-dialog-sub">Copies every stored item to another database, then switches to it.</div>
+          <div class="hm-it-ft">
+            <div><div class="hm-it-label">From</div><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Local file (in use)</span></div></div>
+            <span class="hx-mi">arrow_forward</span>
+            <div><div class="hm-it-label">To</div><div class="hm-field hm-select hm-nolabel is-focused"><span class="hm-value">Firebase</span></div></div>
+          </div>
+          <div class="hm-it-hint is-warn"><span class="hx-mi">warning_amber</span><span>Items at the same paths in the target are overwritten. Uses the connection details from the Database tab.</span></div>
+          <div class="hm-it-dialog-ends"><span class="hm-btn hm-outline hm-dense">Cancel</span><span class="hm-btn hm-dense"><span class="hx-mi">sync_alt</span>Start moving</span></div>
+        </div>
+      </div>
+      <figcaption>The Move my data dialog. Only database types Mycelian can load are listed.</figcaption>
+    </figure>
+  </div>
+  <div class="hx-step"><h3>Start moving and wait</h3><p>Click <strong>Start moving</strong>. A progress notice says <em>"Copying your data to the … database"</em> and <em>"Don't close Mycelian until this finishes."</em> Large databases can take several minutes. When it is done you see <em>"Moved your data to the … database"</em>, <em>"Mycelian now uses it."</em>, and the tab shows the new database as <strong>In use</strong>.</p></div>
+</section>
+
+<div class="hx-callout hx-note"><p>If anything fails, Mycelian stays on the database it was using. See <a href="#troubleshooting">Troubleshooting</a> for each message.</p></div>
+
+<h2>Database Explorer</h2>
+
+<p>The explorer shows the raw items Mycelian has stored, as a folder tree of paths, and lets you edit any item as JSON. It is meant for advanced fixes; the other tabs are the normal way to change settings.</p>
+
+<div class="hx-callout hx-warning"><p>Edits and deletes are written to the database straight away and can't be undone. A wrong value can break the feature that uses it. Copy the JSON somewhere safe before you change it.</p></div>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-it">
+      <div class="hm-it-head">
+        <span class="hm-it-brand is-tile"><span class="hx-mi">travel_explore</span></span>
+        <div><div class="hm-it-name">Database Explorer</div><div class="hm-it-sub">Browse and edit what Mycelian has stored</div></div>
+        <span class="hm-it-pill is-ok">Local file · mycelian.db</span>
+        <span class="hm-it-tools"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">refresh</span>Refresh</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">add</span>New item</span><span class="hx-mi">close</span><span class="hm-marker" data-n="1"></span></span>
+      </div>
+      <div class="hm-it-dbx-main">
+        <div class="hm-it-dbx-side">
+          <div class="hm-it-dbx-search"><div class="hm-field hm-nolabel"><span class="hx-mi">search</span><span class="hm-placeholder">Search paths</span></div></div>
+          <div class="hm-it-dbx-tree">
+            <div class="hm-it-dbx-node" style="padding-left:8px"><span class="hx-mi">chevron_right</span><span class="hx-mi is-fold">folder</span><span class="hm-it-dbx-nm">Alerts</span><span class="hm-it-dbx-n">24</span></div>
+            <div class="hm-it-dbx-node" style="padding-left:8px"><span class="hx-mi">chevron_right</span><span class="hx-mi is-fold">folder</span><span class="hm-it-dbx-nm">Chatbot</span><span class="hm-it-dbx-n">9</span></div>
+            <div class="hm-it-dbx-node" style="padding-left:8px"><span class="hx-mi">expand_more</span><span class="hx-mi is-fold">folder_open</span><span class="hm-it-dbx-nm">GameHooks</span><span class="hm-it-dbx-n">3</span><span class="hm-marker" data-n="2"></span></div>
+            <div class="hm-it-dbx-node" style="padding-left:48px"><span class="hx-mi is-leaf">data_object</span><span class="hm-it-dbx-nm">factorio_enabled</span></div>
+            <div class="hm-it-dbx-node is-on" style="padding-left:48px"><span class="hx-mi is-leaf">data_object</span><span class="hm-it-dbx-nm">ff7_enabled</span></div>
+            <div class="hm-it-dbx-node" style="padding-left:48px"><span class="hx-mi is-leaf">data_object</span><span class="hm-it-dbx-nm">ff7_connector_overrides</span></div>
+            <div class="hm-it-dbx-node" style="padding-left:8px"><span class="hx-mi">chevron_right</span><span class="hx-mi is-fold">folder</span><span class="hm-it-dbx-nm">Settings</span><span class="hm-it-dbx-n">41</span></div>
+          </div>
+          <div class="hm-it-dbx-foot">77 items · 12 folders</div>
+        </div>
+        <div class="hm-it-dbx-content">
+          <div class="hm-it-dbx-crumbs"><span class="hx-mi">home</span><span class="hm-it-dbx-crumb">Root</span>/<span class="hm-it-dbx-crumb">GameHooks</span>/<span class="hm-it-dbx-cur">ff7_enabled</span><span class="hm-marker" data-n="3"></span></div>
+          <div class="hm-it-dbx-body">
+            <div class="hm-it-dbx-item">
+              <div class="hm-grow">
+                <div class="hm-it-dbx-name">ff7_enabled</div>
+                <div class="hm-it-dbx-path">GameHooks/ff7_enabled <span class="hx-mi">content_copy</span></div>
+                <div class="hm-it-dbx-chips"><span>Object · 1 key</span><span>17 B</span><span class="hm-marker" data-n="4"></span></div>
+              </div>
+              <span class="hm-btn hm-flat hm-dense hm-it-dbx-del"><span class="hx-mi">delete_outline</span>Delete</span><span class="hm-marker" data-n="5"></span>
+            </div>
+            <div class="hm-it-dbx-editor">
+              <div class="hm-it-dbx-bar"><b>JSON</b><span class="hm-it-dbx-valid">Valid JSON</span><span class="hm-marker" data-n="6"></span><span class="hm-grow"></span><span class="hm-btn hm-flat hm-dense"><span class="hx-mi">data_object</span>Format</span><span class="hm-btn hm-flat hm-dense"><span class="hx-mi">undo</span>Undo changes</span></div>
+              <div class="hm-it-dbx-code"><div class="hm-it-dbx-gutter">1
+2
+3</div><div class="hm-it-dbx-src">{
+  <span class="k">"enabled"</span>: <span class="n">false</span>
+}</div></div>
+              <div class="hm-it-dbx-efoot"><span class="hm-it-pill is-edit">Unsaved changes</span><span class="hm-it-dbx-kbd"><kbd>Ctrl</kbd> <kbd>S</kbd> to save</span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save item</span><span class="hm-marker" data-n="7"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>The Database Explorer with one item open and edited. It fills the window; close it with the <span class="hx-mi">close</span> button.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">The pill names the database you are looking at (red if it couldn't be read). <strong>Refresh</strong> reloads everything from the database; <strong>New item</strong> creates a path.</li>
+  <li data-n="2">Type in <strong>Search paths</strong> to show only matching paths. Click a chevron to open or close a folder; the number is how many items it holds. Click an item to open it. Very large folders show the first 300 rows with a <em>Show … more</em> row.</li>
+  <li data-n="3">The breadcrumb shows where you are. Click <strong>Root</strong> or a folder in it to go back up.</li>
+  <li data-n="4">The item's name, full path (the copy button copies it) and chips for its type and size.</li>
+  <li data-n="5"><strong>Delete</strong> asks first: <em>"Delete “ff7_enabled”?"</em>, then removes the item <em>and everything in it</em>. This can't be undone.</li>
+  <li data-n="6">The editor checks your JSON as you type: <strong>Valid JSON</strong>, or <strong>Invalid JSON:</strong> with the problem and line number, for example <em>Invalid JSON: Expecting ',' delimiter (line 3)</em>. <strong>Format</strong> tidies the indentation; <strong>Undo changes</strong> goes back to the stored value.</li>
+  <li data-n="7"><strong>Unsaved changes</strong> shows while the editor differs from the stored value. <strong>Save item</strong> (or <kbd>Ctrl</kbd>+<kbd>S</kbd>, <kbd>Cmd</kbd>+<kbd>S</kbd> on macOS) writes it. Save only works when the JSON is valid and something changed.</li>
+</ol>
+
+<h3>Create or delete an item</h3>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-it-dialog">
+          <div class="hm-it-dialog-title">New item</div>
+          <div class="hm-it-dialog-sub">Creates a new path. Folders are made automatically from the slashes.</div>
+          <div><div class="hm-it-label">Path</div><div class="hm-field hm-nolabel is-focused"><span class="hm-placeholder">e.g. Settings/MyData</span></div></div>
+          <div><div class="hm-it-label">Starting value (JSON)</div><div class="hm-it-dbx-code is-small"><div class="hm-it-dbx-gutter">1</div><div class="hm-it-dbx-src">{}</div></div></div>
+          <div class="hm-it-dialog-ends"><span class="hm-btn hm-outline hm-dense">Cancel</span><span class="hm-btn hm-dense"><span class="hx-mi">add</span>Create</span></div>
+        </div>
+      </div>
+      <figcaption>The New item dialog.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <p>Click <strong>New item</strong>, type a <strong>Path</strong> such as <code>Settings/MyData</code> and a <strong>Starting value (JSON)</strong> (it starts as <code>{}</code>), then <strong>Create</strong>. A leading slash is removed. You see <em>"Created …"</em> and the new item opens.</p>
+    <p>To delete, open the item and click the red <strong>Delete</strong>, then <strong>Delete</strong> again in the confirmation. You see <em>"Deleted …"</em>.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-it-dialog is-danger">
+          <div class="hm-it-dialog-title"><span class="hx-mi">warning_amber</span>Delete “MyData”?</div>
+          <div class="hm-it-dialog-sub">Settings/MyData and everything in it is removed from the database. This can't be undone.</div>
+          <div class="hm-it-dialog-ends"><span class="hm-btn hm-outline hm-dense">Cancel</span><span class="hm-btn hm-dense hm-it-neg"><span class="hx-mi">delete</span>Delete</span></div>
+        </div>
+      </div>
+      <figcaption>The delete confirmation.</figcaption>
+    </figure>
+  </div>
+</div>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>"Can't connect to the … database"</summary>
+  <p>Mycelian lost its database. The notice says <em>"Changes won't be saved until the connection is back."</em> and the header pill shows <strong>Can't connect</strong>. Open <span class="hx-path"><span>Settings</span><span>Database</span></span> (the notice has a button for it), check the fields of the type in use, and click <strong>Test</strong>. For Firebase and MongoDB, check your internet connection too. When it comes back you see <em>"Reconnected to the … database"</em>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Firebase isn't set up correctly" or "service account key file wasn't found"</summary>
+  <p>While Firebase is in use and not connected, a warning under the Firebase fields and a notification list what is wrong:</p>
+  <figure class="hx-figure hx-static">
+    <div class="hm">
+      <div class="hm-it-hint is-warn"><span class="hx-mi">warning_amber</span><span>Service account key not found: C:\Mycelian\ServiceAccountKey.json. Fix the Firebase fields, press <b>Save</b>, then <b>Test</b>.</span></div>
+    </div>
+  </figure>
+  <div class="hx-table-wrap"><table>
+  <thead><tr><th>Message</th><th>Fix</th></tr></thead>
+  <tbody>
+  <tr><td><em>Service account key not found: …</em> (on Test: <em>The service account key file wasn't found at …</em>)</td><td>The key file moved or the path is wrong. Click the folder button next to <strong>Service account key file</strong> and pick the <code>.json</code> key again</td></tr>
+  <tr><td><em>Service account path not configured</em></td><td>Fill in <strong>Service account key file</strong></td></tr>
+  <tr><td><em>Database URL not configured</em>, <em>Invalid database URL format</em></td><td>Copy the <strong>Realtime Database URL</strong> from the Firebase console (it starts with <code>https://</code>)</td></tr>
+  <tr><td><em>Firebase SDK not available</em></td><td>This Mycelian install can't load Firebase. Use a local file or MongoDB</td></tr>
+  </tbody>
+  </table></div>
+  <p>Then click <strong>Save</strong>, then <strong>Test</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Couldn't connect to the … database" after Save</summary>
+  <p>The new connection failed, so nothing was switched: <em>"Mycelian kept using the … database. Your edits are still in the form."</em> The details show the reason. Correct the fields and save again, or click <strong>Discard</strong> to put the saved values back.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Some data couldn't be copied"</summary>
+  <p>The move partly failed: <em>"Copied N of M items. K couldn't be written to the … database, so Mycelian stayed on the … database."</em> Nothing was switched and the source is unchanged. The notice's details list the paths that were <em>Not copied</em>. Check the target's connection and run <strong>Move my data</strong> again; items already copied are simply overwritten.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Other Move my data messages</summary>
+  <div class="hx-table-wrap"><table>
+  <thead><tr><th>Message</th><th>What happened</th></tr></thead>
+  <tbody>
+  <tr><td><em>Couldn't open the … database</em></td><td>The source or target could not be opened. <em>Nothing was copied or switched.</em> Check that database's fields</td></tr>
+  <tr><td><em>Copied your data, but couldn't switch to the … database</em></td><td>Everything was copied, but connecting to the target afterwards failed. Mycelian is still using the source. Check the target's details and click <strong>Test</strong></td></tr>
+  <tr><td><em>The migration stopped before it finished</em></td><td>An unexpected error. Check which database the Connection card says is in use before trying again</td></tr>
+  <tr><td><em>Pick two different databases</em></td><td><strong>From</strong> and <strong>To</strong> are the same</td></tr>
+  </tbody>
+  </table></div>
+</details>
+
+<details class="hx-details">
+  <summary>"Couldn't read the database" in the explorer</summary>
+  <p>The explorer stays empty until it can read the database. Fix the connection on the Database tab, then click <strong>Refresh</strong> in the explorer.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"Couldn't save to the … database" or "responding slowly"</summary>
+  <p>A save did not reach the database (<em>"Recent changes may not have been kept."</em>), or took too long. For Firebase and MongoDB, check your internet connection. If it keeps happening, raise <strong>Timeout</strong> under <strong>Connection settings</strong>, click <strong>Save</strong>, and click <strong>Test</strong>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>"That isn't valid JSON"</summary>
+  <p>Shown when you try to save, format or create an item whose JSON can't be read. The message gives the line and column. Common causes: a missing comma, a trailing comma, or single quotes instead of double quotes.</p>
+</details>
+
+<h2>Where things are stored</h2>
+
+<ul>
+  <li>The database connection (type, file path, Firebase and MongoDB details, timeout, retries) is saved in <code>config.json</code>.</li>
+  <li>The local database is <code>mycelian.db</code> in Mycelian's data folder, unless you chose another file. The Connection card shows its name, folder and size.</li>
+  <li>To back up a local file, close Mycelian and copy the file. With Firebase or MongoDB the data already lives online.</li>
+</ul>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:settings_overview">{{icon:settings}}<span><strong>Settings Overview</strong><span class="hx-card-text">Every Settings tab at a glance</span></span></a>
+  <a class="hx-card" href="help:notifications">{{icon:notifications}}<span><strong>Notifications</strong><span class="hx-card-text">Find past database messages</span></span></a>
+  <a class="hx-card" href="help:troubleshooting_connections">{{icon:wifi_off}}<span><strong>Connection Issues</strong><span class="hx-card-text">Fix other connection problems</span></span></a>
+</div>

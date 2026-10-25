@@ -1519,7 +1519,7 @@ class DatabaseTab:
             on_save=self.save,
             on_discard=self.discard,
             is_dirty=lambda: self.dirty,
-            help_topic="settings_overview",
+            help_topic="database",
             help_tooltip="Database settings help",
             icon="storage",
         )

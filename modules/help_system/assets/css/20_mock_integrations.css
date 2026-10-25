@@ -1,8 +1,9 @@
 /* =========================================================================
    Mock pieces for the Settings integration tabs (Twitch, OBS, PSN, Spotify,
-   YouTube, Streamlabs, StreamElements, Discord). Mirrors
+   YouTube, Streamlabs, StreamElements, Discord, Game Hooks, Database). Mirrors
    modules/uiwindows/tabs/integration_ui.py: header with pills and Save, account
-   card, credentials fold, settings rows and lists. Theme variables only.
+   card, credentials fold, settings rows and lists; plus game hook cards, choice
+   cards, tool rows, dialogs and the Database Explorer. Theme variables only.
    ========================================================================= */
 
 /* Page shell: header over a two-column body */
@@ -304,3 +305,307 @@
 .help-doc .hm .hm-it-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; font-size: 0.74rem; }
 .help-doc .hm .hm-it-kv > span:nth-child(odd) { color: var(--color-text-muted); }
 .help-doc .hm .hm-it-kv > span:nth-child(even) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Small tile in place of a brand mark (Game Hooks, Database) */
+.help-doc .hm .hm-it-brand.is-tile { background: var(--color-primary-light); border-color: var(--color-border-accent); }
+.help-doc .hm .hm-it-brand.is-tile > .hx-mi { font-size: 18px; color: var(--color-primary); }
+
+/* Game Hooks: one card per game in a two-column grid (game_hooks_tab.py) */
+.help-doc .hm .hm-it-hooks { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+
+.help-doc .hm .hm-it-hook {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 10px;
+    background: var(--color-bg-base);
+    overflow: hidden;
+    min-width: 0;
+}
+
+.help-doc .hm .hm-it-hook.is-ok { border-color: color-mix(in srgb, var(--color-success) 50%, var(--color-border-subtle)); }
+.help-doc .hm .hm-it-hook.is-warn { border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border-subtle)); }
+.help-doc .hm .hm-it-hook.is-error { border-color: color-mix(in srgb, var(--color-error) 50%, var(--color-border-subtle)); }
+.help-doc .hm .hm-it-hook.is-unsupported .hm-it-hook-top { opacity: 0.6; }
+.help-doc .hm .hm-it-hook-top { display: flex; align-items: center; gap: 10px; padding: 9px 10px; flex: 1 1 auto; }
+
+.help-doc .hm .hm-it-cover {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.78rem;
+    color: #fff;
+    background: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-border-subtle);
+}
+
+.help-doc .hm .hm-it-cover.is-alt { background: color-mix(in srgb, var(--color-warning) 70%, var(--color-bg-base)); }
+.help-doc .hm .hm-it-hook-text { flex: 1 1 auto; min-width: 0; }
+.help-doc .hm .hm-it-hook-name { font-size: 0.84rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.help-doc .hm .hm-it-os { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+
+.help-doc .hm .hm-it-os > span {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 7px;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hm .hm-it-os > span.is-no { opacity: 0.45; text-decoration: line-through; }
+
+.help-doc .hm .hm-it-hook-state {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 3px 8px 3px 10px;
+    border-top: 1px solid var(--color-border-subtle);
+    font-size: 0.72rem;
+    color: var(--color-text-secondary);
+}
+
+.help-doc .hm .hm-it-hook-line {
+    --hm-st: var(--color-text-muted);
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.help-doc .hm .hm-it-hook-line::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 0.05em; border-radius: 50%; background: var(--hm-st); }
+.help-doc .hm .hm-it-hook-line.is-ok { --hm-st: var(--color-success); }
+.help-doc .hm .hm-it-hook-line.is-warn { --hm-st: var(--color-warning); }
+.help-doc .hm .hm-it-hook-line.is-error { --hm-st: var(--color-error); }
+.help-doc .hm .hm-it-hook-acts { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.help-doc .hm .hm-it-hook-acts > .hm-btn { min-height: 24px; padding: 1px 8px; font-size: 0.7rem; }
+.help-doc .hm .hm-it-hook-detail { font-size: 0.66rem; color: var(--color-text-muted); white-space: nowrap; }
+.help-doc .hm .hm-it-hook-detail.is-ok { color: var(--color-success); }
+.help-doc .hm .hm-it-hook-detail.is-warn { color: var(--color-warning); }
+
+/* Database: choice cards (one of several). Selected: is-on, or is-active when used as mock tabs */
+.help-doc .hm .hm-it-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-top: 6px; }
+
+@media (max-width: 640px) {
+    .help-doc .hm .hm-it-choices { grid-template-columns: 1fr; }
+}
+
+.help-doc .hm .hm-it-choice {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hm .hm-it-choice:is(.is-on, .is-active) {
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 9%, var(--color-bg-base));
+    box-shadow: 0 0 0 1px var(--color-primary) inset;
+}
+
+.help-doc .hm .hm-it-choice-top { display: flex; align-items: center; gap: 7px; }
+.help-doc .hm .hm-it-choice-top > .hx-mi { font-size: 17px; color: var(--color-text-muted); }
+.help-doc .hm .hm-it-choice:is(.is-on, .is-active) .hm-it-choice-top > .hx-mi { color: var(--color-primary); }
+.help-doc .hm .hm-it-choice-name { font-size: 0.8rem; font-weight: 650; }
+.help-doc .hm .hm-it-choice-sub { font-size: 0.68rem; line-height: 1.35; color: var(--color-text-muted); }
+.help-doc .hm .hm-it-choice-check { margin-left: auto; width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; border: 1.5px solid var(--color-border-default); }
+.help-doc .hm .hm-it-choice:is(.is-on, .is-active) .hm-it-choice-check { border: 4px solid var(--color-primary); }
+
+.help-doc .hm .hm-it-choice-tag {
+    position: absolute;
+    top: -8px;
+    right: 10px;
+    height: 16px;
+    padding: 0 7px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    font-size: 0.56rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-success);
+    background: var(--color-bg-surface);
+    border: 1px solid color-mix(in srgb, var(--color-success) 40%, transparent);
+}
+
+/* Warning hint (inline Firebase problems, migration overwrite note) */
+.help-doc .hm .hm-it-hint.is-warn, .help-doc .hm .hm-it-hint.is-warn > .hx-mi { color: var(--color-warning); }
+
+/* Number with a unit at the end of a settings row */
+.help-doc .hm .hm-it-num { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.help-doc .hm .hm-it-num > .hm-field { width: 64px; }
+.help-doc .hm .hm-it-num > span { width: 34px; font-size: 0.68rem; color: var(--color-text-muted); }
+
+/* Tool rows: icon, title, description, button */
+.help-doc .hm .hm-it-tool {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hm .hm-it-tool-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-primary-light);
+}
+
+.help-doc .hm .hm-it-tool-icon > .hx-mi { font-size: 18px; color: var(--color-primary); }
+.help-doc .hm .hm-it-tool-text { flex: 1 1 auto; min-width: 0; }
+.help-doc .hm .hm-it-tool-title { font-size: 0.8rem; font-weight: 650; }
+.help-doc .hm .hm-it-tool-sub { font-size: 0.68rem; line-height: 1.35; color: var(--color-text-muted); }
+
+/* Small dialogs (Move my data, New item, Delete) */
+.help-doc .hm .hm-it-dialog {
+    max-width: 440px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 12px;
+}
+
+.help-doc .hm .hm-it-dialog.is-danger { border-color: color-mix(in srgb, var(--color-error) 45%, var(--color-border-subtle)); }
+.help-doc .hm .hm-it-dialog-title { display: flex; align-items: center; gap: 6px; font-size: 0.92rem; font-weight: 700; }
+.help-doc .hm .hm-it-dialog-title > .hx-mi { font-size: 18px; color: var(--color-error); }
+.help-doc .hm .hm-it-dialog-sub { margin-top: -6px; font-size: 0.72rem; line-height: 1.45; color: var(--color-text-muted); }
+.help-doc .hm .hm-it-dialog-ends { display: flex; justify-content: flex-end; gap: 6px; }
+.help-doc .hm .hm-it-ft { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: end; }
+.help-doc .hm .hm-it-ft > .hx-mi { padding-bottom: 8px; font-size: 16px; color: var(--color-text-muted); }
+.help-doc .hm .hm-btn.hm-it-neg, .help-doc .hm .hm-btn.hm-it-neg .hx-mi { background: var(--color-error); color: #fff; border-color: transparent; }
+
+/* Database Explorer (DatabaseViewer in database_tab.py) */
+.help-doc .hm .hm-it-dbx-main { display: grid; grid-template-columns: minmax(170px, 0.8fr) minmax(0, 2fr); min-height: 300px; background: var(--color-bg-base); }
+
+@media (max-width: 640px) {
+    .help-doc .hm .hm-it-dbx-main { grid-template-columns: 1fr; }
+}
+
+.help-doc .hm .hm-it-dbx-side { display: flex; flex-direction: column; min-width: 0; background: var(--color-bg-surface); border-right: 1px solid var(--color-border-subtle); }
+.help-doc .hm .hm-it-dbx-search { padding: 8px; border-bottom: 1px solid var(--color-border-subtle); }
+.help-doc .hm .hm-it-dbx-tree { flex: 1 1 auto; padding: 5px; }
+
+.help-doc .hm .hm-it-dbx-node {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding-right: 6px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+    min-width: 0;
+}
+
+.help-doc .hm .hm-it-dbx-node.is-on { background: color-mix(in srgb, var(--color-primary) 16%, transparent); color: var(--color-text-primary); font-weight: 600; }
+.help-doc .hm .hm-it-dbx-node > .hx-mi { font-size: 15px; color: var(--color-text-muted); flex: 0 0 auto; }
+.help-doc .hm .hm-it-dbx-node > .hx-mi.is-fold { color: var(--color-warning); }
+.help-doc .hm .hm-it-dbx-node > .hx-mi.is-leaf { color: var(--color-info); }
+.help-doc .hm .hm-it-dbx-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.help-doc .hm .hm-it-dbx-n { margin-left: auto; padding-left: 6px; font-size: 0.62rem; color: var(--color-text-muted); }
+.help-doc .hm .hm-it-dbx-foot { padding: 5px 10px; font-size: 0.64rem; color: var(--color-text-muted); border-top: 1px solid var(--color-border-subtle); }
+.help-doc .hm .hm-it-dbx-content { display: flex; flex-direction: column; min-width: 0; }
+
+.help-doc .hm .hm-it-dbx-crumbs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 12px;
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hm .hm-it-dbx-crumbs > .hx-mi { font-size: 15px; }
+.help-doc .hm .hm-it-dbx-crumb { font-weight: 600; color: color-mix(in srgb, var(--color-primary) 60%, var(--color-text-primary)); }
+.help-doc .hm .hm-it-dbx-cur { font-weight: 650; color: var(--color-text-primary); }
+.help-doc .hm .hm-it-dbx-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.help-doc .hm .hm-it-dbx-item { display: flex; align-items: flex-start; gap: 10px; }
+.help-doc .hm .hm-it-dbx-name { font-size: 0.95rem; font-weight: 700; }
+.help-doc .hm .hm-it-dbx-path { display: flex; align-items: center; gap: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.7rem; color: var(--color-text-muted); }
+.help-doc .hm .hm-it-dbx-path > .hx-mi { font-size: 13px; }
+.help-doc .hm .hm-it-dbx-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+
+.help-doc .hm .hm-it-dbx-chips > span {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 7px;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 650;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hm .hm-btn.hm-it-dbx-del { color: var(--color-error); }
+.help-doc .hm .hm-it-dbx-editor { border: 1px solid var(--color-border-subtle); border-radius: 10px; overflow: hidden; background: var(--color-bg-surface); }
+
+.help-doc .hm .hm-it-dbx-bar,
+.help-doc .hm .hm-it-dbx-efoot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 5px 8px 5px 10px;
+    font-size: 0.72rem;
+    color: var(--color-text-secondary);
+}
+
+.help-doc .hm .hm-it-dbx-bar { border-bottom: 1px solid var(--color-border-subtle); }
+.help-doc .hm .hm-it-dbx-efoot { border-top: 1px solid var(--color-border-subtle); }
+.help-doc .hm .hm-it-dbx-bar > b { font-weight: 650; color: var(--color-text-primary); }
+.help-doc .hm .hm-it-dbx-bar .hm-btn, .help-doc .hm .hm-it-dbx-efoot .hm-btn { min-height: 24px; padding: 1px 8px; font-size: 0.7rem; }
+.help-doc .hm .hm-it-dbx-valid { display: inline-flex; align-items: center; gap: 4px; font-weight: 650; color: var(--color-success); }
+.help-doc .hm .hm-it-dbx-valid::before { font-family: 'Material Icons'; content: 'check_circle'; font-size: 14px; }
+.help-doc .hm .hm-it-dbx-valid.is-bad { color: var(--color-error); }
+.help-doc .hm .hm-it-dbx-valid.is-bad::before { content: 'error_outline'; }
+.help-doc .hm .hm-it-dbx-kbd { margin-left: auto; font-size: 0.66rem; color: var(--color-text-muted); }
+
+.help-doc .hm .hm-it-dbx-code {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.72rem;
+    line-height: 1.6;
+    background: var(--color-bg-base);
+}
+
+.help-doc .hm .hm-it-dbx-gutter { padding: 6px 8px; text-align: right; color: var(--color-text-muted); background: var(--color-bg-surface); border-right: 1px solid var(--color-border-subtle); white-space: pre; }
+.help-doc .hm .hm-it-dbx-src { padding: 6px 10px; white-space: pre; overflow: hidden; color: var(--color-text-primary); }
+.help-doc .hm .hm-it-dbx-src .k { color: var(--color-info); }
+.help-doc .hm .hm-it-dbx-src .s { color: var(--color-success); }
+.help-doc .hm .hm-it-dbx-src .n { color: var(--color-warning); }
+.help-doc .hm .hm-it-dbx-code.is-small { border: 1px solid var(--color-border-subtle); border-radius: 8px; overflow: hidden; }
+.help-doc .hm .hm-switch.is-disabled { opacity: 0.45; pointer-events: none; }

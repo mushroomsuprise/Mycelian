@@ -267,7 +267,7 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
             "StreamElements": "guide_streamelements",
             "Discord": "guide_discord",
             "OBS": "obs_websocket",
-            "Database": "settings",
+            "Database": "database",
             "Statistics": "settings_statistics",
             "Theme": "settings",
             "App Settings": "settings",

@@ -15,87 +15,97 @@
 
 <h2>The Game Hooks tab</h2>
 
-<p>Each game has a card with a switch. The card's border shows how the hook is doing. Switch the mock between platforms to see how unsupported games look.</p>
+<p>Each game has a card with its cover, the systems it runs on and an on/off switch. The line along the bottom of the card says what the hook is doing right now. Switch the mock between platforms to see more states.</p>
 
 <figure class="hx-figure">
   <div class="hm" data-tabs>
     <div class="hm-subtabs">
       <span class="hm-subtab is-active" data-tab="win">On Windows</span>
-      <span class="hm-subtab" data-tab="mac">On macOS or Linux</span>
+      <span class="hm-subtab" data-tab="mac">On macOS</span>
     </div>
-    <div class="hm-frame">
-      <span class="hm-muted">When enabled, Mycelian reads live data from supported PC games and broadcasts it to browser templates.</span>
+    <div class="hm-it">
+      <div class="hm-it-head">
+        <span class="hm-it-brand is-tile"><span class="hx-mi">sports_esports</span></span>
+        <div><div class="hm-it-name">Game Hooks</div><div class="hm-it-sub">Live data from PC games for your overlays</div></div>
+        <span data-panel="win"><span class="hm-it-pill is-ok">1 game running</span></span>
+        <span data-panel="mac"><span class="hm-it-pill is-error">1 with a problem</span></span>
+        <span class="hm-marker" data-n="1"></span>
+        <span class="hm-it-tools"><span class="hx-mi">help_outline</span><span class="hm-btn hm-outline hm-dense is-disabled">Discard</span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span><span class="hm-marker" data-n="6"></span></span>
+      </div>
+      <div class="hm-it-body">
+        <div class="hm-it-col hm-it-wide">
+          <div class="hm-it-sec"><span class="hx-mi">extension</span>Hooks<span class="hm-it-sec-right">2 games</span></div>
 
-      <div data-panel="win">
-        <div class="hm-grid-2">
-          <div class="hm-hook-card is-ok">
-            <div class="hm-row hm-nowrap">
-              <span class="hm-bold hm-sm">Final Fantasy VII (2013)</span>
-              <span class="hm-os"><span>Windows</span><span class="is-off">Linux</span><span class="is-off">macOS</span></span>
-              <span class="hm-switch is-on hm-grow"><i></i></span>
-              <span class="hm-marker" data-n="1"></span>
+          <div class="hm-it-hooks" data-panel="win">
+            <div class="hm-it-hook is-ok">
+              <div class="hm-it-hook-top">
+                <span class="hm-it-cover">FF7</span>
+                <div class="hm-it-hook-text"><div class="hm-it-hook-name">Final Fantasy VII (2013)</div><div class="hm-it-os"><span>Windows</span><span class="is-no">Linux</span><span class="is-no">macOS</span></div></div>
+                <span class="hm-marker" data-n="2"></span>
+                <span class="hm-switch is-on"><i></i></span>
+              </div>
+              <div class="hm-it-hook-state"><span class="hm-it-hook-line is-ok">Attached · reading live data</span><span class="hm-marker" data-n="3"></span></div>
             </div>
-            <span class="hm-muted hm-xs">Green border: attached to the running game.</span>
+            <div class="hm-it-hook is-warn">
+              <div class="hm-it-hook-top">
+                <span class="hm-it-cover is-alt">F</span>
+                <div class="hm-it-hook-text"><div class="hm-it-hook-name">Factorio</div><div class="hm-it-os"><span>Windows</span><span>Linux</span><span>macOS</span></div></div>
+                <span class="hm-switch is-on"><i></i></span>
+              </div>
+              <div class="hm-it-hook-state"><span class="hm-it-hook-line is-warn">Waiting for the game · looking for factorio.exe</span><span class="hm-it-hook-acts"><span class="hm-it-hook-detail">not installed · bundled 1.0.4</span><span class="hm-btn hm-outline hm-dense">Install mod</span><span class="hm-marker" data-n="4"></span></span></div>
+            </div>
           </div>
-          <div class="hm-hook-card is-warn">
-            <div class="hm-row hm-nowrap">
-              <span class="hm-bold hm-sm">Factorio</span>
-              <span class="hm-os"><span>Windows</span><span>Linux</span><span>macOS</span></span>
-              <span class="hm-switch is-on hm-grow"><i></i></span>
+
+          <div class="hm-it-hooks" data-panel="mac">
+            <div class="hm-it-hook is-unsupported">
+              <div class="hm-it-hook-top">
+                <span class="hm-it-cover">FF7</span>
+                <div class="hm-it-hook-text"><div class="hm-it-hook-name">Final Fantasy VII (2013)</div><div class="hm-it-os"><span>Windows</span><span class="is-no">Linux</span><span class="is-no">macOS</span></div></div>
+                <span class="hm-switch is-disabled"><i></i></span>
+              </div>
+              <div class="hm-it-hook-state"><span class="hm-it-hook-line">Not available on macOS · Windows only</span><span class="hm-marker" data-n="5"></span></div>
             </div>
-            <div class="hm-row"><span class="hm-btn hm-outline hm-dense">Install mod</span><span class="hm-muted hm-xs">not installed · bundled 1.0.4</span><span class="hm-marker" data-n="2"></span></div>
-            <span class="hm-muted hm-xs">Amber border: enabled, but not receiving data yet.</span>
+            <div class="hm-it-hook is-error">
+              <div class="hm-it-hook-top">
+                <span class="hm-it-cover is-alt">F</span>
+                <div class="hm-it-hook-text"><div class="hm-it-hook-name">Factorio</div><div class="hm-it-os"><span>Windows</span><span>Linux</span><span>macOS</span></div></div>
+                <span class="hm-switch is-on"><i></i></span>
+              </div>
+              <div class="hm-it-hook-state"><span class="hm-it-hook-line is-error">Problem: Mycelian stats mod not detected — install it from Settings &gt; Game Hooks</span><span class="hm-it-hook-acts"><span class="hm-it-hook-detail is-warn">v1.0.3 · new version 1.0.4</span><span class="hm-btn hm-outline hm-dense">Update mod</span></span></div>
+            </div>
           </div>
         </div>
       </div>
-
-      <div data-panel="mac">
-        <div class="hm-grid-2">
-          <div class="hm-hook-card is-unsupported">
-            <div class="hm-row hm-nowrap">
-              <span class="hm-bold hm-sm">Final Fantasy VII (2013)</span>
-              <span class="hm-os"><span>Windows</span><span class="is-off">Linux</span><span class="is-off">macOS</span></span>
-              <span class="hm-switch hm-grow"><i></i></span>
-              <span class="hm-marker" data-n="3"></span>
-            </div>
-            <span class="hm-muted hm-xs">Dimmed with a red border: not supported on this OS. The switch is disabled.</span>
-          </div>
-          <div class="hm-hook-card is-ok">
-            <div class="hm-row hm-nowrap">
-              <span class="hm-bold hm-sm">Factorio</span>
-              <span class="hm-os"><span>Windows</span><span>Linux</span><span>macOS</span></span>
-              <span class="hm-switch is-on hm-grow"><i></i></span>
-            </div>
-            <div class="hm-row"><span class="hm-btn hm-outline hm-dense is-disabled">Mod installed</span><span class="hm-ok hm-xs">v1.0.4</span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span><span class="hm-marker" data-n="4"></span></div>
     </div>
   </div>
-  <figcaption>Settings → Game Hooks. Click the two tabs at the top. The OS icons are shown as text here; in the app they are logos, colored when supported.</figcaption>
+  <figcaption>Settings → Game Hooks. Click the two tabs at the top to compare. In the app each card shows the game's cover art and OS logos; switches here only change the picture.</figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1">The switch turns the hook on or off. The OS marks show where the game is supported.</li>
-  <li data-n="2">Factorio's mod button: <strong>Install mod</strong>, <strong>Update mod</strong> when a newer version is bundled, or <strong>Mod installed</strong> (disabled) when it is current. The text beside it shows the installed version.</li>
-  <li data-n="3">A game that is not supported on this OS is dimmed and cannot be switched on.</li>
-  <li data-n="4">Nothing changes until you click <strong>Save</strong>. You see <em>"Game Hooks saved"</em>.</li>
+  <li data-n="1">The header pill sums up all hooks: <strong>1 game running</strong> (or more), <strong>1 with a problem</strong>, <strong>Waiting for a game</strong> when hooks are on but nothing is attached, or <strong>No hooks on</strong>.</li>
+  <li data-n="2">The systems the game runs on. A struck-through system is not supported. The switch turns the hook on or off.</li>
+  <li data-n="3">The status line. Hover it to read the full text when it is cut off. The card border takes the same color.</li>
+  <li data-n="4">Factorio only: the mod button and version sit at the end of the status line. The button says <strong>Install mod</strong>, <strong>Update mod</strong> when Mycelian bundles a newer version, or <strong>Mod installed</strong> (greyed out) when it is current. Hover it for what it does.</li>
+  <li data-n="5">A game that does not run on this computer's system is dimmed and its switch is disabled.</li>
+  <li data-n="6">Switches take effect when you click <strong>Save</strong>; an <strong>Unsaved changes</strong> tag shows until then and <strong>Discard</strong> puts them back. You see <em>"Game Hooks saved"</em>.</li>
 </ol>
 
+<h3>Status line</h3>
+
 <div class="hx-table-wrap"><table>
-<thead><tr><th>Card border</th><th>Meaning</th></tr></thead>
+<thead><tr><th>Status line</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>None</td><td>Hook is off</td></tr>
-<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Green</td><td>Attached and receiving data</td></tr>
-<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Amber</td><td>On, but the game is not running or no data has arrived yet</td></tr>
-<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Red</td><td>An error. Mycelian also shows the error as a notification</td></tr>
-<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Red, dimmed</td><td>Not supported on this OS</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> <strong>Off</strong></td><td>The hook is switched off (or not saved as on yet)</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> <strong>Starting…</strong></td><td>The hook was just turned on and has not reported yet</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> <strong>Waiting for the game · looking for <em>process</em></strong></td><td>On, but the game is not running yet. FF7 looks for <code>ff7_en.exe</code>; Factorio for <code>factorio.exe</code> (or <code>factorio</code> on macOS and Linux)</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> <strong>Waiting for the game hooks service to start</strong></td><td>Mycelian is still starting the background service that runs the hooks</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> <strong>Attached · reading live data</strong></td><td>Connected to the running game; overlays are getting data</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> <strong>Problem: <em>reason</em></strong></td><td>Something stopped the hook. Mycelian also shows a pop-up, <em>"The … hook has a problem"</em>, at most once every ten minutes per game</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> <strong>Not available on <em>system</em> · <em>systems</em> only</strong></td><td>The game is not supported on this computer</td></tr>
 </tbody>
 </table></div>
 
-<div class="hx-callout hx-tip"><p>When your Twitch category is Final Fantasy VII, Mycelian shows <em>"Playing … on PC? Try the game hook out!"</em> with a button that opens this tab.</p></div>
+<div class="hx-callout hx-tip"><p>When your Twitch category is Final Fantasy VII or Factorio and that hook is off, Mycelian shows <em>"Playing … ? Try the game hook"</em> with an <strong>Open Game Hooks</strong> button.</p></div>
 
 <h2>Set up a game</h2>
 
@@ -108,7 +118,7 @@
   <div class="hx-tab-panel" data-panel="ff7">
     <section class="hx-guide" data-guide="game_hooks_ff7" data-title="FF7 hook">
       <div class="hx-step"><h3>Turn on the FF7 hook</h3><p>Open <span class="hx-path"><span>Settings</span><span>Game Hooks</span></span>, switch on <strong>Final Fantasy VII (2013)</strong> and click <strong>Save</strong>.</p></div>
-      <div class="hx-step"><h3>Start FF7</h3><p>Run the English PC / Steam version on the same Windows PC. The card turns green once it attaches.</p><div class="hx-callout hx-note"><p>If Windows denies memory access, run Mycelian as Administrator.</p></div></div>
+      <div class="hx-step"><h3>Start FF7</h3><p>Run the English PC / Steam version on the same Windows PC. The card's status line changes from <em>Waiting for the game · looking for ff7_en.exe</em> to <em>Attached · reading live data</em>.</p><div class="hx-callout hx-note"><p>If Windows denies memory access, run Mycelian as Administrator.</p></div></div>
       <div class="hx-step"><h3>Add the FF7 overlay</h3><p>Add <span class="hx-copy" data-copy="http://127.0.0.1:5000/ff7">http://127.0.0.1:5000/ff7</span> as a browser source. See <a href="help:obs_setup">Setting Up Browser Sources in OBS</a>.</p></div>
     </section>
   </div>
@@ -116,11 +126,11 @@
   <div class="hx-tab-panel" data-panel="factorio">
     <section class="hx-guide" data-guide="game_hooks_factorio" data-title="Factorio hook">
       <div class="hx-step"><h3>Turn on the Factorio hook</h3><p>Open <span class="hx-path"><span>Settings</span><span>Game Hooks</span></span>, switch on <strong>Factorio</strong> and click <strong>Save</strong>.</p></div>
-      <div class="hx-step"><h3>Install the mod</h3><p>Click <strong>Install mod</strong> on the Factorio card. It copies <code>mycelian-stats</code> into your Factorio <code>mods</code> folder and enables it.</p></div>
+      <div class="hx-step"><h3>Install the mod</h3><p>Click <strong>Install mod</strong> at the end of the Factorio card's status line. It copies <code>mycelian-stats</code> into your Factorio <code>mods</code> folder and enables it. The text beside the button then shows the installed version, and the button changes to <strong>Mod installed</strong>.</p></div>
       <div class="hx-step"><h3>Restart Factorio and load a save</h3><p>If Factorio is running, quit it fully. Start it and load a save. The mod only loads at startup.</p></div>
       <div class="hx-step"><h3>Add the Factorio overlay</h3><p>Add <span class="hx-copy" data-copy="http://127.0.0.1:5000/factorio">http://127.0.0.1:5000/factorio</span> as a browser source.</p></div>
     </section>
-    <div class="hx-callout hx-note"><p>If the hook is on but no data arrives, Mycelian reports <em>"Mycelian stats mod not detected — install it from Settings &gt; Game Hooks"</em>. Use <strong>Install mod</strong> or <strong>Update mod</strong> and restart Factorio. The mod is read-only and does not change gameplay.</p></div>
+    <div class="hx-callout hx-note"><p>If Factorio is running but no data arrives, the card says <em>"Problem: Mycelian stats mod not detected — install it from Settings &gt; Game Hooks"</em>. Use <strong>Install mod</strong> or <strong>Update mod</strong> and restart Factorio. The mod is read-only and does not change gameplay.</p></div>
   </div>
 </div>
 
@@ -206,6 +216,25 @@
 
 <div class="hx-callout hx-warning"><p>Memory writes are powerful. Use them only on your own single-player game. Online services and anti-cheat systems are not a target for this feature.</p></div>
 
+<h2>When something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>The card stays on "Waiting for the game"</summary>
+  <p>Mycelian has not found the game's process. Make sure the game runs on this computer (not a second PC or a streaming device) and, for FF7, that it is the English PC / Steam version (<code>ff7_en.exe</code> or <code>ff7.exe</code>).</p>
+</details>
+<details class="hx-details">
+  <summary>"The … hook has a problem"</summary>
+  <p>The card's status line starts with <strong>Problem:</strong> and gives the reason; hover it for the full text. The pop-up's details hold the same text. Check that the game is running and Mycelian is allowed to read it. For FF7 on Windows, if memory access is denied, run Mycelian as Administrator. For Factorio, install or update the mod and restart Factorio.</p>
+</details>
+<details class="hx-details">
+  <summary>"Factorio: “Install mod” didn't work"</summary>
+  <p>The details say why, for example <em>Factorio user-data folder not found</em> or <em>Could not create mods folder</em>. Start Factorio once so it creates its user-data folder, then try again.</p>
+</details>
+<details class="hx-details">
+  <summary>"Couldn't save Game Hooks settings"</summary>
+  <p>The switches could not be written to the database. Your choices stay selected on the tab. Check the connection on <a href="help:database">Settings → Database</a> (the notification has a button that opens it), then click <strong>Save</strong> again.</p>
+</details>
+
 <h2>Community credit (m4v3k)</h2>
 
 <p>Huge shoutouts to <strong>m4v3k</strong> for all of their work and contributions to the FF7 community. I was able to use his tools and research to create this game hook, so please check out his other projects:</p>
@@ -220,5 +249,6 @@
 <div class="hx-cards">
   <a class="hx-card" href="help:connector_actions">{{icon:bolt}}<span><strong>Connector Actions</strong><span class="hx-card-text">Wire chat or rewards to game writes</span></span></a>
   <a class="hx-card" href="help:templates_intro">{{icon:web}}<span><strong>Templates</strong><span class="hx-card-text">Style the ff7 and factorio overlays</span></span></a>
+  <a class="hx-card" href="help:database">{{icon:storage}}<span><strong>Database</strong><span class="hx-card-text">Where hook settings are saved</span></span></a>
   <a class="hx-card" href="help:settings_overview">{{icon:settings}}<span><strong>Settings Overview</strong><span class="hx-card-text">Every Settings tab at a glance</span></span></a>
 </div>

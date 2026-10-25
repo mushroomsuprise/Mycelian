@@ -134,7 +134,7 @@ area class needs its file's prefix:
 | `20_mock_general.css` | `hm-gn-`, `hm-sf-` (status footer), plus older unprefixed names |
 | `20_mock_guides_a.css` | `hm-ga-` |
 | `20_mock_guides_b.css` | (Stream Deck pieces) |
-| `20_mock_integrations.css` | `hm-it-` (Settings service tabs: header with pills and Save, account card, credentials fold as `hm-expansion hm-it-fold`, rows, lists, steps; see `content/twitch_setup.html`) |
+| `20_mock_integrations.css` | `hm-it-` (Settings service tabs: header with pills and Save, account card, credentials fold as `hm-expansion hm-it-fold`, rows, lists, steps; see `content/twitch_setup.html`. Game hook cards, choice cards, tool rows, dialogs and the Database Explorer: see `content/game_hooks.html`, `content/database.html`) |
 | `20_mock_alerts.css` | `hma-` |
 | `20_mock_chatbot.css` | `hm-cb-`, `hm-chat` |
 | `20_mock_connectors.css` | `hm-cx-` |

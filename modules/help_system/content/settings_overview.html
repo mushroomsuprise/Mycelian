@@ -38,26 +38,33 @@
       <div data-panel="streamlabs" class="hm-col"><span class="hm-h2">Streamlabs</span><span class="hm-muted">Account card with Connect, Disconnect and Client ID &amp; secret, and the alert currency.</span><span><a href="help:guide_streamlabs">Connect Streamlabs</a></span></div>
       <div data-panel="se" class="hm-col"><span class="hm-h2">StreamElements</span><span class="hm-muted">Account card with Connect, Disconnect and the JWT token, and the alert currency.</span><span><a href="help:guide_streamelements">Connect StreamElements</a></span></div>
       <div data-panel="discord" class="hm-col"><span class="hm-h2">Discord</span><span class="hm-muted">Bot card with the invite link and bot token, setup steps, and the go-live announcement message and channels.</span><span><a href="help:guide_discord">Connect Discord</a></span></div>
-      <div data-panel="hooks" class="hm-col"><span class="hm-h2">Game Hooks</span><span class="hm-muted">Turn live game data on or off for Final Fantasy VII (2013) and Factorio.</span><span><a href="help:game_hooks">Game Hooks</a></span></div>
+      <div data-panel="hooks" class="hm-col"><span class="hm-h2">Game Hooks</span><span class="hm-muted">One card per game, Final Fantasy VII (2013) and Factorio, with an on/off switch and a live status line. Factorio's card also installs its companion mod.</span><span><a href="help:game_hooks">Game Hooks</a></span></div>
 
       <div data-panel="db" class="hm-col">
-        <div class="hm-panel">
-          <div class="hm-row hm-gap-lg">
-            <div class="hm-status-band">
-              <div class="hm-metric"><span>Status</span><span class="hm-ok">Connected</span></div>
-              <div class="hm-metric"><span>Type</span><span>sql</span></div>
-              <div class="hm-metric"><span>Last check</span><span class="hm-muted">17:31:04</span></div>
-            </div>
-            <div class="hm-field hm-select hm-grow" data-label="Database type"><span class="hm-value">sql</span></div>
+        <div class="hm-it">
+          <div class="hm-it-head">
+            <span class="hm-it-brand is-tile"><span class="hx-mi">storage</span></span>
+            <div><div class="hm-it-name">Database</div><div class="hm-it-sub">Where Mycelian keeps your settings, alerts and history</div></div>
+            <span class="hm-it-pill is-ok">Connected · Local file</span>
+            <span class="hm-it-tools"><span class="hx-mi">help_outline</span><span class="hm-btn hm-outline hm-dense is-disabled">Discard</span><span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span></span>
           </div>
-          <div class="hm-panel-title">Configuration</div>
-          <div class="hm-field" data-label="SQLite path"><span class="hm-value">mycelian.db</span></div>
-          <div class="hm-actions">
-            <span class="hm-btn hm-outline"><span class="hx-mi">wifi_tethering</span>Test</span>
-            <span class="hm-btn hm-outline"><span class="hx-mi">sync_alt</span>Migrate</span>
-            <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh</span>
-            <span class="hm-btn hm-outline"><span class="hx-mi">visibility</span>View Data</span>
-            <span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span>
+          <div class="hm-it-body">
+            <div class="hm-it-col">
+              <div class="hm-it-sec"><span class="hx-mi">cable</span>Connection</div>
+              <div class="hm-it-acct"><div class="hm-it-acct-top"><div class="hm-it-who"><span class="hm-it-brand is-tile"><span class="hx-mi">folder</span></span><div><div class="hm-it-kicker">In use</div><div class="hm-it-acct-name">Local file (SQLite)</div><div class="hm-it-state is-ok">Connected · last checked 2 s ago</div></div></div><div class="hm-it-actions"><span class="hx-mi">refresh</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">wifi_tethering</span>Test</span></div></div></div>
+              <div class="hm-it-sec"><span class="hx-mi">storage</span>Storage</div>
+              <div class="hm-it-choices">
+                <div class="hm-it-choice is-on"><span class="hm-it-choice-tag">In use</span><div class="hm-it-choice-top"><span class="hx-mi">folder</span><span class="hm-it-choice-name">Local file</span><span class="hm-it-choice-check"></span></div></div>
+                <div class="hm-it-choice"><div class="hm-it-choice-top"><span class="hx-mi">cloud</span><span class="hm-it-choice-name">Firebase</span><span class="hm-it-choice-check"></span></div></div>
+                <div class="hm-it-choice"><div class="hm-it-choice-top"><span class="hx-mi">dns</span><span class="hm-it-choice-name">MongoDB</span><span class="hm-it-choice-check"></span></div></div>
+              </div>
+            </div>
+            <div class="hm-it-col">
+              <div class="hm-it-sec"><span class="hx-mi">build</span>Your data</div>
+              <div class="hm-it-tool"><span class="hm-it-tool-icon"><span class="hx-mi">travel_explore</span></span><div class="hm-it-tool-text"><div class="hm-it-tool-title">Database Explorer</div></div><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">open_in_new</span>Open</span></div>
+              <div class="hm-it-tool"><span class="hm-it-tool-icon"><span class="hx-mi">sync_alt</span></span><div class="hm-it-tool-text"><div class="hm-it-tool-title">Move my data</div></div><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">arrow_forward</span>Migrate…</span></div>
+              <span class="hm-muted hm-xs">See <a href="help:database">Database and Database Explorer</a> for the full tour.</span>
+            </div>
           </div>
         </div>
       </div>
@@ -192,13 +199,13 @@
 
 <h3>Game Hooks</h3>
 
-<p>Turns on live data from supported PC games for browser overlays and connector actions. See <a href="help:game_hooks">Game Hooks</a>.</p>
+<p>Turns on live data from supported PC games for browser overlays and connector actions. Each game has a card with a switch and a status line (<em>Off</em>, <em>Waiting for the game</em>, <em>Attached · reading live data</em> or <em>Problem: …</em>); the header pill sums them up. Click <strong>Save</strong> to apply the switches. See <a href="help:game_hooks">Game Hooks</a>.</p>
 
 <h3>Database</h3>
 
-<p>Chooses where Mycelian keeps settings, alerts and history: <code>sql</code> (a local SQLite file, <code>mycelian.db</code> by default), <code>firebase</code> or <code>mongodb</code>. <strong>Test</strong> checks the connection. <strong>Migrate</strong> copies data from one database to another. <strong>View Data</strong> opens the Database Explorer. The folder buttons (<span class="hx-mi">folder_open</span>) next to <strong>SQLite path</strong> and <strong>Firebase key file</strong> open a file picker that can browse anywhere on this computer.</p>
+<p>Chooses where Mycelian keeps settings, alerts and history: a <strong>Local file</strong> (SQLite, <code>mycelian.db</code> by default), <strong>Firebase</strong> or <strong>MongoDB</strong>. The <strong>Connection</strong> card shows the database in use with <strong>Test</strong>; <strong>Save</strong> checks a new connection before switching. Under <strong>Your data</strong>, <strong>Database Explorer</strong> opens the raw stored items and <strong>Move my data</strong> (<strong>Migrate…</strong>) copies everything to another database and switches to it. See <a href="help:database">Database and Database Explorer</a>.</p>
 
-<div class="hx-callout hx-warning"><p>Change the database type only if you know you need to. Use <strong>Migrate</strong> first so your data comes with you.</p></div>
+<div class="hx-callout hx-warning"><p>Change the storage type only if you know you need to. Switching does not copy anything; use <strong>Move my data</strong> so your data comes with you.</p></div>
 
 <h3>Statistics</h3>
 
@@ -242,7 +249,7 @@
 <h2>Saving changes</h2>
 
 <ul>
-  <li>Each sub-tab saves separately. Click <strong>Save</strong> on the tab you changed. On the service tabs (Twitch through Discord), <strong>Discard</strong> and <strong>Save</strong> are in the tab's header, next to the connection pills, and an <strong>Unsaved changes</strong> tag shows while there is something to save.</li>
+  <li>Each sub-tab saves separately. Click <strong>Save</strong> on the tab you changed. On the service tabs (Twitch through Discord), Game Hooks and Database, <strong>Discard</strong> and <strong>Save</strong> are in the tab's header, next to the connection pills, and an <strong>Unsaved changes</strong> tag shows while there is something to save.</li>
   <li><strong>Discard</strong> puts the tab back to its last saved values. It is greyed out while there is nothing to discard.</li>
   <li>If you leave Settings with unsaved changes, Mycelian asks: <em>"You have unsaved changes in Settings. Save them before leaving?"</em></li>
 </ul>
@@ -250,7 +257,7 @@
 <h2>Where settings are stored</h2>
 
 <ul>
-  <li><strong>Settings, alerts and history</strong>: the database chosen on the Database tab.</li>
+  <li><strong>Settings, alerts and history</strong>: the database chosen on the <a href="help:database">Database</a> tab.</li>
   <li><strong>Service API credentials</strong>: stored encrypted in <code>api_credentials.json</code>.</li>
   <li><strong>Database connection</strong>: <code>config.json</code>.</li>
   <li><strong>Template settings</strong>: <code>templates/template_configs/*.json</code>, edited on the <strong>Source Settings</strong> tab.</li>
@@ -261,5 +268,6 @@
 <div class="hx-cards">
   <a class="hx-card" href="help:getting_started_intro">{{icon:rocket_launch}}<span><strong>Welcome to Mycelian</strong><span class="hx-card-text">The main window and a quick start</span></span></a>
   <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>Connection Guides</strong><span class="hx-card-text">Set up each service</span></span></a>
+  <a class="hx-card" href="help:database">{{icon:storage}}<span><strong>Database</strong><span class="hx-card-text">Storage, moving data, the explorer</span></span></a>
   <a class="hx-card" href="help:status_footer">{{icon:wifi}}<span><strong>Status Footer</strong><span class="hx-card-text">What the badge colors mean</span></span></a>
 </div>
