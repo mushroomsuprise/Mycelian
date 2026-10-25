@@ -26,6 +26,7 @@ SOFTWARE.
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -40,13 +41,17 @@ from .chatbot_core import (
     EventType,
     Greeting,
     Quote,
+    normalize_permission,
     normalize_specific_time,
     permission_allows,
+    render_template,
 )
 from .statistics_manager import get_statistics_manager
 from .notification_engine import nav_actions_main_tab, notify_critical
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_QUOTE_REPLY_FORMAT = '#{number}: "{text}" \u2014 {author}'
 
 
 def _json_fingerprint(data: Any) -> Optional[str]:
@@ -335,6 +340,8 @@ class ChatbotManager:
         self.greeting_cooldown_hours: int = 24  # Hours between greetings (legacy)
         self.greeting_reset_interval_hours: int = 24  # Hours between greeting resets
         self.quote_cooldown_seconds: int = 30  # Global cooldown for quote commands
+        self.add_quote_permission: str = "moderator"  # who may use !add_quote
+        self.quote_reply_format: str = DEFAULT_QUOTE_REPLY_FORMAT
         self.quote_last_used: float = 0.0  # Timestamp of last quote usage
 
         # Initialize flag manager for efficient default greeting tracking
@@ -708,6 +715,9 @@ class ChatbotManager:
         
         quote_cd_val = settings_data.get("quote_cooldown_seconds", 30)
         self.quote_cooldown_seconds = int(quote_cd_val) if not isinstance(quote_cd_val, int) else quote_cd_val
+        self.add_quote_permission = normalize_permission(settings_data.get("add_quote_permission", "moderator"))
+        fmt = settings_data.get("quote_reply_format")
+        self.quote_reply_format = str(fmt) if isinstance(fmt, str) and fmt.strip() else DEFAULT_QUOTE_REPLY_FORMAT
 
     def _save_data(self) -> None:
         """Queue a save of commands and events. The latest snapshot is written."""
@@ -760,6 +770,8 @@ class ChatbotManager:
             "greeting_cooldown_hours": int(self.greeting_cooldown_hours) if not isinstance(self.greeting_cooldown_hours, int) else self.greeting_cooldown_hours,
             "greeting_reset_interval_hours": int(self.greeting_reset_interval_hours) if not isinstance(self.greeting_reset_interval_hours, int) else self.greeting_reset_interval_hours,
             "quote_cooldown_seconds": int(self.quote_cooldown_seconds) if not isinstance(self.quote_cooldown_seconds, int) else self.quote_cooldown_seconds,
+            "add_quote_permission": self.add_quote_permission,
+            "quote_reply_format": self.quote_reply_format,
         }
 
     def _build_save_payloads(self) -> List[tuple]:
@@ -1146,7 +1158,7 @@ class ChatbotManager:
                 # Random quote
                 quote = self.get_random_quote()
                 if quote:
-                    response = f"{quote.quote_number}. {quote.text}"
+                    response = self.format_quote_reply(quote)
 
                     # Update cooldown timestamp
                     self.quote_last_used = time.time()
@@ -1175,7 +1187,7 @@ class ChatbotManager:
                 quote_number = int(arguments[0])
                 quote = self.get_quote_by_number(quote_number)
                 if quote:
-                    response = f"{quote.quote_number}. {quote.text}"
+                    response = self.format_quote_reply(quote)
 
                     # Update cooldown timestamp
                     self.quote_last_used = time.time()
@@ -1202,7 +1214,7 @@ class ChatbotManager:
                 matches = self.search_quotes(search_text, limit=1)
                 if matches:
                     quote = matches[0]
-                    response = f"{quote.quote_number}. {quote.text}"
+                    response = self.format_quote_reply(quote)
 
                     # Update cooldown timestamp
                     self.quote_last_used = time.time()
@@ -1236,6 +1248,10 @@ class ChatbotManager:
         """Handle the !add_quote command"""
         try:
             username = message_data.get("username", "Unknown")
+            if not permission_allows(self.add_quote_permission, message_data):
+                # Blocked commands stay silent.
+                logger.debug("[CHATBOT] !add_quote blocked: %s needs %s", username, self.add_quote_permission)
+                return _silent_result("add_quote")
 
             if not arguments:
                 return 'Usage: !add_quote "quote text" [author]', "add_quote"
@@ -1874,15 +1890,75 @@ class ChatbotManager:
                     return self.delete_quote(quote_id)
             return False
 
+    def format_quote_reply(self, quote: Quote, template: Optional[str] = None) -> str:
+        """The chat reply for *quote* using the quote reply format.
+
+        Variables: {number} {text} {author} {date_added} {added_by}. When the quote has
+        no author, the " — {author}" part (with -, – or —) is left out.
+        """
+        fmt = template if template is not None else (self.quote_reply_format or DEFAULT_QUOTE_REPLY_FORMAT)
+        if not str(quote.author or "").strip():
+            fmt = re.sub(r"\s*(?:[-\u2013\u2014]|by)\s*\{author\}", "", fmt)
+            fmt = fmt.replace("{author}", "")
+        when = datetime.fromtimestamp(quote.date_added) if quote.date_added else None
+        context = {
+            "number": quote.quote_number,
+            "text": quote.text,
+            "author": quote.author or "",
+            "date_added": when.strftime("%b %d, %Y").replace(" 0", " ") if when else "",
+            "added_by": quote.added_by or "",
+            "quote_number": quote.quote_number,
+        }
+        return render_template(fmt, context).strip()
+
+    def renumber_quotes(self) -> int:
+        """Number quotes 1..N in their current order (closes gaps). Returns how many changed."""
+        with self._lock:
+            ordered = sorted(self.quotes.values(), key=lambda q: (q.quote_number, q.date_added))
+            changed = 0
+            for index, quote in enumerate(ordered, 1):
+                if quote.quote_number != index:
+                    quote.quote_number = index
+                    changed += 1
+            if changed:
+                self._save_data()
+            return changed
+
+    def quote_number_gaps(self) -> List[int]:
+        with self._lock:
+            numbers = sorted(q.quote_number for q in self.quotes.values())
+        if not numbers:
+            return []
+        present = set(numbers)
+        return [n for n in range(1, numbers[-1]) if n not in present]
+
+    def save_quote_settings(self, *, enabled: bool, cooldown_seconds: int, add_permission: str, reply_format: str) -> bool:
+        """Save every quote setting at once (the settings dialog's Save)."""
+        with self._lock:
+            self.quotes_enabled = bool(enabled)
+            self.quote_cooldown_seconds = max(0, int(cooldown_seconds or 0))
+            self.add_quote_permission = normalize_permission(add_permission)
+            self.quote_reply_format = reply_format.strip() if str(reply_format or "").strip() else DEFAULT_QUOTE_REPLY_FORMAT
+            self._save_data()
+            return True
+
     def update_quote(
-        self, quote_id: str, text: str = None, author: str = None
+        self, quote_id: str, text: str = None, author: str = None, *, number: Optional[int] = None,
+        added_by: Optional[str] = None,
     ) -> bool:
-        """Update an existing quote's text and/or author."""
+        """Update an existing quote's text, author, number and/or who added it."""
         with self._lock:
             if quote_id not in self.quotes:
                 return False
 
             quote = self.quotes[quote_id]
+            if number is not None:
+                number = int(number)
+                if number < 1 or any(q.quote_number == number for qid, q in self.quotes.items() if qid != quote_id):
+                    return False
+                quote.quote_number = number
+            if added_by is not None:
+                quote.added_by = added_by.strip()
 
             if text is not None:
                 if not text.strip():
@@ -2080,7 +2156,8 @@ class ChatbotManager:
             # Check if user has a custom greeting first
             greeting = self.greetings_by_user_id.get(user_id)
 
-            if greeting and self.custom_greeting_enabled:
+            # A personal greeting that is switched off falls through to the greeting for everyone else.
+            if greeting and self.custom_greeting_enabled and greeting.enabled:
                 # Update username if it has changed
                 greeting.update_username(username)
 
@@ -2091,10 +2168,7 @@ class ChatbotManager:
                     greeting.update_last_greeted(current_time)
                     self._save_data()
 
-                    # Process variables in custom greeting text
-                    greeting_text = greeting.greeting_text.replace(
-                        "{username}", username
-                    )
+                    greeting_text = self.render_greeting(greeting.greeting_text, user_id, username)
                     logger.info(f"Sending custom greeting to {username}")
                     return greeting_text
                 else:
@@ -2119,10 +2193,7 @@ class ChatbotManager:
                             greeting.update_last_greeted(current_time)
                             self._save_data()
 
-                            # Process variables in custom greeting text
-                            greeting_text = greeting.greeting_text.replace(
-                                "{username}", username
-                            )
+                            greeting_text = self.render_greeting(greeting.greeting_text, user_id, username)
                             logger.info(
                                 f"Sending custom greeting to {username} (reset after interval)"
                             )
@@ -2139,15 +2210,52 @@ class ChatbotManager:
                     # Mark user as greeted
                     self.flag_manager.mark_user_greeted(user_id)
 
-                    # Process variables in default greeting text
-                    greeting_text = self.default_greeting_text.replace(
-                        "{username}", username
-                    )
+                    greeting_text = self.render_greeting(self.default_greeting_text, user_id, username)
                     logger.info(f"Sending default greeting to {username}")
                     return greeting_text
 
                 return None  # User was already greeted with default greeting
         return None
+
+    @staticmethod
+    def greeting_context(user_id: str, username: str, user_login: str = "") -> Dict[str, Any]:
+        return {"username": username, "user_id": user_id, "user_login": user_login or str(username or "").lower()}
+
+    def render_greeting(self, text: str, user_id: str, username: str, user_login: str = "") -> str:
+        """Greeting text with every reply variable filled in (single pass, viewer text never expanded)."""
+        return render_template(text or "", self.greeting_context(user_id, username, user_login)).strip()
+
+    def reset_greeting_for(self, greeting_id: str) -> bool:
+        """Let one viewer with a personal greeting be greeted again next time they chat."""
+        with self._lock:
+            greeting = self.greetings.get(greeting_id)
+            if greeting is None:
+                return False
+            greeting.greeted_flag = False
+            greeting.last_greeted = 0
+            self._save_data()
+            return True
+
+    def greeted_since_reset(self) -> Dict[str, Any]:
+        """How many viewers have been greeted since the last reset, and when that was."""
+        stats = self.flag_manager.get_stats()
+        with self._lock:
+            custom = sum(1 for g in self.greetings.values() if g.greeted_flag)
+        return {"count": int(stats.get("greeted_users", 0)) + custom, "since": stats.get("last_reset_time") or 0}
+
+    def save_greeting_settings(self, *, default_enabled: bool, custom_enabled: bool, default_text: str,
+                               reset_interval_hours: int) -> bool:
+        """Save every greeting setting at once (the dialogs' Save)."""
+        if not str(default_text or "").strip():
+            return False
+        with self._lock:
+            self.default_greeting_enabled = bool(default_enabled)
+            self.custom_greeting_enabled = bool(custom_enabled)
+            self.greetings_enabled = self.default_greeting_enabled or self.custom_greeting_enabled
+            self.default_greeting_text = default_text.strip()
+            self.greeting_reset_interval_hours = max(1, int(reset_interval_hours or 24))
+            self._save_data()
+            return True
 
     def toggle_greetings_enabled(self, enabled: bool) -> bool:
         """Toggle whether the greetings system is enabled (legacy method)"""

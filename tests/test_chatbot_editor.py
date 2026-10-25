@@ -127,3 +127,27 @@ def test_stylesheets_are_well_formed():
 def test_unfilled_tokens_flag_broken_variables():
     assert cards.unfilled_tokens("Hi {user} {username} {count:,}", "Hi {user} Mossy 1,000") == ["{user}"]
     assert cards.unfilled_tokens("No variables", "No variables") == []
+
+
+def test_quotes_greetings_helpers(monkeypatch):
+    from modules.uiwindows import chatbot_quotes_greetings as qg
+
+    assert qg._avatar_color("Mika") == qg._avatar_color("mika")
+    assert qg._date(0) == "Date unknown"
+    names = [v["key"] for v in qg.greeting_variables()]
+    assert names[:3] == ["username", "user_login", "user_id"] and "time" in names
+
+    class _M:
+        def render_greeting(self, text, user_id, username, login=""):
+            return text.replace("{username}", username)
+
+    monkeypatch.setattr(qg, "get_manager", lambda: _M())
+    assert qg.render_greeting_preview("Hi {username}", "Mika") == "Hi Mika"
+
+
+def test_quotes_greetings_stylesheets():
+    from modules.uiwindows.chatbot_quotes_greetings import QG_CSS, QG_DIALOG_CSS
+
+    for css, scope in ((QG_CSS, ".cnx"), (QG_DIALOG_CSS, ".cxe")):
+        scoped = promote_color_importance(scope_selectors(css, scope))
+        assert scoped.count("{") == scoped.count("}")

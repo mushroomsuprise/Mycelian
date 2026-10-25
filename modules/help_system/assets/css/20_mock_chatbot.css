@@ -1,115 +1,18 @@
 /* =========================================================================
    Mycelian Help — Chatbot tab mock pieces and chat transcripts.
-   hm-cb-*: Quotes / Greetings / Giveaways / Polls cards and dialogs
+   hm-cb-*: Giveaways / Polls cards and dialogs
    (modules/uiwindows/chatbot.py, polls_panel.py).
+   hm-cb-qg-*: Quotes / Greetings tabs and dialogs
+   (chatbot_quotes_greetings.py QG_CSS / QG_DIALOG_CSS), used with hm-cx2-*,
+   hm-cb2-* and the hm-cxe-* dialog shell.
    hm-cb2-*: Commands / Events cards and the command/event editor
    (chatbot_cards.py CHATBOT_CARDS_CSS, chatbot_editor_styles.py
    CHATBOT_EDITOR_CSS), used together with the connector kits hm-cx2-* and
    hm-cxe-* in 20_mock_connectors.css. Theme variables only.
    ========================================================================= */
 
-/* Tab header row: action buttons left, search right */
-.help-doc .hm .hm-cb-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 4px 4px 10px;
-}
-
-.help-doc .hm .hm-cb-toolbar > .hm-field { flex: 1 1 220px; max-width: 360px; }
-
-/* Card grid (grid-cols-1 md:2 lg:3) */
-.help-doc .hm .hm-cb-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 12px;
-}
-
-/* .chatbot-card */
-.help-doc .hm .hm-cb-card {
-    background: var(--color-bg-surface);
-    border: 1px solid var(--color-border-accent);
-    border-radius: 8px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 0;
-}
-
-.help-doc .hm .hm-cb-card.is-command { border-color: color-mix(in srgb, var(--color-success) 35%, transparent); }
-.help-doc .hm .hm-cb-card.is-event { border-color: color-mix(in srgb, var(--color-error) 35%, transparent); }
-.help-doc .hm .hm-cb-card.is-disabled { opacity: 0.6; border-color: var(--color-border-default); }
-
-.help-doc .hm .hm-cb-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.help-doc .hm .hm-cb-card-title { font-size: 0.95rem; font-weight: 600; color: var(--color-text-primary); }
-.help-doc .hm .hm-cb-sub { font-size: 0.75rem; color: var(--color-info); }
-.help-doc .hm .hm-cb-sub.is-event { color: var(--color-error); }
-.help-doc .hm .hm-cb-desc { font-size: 0.75rem; color: var(--color-text-secondary); }
-
-.help-doc .hm .hm-cb-status { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.help-doc .hm .hm-cb-status .hm-switch > i { transform: scale(0.8); }
-
-/* .status-badge */
-.help-doc .hm .hm-cb-state {
-    padding: 3px 8px;
-    border-radius: 8px;
-    font-size: 0.62rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    background: color-mix(in srgb, var(--color-success) 18%, transparent);
-    color: var(--color-success);
-}
-
-.help-doc .hm .hm-cb-state.is-off {
-    background: color-mix(in srgb, var(--color-text-muted) 18%, transparent);
-    color: var(--color-text-muted);
-}
-
-/* Variable value inside a preview (italic primary) */
-.help-doc .hm .hm-cb-var { color: var(--color-primary); font-style: italic; }
-
-.help-doc .hm .hm-cb-quote {
-    font-size: 0.82rem;
-    font-style: italic;
-    color: var(--color-text-secondary);
-    background: var(--color-bg-base);
-    border-left: 4px solid var(--color-primary);
-    border-radius: 4px;
-    padding: 8px 10px;
-}
-
-.help-doc .hm .hm-cb-quote.is-greeting { font-style: normal; border-left-color: var(--color-info); }
-
-.help-doc .hm .hm-cb-stats {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    font-size: 0.72rem;
-    color: var(--color-text-secondary);
-    border-top: 1px solid var(--color-border-subtle);
-    padding-top: 8px;
-}
-
-.help-doc .hm .hm-cb-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.help-doc .hm .hm-cb-actions .hm-btn { flex: 1 1 auto; min-height: 26px; padding: 2px 8px; font-size: 0.72rem; gap: 4px; }
-.help-doc .hm .hm-cb-actions .hm-btn .hx-mi { font-size: 1.1em; margin: 0; }
+/* Secondary button used in giveaway / poll mocks */
 .help-doc .hm .hm-btn.hm-cb-secondary { background: var(--color-bg-elevated); color: var(--color-text-primary); border-color: var(--color-border-default); }
-
-/* Empty-state block */
-.help-doc .hm .hm-cb-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    padding: 20px 10px;
-    text-align: center;
-}
-
-.help-doc .hm .hm-cb-empty > .hx-mi { font-size: 48px; color: var(--color-text-muted); }
 
 /* Rounded bordered list box with an elevated header (Giveaway Entrants / Categories) */
 .help-doc .hm .hm-cb-box {
@@ -149,7 +52,7 @@
 .help-doc .hm .hm-cb-poll-bar { height: 8px; border-radius: 4px; background: var(--color-border-default); overflow: hidden; }
 .help-doc .hm .hm-cb-poll-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--color-primary); }
 
-/* Dialog-style card (Quote Settings, Greeting Settings, Add New Quote) */
+/* Dialog-style card (giveaway and poll dialogs) */
 .help-doc .hm .hm-cb-dialog {
     background: var(--color-bg-elevated);
     border: 1px solid var(--color-border-default);
@@ -169,14 +72,6 @@
 
 .help-doc .hm .hm-cb-dialog-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 
-.help-doc .hm .hm-cb-hint {
-    font-size: 0.72rem;
-    color: var(--color-text-secondary);
-    background: var(--color-bg-surface);
-    border: 1px solid var(--color-border-subtle);
-    border-radius: 6px;
-    padding: 6px 8px;
-}
 
 /* ---- Mock chat transcript (Twitch-style, theme colors only) ---------- */
 
@@ -405,4 +300,76 @@
     .help-doc .hm-cb2-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .help-doc .hm-cb2-arg { grid-template-columns: 14px 1fr 16px 1fr 16px; }
     .help-doc .hm-cb2-arg > :nth-child(5) { grid-column: 2 / -2; }
+}
+
+/* ---- Quotes / Greetings tabs and dialogs (chatbot_quotes_greetings.py) ----
+   Toolbar and cards reuse hm-cx2-* / hm-cb2-*; dialogs reuse the hm-cxe-*
+   shell (head, foot, boxes, preview). These are the QG_CSS pieces. */
+
+/* Settings strip under the toolbar */
+.help-doc .hm-cb-qg-strip { display: flex; align-items: center; gap: 7px 12px; flex-wrap: wrap; padding: 7px 10px; border-radius: 10px; position: relative;
+    background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); font-size: .68rem; color: var(--color-text-secondary); }
+.help-doc .hm-cb-qg-strip b { color: var(--color-text-primary); font-weight: 650; }
+.help-doc .hm-cb-qg-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.help-doc .hm-cb-qg-item > .hx-mi { font-size: 14px; color: var(--color-primary); }
+.help-doc .hm-cb-qg-sep { width: 1px; height: 16px; background: var(--color-border-subtle); flex: 0 0 auto; }
+.help-doc .hm-cb-qg-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .64rem; padding: 1px 5px; border-radius: 5px;
+    font-weight: 600; color: var(--color-primary); background: var(--color-primary-light); }
+.help-doc .hm-cb-qg-fmt { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .64rem; padding: 2px 7px; border-radius: 6px;
+    background: var(--color-bg-base); border: 1px dashed var(--color-border-default); color: var(--color-text-secondary);
+    max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+
+/* Quote cards */
+.help-doc .hm-cx2-card.is-quote { box-shadow: inset 3px 0 0 var(--color-primary); }
+.help-doc .hm-cb-qg-num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .66rem; font-weight: 800; padding: 1px 7px; border-radius: 6px;
+    color: var(--color-primary); background: var(--color-primary-light); border: 1px solid var(--color-border-accent); flex: 0 0 auto; }
+.help-doc .hm-cb-qg-by { font-size: .72rem; font-weight: 650; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 1px; }
+.help-doc .hm-cb-qg-by.is-empty { font-style: italic; font-weight: 500; color: var(--color-text-muted); }
+.help-doc .hm-cx2-card.is-quote .hm-cx2-head > .hx-mi { font-size: 15px; color: var(--color-text-secondary); }
+.help-doc .hm-cb-qg-quote { position: relative; margin: 0 10px 7px 12px; padding: 7px 9px 7px 26px; border-radius: 9px; font-size: .74rem; line-height: 1.45;
+    background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); color: var(--color-text-primary); overflow-wrap: anywhere; }
+.help-doc .hm-cb-qg-quote::before { content: '\201C'; position: absolute; left: 8px; top: -2px; font-size: 1.7rem; line-height: 1.2; color: var(--color-primary);
+    opacity: .7; font-family: Georgia, 'Times New Roman', serif; }
+.help-doc .hm-cb-qg-meta { display: flex; flex-wrap: wrap; gap: 3px 9px; padding: 0 10px 8px 12px; font-size: .62rem; color: var(--color-text-muted); flex: 1 1 auto; align-content: flex-start; }
+.help-doc .hm-cb-qg-meta > span { display: inline-flex; align-items: center; gap: 3px; }
+.help-doc .hm-cb-qg-meta .hx-mi { font-size: 12px; }
+
+/* Greetings: "Everyone else" banner, section label, viewer cards */
+.help-doc .hm-cb-qg-default { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; position: relative;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-surface)), var(--color-bg-surface));
+    border: 1px solid var(--color-border-accent); }
+.help-doc .hm-cb-qg-default.is-off { background: var(--color-bg-surface); border-color: var(--color-border-subtle); }
+.help-doc .hm-cb-qg-default.is-off .hm-cb-qg-default-msg { opacity: .55; }
+.help-doc .hm-cb-qg-tile { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    background: var(--color-primary-light); color: var(--color-primary); border: 1px solid var(--color-border-accent); }
+.help-doc .hm-cb-qg-tile .hx-mi { font-size: 18px; }
+.help-doc .hm-cb-qg-default-t { font-size: .62rem; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: .06em; }
+.help-doc .hm-cb-qg-default-msg { font-size: .8rem; color: var(--color-text-primary); margin-top: 1px; overflow-wrap: anywhere; }
+.help-doc .hm-cb-qg-default-sub { font-size: .64rem; color: var(--color-text-muted); margin-top: 1px; }
+.help-doc .hm-cb-qg-section { display: flex; align-items: center; gap: 8px; font-size: .62rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--color-text-muted); }
+.help-doc .hm-cb-qg-section::after { content: ''; flex: 1; height: 1px; background: var(--color-border-subtle); }
+.help-doc .hm-cb-qg-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .72rem;
+    font-weight: 800; color: #fff; flex: 0 0 auto; background: var(--color-primary); }
+.help-doc .hm-cb-qg-avatar.is-info { background: var(--color-info); }
+.help-doc .hm-cb-qg-avatar.is-success { background: var(--color-success); }
+.help-doc .hm-cb-qg-avatar.is-warning { background: var(--color-warning); }
+.help-doc .hm-cb-qg-user { font-size: .8rem; font-weight: 650; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.help-doc .hm-cb-qg-login { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .6rem; color: var(--color-text-muted); }
+.help-doc .hm-cx2-card.is-off .hm-cb-qg-quote { opacity: .5; }
+
+/* Dialog body (inside .hm.hm-cxe) and the live Twitch name check */
+.help-doc .hm-cb-qg-body { display: flex; flex-direction: column; gap: 9px; padding: 10px; background: var(--color-bg-base); position: relative; min-width: 0; }
+.help-doc .hm-cb-qg-found { display: inline-flex; align-items: center; gap: 4px; font-size: .66rem; font-weight: 600; color: var(--color-success); }
+.help-doc .hm-cb-qg-found.is-warn { color: var(--color-warning); }
+.help-doc .hm-cb-qg-found.is-busy { color: var(--color-text-muted); }
+.help-doc .hm-cb-qg-found .hx-mi { font-size: 14px; }
+.help-doc .hm-cb-qg-found > span:not([class]) { color: inherit; }
+.help-doc .hm-cb-qg-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px; }
+.help-doc .hm-cb-qg-pair > .hm-cxe-f { grid-column: auto; }
+
+@media (max-width: 640px) {
+    .help-doc .hm-cb-qg-default { grid-template-columns: auto minmax(0, 1fr); }
+    .help-doc .hm-cb-qg-default > :last-child { grid-column: 1 / -1; justify-self: end; }
+    .help-doc .hm-cb-qg-pair { grid-template-columns: minmax(0, 1fr); }
 }

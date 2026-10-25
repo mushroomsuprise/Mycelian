@@ -229,7 +229,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Managing Quotes and Highlights',
         category=HelpCategory.CHATBOT,
         summary='How to collect and manage memorable chat moments',
-        keywords=['quotes', 'highlights', 'memorable', 'moments', 'save'],
+        keywords=['quotes', 'highlights', 'memorable', 'moments', 'save', '!quote', 'add_quote', 'author', 'cooldown', 'renumber', 'reply format'],
         related_topics=['chatbot_commands', 'chatbot_events'],
     ),
     'chatbot_greetings': HelpTopic(
@@ -237,7 +237,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Chatbot Greetings',
         category=HelpCategory.CHATBOT,
         summary='Automatically greet viewers on their first chat message',
-        keywords=['greetings', 'welcome', 'hello', 'chat', 'viewers', 'automatic'],
+        keywords=['greetings', 'welcome', 'hello', 'chat', 'viewers', 'automatic', 'personal greeting', 'first message', 'greet again', 'regulars'],
         related_topics=['chatbot_commands', 'chatbot_events', 'chatbot_variables'],
     ),
     'chatbot_giveaways': HelpTopic(

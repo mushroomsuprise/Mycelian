@@ -1,7 +1,7 @@
-<p class="hx-lead">Save memorable lines from your stream and let chat pull them back up. Quotes are numbered. Viewers use the built-in <code>!quote</code> and <code>!add_quote</code> commands; you manage the list on the Quotes tab.</p>
+<p class="hx-lead">Save memorable lines from your stream and let chat pull them back up. Every quote has a number. Viewers use the built-in <code>!quote</code> and <code>!add_quote</code> commands; you manage the list on the Quotes tab.</p>
 
 <div class="hx-meta">
-  <span>{{icon:schedule}} About 2 minutes</span>
+  <span>{{icon:schedule}} About 3 minutes</span>
   <span>{{icon:place}} <span class="hx-path"><span>Chatbot</span><span>Quotes</span></span></span>
   <span>{{brand:twitch}} Twitch chat</span>
 </div>
@@ -18,100 +18,114 @@
       <span class="hm-subtab">Giveaways</span>
       <span class="hm-subtab">Polls</span>
     </div>
-    <div class="hm-frame">
-      <div class="hm-cb-toolbar">
-        <div class="hm-row">
-          <span class="hm-btn"><span class="hx-mi">format_quote</span>New Quote</span>
-          <span class="hm-btn hm-outline"><span class="hx-mi">refresh</span>Refresh</span>
-          <span class="hm-btn hm-outline"><span class="hx-mi">settings</span>Settings</span>
-          <span class="hm-marker" data-n="1"></span>
-        </div>
-        <div class="hm-field hm-base" data-label="🔍 Search quotes"><span class="hm-placeholder">Search by text, author, or ID...</span></div>
+    <div class="hm-frame hm-stack">
+      <div class="hm-cx2-bar">
+        <span class="hm-cb2-baricon"><span class="hx-mi">format_quote</span></span>
+        <span class="hm-cb2-bartext"><span class="hm-cb2-bartitle">Quotes <span class="hm-marker" data-n="1"></span></span><span class="hm-cb2-barsub">Memorable lines viewers can call up in chat. 3 quotes.</span></span>
+        <span class="hm-cx2-search"><span class="hx-mi">search</span>Search text, author or #</span>
+        <span class="hm-cxe-in is-select">Newest first</span>
+        <span class="hm-btn hm-outline hm-dense hm-icon-only"><span class="hx-mi">refresh</span></span>
+        <span class="hm-btn hm-dense"><span class="hx-mi">add</span>New quote</span>
       </div>
-      <div class="hm-cb-grid">
-        <div class="hm-cb-card">
-          <div class="hm-cb-card-head">
-            <div class="hm-col hm-tight">
-              <span class="hm-cb-card-title">Quote #12</span>
-              <span class="hm-cb-desc">by night_owl</span>
-            </div>
-            <div class="hm-col hm-tight">
-              <span class="hm-btn hm-cb-secondary hm-dense"><span class="hx-mi">edit</span>Edit</span>
-              <span class="hm-btn hm-cb-secondary hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
-              <span class="hm-btn hm-danger hm-dense"><span class="hx-mi">delete</span>Delete</span>
-            </div>
-          </div>
-          <span class="hm-muted hm-xs">Quote:</span>
-          <div class="hm-cb-quote">"I meant to jump into the lava."</div>
-          <div class="hm-cb-stats"><span>Added by: ModMika</span><span>Added: 10/14 21:07</span></div>
+      <div class="hm-cb-qg-strip">
+        <span class="hm-cb-qg-item"><span class="hm-switch is-on"><i></i></span><b>Quotes on</b></span>
+        <span class="hm-cb-qg-sep"></span>
+        <span class="hm-cb-qg-item">Viewers type <span class="hm-cb-qg-code">!quote</span> <span class="hm-cb-qg-code">!quote 4</span> <span class="hm-cb-qg-code">!quote word</span></span>
+        <span class="hm-cb-qg-sep"></span>
+        <span class="hm-cb-qg-item"><span class="hx-mi">timer</span>Cooldown <b>30 s</b></span>
+        <span class="hm-cb-qg-sep"></span>
+        <span class="hm-cb-qg-item"><span class="hx-mi">shield</span><span class="hm-cb-qg-code">!add_quote</span> <b>Mods</b></span>
+        <span class="hm-cb-qg-sep"></span>
+        <span class="hm-cb-qg-item"><span class="hx-mi">chat</span>Replies <span class="hm-cb-qg-fmt">#1: "Mushrooms are just trees that went to art school." — SporeLord</span></span>
+        <span class="hm-grow"></span>
+        <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">tune</span>Quote settings</span>
+        <span class="hm-marker" data-n="2"></span>
+      </div>
+      <div class="hm-cx2-grid">
+        <div class="hm-cx2-card is-quote">
+          <div class="hm-cx2-head"><span class="hm-cb-qg-num">#4</span><span class="hm-cx2-title"><span class="hm-cb-qg-by is-empty">No author</span></span><span class="hx-mi">send</span><span class="hm-marker" data-n="3"></span></div>
+          <div class="hm-cb-qg-quote">Chat, I have a plan. It is a bad plan.</div>
+          <div class="hm-cb-qg-meta"><span><span class="hx-mi">person_add</span>Added by ModMika</span><span><span class="hx-mi">event</span>Oct 21</span></div>
+          <div class="hm-cx2-foot"><span class="hx-mi">schedule</span>Never used<span class="hm-grow"></span><span class="hx-mi">content_copy</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span><span class="hm-marker" data-n="4"></span></div>
         </div>
-        <div class="hm-cb-card">
-          <div class="hm-cb-card-head">
-            <div class="hm-col hm-tight">
-              <span class="hm-cb-card-title">Quote #13</span>
-              <span class="hm-muted hm-xs"><em>Anonymous</em></span>
-              <span class="hm-marker" data-n="2"></span>
-            </div>
-            <div class="hm-col hm-tight">
-              <span class="hm-btn hm-cb-secondary hm-dense"><span class="hx-mi">edit</span>Edit</span>
-              <span class="hm-btn hm-cb-secondary hm-dense"><span class="hx-mi">content_copy</span>Duplicate</span>
-              <span class="hm-btn hm-danger hm-dense"><span class="hx-mi">delete</span>Delete</span>
-            </div>
-          </div>
-          <span class="hm-muted hm-xs">Quote:</span>
-          <div class="hm-cb-quote">"Chat, I have a plan. It is a bad plan."</div>
-          <div class="hm-cb-stats"><span>Added by: UI</span><span>Added: 10/21 20:55</span></div>
+        <div class="hm-cx2-card is-quote">
+          <div class="hm-cx2-head"><span class="hm-cb-qg-num">#2</span><span class="hm-cx2-title"><span class="hm-cb-qg-by">— night_owl</span></span><span class="hx-mi">send</span></div>
+          <div class="hm-cb-qg-quote">I meant to jump into the lava.</div>
+          <div class="hm-cb-qg-meta"><span><span class="hx-mi">person_add</span>Added by UI</span><span><span class="hx-mi">event</span>Oct 14</span></div>
+          <div class="hm-cx2-foot"><span class="hx-mi hm-cx2-bolt">bolt</span><b>3</b>&nbsp;times<span class="hm-grow"></span><span class="hx-mi">content_copy</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
+        </div>
+        <div class="hm-cx2-card is-quote">
+          <div class="hm-cx2-head"><span class="hm-cb-qg-num">#1</span><span class="hm-cx2-title"><span class="hm-cb-qg-by">— SporeLord</span></span><span class="hx-mi">send</span></div>
+          <div class="hm-cb-qg-quote">Mushrooms are just trees that went to art school.</div>
+          <div class="hm-cb-qg-meta"><span><span class="hx-mi">person_add</span>Added by MossyMika</span><span><span class="hx-mi">event</span>Sep 2</span></div>
+          <div class="hm-cx2-foot"><span class="hx-mi hm-cx2-bolt">bolt</span><b>14</b>&nbsp;times<span class="hm-grow"></span><span class="hx-mi">content_copy</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
         </div>
       </div>
     </div>
   </div>
-  <figcaption>Chatbot → Quotes. Quotes added from this tab show <em>Added by: UI</em>; quotes added from chat show the chatter's name.</figcaption>
+  <figcaption><span>Chatbot → Quotes, newest first. Quote #3 was deleted, so its number is free. The switch here only flips the picture.</span></figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1"><strong>New Quote</strong> adds one by hand. <strong>Settings</strong> turns the quote system on or off and sets the cooldown.</li>
-  <li data-n="2">A quote without an author shows <em>Anonymous</em>.</li>
+  <li data-n="1"><strong>Search</strong> matches the quote, the author, who added it, or a number (<code>4</code> or <code>#4</code>). The sort menu offers <strong>Newest first</strong>, <strong>Oldest first</strong>, <strong>By number</strong> and <strong>Most used</strong>. {{icon:refresh}} reloads; <strong>New quote</strong> opens the editor.</li>
+  <li data-n="2">The settings at a glance. The switch turns quotes on or off straight away. Then what viewers can type, the cooldown, who can use <code>!add_quote</code>, and how a reply looks, using your lowest-numbered quote. <strong>Quote settings</strong> changes them.</li>
+  <li data-n="3">The number, then <em>— author</em> or <em>No author</em>. {{icon:send}} <strong>Post this quote in chat now</strong> sends it with your reply format. If chat isn't connected, Mycelian says so and nothing is posted.</li>
+  <li data-n="4">How many times viewers called it up, or <em>Never used</em>. Then {{icon:content_copy}} <strong>Duplicate</strong> (saved as the next number), {{icon:edit}} <strong>Edit</strong> and {{icon:more_horiz}} with <strong>Copy the quote text</strong> and <strong>Delete…</strong>.</li>
 </ol>
 
-<h2>Add a quote from the app</h2>
+<p>With no quotes yet, the tab shows <em>No quotes yet</em> and an <strong>Add a quote</strong> button. <strong>Delete…</strong> asks <em>Delete quote #4?</em> and reminds you that its number stays free.</p>
+
+<h2>Add or edit a quote</h2>
 
 <div class="hx-split">
   <div>
     <figure class="hx-figure hx-static">
-      <div class="hm">
-        <div class="hm-cb-dialog">
-          <div class="hm-cb-dialog-head"><span>Add New Quote</span><span class="hx-mi">close</span></div>
-          <div class="hm-cb-dialog-body">
-            <div class="hm-field hm-textarea" data-label="Quote Text"><span class="hm-placeholder">Enter the quote text...</span></div>
-            <div class="hm-field" data-label="Author (optional)"><span class="hm-placeholder">Who said this quote?</span></div>
-            <div class="hm-row hm-end"><span class="hm-btn hm-flat">Cancel</span><span class="hm-btn"><span class="hx-mi">save</span>Add Quote</span></div>
+      <div class="hm hm-cxe">
+        <div class="hm-cxe-head">
+          <span class="hm-cxe-tile"><span class="hx-mi">format_quote</span></span>
+          <div class="hm-cxe-headtext"><span class="hm-cxe-name">New quote</span><span class="hm-cxe-desc">Will be quote #5. Viewers can call it with !quote 5.</span></div>
+          <span class="hx-mi">close</span>
+        </div>
+        <div class="hm-cb-qg-body">
+          <div class="hm-cxe-row"><span class="hm-cb2-mini">Number</span><span class="hm-cxe-in">#&nbsp;5</span></div>
+          <div class="hm-cxe-f"><span class="hm-cxe-label">Quote</span><div class="hm-cxe-box is-area is-focused">The lava was a lie.</div></div>
+          <div class="hm-cb-qg-pair">
+            <div class="hm-cxe-f"><span class="hm-cxe-label">Who said it</span><span class="hm-cxe-in">night_owl</span></div>
+            <div class="hm-cxe-f"><span class="hm-cxe-label">Added by</span><span class="hm-cxe-in"><span class="hm-placeholder">You</span></span></div>
           </div>
+          <div class="hm-cxe-preview"><span class="hx-mi">visibility</span><span>#5: "The lava was a lie." — night_owl</span></div>
+        </div>
+        <div class="hm-cxe-foot">
+          <span class="hm-grow"></span>
+          <span class="hm-btn hm-outline hm-dense">Cancel</span>
+          <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Add quote</span>
         </div>
       </div>
     </figure>
   </div>
   <div>
     <ol>
-      <li>Click <strong>New Quote</strong>.</li>
-      <li>Type the line in <strong>Quote Text</strong>. Leave out the quotation marks; the card adds them.</li>
-      <li>Optionally fill in <strong>Author</strong>.</li>
-      <li>Click <strong>Add Quote</strong>. A toast confirms <em>"Quote #N added successfully!"</em></li>
+      <li>Click <strong>New quote</strong>.</li>
+      <li>Type the line in <strong>Quote</strong>. Leave out the quotation marks; the reply format adds them.</li>
+      <li>Optionally fill in <strong>Who said it</strong> and <strong>Added by</strong>. Left empty, <em>Added by</em> saves as <em>UI</em>.</li>
+      <li>Check the preview, then click <strong>Add quote</strong> or press <kbd>Ctrl</kbd>+<kbd>Enter</kbd>.</li>
     </ol>
-    <p><strong>Edit</strong> on a card changes the text and author (<strong>Update Quote</strong>). The number stays the same.</p>
+    <p><strong>Number</strong> starts at the next free number. You can change it, but it can't match another quote: the editor says <em>#2 is already used by another quote.</em></p>
+    <p><strong>Edit</strong> opens the same editor as <em>Edit quote #2</em>, showing when it was added and how often it was used. You can change the text, author, who added it and the number. It adds a <strong>Delete</strong> button; the save button reads <strong>Save</strong>.</p>
   </div>
 </div>
 
 <h2>Chat commands</h2>
 
-<p>These are built in. You do not create them on the Commands tab, and no custom command can use the names <code>quote</code> or <code>add_quote</code>.</p>
+<p>These are built in while quotes are on. You don't create them on the Commands tab, and your own commands can't use the words <code>quote</code> or <code>add_quote</code>.</p>
 
 <div class="hx-table-wrap"><table>
   <thead><tr><th>Type in chat</th><th>Bot replies</th></tr></thead>
   <tbody>
-    <tr><td><span class="hx-copy" data-copy="!quote">!quote</span></td><td>A random quote, as <em>12. I meant to jump into the lava.</em></td></tr>
-    <tr><td><span class="hx-copy" data-copy="!quote 12">!quote 12</span></td><td>Quote number 12, or <em>Quote #12 not found!</em></td></tr>
+    <tr><td><span class="hx-copy" data-copy="!quote">!quote</span></td><td>A random quote, as <em>#2: "I meant to jump into the lava." — night_owl</em></td></tr>
+    <tr><td><span class="hx-copy" data-copy="!quote 2">!quote 2</span></td><td>Quote number 2, or <em>Quote #2 not found!</em></td></tr>
     <tr><td><span class="hx-copy" data-copy="!quote lava">!quote lava</span></td><td>The best match for <em>lava</em> in the text or author, or <em>No quotes found matching 'lava'</em></td></tr>
-    <tr><td><span class="hx-copy" data-copy='!add_quote "I meant to jump into the lava." night_owl'>!add_quote "text" author</span></td><td>Saves a new quote and replies <em>Quote #14 added successfully!</em> The author after the closing quotation mark is optional.</td></tr>
+    <tr><td><span class="hx-copy" data-copy='!add_quote "I meant to jump into the lava." night_owl'>!add_quote "text" author</span></td><td>Saves a new quote and replies <em>Quote #5 added successfully!</em> The author after the closing quotation mark is optional. Who added it is the chatter's name.</td></tr>
   </tbody>
 </table></div>
 
@@ -119,44 +133,71 @@
   <div class="hm-chat">
     <div class="hm-chat-title">{{brand:twitch}} Stream chat</div>
     <div class="hm-chat-line is-mod"><span class="hm-chat-badge is-mod">M</span><b>ModMika:</b> !add_quote "Chat, I have a plan. It is a bad plan."</div>
-    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> Quote #13 added successfully!</div>
+    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> Quote #4 added successfully!</div>
     <div class="hm-chat-line"><b>night_owl:</b> !quote lava</div>
-    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> 12. I meant to jump into the lava.</div>
-    <div class="hm-chat-line"><b>pixelpat:</b> !quote</div>
-    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> Quote command is on cooldown. Please wait 24 seconds.</div>
+    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> #2: "I meant to jump into the lava." — night_owl</div>
+    <div class="hm-chat-line"><b>pixelpat:</b> !quote 4</div>
+    <div class="hm-chat-line is-dim">(no reply: the 30-second cooldown is still running)</div>
   </div>
-  <figcaption>Replies show the number and text only. The author is stored but not posted.</figcaption>
+  <figcaption>Quote #4 has no author, so its reply would leave out the <em>— author</em> part.</figcaption>
 </figure>
 
-<div class="hx-callout hx-warning"><p>Anyone in chat can use <code>!add_quote</code>. There is no moderator-only setting for it. Review new quotes on the tab and delete anything you do not want.</p></div>
+<p>The bot stays silent when <code>!quote</code> is on cooldown, or when someone who isn't allowed tries <code>!add_quote</code>. <code>!add_quote</code> is for <strong>Mods</strong> by default; you, the broadcaster, can always use it.</p>
 
-<h2>Quote Settings</h2>
+<h2>Quote settings</h2>
 
 <figure class="hx-figure">
-  <div class="hm">
-    <div class="hm-cb-dialog">
-      <div class="hm-cb-dialog-head"><span class="hm-info">Quote Settings</span><span class="hx-mi">close</span></div>
-      <div class="hm-cb-dialog-body">
-        <div class="hm-row hm-between"><span class="hm-label hm-bold">Enable Quote System</span><span class="hm-switch is-on"><i></i></span></div>
-        <div class="hm-field" data-label="Global Quote Cooldown (seconds)"><span class="hm-value">30</span></div>
-        <div class="hm-cb-hint"><strong>💡 Quote Cooldown</strong><br>• Set to 0 to disable cooldown<br>• Applies to all quote commands (!quote)</div>
-        <div class="hm-row hm-end"><span class="hm-btn hm-flat">Cancel</span><span class="hm-btn hm-cb-secondary"><span class="hx-mi">save</span>Save Settings</span></div>
+  <div class="hm hm-cxe">
+    <div class="hm-cxe-head">
+      <span class="hm-cxe-tile"><span class="hx-mi">tune</span></span>
+      <div class="hm-cxe-headtext"><span class="hm-cxe-name">Quote settings</span><span class="hm-cxe-desc">How !quote and !add_quote behave in chat</span></div>
+      <span class="hx-mi">close</span>
+    </div>
+    <div class="hm-cb-qg-body">
+      <div class="hm-cxe-row"><span class="hm-cb2-mini">Quotes</span><span class="hm-switch is-on"><i></i></span><span class="hm-cxe-unit">!quote and !add_quote answer in chat</span></div>
+      <div class="hm-cxe-row"><span class="hm-cb2-mini">Cooldown</span><span class="hm-cxe-in">30</span><span class="hm-cxe-unit">seconds between !quote replies (0 = none)</span><span class="hm-marker" data-n="1"></span></div>
+      <div class="hm-cxe-row"><span class="hm-cb2-mini">Who can use !add_quote</span><span class="hm-cb2-seg"><span><span class="hx-mi">groups</span>Everyone</span><span><span class="hx-mi">star</span>Subscribers</span><span><span class="hx-mi">diamond</span>VIPs</span><span class="is-on"><span class="hx-mi">shield</span>Mods</span></span><span class="hm-marker" data-n="2"></span></div>
+      <div class="hm-cb2-box">
+        <div class="hm-cxe-f"><span class="hm-cxe-label">!quote reply</span><div class="hm-cxe-box is-area">#{number}: "{text}" — {author}<span class="hm-cxe-varbtn">{ }</span></div></div>
+        <div class="hm-cxe-preview"><span class="hx-mi">visibility</span><span>#1: "Mushrooms are just trees that went to art school." — SporeLord</span></div>
+        <div class="hm-cxe-row"><span class="hm-cb2-link">Reset to default</span><span class="hm-cxe-unit">When a quote has no author, the “ — {author}” part is left out.</span><span class="hm-marker" data-n="3"></span></div>
+      </div>
+      <div class="hm-cb2-box">
+        <div class="hm-cxe-row"><span class="hm-cb2-mini">Numbering</span><span class="hm-cxe-unit">#3 is missing (deleted quotes).</span><span class="hm-grow"></span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">format_list_numbered</span>Renumber 1–3</span><span class="hm-marker" data-n="4"></span></div>
       </div>
     </div>
+    <div class="hm-cxe-foot">
+      <span class="hm-grow"></span>
+      <span class="hm-btn hm-outline hm-dense">Cancel</span>
+      <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save settings</span>
+    </div>
   </div>
-  <figcaption>Opened with <strong>Settings</strong> on the Quotes tab. The switch is a preview only.</figcaption>
+  <figcaption><span>Opened with <strong>Quote settings</strong> on the Quotes tab. Changes apply when you click <strong>Save settings</strong>; <strong>Cancel</strong> or {{icon:close}} drops them.</span></figcaption>
 </figure>
 
-<ul>
-  <li><strong>Enable Quote System</strong> turns <code>!quote</code> and <code>!add_quote</code> on or off. It takes effect as soon as you flip it.</li>
-  <li><strong>Global Quote Cooldown</strong> is shared by everyone. The default is 30 seconds. It starts when a quote is posted, not when one is added.</li>
-</ul>
+<ol class="hx-annotations">
+  <li data-n="1">One cooldown shared by everyone, 30 seconds by default. It starts when a quote is posted in reply to <code>!quote</code>. <code>0</code> turns it off.</li>
+  <li data-n="2"><strong>Everyone</strong>, <strong>Subscribers</strong> (plus VIPs and mods), <strong>VIPs</strong> (plus mods) or <strong>Mods</strong>. The default is Mods.</li>
+  <li data-n="3">What the bot posts for <code>!quote</code> and for {{icon:send}} on a card. Type your own text; the <code>{ }</code> button inserts the variables below, and the preview uses one of your quotes. <strong>Reset to default</strong> puts back <code>#{number}: "{text}" — {author}</code>; an empty box also saves as the default.</li>
+  <li data-n="4">Only shown when deleted quotes left gaps. <strong>Renumber</strong> numbers the quotes 1, 2, 3… in their current order. It happens at once and closes the dialog without saving your other changes, so save those first.</li>
+</ol>
+
+<div class="hx-table-wrap"><table>
+  <thead><tr><th>Variable</th><th>Becomes</th></tr></thead>
+  <tbody>
+    <tr><td><code>{number}</code></td><td>The quote number</td></tr>
+    <tr><td><code>{text}</code></td><td>The quote</td></tr>
+    <tr><td><code>{author}</code></td><td>Who said it. When it is empty, <em>— {author}</em>, <em>- {author}</em> or <em>by {author}</em> is left out.</td></tr>
+    <tr><td><code>{date_added}</code></td><td>When it was added, like <em>Oct 14, 2026</em></td></tr>
+    <tr><td><code>{added_by}</code></td><td>Who added it</td></tr>
+  </tbody>
+</table></div>
 
 <h2>Questions</h2>
 
 <details class="hx-details">
   <summary>Why did my quote numbers skip?</summary>
-  <p>A new quote gets the highest number plus one. Deleting a quote does not renumber the others, so there can be gaps.</p>
+  <p>A new quote gets the highest number plus one, and deleting a quote doesn't renumber the others. To close the gaps, open <strong>Quote settings</strong> and click <strong>Renumber</strong>. Viewers who remember <em>!quote 12</em> may get a different quote afterwards.</p>
 </details>
 
 <details class="hx-details">
@@ -165,11 +206,16 @@
 </details>
 
 <details class="hx-details">
-  <summary>!quote does nothing</summary>
-  <p>Check that <strong>Enable Quote System</strong> is on and that Twitch is connected. If the cooldown is running the bot says so. Quote commands only work in Twitch chat.</p>
+  <summary>!quote or !add_quote does nothing</summary>
+  <p>Check that quotes are on and that Twitch is connected; quote commands only work in Twitch chat. The bot is also silent while the cooldown runs, and when the chatter isn't allowed to use <code>!add_quote</code>. Check <strong>Who can use !add_quote</strong> in Quote settings.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Someone added a quote I don't want</summary>
+  <p>Find it with the search box or sort by <strong>Newest first</strong>, then use {{icon:more_horiz}} → <strong>Delete…</strong>. To stop it happening, set <strong>Who can use !add_quote</strong> to <strong>Mods</strong>.</p>
 </details>
 
 <div class="hx-cards">
   <a class="hx-card" href="help:chatbot_commands">{{icon:terminal}}<span><strong>Commands</strong><span class="hx-card-text">Make your own !commands</span></span></a>
-  <a class="hx-card" href="help:chatbot_events">{{icon:celebration}}<span><strong>Events</strong><span class="hx-card-text">Automatic messages for stream events</span></span></a>
+  <a class="hx-card" href="help:chatbot_variables">{{icon:data_object}}<span><strong>Variables</strong><span class="hx-card-text">Quote variables for any reply</span></span></a>
 </div>

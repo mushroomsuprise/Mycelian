@@ -198,7 +198,7 @@ def test_blocked_commands_stay_silent(manager_factory):
 def test_quote_cooldown_is_silent(manager_factory):
     manager = manager_factory()
     manager.add_quote("hello", "a", "b")
-    assert manager.process_chat_message({"message": "!quote", "username": "v"})[0].endswith("hello")
+    assert manager.process_chat_message({"message": "!quote", "username": "v"})[0] == '#1: "hello" \u2014 a'
     assert manager.process_chat_message({"message": "!quote", "username": "v"})[0] == ""
 
 
@@ -877,3 +877,70 @@ def test_custom_variable_random_age_twitch_and_errors(monkeypatch):
     c._twitch_cache.clear()
     failing = dict(twitch, fallback="unknown")
     assert c._evaluate_definition({"kind": "twitch", "params": failing}, ctx, 1) == "unknown"
+
+
+# --------------------------------------------------------------------------
+# Quotes and greetings settings
+# --------------------------------------------------------------------------
+
+
+def test_quote_reply_format_permission_and_renumber(manager_factory):
+    manager = manager_factory()
+    assert manager.add_quote_permission == "moderator"
+    manager.add_quote("First line", "SporeLord", "ui")
+    manager.add_quote("Second {stats.x} line", "", "ui")
+    manager.add_quote("Third", "Mika", "ui")
+    q1 = manager.get_quote_by_number(1)
+    q2 = manager.get_quote_by_number(2)
+    assert manager.format_quote_reply(q1) == '#1: "First line" — SporeLord'
+    assert manager.format_quote_reply(q2) == '#2: "Second {stats.x} line"'  # no author part, viewer text not expanded
+    assert manager.format_quote_reply(q1, "{number}. {text} by {author}") == "1. First line by SporeLord"
+
+    viewer = {"username": "Viewer", "badges": "", "message": '!add_quote "hi"'}
+    result = manager._handle_add_quote_command(['"hi"'], dict(viewer))
+    assert not result[0]  # silent for non-mods
+    mod = dict(viewer, badges="moderator/1")
+    assert "added" in manager._handle_add_quote_command(['"hi"'], mod)[0]
+
+    manager.delete_quote(q2.quote_id)
+    assert manager.quote_number_gaps() == [2]
+    assert manager.renumber_quotes() == 2
+    assert sorted(q.quote_number for q in manager.get_all_quotes().values()) == [1, 2, 3]
+
+    q3 = manager.get_quote_by_number(3)
+    assert manager.update_quote(q3.quote_id, number=1) is False  # taken
+    assert manager.update_quote(q3.quote_id, number=9, added_by="Mod")
+    assert manager.get_quote_by_number(9).added_by == "Mod"
+
+    assert manager.save_quote_settings(enabled=False, cooldown_seconds=-5, add_permission="vip", reply_format="  ")
+    assert (manager.quotes_enabled, manager.quote_cooldown_seconds, manager.add_quote_permission) == (False, 0, "vip")
+    assert manager.quote_reply_format == cm.DEFAULT_QUOTE_REPLY_FORMAT
+
+
+def test_greetings_render_all_variables_and_settings(manager_factory, custom):
+    manager = manager_factory()
+    custom["custom_hi"] = {"kind": "text", "params": {"template": "hey {username}"}, "expression": ""}
+    text = manager.render_greeting("Welcome {username} ({user_id}) {custom_hi} {time:%Y}", "42", "Mossy{stats.x}")
+    assert text.startswith("Welcome Mossy{stats.x} (42) hey Mossy{stats.x} 2")
+    ok, _err, gid = manager.add_greeting("42", "Mossy", "Hi {username}!", True)
+    assert ok
+    manager.greetings[gid].greeted_flag = True
+    manager.greetings[gid].last_greeted = 123
+    assert manager.reset_greeting_for(gid)
+    assert manager.greetings[gid].greeted_flag is False
+    assert manager.save_greeting_settings(default_enabled=False, custom_enabled=True, default_text="Yo {username}",
+                                          reset_interval_hours=0)
+    assert (manager.default_greeting_enabled, manager.greeting_reset_interval_hours) == (False, 24)  # 0 = default
+    assert manager.save_greeting_settings(default_enabled=True, custom_enabled=True, default_text=" ",
+                                          reset_interval_hours=5) is False
+
+
+def test_disabled_personal_greeting_falls_back_to_default(manager_factory):
+    manager = manager_factory()
+    manager.flag_manager.should_greet_user.return_value = True
+    manager.default_greeting_text = "Welcome {username}"
+    ok, _e, gid = manager.add_greeting("7", "Mika", "Hi personal {username}", True)
+    assert manager.process_greeting("7", "Mika") == "Hi personal Mika"
+    manager.greetings[gid].greeted_flag = False
+    manager.update_greeting(gid, enabled=False)
+    assert manager.process_greeting("7", "Mika") == "Welcome Mika"

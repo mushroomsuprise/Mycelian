@@ -1,7 +1,7 @@
-<p class="hx-lead">The chatbot can welcome viewers when they send their first chat message. Everyone gets the <strong>default greeting</strong>. Viewers you pick can get their own <strong>custom greeting</strong> instead.</p>
+<p class="hx-lead">The chatbot can welcome viewers the first time they chat. Everyone gets the greeting for <strong>everyone else</strong>. Regulars you pick can get a <strong>personal greeting</strong> instead.</p>
 
 <div class="hx-meta">
-  <span>{{icon:schedule}} About 2 minutes</span>
+  <span>{{icon:schedule}} About 3 minutes</span>
   <span>{{icon:place}} <span class="hx-path"><span>Chatbot</span><span>Greetings</span></span></span>
   <span>{{brand:twitch}} Twitch chat only</span>
 </div>
@@ -10,9 +10,9 @@
 
 <ul>
   <li>A greeting is sent on a viewer's <strong>first Twitch chat message</strong>, including a <code>!command</code>.</li>
-  <li>After that, the viewer is not greeted again until the <strong>Greeting Reset Interval</strong> has passed. The default is 24 hours.</li>
-  <li>A viewer with a custom greeting gets that one. Everyone else gets the default greeting.</li>
-  <li>Greetings always post in Twitch chat, as the chatbot account. YouTube chat is not greeted.</li>
+  <li>Each viewer is greeted <strong>once every 24 hours</strong> by default. Mycelian keeps a list of who it has greeted and starts over when that time has passed. You can pick anything from an hour to a week.</li>
+  <li>A viewer with a personal greeting gets that one while <strong>Personal greetings</strong> is on. Everyone else, and those viewers too when personal greetings are off, gets the greeting for everyone else, if that is on.</li>
+  <li>Greetings post in Twitch chat as the chatbot account. YouTube chat is not greeted.</li>
 </ul>
 
 <figure class="hx-figure hx-static">
@@ -20,123 +20,193 @@
     <div class="hm-chat-title">{{brand:twitch}} Stream chat</div>
     <div class="hm-chat-line"><b>pixelpat:</b> hi everyone</div>
     <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> @pixelpat welcome to the stream!</div>
-    <div class="hm-chat-line"><b>night_owl:</b> evening!</div>
-    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> The owl has landed. Welcome back night_owl!</div>
+    <div class="hm-chat-line"><b>Night_Owl:</b> evening!</div>
+    <div class="hm-chat-line is-bot"><b>MyceliumBot:</b> The owl has landed. Welcome back Night_Owl!</div>
     <div class="hm-chat-line"><b>pixelpat:</b> what game is this?</div>
   </div>
-  <figcaption>pixelpat gets the default greeting; night_owl has a custom one. pixelpat's second message is not greeted.</figcaption>
+  <figcaption>pixelpat gets the greeting for everyone else; Night_Owl has a personal one. pixelpat's second message is not greeted.</figcaption>
 </figure>
 
-<h2>Greeting Settings</h2>
-
-<p>Click <strong>Settings</strong> on the Greetings tab.</p>
+<h2>The Greetings tab</h2>
 
 <figure class="hx-figure">
   <div class="hm">
-    <div class="hm-cb-dialog">
-      <div class="hm-cb-dialog-head"><span class="hm-info">Greeting Settings</span><span class="hx-mi">close</span></div>
-      <div class="hm-cb-dialog-body">
-        <div class="hm-row hm-between">
-          <span class="hm-label hm-bold">Greeting Types <span class="hm-marker" data-n="1"></span></span>
-          <div class="hm-row hm-gap-lg">
-            <div class="hm-col hm-tight"><span class="hm-switch is-on"><i></i></span><span class="hm-xs hm-info">Default</span></div>
-            <div class="hm-col hm-tight"><span class="hm-switch is-on"><i></i></span><span class="hm-xs hm-info">Custom</span></div>
-          </div>
+    <div class="hm-subtabs">
+      <span class="hm-subtab">Commands</span>
+      <span class="hm-subtab">Events</span>
+      <span class="hm-subtab">Quotes</span>
+      <span class="hm-subtab is-active">Greetings</span>
+      <span class="hm-subtab">Giveaways</span>
+      <span class="hm-subtab">Polls</span>
+    </div>
+    <div class="hm-frame hm-stack">
+      <div class="hm-cx2-bar">
+        <span class="hm-cb2-baricon"><span class="hx-mi">waving_hand</span></span>
+        <span class="hm-cb2-bartext"><span class="hm-cb2-bartitle">Greetings</span><span class="hm-cb2-barsub">A welcome message the first time a viewer chats. 3 personal greetings.</span></span>
+        <span class="hm-cx2-search"><span class="hx-mi">search</span>Search viewer or message</span>
+        <span class="hm-btn hm-outline hm-dense hm-icon-only"><span class="hx-mi">refresh</span></span>
+        <span class="hm-btn hm-dense"><span class="hx-mi">add</span>New greeting</span>
+      </div>
+      <div class="hm-cb-qg-default">
+        <span class="hm-cb-qg-tile"><span class="hx-mi">waving_hand</span></span>
+        <div>
+          <div class="hm-cb-qg-default-t">Everyone else <span class="hm-marker" data-n="1"></span></div>
+          <div class="hm-cb-qg-default-msg">@NewViewer welcome to the stream!</div>
+          <div class="hm-cb-qg-default-sub">Viewers without their own greeting get this the first time they chat.</div>
         </div>
-        <div class="hm-field hm-textarea" data-label="Default Greeting Text"><span class="hm-value">@{username} welcome to the stream!</span></div>
-        <div class="hm-row hm-nowrap"><div class="hm-field hm-grow" data-label="Greeting Reset Interval (hours)"><span class="hm-value">24</span></div><span class="hm-marker" data-n="2"></span></div>
-        <div class="hm-cb-hint"><strong>💡 Variables you can use in greetings:</strong><br>• {username} - The user's display name<br>• {user_id} - The user's unique ID<span class="hm-marker" data-n="3"></span></div>
-        <div class="hm-row hm-end"><span class="hm-btn hm-flat">Cancel</span><span class="hm-btn hm-cb-secondary"><span class="hx-mi">save</span>Save Settings</span></div>
+        <div class="hm-row hm-nowrap"><span class="hm-switch is-on"><i></i></span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">edit</span>Edit</span></div>
+      </div>
+      <div class="hm-cb-qg-strip">
+        <span class="hm-cb-qg-item"><span class="hx-mi">history</span>Greet each viewer once every <span class="hm-cxe-in is-select">24 hours</span><span class="hm-marker" data-n="2"></span></span>
+        <span class="hm-cb-qg-sep"></span>
+        <span class="hm-cb-qg-item"><span class="hx-mi">group</span><b>12</b> viewers greeted since 18:05</span>
+        <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">restart_alt</span>Greet everyone again</span>
+        <span class="hm-marker" data-n="3"></span>
+        <span class="hm-cb-qg-sep"></span>
+        <span class="hm-cb-qg-item"><span class="hm-switch is-on"><i></i></span>Personal greetings on<span class="hm-marker" data-n="4"></span></span>
+      </div>
+      <div class="hm-cb-qg-section">Personal greetings</div>
+      <div class="hm-cx2-grid">
+        <div class="hm-cx2-card">
+          <div class="hm-cx2-head"><span class="hm-cb-qg-avatar">N</span><span class="hm-cx2-title"><span class="hm-cb-qg-user">Night_Owl</span><span class="hm-cb-qg-login">@night_owl</span></span><span class="hm-switch is-on"><i></i></span><span class="hm-marker" data-n="5"></span></div>
+          <div class="hm-cb2-reply">The owl has landed. Welcome back Night_Owl!</div>
+          <div class="hm-cx2-foot"><span class="hx-mi">waving_hand</span>Greeted 2 hours ago<span class="hm-grow"></span><span class="hx-mi">restart_alt</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span><span class="hm-marker" data-n="6"></span></div>
+        </div>
+        <div class="hm-cx2-card">
+          <div class="hm-cx2-head"><span class="hm-cb-qg-avatar is-info">M</span><span class="hm-cx2-title"><span class="hm-cb-qg-user">ModMika</span><span class="hm-cb-qg-login">@modmika</span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-cb2-reply">All rise, ModMika has entered the chat. It's 7:42 PM, the party can start.</div>
+          <div class="hm-cx2-foot"><span class="hx-mi">schedule</span>Not greeted yet<span class="hm-grow"></span><span class="hx-mi">restart_alt</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
+        </div>
+        <div class="hm-cx2-card is-off">
+          <div class="hm-cx2-head"><span class="hm-cb-qg-avatar is-success">S</span><span class="hm-cx2-title"><span class="hm-cb-qg-user">SporeKid</span><span class="hm-cb-qg-login">@sporekid</span></span><span class="hm-switch"><i></i></span></div>
+          <div class="hm-cb2-reply">Look who it is! SporeKid is here 🍄</div>
+          <div class="hm-cx2-foot"><span class="hx-mi">waving_hand</span>Greeted 3 days ago<span class="hm-grow"></span><span class="hx-mi">restart_alt</span><span class="hx-mi">edit</span><span class="hx-mi">more_horiz</span></div>
+        </div>
       </div>
     </div>
   </div>
-  <figcaption>The two switches can be clicked here to preview them. In the app they apply immediately; the text and interval apply on Save Settings.</figcaption>
+  <figcaption><span>Chatbot → Greetings. Greetings are shown filled in with sample values. The switches here only flip the picture; in the app they save straight away.</span></figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1"><strong>Default</strong> turns the greeting for everyone on or off. <strong>Custom</strong> turns all per-viewer greetings on or off. Turn both off to stop greetings entirely.</li>
-  <li data-n="2">How many hours before a viewer can be greeted again. Minimum 1. An empty or invalid value saves as 24.</li>
-  <li data-n="3">Only <code>{username}</code> is filled in when the greeting is sent. <code>{user_id}</code> is listed here but stays as plain text in chat.</li>
+  <li data-n="1">The greeting for <strong>everyone else</strong>, as it would look. The switch turns it on or off; when off, the banner says <em>Off: viewers without their own greeting aren't greeted.</em> <strong>Edit</strong> opens its dialog.</li>
+  <li data-n="2">How often a viewer can be greeted: every hour, 3, 6, 12 or 24 hours, 2 days or a week.</li>
+  <li data-n="3">How many viewers have been greeted since the list last started over. <strong>Greet everyone again</strong> asks <em>Greet everyone again?</em>, then forgets who has been greeted, so every viewer is greeted the next time they chat.</li>
+  <li data-n="4">Turns all personal greetings on or off. While off, those viewers get the greeting for everyone else.</li>
+  <li data-n="5">A personal greeting: the viewer's name, their Twitch login, and the switch for this one greeting. A card that is off has a grey stripe.</li>
+  <li data-n="6">When they were last greeted, or <em>Not greeted yet</em>. {{icon:restart_alt}} <strong>Greet again the next time they chat</strong>, {{icon:edit}} <strong>Edit</strong>, and {{icon:more_horiz}} → <strong>Delete…</strong>, which asks <em>Delete Night_Owl's greeting?</em> They'll get the greeting for everyone else instead.</li>
 </ol>
 
-<p>The <strong>Default Greeting Text</strong> cannot be empty. Turn off <strong>Default</strong> instead if you only want custom greetings.</p>
+<p>The search box matches the viewer's name or the greeting text. With no personal greetings yet, the tab shows <em>No personal greetings yet</em> and an <strong>Add a greeting</strong> button.</p>
 
-<h2>Give a viewer a custom greeting</h2>
+<h2>The greeting for everyone else</h2>
 
-<section class="hx-guide" data-guide="chatbot_greetings_custom" data-title="Custom greeting">
-  <div class="hx-step">
-    <h3>Open Add New Greeting</h3>
-    <p>Click <strong>New Greeting</strong> on the Greetings tab.</p>
+<div class="hx-split">
+  <div>
     <figure class="hx-figure hx-static">
-      <div class="hm">
-        <div class="hm-cb-dialog">
-          <div class="hm-cb-dialog-head"><span>Add New Greeting</span><span class="hx-mi">close</span></div>
-          <div class="hm-cb-dialog-body">
-            <div class="hm-field is-focused" data-label="Username (required)"><span class="hm-value">night_owl</span></div>
-            <div class="hm-field hm-textarea" data-label="Greeting Text"><span class="hm-value">The owl has landed. Welcome back {username}!</span></div>
-            <span class="hm-switch is-on"><i></i>Enabled</span>
-            <div class="hm-row hm-end"><span class="hm-btn hm-flat">Cancel</span><span class="hm-btn"><span class="hx-mi">save</span>Add Greeting</span></div>
-          </div>
+      <div class="hm hm-cxe">
+        <div class="hm-cxe-head">
+          <span class="hm-cxe-tile"><span class="hx-mi">waving_hand</span></span>
+          <div class="hm-cxe-headtext"><span class="hm-cxe-name">Greeting for everyone else</span><span class="hm-cxe-desc">Sent the first time a viewer without a personal greeting chats</span></div>
+          <span class="hx-mi">close</span>
+        </div>
+        <div class="hm-cb-qg-body">
+          <div class="hm-cxe-box is-area is-focused">@{username} welcome to the stream!<span class="hm-cxe-varbtn">{ }</span></div>
+          <div class="hm-cxe-preview"><span class="hx-mi">visibility</span><span>@NewViewer welcome to the stream!</span></div>
+          <div class="hm-cxe-row"><span class="hm-cb2-mini">Greet each viewer once every</span><span class="hm-cxe-in">24</span><span class="hm-cxe-unit">hours</span></div>
+          <div class="hm-cxe-row"><span class="hm-cb2-mini">Greet everyone else</span><span class="hm-switch is-on"><i></i></span></div>
+        </div>
+        <div class="hm-cxe-foot">
+          <span class="hm-grow"></span>
+          <span class="hm-btn hm-outline hm-dense">Cancel</span>
+          <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span>
+        </div>
+      </div>
+    </figure>
+  </div>
+  <div>
+    <p>Click <strong>Edit</strong> on the <strong>Everyone else</strong> banner.</p>
+    <ul>
+      <li>Type the greeting. The <code>{ }</code> button inserts a variable, and the preview shows it with sample values.</li>
+      <li><strong>Greet each viewer once every</strong> takes any whole number of hours, 1 or more. It is the same setting as the menu on the tab.</li>
+      <li><strong>Greet everyone else</strong> is the banner's switch.</li>
+    </ul>
+    <p>Changes apply when you click <strong>Save</strong>. The greeting can't be empty (<em>Write the greeting.</em>); turn the switch off instead if you only want personal greetings.</p>
+  </div>
+</div>
+
+<h2>Give a viewer a personal greeting</h2>
+
+<section class="hx-guide" data-guide="chatbot_greetings_custom" data-title="Personal greeting">
+  <div class="hx-step">
+    <h3>Open New greeting</h3>
+    <p>Click <strong>New greeting</strong> on the Greetings tab (or <strong>Add a greeting</strong> when the list is empty).</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-cxe">
+        <div class="hm-cxe-head">
+          <span class="hm-cxe-tile"><span class="hx-mi">waving_hand</span></span>
+          <div class="hm-cxe-headtext"><span class="hm-cxe-name">New greeting</span><span class="hm-cxe-desc">A personal welcome for one viewer</span></div>
+          <span class="hx-mi">close</span>
+        </div>
+        <div class="hm-cb-qg-body">
+          <div class="hm-cxe-row"><span class="hm-cb2-mini">Twitch viewer</span><span class="hm-cxe-in">@&nbsp;night_owl</span><span class="hm-cb-qg-found"><span class="hx-mi">verified</span><span>Found Night_Owl on Twitch</span></span></div>
+          <div class="hm-cxe-box is-area is-focused">The owl has landed. Welcome back {username}!<span class="hm-cxe-varbtn">{ }</span></div>
+          <div class="hm-cxe-preview"><span class="hx-mi">visibility</span><span>The owl has landed. Welcome back Night_Owl!</span></div>
+          <div class="hm-cxe-row"><span class="hm-cb2-mini">Greeting on</span><span class="hm-switch is-on"><i></i></span><span class="hm-grow"></span><span class="hm-cxe-unit">Uses the same variables as command replies.</span></div>
+        </div>
+        <div class="hm-cxe-foot">
+          <span class="hm-grow"></span>
+          <span class="hm-btn hm-outline hm-dense">Cancel</span>
+          <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Add greeting</span>
         </div>
       </div>
     </figure>
   </div>
   <div class="hx-step">
-    <h3>Enter the Twitch username and message</h3>
-    <p>Type the viewer's Twitch username and the greeting. <code>{username}</code> becomes their name. Click <strong>Add Greeting</strong>.</p>
-    <p>Mycelian shows <em>"Looking up Twitch user..."</em> and finds the account's user ID, so the greeting keeps working if the viewer changes their name later. This needs Twitch to be connected. Each viewer can have only one custom greeting.</p>
+    <h3>Type the viewer's Twitch name</h3>
+    <p>Type their login in <strong>Twitch viewer</strong>; the <code>@</code> is optional. Mycelian checks it with Twitch as you type and shows <em>Found Night_Owl on Twitch</em>. It saves the account's ID, so the greeting keeps working if the viewer changes their name.</p>
+    <p>Other messages: <em>Couldn't find … on Twitch</em>, <em>That isn't a Twitch name</em>, <em>Twitch isn't connected</em> (connect it in <a href="help:twitch_setup">Twitch Setup</a>) and <em>Night_Owl already has a greeting</em> (each viewer can have one; edit that card instead).</p>
   </div>
   <div class="hx-step">
-    <h3>Check the card</h3>
-    <p>The new card appears on the tab.</p>
-    <figure class="hx-figure hx-static">
-      <div class="hm">
-        <div class="hm-cb-card">
-          <div class="hm-cb-card-head">
-            <div class="hm-col hm-tight">
-              <span class="hm-cb-card-title">@night_owl</span>
-              <span class="hm-cb-sub">ID: 123456789</span>
-            </div>
-            <div class="hm-cb-status"><span class="hm-cb-state">Enabled</span><span class="hm-switch is-on"><i></i></span></div>
-          </div>
-          <span class="hm-muted hm-xs">Greeting:</span>
-          <div class="hm-cb-quote is-greeting">The owl has landed. Welcome back <span class="hm-cb-var">@night_owl</span>!</div>
-          <div class="hm-cb-stats"><span>Never greeted</span><span>Type: Custom</span></div>
-          <div class="hm-cb-actions">
-            <span class="hm-btn hm-cb-secondary"><span class="hx-mi">edit</span>Edit</span>
-            <span class="hm-btn hm-danger"><span class="hx-mi">delete</span>Delete</span>
-          </div>
-        </div>
-      </div>
-    </figure>
-    <p><strong>Edit</strong> changes the greeting text and the Enabled switch. User ID and Username are shown read-only. The search box filters by username or greeting text.</p>
+    <h3>Write the greeting and save</h3>
+    <p>Type the greeting. <code>{username}</code> becomes their name, and the <code>{ }</code> button inserts any other variable. Leave <strong>Greeting on</strong> on and click <strong>Add greeting</strong>. The button stays greyed out until the name was found and the greeting has text.</p>
+    <p><strong>Edit</strong> on a card opens the same dialog, titled <em>Night_Owl's greeting</em>. The name can't be changed there; to greet a different viewer, add a new greeting. Edit also has a <strong>Delete</strong> button.</p>
   </div>
 </section>
 
-<div class="hx-callout hx-warning"><p>In the current version the <strong>Enabled</strong> switch on a custom greeting card is saved but does not stop that greeting from being sent. To stop one viewer's greeting, <strong>Delete</strong> the card. To stop all custom greetings, turn off <strong>Custom</strong> in Greeting Settings.</p></div>
+<h2>Variables in greetings</h2>
+
+<p>Both kinds of greeting use the same variables as command replies, and the <code>{ }</code> menu lists them with example values:</p>
+
+<ul>
+  <li><code>{username}</code> (display name), <code>{user_login}</code> (login name) and <code>{user_id}</code> (Twitch ID) of the viewer being greeted.</li>
+  <li>Date and time, such as <code>{time:%-I:%M %p}</code> for <em>7:42 PM</em>, statistics, quotes and your custom variables.</li>
+</ul>
+
+<p>Words typed after a command and Twitch lookups are not available, because a greeting is not a command. A viewer's name is always inserted as plain text, so a name with braces in it is never treated as a variable. See <a href="help:chatbot_variables">Chatbot Variables</a> for the full list.</p>
 
 <h2>Questions</h2>
 
 <details class="hx-details">
   <summary>Greetings are not sending</summary>
   <ul>
-    <li>Check that <strong>Default</strong> or <strong>Custom</strong> is on in Greeting Settings.</li>
+    <li>Check that the <strong>Everyone else</strong> switch or <strong>Personal greetings</strong> is on.</li>
     <li>Check that Twitch is connected and the chatbot account can chat. See <a href="help:twitch_setup">Twitch Setup</a>.</li>
-    <li>The viewer may already have been greeted within the reset interval. Each viewer is greeted at most once per interval.</li>
+    <li>The viewer may already have been greeted. Use {{icon:restart_alt}} on their card, or <strong>Greet everyone again</strong>, to test.</li>
   </ul>
 </details>
 
 <details class="hx-details">
   <summary>Too many greetings in a busy chat</summary>
-  <p>Raise the <strong>Greeting Reset Interval</strong>, for example to 168 hours (one week), so regulars are greeted less often. Or turn off <strong>Default</strong> and keep custom greetings for a few regulars.</p>
+  <p>Set <strong>Greet each viewer once every</strong> to <strong>week</strong> so regulars are greeted less often. Or turn off <strong>Everyone else</strong> and keep personal greetings for a few regulars.</p>
 </details>
 
 <details class="hx-details">
-  <summary>"User already has a greeting"</summary>
-  <p>Each viewer can have one custom greeting. Edit the existing card instead.</p>
+  <summary>"Twitch isn't connected" when adding a greeting</summary>
+  <p>Mycelian needs Twitch to look up the viewer's account. Connect Twitch first, then type the name again.</p>
 </details>
 
 <div class="hx-cards">
   <a class="hx-card" href="help:chatbot_events">{{icon:celebration}}<span><strong>Events</strong><span class="hx-card-text">Messages for follows, subs and raids</span></span></a>
-  <a class="hx-card" href="help:chatbot_variables">{{icon:data_object}}<span><strong>Variables</strong><span class="hx-card-text">Placeholders for commands and events</span></span></a>
+  <a class="hx-card" href="help:chatbot_variables">{{icon:data_object}}<span><strong>Variables</strong><span class="hx-card-text">Everything you can put in a greeting</span></span></a>
 </div>
