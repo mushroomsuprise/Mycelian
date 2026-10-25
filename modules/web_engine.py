@@ -2427,19 +2427,38 @@ class WebEngine:
             case where this endpoint is unreachable (network blip during
             save, etc.).
             """
+            # The overlay server accepts LAN peers; only this computer may raise app notifications.
+            if not _is_localhost_remote_addr(getattr(request, "remote_addr", None)):
+                return ({"error": "forbidden"}, 403, {"Content-Type": "application/json"})
             try:
                 from . import notification_engine as _ne
 
                 payload = request.get_json(silent=True) or {}
                 message = payload.get("message")
-                if not isinstance(message, str) or not message.strip():
+                title = payload.get("title")
+                if not (isinstance(message, str) and message.strip()) and not (isinstance(title, str) and title.strip()):
                     return (
                         {"error": "message is required"},
                         400,
                         {"Content-Type": "application/json"},
                     )
-                kind = payload.get("type") or "info"
-                _ne.notify(str(message), type=str(kind))
+
+                def _text(key: str, limit: int) -> str:
+                    value = payload.get(key)
+                    return str(value)[:limit] if isinstance(value, str) else ""
+
+                template = _text("template", 120)
+                actions = _ne.nav_spore_template(template) if template else None
+                _ne.notify(
+                    _text("message", 600),
+                    type=_text("type", 20) or "info",
+                    source=_text("source", 40) or "spore_studio",
+                    title=_text("title", 200) or None,
+                    hint=_text("hint", 400) or None,
+                    details=_text("details", 4000) or None,
+                    dedupe_key=("spore:" + _text("dedupe", 120)) if payload.get("dedupe") else None,
+                    actions=actions,
+                )
                 return (
                     {"ok": True},
                     200,
@@ -6667,6 +6686,44 @@ class WebEngine:
                 )
             except Exception as e:
                 logger.debug("mycelian_preview_client_ready failed: %s", e)
+
+        @self.socketio.on("dock_notify")
+        def handle_dock_notify(data=None):
+            """OBS docks (Activity Feed, Source Controls) report their errors to the app's
+            notification centre; routine dock messages stay inside the dock."""
+            if _reject_non_localhost_socket():
+                return
+            try:
+                data = data if isinstance(data, dict) else {}
+                level = str(data.get("level") or "").lower()
+                if level not in ("error", "negative"):
+                    return
+                source = str(data.get("source") or "")
+                if source not in ("activity_feed", "source_controls"):
+                    source = "app"
+                from . import notification_engine as _ne
+
+                _ne.notify(
+                    str(data.get("message") or "")[:600],
+                    type="error",
+                    source=source,
+                    title=str(data.get("title") or "")[:200] or None,
+                    hint=str(data.get("hint") or "")[:400] or None,
+                    skip_toast=True,
+                    dedupe_key="dock:" + source + ":" + str(data.get("title") or data.get("message") or "")[:120],
+                )
+            except Exception as e:
+                logger.debug("dock_notify failed: %s", e)
+
+        @self.socketio.on("get_notify_settings")
+        def handle_get_notify_settings():
+            """Pop-up settings for pages that show their own (OBS docks)."""
+            try:
+                from .notify_settings import current_prefs
+
+                self.socketio.emit("notify_settings", current_prefs().for_client(), to=request.sid)
+            except Exception as e:
+                logger.debug("get_notify_settings failed: %s", e)
 
         @self.socketio.on("get_current_theme")
         def handle_get_current_theme():

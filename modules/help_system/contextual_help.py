@@ -111,6 +111,50 @@ def navigate_to_settings_subtab(
         logger.debug("navigate_to_settings_subtab failed: %s", e)
 
 
+def _select_subtab_soon(get_tabs, label: str) -> None:
+    """Pick a sub-tab right after its main tab shows (lazy tabs build on first open)."""
+
+    def go() -> None:
+        tabs = get_tabs()
+        if tabs is None:
+            return
+        try:
+            tabs.value = label
+        except Exception as e:
+            logger.debug("sub-tab select failed: %s", e)
+
+    layout_schedule(0.12, go, once=True)
+    layout_schedule(0.45, go, once=True)
+
+
+def navigate_to_chatbot_subtab(subtab_label: str) -> None:
+    """Open Chatbot and select a sub-tab (Commands, Events, Quotes, Greetings, Giveaways, Polls)."""
+    navigate_to_main_tab("Chatbot")
+    _select_subtab_soon(lambda: _chatbot_tabs, subtab_label)
+
+
+def navigate_to_alerts_subtab(subtab_label: str) -> None:
+    """Open Alerts and select a sub-tab by label."""
+    navigate_to_main_tab("Alerts")
+    _select_subtab_soon(lambda: _alerts_tabs, subtab_label)
+
+
+def navigate_to_source_settings_template(config_name: str) -> None:
+    """Open Source Settings with ``config_name`` selected (prompts first if edits are unsaved)."""
+    navigate_to_main_tab("Source Settings")
+
+    def go() -> None:
+        try:
+            from ..uiwindows.customsources import select_config
+
+            select_config(config_name)
+        except Exception as e:
+            logger.debug("Source Settings select failed: %s", e)
+
+    for delay in (0.15, 0.6, 1.5):
+        layout_schedule(delay, go, once=True)
+
+
 def get_current_tab_context() -> Tuple[str, Optional[str]]:
     """
     Get the current active tab context.

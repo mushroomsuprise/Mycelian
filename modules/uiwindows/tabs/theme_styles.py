@@ -103,6 +103,17 @@ body:not(.body--dark) .thm :is(p, span, div, label):not([class]) { color: inheri
 .thm-focus-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-warning); }
 .thm-focus-val { font-size: .68rem; color: var(--color-text-muted); line-height: 1.35; }
 .thm-reads { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.thm-notify { display: flex; flex-direction: column; gap: 8px; }
+.thm-nstyles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.thm-nstyle { display: flex; align-items: center; justify-content: center; height: 28px; border-radius: 7px; cursor: pointer; font-size: .72rem; font-weight: 600;
+    color: var(--color-text-secondary); background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); user-select: none; }
+.thm-nstyle:hover { color: var(--color-text-primary); }
+.thm-nstyle.is-on { color: var(--color-text-primary); border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+.thm-nrow { display: grid; grid-template-columns: auto minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 6px 8px; font-size: .74rem;
+    color: var(--color-text-secondary); }
+.thm-nsel { min-width: 0; }
+.thm-nsample { display: block; }
+.thm-nsample .mt { width: 100%; pointer-events: none; }
 .thm-read { display: flex; align-items: center; gap: 5px; font-size: .72rem; color: var(--color-text-secondary); padding: 4px 6px; border-radius: 6px;
     background: var(--color-bg-base); }
 .thm-read b { margin-left: auto; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--color-text-primary); }

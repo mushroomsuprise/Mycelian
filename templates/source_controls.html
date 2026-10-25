@@ -7,6 +7,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
     <script src="/assets/default_assets/overlay_recovery.js"></script>
     <script src="/assets/default_assets/template_logger.js"></script>
+    <script src="/assets/default_assets/mycelian_toast.js"></script>
     <script>MycelianLog.init({ templateName: 'source_controls' });</script>
     <style>
         * {
@@ -653,10 +654,15 @@
 
                     // Request current theme on connect
                     broadcastSocket.emit('get_current_theme');
+                    broadcastSocket.emit('get_notify_settings');
                 });
 
                 broadcastSocket.on('template_config_updated', function () {
                     loadTemplateConfigs();
+                });
+
+                broadcastSocket.on('notify_settings', function (settings) {
+                    if (window.MycelianToast && settings) { MycelianToast.configure(Object.assign({}, settings, { dock: true })); }
                 });
 
                 // Theme update handler - applies theme CSS variables in real-time
@@ -1560,7 +1566,7 @@
             if (!broadcastSocket) {
                 console.error('No broadcast socket available');
                 if (!silent) {
-                    showNotification(`Failed to send ${action} to ${templateName} - No socket`, 'error');
+                    relayFailed(templateName, action, data, "The dock hasn't connected to Mycelian yet.");
                 }
                 return;
             }
@@ -1573,14 +1579,14 @@
                         if (broadcastSocket.connected) {
                             sendRelayEvent(templateName, action, eventName, data, silent);
                         } else if (!silent) {
-                            showNotification(`Failed to connect for ${action} to ${templateName}`, 'error');
+                            relayFailed(templateName, action, data, 'The dock has lost its connection to Mycelian.');
                         }
                     }, 100);
                     return;
                 } catch (error) {
                     console.error('Error reconnecting socket:', error);
                     if (!silent) {
-                        showNotification(`Connection failed for ${action} to ${templateName}`, 'error');
+                        relayFailed(templateName, action, data, 'The dock has lost its connection to Mycelian.');
                     }
                     return;
                 }
@@ -1601,7 +1607,7 @@
             } catch (error) {
                 console.error(`Error sending relay event ${action} for ${templateName}:`, error);
                 if (!silent) {
-                    showNotification(`Error relaying ${action} to ${templateName}`, 'error');
+                    relayFailed(templateName, action, data, 'Sending it failed: ' + (error && error.message ? error.message : 'unknown error') + '.');
                 }
             }
         }
@@ -1643,35 +1649,25 @@
             `;
         }
 
-        function showNotification(message, type = 'info') {
-            // Simple notification system
-            const notification = document.createElement('div');
-            notification.style.cssText = `
-                position: fixed;
-                top: 5px;
-                right: 10px;
-                padding: 10px 15px;
-                border-radius: 8px;
-                color: white;
-                font-size: 0.9rem;
-                z-index: 1001;
-                transition: all 0.3s ease;
-                ${type === 'success' ? 'background: linear-gradient(135deg, #16a34a, #22c55e);' : ''}
-                ${type === 'error' ? 'background: linear-gradient(135deg, #dc2626, #ef4444);' : ''}
-                ${type === 'info' ? 'background: linear-gradient(135deg, #3b82f6, #60a5fa);' : ''}
-            `;
-            notification.textContent = message;
-            
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                notification.style.opacity = '0';
-                notification.style.transform = 'translateX(100%)';
-                setTimeout(() => {
-                    document.body.removeChild(notification);
-                }, 300);
-            }, 3000);
+        function humanAction(action) {
+            return String(action || '').replace(/_/g, ' ');
         }
+
+        /* Pop-ups use the app's shared design and level settings; errors also reach the
+           app's notification centre (when the socket is up). */
+        function relayFailed(templateName, action, data, why) {
+            var title = "Couldn't send “" + humanAction(action) + "” to " + templateName;
+            var hint = 'Make sure Mycelian is running. The dock reconnects on its own; right-click the dock and choose Refresh if it doesn\'t.';
+            if (broadcastSocket && broadcastSocket.connected) {
+                broadcastSocket.emit('dock_notify', { source: 'source_controls', level: 'error', title: title, message: why, hint: hint });
+            }
+            if (!window.MycelianToast) { console.error(title, why); return; }
+            MycelianToast.local('error', title, why, {
+                source: 'Source Controls', hint: hint,
+                actions: [{ label: 'Try again', icon: 'refresh', run: function () { sendWebSocketEvent(templateName, action, data); } }]
+            });
+        }
+        if (window.MycelianToast) { MycelianToast.configure({ dock: true }); }
     </script>
 </body>
 </html> 

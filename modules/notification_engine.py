@@ -17,9 +17,11 @@ import time
 import uuid
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, cast
+from typing import Any, Callable, Dict, List, Optional
 
 from .connection_status_tracker import service_configured as _service_configured
+from .service_alerts import ServiceAlertTracker
+from .notify_settings import LEVEL_TO_TYPE, current_prefs, level_of, normalize_source, source_label
 from .path_utils import get_data_path
 
 logger = logging.getLogger(__name__)
@@ -31,163 +33,23 @@ DEFAULT_TOAST_TIMEOUT_MS = 5000
 # Values below this threshold are treated as seconds (legacy call sites used ``timeout=3``).
 _TIMEOUT_SECONDS_THRESHOLD = 1000
 
-# Quasar Notify pins ``left``/``width`` on dismiss but not ``top``. When leave-active
-# applies ``position: absolute`` the toast jumps to the top slot before exiting — this
-# script snapshots offsetTop and restores it for mycelian toasts.
-NOTIFICATION_LEAVE_PIN_SCRIPT = """
-<script>
-(function () {
-    var LEAVE_ACTIVE = 'q-notification--top-right-leave-active';
+def _toast_head_html() -> str:
+    """The shared pop-up renderer plus the glue that sends button clicks back to Python."""
+    try:
+        from .path_utils import get_assets_path
 
-    function snapshotPositions() {
-        document.querySelectorAll('.q-notification.mycelian-toast').forEach(function (el) {
-            if (el.classList.contains(LEAVE_ACTIVE)) {
-                return;
-            }
-            el.dataset.mycelianOffsetTop = String(el.offsetTop);
-        });
-    }
+        with open(get_assets_path("default_assets/mycelian_toast.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+    except Exception as e:
+        logger.error("Could not load the notification renderer: %s", e)
+        js = ""
+    glue = (
+        "if(window.MycelianToast){"
+        "MycelianToast.onAction=function(id,i){if(typeof emitEvent==='function')emitEvent('mycelian-toast-action',{id:id,index:i});};"
+        "MycelianToast.onDismiss=null;MycelianToast.ensureStyles();}"
+    )
+    return "<script>" + js + "\n" + glue + "</script>"
 
-    function pinLeavePosition(el) {
-        if (!el.classList || !el.classList.contains('mycelian-toast')) {
-            return;
-        }
-        if (!el.classList.contains(LEAVE_ACTIVE)) {
-            return;
-        }
-        if (el.dataset.mycelianLeavePinned === '1') {
-            return;
-        }
-        var top = el.dataset.mycelianOffsetTop;
-        if (top == null || top === '') {
-            return;
-        }
-        el.style.top = top + 'px';
-        el.dataset.mycelianLeavePinned = '1';
-    }
-
-    function scanLeaving() {
-        document.querySelectorAll('.q-notification.mycelian-toast.' + LEAVE_ACTIVE)
-            .forEach(pinLeavePosition);
-    }
-
-    function wireToastInteractions(el) {
-        if (!el || !el.classList || !el.classList.contains('mycelian-toast')) {
-            return;
-        }
-        if (el.dataset.mycelianToastWired === '1') {
-            return;
-        }
-        el.dataset.mycelianToastWired = '1';
-
-        var mainTab = el.getAttribute('data-mycelian-nav-main-tab');
-        var settingsSubtab = el.getAttribute('data-mycelian-nav-settings-subtab');
-        var sporeTemplate = el.getAttribute('data-mycelian-nav-spore-template');
-        if (!mainTab && !settingsSubtab && !sporeTemplate) {
-            return;
-        }
-
-        el.addEventListener('click', function (e) {
-            if (e.target.closest('.q-notification__actions')) {
-                return;
-            }
-            var msgEl = el.querySelector('.q-notification__message');
-            var message = msgEl ? (msgEl.textContent || '') : '';
-            if (typeof emitEvent === 'function') {
-                emitEvent('mycelian-toast-navigate', {
-                    main_tab: mainTab || '',
-                    settings_subtab: settingsSubtab || '',
-                    spore_template: sporeTemplate || '',
-                    message: message,
-                });
-            }
-        });
-    }
-
-    function wireAllToasts() {
-        document.querySelectorAll('.q-notification.mycelian-toast').forEach(wireToastInteractions);
-    }
-
-    var tracking = false;
-    var trackRaf = null;
-
-    function trackLoop() {
-        snapshotPositions();
-        scanLeaving();
-        if (document.querySelector('.q-notification.mycelian-toast')) {
-            trackRaf = requestAnimationFrame(trackLoop);
-        } else {
-            tracking = false;
-            trackRaf = null;
-        }
-    }
-
-    function ensureTracking() {
-        if (tracking) {
-            return;
-        }
-        if (!document.querySelector('.q-notification.mycelian-toast')) {
-            return;
-        }
-        tracking = true;
-        trackRaf = requestAnimationFrame(trackLoop);
-    }
-
-    function attachLists() {
-        document.querySelectorAll('.q-notifications__list').forEach(function (list) {
-            if (list.dataset.mycelianNotifyObserved === '1') {
-                return;
-            }
-            list.dataset.mycelianNotifyObserved = '1';
-            var observer = new MutationObserver(function (records) {
-                records.forEach(function (record) {
-                    if (record.type === 'attributes' && record.attributeName === 'class') {
-                        pinLeavePosition(record.target);
-                    }
-                });
-                snapshotPositions();
-                scanLeaving();
-                wireAllToasts();
-                ensureTracking();
-            });
-            observer.observe(list, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ['class'],
-            });
-        });
-    }
-
-    function boot() {
-        attachLists();
-        snapshotPositions();
-        wireAllToasts();
-        ensureTracking();
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', boot);
-    } else {
-        boot();
-    }
-
-    // Qt WebEngine may execute head scripts before <body> exists.
-    (function startBodyObserver() {
-        if (!document.body) {
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', startBodyObserver, { once: true });
-            }
-            return;
-        }
-        new MutationObserver(function () {
-            attachLists();
-            ensureTracking();
-        }).observe(document.body, { childList: true, subtree: true });
-    })();
-})();
-</script>
-"""
 
 _notification_leave_script_injected = False
 _toast_nav_handler_registered = False
@@ -204,33 +66,6 @@ _service_watcher_started = False
 
 def _history_path() -> Path:
     return Path(get_data_path(HISTORY_FILENAME))
-
-
-def _notifications_enabled() -> bool:
-    try:
-        from .dataobjects import state_manager
-
-        s = state_manager.get_app_settings()
-        if s is None:
-            return True
-        return bool(getattr(s, "notifications_enabled", True))
-    except Exception:
-        return True
-
-
-def _normalize_notify_type(notify_type: Optional[str]) -> str:
-    if not notify_type:
-        return "info"
-    t = str(notify_type).lower()
-    if t in ("error", "err"):
-        return "negative"
-    if t in ("ok", "success"):
-        return "positive"
-    if t in ("warn",):
-        return "warning"
-    if t in ("positive", "negative", "warning", "info", "ongoing"):
-        return t
-    return "info"
 
 
 def load_history() -> None:
@@ -388,46 +223,145 @@ def copy_text_to_clipboard(text: str) -> bool:
     return False
 
 
-def _pick_navigate_action(
-    actions: Optional[List[Dict[str, Any]]],
-) -> Optional[Dict[str, Any]]:
-    """First navigate action in the list, if any."""
+_NAV_KEYS = ("main_tab", "settings_subtab", "spore_template", "chatbot_tab", "alerts_tab", "source_template")
+
+
+def _action_label(action: Dict[str, Any]) -> str:
+    """Button text for an action that didn't name one."""
+    if action.get("label"):
+        return str(action["label"])
+    kind = action.get("kind")
+    if kind == "copy":
+        return "Copy details"
+    if kind != "navigate":
+        return "Open"
+    if action.get("spore_template"):
+        return "Open in Spore Studio"
+    if action.get("source_template"):
+        return "Open in Source Settings"
+    if action.get("settings_subtab"):
+        return f"Open {action['settings_subtab']} settings"
+    if action.get("chatbot_tab"):
+        return f"Open Chatbot → {action['chatbot_tab']}"
+    if action.get("alerts_tab"):
+        return f"Open Alerts → {action['alerts_tab']}"
+    if action.get("main_tab"):
+        return f"Open {action['main_tab']}"
+    return "Open"
+
+
+def _action_icon(action: Dict[str, Any]) -> str:
+    if action.get("icon"):
+        return str(action["icon"])
+    if action.get("kind") == "copy":
+        return "content_copy"
+    if action.get("spore_template"):
+        return "auto_awesome"
+    return "open_in_new"
+
+
+def _normalize_actions(actions: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
     for a in actions or []:
-        if isinstance(a, dict) and a.get("kind") == "navigate":
-            return a
-    return None
+        if not isinstance(a, dict):
+            continue
+        kind = a.get("kind")
+        if kind == "navigate":
+            if not any(a.get(k) for k in _NAV_KEYS):
+                continue
+            out.append({k: v for k, v in a.items() if k in _NAV_KEYS + ("kind", "label", "icon") and v})
+        elif kind == "copy":
+            out.append({k: v for k, v in a.items() if k in ("kind", "label", "icon", "text") and v is not None})
+        elif kind == "call" and callable(a.get("fn")):
+            out.append(dict(a))
+    return out
 
 
 def run_action(
     action: Dict[str, Any],
     *,
     message: str,
+    entry: Optional[Dict[str, Any]] = None,
 ) -> None:
     kind = (action or {}).get("kind")
     if kind == "copy":
-        if not copy_text_to_clipboard(message):
+        text = action.get("text") or _copy_text_for(entry) or message
+        if copy_text_to_clipboard(text):
+            notify("Copied to the clipboard", type="positive", source=(entry or {}).get("source"),
+                   dedupe_key="notify:copied", dedupe_cooldown_sec=2)
+        else:
             logger.debug("clipboard copy failed for notification action")
+    elif kind == "call":
+        fn = action.get("fn")
+        if callable(fn):
+            try:
+                fn()
+            except Exception as e:
+                logger.error("Notification action failed: %s", e, exc_info=True)
     elif kind == "navigate":
-        from .help_system.contextual_help import navigate_to_settings_subtab
+        from .help_system import contextual_help as ch
 
         main_tab = action.get("main_tab")
         settings_subtab = action.get("settings_subtab")
         if settings_subtab:
-            navigate_to_settings_subtab(str(settings_subtab), main_tab=str(main_tab) if main_tab else None)
+            ch.navigate_to_settings_subtab(str(settings_subtab), main_tab=str(main_tab) if main_tab else None)
+        elif action.get("chatbot_tab"):
+            ch.navigate_to_chatbot_subtab(str(action["chatbot_tab"]))
+        elif action.get("alerts_tab"):
+            ch.navigate_to_alerts_subtab(str(action["alerts_tab"]))
+        elif action.get("source_template"):
+            ch.navigate_to_source_settings_template(str(action["source_template"]))
         elif main_tab:
-            from .help_system.contextual_help import navigate_to_main_tab
-
-            navigate_to_main_tab(str(main_tab))
+            ch.navigate_to_main_tab(str(main_tab))
         spore_template = action.get("spore_template")
         if spore_template:
-            from .help_system.contextual_help import navigate_to_main_tab
             from .uiwindows.spore_studio.editor_view import open_template
 
-            navigate_to_main_tab("Spore Studio")
+            ch.navigate_to_main_tab("Spore Studio")
             open_template(str(spore_template))
 
 
+def _copy_text_for(entry: Optional[Dict[str, Any]]) -> str:
+    """What "Copy" copies: the details when there are some, else title, message and fix."""
+    if not entry:
+        return ""
+    if entry.get("details"):
+        head = " - ".join(x for x in (entry.get("title"), entry.get("message")) if x)
+        return f"{head}\n\n{entry['details']}" if head else str(entry["details"])
+    parts = [entry.get("title"), entry.get("message"), entry.get("hint")]
+    return "\n".join(str(p) for p in parts if p)
+
+
+# Repeats of the same notification within the cooldown update one entry (×N) instead
+# of adding a new one. Key -> (entry id, last time).
+_repeat_index: Dict[str, tuple] = {}
+_REPEAT_INDEX_LIMIT = 512
+# Callbacks for "call" actions, which can't be stored in history. Entry id -> actions.
+_call_actions: Dict[str, List[Dict[str, Any]]] = {}
+_CALL_ACTIONS_LIMIT = 200
+
+
+def _remember_repeat(key: str, entry_id: str) -> None:
+    now = time.monotonic()
+    _repeat_index[key] = (entry_id, now)
+    if len(_repeat_index) > _REPEAT_INDEX_LIMIT:
+        for k, (_eid, stamp) in list(_repeat_index.items()):
+            if now - stamp > _DEDUPE_ENTRY_TTL_SEC:
+                _repeat_index.pop(k, None)
+
+
+def _find_repeat(key: str, cooldown: float) -> Optional[str]:
+    hit = _repeat_index.get(key)
+    if not hit:
+        return None
+    entry_id, stamp = hit
+    if time.monotonic() - stamp >= cooldown:
+        return None
+    return entry_id
+
+
 def _should_skip_dedupe(dedupe_key: Optional[str], cooldown: float) -> bool:
+    """True when ``dedupe_key`` fired within ``cooldown`` (used by callers that gate work)."""
     if not dedupe_key:
         return False
     now = time.monotonic()
@@ -452,101 +386,98 @@ def _mark_dedupe(dedupe_key: str) -> None:
                 _last_emit_monotonic.pop(key, None)
 
 
-def _normalize_timeout_ms(timeout: Optional[float]) -> int:
-    """Convert app timeout values to Quasar Notify milliseconds.
-
-    Call sites mix seconds (``3``, ``8.0``) and milliseconds (``2000``). Quasar
-    always expects milliseconds; small values otherwise dismiss almost instantly.
-    """
-    if timeout is None:
-        return DEFAULT_TOAST_TIMEOUT_MS
-    if timeout == 0:
-        return 0
-    if timeout < _TIMEOUT_SECONDS_THRESHOLD:
-        return max(0, int(round(float(timeout) * 1000)))
-    return max(0, int(round(float(timeout))))
-
-
-def _build_toast_opts(
-    ntype: str,
-    *,
-    position: str = "top-right",
-    timeout: Optional[float] = None,
-    actions: Optional[List[Dict[str, Any]]] = None,
-    **kwargs: Any,
-) -> Dict[str, Any]:
-    """Build Quasar Notify options aligned with notification-center history cards.
-
-    Quasar ``type`` applies ``bg-*`` utilities from the ``quasar_importants`` CSS layer
-    (bright fills, white text, type icons). History cards use themed ``nc-history-card--*``
-    classes instead — floating toasts mirror that via ``mycelian-toast--*``.
-    """
-    class_parts = ["mycelian-toast", f"mycelian-toast--{ntype}"]
-    extra = dict(kwargs)
-    extra.pop("type", None)
-    extra.pop("actions", None)
-    if "timeout" in extra:
-        extra["timeout"] = _normalize_timeout_ms(extra.get("timeout"))
-    close_btn = extra.get("close_button", extra.get("closeBtn"))
-    if close_btn is not False:
-        extra["close_button"] = (
-            "\u00d7" if close_btn in (None, True) else close_btn
-        )
-
-    nav_action = _pick_navigate_action(actions)
-    if nav_action:
-        class_parts.append("mycelian-toast--clickable")
-        attrs = dict(extra.get("attrs") or {})
-        main_tab = nav_action.get("main_tab")
-        settings_subtab = nav_action.get("settings_subtab")
-        if main_tab:
-            attrs["data-mycelian-nav-main-tab"] = str(main_tab)
-        if settings_subtab:
-            attrs["data-mycelian-nav-settings-subtab"] = str(settings_subtab)
-        spore_template = nav_action.get("spore_template")
-        if spore_template:
-            attrs["data-mycelian-nav-spore-template"] = str(spore_template)
-        extra["attrs"] = attrs
-
-    opts: Dict[str, Any] = {
-        "position": position,
-        "classes": " ".join(class_parts),
-        "group": False,
-        "ignoreDefaults": True,
-        "timeout": _normalize_timeout_ms(timeout),
+def _toast_payload(entry: Dict[str, Any], timeout_ms: int) -> Dict[str, Any]:
+    """What the browser renderer gets (no callables, labels resolved)."""
+    actions = []
+    click = None
+    for index, a in enumerate(entry.get("actions") or []):
+        actions.append({"label": _action_label(a), "icon": _action_icon(a)})
+        if click is None and a.get("kind") == "navigate":
+            click = index
+    return {
+        "id": entry["id"],
+        "level": entry.get("level", "info"),
+        "source": source_label(entry.get("source")),
+        "title": entry.get("title") or "",
+        "message": entry.get("message") or "",
+        "hint": entry.get("hint") or "",
+        "actions": actions,
+        "count": int(entry.get("count") or 1),
+        "timeout": timeout_ms,
+        "progress": entry.get("progress"),
+        "click": click,
     }
-    opts.update(extra)
-    return opts
 
 
-def _deliver_toast(message: str, opts: Dict[str, Any]) -> bool:
-    """Show a toast if the UI is ready. Returns False when delivery should be retried.
+def _deliver_js(code: str) -> bool:
+    """Run ``code`` in every connected client. False when the UI isn't up yet (retry later).
 
-    Never calls ``ui.notify``: that reads ``context.client``, which before
-    ``ui.run`` creates a NiceGUI pseudo-client and flips ``core.script_mode``.
-    That causes ``ui.run(root=...)`` to be replaced with script re-execution and
-    can shut the whole app down on a 404. Background threads (overlay restart)
-    must only use the broadcast path, or queue until clients exist.
+    Never touches ``context.client``: before ``ui.run`` that creates a NiceGUI pseudo-client
+    and flips ``core.script_mode`` (which can shut the app down). Safe from any thread: the
+    enqueue runs on NiceGUI's loop.
     """
-    inject_notification_ui_assets()
     try:
         from nicegui import Client, core
 
         app = getattr(core, "app", None)
         if app is None or not getattr(app, "is_started", False):
             return False
-        live_clients = [
-            c
-            for c in list(Client.instances.values())
-            if not getattr(c, "_deleted", False)
-        ]
-        if not live_clients:
+        clients = [c for c in list(Client.instances.values()) if not getattr(c, "_deleted", False)]
+        if not clients:
             return False
-        _broadcast_notify(message, opts)
-        return True
     except Exception as e:
-        logger.warning("broadcast notify failed: %s", e)
+        logger.warning("notification delivery failed: %s", e)
         return False
+
+    def _enqueue() -> None:
+        for client in list(Client.instances.values()):
+            if getattr(client, "_deleted", False):
+                continue
+            try:
+                client.outbox.enqueue_message("run_javascript", {"code": code}, client.id)
+            except Exception as e:
+                logger.debug("notification skipped client %s: %s", client, e)
+
+    loop = getattr(core, "loop", None)
+    if loop is not None and loop.is_running():
+        try:
+            loop.call_soon_threadsafe(_enqueue)
+            return True
+        except RuntimeError:
+            pass
+    _enqueue()
+    return True
+
+
+def _deliver_toast(message: Any, opts: Optional[Dict[str, Any]] = None) -> bool:
+    """Show (or update) one pop-up. ``message`` is a renderer payload (or plain text)."""
+    inject_notification_ui_assets()
+    payload = message if isinstance(message, dict) else {
+        "id": str(uuid.uuid4()), "level": level_of((opts or {}).get("type")), "title": str(message), "timeout": DEFAULT_TOAST_TIMEOUT_MS,
+    }
+    cfg = (opts or {}).get("config") or current_prefs().for_client()
+    code = (
+        "window.MycelianToast&&(MycelianToast.configure(" + json.dumps(cfg) + "),"
+        "MycelianToast.show(" + json.dumps(payload) + "))"
+    )
+    return _deliver_js(code)
+
+
+def dismiss_notification(entry_id: str) -> None:
+    """Close a pop-up (it stays in the notification centre)."""
+    _deliver_js("window.MycelianToast&&MycelianToast.dismiss(" + json.dumps(str(entry_id)) + ")")
+
+
+def _queue_toast(payload: Dict[str, Any], opts: Dict[str, Any]) -> None:
+    with _history_lock:
+        _pending_toasts[:] = [(p, o) for p, o in _pending_toasts if not (isinstance(p, dict) and p.get("id") == payload["id"])]
+        _pending_toasts.append((payload, dict(opts)))
+        if len(_pending_toasts) > _MAX_PENDING_TOASTS:
+            # Keep errors when trimming: they are usually the root cause.
+            errors = [t for t in _pending_toasts if isinstance(t[0], dict) and t[0].get("level") == "error"]
+            rest = [t for t in _pending_toasts if t not in errors]
+            _pending_toasts[:] = (errors + rest)[-_MAX_PENDING_TOASTS:]
+    _ensure_toast_flush_timer()
 
 
 _toast_flush_timer: Optional[Any] = None
@@ -589,7 +520,7 @@ def flush_pending_toasts() -> None:
             return
         pending = list(_pending_toasts)
         _pending_toasts.clear()
-    still_pending: List[tuple[str, Dict[str, Any]]] = []
+    still_pending: List[tuple] = []
     for message, opts in pending:
         if not _deliver_toast(message, opts):
             still_pending.append((message, opts))
@@ -599,147 +530,199 @@ def flush_pending_toasts() -> None:
         _ensure_toast_flush_timer()
 
 
+def _find_entry(entry_id: str) -> Optional[Dict[str, Any]]:
+    with _history_lock:
+        for entry in reversed(_history):
+            if entry.get("id") == entry_id:
+                return entry
+    return None
+
+
+def _stored_actions(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Actions without callables (history is saved as JSON)."""
+    return [{k: v for k, v in a.items() if k != "fn"} for a in actions]
+
+
 def notify(
     message: str,
     *,
     type: str = "info",
-    position: str = "top-right",
+    source: Optional[str] = None,
+    title: Optional[str] = None,
+    hint: Optional[str] = None,
+    details: Optional[str] = None,
+    position: Optional[str] = None,
     timeout: Optional[float] = None,
     dedupe_key: Optional[str] = None,
     dedupe_cooldown_sec: float = DEFAULT_DEDUPE_COOLDOWN_SEC,
     skip_toast: bool = False,
     actions: Optional[List[Dict[str, Any]]] = None,
+    progress: Optional[float] = None,
+    notice_id: Optional[str] = None,
+    sticky: bool = False,
     **kwargs: Any,
 ) -> Optional[str]:
+    """Show a pop-up and record it in the notification centre.
+
+    ``type``: error / warning / info / success / ongoing (Quasar names also work).
+    ``source``: the feature it belongs to (see ``notify_settings.SOURCES``); the user can
+    silence each level per feature. ``title`` is the bold first line and ``message`` the
+    detail under it; with no title, ``message`` is the title. ``hint`` says how to fix it.
+    ``details`` is what "Copy details" copies (exception text, URLs...).
+    ``actions``: ``{"kind": "navigate", main_tab | settings_subtab | chatbot_tab | alerts_tab
+    | spore_template | source_template, "label"?}``, ``{"kind": "copy", "text"?}``,
+    ``{"kind": "call", "label", "fn"}``.
+    Repeats within ``dedupe_cooldown_sec`` update the same entry and show ×N.
+    ``notice_id`` updates an existing entry in place (see :func:`notify_progress`).
+    Durations come from the user's settings; ``timeout=0`` or ``sticky`` keeps it up.
+
+    Returns the entry id, or None when the user's settings drop it entirely.
     """
-    Show a toast and record in notification center history.
-
-    ``type`` accepts NiceGUI/Quasar names; ``error`` maps to ``negative``.
-
-    Returns the history entry id, or None if deduped and skipped entirely.
-    """
-    if not _notifications_enabled():
+    del position, kwargs  # legacy Quasar options; the look and place come from settings
+    level = level_of(type)
+    src = normalize_source(source)
+    prefs = current_prefs()
+    muted = prefs.is_muted(level, src)
+    if muted and not prefs.record_muted:
         return None
+    text = str(message or "")
+    head = str(title or "").strip()
+    norm_actions = _normalize_actions(actions)
+    if details and not any(a.get("kind") == "copy" for a in norm_actions):
+        norm_actions.append({"kind": "copy"})
 
-    ntype = _normalize_notify_type(type)
-    key = dedupe_key or f"msg:{ntype}:{message[:120]}"
-    if _should_skip_dedupe(key, dedupe_cooldown_sec):
-        return None
-    _mark_dedupe(key)
-
-    entry_id = str(uuid.uuid4())
-    entry: Dict[str, Any] = {
-        "id": entry_id,
-        "ts": time.time(),
-        "message": message,
-        "type": ntype,
-        "dedupe_key": dedupe_key,
-        "actions": actions or [],
-    }
     _ensure_history_loaded()
+    repeat = False
     with _history_lock:
-        _history.append(entry)
-        if len(_history) > MAX_HISTORY_ITEMS:
-            del _history[: len(_history) - MAX_HISTORY_ITEMS]
+        entry: Optional[Dict[str, Any]] = _find_entry(notice_id) if notice_id else None
+        key = dedupe_key or f"{src}:{level}:{head or text}"[:240]
+        if entry is None and not notice_id:
+            hit = _find_repeat(key, dedupe_cooldown_sec)
+            entry = _find_entry(hit) if hit else None
+            repeat = entry is not None
+        if dedupe_key:
+            _mark_dedupe(dedupe_key)
+        now = time.time()
+        if entry is None:
+            entry = {"id": notice_id or str(uuid.uuid4()), "first_ts": now, "count": 1}
+            _history.append(entry)
+            if len(_history) > MAX_HISTORY_ITEMS:
+                del _history[: len(_history) - MAX_HISTORY_ITEMS]
+        elif repeat:
+            entry["count"] = int(entry.get("count") or 1) + 1
+            entry["read"] = False
+            # A repeat that says less keeps what the first one offered.
+            if not norm_actions:
+                norm_actions = _call_actions.get(entry["id"]) or list(entry.get("actions") or [])
+            hint = hint or entry.get("hint")
+            details = details or entry.get("details")
+        entry.update({
+            "ts": now,
+            "level": level,
+            "type": LEVEL_TO_TYPE.get(level, "info"),
+            "source": src,
+            "title": head,
+            "message": text,
+            "hint": str(hint or ""),
+            "details": str(details or ""),
+            "dedupe_key": dedupe_key,
+            "actions": _stored_actions(norm_actions),
+            "progress": progress if level == "ongoing" else None,
+            "muted": muted,
+        })
+        if not notice_id:
+            _remember_repeat(key, entry["id"])
+        if any(a.get("kind") == "call" for a in norm_actions):
+            _call_actions[entry["id"]] = norm_actions
+            while len(_call_actions) > _CALL_ACTIONS_LIMIT:
+                _call_actions.pop(next(iter(_call_actions)))
+        snapshot = dict(entry)
     _flush_history_soon()
     _trigger_history_refresh()
-    if ntype in ("negative", "warning"):
+
+    if level in ("error", "warning") and not muted and not repeat and prefs.desktop_when_minimized:
         try:
             from .tray_controller import is_minimized
 
             if is_minimized():
                 from .system_notify import notify_async
 
-                notify_async(message, title="Mycelian")
+                notify_async(text if head else "", title=head or text or "Mycelian")
         except Exception:
             pass
 
-    if not skip_toast:
-        opts = _build_toast_opts(
-            ntype,
-            position=position,
-            timeout=timeout,
-            actions=actions,
-            **kwargs,
-        )
-        if not _deliver_toast(message, opts):
-            with _history_lock:
-                _pending_toasts.append((message, dict(opts)))
-                if len(_pending_toasts) > _MAX_PENDING_TOASTS:
-                    del _pending_toasts[: len(_pending_toasts) - _MAX_PENDING_TOASTS]
-            _ensure_toast_flush_timer()
-
-    return entry_id
+    popup = not skip_toast and prefs.show_popup(level, src)
+    if popup or notice_id:
+        # Updates of a progress notice always reach its pop-up (or close it when muted).
+        if not popup:
+            dismiss_notification(snapshot["id"])
+        else:
+            payload = _toast_payload(snapshot, prefs.duration_ms(level, sticky=sticky or timeout == 0))
+            opts = {"config": prefs.for_client()}
+            if not _deliver_toast(payload, opts):
+                _queue_toast(payload, opts)
+    return snapshot["id"]
 
 
-def _broadcast_notify(message: str, opts: Dict[str, Any]) -> None:
-    """Push a notify payload directly into every connected client's outbox.
+class ProgressNotice:
+    """A "working…" pop-up that updates in place and then turns into the result.
 
-    Mirrors what ``ui.notify`` does internally, minus the ``context.client``
-    lookup that requires a slot stack. Designed to be called from any
-    thread (Flask request handlers, background workers, …) — the actual
-    enqueue runs on NiceGUI's asyncio loop via ``call_soon_threadsafe``
-    because ``Outbox.enqueue_message`` triggers ``asyncio.Event.set()``,
-    which is not safe to invoke from a foreign thread.
+    ``notice = notify_progress("Copying templates", source="files")``
+    ``notice.update("18 of 42 files", progress=43)``
+    ``notice.done("Templates copied")`` or ``notice.fail("Couldn't copy templates", hint=...)``
+    Also a context manager: an exception inside the block calls ``fail``.
     """
-    from nicegui import Client, core
 
-    payload: Dict[str, Any] = {}
-    for k, v in opts.items():
-        if v is None:
-            continue
-        key = "closeBtn" if k == "close_button" else (
-            "multiLine" if k == "multi_line" else k
-        )
-        payload[key] = v
-    payload["message"] = str(message)
+    def __init__(self, title: str, *, source: str = "app", message: str = "", progress: Optional[float] = None) -> None:
+        self.title = title
+        self.source = source
+        self.id = str(uuid.uuid4())
+        self.finished = False
+        notify(message, type="ongoing", source=source, title=title, progress=progress, notice_id=self.id)
 
-    loop = getattr(core, "loop", None)
-
-    def _enqueue_on_loop() -> None:
-        # Mycelian renders all UI through a single ``ui.run(root=...)`` page, so the
-        # live native window is just an entry in ``Client.instances``. Broadcast to
-        # every connected client; the outbox loop already skips clients without a
-        # socket connection, so no extra filter is needed here.
-        for client in list(Client.instances.values()):
-            if getattr(client, "_deleted", False):
-                continue
-            try:
-                client.outbox.enqueue_message(
-                    "notify", dict(payload), client.id
-                )
-            except Exception as e:
-                logger.debug(
-                    "notify broadcast skipped client %s: %s", client, e
-                )
-
-    if loop is not None and loop.is_running():
-        try:
-            loop.call_soon_threadsafe(_enqueue_on_loop)
+    def update(self, message: Optional[str] = None, *, progress: Optional[float] = None, title: Optional[str] = None) -> None:
+        if self.finished:
             return
-        except RuntimeError as e:
-            logger.debug(
-                "notify broadcast: call_soon_threadsafe failed (%s); "
-                "falling back to direct enqueue",
-                e,
-            )
+        if title:
+            self.title = title
+        notify(message or "", type="ongoing", source=self.source, title=self.title, progress=progress, notice_id=self.id)
 
-    # NiceGUI loop unavailable (e.g. unit test, app shutting down).
-    # Direct enqueue is best-effort: the deque write itself is GIL-safe,
-    # and if the asyncio.Event.set() race fails it's harmless — the next
-    # naturally-triggered enqueue will flush this message too.
-    _enqueue_on_loop()
+    def done(self, title: Optional[str] = None, message: str = "", *, type: str = "success", **kwargs: Any) -> None:
+        if self.finished:
+            return
+        self.finished = True
+        notify(message, type=type, source=self.source, title=title or self.title, notice_id=self.id, **kwargs)
+
+    def fail(self, title: Optional[str] = None, message: str = "", **kwargs: Any) -> None:
+        if self.finished:
+            return
+        self.finished = True
+        notify(message, type="error", source=self.source, title=title or self.title, notice_id=self.id, **kwargs)
+
+    def close(self) -> None:
+        """Remove the pop-up and its history entry (the work produced nothing worth keeping)."""
+        self.finished = True
+        dismiss_notification(self.id)
+        remove_history_item(self.id)
+
+    def __enter__(self) -> "ProgressNotice":
+        return self
+
+    def __exit__(self, exc_type, exc, _tb) -> bool:
+        if exc is not None and not self.finished:
+            self.fail(message="Something went wrong.", details=f"{exc_type.__name__}: {exc}")
+        elif not self.finished:
+            self.close()
+        return False
+
+
+def notify_progress(title: str, *, source: str = "app", message: str = "", progress: Optional[float] = None) -> ProgressNotice:
+    return ProgressNotice(title, source=source, message=message, progress=progress)
 
 
 def nav_actions_settings(subtab: str) -> List[Dict[str, Any]]:
     """Toast/history: open Settings and select a sub-tab by label."""
-    return [
-        {
-            "kind": "navigate",
-            "main_tab": "Settings",
-            "settings_subtab": subtab,
-        }
-    ]
+    return [{"kind": "navigate", "main_tab": "Settings", "settings_subtab": subtab}]
 
 
 def nav_actions_main_tab(tab_label: str) -> List[Dict[str, Any]]:
@@ -747,22 +730,45 @@ def nav_actions_main_tab(tab_label: str) -> List[Dict[str, Any]]:
     return [{"kind": "navigate", "main_tab": tab_label}]
 
 
+def nav_chatbot(tab: str) -> List[Dict[str, Any]]:
+    return [{"kind": "navigate", "main_tab": "Chatbot", "chatbot_tab": tab}]
+
+
+def nav_alerts(tab: str) -> List[Dict[str, Any]]:
+    return [{"kind": "navigate", "main_tab": "Alerts", "alerts_tab": tab}]
+
+
+def nav_spore_template(name: str) -> List[Dict[str, Any]]:
+    return [{"kind": "navigate", "main_tab": "Spore Studio", "spore_template": name}]
+
+
+def nav_source_template(name: str) -> List[Dict[str, Any]]:
+    return [{"kind": "navigate", "main_tab": "Source Settings", "source_template": name}]
+
+
 def notify_critical(
     message: str,
     *,
+    source: Optional[str] = None,
+    title: Optional[str] = None,
+    hint: Optional[str] = None,
+    details: Optional[str] = None,
     dedupe_key: Optional[str] = None,
     dedupe_cooldown_sec: float = 120.0,
     actions: Optional[List[Dict[str, Any]]] = None,
-    timeout: Optional[float] = 8.0,
+    timeout: Optional[float] = None,
 ) -> Optional[str]:
-    """
-    User-visible error for serious backend failures (toast + notification history).
+    """A serious failure: an error that stays until dismissed (subject to user settings).
 
     Prefer a stable ``dedupe_key`` when the same condition may log repeatedly.
     """
     return notify(
         message,
-        type="negative",
+        type="error",
+        source=source,
+        title=title,
+        hint=hint,
+        details=details,
         dedupe_key=dedupe_key,
         dedupe_cooldown_sec=dedupe_cooldown_sec,
         actions=actions,
@@ -806,64 +812,6 @@ def _service_status_label(key: str) -> str:
     return get_connection_status(key)
 
 
-def _service_status_notify_type(service_key: str, status: str) -> str:
-    s = (status or "").strip().lower()
-    if not s:
-        return "info"
-    if "error" in s or "fail" in s:
-        return "negative"
-    if service_key == "twitch":
-        if s == "connected":
-            return "positive"
-        return "warning"
-    if service_key == "spotify":
-        if s == "connected":
-            return "positive"
-        return "warning"
-    if service_key == "youtube":
-        if s.startswith("connected") or s.startswith("partial"):
-            return "positive"
-        return "warning"
-    if service_key == "psn":
-        if s == "connected":
-            return "positive"
-        return "warning"
-    if service_key == "obs":
-        if s == "connected":
-            return "positive"
-        return "warning"
-    if service_key == "discord":
-        if s == "connected":
-            return "positive"
-        return "warning"
-    if service_key in ("streamlabs", "streamelements"):
-        if s == "connected":
-            return "positive"
-        if "error" in s or "fail" in s or "expired" in s:
-            return "negative"
-        return "warning"
-    if service_key == "webengine":
-        s_lower = s.lower()
-        if s_lower == "running":
-            return "positive"
-        if s_lower in ("crashed", "stopped"):
-            return "negative"
-        if s_lower in ("stalled", "overloaded", "restarting", "starting"):
-            return "warning"
-        if "frozen" in s_lower:
-            return "negative"
-        return "warning"
-    if service_key == "internet":
-        if s == "online":
-            return "positive"
-        if s == "offline":
-            return "negative"
-        if "no internet" in s or "unreachable" in s:
-            return "negative"
-        return "warning"
-    return "info"
-
-
 _SERVICE_KEYS = (
     "internet",
     "webengine",
@@ -902,35 +850,10 @@ _SERVICE_SUBTABS: Dict[str, str] = {
     "webengine": "App Settings",
 }
 
-_service_last: Dict[str, str] = {}
+_service_alerts = ServiceAlertTracker()
 
-# Same status repeated within this window does not re-notify (flicker).
-_SERVICE_STATUS_DEDUPE_COOLDOWN_SEC = 45.0
-
-# OBS reconnect cycles through these phases between stable Connected/Disconnected.
-_OBS_TRANSIENT_STATUSES = frozenset({"connecting", "disconnecting"})
-
-
-def _is_obs_transient_status(status: str) -> bool:
-    return (status or "").strip().lower() in _OBS_TRANSIENT_STATUSES
-
-
-def _should_notify_obs_status_change(prev: str, status: str) -> bool:
-    """Toast only on stable Connected or after losing an active OBS session."""
-    p = (prev or "").strip().lower()
-    s = (status or "").strip().lower()
-    if s in _OBS_TRANSIENT_STATUSES:
-        return False
-    if s == "connected":
-        return p != "connected"
-    if s == "disconnected":
-        return p == "connected"
-    return False
-
-
-def _should_skip_psn_status_notify(status: str) -> bool:
-    """NPSSO expiry already has a dedicated toast from psn_service."""
-    return (status or "").strip().lower() == "token expired"
+# A repeated connection notice within this window updates the same entry (×N).
+_SERVICE_STATUS_DEDUPE_COOLDOWN_SEC = 600.0
 
 
 def _status_footer_enabled() -> bool:
@@ -1379,9 +1302,9 @@ def _on_footer_item_click(service_key: str) -> None:
 
 def _on_template_copy_footer_click(_e: Any = None) -> None:
     try:
-        from .help_system.contextual_help import navigate_to_settings_subtab
+        from .help_system.contextual_help import navigate_to_main_tab
 
-        navigate_to_settings_subtab("Source Settings", main_tab="Settings")
+        navigate_to_main_tab("Source Settings")
     except Exception:
         logger.debug("footer navigate failed for template copy", exc_info=True)
 
@@ -1671,62 +1594,29 @@ def poll_service_status_changes() -> None:
         _footer_probe_refresh_pending = False
         refresh_service_status_footer()
 
-    if _notifications_enabled():
-        for key in _SERVICE_KEYS:
-            if key != "internet" and key != "twitch" and not _service_configured(key):
-                _service_last.pop(key, None)
-                continue
-
-            try:
-                status = _service_status_label(key)
-            except Exception:
-                logger.debug(
-                    "service status poll failed for %s", key, exc_info=True
-                )
-                continue
-
-            prev = _service_last.get(key)
-            if prev is None:
-                if key == "obs" and _is_obs_transient_status(status):
-                    continue
-                _service_last[key] = status
-                continue
-            if prev == status:
-                continue
-
-            if key == "obs":
-                if _is_obs_transient_status(status):
-                    continue
-                if not _should_notify_obs_status_change(prev, status):
-                    _service_last[key] = status
-                    continue
-
-            if key == "psn" and _should_skip_psn_status_notify(status):
-                _service_last[key] = status
-                continue
-
-            _service_last[key] = status
-            label = _SERVICE_LABELS[key]
-            sub = _SERVICE_SUBTABS.get(key)
-            msg = f"{label}: {status}"
-            ntype = _service_status_notify_type(key, status)
-            dk = f"svc:{key}:{status}"
-            actions = []
-            if sub:
-                actions.append(
-                    {
-                        "kind": "navigate",
-                        "main_tab": "Settings",
-                        "settings_subtab": sub,
-                    }
-                )
-            notify(
-                msg,
-                type=ntype,
-                dedupe_key=dk,
-                dedupe_cooldown_sec=_SERVICE_STATUS_DEDUPE_COOLDOWN_SEC,
-                actions=actions or None,
-            )
+    samples: Dict[str, Optional[str]] = {}
+    for key in _SERVICE_KEYS:
+        if key != "internet" and key != "twitch" and not _service_configured(key):
+            _service_alerts.forget(key)
+            continue
+        try:
+            samples[key] = _service_status_label(key)
+        except Exception:
+            logger.debug("service status poll failed for %s", key, exc_info=True)
+    for notice in _service_alerts.observe(samples):
+        actions = None
+        if notice.settings_tab:
+            actions = [{"kind": "navigate", "main_tab": "Settings", "settings_subtab": notice.settings_tab}]
+        notify(
+            notice.message,
+            type=notice.type,
+            source=notice.source,
+            title=notice.title,
+            hint=notice.hint,
+            dedupe_key=notice.dedupe_key,
+            dedupe_cooldown_sec=_SERVICE_STATUS_DEDUPE_COOLDOWN_SEC,
+            actions=actions,
+        )
 
     refresh_service_status_footer()
 
@@ -1781,313 +1671,41 @@ def start_service_watcher_timer() -> None:
         _ensure_toast_flush_timer()
 
 
-_history_last_read_ts: float = time.time()
-
-_history_column: Optional[Any] = None
-_history_type_filter: str = ""
-_history_scroll_area: Optional[Any] = None
-_notification_dialog: Optional[Any] = None
-_tray_badge_ref: Optional[Any] = None
-
-
-def _notification_panel_is_open() -> bool:
-    global _notification_dialog
-    if _notification_dialog is None:
-        return False
-    try:
-        if getattr(_notification_dialog, "is_deleted", False):
-            return False
-    except Exception:
-        return False
-    return bool(getattr(_notification_dialog, "value", False))
-
-
-def _compute_tray_badge_count() -> int:
-    if _notification_panel_is_open():
-        return 0
-    _ensure_history_loaded()
-    cut = _history_last_read_ts
-    with _history_lock:
-        return sum(1 for e in _history if float(e.get("ts") or 0.0) > cut)
-
-
-def _tray_badge_display_text(count: int) -> str:
-    if count > 999:
-        return "999+"
-    return str(count)
-
-
-def _tray_badge_digit_class(text: str) -> str:
-    length = len(text)
-    if length <= 1:
-        return "badge-digits-1"
-    if length == 2:
-        return "badge-digits-2"
-    if length == 3:
-        return "badge-digits-3"
-    return "badge-digits-4"
-
-
-def _update_tray_badge() -> None:
-    ref = _tray_badge_ref
-    if ref is None:
+def run_entry_action(entry_id: str, index: int) -> None:
+    """Run action ``index`` of a history entry (pop-up and notification-centre buttons)."""
+    entry = _find_entry(entry_id)
+    if entry is None:
         return
-    try:
-        if getattr(ref, "is_deleted", False):
-            return
-    except Exception:
-        return
-    n = _compute_tray_badge_count()
-    if n <= 0:
-        ref.set_text("")
-        ref.classes(add="hidden")
-        return
-    ref.classes(remove="hidden")
-    display = _tray_badge_display_text(n)
-    ref.set_text(display)
-    ref.classes(
-        remove="badge-digits-1 badge-digits-2 badge-digits-3 badge-digits-4",
-        add=_tray_badge_digit_class(display),
-    )
+    actions = _call_actions.get(entry_id) or entry.get("actions") or []
+    if 0 <= index < len(actions):
+        run_action(actions[index], message=str(entry.get("message") or ""), entry=entry)
 
 
-def _bump_history_read_watermark() -> None:
-    global _history_last_read_ts
-    _history_last_read_ts = time.time()
-    _update_tray_badge()
-
-
-def _scroll_history_to_top() -> None:
-    scroll = _history_scroll_area
-    if scroll is None:
-        return
-    try:
-        if getattr(scroll, "is_deleted", False):
-            return
-        scroll.scroll_to(pixels=0, duration=0.28)
-    except Exception as e:
-        logger.debug("history scroll-to-top failed: %s", e)
-
-
-def _set_history_type_filter(value: str) -> None:
-    global _history_type_filter
-    _history_type_filter = value or ""
-    _render_history_cards()
-
-
-def _render_history_cards() -> None:
-    from nicegui import ui
-
-    col = _history_column
-    if col is None:
-        return
-    panel_open = _notification_panel_is_open()
-    col.clear()
-    with col:
-        items = list(reversed(get_history()))
-        if _history_type_filter:
-            items = [
-                entry
-                for entry in items
-                if str(entry.get("type", "info") or "info") == _history_type_filter
-            ]
-        if not items:
-            if _history_type_filter and get_history():
-                ui.label("No notifications of this type").classes(
-                    "text-sm secondary-text p-2"
-                )
-            else:
-                ui.label("No notifications yet").classes("text-sm secondary-text p-2")
-            return
-        for entry in items:
-            eid = entry.get("id", "")
-            msg = entry.get("message", "")
-            ntype = str(entry.get("type", "info") or "info")
-            ts = entry.get("ts", 0)
-            try:
-                tss = time.strftime("%b %d, %Y %H:%M:%S", time.localtime(ts))
-            except Exception:
-                tss = ""
-            type_class = {
-                "positive": "nc-history-card--positive",
-                "negative": "nc-history-card--negative",
-                "warning": "nc-history-card--warning",
-                "info": "nc-history-card--info",
-                "ongoing": "nc-history-card--ongoing",
-            }.get(ntype, "nc-history-card--default")
-
-            nav_action = _pick_navigate_action(entry.get("actions") or [])
-
-            def make_remove(i: str):
-                return lambda: remove_history_item(i)
-
-            def make_copy_handler(text: str):
-                def _copy() -> None:
-                    copy_text_to_clipboard(text)
-
-                return _copy
-
-            def make_nav_handler(action: Dict[str, Any], text: str):
-                def _go() -> None:
-                    run_action(action, message=text)
-
-                return _go
-
-            with ui.card().classes(
-                f"nc-history-card nc-history-card--enter w-full min-w-0 overflow-visible "
-                f"{type_class} p-0 gap-0"
-            ):
-                with ui.row().classes(
-                    "w-full items-center justify-between gap-2 flex-nowrap "
-                    "px-2 py-0.5 border-b border-[var(--color-border-subtle)]"
-                ):
-                    if tss:
-                        ui.label(tss).classes(
-                            "text-xs text-[var(--color-text-muted)] min-w-0 flex-1 "
-                            "leading-tight"
-                        )
-                    else:
-                        ui.element("div").classes("flex-1 min-h-0")
-                    with ui.row().classes("items-center gap-0 shrink-0"):
-                        ui.button(
-                            icon="content_copy",
-                            on_click=make_copy_handler(msg),
-                        ).props("flat dense round size=sm").tooltip("Copy text")
-                        ui.button(icon="close", on_click=make_remove(cast(str, eid))).props(
-                            "flat dense round size=sm"
-                        ).tooltip("Dismiss")
-
-                body_classes = "nc-history-card__body w-full min-w-0 px-2 py-1 gap-0"
-                if nav_action:
-                    body_classes += " nc-history-card__body--clickable cursor-pointer"
-                body = ui.column().classes(body_classes)
-                if nav_action:
-                    body.on("click", make_nav_handler(nav_action, msg))
-                with body:
-                    ui.label(msg).classes(
-                        "text-sm break-words text-[var(--color-text-primary)] leading-snug"
-                    )
-
-    if panel_open:
-        _scroll_history_to_top()
+def _on_toast_action_event(e: Any) -> None:
+    args = getattr(e, "args", None) or {}
+    if isinstance(args, dict) and args.get("id") is not None:
+        try:
+            run_entry_action(str(args["id"]), int(args.get("index", 0)))
+        except (TypeError, ValueError):
+            pass
 
 
 def inject_notification_ui_assets() -> None:
-    """Inject shared head assets for toast leave-position pinning (once)."""
-    global _notification_leave_script_injected
+    """Add the pop-up renderer to the page head and listen for its button clicks (once)."""
+    global _notification_leave_script_injected, _toast_nav_handler_registered
     if _notification_leave_script_injected:
         return
     from nicegui import ui
 
-    ui.add_head_html(NOTIFICATION_LEAVE_PIN_SCRIPT, shared=True)
+    ui.add_head_html(_toast_head_html(), shared=True)
     _notification_leave_script_injected = True
-
-
-def _on_toast_navigate_event(e: Any) -> None:
-    args = getattr(e, "args", None) or {}
-    if not isinstance(args, dict):
-        return
-    action: Dict[str, Any] = {"kind": "navigate"}
-    if args.get("main_tab"):
-        action["main_tab"] = args["main_tab"]
-    if args.get("settings_subtab"):
-        action["settings_subtab"] = args["settings_subtab"]
-    if args.get("spore_template"):
-        action["spore_template"] = args["spore_template"]
-        action["main_tab"] = action.get("main_tab") or "Spore Studio"
-    if not action.get("main_tab") and not action.get("settings_subtab"):
-        return
-    run_action(action, message=str(args.get("message") or ""))
-
-
-def _ensure_toast_nav_handler() -> None:
-    global _toast_nav_handler_registered
-    if _toast_nav_handler_registered:
-        return
-    from nicegui import ui
-
-    ui.on("mycelian-toast-navigate", _on_toast_navigate_event)
-    _toast_nav_handler_registered = True
+    if not _toast_nav_handler_registered:
+        ui.on("mycelian-toast-action", _on_toast_action_event)
+        _toast_nav_handler_registered = True
 
 
 def create_notification_tray_button() -> None:
-    """Place inside the main header row (next to tabs). Opens notification center."""
-    global _history_column, _history_scroll_area, _notification_dialog, _tray_badge_ref
+    """The bell in the header (see :mod:`notify_center`)."""
+    from .notify_center import create_notification_tray_button as build
 
-    from nicegui import ui
-
-    inject_notification_ui_assets()
-    _ensure_toast_nav_handler()
-
-    def refresh() -> None:
-        _render_history_cards()
-        _update_tray_badge()
-
-    register_history_refresh(refresh)
-
-    def toggle_panel() -> None:
-        refresh()
-        if _notification_dialog is None:
-            return
-        if _notification_dialog.value:
-            _notification_dialog.close()
-            _bump_history_read_watermark()
-        else:
-            _notification_dialog.open()
-            _bump_history_read_watermark()
-
-    def close_notification_panel() -> None:
-        if _notification_dialog is not None:
-            _notification_dialog.close()
-        _bump_history_read_watermark()
-
-    # Seamless right panel: no modal backdrop, app stays clickable; persistent = no click-outside dismiss
-    with ui.dialog().props(
-        "seamless position=right persistent full-height no-esc-dismiss"
-    ) as dlg, ui.card().classes(
-        "w-[min(100vw,420px)] max-w-[100vw] h-full flex flex-col p-3 gap-2 "
-        "rounded-none border-l border-[var(--color-border-default)]"
-    ):
-        _notification_dialog = dlg
-        with ui.row().classes("w-full items-center justify-between gap-2"):
-            ui.label("Notifications").classes("text-lg font-bold")
-            ui.select(
-                {
-                    "": "All types",
-                    "info": "Info",
-                    "positive": "Success",
-                    "warning": "Warning",
-                    "negative": "Error",
-                    "ongoing": "Ongoing",
-                },
-                value="",
-                label="Type",
-                on_change=lambda e: _set_history_type_filter(
-                    "" if e.value is None else str(e.value)
-                ),
-            ).props("dense outlined options-dense").classes("w-36")
-            with ui.row().classes("items-center gap-0"):
-                ui.button("Clear all", on_click=lambda: clear_history()).props(
-                    "flat dense no-caps"
-                )
-                ui.button(
-                    icon="close",
-                    on_click=close_notification_panel,
-                ).props("flat dense round").tooltip("Close panel")
-        with ui.scroll_area().classes(
-            "nc-history-scroll w-full grow min-h-0"
-        ) as history_scroll:
-            _history_scroll_area = history_scroll
-            _history_column = ui.column().classes("nc-history-list w-full gap-2")
-
-    with ui.row().classes(
-        "notification-tray-wrap relative inline-flex items-center justify-center "
-        "shrink-0 overflow-visible"
-    ):
-        ui.button(icon="notifications", on_click=toggle_panel).props(
-            "flat round dense"
-        ).tooltip("Notifications")
-        _tray_badge_ref = ui.label("").classes(
-            "notification-tray-badge badge-digits-1 hidden"
-        )
-    refresh()
+    build()

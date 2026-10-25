@@ -62,11 +62,25 @@ class ThemeColors:
     notify_warning: str = ""
     notify_error: str = ""
     notify_info: str = ""
+    # Pop-up look (empty = default): style accent|chip|minimal|tinted|glass, radius in px,
+    # shadow none|soft|strong, timer on|off, density comfortable|compact.
+    notify_style: str = ""
+    notify_radius: str = ""
+    notify_shadow: str = ""
+    notify_timer: str = ""
+    notify_density: str = ""
 
     # Interactive states
     hover_overlay: str = ""
     active_overlay: str = ""
     focus_ring: str = ""
+
+
+def _notify_radius(theme: ThemeColors) -> int:
+    try:
+        return max(0, min(28, int(float(theme.notify_radius))))
+    except (TypeError, ValueError):
+        return 12
 
 
 def generate_css_variables(theme: ThemeColors) -> str:
@@ -110,6 +124,11 @@ def generate_css_variables(theme: ThemeColors) -> str:
     --color-notify-warning: {theme.notify_warning or theme.warning};
     --color-notify-error: {theme.notify_error or theme.error};
     --color-notify-info: {theme.notify_info or theme.info};
+    --notify-style: {theme.notify_style or 'accent'};
+    --notify-radius: {_notify_radius(theme)}px;
+    --notify-shadow: {theme.notify_shadow or 'soft'};
+    --notify-timer: {theme.notify_timer or 'on'};
+    --notify-density: {theme.notify_density or 'comfortable'};
 
     /* Interactive */
     --color-hover-overlay: {theme.hover_overlay};

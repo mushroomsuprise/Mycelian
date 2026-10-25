@@ -2200,6 +2200,19 @@ def _suppress_and_select(config_select, config_name) -> None:
         _suppress_config_change = False
 
 
+def select_config(config_name: str) -> bool:
+    """Select ``config_name`` in the open Source Settings tab (normal change handling applies).
+
+    Returns False while the tab isn't built yet or the config doesn't exist.
+    """
+    sel = _custom_sources_ctx.get("config_select")
+    if sel is None or getattr(sel, "is_deleted", False) or config_name not in (sel.options or []):
+        return False
+    if sel.value != config_name:
+        sel.value = config_name
+    return True
+
+
 def on_config_selected(e, config_parser, config_container, config_select=None):
     """Handle config selection"""
     global _suppress_config_change

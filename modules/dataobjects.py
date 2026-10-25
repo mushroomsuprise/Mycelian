@@ -169,6 +169,14 @@ class AppSettings:
     auto_raid_chat_shoutout: bool = True
     current_theme: str = "dark"
     notifications_enabled: bool = True
+    # Fine-grained notification preferences (see notify_settings.NotifyPrefs).
+    notify_levels: dict = field(default_factory=lambda: {"error": True, "warning": True, "info": True, "success": True})
+    notify_durations: dict = field(default_factory=lambda: {"error": 0, "warning": 8, "info": 4, "success": 3})
+    notify_position: str = "top-right"
+    notify_max_visible: int = 4
+    notify_desktop_when_minimized: bool = True
+    notify_record_muted: bool = True
+    notify_muted: dict = field(default_factory=dict)  # source id -> list of muted levels
     status_footer_enabled: bool = True
     status_footer_minimal: bool = False
     auto_update: bool = True

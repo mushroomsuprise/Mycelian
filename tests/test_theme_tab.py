@@ -63,9 +63,12 @@ def test_describe_color_shows_alpha():
     assert tab._describe_color("") == "not set"
 
 
-def test_editor_covers_every_theme_color():
-    colors = {f for f in ThemeColors.__dataclass_fields__} - {"name", "display_name", "theme_type"}
-    assert set(_PALETTE_COLOR_FIELDS) == colors
+def test_editor_covers_every_theme_field():
+    from modules.uiwindows.tabs.theme_tab import _EDITABLE_FIELDS, _NOTIFY_LOOK_DEFAULTS
+
+    fields = {f for f in ThemeColors.__dataclass_fields__} - {"name", "display_name", "theme_type"}
+    assert set(_EDITABLE_FIELDS) == fields
+    assert not set(_PALETTE_COLOR_FIELDS) & set(_NOTIFY_LOOK_DEFAULTS)
 
 
 def test_mock_markup_is_balanced_and_has_footer():

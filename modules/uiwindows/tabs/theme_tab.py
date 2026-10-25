@@ -91,6 +91,15 @@ _PALETTE_COLOR_FIELDS: Tuple[str, ...] = tuple(
     field_name for _group, fields in _COLOR_SECTIONS for field_name, _label, _desc in fields
 )
 
+# Pop-up look, saved with the theme (empty = default).
+_NOTIFY_STYLES: Tuple[Tuple[str, str], ...] = (
+    ("accent", "Accent bar"), ("chip", "Icon chip"), ("minimal", "Minimal"), ("tinted", "Tinted"), ("glass", "Glass"),
+)
+_NOTIFY_LOOK_DEFAULTS: Dict[str, str] = {
+    "notify_style": "accent", "notify_radius": "12", "notify_shadow": "soft", "notify_timer": "on", "notify_density": "comfortable",
+}
+_EDITABLE_FIELDS: Tuple[str, ...] = _PALETTE_COLOR_FIELDS + tuple(_NOTIFY_LOOK_DEFAULTS)
+
 _MAX_PALETTE_HISTORY = 50
 
 _COLOR_RE = re.compile(
@@ -272,7 +281,7 @@ class ThemeTab:
         disk = self._get_current_theme(self.buffer)
         if not disk:
             return True
-        for field in _PALETTE_COLOR_FIELDS:
+        for field in _EDITABLE_FIELDS:
             if getattr(self._working_theme, field, "") != getattr(disk, field, ""):
                 return False
         return True
@@ -455,6 +464,9 @@ class ThemeTab:
             self.palette_container = ui.element("div").classes("thm-groups")
             self.ui_elements["_focus"] = ui.html("", sanitize=False).classes("thm-focus")
             with ui.element("div").classes("thm-side-head is-sub"):
+                ui.label("Pop-up notifications")
+            self.notify_container = ui.element("div").classes("thm-notify")
+            with ui.element("div").classes("thm-side-head is-sub"):
                 ui.label("Readability")
             self.ui_elements["_readability"] = ui.html("", sanitize=False).classes("thm-reads")
         self._update_palette_toolbar_state()
@@ -475,6 +487,103 @@ class ThemeTab:
                     with ui.element("div").classes("thm-grp-sw"):
                         for field_name, label, desc in fields:
                             self._build_swatch(theme, disk, group, field_name, label, desc)
+        self._build_notify_section(theme)
+
+    def _notify_look(self, theme: ThemeColors, field_name: str) -> str:
+        return str(getattr(theme, field_name, "") or _NOTIFY_LOOK_DEFAULTS[field_name])
+
+    def _set_notify_look(self, field_name: str, value: str) -> None:
+        """Change one pop-up look setting on the working theme (undoable, like a color)."""
+        if not self._working_theme:
+            return
+        if self._notify_look(self._working_theme, field_name) == value:
+            return
+        self._push_undo_snapshot()
+        setattr(self._working_theme, field_name, value)
+        self._refresh_dirty_from_palette()
+        self._apply_preview()
+
+    def _build_notify_section(self, theme: ThemeColors) -> None:
+        box = getattr(self, "notify_container", None)
+        if box is None or getattr(box, "is_deleted", False):
+            return
+        style = self._notify_look(theme, "notify_style")
+        box.clear()
+        with box:
+            with ui.element("div").classes("thm-nstyles"):
+                for value, label in _NOTIFY_STYLES:
+                    chip = ui.element("div").classes("thm-nstyle" + (" is-on" if value == style else ""))
+                    chip.on("click", lambda _e, v=value: self._set_notify_look("notify_style", v))
+                    with chip:
+                        ui.label(label)
+            with ui.element("div").classes("thm-nrow"):
+                ui.label("Corners")
+                form_select(
+                    tooltip="Corner radius of pop-ups",
+                    options={str(r): f"{r} px" for r in (0, 4, 8, 12, 16, 20, 24)},
+                    value=self._notify_look(theme, "notify_radius"),
+                    classes="thm-nsel",
+                    on_change=lambda e: self._set_notify_look("notify_radius", str(e.value or "12")),
+                )
+                ui.label("Shadow")
+                form_select(
+                    tooltip="Shadow under pop-ups",
+                    options={"none": "None", "soft": "Soft", "strong": "Strong"},
+                    value=self._notify_look(theme, "notify_shadow"),
+                    classes="thm-nsel",
+                    on_change=lambda e: self._set_notify_look("notify_shadow", str(e.value or "soft")),
+                )
+            with ui.element("div").classes("thm-nrow"):
+                ui.label("Density")
+                form_select(
+                    tooltip="Comfortable leaves more room; compact fits more on screen",
+                    options={"comfortable": "Comfortable", "compact": "Compact"},
+                    value=self._notify_look(theme, "notify_density"),
+                    classes="thm-nsel",
+                    on_change=lambda e: self._set_notify_look("notify_density", str(e.value or "comfortable")),
+                )
+                ui.label("Timer bar")
+                ui.switch(
+                    value=self._notify_look(theme, "notify_timer") != "off",
+                    on_change=lambda e: self._set_notify_look("notify_timer", "on" if e.value else "off"),
+                ).props("dense").tooltip("A thin bar along the bottom shows how long the pop-up stays")
+            ui.html(self._notify_sample_html(theme), sanitize=False).classes("thm-nsample")
+
+    def _notify_sample_html(self, theme: ThemeColors) -> str:
+        """A static pop-up drawn with the renderer's classes and this theme's colors."""
+        def c(field_name: str, fallback: str = "") -> str:
+            return html.escape(str(getattr(theme, field_name, "") or fallback), quote=True)
+
+        try:
+            radius = max(0, min(28, int(float(self._notify_look(theme, "notify_radius")))))
+        except ValueError:
+            radius = 12
+        variables = (
+            f"--notify-radius:{radius}px;--color-bg-surface:{c('bg_surface')};--color-bg-base:{c('bg_base')};"
+            f"--color-border-subtle:{c('border_subtle')};--color-border-default:{c('border_default')};"
+            f"--color-border-accent:{c('border_accent')};--color-text-primary:{c('text_primary')};"
+            f"--color-text-secondary:{c('text_secondary')};--color-text-muted:{c('text_muted')};"
+            f"--color-primary:{c('primary')};--color-primary-light:{c('primary_light')};"
+            f"--color-notify-warning:{c('notify_warning', theme.warning)};--color-warning:{c('warning')};"
+        )
+        style = self._notify_look(theme, "notify_style")
+        shadow = self._notify_look(theme, "notify_shadow")
+        classes = f"mt is-warning st-{style}"
+        if shadow != "soft":
+            classes += f" sh-{shadow}"
+        if self._notify_look(theme, "notify_density") == "compact":
+            classes += " is-compact"
+        bar = '<div class="mt-bar" style="width:55%"></div>' if self._notify_look(theme, "notify_timer") != "off" else ""
+        return (
+            f'<div class="{classes}" style="{variables}">'
+            '<div class="mt-ico"><span class="mt-i">warning</span></div>'
+            '<div class="mt-top"><span class="mt-lvl">Warning</span><span class="mt-dot"></span><span>Spore Studio</span></div>'
+            '<span class="mt-x"><span class="mt-i">close</span></span>'
+            '<div class="mt-title">Font missing in “giveaway”</div>'
+            "<div class=\"mt-msg\">Renogare.ttf isn't in the fonts folder, so the overlay falls back to Arial.</div>"
+            '<div class="mt-acts"><span class="mt-btn is-main"><span class="mt-i">auto_awesome</span>Open in Spore Studio</span></div>'
+            f"{bar}</div>"
+        )
 
     def _build_swatch(self, theme, disk, group, field_name, label, desc) -> None:
         raw = getattr(theme, field_name, "") or ""

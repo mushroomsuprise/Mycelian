@@ -15,6 +15,7 @@ from ...ui_font import apply_app_font, apply_ui_scale
 from ...ui_form_controls import form_number, form_select
 from .app_settings_styles import APP_SETTINGS_CSS
 from ...notification_engine import notify, refresh_service_status_footer
+from ...notify_settings import DURATION_CHOICES, LEVEL_LABELS, LEVELS, POSITIONS, SOURCES, NotifyPrefs, duration_label
 from ...help_system.contextual_help import help_button
 from ...streamdeck_plugin_utils import (
     PluginInstallError,
@@ -172,6 +173,8 @@ class AppSettingsTab:
                             self._build_updates()
                         with ui.element("div").classes("aps-col"):
                             self._build_storage()
+                    self._notify_panel = ui.element("div").classes("aps-npanel")
+        self._render_notify_panel()
         self._apply_plugin_status_display(initial_status)
         self._refresh_derived()
 
@@ -267,9 +270,7 @@ class AppSettingsTab:
             self._font_preview = ui.html("<b>Aa</b><span>Mycelian streaming toolkit</span>", sanitize=False).classes("aps-sample")
 
     def _build_notifications(self) -> None:
-        with self._section("notifications", "Notifications"):
-            with self._row("Pop-up notifications", "Messages in the corner of the window, such as \"Settings saved\"."):
-                self._switch("notifications_enabled")
+        with self._section("signal_cellular_alt", "Status bar"):
             with self._row(
                 "Connection status bar",
                 "The bar along the bottom that shows each service's connection. Click for what the colors mean.",
@@ -278,6 +279,139 @@ class AppSettingsTab:
                 self._switch("status_footer_enabled")
             with self._row("Minimal badges", "Only icons with a colored ring; hover a badge for its status.", key="status_footer_minimal"):
                 self._switch("status_footer_minimal")
+
+    # ----- notifications panel -----
+    def _render_notify_panel(self) -> None:
+        panel = getattr(self, "_notify_panel", None)
+        if panel is None or getattr(panel, "is_deleted", False):
+            return
+        b = self.buffer
+        prefs = NotifyPrefs.from_app_settings(b)
+        panel.clear()
+        with panel:
+            with ui.element("div").classes("aps-nhead"):
+                ui.html('<span class="aps-icon">notifications</span>Notifications', sanitize=False).classes("aps-sec-head")
+                ui.element("div").classes("aps-spacer")
+                outline_button("Send a test", self._send_test_notifications, icon="science").props("dense").classes("px-3").tooltip(
+                    "Shows one of each kind with the saved settings")
+            with ui.element("div").classes("aps-ngrid"):
+                with ui.element("div"):
+                    with self._row("Pop-up notifications", "Turn every pop-up off. The notification centre (the bell) still records them."):
+                        self._switch("notifications_enabled")
+                    with self._row("Where pop-ups appear", "Corner of the window pop-ups slide into."):
+                        form_select(tooltip="Pop-up position", options=dict(POSITIONS), value=prefs.position, classes="w-40",
+                                    on_change=lambda e: self._set("notify_position", str(e.value or "top-right")))
+                    with self._row("Most on screen at once", "Older pop-ups close early when more arrive (errors stay longest)."):
+                        form_select(tooltip="Maximum pop-ups shown together", options={str(n): str(n) for n in range(1, 9)},
+                                    value=str(prefs.max_visible), classes="w-20",
+                                    on_change=lambda e: self._set("notify_max_visible", int(e.value or 4)))
+                with ui.element("div"):
+                    with self._row("Desktop notifications when minimized",
+                                   "Errors and warnings also show as system notifications while Mycelian is in the tray."):
+                        self._switch("notify_desktop_when_minimized")
+                    with self._row("Keep muted ones in the notification centre",
+                                   "Notifications you silenced below are still listed under the bell, marked Muted."):
+                        self._switch("notify_record_muted")
+            ui.label("By level").classes("aps-nsub")
+            with ui.element("div").classes("aps-levels"):
+                for level in LEVELS:
+                    on = prefs.levels[level]
+                    with ui.element("div").classes(f"aps-level is-{level}" + ("" if on else " is-off")):
+                        with ui.element("div").classes("aps-level-top"):
+                            ui.element("span").classes("d")
+                            ui.label(LEVEL_LABELS[level])
+                            ui.element("div").classes("aps-spacer")
+                            ui.switch(value=on, on_change=lambda e, lv=level: self._set_level(lv, bool(e.value))).props("dense").tooltip(
+                                f"Show {LEVEL_LABELS[level].lower()} as pop-ups")
+                        with ui.element("div").classes("aps-level-row"):
+                            ui.label("Stays up")
+                            choices = {str(int(s) if s == int(s) else s): duration_label(s) for s in DURATION_CHOICES}
+                            current = prefs.durations[level]
+                            key = str(int(current) if current == int(current) else current)
+                            choices.setdefault(key, duration_label(current))
+                            form_select(tooltip=f"How long {LEVEL_LABELS[level].lower()} stay on screen", options=choices, value=key,
+                                        classes="w-36", on_change=lambda e, lv=level: self._set_duration(lv, e.value))
+            ui.label("By feature: untick to silence one kind of notification for one feature").classes("aps-nsub")
+            with ui.element("div").classes("aps-mx-wrap"):
+                with ui.element("div").classes("aps-mx-cols"):
+                    half = (len(SOURCES) + 1) // 2
+                    for chunk in (SOURCES[:half], SOURCES[half:]):
+                        self._feature_table(chunk, prefs)
+
+    def _feature_table(self, sources, prefs: "NotifyPrefs") -> None:
+        with ui.element("table").classes("aps-mx"):
+            with ui.element("tr"):
+                ui.html("<th>Feature</th>", sanitize=False).classes("contents")
+                for lv in LEVELS:
+                    th = ui.element("th")
+                    with th:
+                        ui.html(f'<span class="d" style="background:var(--color-notify-{lv})"></span>{LEVEL_LABELS[lv]}', sanitize=False).classes("contents")
+                    th.on("click", lambda _e, level=lv: self._toggle_level_column(level))
+                    th.tooltip(f"Tick or untick {LEVEL_LABELS[lv].lower()} for every feature")
+            for sid, label, icon in sources:
+                muted = prefs.muted.get(sid, [])
+                with ui.element("tr").classes("is-muted" if len(muted) == len(LEVELS) else ""):
+                    with ui.element("td"):
+                        ui.html(f'<span class="mod"><span class="aps-icon">{icon}</span>{html.escape(label)}</span>'
+                                + ('<span class="aps-mute-tag">Muted</span>' if len(muted) == len(LEVELS) else ""), sanitize=False)
+                    for lv in LEVELS:
+                        with ui.element("td"):
+                            ui.checkbox(value=lv not in muted, on_change=lambda e, s=sid, level=lv: self._set_source_level(s, level, bool(e.value))
+                                        ).props("dense size=sm")
+
+    def _set_level(self, level: str, on: bool) -> None:
+        levels = dict(NotifyPrefs.from_app_settings(self.buffer).levels)
+        levels[level] = on
+        self._set("notify_levels", levels)
+        self._render_notify_panel()
+
+    def _set_duration(self, level: str, raw) -> None:
+        durations = dict(NotifyPrefs.from_app_settings(self.buffer).durations)
+        try:
+            durations[level] = float(raw)
+        except (TypeError, ValueError):
+            return
+        self._set("notify_durations", durations)
+
+    def _set_source_level(self, source: str, level: str, on: bool) -> None:
+        muted = {k: list(v) for k, v in NotifyPrefs.from_app_settings(self.buffer).muted.items()}
+        levels_off = set(muted.get(source, []))
+        if on:
+            levels_off.discard(level)
+        else:
+            levels_off.add(level)
+        if levels_off:
+            muted[source] = sorted(levels_off)
+        else:
+            muted.pop(source, None)
+        self._set("notify_muted", muted)
+        self._render_notify_panel()
+
+    def _toggle_level_column(self, level: str) -> None:
+        """Header click: if any feature has this level on, turn it off everywhere; else on everywhere."""
+        muted = {k: set(v) for k, v in NotifyPrefs.from_app_settings(self.buffer).muted.items()}
+        any_on = any(level not in muted.get(sid, set()) for sid, _l, _i in SOURCES)
+        for sid, _label, _icon in SOURCES:
+            levels_off = muted.setdefault(sid, set())
+            if any_on:
+                levels_off.add(level)
+            else:
+                levels_off.discard(level)
+        self._set("notify_muted", {k: sorted(v) for k, v in muted.items() if v})
+        self._render_notify_panel()
+
+    def _send_test_notifications(self) -> None:
+        if self.dirty:
+            notify("Save first to test your new settings", type="info", source="app",
+                   message="The test uses the saved notification settings.")
+            return
+        notify("Something went wrong", type="error", source="app", message="This is what an error looks like.",
+               hint="Errors say how to fix the problem here.", actions=[{"kind": "navigate", "main_tab": "Settings",
+                                                                          "settings_subtab": "App Settings", "label": "Open App Settings"}],
+               dedupe_key="test:error")
+        notify("Worth a look", type="warning", source="app", message="This is what a warning looks like.", dedupe_key="test:warning")
+        notify("Just so you know", type="info", source="app", message="This is what info looks like.", dedupe_key="test:info")
+        notify("All done", type="success", source="app", dedupe_key="test:success")
 
     def _build_window(self) -> None:
         with self._section("desktop_windows", "Window and startup"):
@@ -508,11 +642,24 @@ class AppSettingsTab:
                 refresh_service_status_footer()
             except Exception:
                 logger.debug("status footer refresh after save failed", exc_info=True)
-            notify("Settings saved", type="positive")
+            self._push_notify_settings_to_docks()
+            notify("Settings saved", type="positive", source="app")
             self.dirty = False
             self._refresh_derived()
         else:
             notify("Error saving settings", type="negative")
+
+    @staticmethod
+    def _push_notify_settings_to_docks() -> None:
+        """OBS docks show their own pop-ups; send them the new level switches and durations."""
+        try:
+            from ... import web_engine
+
+            engine = web_engine.web_engine_instance
+            if engine is not None:
+                engine.safe_emit("notify_settings", NotifyPrefs.from_app_settings(state_manager.get_app_settings()).for_client())
+        except Exception:
+            logger.debug("could not push notification settings to docks", exc_info=True)
 
     def _apply_background_settings(self) -> None:
         """Push the saved tray / autostart toggles to the OS and the tray process."""
@@ -559,4 +706,5 @@ class AppSettingsTab:
                     element.value = getattr(self.buffer, key)
         self.dirty = False
         apply_ui_scale(int(getattr(self.buffer, "ui_scale_percent", 100) or 100))
+        self._render_notify_panel()
         self._refresh_derived()

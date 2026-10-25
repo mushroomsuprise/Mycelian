@@ -9,6 +9,7 @@
         crossorigin="anonymous"></script>
     <script src="/assets/default_assets/overlay_recovery.js"></script>
     <script src="/assets/default_assets/template_logger.js"></script>
+    <script src="/assets/default_assets/mycelian_toast.js"></script>
     <script>MycelianLog.init({ templateName: 'activity_feed' });</script>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
@@ -987,49 +988,6 @@
             padding: 20px;
         }
 
-        /* Notification styling */
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 16px;
-            border-radius: 6px;
-            color: white;
-            font-size: 14px;
-            font-weight: 500;
-            z-index: 1000;
-            opacity: 0;
-            transform: translateX(100%);
-            transition: all 0.3s ease;
-            min-width: 200px;
-            max-width: 400px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-
-        .notification.show {
-            opacity: 1;
-            transform: translateX(0);
-        }
-
-        .notification-info {
-            background-color: rgba(59, 130, 246, 0.9);
-            border-left: 4px solid #3b82f6;
-        }
-
-        .notification-warning {
-            background-color: rgba(245, 158, 11, 0.9);
-            border-left: 4px solid #f59e0b;
-        }
-
-        .notification-error {
-            background-color: rgba(239, 68, 68, 0.9);
-            border-left: 4px solid #ef4444;
-        }
-
-        .notification-success {
-            background-color: rgba(34, 197, 94, 0.9);
-            border-left: 4px solid #22c55e;
-        }
     </style>
 </head>
 
@@ -1295,6 +1253,7 @@
                 socket.emit('get_pause_status');
                 socket.emit('get_mute_status');
                 socket.emit('get_current_theme');
+                socket.emit('get_notify_settings');
                 socket.emit('get_activity_feed_view');
                 console.log('Requested shared activity feed view');
             }, 150);
@@ -1874,192 +1833,102 @@
         }
 
         // Action functions
+        function socketReady() {
+            return typeof socket !== 'undefined' && socket && socket.connected;
+        }
+
+        function notConnected(action) {
+            dockNotify('error', "Couldn't " + action, 'The dock has lost its connection to Mycelian.',
+                { hint: 'Make sure Mycelian is running. The dock reconnects on its own; right-click the dock and choose Refresh if it doesn\'t.' });
+        }
+
+        function alertLabel(alertData) {
+            return (alertData && alertData.type) ? String(alertData.type) : 'alert';
+        }
+
         function replayAlert(alertData) {
-            console.log('Replaying alert:', alertData);
-            try {
-                // Get the alert ID from the alert data
-                var alertId = alertData.alert_id;
-                if (!alertId) {
-                    console.error('No alert_id found in alert data, cannot replay');
-                    showNotification('Cannot replay alert: no alert ID available', 'error');
-                    return;
-                }
-
-                // Send only the alert_id to the server - it will fetch complete stored data
-                var replayRequestData = {
-                    alert_id: alertId
-                };
-
-                console.log('Sending replay request with alert_id:', alertId);
-
-                // Emit the replay request with just the alert_id
-                socket.emit('activity_feed_replay_alert', replayRequestData, function (response) {
-                    if (response && response.success) {
-                        console.log('Alert replay successful');
-                        showNotification('Replaying ' + (alertData.type || 'alert'), 'info');
-                    } else {
-                        console.error('Alert replay failed:', response);
-                        showNotification('Failed to replay alert: ' + (response ? response.error : 'Unknown error'), 'error');
-                    }
-                });
-
-                // Show immediate feedback
-                showNotification('Replaying ' + (alertData.type || 'alert') + '...', 'info');
-
-            } catch (error) {
-                console.error('Error replaying alert:', error);
-                showNotification('Error replaying alert', 'error');
+            var alertId = alertData && alertData.alert_id;
+            if (!alertId) {
+                dockNotify('error', "Couldn't replay the alert", 'This alert was saved without an ID, so it can\'t be replayed.');
+                return;
             }
+            if (!socketReady()) { notConnected('replay the alert'); return; }
+            var id = dockNotify('ongoing', 'Replaying ' + alertLabel(alertData) + '…', '');
+            socket.emit('activity_feed_replay_alert', { alert_id: alertId }, function (response) {
+                if (response && response.success) {
+                    dockNotify('success', 'Replaying ' + alertLabel(alertData), '', { id: id });
+                } else {
+                    dockNotify('error', "Couldn't replay the alert", (response && response.error) || 'Mycelian didn\'t say why.', {
+                        id: id,
+                        hint: 'If alerts are paused, resume them first. Check the Alerts tab for this alert type.',
+                        actions: [{ label: 'Try again', icon: 'refresh', run: function () { replayAlert(alertData); } }]
+                    });
+                }
+            });
         }
 
         function skipAlert(alertData) {
-            console.log('Skipping alert:', alertData);
-            try {
-                // Create enhanced alert data for skip with additional fields
-                var enhancedAlertData = {
-                    type: alertData.type,
-                    message: alertData.message,
-                    badge_type: alertData.badge_type,
-                    timestamp: alertData.timestamp,
-                    user_message: alertData.user_message,
-                    tier: alertData.tier,
-                    alert_id: alertData.alert_id,
-                    username: alertData.username,
-                    alert_type: (alertData.type || '').toLowerCase(),
-                    is_skip: true
-                };
-
-                // Emit the skip request with enhanced data
-                socket.emit('activity_feed_skip_alert', enhancedAlertData, function (response) {
-                    if (response && response.success) {
-                        console.log('Alert skip successful');
-                        showNotification('Skipped ' + (alertData.type || 'alert'), 'warning');
-                    } else {
-                        console.error('Alert skip failed:', response);
-                        showNotification('Failed to skip alert', 'error');
-                    }
-                });
-
-                // Show immediate feedback
-                showNotification('Skipped ' + (alertData.type || 'alert'), 'warning');
-
-            } catch (error) {
-                console.error('Error skipping alert:', error);
-                showNotification('Error skipping alert', 'error');
-            }
-        }
-
-        // Utility function to show notifications
-        function showNotification(message, type) {
-            type = type || 'info';
-            console.log('[' + type.toUpperCase() + '] ' + message);
-
-            // Create notification element
-            var notification = document.createElement('div');
-            notification.className = 'notification notification-' + type;
-            notification.textContent = message;
-
-            // Add notification styles if not already present
-            if (!document.querySelector('#notification-styles')) {
-                var style = document.createElement('style');
-                style.id = 'notification-styles';
-                style.textContent = `
-                    .notification {
-                        position: fixed;
-                        top: 20px;
-                        right: 20px;
-                        padding: 12px 16px;
-                        border-radius: 6px;
-                        color: white;
-                        font-size: 14px;
-                        font-weight: 500;
-                        z-index: 1000;
-                        opacity: 0;
-                        transform: translateX(100%);
-                        transition: all 0.3s ease;
-                        min-width: 200px;
-                        max-width: 400px;
-                        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-                    }
-                    .notification.show {
-                        opacity: 1;
-                        transform: translateX(0);
-                    }
-                    .notification-info {
-                        background-color: rgba(59, 130, 246, 0.9);
-                        border-left: 4px solid #3b82f6;
-                    }
-                    .notification-warning {
-                        background-color: rgba(245, 158, 11, 0.9);
-                        border-left: 4px solid #f59e0b;
-                    }
-                    .notification-error {
-                        background-color: rgba(239, 68, 68, 0.9);
-                        border-left: 4px solid #ef4444;
-                    }
-                    .notification-success {
-                        background-color: rgba(34, 197, 94, 0.9);
-                        border-left: 4px solid #22c55e;
-                    }
-                `;
-                document.head.appendChild(style);
-            }
-
-            // Add to document
-            document.body.appendChild(notification);
-
-            // Trigger animation
-            setTimeout(function () {
-                notification.classList.add('show');
-            }, 10);
-
-            // Remove after delay
-            setTimeout(function () {
-                notification.classList.remove('show');
-                setTimeout(function () {
-                    if (notification.parentNode) {
-                        notification.parentNode.removeChild(notification);
-                    }
-                }, 300);
-            }, 3000);
-        }
-
-        function togglePause() {
-            console.log('Toggle pause clicked. Current pause status:', activityFeedState.pauseStatus);
-            var newPauseState = !activityFeedState.pauseStatus;
-
-            // Primary method: Emit the pause status change to the server
-            socket.emit('set_pause_status', { paused: newPauseState }, function (response) {
-                console.log('Pause status change response:', response);
+            if (!socketReady()) { notConnected('skip the alert'); return; }
+            var enhancedAlertData = {
+                type: alertData.type,
+                message: alertData.message,
+                badge_type: alertData.badge_type,
+                timestamp: alertData.timestamp,
+                user_message: alertData.user_message,
+                tier: alertData.tier,
+                alert_id: alertData.alert_id,
+                username: alertData.username,
+                alert_type: (alertData.type || '').toLowerCase(),
+                is_skip: true
+            };
+            socket.emit('activity_feed_skip_alert', enhancedAlertData, function (response) {
                 if (response && response.success) {
-                    console.log('Pause status successfully changed to:', newPauseState);
-                    showNotification(newPauseState ? 'Alerts paused' : 'Alerts resumed', 'success');
+                    dockNotify('success', 'Skipped ' + alertLabel(alertData), '');
                 } else {
-                    console.error('Failed to change pause status:', response);
-                    showNotification('Failed to change pause status', 'error');
+                    dockNotify('error', "Couldn't skip the alert", (response && response.error) || 'Mycelian didn\'t say why.');
                 }
             });
+        }
 
-            // Show immediate feedback
-            showNotification(newPauseState ? 'Pausing alerts...' : 'Resuming alerts...', 'info');
+        /* Pop-ups use the app's shared design and level settings. Errors are also sent to the
+           app's notification centre; everything else stays in the dock. */
+        function dockNotify(level, title, message, opts) {
+            opts = opts || {};
+            if (level === 'error' && socketReady()) {
+                socket.emit('dock_notify', { source: 'activity_feed', level: 'error', title: title, message: message, hint: opts.hint || '' });
+            }
+            if (!window.MycelianToast) { console.log('[' + level + '] ' + title + ' ' + (message || '')); return null; }
+            opts.source = 'Activity Feed';
+            return MycelianToast.local(level, title, message, opts);
+        }
+        if (window.MycelianToast) { MycelianToast.configure({ dock: true }); }
+
+        function togglePause() {
+            if (!socketReady()) { notConnected(activityFeedState.pauseStatus ? 'resume alerts' : 'pause alerts'); return; }
+            var newPauseState = !activityFeedState.pauseStatus;
+            var id = dockNotify('ongoing', newPauseState ? 'Pausing alerts…' : 'Resuming alerts…', '');
+            socket.emit('set_pause_status', { paused: newPauseState }, function (response) {
+                if (response && response.success) {
+                    dockNotify('success', newPauseState ? 'Alerts paused' : 'Alerts resumed', '', { id: id });
+                } else {
+                    dockNotify('error', newPauseState ? "Couldn't pause alerts" : "Couldn't resume alerts",
+                        (response && response.error) || 'Mycelian didn\'t say why.', { id: id });
+                }
+            });
         }
 
         function toggleMute() {
-            console.log('Toggle mute clicked. Current mute status:', activityFeedState.muteStatus);
+            if (!socketReady()) { notConnected(activityFeedState.muteStatus ? 'unmute alerts' : 'mute alerts'); return; }
             var newMuteState = !activityFeedState.muteStatus;
-
+            var id = dockNotify('ongoing', newMuteState ? 'Muting alerts…' : 'Unmuting alerts…', '');
             socket.emit('set_mute_status', { muted: newMuteState }, function (response) {
-                console.log('Mute status change response:', response);
                 if (response && response.success) {
-                    console.log('Mute status successfully changed to:', newMuteState);
-                    showNotification(newMuteState ? 'Alerts muted' : 'Alerts unmuted', 'success');
+                    dockNotify('success', newMuteState ? 'Alerts muted' : 'Alerts unmuted', '', { id: id });
                 } else {
-                    console.error('Failed to change mute status:', response);
-                    showNotification('Failed to change mute status', 'error');
+                    dockNotify('error', newMuteState ? "Couldn't mute alerts" : "Couldn't unmute alerts",
+                        (response && response.error) || 'Mycelian didn\'t say why.', { id: id });
                 }
             });
-
-            showNotification(newMuteState ? 'Muting alerts...' : 'Unmuting alerts...', 'info');
         }
 
         function applyTabChrome(tabName) {
@@ -2645,6 +2514,10 @@
             if (!name || name === 'activity_feed') {
                 loadTemplateConfig();
             }
+        });
+
+        socket.on('notify_settings', function (settings) {
+            if (window.MycelianToast && settings) { MycelianToast.configure(Object.assign({}, settings, { dock: true })); }
         });
 
         // Theme update handler - applies theme CSS variables in real-time
