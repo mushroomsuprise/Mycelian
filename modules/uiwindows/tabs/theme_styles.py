@@ -70,11 +70,17 @@ body:not(.body--dark) .thm :is(p, span, div, label):not([class]) { color: inheri
 /* Quasar's own rule is in the quasar_importants layer; an earlier layer wins for !important. */
 @layer overrides { .thm .q-btn.disabled { opacity: .38 !important; } }
 
-/* Body: preview stage + colors panel */
-.thm-body { display: grid; grid-template-columns: minmax(0, 1fr) 248px; }
-@media (max-width: 900px) { .thm-body { grid-template-columns: 1fr; } .thm-side { border-left: none; border-top: 1px solid var(--color-border-subtle); } }
+/* Body: preview stage on top, the Colors and Pop-up notifications panels side by side below */
+.thm-body { display: flex; flex-direction: column; }
 .thm-stage { padding: 12px; min-width: 0; background: var(--color-bg-base); }
-.thm-side { border-left: 1px solid var(--color-border-subtle); padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.thm-panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border-top: 1px solid var(--color-border-subtle); }
+@media (max-width: 1000px) { .thm-panels { grid-template-columns: 1fr; } .thm-panels > .thm-side + .thm-side { border-left: none; border-top: 1px solid var(--color-border-subtle); } }
+.thm-side { padding: 10px 14px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.thm-panels > .thm-side + .thm-side { border-left: 1px solid var(--color-border-subtle); }
+.thm-colors { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 18px; align-items: start; }
+@media (max-width: 1250px) { .thm-colors { grid-template-columns: 1fr; } }
+.thm-colors-aside { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.thm-colors-aside .thm-side-head.is-sub { margin-top: 0; padding-top: 6px; border-top: none; }
 .thm-side-head { display: flex; align-items: center; gap: 2px; min-height: 26px; font-size: .7rem; font-weight: 650; letter-spacing: .05em;
     text-transform: uppercase; color: var(--color-text-muted); }
 .thm-side-head.is-sub { margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--color-border-subtle); }
@@ -103,7 +109,10 @@ body:not(.body--dark) .thm :is(p, span, div, label):not([class]) { color: inheri
 .thm-focus-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-warning); }
 .thm-focus-val { font-size: .68rem; color: var(--color-text-muted); line-height: 1.35; }
 .thm-reads { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-.thm-notify { display: flex; flex-direction: column; gap: 8px; }
+.thm-notify { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 18px; align-items: start; }
+.thm-notify > :not(.thm-nsample) { grid-column: 1; }
+.thm-notify > .thm-nsample { grid-column: 2; grid-row: 1 / span 3; }
+@media (max-width: 1250px) { .thm-notify { grid-template-columns: 1fr; } .thm-notify > .thm-nsample { grid-column: 1; grid-row: auto; } }
 .thm-nstyles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .thm-nstyle { display: flex; align-items: center; justify-content: center; height: 28px; border-radius: 7px; cursor: pointer; font-size: .72rem; font-weight: 600;
     color: var(--color-text-secondary); background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); user-select: none; }

@@ -448,27 +448,32 @@ class ThemeTab:
             self.preview_container = mock
 
     def _build_side(self) -> None:
-        with ui.element("div").classes("thm-side"):
-            with ui.element("div").classes("thm-side-head"):
-                ui.label("Colors")
-                ui.element("div").classes("thm-spacer")
-                for key, icon, tip, handler in (
-                    ("palette_undo_btn", "undo", "Undo", self._undo_palette),
-                    ("palette_redo_btn", "redo", "Redo", self._redo_palette),
-                    ("palette_discard_btn", "restart_alt", "Reset colors", self._discard_palette_edits),
-                ):
-                    btn = ui.button(icon=icon).props("flat round dense size=sm")
-                    btn.on_click(handler)
-                    btn.tooltip(tip)
-                    self.ui_elements[key] = btn
-            self.palette_container = ui.element("div").classes("thm-groups")
-            self.ui_elements["_focus"] = ui.html("", sanitize=False).classes("thm-focus")
-            with ui.element("div").classes("thm-side-head is-sub"):
-                ui.label("Pop-up notifications")
-            self.notify_container = ui.element("div").classes("thm-notify")
-            with ui.element("div").classes("thm-side-head is-sub"):
-                ui.label("Readability")
-            self.ui_elements["_readability"] = ui.html("", sanitize=False).classes("thm-reads")
+        """Colors and pop-up notification panels, side by side under the preview."""
+        with ui.element("div").classes("thm-panels"):
+            with ui.element("div").classes("thm-side"):
+                with ui.element("div").classes("thm-side-head"):
+                    ui.label("Colors")
+                    ui.element("div").classes("thm-spacer")
+                    for key, icon, tip, handler in (
+                        ("palette_undo_btn", "undo", "Undo", self._undo_palette),
+                        ("palette_redo_btn", "redo", "Redo", self._redo_palette),
+                        ("palette_discard_btn", "restart_alt", "Reset colors", self._discard_palette_edits),
+                    ):
+                        btn = ui.button(icon=icon).props("flat round dense size=sm")
+                        btn.on_click(handler)
+                        btn.tooltip(tip)
+                        self.ui_elements[key] = btn
+                with ui.element("div").classes("thm-colors"):
+                    self.palette_container = ui.element("div").classes("thm-groups")
+                    with ui.element("div").classes("thm-colors-aside"):
+                        self.ui_elements["_focus"] = ui.html("", sanitize=False).classes("thm-focus")
+                        with ui.element("div").classes("thm-side-head is-sub"):
+                            ui.label("Readability")
+                        self.ui_elements["_readability"] = ui.html("", sanitize=False).classes("thm-reads")
+            with ui.element("div").classes("thm-side"):
+                with ui.element("div").classes("thm-side-head"):
+                    ui.label("Pop-up notifications")
+                self.notify_container = ui.element("div").classes("thm-notify")
         self._update_palette_toolbar_state()
 
     def _build_palette_section(self) -> None:
