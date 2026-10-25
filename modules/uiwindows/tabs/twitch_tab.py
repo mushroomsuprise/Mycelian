@@ -2,26 +2,37 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from nicegui import ui
 from ...notification_engine import notify, notify_progress
-from ...ui_buttons import outline_button, primary_button
-from ...ui_form_controls import copy_text_button, form_sensitive_input
+from ...ui_buttons import primary_button
 from ...ui_timer import layout_schedule
-from ...ui_settings_layout import (
-    settings_footer,
-    settings_form_grid,
-    settings_inner_panel,
-    settings_status_band,
-    settings_surface,
-    settings_toolbar,
-)
+from ... import dataobjects
 from ...api_credentials_manager import api_credentials_manager
+from ...dataobjects import state_manager
+from .integration_ui import (
+    AccountCard,
+    CopyRow,
+    CredentialsFold,
+    IntegrationPage,
+    field as text_field,
+    fields,
+    hint,
+    initial_of,
+    section,
+    set_connect_style,
+    steps_html,
+    switch_row,
+)
 
 TWITCH_OAUTH_REDIRECT_URI = "http://localhost:17563"
-from ... import dataobjects
-from ...dataobjects import state_manager
+
+# Status strings from connection_status_tracker's connectivity overlay.
+_OFFLINE_STATUSES = ("No Internet", "Checking Internet", "Service Unreachable")
+# user_name values that mean "no account".
+_NO_USER = ("", "None", "N/A", "Error")
+_ACCOUNT_LABELS = {"main": "Main account", "chatbot": "Chatbot"}
 
 
 def _stop_ui_timer(timer) -> None:
@@ -50,6 +61,16 @@ def _fail_or_notify(work, source: str, title: str, details: str) -> None:
         notify("", type="error", source=source, title=title, **kwargs)
 
 
+def _has_token(status_info: Dict[str, Any]) -> bool:
+    """True when the account holds a user token (the timing fields are filled)."""
+    return str(status_info.get("token_expires_countdown", "—") or "—") != "—"
+
+
+def _is_fallback(prefix: str, status_info: Dict[str, Any]) -> bool:
+    """Chatbot replies through the main account (no dedicated bot connected)."""
+    return prefix == "chatbot" and "fallback" in str(status_info.get("status", "")).lower()
+
+
 class TwitchTab:
     name = "Twitch"
 
@@ -59,54 +80,44 @@ class TwitchTab:
         self._app_settings_buffer: Optional[dataobjects.AppSettings] = None
         self.ui_elements: Dict[str, Any] = {}
         self._creds: Dict[str, str] = {}
+        self._saved_creds: Dict[str, str] = {}
         self._status_timer: Optional[Any] = None
         self._token_timer: Optional[Any] = None
+        self._page: Optional[IntegrationPage] = None
+        self._cards: Dict[str, AccountCard] = {}
+        self._folds: Dict[str, CredentialsFold] = {}
+        self._steps: Optional[Any] = None
+        self._steps_html: str = ""
+        self._pills: Dict[str, Tuple[str, str]] = {}
+        self._valid: Dict[str, bool] = {}
+        self._connected: Dict[str, bool] = {}
+        self._connecting: Dict[str, bool] = {}
 
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
         if self._token_timer is not None:
             self._token_timer.active = True
+        if self._page is not None:
+            self._page.set_active(True)
         layout_schedule(0.05, self._refresh_status, once=True)
         layout_schedule(0.05, self._refresh_token_countdowns, once=True)
 
+    def on_exit(self) -> None:
+        if self._status_timer is not None:
+            self._status_timer.active = False
+        if self._token_timer is not None:
+            self._token_timer.active = False
+        if self._page is not None:
+            self._page.set_active(False)
+
+    # ----- status -----
     def _refresh_main_status(self) -> None:
         """Refresh main Twitch account status display."""
         try:
-            # Get current status from the Twitch module
             from ... import twitch
 
-            status_info = twitch.get_twitch_connection_status()
-
-            # Update status label and color
-            if "main_status_label" in self.ui_elements:
-                status_text = status_info.get("status", "Unknown")
-                is_valid = status_info.get("is_valid", False)
-
-                self.ui_elements["main_status_label"].set_text(status_text)
-
-                # Update color based on status
-                if is_valid:
-                    self.ui_elements["main_status_label"].classes(
-                        replace="font-semibold text-theme-success"
-                    )
-                else:
-                    self.ui_elements["main_status_label"].classes(
-                        replace="font-semibold text-theme-error"
-                    )
-
-            # Update user label
-            if "main_user_name_label" in self.ui_elements:
-                user_name = status_info.get("user_name", "N/A")
-                self.ui_elements["main_user_name_label"].set_text(user_name)
-
-            # Update last update label
-            if "main_last_update_label" in self.ui_elements:
-                last_update = status_info.get("last_update", "Never")
-                self.ui_elements["main_last_update_label"].set_text(last_update)
-
-            self._update_token_timing_labels("main", status_info)
-
+            self._apply_status("main", twitch.get_twitch_connection_status())
         except Exception as e:
             import logging
 
@@ -114,61 +125,20 @@ class TwitchTab:
             logger.error(
                 f"Error refreshing main Twitch status: {str(e)}", exc_info=True
             )
-            # Set error status
-            if "main_status_label" in self.ui_elements:
-                self.ui_elements["main_status_label"].set_text("Status Error")
-                self.ui_elements["main_status_label"].classes(
-                    replace="font-semibold text-theme-error"
-                )
+            self._apply_status_error("main")
 
     def _refresh_chatbot_status(self) -> None:
         """Refresh chatbot Twitch account status display."""
         try:
-            # Get current status from the chatbot module
             from ... import chatbot
 
-            status_info = chatbot.get_chatbot_connection_status()
-
-            # Update status label and color
-            if "chatbot_status_label" in self.ui_elements:
-                status_text = status_info.get("status", "Unknown")
-                is_valid = status_info.get("is_valid", False)
-
-                self.ui_elements["chatbot_status_label"].set_text(status_text)
-
-                # Update color based on status
-                if is_valid:
-                    self.ui_elements["chatbot_status_label"].classes(
-                        replace="font-semibold text-theme-success"
-                    )
-                else:
-                    self.ui_elements["chatbot_status_label"].classes(
-                        replace="font-semibold text-theme-error"
-                    )
-
-            # Update user label
-            if "chatbot_user_name_label" in self.ui_elements:
-                user_name = status_info.get("user_name", "N/A")
-                self.ui_elements["chatbot_user_name_label"].set_text(user_name)
-
-            # Update last update label
-            if "chatbot_last_update_label" in self.ui_elements:
-                last_update = status_info.get("last_update", "Never")
-                self.ui_elements["chatbot_last_update_label"].set_text(last_update)
-
-            self._update_token_timing_labels("chatbot", status_info)
-
+            self._apply_status("chatbot", chatbot.get_chatbot_connection_status())
         except Exception as e:
             import logging
 
             logger = logging.getLogger(__name__)
             logger.error(f"Error refreshing chatbot status: {str(e)}", exc_info=True)
-            # Set error status
-            if "chatbot_status_label" in self.ui_elements:
-                self.ui_elements["chatbot_status_label"].set_text("Status Error")
-                self.ui_elements["chatbot_status_label"].classes(
-                    replace="font-semibold text-theme-error"
-                )
+            self._apply_status_error("chatbot")
 
     def _refresh_status(self) -> None:
         """Refresh both main account and chatbot status displays."""
@@ -190,44 +160,158 @@ class TwitchTab:
             pass
 
     @staticmethod
-    def _countdown_label_classes(status_info: Dict[str, Any], *, for_expiry: bool) -> str:
+    def _countdown_class(status_info: Dict[str, Any], *, for_expiry: bool) -> str:
         if status_info.get("token_expired"):
-            return "font-semibold text-sm text-theme-error"
+            return "is-error"
         if not for_expiry and status_info.get("token_refresh_due"):
-            return "font-semibold text-sm text-theme-warning"
-        return "font-semibold text-sm"
+            return "is-warn"
+        return ""
 
     def _update_token_timing_labels(
         self, prefix: str, status_info: Dict[str, Any]
     ) -> None:
-        """Apply token refresh / expiry countdown fields to the account card."""
-        pairs = (
-            ("token_refresh_countdown", f"{prefix}_token_refresh_countdown_label", False),
-            ("token_refresh_at", f"{prefix}_token_refresh_at_label", None),
-            ("token_expires_countdown", f"{prefix}_token_expires_countdown_label", True),
-            ("token_expires_at", f"{prefix}_token_expires_at_label", None),
+        """Apply Updated / Next refresh / Token expires to the account card."""
+        card = self._cards.get(prefix)
+        if card is None:
+            return
+        if _is_fallback(prefix, status_info) or not (
+            status_info.get("is_valid") or _has_token(status_info)
+        ):
+            card.set_meta([])  # no account of its own: nothing to time
+            return
+        card.set_meta(
+            [
+                ("Updated", str(status_info.get("last_update", "Never")), "", ""),
+                (
+                    "Next refresh",
+                    str(status_info.get("token_refresh_countdown", "—")),
+                    str(status_info.get("token_refresh_at", "—")),
+                    self._countdown_class(status_info, for_expiry=False),
+                ),
+                (
+                    "Token expires",
+                    str(status_info.get("token_expires_countdown", "—")),
+                    str(status_info.get("token_expires_at", "—")),
+                    self._countdown_class(status_info, for_expiry=True),
+                ),
+            ]
         )
-        for field, key, for_expiry in pairs:
-            if key not in self.ui_elements:
-                continue
-            label = self.ui_elements[key]
-            label.set_text(status_info.get(field, "—"))
-            if for_expiry is not None:
-                label.classes(
-                    replace=self._countdown_label_classes(
-                        status_info, for_expiry=for_expiry
-                    )
-                )
 
-    def on_exit(self) -> None:
-        if self._status_timer is not None:
-            self._status_timer.active = False
-        if self._token_timer is not None:
-            self._token_timer.active = False
+    def _describe(self, prefix: str, info: Dict[str, Any]) -> Tuple[str, str, str, str]:
+        """(card state kind, state line, header pill kind, header pill text)."""
+        label = _ACCOUNT_LABELS[prefix]
+        status = str(info.get("status") or "Unknown")
+        valid = bool(info.get("is_valid"))
+        if _is_fallback(prefix, info):
+            if valid or status.startswith("Not Configured"):
+                return "off", "Replies use your main account until you connect a bot", "warn", f"{label} not connected"
+            return "warn", status, "warn", f"{label} not connected"
+        if info.get("token_expired") and (valid or _has_token(info)):
+            return "error", "Token expired · reconnect to sign in again", "error", f"{label} token expired"
+        if valid:
+            if info.get("degraded"):
+                return "warn", status, "warn", f"{label} degraded"
+            line = "Connected · events flowing" if prefix == "main" else "Connected · replies come from this account"
+            return "ok", line, "ok", f"{label} connected"
+        if status in _OFFLINE_STATUSES or status == "Authenticated but Disconnected":
+            return "warn", status, "warn", f"{label} disconnected"
+        if status in ("Error", "Status Error"):
+            return "error", status, "error", f"{label} status error"
+        return "off", status, "warn", f"{label} not connected"
 
-    def _build_account_panel(
+    def _account_name(self, prefix: str, info: Dict[str, Any]) -> Tuple[str, bool]:
+        """(display name, whether it is a real account)."""
+        if _is_fallback(prefix, info):
+            return "Not connected", False
+        user = str(info.get("user_name") or "").strip()
+        if user not in _NO_USER and user != "Unknown":
+            return user, True
+        if info.get("is_valid") or _has_token(info):
+            return "Twitch account", True
+        return "Not connected", False
+
+    def _apply_status(self, prefix: str, info: Dict[str, Any]) -> None:
+        card = self._cards.get(prefix)
+        if card is None:
+            return
+        kind, line, pill_kind, pill_text = self._describe(prefix, info)
+        name, real = self._account_name(prefix, info)
+        card.set(name, kind, line, initial=initial_of(name) if real else None)
+        self._update_token_timing_labels(prefix, info)
+        self._valid[prefix] = bool(info.get("is_valid")) and not _is_fallback(prefix, info)
+        self._connected[prefix] = real
+        self._pills[prefix] = (pill_kind, pill_text)
+        self._sync_connect_button(prefix)
+        self._refresh_overview()
+
+    def _apply_status_error(self, prefix: str) -> None:
+        card = self._cards.get(prefix)
+        if card is None:
+            return
+        card.set("Not connected", "error", "Status Error")
+        self._pills[prefix] = ("error", f"{_ACCOUNT_LABELS[prefix]} status error")
+        self._refresh_overview()
+
+    def _refresh_overview(self) -> None:
+        """Header pills, credential tags and the setup ticks."""
+        if self._page is not None:
+            self._page.set_status([self._pills[k] for k in ("main", "chatbot") if k in self._pills])
+        main_saved = bool(self._saved_creds.get("client_id") and self._saved_creds.get("client_secret"))
+        bot_saved = bool(
+            self._saved_creds.get("chatbot_client_id") and self._saved_creds.get("chatbot_client_secret")
+        )
+        for prefix, saved in (("main", main_saved), ("chatbot", bot_saved)):
+            fold = self._folds.get(prefix)
+            if fold is not None:
+                fold.set_saved(saved)
+        if self._steps is not None:
+            content = steps_html(
+                [
+                    (
+                        "Create an app at <b>dev.twitch.tv/console</b> with redirect URI "
+                        f"<b>{TWITCH_OAUTH_REDIRECT_URI}</b>.",
+                        main_saved,
+                    ),
+                    ("Paste its Client ID and Secret under <b>Client ID &amp; secret</b>.", main_saved),
+                    ("Click <b>Connect</b> and approve Mycelian in your browser.", self._valid.get("main", False)),
+                    (
+                        "Optional: repeat for a separate <b>chatbot</b> account so replies come from the bot.",
+                        self._valid.get("chatbot", False),
+                    ),
+                ]
+            )
+            if content != self._steps_html:
+                self._steps_html = content
+                self._steps.set_content(content)
+
+    # ----- connect button -----
+    def _sync_connect_button(self, prefix: str) -> None:
+        btn = self.ui_elements.get(f"{prefix}_connect_button")
+        if btn is None or self._connecting.get(prefix):
+            return
+        set_connect_style(btn, self._connected.get(prefix, False))
+
+    def _start_connect_button(self, prefix: str) -> None:
+        btn = self.ui_elements.get(f"{prefix}_connect_button")
+        if btn is None:
+            return
+        self._connecting[prefix] = True
+        btn.set_text("Connecting...")
+        btn.disable()
+
+    def _reset_connect_button(self, prefix: str) -> None:
+        btn = self.ui_elements.get(f"{prefix}_connect_button")
+        if btn is None:
+            return
+        self._connecting[prefix] = False
+        btn.enable()
+        btn._itg_connected = None  # force the label back from "Connecting..."
+        self._sync_connect_button(prefix)
+
+    # ----- layout -----
+    def _build_account_card(
         self,
-        title: str,
+        kicker: str,
         prefix: str,
         *,
         connect_handler,
@@ -237,103 +321,69 @@ class TwitchTab:
         client_id_placeholder: str,
         client_secret_placeholder: str,
     ) -> None:
-        with settings_inner_panel():
-            ui.label(title).classes("text-base font-semibold")
-            with settings_toolbar():
-                self.ui_elements[f"{prefix}_connect_button"] = primary_button(
-                    "Connect",
-                    connect_handler,
-                    icon="login",
-                )
-                copy_text_button(
-                    TWITCH_OAUTH_REDIRECT_URI,
-                    tooltip=f"Copy redirect URI {TWITCH_OAUTH_REDIRECT_URI}",
-                )
-                self.ui_elements[f"{prefix}_refresh_button"] = outline_button(
-                    "Refresh",
-                    refresh_handler,
-                    icon="refresh",
-                )
-            with settings_status_band():
-                with ui.column().classes("gap-0"):
-                    ui.label("Status").classes("text-xs secondary-text")
-                    self.ui_elements[f"{prefix}_status_label"] = ui.label(
-                        "Loading..."
-                    ).classes("font-semibold text-sm")
-                with ui.column().classes("gap-0"):
-                    ui.label("User").classes("text-xs secondary-text")
-                    self.ui_elements[f"{prefix}_user_name_label"] = ui.label(
-                        "N/A"
-                    ).classes("font-semibold text-sm")
-                with ui.column().classes("gap-0"):
-                    ui.label("Updated").classes("text-xs secondary-text")
-                    self.ui_elements[f"{prefix}_last_update_label"] = ui.label(
-                        "Never"
-                    ).classes("secondary-text text-sm")
-                with ui.column().classes("gap-0"):
-                    ui.label("Next refresh").classes("text-xs secondary-text")
-                    self.ui_elements[f"{prefix}_token_refresh_countdown_label"] = (
-                        ui.label("—").classes("font-semibold text-sm")
-                    )
-                    self.ui_elements[f"{prefix}_token_refresh_at_label"] = ui.label(
-                        "—"
-                    ).classes("secondary-text text-xs")
-                with ui.column().classes("gap-0"):
-                    ui.label("Token expires").classes("text-xs secondary-text")
-                    self.ui_elements[f"{prefix}_token_expires_countdown_label"] = (
-                        ui.label("—").classes("font-semibold text-sm")
-                    )
-                    self.ui_elements[f"{prefix}_token_expires_at_label"] = ui.label(
-                        "—"
-                    ).classes("secondary-text text-xs")
-            with ui.expansion("Advanced", icon="vpn_key").classes("w-full").props(
-                "dense"
-            ):
-                ui.label(
-                    "Client ID and Client Secret are required. "
-                    "Paste both, then click Connect."
-                ).classes("text-xs secondary-text mb-2")
-                self._build_credential_fields(
-                    client_id_key,
-                    client_secret_key,
-                    client_id_placeholder,
-                    client_secret_placeholder,
-                )
-
-    def _build_credential_fields(
-        self,
-        client_id_key: str,
-        client_secret_key: str,
-        client_id_placeholder: str,
-        client_secret_placeholder: str,
-    ) -> None:
-        with settings_form_grid(columns=2):
-            self.ui_elements[client_id_key] = form_sensitive_input(
-                tooltip="Twitch application Client ID from the developer console",
-                label="Client ID",
-                value=self._creds.get(client_id_key, ""),
-                placeholder=client_id_placeholder,
-                on_change=lambda e, k=client_id_key: self._set_cred(
-                    k, "" if e.value is None else str(e.value)
-                ),
+        card = AccountCard("twitch", kicker)
+        self._cards[prefix] = card
+        with card.actions:
+            self.ui_elements[f"{prefix}_refresh_button"] = (
+                ui.button(icon="refresh", on_click=refresh_handler)
+                .props("flat round dense")
+                .classes("itg-ibtn")
+                .tooltip("Check status now")
             )
-            self.ui_elements[client_secret_key] = form_sensitive_input(
-                tooltip="Twitch application Client Secret (keep private)",
-                label="Client Secret",
-                value=self._creds.get(client_secret_key, ""),
-                placeholder=client_secret_placeholder,
-                on_change=lambda e, k=client_secret_key: self._set_cred(
-                    k, "" if e.value is None else str(e.value)
-                ),
+            self.ui_elements[f"{prefix}_connect_button"] = (
+                primary_button("Connect", connect_handler, icon="login")
+                .props("dense")
+                .classes("px-3")
+            )
+        saved = bool(self._creds.get(client_id_key) and self._creds.get(client_secret_key))
+        fold = card.credentials("Client ID & secret", opened=not saved)
+        self._folds[prefix] = fold
+        with fold.body:
+            with fields():
+                self.ui_elements[client_id_key] = text_field(
+                    "Client ID",
+                    value=self._creds.get(client_id_key, ""),
+                    password=True,
+                    placeholder=client_id_placeholder,
+                    tip="Twitch application Client ID from the developer console",
+                    on_change=lambda e, k=client_id_key: self._set_cred(
+                        k, "" if e.value is None else str(e.value)
+                    ),
+                )
+                self.ui_elements[client_secret_key] = text_field(
+                    "Client Secret",
+                    value=self._creds.get(client_secret_key, ""),
+                    password=True,
+                    placeholder=client_secret_placeholder,
+                    tip="Twitch application Client Secret (keep private)",
+                    on_change=lambda e, k=client_secret_key: self._set_cred(
+                        k, "" if e.value is None else str(e.value)
+                    ),
+                )
+            CopyRow("Redirect URI", TWITCH_OAUTH_REDIRECT_URI, copied="Redirect URI copied")
+            hint(
+                "Create an app with the redirect URI above, then paste its Client ID and Secret here and Save.",
+                link_label="dev.twitch.tv/console",
+                url="https://dev.twitch.tv/console",
             )
 
     def build(self, parent_container) -> None:
         self._load_from_state()
-        with settings_surface(parent_container):
-
-            with ui.grid(columns=2).classes("w-full gap-3"):
-                self._build_account_panel(
-                    "Main Account",
+        self._page = page = IntegrationPage(
+            parent_container,
+            "twitch",
+            "Twitch",
+            "Alerts, chat, raids and channel points from your channel",
+            on_save=self.save,
+            on_discard=self.discard,
+            is_dirty=lambda: self.dirty,
+            help_topic="twitch_setup",
+            help_tooltip="Twitch setup guide",
+        )
+        with page.column():
+            with section("account_circle", "Accounts"):
+                self._build_account_card(
+                    "Main account",
                     "main",
                     connect_handler=self._handle_main_oauth_connection,
                     refresh_handler=self._refresh_main_status,
@@ -342,8 +392,8 @@ class TwitchTab:
                     client_id_placeholder="Twitch API Client ID",
                     client_secret_placeholder="Twitch API Client Secret",
                 )
-                self._build_account_panel(
-                    "Chatbot Account",
+                self._build_account_card(
+                    "Chatbot account",
                     "chatbot",
                     connect_handler=self._handle_chatbot_oauth_connection,
                     refresh_handler=self._refresh_chatbot_status,
@@ -352,64 +402,35 @@ class TwitchTab:
                     client_id_placeholder="Chatbot Twitch API Client ID",
                     client_secret_placeholder="Chatbot Twitch API Client Secret",
                 )
-
-            with settings_inner_panel():
-                ui.label("Options").classes("text-base font-semibold")
-                with ui.row().classes("items-center gap-6 flex-wrap"):
-                    with ui.row().classes("items-center gap-2"):
-                        self.ui_elements["alerts_enabled"] = (
-                            ui.switch(
-                                value=bool(
-                                    getattr(self.buffer, "alerts_enabled", True)
-                                )
-                            )
-                            .classes("q-switch")
-                            .on_value_change(
-                                lambda e: self._set(
-                                    "alerts_enabled",
-                                    bool(e.value),
-                                )
-                            )
-                        )
-                        ui.label("Process Twitch alerts").classes("text-sm")
-                    with ui.row().classes("items-center gap-2"):
-                        self.ui_elements["auto_raid_helix_shoutout"] = (
-                            ui.switch(
-                                value=bool(
-                                    self._app_settings_buffer.auto_raid_helix_shoutout
-                                )
-                            )
-                            .classes("q-switch")
-                            .on_value_change(
-                                lambda e: self._set_app_setting(
-                                    "auto_raid_helix_shoutout",
-                                    bool(e.value),
-                                )
-                            )
-                        )
-                        ui.label("Send native Twitch Shoutout").classes("text-sm")
-                    with ui.row().classes("items-center gap-2"):
-                        self.ui_elements["auto_raid_chat_shoutout"] = (
-                            ui.switch(
-                                value=bool(
-                                    self._app_settings_buffer.auto_raid_chat_shoutout
-                                )
-                            )
-                            .classes("q-switch")
-                            .on_value_change(
-                                lambda e: self._set_app_setting(
-                                    "auto_raid_chat_shoutout",
-                                    bool(e.value),
-                                )
-                            )
-                        )
-                        ui.label("Send chat raid shoutout").classes("text-sm")
-
-            settings_footer(self.discard, self.save)
-            self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
-            self._token_timer = layout_schedule(
-                1.0, self._refresh_token_countdowns, active=True
-            )
+        with page.column():
+            with section("campaign", "Alerts"):
+                self.ui_elements["alerts_enabled"] = switch_row(
+                    "Process Twitch alerts",
+                    "Follows, subs, bits, raids and redemptions go to the alert queue",
+                    bool(getattr(self.buffer, "alerts_enabled", True)),
+                    lambda v: self._set("alerts_enabled", v),
+                )
+            with section("diversity_3", "Raids"):
+                self.ui_elements["auto_raid_helix_shoutout"] = switch_row(
+                    "Send a native Twitch shoutout",
+                    "Uses Twitch's /shoutout for incoming raids",
+                    bool(self._app_settings_buffer.auto_raid_helix_shoutout),
+                    lambda v: self._set_app_setting("auto_raid_helix_shoutout", v),
+                )
+                self.ui_elements["auto_raid_chat_shoutout"] = switch_row(
+                    "Send a chat raid shoutout",
+                    "Posts a link to the raider's channel in chat",
+                    bool(self._app_settings_buffer.auto_raid_chat_shoutout),
+                    lambda v: self._set_app_setting("auto_raid_chat_shoutout", v),
+                )
+            with section("menu_book", "Setup"):
+                self._steps = ui.html("", sanitize=False).classes("w-full")
+        self._refresh_overview()
+        self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
+        self._token_timer = layout_schedule(
+            1.0, self._refresh_token_countdowns, active=True
+        )
+        self._refresh_status()
 
     # ----- helpers -----
     def _load_from_state(self) -> None:
@@ -428,6 +449,7 @@ class TwitchTab:
                 "chatbot_client_secret": chatbot_creds.get("client_secret", ""),
             }
         )
+        self._saved_creds = dict(self._creds)
 
         app_settings = state_manager.get_app_settings()
         self._app_settings_buffer = dataobjects.AppSettings(
@@ -475,6 +497,7 @@ class TwitchTab:
             client_id=self._creds.get("chatbot_client_id", ""),
             client_secret=self._creds.get("chatbot_client_secret", ""),
         )
+        self._saved_creds = dict(self._creds)
 
         if self._app_settings_buffer:
             for field in ("auto_raid_helix_shoutout", "auto_raid_chat_shoutout"):
@@ -486,6 +509,7 @@ class TwitchTab:
             notify("", type="success", source="twitch", title="Twitch settings saved")
             self.dirty = False
         # A failed save_changes() was already reported once (changes stay pending).
+        self._refresh_overview()
 
     def discard(self) -> None:
         self._load_from_state()
@@ -507,6 +531,7 @@ class TwitchTab:
             elif hasattr(self.buffer, key) and hasattr(element, "value"):
                 element.value = getattr(self.buffer, key)
         self.dirty = False
+        self._refresh_overview()
 
     def _handle_main_oauth_connection(self) -> None:
         """Handle the Connect Main Account button click to trigger OAuth reconnection"""
@@ -527,10 +552,7 @@ class TwitchTab:
                 )
                 return
 
-            # Update button state to show it's working
-            if "main_connect_button" in self.ui_elements:
-                self.ui_elements["main_connect_button"].set_text("Connecting...")
-                self.ui_elements["main_connect_button"].disable()
+            self._start_connect_button("main")
 
             work = notify_progress(
                 "Connecting your Twitch account",
@@ -602,13 +624,9 @@ class TwitchTab:
                             )
                             logger.error("Main Twitch OAuth connection failed")
 
-                        # Refresh the status display and reset button
+                        # Refresh the status display and reset the button
                         self._refresh_main_status()
-                        if "main_connect_button" in self.ui_elements:
-                            self.ui_elements["main_connect_button"].set_text(
-                                "Connect Main Account"
-                            )
-                            self.ui_elements["main_connect_button"].enable()
+                        self._reset_connect_button("main")
                     except Exception as e:
                         logger.error(
                             f"Error updating UI after main Twitch OAuth: {str(e)}"
@@ -626,12 +644,7 @@ class TwitchTab:
                             hint="Check the Client ID and Secret, then try again.",
                             details=str(oauth_result["error"] or ""),
                         )
-                        # Reset button state
-                        if "main_connect_button" in self.ui_elements:
-                            self.ui_elements["main_connect_button"].set_text(
-                                "Connect Main Account"
-                            )
-                            self.ui_elements["main_connect_button"].enable()
+                        self._reset_connect_button("main")
                     except Exception as ui_error:
                         logger.error(f"Error handling UI error update: {str(ui_error)}")
                     _stop_ui_timer(oauth_timer_holder.get("timer"))
@@ -659,15 +672,10 @@ class TwitchTab:
                     logger.warning("Main OAuth check timed out after 100 seconds")
                     work.done(
                         "Still waiting for Twitch sign-in",
-                        "Finish it in your browser, or press Connect Main Account again.",
+                        "Finish it in your browser, or try connecting again.",
                         type="warning",
                     )
-                    # Reset button state
-                    if "main_connect_button" in self.ui_elements:
-                        self.ui_elements["main_connect_button"].set_text(
-                            "Connect Main Account"
-                        )
-                        self.ui_elements["main_connect_button"].enable()
+                    self._reset_connect_button("main")
                     _stop_ui_timer(oauth_timer_holder.get("timer"))
                     return
 
@@ -693,10 +701,7 @@ class TwitchTab:
                 "Couldn't start Twitch sign-in",
                 f"{type(e).__name__}: {e}",
             )
-            # Reset button state
-            if "main_connect_button" in self.ui_elements:
-                self.ui_elements["main_connect_button"].set_text("Connect Main Account")
-                self.ui_elements["main_connect_button"].enable()
+            self._reset_connect_button("main")
 
     def _handle_chatbot_oauth_connection(self) -> None:
         """Handle the Connect Chatbot button click to trigger OAuth reconnection"""
@@ -719,10 +724,7 @@ class TwitchTab:
                 )
                 return
 
-            # Update button state to show it's working
-            if "chatbot_connect_button" in self.ui_elements:
-                self.ui_elements["chatbot_connect_button"].set_text("Connecting...")
-                self.ui_elements["chatbot_connect_button"].disable()
+            self._start_connect_button("chatbot")
 
             work = notify_progress(
                 "Connecting the chatbot account",
@@ -789,13 +791,9 @@ class TwitchTab:
                             )
                             logger.error("Chatbot Twitch OAuth connection failed")
 
-                        # Refresh the status display and reset button
+                        # Refresh the status display and reset the button
                         self._refresh_chatbot_status()
-                        if "chatbot_connect_button" in self.ui_elements:
-                            self.ui_elements["chatbot_connect_button"].set_text(
-                                "Connect Chatbot"
-                            )
-                            self.ui_elements["chatbot_connect_button"].enable()
+                        self._reset_connect_button("chatbot")
                     except Exception as e:
                         logger.error(
                             f"Error updating UI after chatbot Twitch OAuth: {str(e)}"
@@ -813,12 +811,7 @@ class TwitchTab:
                             hint="Check the chatbot Client ID and Secret, then try again.",
                             details=str(oauth_result["error"] or ""),
                         )
-                        # Reset button state
-                        if "chatbot_connect_button" in self.ui_elements:
-                            self.ui_elements["chatbot_connect_button"].set_text(
-                                "Connect Chatbot"
-                            )
-                            self.ui_elements["chatbot_connect_button"].enable()
+                        self._reset_connect_button("chatbot")
                     except Exception as ui_error:
                         logger.error(f"Error handling UI error update: {str(ui_error)}")
                     _stop_ui_timer(oauth_timer_holder.get("timer"))
@@ -846,15 +839,10 @@ class TwitchTab:
                     logger.warning("Chatbot OAuth check timed out after 130 seconds")
                     work.done(
                         "Still waiting for the chatbot sign-in",
-                        "Finish it in your browser, or press Connect Chatbot again.",
+                        "Finish it in your browser, or try connecting the chatbot again.",
                         type="warning",
                     )
-                    # Reset button state
-                    if "chatbot_connect_button" in self.ui_elements:
-                        self.ui_elements["chatbot_connect_button"].set_text(
-                            "Connect Chatbot"
-                        )
-                        self.ui_elements["chatbot_connect_button"].enable()
+                    self._reset_connect_button("chatbot")
                     _stop_ui_timer(oauth_timer_holder.get("timer"))
                     return
 
@@ -881,20 +869,17 @@ class TwitchTab:
                 "Couldn't start the chatbot sign-in",
                 f"{type(e).__name__}: {e}",
             )
-            # Reset button state
-            if "chatbot_connect_button" in self.ui_elements:
-                self.ui_elements["chatbot_connect_button"].set_text("Connect Chatbot")
-                self.ui_elements["chatbot_connect_button"].enable()
+            self._reset_connect_button("chatbot")
 
     def _save_settings_only(self) -> None:
         """Save only Twitch / chatbot credentials without triggering a full tab save."""
         try:
-            from ... import api_credentials_manager
-
             api_credentials_manager.update_twitch_credentials(
                 client_id=self._creds.get("client_id", ""),
                 client_secret=self._creds.get("client_secret", ""),
             )
+            for key in ("client_id", "client_secret"):
+                self._saved_creds[key] = self._creds.get(key, "")
             chatbot_id = (self._creds.get("chatbot_client_id") or "").strip() or None
             chatbot_secret = (self._creds.get("chatbot_client_secret") or "").strip() or None
             if chatbot_id or chatbot_secret:
@@ -902,8 +887,12 @@ class TwitchTab:
                     client_id=chatbot_id,
                     client_secret=chatbot_secret,
                 )
+                self._saved_creds["chatbot_client_id"] = chatbot_id or ""
+                self._saved_creds["chatbot_client_secret"] = chatbot_secret or ""
         except Exception as e:
             import logging
 
             logger = logging.getLogger(__name__)
             logger.error(f"Error saving Twitch settings only: {str(e)}", exc_info=True)
+        finally:
+            self._refresh_overview()

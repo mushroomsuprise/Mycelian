@@ -8,18 +8,12 @@ from typing import Any, Dict, Optional
 from nicegui import run, ui
 
 from ... import dataobjects
-from ...ui_settings_layout import (
-    settings_action_row,
-    settings_form_grid,
-    settings_status_band,
-    settings_surface,
-)
 from ...dataobjects import OBSData, state_manager
 from ...notification_engine import notify, notify_progress
 from ...obs_service import obs_service
-from ...help_system.contextual_help import help_button
-from ...ui_form_controls import form_sensitive_input, form_sensitive_number
+from ...ui_buttons import outline_button
 from ...ui_timer import layout_schedule
+from .integration_ui import AccountCard, IntegrationPage, field, fields, hint, section, steps, switch_row
 
 logger = logging.getLogger(__name__)
 
@@ -33,56 +27,63 @@ class ObsTab:
         self.ui_elements: Dict[str, Any] = {}
         self._status_timer: Optional[Any] = None
         self._test_in_progress: bool = False
+        self._page: Optional[IntegrationPage] = None
+        self._card: Optional[AccountCard] = None
 
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
+        if self._page is not None:
+            self._page.set_active(True)
         layout_schedule(0.05, self._refresh_status, once=True)
 
     def on_exit(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = False
+        if self._page is not None:
+            self._page.set_active(False)
+
+    def _status(self) -> tuple:
+        """(pill kind, short status, longer line, meta rows)."""
+        if self.buffer is not None and not bool(getattr(self.buffer, "enabled", True)):
+            return "off", "Turned off", "OBS integration is off. Turn it on below to connect.", []
+        phase = obs_service.get_connection_phase()
+        ok, plug, rpc = obs_service.connection_details()
+        if phase == "connecting":
+            return "busy", "Connecting", "Connecting to OBS…", []
+        if phase == "disconnecting":
+            return "busy", "Disconnecting", "Disconnecting from OBS…", []
+        if ok:
+            meta = []
+            if plug:
+                meta.append(("OBS", str(plug), "", ""))
+            if rpc:
+                meta.append(("WebSocket", f"v{rpc}", "", ""))
+            return "ok", "Connected", "Connected · scenes and sources are available", meta
+        if obs_service.auth_failed():
+            return "error", "Wrong password", "OBS rejected the WebSocket password. Copy it again from OBS.", []
+        from ...connection_status_tracker import obs_disconnected_status
+
+        why = obs_disconnected_status()
+        if why == "Not running":
+            return "off", "OBS not running", "OBS isn't open. Mycelian connects on its own once it is.", []
+        if why == "Can't connect":
+            return "warn", "Can't connect", "OBS is open, but its WebSocket server isn't answering.", []
+        return "warn", "Not connected", "Can't reach OBS at this address. Check that it's open there.", []
 
     def _refresh_status(self) -> None:
         try:
-            phase = obs_service.get_connection_phase()
-            ok, plug, rpc = obs_service.connection_details()
-            if phase == "connecting":
-                txt = "Connecting…"
-                success = False
-                pending = True
-            elif phase == "disconnecting":
-                txt = "Disconnecting…"
-                success = False
-                pending = True
-            elif ok:
-                txt = "Connected"
-                if plug:
-                    extra = plug
-                    if rpc:
-                        extra = f"{plug} · ws {rpc}"
-                    txt = f"Connected — {extra}"
-                success = True
-                pending = False
-            else:
-                txt = (
-                    self.buffer.connection_status
-                    if self.buffer
-                    else "Disconnected"
-                )
-                success = False
-                pending = False
-            if "status_label" in self.ui_elements:
-                self.ui_elements["status_label"].set_text(txt)
-                if pending:
-                    css = "font-semibold text-theme-warning"
-                elif success:
-                    css = "font-semibold text-theme-success"
-                else:
-                    css = "font-semibold text-theme-error"
-                self.ui_elements["status_label"].classes(replace=css)
+            kind, short, line, meta = self._status()
+            if self._page is not None:
+                self._page.set_status([(kind, short)])
+            if self._card is not None:
+                host = (self.buffer.host if self.buffer else "") or "localhost"
+                port = (self.buffer.port if self.buffer else 4455) or 4455
+                state = {"busy": "busy", "ok": "ok", "error": "error", "warn": "warn"}.get(kind, "off")
+                self._card.set(f"{host}:{port}", state, line)
+                self._card.set_meta(meta)
         except Exception:
-            pass
+            logger.debug("OBS status refresh failed", exc_info=True)
 
     def _load_from_state(self) -> None:
         raw = state_manager.get_obs_data()
@@ -170,87 +171,84 @@ class ObsTab:
 
     def build(self, parent_container) -> None:
         self._load_from_state()
-        with settings_surface(parent_container):
-
-            with settings_status_band():
-                with ui.row().classes("items-center gap-2"):
-                    ui.label("Live status").classes("text-xs secondary-text")
-                    self.ui_elements["status_label"] = ui.label("…").classes(
-                        "font-semibold"
+        self._page = page = IntegrationPage(
+            parent_container,
+            "obs",
+            "OBS",
+            "Scenes, sources and recording control over OBS WebSocket",
+            on_save=self.save,
+            on_discard=self.discard,
+            is_dirty=lambda: self.dirty,
+            help_topic="obs_websocket",
+            help_tooltip="OBS WebSocket setup",
+        )
+        with page.column():
+            with section("cable", "Connection"):
+                self._card = AccountCard("obs", "OBS Studio")
+                with self._card.actions:
+                    outline_button("Test", self._test_connection, icon="wifi_tethering").props("dense").classes(
+                        "px-3"
+                    ).tooltip("Save these settings and try connecting now")
+                with ui.element("div").style("margin-top:8px"):
+                    self.ui_elements["enabled"] = switch_row(
+                        "Enable OBS integration",
+                        "Connect automatically whenever OBS is running",
+                        bool(getattr(self.buffer, "enabled", True)),
+                        lambda v: (self._set("enabled", v), self._refresh_status()),
                     )
-                self.ui_elements["enabled"] = ui.switch(
-                    "Enable OBS integration",
-                    value=bool(getattr(self.buffer, "enabled", True)),
-                    on_change=lambda e: self._set("enabled", bool(e.value)),
-                )
-
-            with ui.column().classes("w-full gap-1 mb-2"):
-                with ui.row().classes("items-center gap-2"):
-                    ui.label("WebSocket checklist").classes("text-sm font-semibold")
-                    help_button(
-                        topic_id="obs_websocket",
-                        tooltip="OBS WebSocket setup",
-                        size="sm",
+                with fields():
+                    self.ui_elements["host"] = field(
+                        "Host",
+                        value=getattr(self.buffer, "host", ""),
+                        placeholder="localhost",
+                        tip="Hostname or IP address where the OBS WebSocket server listens",
+                        on_change=lambda e: self._set("host", ("" if e.value is None else str(e.value)).strip()),
                     )
-                ui.label(
-                    "1. In OBS, open Tools → WebSocket Server Settings."
-                ).classes("text-xs secondary-text")
-                ui.label(
-                    "2. Enable the server and note the port (default 4455) and password."
-                ).classes("text-xs secondary-text")
-                ui.label(
-                    "3. Enter those values here, Save, then Test."
-                ).classes("text-xs secondary-text")
-
-            with settings_form_grid(columns=2):
-                self.ui_elements["host"] = form_sensitive_input(
-                    tooltip="Hostname or IP where OBS WebSocket server listens",
-                    label="Host",
-                    value=getattr(self.buffer, "host", ""),
-                    placeholder="localhost",
+                    self.ui_elements["port"] = field(
+                        "Port",
+                        value=int(getattr(self.buffer, "port", 4455) or 4455),
+                        placeholder="4455",
+                        tip="OBS WebSocket server port (default 4455)",
+                        on_change=self._on_port,
+                    )
+                    self.ui_elements["port"].props("hide-bottom-space")
+                    self.ui_elements["port"].validation = {"Enter a port from 1 to 65535": self._port_ok}
+                with fields(one=True):
+                    self.ui_elements["password"] = field(
+                        "WebSocket password",
+                        value=getattr(self.buffer, "password", ""),
+                        password=True,
+                        tip="From OBS → Tools → WebSocket Server Settings → Show Connect Info",
+                        on_change=lambda e: self._set("password", "" if e.value is None else str(e.value)),
+                    )
+        with page.column():
+            with section("checklist", "WebSocket checklist"):
+                steps(
+                    [
+                        ("In OBS, open <b>Tools → WebSocket Server Settings</b>.", False),
+                        ("Tick <b>Enable WebSocket server</b> and note the port (default 4455).", False),
+                        ("Click <b>Show Connect Info</b> and copy the password.", False),
+                        ("Enter the host, port and password here, <b>Save</b>, then <b>Test</b>.", False),
+                    ]
                 )
-                self.ui_elements["host"].on_value_change(
-                    lambda e: self._set(
-                        "host",
-                        ("" if e.value is None else str(e.value)).strip(),
-                    ),
+                hint(
+                    "OBS on another computer? Use that computer's IP address as the host, and allow the port "
+                    "through its firewall."
                 )
-                self.ui_elements["port"] = form_sensitive_number(
-                    tooltip="OBS WebSocket server port (default 4455)",
-                    label="Port",
-                    value=int(getattr(self.buffer, "port", 4455) or 4455),
-                    min=1,
-                    max=65535,
-                    classes="w-full",
-                )
-                self.ui_elements["port"].on_value_change(
-                    lambda e: self._set(
-                        "port",
-                        int(float(e.value if e.value is not None else 4455)),
-                    ),
-                )
-            self.ui_elements["password"] = form_sensitive_input(
-                tooltip="Password configured in OBS WebSocket server settings",
-                label="WebSocket password",
-                value=getattr(self.buffer, "password", ""),
-            )
-            self.ui_elements["password"].on_value_change(
-                lambda e: self._set(
-                    "password",
-                    "" if e.value is None else str(e.value),
-                ),
-            )
-
-            settings_action_row(
-                discard=self.discard,
-                save=self.save,
-                before_discard=[
-                    ("Test", self._test_connection, "wifi_tethering", False),
-                ],
-            )
-            self._status_timer = layout_schedule(5.0, self._refresh_status, active=True)
-
+        self._status_timer = layout_schedule(5.0, self._refresh_status, active=True)
         self._refresh_status()
+
+    @staticmethod
+    def _port_ok(value: Any) -> bool:
+        try:
+            return 1 <= int(str(value).strip()) <= 65535
+        except (TypeError, ValueError):
+            return False
+
+    def _on_port(self, e: Any) -> None:
+        if self._port_ok(e.value):
+            self._set("port", int(str(e.value).strip()))
+            self._refresh_status()
 
     def save(self) -> None:
         if not self.buffer:
@@ -283,3 +281,4 @@ class ObsTab:
         if sw is not None and hasattr(sw, "value"):
             sw.value = bool(self.buffer.enabled)
         self.dirty = False
+        self._refresh_status()

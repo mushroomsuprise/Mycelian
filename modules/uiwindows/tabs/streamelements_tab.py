@@ -11,7 +11,6 @@ from nicegui import ui
 
 from ...donation_currency import ALERT_CURRENCIES
 from ...donation_settings import get_settings, update_settings
-from ...help_system.contextual_help import help_button
 from ...notification_engine import nav_actions_settings, notify
 from ...streamelements import (
     connect_streamelements,
@@ -19,26 +18,19 @@ from ...streamelements import (
     get_streamelements_status,
 )
 from ...ui_buttons import browser_link, outline_button, primary_button
-from ...ui_form_controls import form_select, form_sensitive_input
-from ...ui_settings_layout import (
-    settings_action_row,
-    settings_form_grid,
-    settings_section,
-    settings_status_band,
-    settings_surface,
-)
 from ...ui_timer import layout_schedule
+from .integration_ui import (
+    AccountCard,
+    CredentialsFold,
+    IntegrationPage,
+    field,
+    fields,
+    hint,
+    row,
+    section,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _status_classes(status: str) -> str:
-    text = (status or "").lower()
-    if text == "connected":
-        return "font-semibold text-sm text-theme-success"
-    if "connect" in text:
-        return "font-semibold text-sm text-theme-warning"
-    return "font-semibold text-sm text-theme-error"
 
 
 class StreamElementsTab:
@@ -48,21 +40,32 @@ class StreamElementsTab:
         self.dirty: bool = False
         self.ui_elements: Dict[str, Any] = {}
         self._jwt: str = ""
+        self._jwt_saved: bool = False
         self._currency: str = "USD"
         self._status_timer: Optional[Any] = None
+        self._page: Optional[IntegrationPage] = None
+        self._card: Optional[AccountCard] = None
+        self._fold: Optional[CredentialsFold] = None
+        self._connect_button: Optional[Any] = None
+        self._disconnect_button: Optional[Any] = None
 
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
+        if self._page is not None:
+            self._page.set_active(True)
         layout_schedule(0.05, self._refresh_status, once=True)
 
     def on_exit(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = False
+        if self._page is not None:
+            self._page.set_active(False)
 
     def _load(self) -> None:
         settings = get_settings()
         self._jwt = (settings.streamelements_jwt or "").strip()
+        self._jwt_saved = bool(self._jwt)
         currency = (settings.alert_currency or "USD").upper()
         self._currency = currency if currency in ALERT_CURRENCIES else "USD"
         self.dirty = False
@@ -102,6 +105,7 @@ class StreamElementsTab:
                     streamelements_jwt=self._jwt,
                     alert_currency=self._currency or "USD",
                 )
+                self._jwt_saved = True
             else:
                 update_settings(alert_currency=self._currency or "USD")
             self.dirty = False
@@ -118,6 +122,7 @@ class StreamElementsTab:
                 details=f"{type(exc).__name__}: {exc}",
                 actions=nav_actions_settings("Database"),
             )
+        self._refresh_status()
 
     def discard(self) -> None:
         self._load()
@@ -126,15 +131,43 @@ class StreamElementsTab:
         if "currency" in self.ui_elements:
             self.ui_elements["currency"].value = self._currency
         self.dirty = False
+        self._refresh_status()
 
-    def _refresh_status(self) -> None:
+    def _status(self) -> tuple:
+        """(card state kind, header pill text, card name, card state line, connected)."""
         info = get_streamelements_status()
         status = str(info.get("status") or "Disconnected")
-        label = self.ui_elements.get("status_label")
-        if label is not None:
-            detail = str(info.get("error") or "").strip()
-            label.set_text(status if not detail else f"{status}: {detail}")
-            label.classes(replace=_status_classes(status))
+        detail = str(info.get("error") or "").strip()
+        low = status.lower()
+        if status == "Connected":
+            return "ok", "Connected", "Connected", detail or "Listening for tips", True
+        if low == "connecting":
+            return "busy", "Connecting", "Connecting", detail or "Opening the StreamElements connection", False
+        if low == "disconnected":
+            if detail:
+                line = detail
+            elif self._jwt_saved:
+                line = "Press Connect to start listening for tips"
+            else:
+                line = "Paste your channel's JWT token, then connect"
+            return "off", "Not connected", "Not connected", line, False
+        return "error", status, status, detail or "Press Connect to try again", False
+
+    def _refresh_status(self) -> None:
+        try:
+            kind, short, name, line, connected = self._status()
+            if self._page is not None:
+                self._page.set_status([("error" if kind == "off" else kind, short)])
+            if self._card is not None:
+                self._card.set(name, kind, line)
+            if self._fold is not None:
+                self._fold.set_saved(self._jwt_saved)
+            if self._disconnect_button is not None:
+                self._disconnect_button.set_visibility(kind != "off")
+            if self._connect_button is not None:
+                self._connect_button.set_visibility(not connected)
+        except Exception:
+            logger.debug("StreamElements status refresh failed", exc_info=True)
 
     def _show_guide(self) -> None:
         with ui.dialog() as dialog, ui.card().classes("w-full max-w-2xl"):
@@ -183,9 +216,10 @@ class StreamElementsTab:
                 type="warning",
                 source="streamelements",
                 title=error,
-                hint="Use the Guide button to see where to find the JWT.",
+                hint="Press How to connect to see where to find the JWT.",
             )
             return
+        self._jwt_saved = True
         # The status line shows "Connecting"; the result is announced by the status watcher.
         self._refresh_status()
 
@@ -205,6 +239,7 @@ class StreamElementsTab:
             self._refresh_status()
             return
         self._jwt = ""
+        self._jwt_saved = False
         if "jwt" in self.ui_elements:
             self.ui_elements["jwt"].value = ""
         self.dirty = False
@@ -213,51 +248,64 @@ class StreamElementsTab:
 
     def build(self, parent_container) -> None:
         self._load()
-        with settings_surface(parent_container):
-            with settings_status_band():
-                with ui.column().classes("gap-0"):
-                    ui.label("Status").classes("text-xs secondary-text")
-                    self.ui_elements["status_label"] = ui.label("Disconnected").classes(
-                        "font-semibold text-sm"
+        self._page = page = IntegrationPage(
+            parent_container,
+            "streamelements",
+            "StreamElements",
+            "Tips from StreamElements as alerts",
+            on_save=self.save,
+            on_discard=self.discard,
+            is_dirty=self.has_unsaved_changes,
+            help_topic="guide_streamelements",
+            help_tooltip="StreamElements setup help",
+        )
+        with page.column():
+            with section("account_circle", "Account"):
+                self._card = AccountCard("streamelements", "StreamElements")
+                with self._card.actions:
+                    self._disconnect_button = (
+                        ui.button(icon="logout", on_click=self._disconnect)
+                        .props("flat round dense")
+                        .classes("itg-ibtn")
+                        .tooltip("Disconnect")
                     )
-            self._refresh_status()
-            self._status_timer = ui.timer(2.0, self._refresh_status)
-
-            with settings_section(
-                "Donations",
-                subtitle="Tips from StreamElements become donation alerts.",
-            ):
-                with ui.row().classes("w-full items-center justify-between"):
-                    ui.label(
-                        "Alert amounts are matched in the currency below."
-                    ).classes("text-xs secondary-text")
-                    with ui.row().classes("items-center gap-2"):
-                        outline_button("How to connect", self._show_guide)
-                        help_button(
-                            topic_id="guide_streamelements",
-                            tooltip="StreamElements setup help",
-                            size="sm",
+                    outline_button("How to connect", self._show_guide, icon="menu_book").props(
+                        "dense"
+                    ).classes("px-3")
+                    self._connect_button = (
+                        primary_button("Connect", self._connect, icon="login")
+                        .props("dense")
+                        .classes("px-3")
+                    )
+                self._fold = self._card.credentials("JWT token", opened=not self._jwt_saved)
+                with self._fold.body:
+                    with fields(one=True):
+                        self.ui_elements["jwt"] = field(
+                            "JWT token",
+                            value=self._jwt,
+                            password=True,
+                            placeholder="Stored encrypted",
+                            tip="StreamElements channel JWT (Account → Channels → Show secrets), stored encrypted",
+                            on_change=lambda event: self._set_jwt(self._str_from_value_event(event)),
                         )
-                with settings_form_grid(columns=1):
-                    self.ui_elements["currency"] = form_select(
-                        tooltip="Donation alert thresholds use this currency",
-                        label="Alert currency",
-                        options=list(ALERT_CURRENCIES),
-                        value=self._currency,
+        with page.column():
+            with section("payments", "Donations"):
+                _row, ctrl = row(
+                    "Alert currency",
+                    "Donation alert amounts are matched in this currency "
+                    "(shared with Streamlabs)",
+                )
+                with ctrl:
+                    self.ui_elements["currency"] = (
+                        ui.select(options=list(ALERT_CURRENCIES), value=self._currency)
+                        .props("outlined dense options-dense")
+                        .style("width:120px")
+                        .tooltip("Donation alert thresholds use this currency")
                     )
                     self.ui_elements["currency"].on_value_change(
                         lambda event: self._set_currency(self._str_from_value_event(event))
                     )
-                    self.ui_elements["jwt"] = form_sensitive_input(
-                        tooltip="StreamElements channel JWT, stored encrypted",
-                        label="JWT token",
-                        value=self._jwt,
-                    )
-                    self.ui_elements["jwt"].on_value_change(
-                        lambda event: self._set_jwt(self._str_from_value_event(event))
-                    )
-                with ui.row().classes("gap-2"):
-                    primary_button("Connect", self._connect)
-                    outline_button("Disconnect", self._disconnect)
-
-            settings_action_row(discard=self.discard, save=self.save)
+                hint("Only tips come from StreamElements. Follows, subs and bits stay on Twitch.")
+        with page.root:
+            self._status_timer = ui.timer(2.0, self._refresh_status)
+        self._refresh_status()

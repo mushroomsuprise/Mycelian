@@ -2,29 +2,46 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 from nicegui import run, ui
 from ...notification_engine import nav_actions_settings, notify, notify_progress
 from ...ui_buttons import outline_button, primary_button
-from ...ui_form_controls import (
-    copy_text_button,
-    form_input,
-    form_select,
-    form_sensitive_input,
-)
 from ...ui_timer import layout_schedule
-from ...ui_settings_layout import (
-    settings_action_row,
-    settings_form_grid,
-    settings_status_band,
-    settings_surface,
-)
 
 from ... import dataobjects
 from ...dataobjects import state_manager
 from ...api_credentials_manager import api_credentials_manager
 from ...spotify import SPOTIFY_OAUTH_REDIRECT_URI
+from .integration_ui import (
+    AccountCard,
+    CopyRow,
+    CredentialsFold,
+    IntegrationPage,
+    field as text_field,
+    fields,
+    hint,
+    media_html,
+    row,
+    section,
+    set_connect_style,
+)
+
+_MARKETS = {
+    "": "Auto (from account)",
+    "US": "United States",
+    "GB": "United Kingdom",
+    "CA": "Canada",
+}
+_BUSY_STATUSES = ("Opening Browser...", "Awaiting Authorization")
+_WARN_STATUSES = (
+    "Authorization Required",
+    "Authorization Timeout",
+    "No Internet",
+    "Checking Internet",
+    "Service Unreachable",
+)
+_NOTHING_PLAYING = "Nothing playing"
 
 
 class SpotifyTab:
@@ -35,7 +52,14 @@ class SpotifyTab:
         self.buffer: Optional[dataobjects.SpotifyData] = None
         self.ui_elements: Dict[str, Any] = {}
         self._creds: Dict[str, str] = {}
+        self._saved_creds: Dict[str, str] = {}
         self._status_timer: Optional[Any] = None
+        self._page: Optional[IntegrationPage] = None
+        self._card: Optional[AccountCard] = None
+        self._fold: Optional[CredentialsFold] = None
+        self._track: Optional[Any] = None
+        self._track_box: Optional[Any] = None
+        self._track_html: str = ""
 
     @staticmethod
     def _str_from_value_event(e: Any) -> str:
@@ -56,7 +80,72 @@ class SpotifyTab:
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
+        if self._page is not None:
+            self._page.set_active(True)
         layout_schedule(0.05, self._refresh_status, once=True)
+
+    def on_exit(self) -> None:
+        if self._status_timer is not None:
+            self._status_timer.active = False
+        if self._page is not None:
+            self._page.set_active(False)
+
+    def _describe(self, status_text: str, connected: bool) -> Tuple[str, str, str, str, str]:
+        """(card state kind, card name, state line, header pill kind, header pill text)."""
+        if connected:
+            return "ok", "Connected", "Connected · now playing is available", "ok", "Connected"
+        if getattr(self, "_oauth_in_progress", False) or status_text in _BUSY_STATUSES:
+            return "busy", "Signing in…", status_text, "busy", "Signing in"
+        if status_text in _WARN_STATUSES:
+            return "warn", "Not connected", status_text, "warn", status_text
+        if "error" in status_text.lower() or "failed" in status_text.lower():
+            return "error", "Not connected", status_text, "error", "Connection error"
+        creds = getattr(self, "_saved_creds", {}) or {}
+        if creds.get("client_id") and creds.get("client_secret"):
+            line = "Click Connect and approve Mycelian in your browser"
+        else:
+            line = "Add your app's Client ID and secret, then connect"
+        return "off", "Not connected", line, "off", "Not connected"
+
+    def _set_track(self, status_info: Dict[str, Any], connected: bool) -> None:
+        """Now playing strip: title and artist, or the old fallback texts."""
+        if self._track is None:
+            return
+        if self._track_box is not None:
+            # Nothing to show until signed in; the card already says it isn't connected.
+            self._track_box.set_visibility(connected)
+        title, sub = "", ""
+        try:
+            from ... import spotify
+
+            client = getattr(spotify, "spotify_client", None)
+            data = client.spotify_data if client is not None else None
+            if data is not None:
+                title = str(getattr(data, "track_name", "") or "").strip()
+                sub = " · ".join(
+                    part
+                    for part in (
+                        str(getattr(data, "artist_name", "") or "").strip(),
+                        str(getattr(data, "album_name", "") or "").strip(),
+                    )
+                    if part and part != _NOTHING_PLAYING
+                )
+        except Exception:
+            title, sub = "", ""
+        current_track = str(status_info.get("current_track", "N/A") or "N/A")
+        if not title or title == _NOTHING_PLAYING or current_track == "N/A":
+            # If we get "Nothing playing - Nothing playing" due to regional restrictions,
+            # show a more user-friendly message
+            if connected:
+                text = "Spotify connected (playback may be restricted by region)"
+            else:
+                text = "Not connected"
+            content = media_html("music_off", text, muted=True)
+        else:
+            content = media_html("music_note", title, sub)
+        if content != self._track_html:
+            self._track_html = content
+            self._track.set_content(content)
 
     def _refresh_status(self) -> None:
         """Refresh Spotify status display."""
@@ -76,41 +165,22 @@ class SpotifyTab:
                 spotify_data.connection_status if spotify_data else "Unknown"
             )
 
-            # Update status label and color
-            if "status_label" in self.ui_elements:
-                # Use the most current status from either source
-                status_text = current_connection_status or status_info.get(
-                    "status", "Unknown"
-                )
-                is_authenticated = status_info.get("is_authenticated", False)
+            # Use the most current status from either source
+            status_text = str(
+                current_connection_status or status_info.get("status", "Unknown")
+            )
+            is_authenticated = bool(status_info.get("is_authenticated", False))
+            connected = is_authenticated or status_text == "Connected"
 
-                self.ui_elements["status_label"].set_text(status_text)
-
-                # Update color based on status
-                if is_authenticated or status_text == "Connected":
-                    self.ui_elements["status_label"].classes(
-                        replace="font-semibold text-theme-success"
-                    )
-                else:
-                    self.ui_elements["status_label"].classes(
-                        replace="font-semibold text-theme-error"
-                    )
-
-            # Update current track label - Handle regional restrictions gracefully
-            if "track_label" in self.ui_elements:
-                current_track = status_info.get("current_track", "N/A")
-
-                # If we get "Nothing playing - Nothing playing" due to regional restrictions,
-                # show a more user-friendly message
-                if current_track == "Nothing playing - Nothing playing":
-                    if status_info.get("is_authenticated", False):
-                        current_track = (
-                            "Spotify connected (playback may be restricted by region)"
-                        )
-                    else:
-                        current_track = "Not connected"
-
-                self.ui_elements["track_label"].set_text(current_track)
+            kind, name, line, pill_kind, pill_text = self._describe(status_text, connected)
+            if self._card is not None:
+                self._card.set(name, kind, line)
+            if self._page is not None:
+                self._page.set_status([(pill_kind, pill_text)])
+            self._set_track(status_info, is_authenticated)
+            btn = self.ui_elements.get("connect_button")
+            if btn is not None and not getattr(self, "_oauth_in_progress", False):
+                set_connect_style(btn, connected)
 
         except Exception as e:
             import logging
@@ -118,106 +188,106 @@ class SpotifyTab:
             logger = logging.getLogger(__name__)
             logger.error(f"Error refreshing Spotify status: {str(e)}", exc_info=True)
             # Set error status
-            if "status_label" in self.ui_elements:
-                self.ui_elements["status_label"].set_text("Status Error")
-                self.ui_elements["status_label"].classes(
-                    replace="font-semibold text-theme-error"
-                )
+            if self._card is not None:
+                self._card.set("Not connected", "error", "Status Error")
+            if self._page is not None:
+                self._page.set_status([("error", "Status error")])
 
-    def on_exit(self) -> None:
-        if self._status_timer is not None:
-            self._status_timer.active = False
+    def _refresh_saved_tag(self) -> None:
+        if self._fold is not None:
+            self._fold.set_saved(
+                bool(self._saved_creds.get("client_id") and self._saved_creds.get("client_secret"))
+            )
 
     def build(self, parent_container) -> None:
         self._load_from_state()
-        with settings_surface(parent_container):
-
-            with settings_status_band():
-                with ui.column().classes("gap-0"):
-                    ui.label("Status").classes("text-xs secondary-text")
-                    self.ui_elements["status_label"] = ui.label(
-                        "Loading..."
-                    ).classes("font-semibold text-sm")
-                with ui.column().classes("gap-0 flex-1 min-w-[12rem]"):
-                    ui.label("Current track").classes("text-xs secondary-text")
-                    self.ui_elements["track_label"] = ui.label("N/A").classes(
-                        "font-semibold text-sm"
+        self._page = page = IntegrationPage(
+            parent_container,
+            "spotify",
+            "Spotify",
+            "Now playing for overlays and chat commands",
+            on_save=self.save,
+            on_discard=self.discard,
+            is_dirty=lambda: self.dirty,
+            help_topic="guide_spotify",
+            help_tooltip="Spotify setup guide",
+        )
+        with page.column():
+            with section("account_circle", "Account"):
+                self._card = card = AccountCard("spotify", "Spotify")
+                with card.actions:
+                    self.ui_elements["refresh_button"] = (
+                        ui.button(icon="refresh", on_click=self._refresh_status)
+                        .props("flat round dense")
+                        .classes("itg-ibtn")
+                        .tooltip("Check status now")
                     )
-
-            markets = {
-                "": "Auto (from account)",
-                "US": "US",
-                "GB": "GB",
-                "CA": "CA",
-            }
-            with ui.expansion("Advanced", icon="vpn_key").classes("w-full").props(
-                "dense"
-            ):
-                ui.label(
-                    "Client ID and secret from the Spotify dashboard. "
-                    "Connect still uses these values."
-                ).classes("text-xs secondary-text mb-2")
-                with settings_form_grid(columns=2):
-                    self.ui_elements["client_id"] = form_sensitive_input(
-                        tooltip="Spotify application Client ID from the developer dashboard",
-                        label="Client ID",
-                        value=self._creds.get("client_id", ""),
-                        placeholder="Spotify API Client ID",
+                    self.ui_elements["test_button"] = (
+                        outline_button("Test", self._test_connection, icon="wifi_tethering")
+                        .props("dense")
+                        .classes("px-3")
+                        .tooltip("Save the Client ID and Secret and check the saved sign-in")
                     )
-                    self.ui_elements["client_id"].on_value_change(
-                        lambda e: self._set_cred(
-                            "client_id", self._str_from_value_event(e)
+                    self.ui_elements["connect_button"] = (
+                        primary_button("Connect", self._handle_oauth_connection, icon="login")
+                        .props("dense")
+                        .classes("px-3")
+                    )
+                self._track_box = card.extra()
+                with self._track_box:
+                    self._track = ui.html("", sanitize=False).classes("w-full")
+                saved = bool(self._creds.get("client_id") and self._creds.get("client_secret"))
+                self._fold = fold = card.credentials("Client ID & secret", opened=not saved)
+                with fold.body:
+                    with fields():
+                        self.ui_elements["client_id"] = text_field(
+                            "Client ID",
+                            value=self._creds.get("client_id", ""),
+                            password=True,
+                            placeholder="Spotify API Client ID",
+                            tip="Spotify application Client ID from the developer dashboard",
+                            on_change=lambda e: self._set_cred(
+                                "client_id", self._str_from_value_event(e)
+                            ),
                         )
-                    )
-                    self.ui_elements["client_secret"] = form_sensitive_input(
-                        tooltip="Spotify application Client Secret",
-                        label="Client Secret",
-                        value=self._creds.get("client_secret", ""),
-                        placeholder="Spotify API Client Secret",
-                    )
-                    self.ui_elements["client_secret"].on_value_change(
-                        lambda e: self._set_cred(
-                            "client_secret", self._str_from_value_event(e)
+                        self.ui_elements["client_secret"] = text_field(
+                            "Client Secret",
+                            value=self._creds.get("client_secret", ""),
+                            password=True,
+                            placeholder="Spotify API Client Secret",
+                            tip="Spotify application Client Secret",
+                            on_change=lambda e: self._set_cred(
+                                "client_secret", self._str_from_value_event(e)
+                            ),
                         )
+                    CopyRow("Redirect URI", SPOTIFY_OAUTH_REDIRECT_URI, copied="Redirect URI copied")
+                    hint(
+                        "Create an app, add the redirect URI above, then paste its Client ID and Secret here.",
+                        link_label="developer.spotify.com/dashboard",
+                        url="https://developer.spotify.com/dashboard",
                     )
-            with settings_form_grid(columns=3):
-                self.ui_elements["market_country"] = form_select(
-                    tooltip="Market used for Spotify API requests (Auto uses your account region)",
-                    label="Market country",
-                    options=markets,
-                    value=getattr(self.buffer, "market_country", ""),
-                )
+                self._refresh_saved_tag()
+        with page.column():
+            with section("tune", "Options"):
+                market = str(getattr(self.buffer, "market_country", "") or "")
+                markets = dict(_MARKETS)
+                if market not in markets:
+                    markets[market] = market
+                _r, ctrl = row("Market country", "Region used for Spotify lookups")
+                with ctrl:
+                    self.ui_elements["market_country"] = (
+                        ui.select(options=markets, value=market)
+                        .props("outlined dense")
+                        .style("width:210px")
+                        .tooltip("Market used for Spotify API requests (Auto uses your account region)")
+                    )
                 self.ui_elements["market_country"].on_value_change(
                     lambda e: self._set(
                         "market_country", self._str_from_value_event(e)
                     )
                 )
-
-            with ui.row().classes(
-                "button-row w-full justify-end gap-2 mt-1 flex-wrap"
-            ):
-                self.ui_elements["refresh_button"] = outline_button(
-                    "Refresh",
-                    self._refresh_status,
-                    icon="refresh",
-                )
-                self.ui_elements["test_button"] = outline_button(
-                    "Test",
-                    self._test_connection,
-                    icon="wifi_tethering",
-                )
-                outline_button("Discard", self.discard)
-                primary_button("Save", self.save)
-                copy_text_button(
-                    SPOTIFY_OAUTH_REDIRECT_URI,
-                    tooltip=f"Copy redirect URI {SPOTIFY_OAUTH_REDIRECT_URI}",
-                )
-                self.ui_elements["connect_button"] = primary_button(
-                    "Connect",
-                    self._handle_oauth_connection,
-                    icon="login",
-                )
-            self._status_timer = layout_schedule(5.0, self._refresh_status, active=True)
+        self._status_timer = layout_schedule(5.0, self._refresh_status, active=True)
+        self._refresh_status()
 
     def _load_from_state(self) -> None:
         sp = state_manager.get_spotify_data()
@@ -225,6 +295,7 @@ class SpotifyTab:
             **{k: getattr(sp, k) for k in sp.__dataclass_fields__.keys()}
         )
         self._creds = dict(api_credentials_manager.get_spotify_credentials())
+        self._saved_creds = dict(self._creds)
         self.dirty = False
 
     def _set(self, field: str, value) -> None:
@@ -250,6 +321,8 @@ class SpotifyTab:
             client_id=client_id,
             client_secret=client_secret,
         )
+        self._saved_creds = {"client_id": client_id, "client_secret": client_secret}
+        self._refresh_saved_tag()
 
     def save(self) -> None:
         if not self.buffer:
@@ -270,6 +343,7 @@ class SpotifyTab:
             elif hasattr(self.buffer, key) and hasattr(element, "value"):
                 element.value = getattr(self.buffer, key)
         self.dirty = False
+        self._refresh_saved_tag()
 
     def _handle_oauth_connection(self) -> None:
         """Handle the Connect to Spotify button click to trigger OAuth connection"""
@@ -304,6 +378,7 @@ class SpotifyTab:
             if "connect_button" in self.ui_elements:
                 self.ui_elements["connect_button"].set_text("Connecting...")
                 self.ui_elements["connect_button"].disable()
+            self._refresh_status()
 
             # Save only Spotify settings (a failure is reported by save_changes)
             self._save_settings_only()
@@ -373,7 +448,7 @@ class SpotifyTab:
                         self._cleanup_oauth()
                         work.done(
                             "Still waiting for Spotify sign-in",
-                            "Finish signing in in your browser, or press Connect to Spotify again.",
+                            "Finish signing in in your browser, or try connecting again.",
                             type="warning",
                         )
                     return
@@ -397,7 +472,7 @@ class SpotifyTab:
                             if "timeout" in status.lower():
                                 work.fail(
                                     "Spotify sign-in timed out",
-                                    hint="Press Connect to Spotify and approve Mycelian within 5 minutes.",
+                                    hint="Connect again and approve Mycelian within 5 minutes.",
                                     details=status,
                                 )
                             else:
@@ -480,10 +555,11 @@ class SpotifyTab:
             # Mark OAuth as no longer in progress
             self._oauth_in_progress = False
 
-            # Reset button state
+            # Reset button state (the label follows the connection state again)
             if "connect_button" in self.ui_elements:
-                self.ui_elements["connect_button"].set_text("Connect to Spotify")
                 self.ui_elements["connect_button"].enable()
+                self.ui_elements["connect_button"]._itg_connected = None
+            self._refresh_status()
         except Exception as e:
             import logging
 
@@ -530,7 +606,7 @@ class SpotifyTab:
                 else:
                     work.fail(
                         "Couldn't reach Spotify with the saved sign-in",
-                        hint="Press Connect to Spotify to sign in again.",
+                        hint="Connect again to sign in.",
                     )
                     logger.warning("Spotify connection test failed")
                 self._refresh_status()
@@ -538,7 +614,7 @@ class SpotifyTab:
                 logger.error(f"Error testing Spotify connection: {str(e)}", exc_info=True)
                 work.fail(
                     "Couldn't test the Spotify connection",
-                    hint="Press Connect to Spotify to sign in again.",
+                    hint="Connect again to sign in.",
                     details=f"{type(e).__name__}: {e}",
                 )
             finally:

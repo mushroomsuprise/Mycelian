@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 from nicegui import run, ui
 from ...notification_engine import nav_actions_settings, notify, notify_progress
@@ -14,16 +15,6 @@ from ... import database_manager as _dbm
 
 from ...ui_buttons import outline_button, primary_button
 from ...ui_timer import app_schedule, layout_schedule, run_on_ui_loop
-from ...ui_form_controls import form_input, form_select, form_sensitive_input
-from ...ui_settings_layout import (
-    THEME_CHIP_CLASSES,
-    settings_divider,
-    settings_form_grid,
-    settings_section,
-    settings_status_band,
-    settings_surface,
-    theme_chip_row,
-)
 
 from ... import dataobjects
 from ...dataobjects import state_manager
@@ -38,8 +29,28 @@ from ...psnapi import (
     update_psn_game_cache_in_db,
     delete_psn_game_cache_in_db,
 )
+from .integration_ui import (
+    AccountCard,
+    IntegrationPage,
+    banner,
+    esc,
+    field,
+    fields,
+    hint,
+    icon_html,
+    initial_of,
+    list_box,
+    list_empty,
+    list_foot,
+    list_item,
+    section,
+    set_connect_style,
+)
 
 logger = logging.getLogger(__name__)
+
+# The game cache can hold thousands of games: only this many matching rows are drawn.
+_CACHE_LIST_LIMIT = 150
 
 
 def _cache_write(fn, *args) -> tuple:
@@ -77,6 +88,32 @@ def _npsso_trace(msg: str) -> None:
     )
 
 
+def _game_name(game: dict) -> str:
+    return str(
+        game.get("trophy_name")
+        or game.get("presence_name")
+        or game.get("np_communication_id")
+        or "Unknown"
+    )
+
+
+def _game_sort_key(game: dict) -> list:
+    """Natural order: "Game 2" before "Game 10"."""
+    return [(0, int(p), "") if p.isdigit() else (1, 0, p) for p in re.split(r"(\d+)", _game_name(game).lower()) if p]
+
+
+def _game_search_key(game: dict) -> str:
+    """Lower-case text the cache search matches against (names, platform, IDs)."""
+    parts = (
+        game.get("trophy_name"),
+        game.get("presence_name"),
+        game.get("platform"),
+        game.get("np_communication_id"),
+        game.get("np_title_id"),
+    )
+    return " ".join(str(p) for p in parts if p).lower()
+
+
 class PSNTab:
     name = "PSN"
 
@@ -86,18 +123,34 @@ class PSNTab:
         self.ui_elements: Dict[str, Any] = {}
         self._npsso_capture_timer: Any = None
         self._cached_games: List[dict] = []
+        self._cache_index: List[Tuple[dict, str]] = []
         self._selected_game: Optional[dict] = None
         self._game_cache_dirty: bool = False
-        self._cache_chip_container: Any = None
-        self._game_select_container: Any = None
+        self._populating_game: bool = False
+        self._cache_filter: str = ""
+        self._cache_filter_timer: Optional[Any] = None
+        self._cache_rows: Dict[str, Any] = {}
+        self._cache_list: Any = None
+        self._cache_head: Any = None
+        self._cache_section: Any = None
+        self._detail_empty: Any = None
+        self._detail_kv: Any = None
         self._status_timer: Optional[Any] = None
         self._mismatch_timer: Optional[Any] = None
+        self._auth_in_progress: bool = False
+        self._connected: bool = False
+        self._page: Optional[IntegrationPage] = None
+        self._card: Optional[AccountCard] = None
+        self._fold: Any = None
+        self._banner: Any = None
 
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
         if self._mismatch_timer is not None:
             self._mismatch_timer.active = True
+        if self._page is not None:
+            self._page.set_active(True)
         layout_schedule(0.05, self._refresh_status, once=True)
         layout_schedule(0.2, self._refresh_game_cache_async, once=True)
 
@@ -106,6 +159,8 @@ class PSNTab:
             self._status_timer.active = False
         if self._mismatch_timer is not None:
             self._mismatch_timer.active = False
+        if self._page is not None:
+            self._page.set_active(False)
 
     @staticmethod
     def _str_from_value_event(e: Any) -> str:
@@ -125,92 +180,78 @@ class PSNTab:
 
     def build(self, parent_container) -> None:
         self._load_from_state()
-        with settings_surface(parent_container):
+        self._page = page = IntegrationPage(
+            parent_container,
+            "psn",
+            "PlayStation",
+            "Trophies, presence and the current game for overlays",
+            on_save=self.save,
+            on_discard=self.discard,
+            is_dirty=self.has_unsaved_changes,
+            help_topic="guide_psn",
+            help_tooltip="PlayStation setup guide",
+        )
+        with page.wide(top=True):
+            self._banner = banner()
 
-            with settings_status_band():
-                with ui.column().classes("gap-0"):
-                    ui.label("Status").classes("text-xs secondary-text")
-                    self.ui_elements["status_label"] = ui.label(
-                        "Not Connected"
-                    ).classes("font-semibold text-sm")
-                with ui.column().classes("gap-0"):
-                    ui.label("Tracking").classes("text-xs secondary-text")
-                    self.ui_elements["user_label"] = ui.label("N/A").classes(
-                        "font-semibold text-sm"
-                    )
+        with page.column():
+            with section("account_circle", "Account"):
+                self._card = AccountCard("psn", "PlayStation account")
+                with self._card.actions:
+                    outline_button("How to connect", self._show_help_dialog, icon="help_outline").props(
+                        "dense"
+                    ).classes("px-3")
+                    self.connect_button = primary_button(
+                        "Connect to PSN", self._start_npsso_auth, icon="login"
+                    ).props("dense").classes("px-3")
+                saved_npsso = bool((self.buffer.npsso_code or "").strip())
+                self._fold = self._card.credentials("NPSSO code", opened=not saved_npsso)
+                with self._fold.body:
+                    with fields(one=True):
+                        self.ui_elements["npsso_code"] = field(
+                            "NPSSO code",
+                            value=self.buffer.npsso_code or "",
+                            password=True,
+                            placeholder="Required for PSN API access",
+                            tip="Sony NPSSO token for PlayStation Network API access. Sign in fills this for you.",
+                            on_change=lambda e: self._set("npsso_code", self._str_from_value_event(e)),
+                        )
+                    with ui.element("div").classes("itg-hint"):
+                        ui.html(icon_html("info"), sanitize=False)
+                        with ui.element("span"):
+                            ui.html(
+                                "Signing in opens a PlayStation window and saves the code for you. "
+                                "To paste one by hand, see&nbsp;",
+                                sanitize=False,
+                            ).classes("inline")
+                            ui.label("How to get an NPSSO code").classes("itg-link inline").on(
+                                "click", lambda _e: self._show_help_dialog()
+                            )
+                self._fold.set_saved(saved_npsso)
 
-            self.ui_elements["mismatch_banner"] = ui.card().classes(
-                "w-full hint-warning p-2"
-            )
-            self.ui_elements["mismatch_banner"].set_visibility(False)
-            with self.ui_elements["mismatch_banner"]:
-                with ui.row().classes("w-full items-center gap-2"):
-                    ui.icon("warning").classes("text-xl text-theme-warning")
-                    with ui.column().classes("grow gap-0"):
-                        ui.label("Game Mismatch Detected").classes(
-                            "font-semibold text-theme-warning"
-                        )
-                        self.ui_elements["mismatch_game_name"] = ui.label("").classes(
-                            "text-sm text-theme-warning"
-                        )
-                    ui.label("Edit in Game Cache below").classes(
-                        "text-sm text-theme-warning shrink-0"
-                    )
-
-            with settings_section(
-                "Configuration",
-                subtitle="Use Connect for automatic NPSSO, or enter credentials below.",
-            ):
-                with settings_form_grid(columns=2):
-                    self.ui_elements["npsso_code"] = form_sensitive_input(
-                        tooltip="Sony NPSSO token for PlayStation Network API access",
-                        label="NPSSO code",
-                        value=self.buffer.npsso_code or "",
-                        placeholder="Required for PSN API access",
-                    )
-                    self.ui_elements["npsso_code"].on_value_change(
-                        lambda e: self._set(
-                            "npsso_code", self._str_from_value_event(e)
-                        )
-                    )
-                    self.ui_elements["psn_username"] = form_sensitive_input(
-                        tooltip="PSN online ID to query; leave empty to use your own account",
-                        label="PSN username",
+        with page.column():
+            with section("person_search", "Tracking"):
+                with fields(one=True):
+                    self.ui_elements["psn_username"] = field(
+                        "PSN username to track",
                         value=self.buffer.psn_username or "",
-                        placeholder="Optional — leave empty for your own account",
+                        placeholder="Leave empty to track your own account",
+                        tip="PSN online ID to query; leave empty to use your own account",
+                        on_change=lambda e: self._set("psn_username", self._str_from_value_event(e)),
                     )
-                    self.ui_elements["psn_username"].on_value_change(
-                        lambda e: self._set(
-                            "psn_username", self._str_from_value_event(e)
-                        )
-                    )
+                hint("You can only track your own profile, or friends who are online.")
 
-            with ui.row().classes(
-                "button-row w-full justify-end gap-2 mt-1 flex-wrap"
-            ):
-                outline_button(
-                    "How to Connect",
-                    self._show_help_dialog,
-                    icon="help_outline",
-                )
-                outline_button("Discard", self.discard)
-                primary_button("Save", self.save)
-                self.connect_button = primary_button(
-                    "Connect to PSN",
-                    self._start_npsso_auth,
-                    icon="login",
-                )
-
-            settings_divider()
+        with page.wide():
             self._build_game_cache_section()
-            # The section build just loaded the list from the database.
-            self.refresh_game_cache(reload=False)
+        # The section build just loaded the list from the database.
+        self.refresh_game_cache(reload=False)
 
-            layout_schedule(0.1, self._refresh_status, once=True)
-            layout_schedule(0.8, self._refresh_status, once=True)
-            layout_schedule(0.5, self._check_mismatch, once=True)
-            self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
-            self._mismatch_timer = layout_schedule(10.0, self._check_mismatch, active=True)
+        self._refresh_status()
+        layout_schedule(0.1, self._refresh_status, once=True)
+        layout_schedule(0.8, self._refresh_status, once=True)
+        layout_schedule(0.5, self._check_mismatch, once=True)
+        self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
+        self._mismatch_timer = layout_schedule(10.0, self._check_mismatch, active=True)
 
     def _start_npsso_auth(self) -> None:
         """Start the NPSSO authentication flow"""
@@ -229,7 +270,7 @@ class PSNTab:
             _npsso_trace("reset_connect_ui: re-enable Connect button")
             self._auth_in_progress = False
             self.connect_button.enable()
-            self.connect_button.text = "Connect to PSN"
+            self._sync_connect_button()
             self._refresh_status()
 
         def on_auth_complete(result: NpssoResult):
@@ -470,7 +511,7 @@ class PSNTab:
             logger.error(f"Error starting NPSSO auth: {e}")
             self._auth_in_progress = False
             self.connect_button.enable()
-            self.connect_button.text = "Connect to PSN"
+            self._sync_connect_button()
             notify(
                 "",
                 type="error",
@@ -577,14 +618,14 @@ class PSNTab:
         """
         if not self.buffer:
             return None
-        for field in ("npsso_code", "psn_username"):
-            el = self.ui_elements.get(field)
+        for key in ("npsso_code", "psn_username"):
+            el = self.ui_elements.get(key)
             if el and hasattr(el, "value"):
                 v = el.value
                 if v is not None:
-                    self._set(field, str(v))
-        for field in self.buffer.__dataclass_fields__.keys():
-            state_manager.update_psn_setting(field, getattr(self.buffer, field))
+                    self._set(key, str(v))
+        for key in self.buffer.__dataclass_fields__.keys():
+            state_manager.update_psn_setting(key, getattr(self.buffer, key))
         _npsso_trace("save(): calling state_manager.save_changes() …")
         return state_manager.save_changes()
 
@@ -592,6 +633,8 @@ class PSNTab:
         _npsso_trace(
             f"save(): enter suppress_saved_notification={suppress_saved_notification}"
         )
+        if self._game_cache_dirty and self._selected_game:
+            self._save_game_cache()  # Save covers a pending game-cache edit too
         ok = self._persist_psn_settings()
         if ok is None:
             _npsso_trace("save(): no buffer, return")
@@ -647,184 +690,237 @@ class PSNTab:
         """Drop unsaved account and game-cache edits."""
         self._game_cache_dirty = False
         self.dirty = False
+        btn = self.ui_elements.get("cache_save_btn")
+        if btn is not None:
+            btn.disable()
+
+    def _sync_connect_button(self) -> None:
+        """Connect when there's no working sign-in; Sign in again once PSN is connected."""
+        btn = getattr(self, "connect_button", None)
+        if btn is None or self._auth_in_progress:
+            return
+        has_code = bool((self.buffer.npsso_code if self.buffer else "") or "")
+        set_connect_style(
+            btn,
+            self._connected,
+            connect="Sign in again" if has_code else "Connect to PSN",
+            reconnect="Sign in again",
+        )
+
+    def _status(self) -> tuple:
+        """(pill kind, pill text, card name, card state kind, card state text, meta rows)."""
+        status_text, user_text, status_color = psn_service.get_psn_status_display()
+        kind = {"text-theme-success": "ok", "text-theme-warning": "warn"}.get(status_color, "error")
+        saved = state_manager.get_psn_settings_data()
+        has_code = bool(getattr(saved, "npsso_code", "") or "")
+        if status_text == "Not Connected" and not has_code:
+            return "off", "Not connected", "Not signed in", "off", "Connect to PSN to sign in", []
+
+        tracked, whose = "", ""
+        user_text = str(user_text or "")
+        for suffix, label in ((" (own account)", "own account"), (" (target)", "tracking target")):
+            if user_text.endswith(suffix):
+                tracked, whose = user_text[: -len(suffix)], label
+        meta = []
+        if tracked:
+            meta.append(("Tracking", tracked, whose, ""))
+
+        state_text = str(status_text).replace(" - ", " · ")
+        if kind == "error":
+            return "error", str(status_text), "PlayStation account", "error", state_text, meta
+
+        live = state_manager.get_live_psn_data()
+        online_id = str(getattr(live, "online_id", "") or "") if live else ""
+        game = str(getattr(live, "current_game_name", "") or "") if live else ""
+        if game:
+            meta.append(("Now playing", game, "", ""))
+        name = online_id or tracked or "PlayStation account"
+        pill = "Connected" if kind == "ok" else str(status_text).split(" - ")[0]
+        return kind, pill, name, kind, state_text, meta
 
     def _refresh_status(self) -> None:
-        """Update PSN status labels in the UI."""
+        """Update the header pill, account card and NPSSO fold from the PSN service."""
         try:
-            from ... import psn_service
-
-            status_text, user_text, status_color = psn_service.get_psn_status_display()
-
-            # Update UI elements if they exist
-            if "status_label" in self.ui_elements:
-                self.ui_elements["status_label"].set_text(status_text)
-                self.ui_elements["status_label"].classes(
-                    replace=f"font-semibold {status_color}"
-                )
-            if "user_label" in self.ui_elements:
-                self.ui_elements["user_label"].set_text(user_text)
-
+            pill_kind, pill_text, name, state_kind, state_text, meta = self._status()
+            self._connected = pill_kind in ("ok", "warn")
+            if self._page is not None:
+                self._page.set_status([(pill_kind, pill_text)])
+            if self._card is not None:
+                initial = initial_of(name) if self._connected and name != "PlayStation account" else None
+                self._card.set(name, state_kind, state_text, initial=initial)
+                self._card.set_meta(meta)
+            if self._fold is not None:
+                saved = state_manager.get_psn_settings_data()
+                self._fold.set_saved(bool(getattr(saved, "npsso_code", "") or ""))
         except Exception as e:
             logger.error(f"Error refreshing PSN status: {str(e)}", exc_info=True)
-            # Set error status if UI elements exist
-            if "status_label" in self.ui_elements:
-                self.ui_elements["status_label"].set_text("Error")
-                self.ui_elements["status_label"].classes(
-                    replace="font-semibold text-theme-error"
-                )
-            if "user_label" in self.ui_elements:
-                self.ui_elements["user_label"].set_text("N/A")
+            self._connected = False
+            if self._page is not None:
+                self._page.set_status([("error", "Error")])
+            if self._card is not None:
+                self._card.set("PlayStation account", "error", "Error")
+                self._card.set_meta([])
+        self._sync_connect_button()
 
     def _check_mismatch(self) -> None:
         """Check for game mismatch and update banner visibility."""
         try:
             live_psn_data = state_manager.get_live_psn_data()
+            if self._banner is None:
+                return
             if live_psn_data and live_psn_data.current_game_mismatch:
                 mismatch = live_psn_data.current_game_mismatch
-                if "mismatch_banner" in self.ui_elements:
-                    self.ui_elements["mismatch_banner"].set_visibility(True)
-                if "mismatch_game_name" in self.ui_elements:
-                    self.ui_elements["mismatch_game_name"].set_text(
-                        f'Game: "{mismatch.presence_name}" not found in trophy data'
-                    )
+                target = getattr(self._cache_section, "html_id", "") if self._cache_section else ""
+                scroll = (
+                    f"document.getElementById('{target}')?.scrollIntoView({{behavior:'smooth',block:'start'}})"
+                    if target
+                    else ""
+                )
+                self._banner.set_content(
+                    f'{icon_html("warning_amber")}<div><b>Game mismatch:</b> '
+                    f"“{esc(mismatch.presence_name)}” isn’t in your trophy data, so trophy overlays show "
+                    f'nothing for it. <span class="itg-link" onclick="{esc(scroll)}">'
+                    "Fix it in the game cache below</span>.</div>"
+                )
+                self._banner.set_visibility(True)
             else:
-                if "mismatch_banner" in self.ui_elements:
-                    self.ui_elements["mismatch_banner"].set_visibility(False)
+                self._banner.set_visibility(False)
         except Exception as e:
             logger.debug(f"Error checking mismatch: {str(e)}")
 
     def _build_game_cache_section(self) -> None:
-        """Build the Game Cache Editor section."""
-        with settings_section(
-            "Game Cache",
-            subtitle=(
-                "Edit cached game data to fix name mismatches. Remove chips to "
-                "clear entries (re-cached on next play)."
-            ),
-        ):
-            self._load_cached_games()
-            self._cache_chip_container = theme_chip_row()
-            self._rebuild_cache_chips()
-
-            with ui.row().classes("w-full items-end gap-2"):
-                ui.label("Search game").classes("text-sm secondary-text shrink-0 pb-2")
-                self._game_select_container = ui.column().classes("flex-1 min-w-0")
-            with self._game_select_container:
-                self._rebuild_game_select(reload=False)
-
-            self.ui_elements["game_details_container"] = ui.column().classes(
-                "w-full gap-2 mt-2"
+        """Game cache: searchable list on the left, the selected game's details on the right."""
+        self._load_cached_games()
+        self._cache_section = ui.element("div").classes("itg-sec")
+        with self._cache_section:
+            self._cache_head = ui.html("", sanitize=False).classes("itg-sec-head")
+            hint(
+                "Fix names that don't match between presence and trophies. Removed games are cached again "
+                "the next time you play them."
             )
-
-            with self.ui_elements["game_details_container"]:
-                ui.label("Selected game").classes("font-semibold text-sm")
-                with settings_form_grid(columns=2):
-                    with ui.column().classes("gap-0"):
-                        ui.label("Trophy name").classes("text-xs secondary-text")
-                        self.ui_elements["cache_trophy_name"] = ui.label("--").classes(
-                            "font-medium text-sm"
-                        )
-                    with ui.column().classes("gap-0"):
-                        ui.label("Platform").classes("text-xs secondary-text")
-                        self.ui_elements["cache_platform"] = ui.label("--").classes(
-                            "text-sm"
-                        )
-                    with ui.column().classes("gap-0 col-span-2"):
-                        ui.label("NP Communication ID").classes(
-                            "text-xs secondary-text"
-                        )
-                        self.ui_elements["cache_np_comm_id"] = ui.label("--").classes(
-                            "font-mono text-sm"
-                        )
-                    with ui.column().classes("gap-0 col-span-2"):
-                        ui.label("Cover art URL").classes("text-xs secondary-text")
-                        self.ui_elements["cache_cover_url"] = ui.label("--").classes(
-                            "text-sm truncate"
-                        )
-                    with ui.column().classes("gap-0"):
-                        ui.label("Last updated").classes("text-xs secondary-text")
-                        self.ui_elements["cache_last_updated"] = ui.label(
-                            "--"
-                        ).classes("text-sm")
-
-                with settings_form_grid(columns=2):
-                    self.ui_elements["cache_presence_name"] = form_input(
-                        tooltip="Display name shown for this game in presence/social APIs",
-                        label="Presence name",
-                        placeholder="Name from presence/social API",
-                        on_change=lambda e: self._on_cache_field_changed(),
+            with ui.element("div").classes("itg-split").style("margin-top:10px"):
+                with ui.element("div").style("min-width:0"):
+                    search = (
+                        ui.input(placeholder="Search cached games")
+                        .props("outlined dense clearable")
+                        .classes("w-full")
+                        .tooltip("Matches game names, platform and IDs")
                     )
-                    self.ui_elements["cache_np_title_id"] = form_input(
-                        tooltip="PlayStation NP Title ID for this cached game",
-                        label="NP Title ID",
-                        placeholder="e.g. PPSA01234_00",
-                        on_change=lambda e: self._on_cache_field_changed(),
-                    )
+                    with search.add_slot("prepend"):
+                        ui.icon("search").style("font-size:18px")
+                    search.on_value_change(self._on_cache_search)
+                    self._cache_list = list_box(scroll=True).style("margin-top:8px")
 
-                with ui.row().classes("justify-end gap-2 mt-1"):
-                    self.ui_elements["cache_save_btn"] = ui.button(
-                        "Save Changes", on_click=self._save_game_cache
-                    ).props("color=primary")
-                    self.ui_elements["cache_save_btn"].disable()
+                with ui.element("div").classes("itg-detail"):
+                    self._detail_empty = ui.label(
+                        "Pick a game from the list to see and edit its details."
+                    ).classes("itg-empty")
+                    details = ui.element("div").classes("w-full")
+                    self.ui_elements["game_details_container"] = details
+                    with details:
+                        self._detail_kv = ui.html("", sanitize=False).classes("itg-kv")
+                        with fields():
+                            self.ui_elements["cache_presence_name"] = field(
+                                "Presence name",
+                                placeholder="Name from presence/social API",
+                                tip="Display name shown for this game in presence/social APIs",
+                                on_change=lambda e: self._on_cache_field_changed(),
+                            )
+                            self.ui_elements["cache_np_title_id"] = field(
+                                "NP Title ID",
+                                placeholder="e.g. PPSA01234_00",
+                                tip="PlayStation NP Title ID for this cached game",
+                                on_change=lambda e: self._on_cache_field_changed(),
+                            )
+                        with ui.element("div").classes("itg-actions-end"):
+                            self.ui_elements["cache_save_btn"] = primary_button(
+                                "Save game", self._save_game_cache, icon="check"
+                            ).props("dense").classes("px-3")
+                            self.ui_elements["cache_save_btn"].disable()
+                    details.set_visibility(False)
 
-        self.ui_elements["game_details_container"].set_visibility(False)
-
-    def _rebuild_game_select(self, *, reload: bool = True) -> None:
-        """Rebuild the game dropdown or empty-state label inside the selector column."""
-        if not self._game_select_container:
+    def _update_cache_head(self, total: int, matches: Optional[int]) -> None:
+        if self._cache_head is None:
             return
-        self._game_select_container.clear()
-        if reload:
-            self._load_cached_games()
-        game_options = self._get_game_options()
-        with self._game_select_container:
-            if game_options:
-                self.ui_elements["game_select"] = form_select(
-                    tooltip="Select a cached PlayStation game to view or edit details",
-                    options=game_options,
-                    classes="w-full",
-                    on_change=lambda e: self._on_game_selected(e.value),
-                )
-                self.ui_elements["game_select"].props(
-                    'use-input input-debounce="300" clearable with-input'
-                )
-            else:
-                self.ui_elements["game_select"] = ui.label(
-                    "No cached games yet. Play a game to populate the cache."
-                ).classes("muted-text italic")
-        self._rebuild_cache_chips()
-
-    def _rebuild_cache_chips(self) -> None:
-        """Recreate cache chips (same style as YouTube playlist filter)."""
-        if not self._cache_chip_container:
-            return
-        self._cache_chip_container.clear()
-        for game in self._cached_games:
-            self._create_cache_chip(game)
-
-    def _create_cache_chip(self, game: dict) -> None:
-        np_comm = game.get("np_communication_id", "") or ""
-        title = (
-            game.get("trophy_name")
-            or game.get("presence_name")
-            or np_comm
+        noun = "game" if total == 1 else "games"
+        right = f"{total:,} {noun}" if matches is None else f"{matches:,} of {total:,} {noun}"
+        self._cache_head.set_content(
+            f'{icon_html("sports_esports")}Game cache<span class="itg-sec-right">{esc(right)}</span>'
         )
-        platform = (game.get("platform") or "").strip()
-        if platform:
-            title = f"{title} ({platform})"
-        with self._cache_chip_container:
-            with (
-                ui.element("div")
-                .classes(f"{THEME_CHIP_CLASSES} max-w-full")
-                .style("white-space: nowrap;")
-            ):
-                ui.label(title).classes("text-sm truncate").style("max-width: 14rem;")
-                ui.button(
-                    icon="close",
-                    on_click=lambda _e, cid=np_comm: self._on_remove_cache_chip(
-                        cid
-                    ),
-                ).props("flat dense round size=xs")
+
+    def _reindex_cache(self) -> None:
+        games = sorted(self._cached_games, key=_game_sort_key)
+        self._cache_index = [(g, _game_search_key(g)) for g in games]
+
+    def _on_cache_search(self, e: Any) -> None:
+        """Debounce typing: filter once the user pauses."""
+        text = "" if e.value is None else str(e.value)
+        if self._cache_filter_timer is not None:
+            try:
+                self._cache_filter_timer.cancel()
+            except Exception:
+                pass
+        self._cache_filter_timer = layout_schedule(0.25, lambda: self._apply_cache_filter(text), once=True)
+
+    def _apply_cache_filter(self, text: str) -> None:
+        self._cache_filter_timer = None
+        query = text.strip()
+        if query == self._cache_filter:
+            return
+        self._cache_filter = query
+        self._rebuild_cache_list()
+
+    def _rebuild_cache_list(self) -> None:
+        """Redraw only the list rows (at most ``_CACHE_LIST_LIMIT``) for the current search."""
+        if self._cache_list is None:
+            return
+        query = self._cache_filter.lower()
+        total = len(self._cache_index)
+        if query:
+            matches = [g for g, key in self._cache_index if query in key]
+        else:
+            matches = [g for g, _key in self._cache_index]
+        self._update_cache_head(total, len(matches) if query else None)
+        selected_id = str((self._selected_game or {}).get("np_communication_id") or "")
+        self._cache_list.clear()
+        self._cache_rows = {}
+        with self._cache_list:
+            if not total:
+                list_empty("No cached games yet. Play a game to fill the cache.")
+                return
+            if not matches:
+                list_empty(f"No cached games match “{self._cache_filter}”.")
+                return
+            for game in matches[:_CACHE_LIST_LIMIT]:
+                cid = str(game.get("np_communication_id") or "")
+                row = list_item(
+                    "sports_esports",
+                    _game_name(game),
+                    str(game.get("platform") or "").strip(),
+                    on_remove=(lambda c=cid: self._on_remove_cache_chip(c)) if cid else None,
+                    remove_tip="Remove from cache",
+                    on_click=(lambda c=cid: self._on_game_selected(c)) if cid else None,
+                    active=bool(cid) and cid == selected_id,
+                )
+                if cid:
+                    self._cache_rows[cid] = row
+            if len(matches) > _CACHE_LIST_LIMIT:
+                list_foot(f"Showing {_CACHE_LIST_LIMIT} of {len(matches):,} — type to narrow the list")
+
+    def _highlight_selected(self) -> None:
+        selected_id = str((self._selected_game or {}).get("np_communication_id") or "")
+        for cid, row in self._cache_rows.items():
+            if cid == selected_id:
+                row.classes(add="is-active")
+            else:
+                row.classes(remove="is-active")
+
+    def _show_details(self, visible: bool) -> None:
+        details = self.ui_elements.get("game_details_container")
+        if details is not None:
+            details.set_visibility(visible)
+        if self._detail_empty is not None:
+            self._detail_empty.set_visibility(not visible)
 
     def _on_remove_cache_chip(self, np_comm: str) -> None:
         if not np_comm:
@@ -833,13 +929,13 @@ class PSNTab:
         if not ok:
             _notify_cache_write_failed("Couldn't remove that game from the cache", details)
             return
-        # The chip disappearing is the confirmation.
+        # The row disappearing is the confirmation.
         if self._selected_game and self._selected_game.get("np_communication_id") == (
             np_comm
         ):
             self._selected_game = None
-            if "game_details_container" in self.ui_elements:
-                self.ui_elements["game_details_container"].set_visibility(False)
+            self._game_cache_dirty = False
+            self._show_details(False)
         self.refresh_game_cache()
 
     @staticmethod
@@ -875,44 +971,28 @@ class PSNTab:
         self._cached_games = games
         self.refresh_game_cache(reload=False)
 
-    def _get_game_options(self) -> dict:
-        """Get game options for the dropdown as {np_communication_id: display_name}."""
-        options = {}
-        for game in self._cached_games:
-            np_comm_id = game.get("np_communication_id", "")
-            trophy_name = game.get("trophy_name", "Unknown")
-            platform = game.get("platform", "")
-            display_name = f"{trophy_name}"
-            if platform:
-                display_name += f" ({platform})"
-            options[np_comm_id] = display_name
-        return options
-
     def _on_game_selected(self, np_communication_id: str) -> None:
-        """Handle game selection from dropdown."""
+        """Handle a click on a cached game."""
         if not np_communication_id:
             self._selected_game = None
-            if "game_details_container" in self.ui_elements:
-                self.ui_elements["game_details_container"].set_visibility(False)
+            self._highlight_selected()
+            self._show_details(False)
             return
 
         # Find the selected game
-        self._selected_game = None
-        for game in self._cached_games:
-            if game.get("np_communication_id") == np_communication_id:
-                self._selected_game = game
-                break
-
-        if not self._selected_game:
+        game = next(
+            (g for g in self._cached_games if g.get("np_communication_id") == np_communication_id),
+            None,
+        )
+        if not game:
             logger.warning(f"Could not find game with ID: {np_communication_id}")
             return
+        self._selected_game = game
+        self._highlight_selected()
 
         # Populate the fields
         self._populate_game_details()
-
-        # Show the details container
-        if "game_details_container" in self.ui_elements:
-            self.ui_elements["game_details_container"].set_visibility(True)
+        self._show_details(True)
 
         # Selecting a game fills the fields. That is not an edit.
         self._game_cache_dirty = False
@@ -926,40 +1006,33 @@ class PSNTab:
             return
 
         game = self._selected_game
-
-        # Read-only fields
-        if "cache_trophy_name" in self.ui_elements:
-            self.ui_elements["cache_trophy_name"].set_text(
-                game.get("trophy_name") or "--"
+        cover_url = str(game.get("cover_art_url") or "")
+        rows = [
+            ("Trophy name", str(game.get("trophy_name") or "--"), ""),
+            ("Platform", str(game.get("platform") or "--"), ""),
+            ("NP Communication ID", str(game.get("np_communication_id") or "--"), " mono"),
+            ("Cover art URL", cover_url or "--", " mono" if cover_url else ""),
+            ("Last updated", str(game.get("last_updated") or "--"), ""),
+        ]
+        if self._detail_kv is not None:
+            self._detail_kv.set_content(
+                "".join(
+                    f'<span class="k">{esc(k)}</span><span class="v{cls}" title="{esc(v)}">{esc(v)}</span>'
+                    for k, v, cls in rows
+                )
             )
 
-        if "cache_np_comm_id" in self.ui_elements:
-            self.ui_elements["cache_np_comm_id"].set_text(
-                game.get("np_communication_id") or "--"
-            )
-
-        if "cache_platform" in self.ui_elements:
-            self.ui_elements["cache_platform"].set_text(game.get("platform") or "--")
-
-        if "cache_cover_url" in self.ui_elements:
-            cover_url = game.get("cover_art_url") or "--"
-            # Truncate long URLs for display
-            display_url = cover_url if len(cover_url) <= 60 else cover_url[:57] + "..."
-            self.ui_elements["cache_cover_url"].set_text(display_url)
-
-        if "cache_last_updated" in self.ui_elements:
-            self.ui_elements["cache_last_updated"].set_text(
-                game.get("last_updated") or "--"
-            )
-
-        # Editable fields
-        if "cache_presence_name" in self.ui_elements:
-            self.ui_elements["cache_presence_name"].value = (
-                game.get("presence_name") or ""
-            )
-
-        if "cache_np_title_id" in self.ui_elements:
-            self.ui_elements["cache_np_title_id"].value = game.get("np_title_id") or ""
+        # Editable fields (filling them is not an edit)
+        self._populating_game = True
+        try:
+            if "cache_presence_name" in self.ui_elements:
+                self.ui_elements["cache_presence_name"].value = (
+                    game.get("presence_name") or ""
+                )
+            if "cache_np_title_id" in self.ui_elements:
+                self.ui_elements["cache_np_title_id"].value = game.get("np_title_id") or ""
+        finally:
+            self._populating_game = False
         self._adopt_cache_field_snapshot()
 
     def _adopt_cache_field_snapshot(self) -> None:
@@ -976,12 +1049,32 @@ class PSNTab:
         """Account fields use the dirty flag. Game-cache edits use their own flag."""
         return bool(self.dirty or self._game_cache_dirty)
 
+    def _cache_edits(self) -> dict:
+        """Editable cache fields that differ from the selected game."""
+        updates: dict = {}
+        if not self._selected_game:
+            return updates
+        if "cache_presence_name" in self.ui_elements:
+            new_presence_name = self.ui_elements["cache_presence_name"].value or ""
+            if new_presence_name != (self._selected_game.get("presence_name") or ""):
+                updates["presence_name"] = new_presence_name
+        if "cache_np_title_id" in self.ui_elements:
+            new_np_title_id = self.ui_elements["cache_np_title_id"].value or ""
+            if new_np_title_id != (self._selected_game.get("np_title_id") or ""):
+                updates["np_title_id"] = new_np_title_id
+        return updates
+
     def _on_cache_field_changed(self) -> None:
-        """Handle changes to editable cache fields."""
-        self._game_cache_dirty = True
-        self.dirty = True
-        if "cache_save_btn" in self.ui_elements:
-            self.ui_elements["cache_save_btn"].enable()
+        """Enable Save game only while the fields differ from the cached game."""
+        if self._populating_game or getattr(self, "_suppress_dirty", False):
+            return
+        self._game_cache_dirty = bool(self._cache_edits())
+        btn = self.ui_elements.get("cache_save_btn")
+        if btn is not None:
+            if self._game_cache_dirty:
+                btn.enable()
+            else:
+                btn.disable()
 
     def _save_game_cache(self) -> None:
         """Save changes to the game cache."""
@@ -1001,18 +1094,7 @@ class PSNTab:
             return
 
         # Gather updated values
-        updates = {}
-
-        if "cache_presence_name" in self.ui_elements:
-            new_presence_name = self.ui_elements["cache_presence_name"].value or ""
-            if new_presence_name != (self._selected_game.get("presence_name") or ""):
-                updates["presence_name"] = new_presence_name
-
-        if "cache_np_title_id" in self.ui_elements:
-            new_np_title_id = self.ui_elements["cache_np_title_id"].value or ""
-            if new_np_title_id != (self._selected_game.get("np_title_id") or ""):
-                updates["np_title_id"] = new_np_title_id
-
+        updates = self._cache_edits()
         if not updates:
             return  # nothing changed
 
@@ -1039,37 +1121,24 @@ class PSNTab:
             _notify_cache_write_failed(f"Couldn't save changes to {game_name}", f"{type(e).__name__}: {e}")
 
     def refresh_game_cache(self, *, reload: bool = True) -> None:
-        """Reload list from the database and rebuild selector, chips, and details sync."""
+        """Reload the list from the database, redraw its rows and keep the selection in sync."""
         if reload:
             self._load_cached_games()
-        if self._cache_chip_container:
-            self._rebuild_cache_chips()
-        if not self._game_select_container:
-            return
         prev_id = None
         if self._selected_game:
             prev_id = self._selected_game.get("np_communication_id")
-        self._rebuild_game_select(reload=False)
-        self._rebuild_cache_chips()
-        if prev_id and any(
-            g.get("np_communication_id") == prev_id for g in self._cached_games
-        ):
-            if "game_select" in self.ui_elements:
-                el = self.ui_elements["game_select"]
-                if hasattr(el, "value"):
-                    try:
-                        el.value = prev_id
-                    except (TypeError, ValueError, AttributeError):
-                        pass
+        current = next(
+            (g for g in self._cached_games if prev_id and g.get("np_communication_id") == prev_id),
+            None,
+        )
+        self._selected_game = current
+        self._reindex_cache()
+        self._rebuild_cache_list()
+        if current is None:
+            self._game_cache_dirty = False
+            self._show_details(False)
+        elif not self._game_cache_dirty:
+            # Keep unsaved edits in the fields; otherwise show the fresh values.
             self._on_game_selected(str(prev_id))
         else:
-            self._selected_game = None
-            if "game_details_container" in self.ui_elements:
-                self.ui_elements["game_details_container"].set_visibility(False)
-            if "game_select" in self.ui_elements:
-                el = self.ui_elements["game_select"]
-                if hasattr(el, "value"):
-                    try:
-                        el.value = None
-                    except (TypeError, ValueError, AttributeError):
-                        pass
+            self._on_cache_field_changed()

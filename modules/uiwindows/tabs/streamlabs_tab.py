@@ -16,7 +16,6 @@ from ...api_credentials_manager import (
 )
 from ...donation_currency import ALERT_CURRENCIES
 from ...donation_settings import get_settings, update_settings
-from ...help_system.contextual_help import help_button
 from ...notification_engine import nav_actions_settings, notify, notify_progress
 from ...streamlabs import (
     STREAMLABS_OAUTH_REDIRECT_URI,
@@ -25,17 +24,25 @@ from ...streamlabs import (
     get_streamlabs_status,
 )
 from ...ui_buttons import browser_link, outline_button, primary_button
-from ...ui_form_controls import copy_text_button, form_select, form_sensitive_input
-from ...ui_settings_layout import (
-    settings_action_row,
-    settings_form_grid,
-    settings_section,
-    settings_status_band,
-    settings_surface,
-)
+from ...ui_form_controls import copy_text_button
 from ...ui_timer import layout_schedule
+from .integration_ui import (
+    AccountCard,
+    CopyRow,
+    CredentialsFold,
+    IntegrationPage,
+    field,
+    fields,
+    hint,
+    icon_html,
+    link,
+    row,
+    section,
+)
 
 logger = logging.getLogger(__name__)
+
+_REGISTER_URL = "https://dev.streamlabs.com/docs/register-your-application"
 
 
 def _streamlabs_error_text(error: str) -> tuple:
@@ -68,15 +75,6 @@ def _streamlabs_error_text(error: str) -> tuple:
     )
 
 
-def _status_classes(status: str) -> str:
-    text = (status or "").lower()
-    if text == "connected":
-        return "font-semibold text-sm text-theme-success"
-    if "connect" in text:
-        return "font-semibold text-sm text-theme-warning"
-    return "font-semibold text-sm text-theme-error"
-
-
 class StreamlabsTab:
     name = "Streamlabs"
 
@@ -84,18 +82,28 @@ class StreamlabsTab:
         self.dirty: bool = False
         self.ui_elements: Dict[str, Any] = {}
         self._creds: Dict[str, str] = {"client_id": "", "client_secret": ""}
+        self._creds_saved: bool = False
         self._currency: str = "USD"
         self._status_timer: Optional[Any] = None
         self._connect_in_progress: bool = False
+        self._page: Optional[IntegrationPage] = None
+        self._card: Optional[AccountCard] = None
+        self._fold: Optional[CredentialsFold] = None
+        self._connect_button: Optional[Any] = None
+        self._disconnect_button: Optional[Any] = None
 
     def on_enter(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = True
+        if self._page is not None:
+            self._page.set_active(True)
         layout_schedule(0.05, self._refresh_status, once=True)
 
     def on_exit(self) -> None:
         if self._status_timer is not None:
             self._status_timer.active = False
+        if self._page is not None:
+            self._page.set_active(False)
 
     def _load(self) -> None:
         creds = get_streamlabs_credentials()
@@ -103,6 +111,7 @@ class StreamlabsTab:
             "client_id": (creds.get("client_id") or "").strip(),
             "client_secret": (creds.get("client_secret") or "").strip(),
         }
+        self._creds_saved = bool(self._creds["client_id"] and self._creds["client_secret"])
         currency = (get_settings().alert_currency or "USD").upper()
         self._currency = currency if currency in ALERT_CURRENCIES else "USD"
         self.dirty = False
@@ -143,6 +152,9 @@ class StreamlabsTab:
             )
             update_settings(alert_currency=self._currency or "USD")
             self.dirty = False
+            self._creds_saved = bool(
+                self._creds.get("client_id") and self._creds.get("client_secret")
+            )
             if not silent:
                 notify("", type="success", source="streamlabs", title="Streamlabs settings saved")
         except Exception as exc:
@@ -156,6 +168,7 @@ class StreamlabsTab:
                 details=f"{type(exc).__name__}: {exc}",
                 actions=nav_actions_settings("Database"),
             )
+        self._refresh_status()
 
     def discard(self) -> None:
         self._load()
@@ -166,15 +179,51 @@ class StreamlabsTab:
         if "currency" in self.ui_elements:
             self.ui_elements["currency"].value = self._currency
         self.dirty = False
+        self._refresh_status()
 
-    def _refresh_status(self) -> None:
+    def _status(self) -> tuple:
+        """(card state kind, header pill text, card name, card state line, connected)."""
         info = get_streamlabs_status()
         status = str(info.get("status") or "Disconnected")
-        label = self.ui_elements.get("status_label")
-        if label is not None:
-            detail = str(info.get("error") or "").strip()
-            label.set_text(status if not detail else f"{status}: {detail}")
-            label.classes(replace=_status_classes(status))
+        detail = str(info.get("error") or "").strip()
+        low = status.lower()
+        if status == "Connected":
+            return "ok", "Connected", "Connected", detail or "Listening for donations", True
+        if self._connect_in_progress or low == "connecting":
+            line = detail or "Approve Mycelian in the Streamlabs page that opens"
+            return "busy", "Connecting", "Connecting", line, False
+        if low == "disconnected":
+            if detail:
+                line = detail
+            elif self._creds_saved:
+                line = "Press Connect to sign in to Streamlabs"
+            else:
+                line = "Add your app's client ID and secret, then connect"
+            return "off", "Not connected", "Not connected", line, False
+        return "error", status, status, detail or "Press Connect to try again", False
+
+    def _refresh_status(self) -> None:
+        try:
+            kind, short, name, line, connected = self._status()
+            if self._page is not None:
+                self._page.set_status([("error" if kind == "off" else kind, short)])
+            if self._card is not None:
+                self._card.set(name, kind, line)
+            if self._fold is not None:
+                self._fold.set_saved(self._creds_saved)
+            if self._disconnect_button is not None:
+                self._disconnect_button.set_visibility(kind != "off")
+            button = self._connect_button
+            if button is not None:
+                button.set_visibility(not connected)
+                if self._connect_in_progress:
+                    button.set_text("Connecting…")
+                    button.disable()
+                else:
+                    button.set_text("Connect")
+                    button.enable()
+        except Exception:
+            logger.debug("Streamlabs status refresh failed", exc_info=True)
 
     def _show_guide(self) -> None:
         with ui.dialog() as dialog, ui.card().classes("w-full max-w-2xl"):
@@ -235,10 +284,11 @@ class StreamlabsTab:
                 type="warning",
                 source="streamlabs",
                 title="Enter your Streamlabs Client ID and Client Secret first",
-                hint="Use the Guide button to see where to get them.",
+                hint="Press How to connect to see where to get them.",
             )
             return
         self._connect_in_progress = True
+        self._refresh_status()
         progress = notify_progress(
             "Connecting to Streamlabs",
             source="streamlabs",
@@ -285,66 +335,96 @@ class StreamlabsTab:
         self._refresh_status()
         notify("", type="info", source="streamlabs", title="Streamlabs disconnected")
 
+    def _register_hint(self) -> None:
+        with ui.element("div").classes("itg-hint"):
+            ui.html(icon_html("info"), sanitize=False)
+            with ui.element("span"):
+                ui.html("Register an app at ", sanitize=False).classes("inline")
+                link("dev.streamlabs.com", _REGISTER_URL).classes("inline")
+                ui.html(" with the redirect URI above. ", sanitize=False).classes("inline")
+                guide = ui.label("How to connect").classes("itg-link inline")
+                guide.on("click", lambda _e: self._show_guide())
+                ui.html(" walks through it.", sanitize=False).classes("inline")
+
     def build(self, parent_container) -> None:
         self._load()
-        with settings_surface(parent_container):
-            with settings_status_band():
-                with ui.column().classes("gap-0"):
-                    ui.label("Status").classes("text-xs secondary-text")
-                    self.ui_elements["status_label"] = ui.label("Disconnected").classes(
-                        "font-semibold text-sm"
+        self._page = page = IntegrationPage(
+            parent_container,
+            "streamlabs",
+            "Streamlabs",
+            "Donations from Streamlabs as alerts",
+            on_save=self.save,
+            on_discard=self.discard,
+            is_dirty=self.has_unsaved_changes,
+            help_topic="guide_streamlabs",
+            help_tooltip="Streamlabs setup help",
+        )
+        with page.column():
+            with section("account_circle", "Account"):
+                self._card = AccountCard("streamlabs", "Streamlabs")
+                with self._card.actions:
+                    self._disconnect_button = (
+                        ui.button(icon="logout", on_click=self._disconnect)
+                        .props("flat round dense")
+                        .classes("itg-ibtn")
+                        .tooltip("Disconnect")
                     )
-            self._refresh_status()
-            self._status_timer = ui.timer(2.0, self._refresh_status)
-
-            with settings_section(
-                "Donations",
-                subtitle="Cash tips from Streamlabs become donation alerts.",
-            ):
-                with ui.row().classes("w-full items-center justify-between"):
-                    ui.label(
-                        "Alert amounts are matched in the currency below."
-                    ).classes("text-xs secondary-text")
-                    with ui.row().classes("items-center gap-2"):
-                        outline_button("How to connect", self._show_guide)
-                        help_button(
-                            topic_id="guide_streamlabs",
-                            tooltip="Streamlabs setup help",
-                            size="sm",
+                    outline_button("How to connect", self._show_guide, icon="menu_book").props(
+                        "dense"
+                    ).classes("px-3")
+                    self._connect_button = (
+                        primary_button("Connect", self._connect, icon="login")
+                        .props("dense")
+                        .classes("px-3")
+                    )
+                self._fold = self._card.credentials(
+                    "Client ID & secret", opened=not self._creds_saved
+                )
+                with self._fold.body:
+                    with fields():
+                        self.ui_elements["client_id"] = field(
+                            "Client ID",
+                            value=self._creds.get("client_id", ""),
+                            placeholder="Streamlabs application client id",
+                            tip="Streamlabs application client id",
+                            on_change=lambda event: self._set_cred(
+                                "client_id", self._str_from_value_event(event)
+                            ),
                         )
-                with settings_form_grid(columns=1):
-                    self.ui_elements["currency"] = form_select(
-                        tooltip="Donation alert thresholds use this currency",
-                        label="Alert currency",
-                        options=list(ALERT_CURRENCIES),
-                        value=self._currency,
+                        self.ui_elements["client_secret"] = field(
+                            "Client secret",
+                            value=self._creds.get("client_secret", ""),
+                            password=True,
+                            placeholder="Stored encrypted",
+                            tip="Streamlabs application client secret, stored encrypted",
+                            on_change=lambda event: self._set_cred(
+                                "client_secret", self._str_from_value_event(event)
+                            ),
+                        )
+                    CopyRow(
+                        "Redirect URI",
+                        STREAMLABS_OAUTH_REDIRECT_URI,
+                        copied="Redirect URI copied",
+                    )
+                    self._register_hint()
+        with page.column():
+            with section("payments", "Donations"):
+                _row, ctrl = row(
+                    "Alert currency",
+                    "Donation alert amounts are matched in this currency "
+                    "(shared with StreamElements)",
+                )
+                with ctrl:
+                    self.ui_elements["currency"] = (
+                        ui.select(options=list(ALERT_CURRENCIES), value=self._currency)
+                        .props("outlined dense options-dense")
+                        .style("width:120px")
+                        .tooltip("Donation alert thresholds use this currency")
                     )
                     self.ui_elements["currency"].on_value_change(
                         lambda event: self._set_currency(self._str_from_value_event(event))
                     )
-                    self.ui_elements["client_id"] = form_sensitive_input(
-                        tooltip="Streamlabs application client id",
-                        label="Client ID",
-                        value=self._creds.get("client_id", ""),
-                        password=False,
-                    )
-                    self.ui_elements["client_id"].on_value_change(
-                        lambda event: self._set_cred(
-                            "client_id", self._str_from_value_event(event)
-                        )
-                    )
-                    self.ui_elements["client_secret"] = form_sensitive_input(
-                        tooltip="Streamlabs application client secret, stored encrypted",
-                        label="Client secret",
-                        value=self._creds.get("client_secret", ""),
-                    )
-                    self.ui_elements["client_secret"].on_value_change(
-                        lambda event: self._set_cred(
-                            "client_secret", self._str_from_value_event(event)
-                        )
-                    )
-                with ui.row().classes("gap-2"):
-                    primary_button("Connect", self._connect)
-                    outline_button("Disconnect", self._disconnect)
-
-            settings_action_row(discard=self.discard, save=self.save)
+                hint("Only tips come from Streamlabs. Follows, subs and bits stay on Twitch.")
+        with page.root:
+            self._status_timer = ui.timer(2.0, self._refresh_status)
+        self._refresh_status()
