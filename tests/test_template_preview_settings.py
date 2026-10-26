@@ -50,6 +50,18 @@ class TemplatePreviewSettingsTests(unittest.TestCase):
         self.assertIn("ff7", raw["resolutions"])
         self.assertIn("chat", raw["resolutions"])
 
+    def test_split_editor_pct_default_clamp_and_save(self):
+        self.assertEqual(tps.load_template_preview_settings()["split_editor_pct"], tps.SPLIT_EDITOR_PCT_DEFAULT)
+        self.assertEqual(tps.clamp_split_editor_pct(5), tps.SPLIT_EDITOR_PCT_MIN)
+        self.assertEqual(tps.clamp_split_editor_pct(99), tps.SPLIT_EDITOR_PCT_MAX)
+        self.assertEqual(tps.clamp_split_editor_pct("x"), tps.SPLIT_EDITOR_PCT_DEFAULT)
+        self.assertEqual(tps.clamp_split_editor_pct(float("nan")), tps.SPLIT_EDITOR_PCT_DEFAULT)
+        self.assertTrue(tps.save_template_preview_settings({"split_editor_pct": 61.5}))
+        self.assertTrue(tps.set_template_preview_resolution("ff7", 1280, 720))
+        data = tps.load_template_preview_settings()
+        self.assertEqual(data["split_editor_pct"], 61.5)
+        self.assertEqual(tps.get_template_preview_resolution("ff7"), (1280, 720))
+
     def test_clear_one_key(self):
         tps.set_template_preview_resolution("ff7", 1280, 720)
         tps.set_template_preview_resolution("chat", 800, 600)

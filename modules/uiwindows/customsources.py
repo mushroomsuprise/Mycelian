@@ -24,17 +24,21 @@ SOFTWARE.
 """
 
 import copy
+import html
+import inspect
 import json
 import logging
 import os
+import re
 import shutil
-import sys
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from nicegui import ui
+from nicegui.elements.mixins.text_element import TextElement
 
 from .. import web_engine as web_engine_module
 
@@ -53,16 +57,18 @@ from ..template_preview_settings import (
     PREVIEW_HEIGHT_MIN,
     PREVIEW_WIDTH_MAX,
     PREVIEW_WIDTH_MIN,
+    clamp_split_editor_pct,
     clear_template_preview_resolution,
     get_template_preview_resolution,
     load_template_preview_settings,
     save_template_preview_settings,
     set_template_preview_resolution,
 )
-from ..ui_buttons import destructive_button, outline_button, primary_button
+from ..ui_buttons import outline_button, primary_button
 from ..ui_color_control import is_color_transparent, render_color_field
 from ..ui_form_controls import form_input, form_number, form_select, form_textarea
 from ..ui_timer import app_schedule, layout_schedule, run_on_ui_loop
+from .source_settings_styles import SOURCE_SETTINGS_CSS
 
 logger = logging.getLogger(__name__)
 
@@ -95,25 +101,10 @@ def _list_default_font_basenames() -> List[str]:
 # Global dictionary to store form data for each config
 form_data_store = {}
 
-# Add a dictionary to store original values of fields
-original_values = {}
 # Values last loaded from disk or last successfully saved, keyed by config name.
 _disk_baselines: Dict[str, Dict[str, Any]] = {}
 _active_config_name: Optional[str] = None
 _suppress_config_change = False
-
-# Add global dictionary to store UI elements
-element_ui_map = {}
-
-# Add global variable to store current search term
-current_search_term = ""
-
-# Add global variables for re-rendering
-current_config_name = ""
-current_container = None
-
-# Add global dictionary to store expansion elements for dynamic title updates
-roulette_expansions = {}
 
 # Custom Sources preview pane (iframe + labels); populated in create_custom_sources_tab
 CUSTOM_SOURCES_PREVIEW_TOKEN = str(uuid.uuid4())
@@ -133,45 +124,8 @@ _preview_size_resolve_gen: list[int] = [0]
 # Maps config file stem -> overlay HTML route (JSON ``template_name``).
 _preview_route_cache: Dict[str, str] = {}
 
-# Add custom CSS for animations and styling (removed pulsing animations)
+# Pop-out preview dialog (fixed position, outside the scoped tab stylesheet)
 CUSTOM_CSS = """
-.fade-in {
-    animation: fadeIn 0.3s ease-in-out;
-}
-
-.scale-in {
-    animation: scaleIn 0.2s ease-out;
-}
-
-.slide-in {
-    animation: slideIn 0.3s ease-out;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-@keyframes scaleIn {
-    from { transform: scale(0.95); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
-}
-
-@keyframes slideIn {
-    from { transform: translateY(-10px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
-.config-card {
-    transition: all 0.2s ease-in-out;
-    background: var(--color-bg-surface);
-}
-
-.config-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px -1px var(--color-bg-overlay);
-}
-
 /* Pop-out preview — modeless, draggable, resizable (Spore Studio parity) */
 .mycelian-cs-popout-dialog {
     position: fixed;
@@ -252,8 +206,6 @@ CUSTOM_CSS = """
     z-index: 2;
 }
 
-[data-mycelian-cs-preview-outer],
-[data-mycelian-cs-preview-outer] > div,
 [data-mycelian-cs-popout-preview],
 [data-mycelian-cs-popout-preview] > div {
     background: var(--color-bg-elevated);
@@ -311,6 +263,7 @@ def _assign_preview_iframe_src(
         "var __src=(window.mycelianCsPreviewSrcWithChrome"
         "?window.mycelianCsPreviewSrcWithChrome(__rawSrc):__rawSrc);"
         "iframe.src=__src;"
+        "iframe.style.visibility='visible';"
         f"iframe.width={int(design_w)};"
         f"iframe.height={int(design_h)};"
         f"iframe.style.width='{int(design_w)}px';"
@@ -337,6 +290,7 @@ def _clear_preview_iframe(inner_id: Optional[str]) -> None:
         "var iframe=inner.querySelector('iframe');"
         "if(!iframe){return;}"
         "iframe.src='about:blank';"
+        "iframe.style.visibility='hidden';"
         "})();"
     )
     try:
@@ -349,10 +303,12 @@ def _estimate_design_size(form_data: Dict[str, Any]) -> Tuple[int, int]:
     """
     Logical overlay width/height for scaling the preview to fit the panel.
 
-    Uses common JSON keys from template configs; defaults match a typical stream canvas.
+    Uses common JSON keys from template configs (``DesignWidth``/``DesignHeight`` are what
+    Spore Studio templates write); defaults match a typical stream canvas.
     """
     w, h = 1920, 1080
     for key in (
+        "DesignWidth",
         "StreamWidth",
         "CanvasWidth",
         "OverlayWidth",
@@ -368,6 +324,7 @@ def _estimate_design_size(form_data: Dict[str, Any]) -> Tuple[int, int]:
             except (TypeError, ValueError):
                 pass
     for key in (
+        "DesignHeight",
         "StreamHeight",
         "CanvasHeight",
         "OverlayHeight",
@@ -447,14 +404,9 @@ def _sync_preview_size_inputs(width: int, height: int) -> None:
     if hint is not None:
         src = str(_active_preview_size.get("source") or "")
         name = str(_active_preview_size.get("obs_source_name") or "")
-        if src == "obs" and name:
-            hint.text = f"From OBS: {name}"
-        elif src == "obs":
-            hint.text = "From OBS"
-        elif src == "stored":
-            hint.text = "Saved preview size"
-        else:
-            hint.text = ""
+        content = preview_size_chip_html(src, name)
+        hint.set_content(content)
+        hint.set_visibility(bool(content))
 
 
 def _resize_preview_iframes(width: int, height: int) -> None:
@@ -708,6 +660,16 @@ _PREVIEW_SCALE_IIFE = r"""
     inner.style.height = state.designH + "px";
     inner.style.transform = "translate(" + pos.fx + "px," + pos.fy + "px) scale(" + eff + ")";
     inner.style.background = "transparent";
+    var frame = outer.querySelector("[data-cs-frame]");
+    if (frame) {
+      frame.style.left = pos.fx + "px";
+      frame.style.top = pos.fy + "px";
+      frame.style.width = scaledW + "px";
+      frame.style.height = scaledH + "px";
+    }
+    var zoomLabelId = outer.getAttribute("data-zoom-label");
+    var zoomLabel = zoomLabelId ? document.getElementById(zoomLabelId) : null;
+    if (zoomLabel) { zoomLabel.textContent = Math.round(eff * 100) + "%"; }
     var iframe = inner.querySelector("iframe");
     if (iframe) {
       iframe.setAttribute("width", String(state.designW));
@@ -795,14 +757,14 @@ _PREVIEW_SCALE_IIFE = r"""
     if (resetPan) { state.panX = 0; state.panY = 0; }
     applyTransform(outer);
   };
-  window.mycelianCsSplitDrag = function (rowId, leftId, rightId, minLeftPct, maxLeftPct) {
+  window.mycelianCsSplitDrag = function (rowId, leftId, rightId, minLeftPct, maxLeftPct, initialPct) {
     var row = document.getElementById(rowId);
     var divider = row && row.querySelector(".mycelian-cs-split-divider");
     if (!row || !divider) { return; }
     if (divider._mycelianBound) { return; }
     divider._mycelianBound = true;
     var dragging = false;
-    var startX = 0, startLeftPct = 50;
+    var startX = 0, startLeftPct = 50, lastPct = null;
     minLeftPct = Number(minLeftPct) || 28;
     maxLeftPct = Number(maxLeftPct) || 78;
     function getCurrentLeftPct() {
@@ -826,7 +788,8 @@ _PREVIEW_SCALE_IIFE = r"""
         right.style.maxWidth = "100%";
       }
     }
-    applyPct(getCurrentLeftPct());
+    var init = Number(initialPct);
+    applyPct(isFinite(init) && init > 0 ? Math.max(minLeftPct, Math.min(maxLeftPct, init)) : getCurrentLeftPct());
     divider.addEventListener("mousedown", function (ev) {
       if (ev.button !== 0) { return; }
       dragging = true;
@@ -843,6 +806,7 @@ _PREVIEW_SCALE_IIFE = r"""
       var dx = ev.clientX - startX;
       var pct = startLeftPct + (dx / rowW) * 100;
       pct = Math.max(minLeftPct, Math.min(maxLeftPct, pct));
+      lastPct = pct;
       applyPct(pct);
       var outer = document.querySelector("[data-mycelian-cs-preview-outer]");
       if (outer) { applyTransform(outer); }
@@ -852,6 +816,10 @@ _PREVIEW_SCALE_IIFE = r"""
         dragging = false;
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
+        if (lastPct !== null && typeof emitEvent === "function") {
+          emitEvent("mycelian-cs-split", Math.round(lastPct * 10) / 10);
+        }
+        lastPct = null;
       }
     });
   };
@@ -1021,6 +989,7 @@ _POPOUT_DIALOG_IIFE = r"""
       iframe.src = window.mycelianCsPreviewSrcWithChrome
         ? window.mycelianCsPreviewSrcWithChrome(src)
         : src;
+      iframe.style.visibility = "visible";
       iframe.setAttribute("width", String(designW));
       iframe.setAttribute("height", String(designH));
       requestAnimationFrame(function () { requestAnimationFrame(fit); });
@@ -1048,6 +1017,61 @@ _POPOUT_DIALOG_IIFE = r"""
 """
 
 
+_SECTION_NAV_IIFE = r"""
+(function () {
+  if (window.mycelianSsxSyncNav) { return; }
+  window.mycelianSsxSyncNav = function (formId, navId) {
+    var form = document.getElementById(formId);
+    var nav = document.getElementById(navId);
+    if (!form || !nav) { return; }
+    var secs = form.querySelectorAll("[data-sec]");
+    var visible = [];
+    for (var i = 0; i < secs.length; i++) {
+      if (secs[i].offsetParent !== null) { visible.push(secs[i]); }
+    }
+    var cur = visible.length ? visible[0].getAttribute("data-sec") : null;
+    var top = form.scrollTop + 16;
+    for (var j = 0; j < visible.length; j++) {
+      if (visible[j].offsetTop <= top) { cur = visible[j].getAttribute("data-sec"); } else { break; }
+    }
+    if (visible.length && form.scrollTop > 0 && form.scrollTop + form.clientHeight >= form.scrollHeight - 2) {
+      cur = visible[visible.length - 1].getAttribute("data-sec");
+    }
+    var items = nav.querySelectorAll("[data-nav]");
+    for (var k = 0; k < items.length; k++) {
+      var on = items[k].getAttribute("data-nav") === cur;
+      items[k].classList.toggle("is-on", on);
+      if (on) {
+        var list = items[k].closest(".ssx-navlist") || nav;
+        var it = items[k].offsetTop, ib = it + items[k].offsetHeight;
+        if (it < list.scrollTop) { list.scrollTop = it - 24; }
+        else if (ib > list.scrollTop + list.clientHeight) { list.scrollTop = ib - list.clientHeight + 8; }
+      }
+    }
+  };
+  window.mycelianSsxBindNav = function (formId, navId) {
+    var form = document.getElementById(formId);
+    if (!form) { return; }
+    if (!form._ssxNavBound) {
+      form._ssxNavBound = true;
+      var raf = 0;
+      form.addEventListener("scroll", function () {
+        if (raf) { return; }
+        raf = requestAnimationFrame(function () { raf = 0; window.mycelianSsxSyncNav(formId, navId); });
+      }, { passive: true });
+    }
+    window.mycelianSsxSyncNav(formId, navId);
+  };
+  window.mycelianSsxScrollTo = function (formId, secId) {
+    var form = document.getElementById(formId);
+    var sec = document.getElementById(secId);
+    if (!form || !sec) { return; }
+    form.scrollTop = Math.max(0, sec.offsetTop - 10);
+  };
+})();
+"""
+
+
 def _ensure_preview_scale_script() -> None:
     """Define the preview JS helpers on `window` via run_javascript (eval).
 
@@ -1062,6 +1086,7 @@ def _ensure_preview_scale_script() -> None:
     try:
         ui.run_javascript(_PREVIEW_SCALE_IIFE)
         ui.run_javascript(_POPOUT_DIALOG_IIFE)
+        ui.run_javascript(_SECTION_NAV_IIFE)
     except Exception as e:
         logger.debug("Preview scale JS injection skipped: %s", e)
 
@@ -1172,15 +1197,29 @@ def _close_popout_preview_dialog_js(dialog_id: str) -> None:
         logger.debug("Popout close JS skipped: %s", e)
 
 
-def _current_preview_zoom_pct() -> int:
-    zsl = _custom_sources_ctx.get("preview_zoom_slider")
-    if zsl is None:
-        return 100
+PREVIEW_ZOOM_MIN = 25
+PREVIEW_ZOOM_MAX = 200
+# Zoom is a percentage of "fit to the stage"; − / + walk these steps.
+PREVIEW_ZOOM_STEPS = (25, 33, 50, 67, 75, 90, 100, 110, 125, 150, 175, 200)
+
+
+def next_preview_zoom(current: Any, direction: int) -> int:
+    """The next zoom step above (``direction`` > 0) or below the current zoom."""
     try:
-        z = int(zsl.value)
+        z = int(current)
     except (TypeError, ValueError):
         z = 100
-    return max(25, min(200, z))
+    if direction > 0:
+        return next((step for step in PREVIEW_ZOOM_STEPS if step > z), PREVIEW_ZOOM_MAX)
+    return next((step for step in reversed(PREVIEW_ZOOM_STEPS) if step < z), PREVIEW_ZOOM_MIN)
+
+
+def _current_preview_zoom_pct() -> int:
+    try:
+        z = int(_custom_sources_ctx.get("preview_zoom_pct", 100))
+    except (TypeError, ValueError):
+        z = 100
+    return max(PREVIEW_ZOOM_MIN, min(PREVIEW_ZOOM_MAX, z))
 
 
 def _run_preview_scale_js(reset_pan: bool) -> None:
@@ -1225,18 +1264,21 @@ def _run_preview_zoom_js(reset_pan: bool) -> None:
         logger.debug("Preview zoom JS skipped: %s", e)
 
 
-def _apply_inline_preview_visibility(show: bool) -> None:
+def _apply_inline_preview_visibility(show: bool, *, persist: bool = True) -> None:
     """Show or hide the inline preview pane and expand the editor when hidden."""
     ctx = _custom_sources_ctx
     panel = ctx.get("preview_panel")
     divider = ctx.get("split_divider")
     editor_id = ctx.get("preview_editor_panel_id")
+    show_btn = ctx.get("show_preview_button")
     if panel is not None:
         panel.set_visibility(show)
     if divider is not None:
         divider.set_visibility(show)
+    if show_btn is not None:
+        show_btn.set_visibility(not show)
     if editor_id:
-        flex = "100" if not show else "62"
+        flex = "100" if not show else f"{clamp_split_editor_pct(ctx.get('split_pct')):g}"
         js = (
             f"var el=document.getElementById({json.dumps(editor_id)});"
             f"if(el){{el.style.flex='{flex} {flex} 0%';}}"
@@ -1245,7 +1287,10 @@ def _apply_inline_preview_visibility(show: bool) -> None:
             ui.run_javascript(js)
         except Exception as e:
             logger.debug("Inline preview visibility JS skipped: %s", e)
-    save_template_preview_settings({"show_inline_preview": bool(show)})
+    if persist:
+        save_template_preview_settings({"show_inline_preview": bool(show)})
+    if show:
+        _run_preview_scale_js(False)
 
 
 def _sync_preview_iframe(
@@ -1317,9 +1362,10 @@ def _bind_split_divider_js() -> None:
     rrid = ctx.get("preview_panel_id")
     if not rid or not lid or not rrid:
         return
+    pct = clamp_split_editor_pct(ctx.get("split_pct"))
     js = (
         "window.mycelianCsSplitDrag && window.mycelianCsSplitDrag("
-        f"{json.dumps(rid)}, {json.dumps(lid)}, {json.dumps(rrid)}, 28, 78)"
+        f"{json.dumps(rid)}, {json.dumps(lid)}, {json.dumps(rrid)}, 28, 78, {pct:g})"
     )
     try:
         ui.run_javascript(js)
@@ -1404,20 +1450,63 @@ def _remember_disk_baseline(config_name: str, form_data: dict) -> None:
     _disk_baselines[config_name] = copy.deepcopy(form_data)
 
 
-def _refresh_preview_dirty_label(config_name: str) -> None:
-    label = _custom_sources_ctx.get("preview_dirty_label")
-    if not label or not config_name:
-        return
-    dirty = _config_is_dirty(config_name)
-    label.text = (
-        "Unsaved changes reflected in preview"
-        if dirty
-        else "Preview matches saved file"
-    )
+def preview_live_state(
+    config_name: Optional[str], *, server_running: bool, has_template: bool, dirty: bool
+) -> Tuple[str, str]:
+    """(kind, text) for the chip in the preview bar; kind is "live" or "off"."""
+    if not config_name:
+        return "off", "No template"
+    if not server_running:
+        return "off", "Waiting for the overlay server"
+    if not has_template:
+        return "off", "No preview for this template"
     if dirty:
-        label.style("opacity: 1; color: var(--color-warning, #e6a817);")
+        return "live", "Live · shows unsaved changes"
+    return "live", "Live"
+
+
+def preview_live_chip_html(kind: str, text: str) -> str:
+    if kind == "live":
+        return f'<span class="ssx-chip is-live"><span class="dot"></span>{html.escape(text)}</span>'
+    return f'<span class="ssx-chip">{_icon_html("hourglass_empty")}{html.escape(text)}</span>'
+
+
+def preview_size_chip_html(source: str, obs_source_name: str = "") -> str:
+    """Where the preview size came from (OBS / saved); empty for the template estimate."""
+    if source == "obs":
+        text = f"From OBS: {obs_source_name}" if obs_source_name else "From OBS"
+        icon = "videocam"
+    elif source == "stored":
+        text, icon = "Saved size", "push_pin"
     else:
-        label.style("opacity: 0.7; color: inherit;")
+        return ""
+    return f'<span class="ssx-chip" title="{html.escape(text, quote=True)}">{_icon_html(icon)}{html.escape(text)}</span>'
+
+
+def _refresh_live_chip(config_name: Optional[str]) -> None:
+    chip = _custom_sources_ctx.get("preview_live_chip")
+    if chip is None:
+        return
+    inst = getattr(web_engine_module, "web_engine_instance", None)
+    running = bool(inst and getattr(inst, "is_running", False))
+    has_template = bool(config_name) and running and _route_html_exists(_effective_preview_route(config_name or ""))
+    kind, text = preview_live_state(
+        config_name,
+        server_running=running,
+        has_template=has_template,
+        dirty=_config_is_dirty(config_name),
+    )
+    content = preview_live_chip_html(kind, text)
+    if _custom_sources_ctx.get("_live_chip_html") != content:
+        _custom_sources_ctx["_live_chip_html"] = content
+        chip.set_content(content)
+
+
+def _refresh_preview_dirty_label(config_name: str) -> None:
+    """Refresh everything that shows unsaved state: the header, rows, outline and preview chip."""
+    _refresh_live_chip(config_name)
+    if config_name and config_name == _form_state.get("config"):
+        _refresh_dirty_ui()
 
 
 def _invalidate_preview_route_cache(config_name: Optional[str] = None) -> None:
@@ -1536,7 +1625,7 @@ def _notify_preview_push_failed(config_name: str, exc: Exception) -> None:
         type="warning",
         source="source_settings",
         title="The preview didn't update",
-        hint="Click Reload preview above the preview.",
+        hint="Click the Reload preview button (↻) in the bar above the preview.",
         details=f"{config_name}: {type(exc).__name__}: {exc}",
         dedupe_key="source_settings:preview_push",
         dedupe_cooldown_sec=60.0,
@@ -1550,12 +1639,11 @@ def _rebuild_preview_mock_toolbar(config_name: str) -> None:
     row.clear()
     st = load_template_preview_settings()
     row.visible = bool(st.get("show_mock_toolbar", True))
-    actions = get_mock_actions(config_name)
+    actions = get_mock_actions(config_name) if config_name else []
     with row:
+        _Text("span", "Sample events").classes("ssx-mocks-label")
         if not actions:
-            ui.label("No mock events for this template.").classes(
-                "text-xs opacity-60 shrink-0"
-            )
+            _Text("span", "No sample events for this template.").classes("ssx-mocks-empty")
             return
         for act in actions:
             ev = act["event"]
@@ -1563,14 +1651,18 @@ def _rebuild_preview_mock_toolbar(config_name: str) -> None:
             alert_type = act.get("alert_type")
 
             def _emit_mock(
+                _e: Any = None,
                 event_name: str = ev,
                 mock_alert_type: Any = alert_type,
             ) -> None:
                 _emit_preview_mock(event_name, mock_alert_type, config_name)
 
-            ui.button(label, on_click=_emit_mock).props("dense flat size=sm").tooltip(
-                str(act.get("tooltip") or f"Emit mock «{ev}»")
-            )
+            btn = ui.element("button").classes("ssx-mock").props('type="button"')
+            with btn:
+                ui.icon("play_arrow")
+                _Text("span", str(label))
+            btn.on("click", _emit_mock)
+            btn.tooltip(str(act.get("tooltip") or f"Play a sample «{ev}» event in the preview"))
 
 
 def _rebuild_popout_mock_toolbar(config_name: str) -> None:
@@ -1665,385 +1757,1042 @@ def _schedule_template_preview_refresh() -> None:
     layout_schedule(0.32, _tick, once=True)
 
 
+# ---------------------------------------------------------------------------
+#  Sections, search, units and asset fields (pure helpers; unit tested)
+# ---------------------------------------------------------------------------
+
+GENERAL_SECTION_TITLE = "General"
+ROULETTE_CONFIG_NAME = "roulette"
+_SECTIONS_OPEN_BY_DEFAULT = 3
+_OPTION_ID_RE = re.compile(r"^Option(\d+)")
+_UNIT_RE = re.compile(r"(?:^|[\s,;:])\((px|pixels|ms|s|sec|secs|seconds|%|deg|degrees)\)", re.I)
+_UNIT_ALIASES = {"pixels": "px", "sec": "s", "secs": "s", "seconds": "s", "degrees": "deg"}
+
+
+@dataclass
+class SettingsSection:
+    """One card in the form and one entry in the outline."""
+
+    key: str
+    title: str
+    elements: List[dict] = field(default_factory=list)
+    option_num: Optional[int] = None
+
+
+def roulette_option_number(element_id: Any) -> Optional[int]:
+    """``Option12Name`` -> 12 (roulette per-option settings); None otherwise."""
+    match = _OPTION_ID_RE.match(str(element_id or ""))
+    return int(match.group(1)) if match else None
+
+
+def roulette_option_title(option_num: int, option_name: Any) -> str:
+    title = f"Option {option_num}"
+    if option_name:
+        title += f" ({option_name})"
+    return title
+
+
+def build_sections(
+    config_name: str, elements: Iterable[Any], form_data: Optional[Dict[str, Any]] = None
+) -> List[SettingsSection]:
+    """Group config elements into sections, in file order.
+
+    Settings before the first separator form "General". Separators with the same label
+    share one section (as before). The roulette template's per-option settings become
+    one "Option N (name)" section each, after the others.
+    """
+    form_data = form_data or {}
+    ordered: List[SettingsSection] = []
+    by_title: Dict[str, SettingsSection] = {}
+    options: Dict[int, SettingsSection] = {}
+    current: Optional[SettingsSection] = None
+    is_roulette = config_name == ROULETTE_CONFIG_NAME
+
+    def section_for(title: str, key: str) -> SettingsSection:
+        sec = by_title.get(title)
+        if sec is None:
+            sec = SettingsSection(key=key, title=title)
+            by_title[title] = sec
+            ordered.append(sec)
+        return sec
+
+    for element in elements or []:
+        if not isinstance(element, dict):
+            continue
+        if element.get("type") == "separator":
+            title = str(element.get("label") or "").strip() or "Settings"
+            current = section_for(title, f"s{len(ordered)}")
+            continue
+        if is_roulette:
+            num = roulette_option_number(element.get("id"))
+            if num is not None:
+                sec = options.get(num)
+                if sec is None:
+                    sec = options[num] = SettingsSection(key=f"o{num}", title="", option_num=num)
+                sec.elements.append(element)
+                continue
+        if current is None:
+            current = section_for(GENERAL_SECTION_TITLE, "g")
+        current.elements.append(element)
+
+    sections = [sec for sec in ordered if sec.elements]
+    for num in sorted(options):
+        sec = options[num]
+        name_id = f"Option{num}Name"
+        name = form_data.get(name_id)
+        if name is None:
+            name = next((el.get("value") for el in sec.elements if el.get("id") == name_id), None)
+        sec.title = roulette_option_title(num, name)
+        sections.append(sec)
+    return sections
+
+
+def group_config_elements(elements):
+    """Group elements by separator label (``Other`` before the first separator).
+
+    Kept for callers that want the old dict shape; the tab itself uses :func:`build_sections`.
+    """
+    groups: Dict[str, list] = {}
+    current_group = "Other"
+    for element in elements:
+        if element.get("type", "") == "separator":
+            current_group = element.get("label", "")
+            groups.setdefault(current_group, [])
+            continue
+        groups.setdefault(current_group, []).append(element)
+    return groups
+
+
+def normalize_search(term: Any) -> str:
+    return str(term or "").strip().lower()
+
+
+def setting_matches(element: dict, term: str) -> bool:
+    """Search matches the label or the description (``term`` already lower-case)."""
+    if not term:
+        return True
+    label = str(element.get("label") or element.get("id") or "").lower()
+    description = str(element.get("description") or "").lower()
+    return term in label or term in description
+
+
+def row_matches_filters(element: dict, term: str, changed_only: bool, changed_ids: Set[str]) -> bool:
+    if changed_only and str(element.get("id") or "") not in changed_ids:
+        return False
+    return setting_matches(element, term)
+
+
+def filter_sections(
+    sections: Sequence[SettingsSection], term: Any = "", changed_only: bool = False, changed_ids: Optional[Set[str]] = None
+) -> List[Tuple[SettingsSection, List[dict]]]:
+    """Sections that still have settings after search / "Changed only", with those settings."""
+    norm = normalize_search(term)
+    changed = changed_ids or set()
+    out: List[Tuple[SettingsSection, List[dict]]] = []
+    for sec in sections:
+        kept = [el for el in sec.elements if row_matches_filters(el, norm, changed_only, changed)]
+        if kept:
+            out.append((sec, kept))
+    return out
+
+
+def changed_setting_ids(baseline: Optional[Dict[str, Any]], current: Optional[Dict[str, Any]]) -> Set[str]:
+    """Setting ids whose current value differs from the saved one."""
+    baseline = baseline or {}
+    current = current or {}
+    return {
+        key
+        for key in set(baseline) | set(current)
+        if _preview_values_differ(baseline.get(key), current.get(key))
+    }
+
+
+def setting_unit(element: dict) -> str:
+    """Unit shown after a number box: (px) (ms) (s) (%) (deg) in the label or description."""
+    for text in (element.get("label"), element.get("description")):
+        match = _UNIT_RE.search(str(text or ""))
+        if match:
+            unit = match.group(1).lower()
+            return _UNIT_ALIASES.get(unit, unit)
+    return ""
+
+
+def number_step(element: dict) -> Optional[float]:
+    """The JSON ``step`` for a number box (None when missing or unusable)."""
+    raw = element.get("step")
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        step = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if step <= 0 or step != step:
+        return None
+    return int(step) if step == int(step) else step
+
+
+def is_gradient_value(value: Any) -> bool:
+    return "gradient(" in str(value or "").lower()
+
+
+FONT_FILE_EXTS = (".ttf", ".otf", ".ttc", ".woff", ".woff2")
+DEFAULT_FONTS_WEB_DIR = "/assets/default_assets/fonts/"
+
+
+@dataclass(frozen=True)
+class AssetSpec:
+    """How a setting that holds a file is browsed and written back.
+
+    ``style``: ``web`` (``/assets/x/y.png``), ``assets`` (``assets/x/y.png``), ``relative``
+    (relative to ``/assets/``) or ``filename`` (relative to ``base_dir``).
+    """
+
+    kind: str
+    extensions: Tuple[str, ...]
+    mode: str = "file"
+    style: str = "web"
+    base_dir: str = ""
+
+
+def _asset_ext_lists() -> Dict[str, Tuple[str, ...]]:
+    from .file_picker import AUDIO_EXTS, IMAGE_EXTS, VIDEO_EXTS
+
+    return {
+        "image": tuple(IMAGE_EXTS),
+        "audio": tuple(AUDIO_EXTS),
+        "video": tuple(VIDEO_EXTS),
+        "font": FONT_FILE_EXTS,
+        "media": tuple(IMAGE_EXTS) + tuple(AUDIO_EXTS) + tuple(VIDEO_EXTS),
+    }
+
+
+def _words(text: Any) -> List[str]:
+    """``bit_image_range_0_src`` / ``BackgroundImageURL`` / labels -> lower-case words."""
+    raw = str(text or "")
+    raw = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", raw)
+    raw = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", raw)
+    return [w for w in re.split(r"[^A-Za-z0-9]+", raw.lower()) if w]
+
+
+_KIND_WORDS = {
+    "image": {"image", "images", "img", "picture", "icon", "avatar", "gif", "logo", "sprite", "art", "thumbnail", "png", "jpg", "jpeg", "webp", "svg"},
+    "audio": {"sound", "sounds", "audio", "music", "sfx", "mp3", "wav", "ogg"},
+    "video": {"video", "videos", "mp4", "webm", "mov"},
+    "media": {"media"},
+    "font": {"font"},
+}
+# Names that are a file by themselves ("Banner Background Image", "Video").
+_MEDIA_NOUNS = {"image", "img", "gif", "avatar", "picture", "sprite", "thumbnail", "video"}
+_FILE_WORDS = {"src", "source", "file", "filename", "path", "url", "uri", "folder", "directory", "upload"}
+_FOLDER_WORDS = {"folder", "directory", "dir"}
+_NOT_A_FILE_WORDS = {
+    "color", "colour", "shadow", "filter", "extension", "size", "weight", "width", "height", "opacity", "radius",
+    "blur", "position", "align", "alignment", "style", "duration", "delay", "volume", "speed", "family", "css",
+    "spacing", "padding", "margin", "scale", "rotation", "angle", "count", "text",
+}
+_DESC_FILE_RE = re.compile(r"\b(url|path|file ?name|file|folder|directory|upload)\b|\.(png|gif|jpe?g|webp|svg|mp3|wav|ogg|mp4|webm|mov|ttf|otf|woff2?)\b", re.I)
+_MULTI_VALUE_RE = re.compile(r"\b(several|separated|one per line|comma|list of)\b", re.I)
+_DESC_ASSET_DIR_RE = re.compile(r"(?<![\w/])/?assets/([\w .\-/]*?/)(?=[\s)'\",]|$)")
+
+
+def _ext_of(value: str) -> str:
+    return os.path.splitext(value.split("?", 1)[0].split("#", 1)[0])[1].lower()
+
+
+def _value_style(value: str) -> str:
+    v = value.strip().replace("\\", "/")
+    if v.startswith("/assets/"):
+        return "web"
+    if v.startswith("assets/"):
+        return "assets"
+    if "/" in v:
+        return "relative"
+    return "filename"
+
+
+def _asset_browse_spec(element: dict, value: Any, config_name: str = "") -> Optional[AssetSpec]:
+    """How to browse a setting that holds a file path/URL, or None for ordinary settings.
+
+    A setting qualifies when its type is ``file``; when its current or saved value is an
+    ``/assets/...`` path or a media/font file name; or when its id/label name a kind of
+    media together with a file word ("Death Sound File", "Background Image URL") or its
+    description says it is a URL/path/file. Numbers, colours, selects, CSS-ish settings
+    (shadow, filter, size...) and multi-value lists never qualify.
+    """
+    element_type = element.get("type", "text")
+    if element_type not in ("text", "file"):
+        return None
+    description = str(element.get("description") or "")
+    if element_type != "file" and _MULTI_VALUE_RE.search(description):
+        return None
+    lists = _asset_ext_lists()
+    current = str(value or "").strip()
+    saved = str(element.get("value") or "").strip()
+    name_words = set(_words(element.get("id"))) | set(_words(element.get("label")))
+
+    kind = ""
+    sample = ""
+    for candidate in (current, saved):
+        ext = _ext_of(candidate) if candidate else ""
+        kind = next((k for k in ("image", "audio", "video", "font") if ext and ext in lists[k]), "")
+        if kind:
+            sample = candidate
+            break
+    path_value = next(
+        (c for c in (current, saved) if c and c.replace("\\", "/").startswith(("/assets/", "assets/"))), ""
+    )
+    sample = sample or path_value or current or saved
+    by_value = bool(kind or path_value)
+
+    if not by_value and element_type != "file":
+        if name_words & _NOT_A_FILE_WORDS and not name_words & {"file", "path", "src", "source", "url"}:
+            return None
+    if not kind:
+        accept = str(element.get("accept") or "").lower()
+        kind = next((k for k in ("image", "audio", "video") if accept.startswith(k)), "")
+    if not kind:
+        kind = next((k for k in ("image", "audio", "video", "media", "font") if name_words & _KIND_WORDS[k]), "")
+        if kind and not (element_type == "file" or by_value):
+            names_file = bool(name_words & _FILE_WORDS)
+            describes_file = bool(_DESC_FILE_RE.search(description))
+            if not (names_file or describes_file or name_words & _MEDIA_NOUNS):
+                kind = ""
+            elif kind == "font" and not (names_file or re.search(r"\bfile", description, re.I)):
+                kind = ""
+    if not kind and (element_type == "file" or by_value):
+        kind = "media"
+    if not kind:
+        return None
+
+    mode = "folder" if name_words & _FOLDER_WORDS else "file"
+    if sample:
+        style = _value_style(sample)
+    elif kind == "font" or re.search(r"\bfile ?name\b", description, re.I):
+        style = "filename"
+    else:
+        style = "web"
+    base_dir = ""
+    if style == "filename":
+        match = _DESC_ASSET_DIR_RE.search(description)
+        if kind == "font":
+            base_dir = DEFAULT_FONTS_WEB_DIR
+        elif match and match.group(1).strip("/"):
+            base_dir = "/assets/" + match.group(1).lstrip("/")
+        elif config_name:
+            base_dir = f"/assets/{config_name}/"
+        else:
+            style = "web"
+    return AssetSpec(kind=kind, extensions=lists[kind], mode=mode, style=style, base_dir=base_dir)
+
+
+def asset_value_to_web_path(spec: AssetSpec, value: Any) -> str:
+    """The ``/assets/...`` path a setting value points at ('' when it can't tell)."""
+    v = str(value or "").strip().replace("\\", "/")
+    if not v:
+        return spec.base_dir if spec.style == "filename" else ""
+    if v.startswith("/assets/"):
+        return v
+    if v.startswith("assets/"):
+        return "/" + v
+    if spec.style == "filename" and spec.base_dir:
+        return spec.base_dir + v
+    if spec.style == "relative" or "/" in v:
+        return "/assets/" + v.lstrip("/")
+    return ""
+
+
+def asset_value_from_pick(spec: AssetSpec, web_path: str) -> str:
+    """What to write into the setting for a picked ``/assets/...`` path."""
+    path = str(web_path or "")
+    if spec.style == "assets":
+        return path.lstrip("/")
+    if spec.style == "relative" and path.startswith("/assets/"):
+        return path[len("/assets/"):]
+    if spec.style == "filename" and spec.base_dir and path.startswith(spec.base_dir):
+        return path[len(spec.base_dir):]
+    return path
+
+
+# ---------------------------------------------------------------------------
+#  Small render helpers
+# ---------------------------------------------------------------------------
+
+
+class _Text(TextElement):
+    """A native element with text (``<span>``, ``<option>`` ...)."""
+
+    def __init__(self, tag: str, text: str = "") -> None:
+        super().__init__(tag=tag, text=text)
+
+
+def _esc(text: Any) -> str:
+    return html.escape(str(text if text is not None else ""), quote=True)
+
+
+def _icon_html(name: str) -> str:
+    return f'<span class="ssx-mi">{_esc(name)}</span>'
+
+
+def _icon_button(icon: str, tooltip: str, on_click: Callable[[], Any], *, danger: bool = False, small: bool = False):
+    btn = ui.element("button").classes(
+        "ssx-ibtn" + (" is-danger" if danger else "") + (" is-small" if small else "")
+    ).props(f'type="button" aria-label="{_esc(tooltip)}"')
+    with btn:
+        ui.icon(icon)
+    btn.on("click", lambda _e: on_click())
+    if tooltip:
+        btn.tooltip(tooltip)
+    return btn
+
+
+def _inject_source_settings_styles() -> None:
+    from ..help_system.help_render import inject_page_stylesheet, promote_color_importance, scope_selectors
+
+    inject_page_stylesheet(
+        "mycelian-source-settings", promote_color_importance(scope_selectors(SOURCE_SETTINGS_CSS, ".ssx"))
+    )
+
+
+_color_field_params_cache: Optional[Set[str]] = None
+
+
+def _color_field_params() -> Set[str]:
+    """Keyword arguments render_color_field accepts (``on_input`` / ``allow_gradient`` are newer)."""
+    global _color_field_params_cache
+    if _color_field_params_cache is None:
+        try:
+            _color_field_params_cache = set(inspect.signature(render_color_field).parameters)
+        except (TypeError, ValueError):
+            _color_field_params_cache = set()
+    return _color_field_params_cache
+
+
+# ---------------------------------------------------------------------------
+#  Form state (one rendered template at a time)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _RowHandle:
+    element_id: str
+    element: dict
+    row: Any
+    set_value: Callable[[Any], None]
+    visible: bool = True
+
+
+@dataclass
+class _SectionHandle:
+    section: SettingsSection
+    root: Any
+    head: Any
+    rows: List[_RowHandle]
+    dom_id: str
+    is_open: bool
+    visible: bool = True
+    shown: int = 0
+    head_html: str = ""
+
+
+# config, sections (list of _SectionHandle), rows ({id: _RowHandle}), changed (set),
+# search, changed_only, nav_html, empty
+_form_state: Dict[str, Any] = {"search": "", "changed_only": False}
+
+
+def _sections() -> List[_SectionHandle]:
+    return list(_form_state.get("sections") or [])
+
+
+def _section_by_key(key: str) -> Optional[_SectionHandle]:
+    for sec in _sections():
+        if sec.section.key == key:
+            return sec
+    return None
+
+
+def _filtering() -> bool:
+    return bool(normalize_search(_form_state.get("search")) or _form_state.get("changed_only"))
+
+
+def _section_head_html(title: str, count: int) -> str:
+    return (
+        f'<span class="ssx-sec-title" title="{_esc(title)}">{_esc(title)}</span>'
+        f'<span class="n">{count}</span><span class="ssx-mi chev">expand_more</span>'
+    )
+
+
+def _update_section_head(sec: _SectionHandle) -> None:
+    content = _section_head_html(sec.section.title, sec.shown if _filtering() else len(sec.rows))
+    if content != sec.head_html:
+        sec.head_html = content
+        sec.head.set_content(content)
+
+
+def _set_section_open(sec: _SectionHandle, open_: bool) -> None:
+    if sec.is_open == open_:
+        return
+    sec.is_open = open_
+    if open_:
+        sec.root.classes(remove="is-closed")
+    else:
+        sec.root.classes(add="is-closed")
+
+
+def _sync_nav_js() -> None:
+    ctx = _custom_sources_ctx
+    form_id, nav_id = ctx.get("form_id"), ctx.get("nav_id")
+    if not form_id or not nav_id:
+        return
+    js = (
+        "window.mycelianSsxBindNav && "
+        f"window.mycelianSsxBindNav({json.dumps(form_id)}, {json.dumps(nav_id)})"
+    )
+    try:
+        ui.run_javascript(js)
+    except Exception as e:
+        logger.debug("Section outline sync JS skipped: %s", e)
+
+
+def _render_nav() -> None:
+    nav = _custom_sources_ctx.get("nav_list")
+    if nav is None:
+        return
+    filtering = _filtering()
+    changed = _form_state.get("changed") or set()
+    parts = ['<div class="ssx-navhead">Sections</div>']
+    shown_any = False
+    for sec in _sections():
+        if filtering and not sec.shown:
+            continue
+        shown_any = True
+        count = sec.shown if filtering else len(sec.rows)
+        dot = '<span class="dot" title="Has unsaved changes"></span>' if any(r.element_id in changed for r in sec.rows) else ""
+        parts.append(
+            f'<div class="ssx-navitem" data-nav="{_esc(sec.section.key)}" title="{_esc(sec.section.title)}">'
+            f'<span class="nm">{_esc(sec.section.title)}</span>{dot}<span class="n">{count}</span></div>'
+        )
+    if not shown_any:
+        parts.append(
+            '<div class="ssx-navnone">No settings match.</div>' if filtering and _form_state.get("config") else ""
+        )
+    content = "".join(parts)
+    if content != _form_state.get("nav_html"):
+        _form_state["nav_html"] = content
+        nav.set_content(content)
+        _sync_nav_js()
+
+
+def _render_jump() -> None:
+    """Options of the "Jump to section" list shown instead of the outline on narrow tabs."""
+    jump = _custom_sources_ctx.get("jump_select")
+    if jump is None:
+        return
+    jump.clear()
+    with jump:
+        _Text("option", "Jump to section…").props('value=""')
+        for sec in _sections():
+            _Text("option", sec.section.title).props(f'value="{_esc(sec.section.key)}"')
+
+
+def _refresh_meta() -> None:
+    meta = _custom_sources_ctx.get("meta_label")
+    if meta is None:
+        return
+    sections = _sections()
+    if not _form_state.get("config"):
+        meta.set_text("")
+        return
+    settings = sum(len(sec.rows) for sec in sections)
+    meta.set_text(
+        f"{settings} setting{'s' if settings != 1 else ''} · {len(sections)} section{'s' if len(sections) != 1 else ''}"
+    )
+
+
+def _dirty_pill_html(config_name: Optional[str], changed_count: int) -> str:
+    if not config_name:
+        return ""
+    if changed_count:
+        noun = "change" if changed_count == 1 else "changes"
+        return f'<span class="ssx-pill is-warn">{_icon_html("edit")}{changed_count} unsaved {noun}</span>'
+    return f'<span class="ssx-pill is-ok">{_icon_html("check_circle")}Saved</span>'
+
+
+def _refresh_dirty_ui() -> None:
+    """Header pill, Discard, changed rows and outline dots for the open template."""
+    st = _form_state
+    config_name = st.get("config")
+    baseline = _disk_baselines.get(config_name) if config_name else None
+    current = form_data_store.get(config_name, {}) if config_name else {}
+    changed = changed_setting_ids(baseline, current) if baseline is not None else set()
+    previous = st.get("changed") or set()
+    rows = st.get("rows") or {}
+    for element_id in changed ^ previous:
+        handle = rows.get(element_id)
+        if handle is None:
+            continue
+        if element_id in changed:
+            handle.row.classes(add="is-changed")
+        else:
+            handle.row.classes(remove="is-changed")
+    st["changed"] = changed
+
+    ctx = _custom_sources_ctx
+    pill = ctx.get("dirty_pill")
+    if pill is not None:
+        content = _dirty_pill_html(config_name, len(changed))
+        if ctx.get("_dirty_pill_html") != content:
+            ctx["_dirty_pill_html"] = content
+            pill.set_content(content)
+    discard = ctx.get("discard_button")
+    if discard is not None:
+        discard.set_enabled(bool(changed))
+    _render_nav()
+
+
+def _apply_filters() -> None:
+    """Show only settings that match the search and "Changed only", grouped by section."""
+    st = _form_state
+    term = normalize_search(st.get("search"))
+    changed_only = bool(st.get("changed_only"))
+    changed = st.get("changed") or set()
+    filtering = bool(term) or changed_only
+    total = 0
+    for sec in _sections():
+        shown = 0
+        for handle in sec.rows:
+            show = row_matches_filters(handle.element, term, changed_only, changed)
+            if show != handle.visible:
+                handle.row.set_visibility(show)
+                handle.visible = show
+            shown += int(show)
+        sec.shown = shown
+        sec_visible = shown > 0 or not filtering
+        if sec_visible != sec.visible:
+            sec.root.set_visibility(sec_visible)
+            sec.visible = sec_visible
+        if filtering and shown:
+            _set_section_open(sec, True)
+        _update_section_head(sec)
+        total += shown
+    empty = st.get("empty")
+    if empty is not None:
+        empty.set_visibility(filtering and total == 0 and bool(_sections()))
+        title, sub = st.get("empty_labels") or (None, None)
+        if title is not None:
+            if changed_only and not term:
+                title.set_text("No unsaved changes")
+                sub.set_text("Settings you change show up here until you save or discard them.")
+            else:
+                title.set_text("No settings match")
+                sub.set_text(
+                    "Search looks at setting names and descriptions"
+                    + (" among your unsaved changes." if changed_only else ".")
+                )
+    _render_nav()
+
+
+_search_render_generation = 0
+
+
+def _on_search(value: Any) -> None:
+    """Debounced search (label + description); results stay under their section headings."""
+    global _search_render_generation
+    _form_state["search"] = str(value or "")
+    _search_render_generation += 1
+    generation = _search_render_generation
+
+    def _run() -> None:
+        if generation == _search_render_generation:
+            _apply_filters()
+
+    layout_schedule(0.2, _run, once=True)
+
+
+def _on_changed_only(value: Any) -> None:
+    _form_state["changed_only"] = bool(value)
+    _apply_filters()
+
+
+def _goto_section(key: Any) -> None:
+    sec = _section_by_key(str(key or ""))
+    if sec is None or not sec.visible:
+        return
+    _set_section_open(sec, True)
+    form_id = _custom_sources_ctx.get("form_id")
+    if not form_id:
+        return
+    js = (
+        "window.mycelianSsxScrollTo && "
+        f"window.mycelianSsxScrollTo({json.dumps(form_id)}, {json.dumps(sec.dom_id)})"
+    )
+    try:
+        ui.run_javascript(js)
+    except Exception as e:
+        logger.debug("Scroll to section JS skipped: %s", e)
+
+
+def _on_form_click(e: Any) -> None:
+    """Delegated clicks in the form: section headers fold, ↶ reverts one setting."""
+    data = getattr(e, "args", None) or {}
+    if not isinstance(data, dict):
+        return
+    if data.get("revert"):
+        _revert_setting(str(data["revert"]))
+    elif data.get("sec"):
+        sec = _section_by_key(str(data["sec"]))
+        if sec is not None:
+            _set_section_open(sec, not sec.is_open)
+
+
+_FORM_CLICK_JS = (
+    "(e) => {"
+    " const r = e.target.closest('[data-revert]');"
+    " if (r) { e.preventDefault(); emit({revert: r.dataset.revert}); return; }"
+    " const h = e.target.closest('[data-sec-head]');"
+    " if (h) { emit({sec: h.dataset.secHead}); }"
+    "}"
+)
+
+
+def _revert_setting(element_id: str) -> None:
+    """Put one setting back to its saved value."""
+    config_name = _form_state.get("config")
+    form_data = form_data_store.get(config_name) if config_name else None
+    baseline = _disk_baselines.get(config_name) if config_name else None
+    if form_data is None or baseline is None or element_id not in baseline:
+        return
+    value = copy.deepcopy(baseline[element_id])
+    handle = (_form_state.get("rows") or {}).get(element_id)
+    if handle is not None:
+        try:
+            handle.set_value(value)
+        except Exception as e:
+            logger.debug("Could not show the saved value for %s: %s", element_id, e)
+    update_form_data(form_data, element_id, value)
+    if _form_state.get("changed_only"):
+        _apply_filters()
+
+
+def _on_split_moved(e: Any) -> None:
+    pct = clamp_split_editor_pct(getattr(e, "args", None))
+    _custom_sources_ctx["split_pct"] = pct
+    save_template_preview_settings({"split_editor_pct": pct})
+
+
+# ---------------------------------------------------------------------------
+#  Tab
+# ---------------------------------------------------------------------------
+
+
 def create_custom_sources_tab():
-    """
-    Create the custom sources tab content using NiceGUI
-
-    Returns:
-        None
-    """
-    # Add custom CSS to the page
+    """Build the Source Settings tab (header, outline, form, preview)."""
     ui.add_head_html(f"<style>{CUSTOM_CSS}</style>")
+    _inject_source_settings_styles()
     _ensure_preview_scale_script()
+    from ..help_system.contextual_help import help_button
 
-    # Initialize the config parser
     config_dir = "templates/template_configs"
     config_parser = TemplateConfigParser(config_dir)
 
-    # Create a card for the entire tab content with flex layout
-    with ui.element("div").classes(
-        "tab-surface w-full h-full flex flex-col relative p-4"
-    ):
-        # Header section with controls - fixed height
-        with ui.column().classes("w-full gap-2 p-4 flex-none"):
-            _pst_initial = load_template_preview_settings()
-            preview_outer_id = "mycelian-cs-pe-" + uuid.uuid4().hex[:12]
-            preview_inner_id = preview_outer_id + "-inner"
-            preview_split_row_id = "mycelian-cs-row-" + uuid.uuid4().hex[:12]
-            preview_editor_panel_id = "mycelian-cs-ed-" + uuid.uuid4().hex[:12]
-            preview_panel_id = "mycelian-cs-pv-" + uuid.uuid4().hex[:12]
-            popout_outer_id = "mycelian-cs-pop-" + uuid.uuid4().hex[:12]
-            popout_inner_id = popout_outer_id + "-inner"
-            popout_dialog_id = "mycelian-cs-popdlg-" + uuid.uuid4().hex[:12]
+    _pst_initial = load_template_preview_settings()
+    split_pct = clamp_split_editor_pct(_pst_initial.get("split_editor_pct"))
+    uid = uuid.uuid4().hex[:12]
+    preview_outer_id = "mycelian-cs-pe-" + uid
+    preview_inner_id = preview_outer_id + "-inner"
+    preview_split_row_id = "mycelian-cs-row-" + uid
+    preview_editor_panel_id = "mycelian-cs-ed-" + uid
+    preview_panel_id = "mycelian-cs-pv-" + uid
+    popout_outer_id = "mycelian-cs-pop-" + uid
+    popout_inner_id = popout_outer_id + "-inner"
+    popout_dialog_id = "mycelian-cs-popdlg-" + uid
+    form_id = "mycelian-cs-form-" + uid
+    nav_id = "mycelian-cs-nav-" + uid
+    zoom_label_id = "mycelian-cs-zoom-" + uid
 
-            def open_popout_preview() -> None:
-                global _popout_preview_is_open
-                _popout_preview_is_open = True
-                sel = _custom_sources_ctx.get("config_select")
-                if sel and sel.value:
-                    fd = form_data_store.get(sel.value, {})
-                    _load_popout_preview(sel.value, fd)
-                else:
-                    _open_popout_preview_dialog(popout_dialog_id)
+    def open_popout_preview() -> None:
+        global _popout_preview_is_open
+        _popout_preview_is_open = True
+        sel = _custom_sources_ctx.get("config_select")
+        if sel and sel.value:
+            fd = form_data_store.get(sel.value, {})
+            _load_popout_preview(sel.value, fd)
+        else:
+            _open_popout_preview_dialog(popout_dialog_id)
 
-            with ui.row().classes(
-                "w-full items-center gap-2 flex-nowrap overflow-x-auto"
-            ):
-                outline_button(
-                    "",
-                    lambda: load_config_files(
-                        config_parser, config_select, config_container
-                    ),
-                    icon="refresh",
-                    extra_classes="p-2 shrink-0",
-                )
+    def show_inline_preview(show: bool) -> None:
+        _apply_inline_preview_visibility(show)
+        if show:
+            _bind_split_divider_js()
 
-                config_select = form_select(
-                    tooltip="Choose which template configuration to edit",
-                    options=[],
-                    label=None,
-                    classes="w-56 shrink-0 bg-theme-base",
-                    with_input=True,
-                    on_change=lambda e: on_config_selected(
-                        e, config_parser, config_container, config_select
-                    ),
-                )
-
-                outline_button(
-                    "Duplicate",
-                    lambda: duplicate_config(
-                        config_parser, config_select, config_container
-                    ),
-                    icon="content_copy",
-                    extra_classes="shrink-0",
-                )
-
-                outline_button(
-                    "Rename",
-                    lambda: rename_config(
-                        config_parser, config_select, config_container
-                    ),
-                    icon="drive_file_rename_outline",
-                    extra_classes="shrink-0",
-                )
-
-                destructive_button(
-                    "Delete",
-                    lambda: delete_config(
-                        config_parser, config_select, config_container
-                    ),
-                    icon="delete",
-                    extra_classes="shrink-0",
-                )
-
-                search_input = form_input(
-                    tooltip="Filter configuration properties by label",
-                    label="🔍 Search properties",
-                    placeholder="Type to search by property label...",
-                    classes="grow bg-theme-base min-w-[12rem]",
-                    on_change=lambda e: on_search_changed(
-                        e, config_parser, config_select, config_container
-                    ),
-                )
-                search_input.props("clearable")
-
-                outline_button(
-                    "Reset",
-                    lambda: reset_config(
-                        config_parser, config_select, config_container
-                    ),
-                    icon="restart_alt",
-                    extra_classes="shrink-0",
-                )
-
-                primary_button(
-                    "Save",
-                    lambda: save_config(
-                        config_parser, config_select, config_container
-                    ),
-                    icon="save",
-                    extra_classes="shrink-0",
-                )
-
-            # Row 3: preview controls (right-aligned, below action buttons)
-            with ui.row().classes("w-full items-center gap-3 justify-end"):
-                inline_preview_switch = ui.switch(
-                    "Show preview",
-                    value=bool(_pst_initial.get("show_inline_preview", True)),
-                ).props("dense left-label").classes("shrink-0")
-                inline_preview_switch.tooltip(
-                    "Show or hide inline preview panel"
-                )
-                popout_preview_btn = ui.button(
-                    "Pop out preview",
-                    icon="open_in_new",
-                ).props("dense flat size=sm")
-                popout_preview_btn.tooltip(
-                    "Open preview in a floating window"
-                )
-                popout_preview_btn.on_click(open_popout_preview)
-
-        with (
-            ui.element("div")
-            .props(f"id={preview_split_row_id}")
-            .classes(
-                "grow overflow-hidden flex flex-row min-h-0 px-2 pb-2 gap-0 items-stretch w-full"
-            )
-        ):
-            editor_panel = (
-                ui.column()
-                .props(f"id={preview_editor_panel_id}")
-                .classes("min-h-0 min-w-0 overflow-hidden flex flex-col gap-1")
-                .style("flex: 62 62 0%; min-width: 0; max-width: 100%")
-            )
-            split_divider = (
-                ui.element("div")
-                .classes("mycelian-cs-split-divider shrink-0")
-                .style(
-                    "width: 6px; cursor: col-resize; background: var(--color-border-default); "
-                    "opacity: 0.6; transition: opacity 0.2s ease; align-self: stretch;"
-                )
-            )
-            split_divider.tooltip("Drag to resize editor / preview split")
-            preview_panel = (
-                ui.column()
-                .props(f"id={preview_panel_id}")
-                .classes(
-                    "min-h-0 overflow-hidden flex flex-col gap-1 "
-                    "border-l border-[var(--color-border-default)] pl-2"
-                )
-                .style("flex: 38 38 0%; min-width: 160px; max-width: 100%")
-            )
-
-            with editor_panel:
-                config_container = ui.element("div").classes(
-                    "flex-1 min-h-0 overflow-auto w-full"
-                )
-            with ui.dialog() as preview_settings_dialog, ui.card():
-                ui.label("Preview settings").classes("text-lg font-medium mb-2")
-                preview_sound_switch = ui.switch(
-                    "Enable preview sounds",
-                    value=bool(_pst_initial.get("enable_preview_sounds", True)),
-                )
-                preview_toolbar_switch = ui.switch(
-                    "Show mock event toolbar",
-                    value=bool(_pst_initial.get("show_mock_toolbar", True)),
-                )
-                ui.label(
-                    "Preview-only — does not change saved template JSON."
-                ).classes("text-xs opacity-60 mb-2")
-
-                def save_preview_settings_dialog() -> None:
-                    if save_template_preview_settings(
-                        {
-                            "enable_preview_sounds": bool(preview_sound_switch.value),
-                            "show_mock_toolbar": bool(preview_toolbar_switch.value),
-                        }
-                    ):
-                        preview_settings_dialog.close()
-                        inst_l = getattr(web_engine_module, "web_engine_instance", None)
-                        if inst_l:
-                            inst_l.emit_preview_settings_to_iframe(
-                                CUSTOM_SOURCES_PREVIEW_TOKEN
+    with ui.element("div").classes("tab-surface w-full h-full flex flex-col relative p-4"):
+        with ui.element("div").classes("ssx"):
+            with ui.element("div").classes("ssx-shell"):
+                # ---- Header ----
+                with ui.element("div").classes("ssx-head"):
+                    ui.html(_icon_html("tune"), sanitize=False).classes("ssx-tile")
+                    with ui.element("div").classes("ssx-title"):
+                        _Text("div", "Source Settings").classes("ssx-kicker")
+                        with ui.element("div").classes("ssx-title-row"):
+                            config_select = form_select(
+                                tooltip="Choose which template to edit (type to filter)",
+                                options=[],
+                                label=None,
+                                classes="ssx-picker",
+                                with_input=True,
+                                on_change=lambda e: on_config_selected(
+                                    e, config_parser, config_container, config_select
+                                ),
                             )
-                        mr = _custom_sources_ctx.get("mock_toolbar_row")
-                        if mr is not None:
-                            mr.visible = bool(preview_toolbar_switch.value)
-                        pmr = _custom_sources_ctx.get("popout_mock_toolbar_row")
-                        if pmr is not None:
-                            pmr.visible = bool(preview_toolbar_switch.value)
-                        notify("", type="success", source="source_settings", title="Preview settings saved")
-                    else:
-                        notify(
-                            "",
-                            type="error",
-                            source="source_settings",
-                            title="Couldn't save preview settings",
-                            hint="Check that Mycelian's data folder is writable, then try again.",
+                            config_select.props("dropdown-icon=unfold_more options-dense")
+                            meta_label = _Text("span", "").classes("ssx-meta")
+                    dirty_pill = ui.html("", sanitize=False)
+                    ui.element("span").classes("ssx-spacer")
+                    show_preview_button = ui.element("button").classes("ssx-tbtn").props('type="button"')
+                    with show_preview_button:
+                        ui.icon("visibility")
+                        _Text("span", "Show preview")
+                    show_preview_button.on("click", lambda _e: show_inline_preview(True))
+                    show_preview_button.tooltip("Show the live preview next to the settings")
+                    show_preview_button.set_visibility(False)
+                    _icon_button(
+                        "refresh",
+                        "Reload the template list",
+                        lambda: load_config_files(config_parser, config_select, config_container),
+                    )
+                    _icon_button(
+                        "content_copy",
+                        "Duplicate this template",
+                        lambda: duplicate_config(config_parser, config_select, config_container),
+                    )
+                    _icon_button(
+                        "drive_file_rename_outline",
+                        "Rename this template",
+                        lambda: rename_config(config_parser, config_select, config_container),
+                    )
+                    _icon_button(
+                        "delete_outline",
+                        "Delete this template",
+                        lambda: delete_config(config_parser, config_select, config_container),
+                        danger=True,
+                    )
+                    ui.element("span").classes("ssx-sep")
+                    help_button(topic_id="template_configuration", tooltip="Source Settings help", size="sm").props(
+                        remove="color"
+                    )
+                    discard_button = outline_button(
+                        "Discard", lambda: reset_config(config_parser, config_select, config_container)
+                    ).props("dense").classes("px-3")
+                    discard_button.disable()
+                    discard_button.tooltip("Go back to the last saved version of this template")
+                    primary_button(
+                        "Save", lambda: save_config(config_parser, config_select, config_container), icon="check"
+                    ).props("dense").classes("px-4")
+
+                # ---- Body: outline | form | preview ----
+                with ui.element("div").classes("ssx-body"):
+                    with ui.element("div").classes("ssx-nav"):
+                        with ui.element("label").classes("ssx-search"):
+                            ui.icon("search")
+                            ui.element("input").props(
+                                'type="search" placeholder="Search settings" aria-label="Search settings" '
+                                'autocomplete="off" spellcheck="false"'
+                            ).on("input", lambda e: _on_search(e.args), js_handler="(e) => emit(e.target.value)")
+                        nav_list = ui.html("", sanitize=False).classes("ssx-navlist").props(f"id={nav_id}")
+                        nav_list.on(
+                            "click",
+                            lambda e: _goto_section(e.args),
+                            js_handler="(e) => { const n = e.target.closest('[data-nav]'); if (n) emit(n.dataset.nav); }",
+                        )
+                        with ui.element("div").classes("ssx-navfoot"):
+                            _Text("span", "Changed only")
+                            ui.switch(value=False, on_change=lambda e: _on_changed_only(e.value)).props(
+                                "dense"
+                            ).tooltip("Show only settings with unsaved changes")
+
+                    with ui.element("div").props(f"id={preview_split_row_id}").classes("ssx-split"):
+                        editor_panel = (
+                            ui.element("div")
+                            .props(f"id={preview_editor_panel_id}")
+                            .classes("ssx-editor")
+                            .style(f"flex: {split_pct:g} {split_pct:g} 0%")
+                        )
+                        with editor_panel:
+                            jump_select = ui.element("select").classes("ssx-jump").props('aria-label="Jump to section"')
+                            jump_select.on(
+                                "change",
+                                lambda e: _goto_section(e.args),
+                                js_handler="(e) => { const v = e.target.value; e.target.selectedIndex = 0; if (v) emit(v); }",
+                            )
+                            config_container = ui.element("div").classes("ssx-form").props(f"id={form_id}")
+                            config_container.on("click", _on_form_click, js_handler=_FORM_CLICK_JS)
+                        split_divider = ui.element("div").classes("mycelian-cs-split-divider ssx-divider")
+                        split_divider.props('title="Drag to resize the settings and the preview"')
+                        preview_panel = (
+                            ui.element("div")
+                            .props(f"id={preview_panel_id}")
+                            .classes("ssx-prev")
+                            .style(f"flex: {100 - split_pct:g} {100 - split_pct:g} 0%; min-width: 160px")
                         )
 
-                def open_preview_settings_dialog() -> None:
-                    st = load_template_preview_settings()
-                    preview_sound_switch.value = bool(st.get("enable_preview_sounds", True))
-                    preview_toolbar_switch.value = bool(st.get("show_mock_toolbar", True))
-                    preview_settings_dialog.open()
+                        with ui.dialog() as preview_settings_dialog, ui.card():
+                            ui.label("Preview settings").classes("text-lg font-medium mb-2")
+                            preview_sound_switch = ui.switch(
+                                "Enable preview sounds",
+                                value=bool(_pst_initial.get("enable_preview_sounds", True)),
+                            )
+                            preview_toolbar_switch = ui.switch(
+                                "Show sample events bar",
+                                value=bool(_pst_initial.get("show_mock_toolbar", True)),
+                            )
+                            ui.label("Preview-only — does not change saved template JSON.").classes(
+                                "text-xs opacity-60 mb-2"
+                            )
 
-                with ui.row().classes("w-full justify-end gap-2 mt-2"):
-                    ui.button("Cancel", on_click=preview_settings_dialog.close).props(
-                        "flat dense"
-                    )
-                    ui.button("Save", on_click=save_preview_settings_dialog).props(
-                        "dense"
-                    )
+                            def save_preview_settings_dialog() -> None:
+                                if save_template_preview_settings(
+                                    {
+                                        "enable_preview_sounds": bool(preview_sound_switch.value),
+                                        "show_mock_toolbar": bool(preview_toolbar_switch.value),
+                                    }
+                                ):
+                                    preview_settings_dialog.close()
+                                    inst_l = getattr(web_engine_module, "web_engine_instance", None)
+                                    if inst_l:
+                                        inst_l.emit_preview_settings_to_iframe(CUSTOM_SOURCES_PREVIEW_TOKEN)
+                                    mr = _custom_sources_ctx.get("mock_toolbar_row")
+                                    if mr is not None:
+                                        mr.visible = bool(preview_toolbar_switch.value)
+                                    pmr = _custom_sources_ctx.get("popout_mock_toolbar_row")
+                                    if pmr is not None:
+                                        pmr.visible = bool(preview_toolbar_switch.value)
+                                    notify("", type="success", source="source_settings", title="Preview settings saved")
+                                else:
+                                    notify(
+                                        "",
+                                        type="error",
+                                        source="source_settings",
+                                        title="Couldn't save preview settings",
+                                        hint="Check that Mycelian's data folder is writable, then try again.",
+                                    )
 
-            with preview_panel:
-                with ui.row().classes("w-full items-center gap-2 shrink-0 flex-wrap"):
-                    ui.label("Preview").classes("text-sm font-medium shrink-0")
-                    ui.label("Size").classes("text-xs opacity-70 shrink-0")
-                    preview_width_input = (
-                        ui.number(
-                            value=1920,
-                            min=PREVIEW_WIDTH_MIN,
-                            max=PREVIEW_WIDTH_MAX,
-                            step=1,
-                            format="%.0f",
-                        )
-                        .classes("w-20 shrink-0")
-                        .props("dense outlined")
-                    )
-                    preview_width_input.tooltip(
-                        "Preview width (px). Matches OBS browser source when connected."
-                    )
-                    ui.label("×").classes("text-xs opacity-70 shrink-0")
-                    preview_height_input = (
-                        ui.number(
-                            value=1080,
-                            min=PREVIEW_HEIGHT_MIN,
-                            max=PREVIEW_HEIGHT_MAX,
-                            step=1,
-                            format="%.0f",
-                        )
-                        .classes("w-20 shrink-0")
-                        .props("dense outlined")
-                    )
-                    preview_height_input.tooltip(
-                        "Preview height (px). Matches OBS browser source when connected."
-                    )
-                    preview_size_reset_btn = ui.button(text="Reset").props(
-                        "dense flat size=sm"
-                    )
-                    preview_size_reset_btn.tooltip(
-                        "Clear saved size and re-detect from OBS or template defaults"
-                    )
-                    ui.label("Zoom").classes("text-xs opacity-70 shrink-0")
-                    preview_zoom_slider = (
-                        ui.slider(min=25, max=200, value=100, step=1)
-                        .classes("flex-1 min-w-[100px]")
-                        .props("dense label-always")
-                    )
-                    preview_zoom_slider.tooltip("Preview zoom (% of fit-to-area)")
-                    preview_zoom_reset_btn = ui.button(
-                        text="Fit",
-                    ).props("dense flat size=sm")
-                    preview_zoom_reset_btn.tooltip("Reset zoom to 100% (fit)")
-                    preview_settings_btn = ui.button(icon="settings").props(
-                        "dense flat round"
-                    )
-                    preview_settings_btn.tooltip("Preview settings")
-                    preview_settings_btn.on_click(open_preview_settings_dialog)
-                preview_size_hint = ui.label("").classes(
-                    "text-xs opacity-60 min-h-[1rem] shrink-0"
-                )
-                preview_dirty_label = ui.label("").classes(
-                    "text-xs opacity-70 min-h-[1.25rem]"
-                )
-                mock_toolbar_row = ui.row().classes(
-                    "w-full shrink-0 flex-nowrap gap-1 overflow-x-auto py-1 "
-                    "items-center max-h-[4.5rem]"
-                )
-                preview_placeholder = ui.label("Waiting for overlay server…").classes(
-                    "text-xs opacity-60"
-                )
-                preview_outer = (
-                    ui.element("div")
-                    .props(
-                        f"id={preview_outer_id} data-mycelian-cs-preview-outer=true"
-                    )
-                    .classes(
-                        "relative w-full flex-1 min-h-[200px] overflow-hidden rounded"
-                    )
-                )
-                with preview_outer:
-                    preview_inner = (
-                        ui.element("div")
-                        .props(f"id={preview_inner_id}")
-                        .classes("absolute left-0 top-0 origin-top-left")
-                    )
-                    with preview_inner:
-                        preview_iframe = ui.element("iframe").classes(
-                            "block border-0 bg-transparent pointer-events-none"
-                        )
+                            def open_preview_settings_dialog() -> None:
+                                st = load_template_preview_settings()
+                                preview_sound_switch.value = bool(st.get("enable_preview_sounds", True))
+                                preview_toolbar_switch.value = bool(st.get("show_mock_toolbar", True))
+                                preview_settings_dialog.open()
 
-            def on_inline_preview_toggle(e) -> None:
-                _apply_inline_preview_visibility(bool(e.value))
+                            with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                                ui.button("Cancel", on_click=preview_settings_dialog.close).props("flat dense")
+                                ui.button("Save", on_click=save_preview_settings_dialog).props("dense")
 
-            inline_preview_switch.on_value_change(on_inline_preview_toggle)
+                        with preview_panel:
+                            with ui.element("div").classes("ssx-prev-bar"):
+                                _Text("span", "Preview").classes("ssx-prev-title")
+                                preview_live_chip = ui.html("", sanitize=False)
+                                ui.element("span").classes("ssx-spacer")
+                                _icon_button("refresh", "Reload preview", lambda: _flush_template_preview())
+                                _icon_button("open_in_new", "Pop out the preview", open_popout_preview)
+                                _icon_button("settings", "Preview settings", open_preview_settings_dialog)
+                                _icon_button("visibility_off", "Hide the preview", lambda: show_inline_preview(False))
+                            with ui.element("div").classes("ssx-prev-bar is-sub"):
+                                with ui.element("div").classes("ssx-size"):
+                                    ui.icon("aspect_ratio")
+                                    preview_width_input = ui.number(
+                                        value=1920, min=PREVIEW_WIDTH_MIN, max=PREVIEW_WIDTH_MAX, step=1, format="%.0f"
+                                    ).props("dense outlined")
+                                    preview_width_input.tooltip(
+                                        "Preview width (px). Matches the OBS browser source when OBS is connected."
+                                    )
+                                    _Text("span", "×")
+                                    preview_height_input = ui.number(
+                                        value=1080, min=PREVIEW_HEIGHT_MIN, max=PREVIEW_HEIGHT_MAX, step=1, format="%.0f"
+                                    ).props("dense outlined")
+                                    preview_height_input.tooltip(
+                                        "Preview height (px). Matches the OBS browser source when OBS is connected."
+                                    )
+                                preview_size_hint = ui.html("", sanitize=False)
+                                preview_size_hint.set_visibility(False)
+                                ui.element("span").classes("ssx-spacer")
+                                with ui.element("div").classes("ssx-zoom"):
+                                    zoom_out_btn = _Text("button", "−").props('type="button" aria-label="Zoom out"')
+                                    _Text("span", "100%").props(f"id={zoom_label_id}")
+                                    zoom_in_btn = _Text("button", "+").props('type="button" aria-label="Zoom in"')
+                                    zoom_fit_btn = _Text("button", "Fit").props('type="button"')
+                                zoom_out_btn.tooltip("Zoom out")
+                                zoom_in_btn.tooltip("Zoom in")
+                                zoom_fit_btn.tooltip("Fit the whole overlay in the preview")
+                                _icon_button(
+                                    "restart_alt",
+                                    "Clear the saved size and detect it again (OBS or template defaults)",
+                                    lambda: reset_preview_size(),
+                                    small=True,
+                                )
+                            preview_outer = (
+                                ui.element("div")
+                                .props(
+                                    f"id={preview_outer_id} data-mycelian-cs-preview-outer=true "
+                                    f"data-zoom-label={zoom_label_id}"
+                                )
+                                .classes("ssx-stage")
+                            )
+                            with preview_outer:
+                                preview_inner = (
+                                    ui.element("div")
+                                    .props(f"id={preview_inner_id}")
+                                    .classes("absolute left-0 top-0 origin-top-left")
+                                )
+                                with preview_inner:
+                                    # Hidden until it has a page (an empty iframe paints white).
+                                    preview_iframe = ui.element("iframe").classes(
+                                        "block border-0 bg-transparent pointer-events-none"
+                                    ).style("visibility: hidden")
+                                ui.element("div").classes("ssx-frame").props("data-cs-frame")
+                                preview_placeholder = ui.label("Waiting for overlay server…").classes("ssx-stage-msg")
+                            mock_toolbar_row = ui.element("div").classes("ssx-mocks")
 
-            def apply_preview_zoom(_: Any = None) -> None:
-                try:
-                    z = int(preview_zoom_slider.value)
-                except (TypeError, ValueError):
-                    z = 100
-                zc = max(25, min(200, z))
-                if zc != z:
-                    preview_zoom_slider.value = zc
-                _run_preview_zoom_js(False)
+        def step_zoom(direction: int) -> None:
+            _custom_sources_ctx["preview_zoom_pct"] = next_preview_zoom(_current_preview_zoom_pct(), direction)
+            _run_preview_zoom_js(False)
 
-            def reset_preview_zoom() -> None:
-                preview_zoom_slider.value = 100
-                _run_preview_zoom_js(True)
+        def reset_preview_zoom() -> None:
+            _custom_sources_ctx["preview_zoom_pct"] = 100
+            _run_preview_zoom_js(True)
 
-            def on_preview_size_change(_: Any = None) -> None:
-                if (_custom_sources_ctx.get("_suppress_size_input") or [False])[0]:
-                    return
-                sel = _custom_sources_ctx.get("config_select")
-                if not sel or not sel.value:
-                    return
-                try:
-                    w = int(float(preview_width_input.value))
-                    h = int(float(preview_height_input.value))
-                except (TypeError, ValueError):
-                    return
-                w = max(PREVIEW_WIDTH_MIN, min(w, PREVIEW_WIDTH_MAX))
-                h = max(PREVIEW_HEIGHT_MIN, min(h, PREVIEW_HEIGHT_MAX))
-                set_template_preview_resolution(sel.value, w, h)
-                _apply_preview_size(sel.value, w, h, source="stored", resize=True)
+        def on_preview_size_change(_: Any = None) -> None:
+            if (_custom_sources_ctx.get("_suppress_size_input") or [False])[0]:
+                return
+            sel = _custom_sources_ctx.get("config_select")
+            if not sel or not sel.value:
+                return
+            try:
+                w = int(float(preview_width_input.value))
+                h = int(float(preview_height_input.value))
+            except (TypeError, ValueError):
+                return
+            w = max(PREVIEW_WIDTH_MIN, min(w, PREVIEW_WIDTH_MAX))
+            h = max(PREVIEW_HEIGHT_MIN, min(h, PREVIEW_HEIGHT_MAX))
+            set_template_preview_resolution(sel.value, w, h)
+            _apply_preview_size(sel.value, w, h, source="stored", resize=True)
 
-            def reset_preview_size() -> None:
-                sel = _custom_sources_ctx.get("config_select")
-                if not sel or not sel.value:
-                    return
-                clear_template_preview_resolution(sel.value)
-                fd = form_data_store.get(sel.value, {})
-                w, h = _resolve_preview_size_for_config(
-                    sel.value, fd, try_obs=True
-                )
-                _resize_preview_iframes(w, h)
+        def reset_preview_size() -> None:
+            sel = _custom_sources_ctx.get("config_select")
+            if not sel or not sel.value:
+                return
+            clear_template_preview_resolution(sel.value)
+            fd = form_data_store.get(sel.value, {})
+            w, h = _resolve_preview_size_for_config(sel.value, fd, try_obs=True)
+            _resize_preview_iframes(w, h)
 
-            preview_zoom_slider.on_value_change(apply_preview_zoom)
-            preview_zoom_reset_btn.on_click(reset_preview_zoom)
-            preview_width_input.on_value_change(on_preview_size_change)
-            preview_height_input.on_value_change(on_preview_size_change)
-            preview_size_reset_btn.on_click(reset_preview_size)
+        zoom_out_btn.on("click", lambda _e: step_zoom(-1))
+        zoom_in_btn.on("click", lambda _e: step_zoom(1))
+        zoom_fit_btn.on("click", lambda _e: reset_preview_zoom())
+        preview_width_input.on_value_change(on_preview_size_change)
+        preview_height_input.on_value_change(on_preview_size_change)
 
         popout_preview_iframe = None
         popout_preview_placeholder = None
-        with ui.element("div").props(f"id={popout_dialog_id}").classes(
-            "mycelian-cs-popout-dialog"
-        ):
-            with ui.element("div").props("data-popout-drag-handle").classes(
-                "mycelian-cs-popout-dialog__head"
-            ):
+        with ui.element("div").props(f"id={popout_dialog_id}").classes("mycelian-cs-popout-dialog"):
+            with ui.element("div").props("data-popout-drag-handle").classes("mycelian-cs-popout-dialog__head"):
                 ui.label("Live preview").classes("text-sm font-medium")
                 with ui.row().classes("items-center gap-1"):
                     ui.button(
@@ -2052,24 +2801,18 @@ def create_custom_sources_tab():
                     ).props("flat dense round").tooltip("Reload preview")
                     ui.button(
                         icon="close",
-                        on_click=lambda: _close_popout_preview_dialog(
-                            popout_dialog_id
-                        ),
+                        on_click=lambda: _close_popout_preview_dialog(popout_dialog_id),
                     ).props("flat dense round").tooltip("Close")
             popout_mock_toolbar_row = ui.row().classes(
-                "mycelian-cs-popout-dialog__mocktools w-full shrink-0 "
-                "flex-nowrap gap-1 items-center"
+                "mycelian-cs-popout-dialog__mocktools w-full shrink-0 flex-nowrap gap-1 items-center"
             )
             with ui.element("div").classes("mycelian-cs-popout-dialog__body"):
-                popout_preview_placeholder = ui.label(
-                    "Waiting for overlay server…"
-                ).classes("text-xs opacity-60 absolute top-2 left-2 z-10")
+                popout_preview_placeholder = ui.label("Waiting for overlay server…").classes(
+                    "text-xs opacity-60 absolute top-2 left-2 z-10"
+                )
                 popout_preview_outer = (
                     ui.element("div")
-                    .props(
-                        f"id={popout_outer_id} "
-                        "data-mycelian-cs-popout-preview=true"
-                    )
+                    .props(f"id={popout_outer_id} data-mycelian-cs-popout-preview=true")
                     .classes("mycelian-cs-popout-dialog__preview-outer")
                 )
                 with popout_preview_outer:
@@ -2082,9 +2825,7 @@ def create_custom_sources_tab():
                         popout_preview_iframe = ui.element("iframe").classes(
                             "block border-0 bg-transparent pointer-events-none"
                         )
-            ui.element("div").props("data-popout-resize-handle").classes(
-                "mycelian-cs-popout-dialog__resize"
-            )
+            ui.element("div").props("data-popout-resize-handle").classes("mycelian-cs-popout-dialog__resize")
 
         _custom_sources_ctx.clear()
         _custom_sources_ctx.update(
@@ -2092,12 +2833,20 @@ def create_custom_sources_tab():
                 "config_select": config_select,
                 "config_container": config_container,
                 "config_parser": config_parser,
+                "meta_label": meta_label,
+                "dirty_pill": dirty_pill,
+                "discard_button": discard_button,
+                "show_preview_button": show_preview_button,
+                "nav_list": nav_list,
+                "nav_id": nav_id,
+                "form_id": form_id,
+                "jump_select": jump_select,
                 "preview_iframe": preview_iframe,
                 "preview_placeholder": preview_placeholder,
-                "preview_dirty_label": preview_dirty_label,
+                "preview_live_chip": preview_live_chip,
                 "preview_outer_id": preview_outer_id,
                 "preview_inner_id": preview_inner_id,
-                "preview_zoom_slider": preview_zoom_slider,
+                "preview_zoom_pct": 100,
                 "preview_width_input": preview_width_input,
                 "preview_height_input": preview_height_input,
                 "preview_size_hint": preview_size_hint,
@@ -2107,6 +2856,7 @@ def create_custom_sources_tab():
                 "preview_panel_id": preview_panel_id,
                 "preview_panel": preview_panel,
                 "split_divider": split_divider,
+                "split_pct": split_pct,
                 "mock_toolbar_row": mock_toolbar_row,
                 "popout_preview_iframe": popout_preview_iframe,
                 "popout_preview_placeholder": popout_preview_placeholder,
@@ -2116,44 +2866,37 @@ def create_custom_sources_tab():
                 "popout_mock_toolbar_row": popout_mock_toolbar_row,
             }
         )
-
-        _bind_split_divider_js()
-        _apply_inline_preview_visibility(
-            bool(_pst_initial.get("show_inline_preview", True))
+        # A rebuilt tab starts with an empty search box and "Changed only" off.
+        _form_state.update(
+            {"config": None, "sections": [], "rows": {}, "changed": set(), "nav_html": None, "search": "", "changed_only": False}
         )
+
+        ui.on("mycelian-cs-split", _on_split_moved)
+        _bind_split_divider_js()
+        _apply_inline_preview_visibility(bool(_pst_initial.get("show_inline_preview", True)), persist=False)
 
         # Load the config files initially
         load_config_files(config_parser, config_select, config_container)
 
 
 def load_config_files(config_parser, config_select, config_container):
-    """Load the config files into the select dropdown"""
+    """Load the template list; keep the open template selected when it still exists."""
     global _active_config_name, _suppress_config_change
     _invalidate_preview_route_cache()
-    configs = config_parser.get_non_hidden_config_files()
+    try:
+        config_parser.invalidate_cache()
+    except Exception:
+        logger.debug("Template list cache refresh failed", exc_info=True)
+    configs = sorted(config_parser.get_non_hidden_config_files())
 
     if configs:
-        # Sort configs alphabetically before updating the select options
-        configs = sorted(configs)
-
-        # Update the select options
         config_select.options = configs
-        target = configs[0]
         previous = _active_config_name
-        if (
-            previous
-            and previous != target
-            and previous in configs
-            and _config_is_dirty(previous)
-        ):
-            _prompt_unsaved_config(
-                previous,
-                target,
-                config_parser,
-                config_select,
-                config_container,
-            )
-            return
+        target = previous if previous in configs else configs[0]
+        if target == previous and not _config_is_dirty(target):
+            # Nothing unsaved: read the file again so outside edits show up.
+            _discard_config_edits(target)
+            _disk_baselines.pop(target, None)
 
         _suppress_config_change = True
         try:
@@ -2162,7 +2905,6 @@ def load_config_files(config_parser, config_select, config_container):
             _suppress_config_change = False
         _apply_config_selection(target, config_parser, config_container)
     else:
-        # Clear the select options
         config_select.options = []
         _suppress_config_change = True
         try:
@@ -2170,12 +2912,24 @@ def load_config_files(config_parser, config_select, config_container):
         finally:
             _suppress_config_change = False
         _active_config_name = None
-
-        # Clear the container
-        config_container.clear()
-        with config_container:
-            ui.label("No configuration files found.").classes("text-sm opacity-75")
+        _show_no_configs(config_container)
         _flush_template_preview()
+
+
+def _show_no_configs(config_container) -> None:
+    _form_state.update({"config": None, "sections": [], "rows": {}, "changed": set()})
+    config_container.clear()
+    with config_container:
+        with ui.element("div").classes("ssx-empty"):
+            ui.icon("folder_off")
+            _Text("div", "No templates yet").classes("ssx-empty-title")
+            _Text("div", "Create one in Spore Studio, or add a configuration to templates/template_configs.").classes(
+                "ssx-empty-sub"
+            )
+    _refresh_meta()
+    _render_nav()
+    _render_jump()
+    _refresh_dirty_ui()
 
 
 def _apply_config_selection(config_name, config_parser, config_container):
@@ -2185,9 +2939,7 @@ def _apply_config_selection(config_name, config_parser, config_container):
         return
     _active_config_name = config_name
     _invalidate_preview_route_cache(config_name)
-    element_ui_map.clear()
-    roulette_expansions.clear()
-    render_config_ui(config_parser, config_name, config_container, "")
+    render_config_ui(config_parser, config_name, config_container)
     _flush_template_preview()
 
 
@@ -2291,33 +3043,11 @@ def on_config_selected(e, config_parser, config_container, config_select=None):
     _apply_config_selection(config_name, config_parser, config_container)
 
 
-_search_render_generation = 0
-
-
-def on_search_changed(e, config_parser, config_select, config_container):
-    """Handle search input changes"""
-    global current_search_term, _search_render_generation
-    current_search_term = e.value.lower() if e.value else ""
-    config_name = config_select.value
-    if not config_name:
-        return
-    _search_render_generation += 1
-    generation = _search_render_generation
-    term = current_search_term
-
-    def _render_search() -> None:
-        if generation != _search_render_generation:
-            return
-        render_config_ui(config_parser, config_name, config_container, term)
-
-    layout_schedule(0.2, _render_search, once=True)
-
-
 def _build_form_data(config_name: str, config: dict) -> dict:
-    """Build complete form data, preserving in-session edits across search re-renders."""
+    """Build complete form data, preserving in-session edits across re-renders."""
     form_data = dict(form_data_store.get(config_name, {}))
     for element in config.get("elements", []):
-        if element.get("type") == "separator":
+        if not isinstance(element, dict) or element.get("type") == "separator":
             continue
         element_id = element.get("id", "")
         if element_id and element_id not in form_data:
@@ -2325,593 +3055,352 @@ def _build_form_data(config_name: str, config: dict) -> dict:
     return form_data
 
 
-def render_config_ui(config_parser, config_name, container, search_term=""):
-    """Render the config as interactive UI elements"""
-    # Clear the container
+def render_config_ui(config_parser, config_name, container, search_term=None):
+    """Render the template's settings as section cards (``search_term`` is ignored; the
+    outline's search box filters the rendered rows)."""
     container.clear()
-
-    # Clear the element_ui_map first
-    element_ui_map.clear()
-
-    # Load the config
     config = config_parser.load_config(config_name)
 
-    # Create a form for the config
+    fresh_from_disk = config_name not in form_data_store
+    form_data = _build_form_data(config_name, config)
+    if fresh_from_disk and config_name not in _disk_baselines:
+        _remember_disk_baseline(config_name, form_data)
+    form_data_store[config_name] = form_data
+
+    elements = [el for el in config.get("elements", []) if isinstance(el, dict)]
+    sections = build_sections(config_name, elements, form_data)
+    form_id = _custom_sources_ctx.get("form_id") or "ssx-form"
+    handles: List[_SectionHandle] = []
+    rows: Dict[str, _RowHandle] = {}
+    _form_state.update(
+        {"config": config_name, "sections": handles, "rows": rows, "changed": set(), "nav_html": None}
+    )
+
     with container:
-        with ui.column().classes("w-full h-full flex flex-col gap-2 p-2"):
-            with ui.scroll_area().classes("w-full grow"):
-                # Preserve full form state even when search hides some controls
-                fresh_from_disk = config_name not in form_data_store
-                form_data = _build_form_data(config_name, config)
-                if fresh_from_disk and config_name not in _disk_baselines:
-                    _remember_disk_baseline(config_name, form_data)
-
-                # Filter elements based on search term
-                elements = config.get("elements", [])
-                if search_term:
-                    filtered_elements = []
-                    for element in elements:
-                        element_label = element.get("label", "").lower()
-                        element_description = element.get("description", "").lower()
-                        if (
-                            search_term in element_label
-                            or search_term in element_description
-                        ):
-                            filtered_elements.append(element)
-                    elements = filtered_elements
-
-                # Show search results info
-                if search_term:
-                    total_elements = len(config.get("elements", []))
-                    filtered_count = len(elements)
-                    ui.label(
-                        f"Showing {filtered_count} of {total_elements} properties"
-                    ).classes("text-sm opacity-75 mb-2")
-
-                # Group similar elements together
-                grouped_elements = group_config_elements(elements)
-
-                # Special handling for roulette template - make each option collapsible
-                if config_name == "roulette":
-                    # Create collapsible cards for each option
-                    option_groups = {}
-                    general_elements = []
-
-                    # Group elements by option number
-                    for element in config.get("elements", []):
-                        element_id = element.get("id", "")
-                        if element_id.startswith("Option"):
-                            # Extract option number
-                            option_part = element_id[6:]  # Remove "Option" prefix
-                            option_num_str = ""
-                            for char in option_part:
-                                if char.isdigit():
-                                    option_num_str += char
-                                else:
-                                    break
-                            if option_num_str:
-                                option_num = int(option_num_str)
-                                if option_num not in option_groups:
-                                    option_groups[option_num] = []
-                                option_groups[option_num].append(element)
-                        else:
-                            general_elements.append(element)
-
-                    # Render general elements first, grouped by separators
-                    if general_elements:
-                        general_groups = group_config_elements(general_elements)
-                        for group_name, group_elements in general_groups.items():
-                            # Skip empty groups
-                            if not group_elements:
-                                continue
-
-                            # Make roulette general categories collapsible too
-                            if group_name != "Other":
-                                with ui.expansion(group_name).classes(
-                                    "content-card mb-1 w-full"
-                                ):
-                                    # Dynamically set columns based on number of elements, max 3
-                                    num_elements = len(group_elements)
-                                    grid_cols = max(1, min(num_elements, 2))
-
-                                    # Create UI elements for each general element in the group
-                                    with ui.grid(columns=grid_cols).classes(
-                                        "w-full gap-x-2 gap-y-px"
-                                    ):
-                                        for element in group_elements:
-                                            if (
-                                                search_term
-                                                and search_term.lower()
-                                                not in element.get("label", "").lower()
-                                                and search_term.lower()
-                                                not in element.get(
-                                                    "description", ""
-                                                ).lower()
-                                            ):
-                                                continue
-                                            render_form_element(
-                                                element,
-                                                form_data,
-                                                config_name,
-                                                container,
-                                                current_search_term,
-                                            )
-                            else:
-                                with ui.expansion("Other Settings").classes(
-                                    "content-card mb-1 w-full"
-                                ):
-                                    # Dynamically set columns based on number of elements, max 3
-                                    num_elements = len(group_elements)
-                                    grid_cols = max(1, min(num_elements, 2))
-
-                                    # Create UI elements for each general element in the group
-                                    with ui.grid(columns=grid_cols).classes(
-                                        "w-full gap-x-2 gap-y-px"
-                                    ):
-                                        for element in group_elements:
-                                            if (
-                                                search_term
-                                                and search_term.lower()
-                                                not in element.get("label", "").lower()
-                                                and search_term.lower()
-                                                not in element.get(
-                                                    "description", ""
-                                                ).lower()
-                                            ):
-                                                continue
-                                            render_form_element(
-                                                element,
-                                                form_data,
-                                                config_name,
-                                                container,
-                                                current_search_term,
-                                            )
-
-                    # Render each option as a collapsible card
-                    for option_num in sorted(option_groups.keys()):
-                        option_elements = option_groups[option_num]
-
-                        # Check if this option should be shown based on search
-                        if search_term:
-                            show_option = False
-                            for element in option_elements:
-                                if (
-                                    search_term.lower()
-                                    in element.get("label", "").lower()
-                                    or search_term.lower()
-                                    in element.get("description", "").lower()
-                                ):
-                                    show_option = True
-                                    break
-                            if not show_option:
-                                continue
-
-                        # Extract option name from the original config (most reliable)
-                        option_name_id = f"Option{option_num}Name"
-                        option_name = None
-                        for element in config.get("elements", []):
-                            if element.get("id") == option_name_id:
-                                option_name = element.get(
-                                    "value", f"Option {option_num}"
-                                )
-                                break
-
-                        # Create the expansion title with option name always in parentheses
-                        expansion_title = f"Option {option_num}"
-                        if option_name:
-                            expansion_title += f" ({option_name})"
-
-                        with ui.expansion(expansion_title).classes(
-                            "content-card mb-1 w-full"
-                        ) as expansion:
-                            # Store reference to this expansion for dynamic title updates
-                            roulette_expansions[option_num] = expansion
-                            # Add data attribute for JavaScript identification
-                            expansion.props(f'data-option="{option_num}"')
-                            # Create UI elements for this option's elements
-                            num_elements = len(option_elements)
-                            grid_cols = max(1, min(num_elements, 2))
-
-                            with ui.grid(columns=grid_cols).classes(
-                                "w-full gap-x-2 gap-y-px"
-                            ):
-                                for element in option_elements:
-                                    render_form_element(
-                                        element,
-                                        form_data,
-                                        config_name,
-                                        container,
-                                        current_search_term,
-                                    )
-                else:
-                    # Default grouping behavior for other templates
-                    # Create UI elements for each group
-                    for group_name, group_elements in grouped_elements.items():
-                        # Skip empty groups
-                        if not group_elements:
-                            continue
-
-                        # Create collapsible categories for all groups
-                        if group_name != "Other":
-                            with ui.expansion(group_name).classes(
-                                "content-card mb-1 w-full"
-                            ):
-                                # Dynamically set columns based on number of elements, max 3
-                                num_elements = len(group_elements)
-                                grid_cols = max(1, min(num_elements, 2))
-
-                                # Create UI elements for each config element in the group
-                                with ui.grid(columns=grid_cols).classes(
-                                    "w-full gap-x-2 gap-y-px"
-                                ):
-                                    for element in group_elements:
-                                        render_form_element(
-                                            element,
-                                            form_data,
-                                            config_name,
-                                            container,
-                                            current_search_term,
-                                        )
-                        else:
-                            with ui.expansion("Other Settings").classes(
-                                "content-card mb-1 w-full"
-                            ):
-                                # Dynamically set columns based on number of elements, max 3
-                                num_elements = len(group_elements)
-                                grid_cols = max(1, min(num_elements, 2))
-
-                                # Create UI elements for each config element in the group
-                                with ui.grid(columns=grid_cols).classes(
-                                    "w-full gap-x-2 gap-y-px"
-                                ):
-                                    for element in group_elements:
-                                        render_form_element(
-                                            element,
-                                            form_data,
-                                            config_name,
-                                            container,
-                                            current_search_term,
-                                        )
-
-                # Show "no results" message if search yielded no results
-                if search_term and not elements:
-                    with ui.element("div").classes("text-center p-8"):
-                        ui.icon("search_off").classes("text-4xl opacity-50 mb-2")
-                        ui.label("No properties found").classes("text-lg opacity-75")
-                        ui.label(f"No properties match '{search_term}'").classes(
-                            "text-sm opacity-50"
-                        )
-
-                # Store the form data in the global store
-                form_data_store[config_name] = form_data
-
-                # Set a small delay to ensure everything is rendered before initializing
-                layout_schedule(0.1, lambda: initialize_values(config_name), once=True)
-
-
-def initialize_values(config_name):
-    """Initialize the original values for the current config"""
-    # Check if we have form data for this config
-    if config_name in form_data_store:
-        form_data = form_data_store[config_name]
-
-        # Update original values with current form data
-        for element_id, value in form_data.items():
-            if element_id in element_ui_map:
-                original_values[element_id] = value
-
-                # Ensure element has an ID
-                element = element_ui_map[element_id]
-                if not element.id:
-                    element.id = f"source-{element_id}-{id(element)}"
-
-                logger.debug(
-                    f"Set original value for {element_id}: {value}, element ID: {element.id}"
+        for index, section in enumerate(sections):
+            open_ = index < _SECTIONS_OPEN_BY_DEFAULT
+            dom_id = f"{form_id}-{section.key}"
+            root = (
+                ui.element("div")
+                .classes("ssx-sec" + ("" if open_ else " is-closed"))
+                .props(f'id={dom_id} data-sec="{_esc(section.key)}"')
+            )
+            with root:
+                head_html = _section_head_html(section.title, len(section.elements))
+                head = ui.html(head_html, sanitize=False).classes("ssx-sec-head").props(
+                    f'data-sec-head="{_esc(section.key)}"'
                 )
+                body = ui.element("div").classes("ssx-sec-body")
+                section_rows: List[_RowHandle] = []
+                with body:
+                    for element in section.elements:
+                        handle = render_form_element(element, form_data, config_name)
+                        if handle is not None:
+                            section_rows.append(handle)
+                            rows[handle.element_id] = handle
+            sec = _SectionHandle(
+                section=section, root=root, head=head, rows=section_rows, dom_id=dom_id, is_open=open_, head_html=head_html
+            )
+            handles.append(sec)
+        if not sections:
+            with ui.element("div").classes("ssx-empty"):
+                ui.icon("tune")
+                _Text("div", "This template has no settings").classes("ssx-empty-title")
+                _Text("div", "Add some in Spore Studio, or in the template's configuration file.").classes("ssx-empty-sub")
+        empty = ui.element("div").classes("ssx-empty")
+        with empty:
+            ui.icon("search_off")
+            empty_title = _Text("div", "No settings match").classes("ssx-empty-title")
+            empty_sub = _Text("div", "").classes("ssx-empty-sub")
+        empty.set_visibility(False)
+        _form_state["empty"] = empty
+        _form_state["empty_labels"] = (empty_title, empty_sub)
 
-    # Clear any changed styling that might be present
-    clear_changed_styling()
+    _refresh_meta()
+    _render_jump()
+    _refresh_dirty_ui()
+    if _filtering():
+        _apply_filters()
+    try:
+        ui.run_javascript(f"var f=document.getElementById({json.dumps(form_id)}); if (f) {{ f.scrollTop = 0; }}")
+    except Exception as e:
+        logger.debug("Form scroll reset skipped: %s", e)
+    _sync_nav_js()
+    layout_schedule(0.1, lambda: _after_render(config_name), once=True)
 
+
+def _after_render(config_name: str) -> None:
     _refresh_preview_dirty_label(config_name)
     _schedule_template_preview_refresh()
 
 
-def group_config_elements(elements):
-    """Group elements by their type or common prefixes"""
-    groups: Dict[str, list] = {}
-    current_group = "Other"
-
-    for element in elements:
-        element_type = element.get("type", "")
-        element_label = element.get("label", "")
-
-        # Check if this is a separator - if so, it defines the new group name
-        if element_type == "separator":
-            current_group = element_label
-            if current_group not in groups:
-                groups[current_group] = []
-            continue
-
-        # Add non-separator elements to the current group
-        if current_group not in groups:
-            groups[current_group] = []
-
-        groups[current_group].append(element)
-
-    return groups
-
-
 def handle_number_change(e, element_id, form_data):
     """Handle number input changes"""
-    # Update the form data
     update_form_data(form_data, element_id, e.value)
 
 
-def _asset_browse_spec(element: dict, value) -> Optional[Tuple[str, Tuple[str, ...]]]:
-    """(kind, extensions) when a template field holds an /assets/ file path, else None."""
-    from .file_picker import AUDIO_EXTS, IMAGE_EXTS, VIDEO_EXTS
+def _asset_media_url(web_path: str) -> str:
+    """URL NiceGUI serves an /assets/ image at (thumbnails work without the overlay server)."""
+    try:
+        from .file_picker import _media_url, assets_root, from_web_path
 
-    element_type = element.get("type", "text")
-    current = str(value or "")
-    default = str(element.get("value") or "")
-    if element_type != "file" and not (current.startswith("/assets/") or default.startswith("/assets/")):
-        return None
-    sample = current or default
-    ext = os.path.splitext(sample.split("?", 1)[0])[1].lower()
-    accept = str(element.get("accept") or "").lower()
-    if ext in IMAGE_EXTS or accept.startswith("image"):
-        return "image", IMAGE_EXTS
-    if ext in AUDIO_EXTS or accept.startswith("audio"):
-        return "audio", AUDIO_EXTS
-    if ext in VIDEO_EXTS or accept.startswith("video"):
-        return "video", VIDEO_EXTS
-    return "media", IMAGE_EXTS + AUDIO_EXTS + VIDEO_EXTS
+        root = assets_root()
+        path = from_web_path(web_path, root)
+        if path is None or not path.is_file():
+            return ""
+        return _media_url(path, root)
+    except Exception:
+        logger.debug("Asset thumbnail URL failed for %s", web_path, exc_info=True)
+        return ""
 
 
-def _attach_asset_browse(input_element, label: str, kind: str, extensions: Tuple[str, ...]) -> None:
-    """Folder button after the field that opens the shared picker and fills in the /assets/ path."""
-    from .file_picker import open_file_picker
+def _asset_thumb_html(spec: AssetSpec, value: Any) -> str:
+    lists = _asset_ext_lists()
+    web = asset_value_to_web_path(spec, value)
+    ext = _ext_of(web or str(value or ""))
+    if spec.mode == "folder":
+        return _icon_html("folder")
+    if ext in lists["image"]:
+        url = _asset_media_url(web) if web else ""
+        if url:
+            return f'<img src="{_esc(url)}" alt="">'
+        return _icon_html("image")
+    if ext in lists["audio"] or (not ext and spec.kind == "audio"):
+        return _icon_html("music_note")
+    if ext in lists["video"] or (not ext and spec.kind == "video"):
+        return _icon_html("movie")
+    if ext in lists["font"] or spec.kind == "font":
+        return _icon_html("font_download")
+    if not ext and spec.kind == "image":
+        return _icon_html("image")
+    return _icon_html("insert_drive_file")
 
-    nouns = {"image": "an image", "audio": "a sound", "video": "a video", "media": "a file"}
+
+def _attach_asset_browse(input_element, label: str, spec: AssetSpec) -> None:
+    """Folder button after the field: opens the shared picker and writes the chosen path."""
+    from pathlib import Path
+
+    from .file_picker import assets_root, open_file_picker
+
+    nouns = {"image": "an image", "audio": "a sound", "video": "a video", "media": "a file", "font": "a font file"}
+    icons = {"image": "image", "audio": "music_note", "video": "movie", "font": "font_download"}
 
     def pick() -> None:
         def apply(result) -> None:
-            input_element.value = result.web_path
+            web = result.web_dir if spec.mode == "folder" else result.web_path
+            if web:
+                input_element.value = asset_value_from_pick(spec, web)
 
+        within = None
+        within_hint = ""
+        if spec.style == "filename" and spec.base_dir:
+            folder = Path(assets_root()) / spec.base_dir[len("/assets/"):]
+            within = folder
+            within_hint = f"This setting reads files from {spec.base_dir}"
+        noun = "a folder" if spec.mode == "folder" else nouns.get(spec.kind, "a file")
+        start = asset_value_to_web_path(spec, input_element.value) or None
         open_file_picker(
-            title=f"Choose {nouns.get(kind, 'a file')} for {label}" if label else f"Choose {nouns.get(kind, 'a file')}",
-            subtitle=", ".join(e[1:].upper() for e in extensions[:8]) + " from your assets folder",
-            extensions=extensions,
+            title=f"Choose {noun} for {label}" if label else f"Choose {noun}",
+            subtitle=", ".join(e[1:].upper() for e in spec.extensions[:8]) + " from your assets folder",
+            extensions=spec.extensions,
             on_pick=apply,
-            kind=kind,
-            start=str(input_element.value or "") or None,
+            mode=spec.mode,
+            kind=spec.kind if spec.kind != "font" else "file",
+            icon="folder" if spec.mode == "folder" else icons.get(spec.kind, ""),
+            start=start,
+            within=within,
+            within_hint=within_hint,
         )
 
-    with input_element.add_slot("after"):
-        ui.button(icon="folder_open", on_click=pick).props("flat round dense").tooltip("Browse the assets folder")
+    btn = _icon_button("folder_open", "Browse the assets folder", pick)
+    return btn
 
 
-def render_form_element(
-    element, form_data, config_name="", container=None, search_term=""
-):
-    """Render a single form element"""
+def _row_text_html(element_id: str, label: str, description: str) -> str:
+    title = (
+        f'<div class="ssx-row-title"><span class="ssx-row-label">{_esc(label)}</span>'
+        '<span class="ssx-changed">Changed</span>'
+        f'<button type="button" class="ssx-revert" data-revert="{_esc(element_id)}" '
+        'title="Back to the saved value" aria-label="Back to the saved value">'
+        f'{_icon_html("undo")}</button></div>'
+    )
+    if description:
+        title += f'<div class="ssx-row-sub" title="{_esc(description)}">{_esc(description)}</div>'
+    return title
+
+
+def render_form_element(element, form_data, config_name="", container=None, search_term=""):
+    """Render one setting as a row (label + description left, control right).
+
+    Returns the row handle (used for "Changed", revert and filtering); ``container`` and
+    ``search_term`` are accepted for older callers and ignored.
+    """
     element_type = element.get("type", "text")
     element_id = element.get("id", "")
     element_label = element.get("label", element_id)
     element_description = element.get("description", "")
 
-    # Prefer in-session value (e.g. after search re-filter) over config file value
+    # Prefer the in-session value (edits survive re-renders) over the config file value
     element_value = form_data.get(element_id, element.get("value", ""))
-
-    # Store config_name and container for potential re-rendering
-    global current_config_name, current_container, current_search_term
-    current_config_name = config_name
-    current_container = container
-    current_search_term = search_term
-
-    # Store original value for later comparison
-    original_values[element_id] = element_value
-
     form_data[element_id] = element_value
 
-    # The main container for the element, designed to fit in a grid cell
-    with ui.column().classes("w-full gap-px form-group py-px px-1 rounded"):
-        with ui.column().classes("w-full gap-1"):
-            # Label row
-            ui.label(element_label).classes("text-sm font-medium")
+    def commit(value, id=element_id) -> None:
+        update_form_data(form_data, id, value)
 
-            if element_description:
-                ui.label(element_description).classes(
-                    "text-xs opacity-50 mb-1 description-text"
-                )
+    stack = element_type == "textarea"
+    row = ui.element("div").classes("ssx-row" + (" is-stack" if stack else ""))
+    with row:
+        ui.html(_row_text_html(element_id, element_label, element_description), sanitize=False).classes("ssx-row-text")
+        if stack:
+            control = form_textarea(
+                tooltip="",
+                value=element_value,
+                classes="ssx-area",
+                rows=4,
+                on_change=lambda e: commit(e.value),
+            )
+            setter = _value_setter(control)
+        else:
+            with ui.element("div").classes("ssx-ctrl"):
+                setter = _render_control(element, element_type, element_id, element_label, element_value, form_data, config_name, commit)
+    return _RowHandle(element_id=element_id, element=element, row=row, set_value=setter)
 
-            tip = element_description or element_label or "Template setting"
-            if element_type in ("text", "file"):
-                input_element = form_input(
-                    tooltip=tip,
-                    value=element_value,
-                    on_change=lambda e, id=element_id: update_form_data(
-                        form_data, id, e.value
-                    ),
-                )
-                element_ui_map[element_id] = input_element
-                browse = _asset_browse_spec(element, element_value)
-                if browse is not None:
-                    _attach_asset_browse(input_element, element_label, *browse)
-            elif element_type == "textarea":
-                input_element = form_textarea(
-                    tooltip=tip,
-                    value=element_value,
-                    classes="w-full h-24",
-                    rows=4,
-                    on_change=lambda e, id=element_id: update_form_data(
-                        form_data, id, e.value
-                    ),
-                )
-                element_ui_map[element_id] = input_element
-            elif element_type == "select":
-                options: List[str] = list(element.get("options", []))
-                if element.get("options_from") == "fonts":
-                    options = _list_default_font_basenames()
-                    ev_str = (
-                        str(element_value).strip() if element_value is not None else ""
-                    )
-                    if ev_str and ev_str not in options:
-                        options = [ev_str] + options
-                    if not options and ev_str:
-                        options = [ev_str]
-                display_type = element.get("display", "dropdown")
 
-                if display_type == "color_grid":
-                    preset_options = list(element.get("options", []))
-                    input_element = render_color_field(
-                        element_id=element_id,
-                        value=element_value,
-                        tooltip=tip,
-                        preset_options=preset_options or None,
-                        on_change=lambda v, id=element_id: update_form_data(
-                            form_data, id, v
-                        ),
-                    )
-                    element_ui_map[element_id] = input_element
-                else:
-                    # Render as normal dropdown
-                    input_element = form_select(
-                        tooltip=tip,
-                        options=options,
-                        value=element_value,
-                        on_change=lambda e, id=element_id: update_form_data(
-                            form_data, id, e.value
-                        ),
-                    )
-                    element_ui_map[element_id] = input_element
-            elif element_type == "number":
-                min_val = element.get("min", None)
-                max_val = element.get("max", None)
-                input_element = form_number(
-                    tooltip=tip,
-                    value=element_value,
-                    min=min_val,
-                    max=max_val,
-                    classes="w-full",
-                    on_change=lambda e, id=element_id: handle_number_change(
-                        e, id, form_data
-                    ),
-                )
-                element_ui_map[element_id] = input_element
-            elif element_type == "slider":
-                min_val = element.get("min", 0)
-                max_val = element.get("max", 100)
-                step_val = element.get("step", 1)
+def _value_setter(control: Any) -> Callable[[Any], None]:
+    def set_value(value: Any) -> None:
+        control.value = value
 
-                # Convert element_value to appropriate numeric type
-                try:
-                    if step_val == int(step_val):
-                        # Integer step, convert value to int
-                        slider_value = (
-                            int(float(element_value))
-                            if element_value != ""
-                            else min_val
-                        )
-                    else:
-                        # Float step, keep as float
-                        slider_value = (
-                            float(element_value) if element_value != "" else min_val
-                        )
-                except (ValueError, TypeError):
-                    slider_value = min_val
+    return set_value
 
-                def slider_readout(value, step=step_val):
-                    try:
-                        number = float(value)
-                    except (TypeError, ValueError):
-                        return str(value)
-                    if step == int(step):
-                        return str(int(round(number)))
-                    return str(number)
 
-                # Create a row to show the current value
-                with ui.row().classes("w-full items-center gap-2"):
-                    # Slider element
-                    input_element = ui.slider(
-                        min=min_val,
-                        max=max_val,
-                        step=step_val,
-                        value=slider_value,
-                    ).classes("grow")
+def _render_control(element, element_type, element_id, element_label, element_value, form_data, config_name, commit):
+    """Build the control for one setting; returns a function that shows a value in it."""
+    if element_type in ("text", "file"):
+        spec = _asset_browse_spec(element, element_value, config_name)
+        if spec is None:
+            control = form_input(tooltip="", value=element_value, classes="ssx-text", on_change=lambda e: commit(e.value))
+            return _value_setter(control)
+        thumb = ui.html(_asset_thumb_html(spec, element_value), sanitize=False).classes("ssx-thumb")
 
-                    # Value display
-                    value_label = ui.label(slider_readout(slider_value)).classes(
-                        "text-sm font-mono min-w-[3rem] text-right"
-                    )
+        def on_asset_change(e) -> None:
+            commit(e.value)
+            thumb.set_content(_asset_thumb_html(spec, e.value))
 
-                    def handle_slider_change(e, id=element_id, label=value_label):
-                        update_form_data(form_data, id, e.value)
-                        label.text = slider_readout(e.value)
+        control = form_input(tooltip="", value=element_value, classes="ssx-text is-asset", on_change=on_asset_change)
+        _attach_asset_browse(control, element_label, spec)
+        return _value_setter(control)
 
-                    input_element.on_value_change(handle_slider_change)
+    if element_type == "select":
+        options: List[Any] = list(element.get("options", []))
+        if element.get("options_from") == "fonts":
+            options = _list_default_font_basenames()
+            ev_str = str(element_value).strip() if element_value is not None else ""
+            if ev_str and ev_str not in options:
+                options = [ev_str] + options
+            if not options and ev_str:
+                options = [ev_str]
+        if element.get("display", "dropdown") == "color_grid":
+            return _render_color(element_id, element_value, list(element.get("options", [])) or None, commit)
+        if element_value not in (None, "") and element_value not in options:
+            options = [element_value] + options
+        control = form_select(
+            tooltip="", options=options, value=element_value, classes="ssx-select", on_change=lambda e: commit(e.value)
+        )
+        return _value_setter(control)
 
-                element_ui_map[element_id] = input_element
-            elif element_type == "checkbox":
-                input_element = ui.switch(
-                    value=element_value,
-                    on_change=lambda _, id=element_id: update_form_data(
-                        form_data, id, input_element.value
-                    ),
-                )
-                element_ui_map[element_id] = input_element
-                # For checkboxes, add a custom wrapper to make styling work better
-                input_element.classes("q-switch")
-            elif element_type == "color":
-                preset_options = element.get("options")
-                if preset_options:
-                    preset_options = list(preset_options)
-                input_element = render_color_field(
-                    element_id=element_id,
-                    value=element_value,
-                    tooltip=tip,
-                    preset_options=preset_options,
-                    on_change=lambda v, id=element_id: update_form_data(
-                        form_data, id, v
-                    ),
-                )
-                element_ui_map[element_id] = input_element
+    if element_type == "number":
+        control = form_number(
+            tooltip="",
+            value=element_value,
+            min=element.get("min", None),
+            max=element.get("max", None),
+            step=number_step(element),
+            classes="ssx-num",
+            on_change=lambda e, id=element_id: handle_number_change(e, id, form_data),
+        )
+        unit = setting_unit(element)
+        if unit:
+            _Text("span", unit).classes("ssx-unit")
+        return _value_setter(control)
+
+    if element_type == "slider":
+        min_val = element.get("min", 0)
+        max_val = element.get("max", 100)
+        step_val = element.get("step", 1)
+        try:
+            if step_val == int(step_val):
+                slider_value = int(float(element_value)) if element_value != "" else min_val
             else:
-                input_element = ui.input(
-                    value=element_value,
-                    on_change=lambda _, id=element_id: update_form_data(
-                        form_data, id, input_element.value
-                    ),
-                ).classes("w-full")
-                element_ui_map[element_id] = input_element
+                slider_value = float(element_value) if element_value != "" else min_val
+        except (ValueError, TypeError):
+            slider_value = min_val
 
-            # Store the initial value in the form data
-            form_data[element_id] = element_value
+        def slider_readout(value, step=step_val):
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return str(value)
+            if step == int(step):
+                return str(int(round(number)))
+            return str(number)
+
+        control = ui.slider(min=min_val, max=max_val, step=step_val, value=slider_value).classes("ssx-slider")
+        value_label = _Text("span", slider_readout(slider_value)).classes("ssx-readout")
+
+        def handle_slider_change(e, label=value_label):
+            commit(e.value)
+            label.set_text(slider_readout(e.value))
+
+        control.on_value_change(handle_slider_change)
+        return _value_setter(control)
+
+    if element_type == "checkbox":
+        control = ui.switch(value=element_value, on_change=lambda e: commit(e.value)).props("dense")
+        return _value_setter(control)
+
+    if element_type == "color":
+        preset_options = element.get("options")
+        return _render_color(element_id, element_value, list(preset_options) if preset_options else None, commit)
+
+    control = ui.input(value=element_value, on_change=lambda e: commit(e.value)).classes("ssx-text").props("outlined dense")
+    return _value_setter(control)
+
+
+def _render_color(element_id: str, value: Any, preset_options: Optional[List[str]], commit: Callable[[Any], None]):
+    """Shared colour field; ``on_input`` drives the live preview while dragging (newer picker)."""
+    params = _color_field_params()
+    kwargs: Dict[str, Any] = {
+        "element_id": element_id,
+        "value": value,
+        "tooltip": "",
+        "preset_options": preset_options,
+        "on_change": lambda v: commit(v),
+    }
+    if "on_input" in params:
+        kwargs["on_input"] = lambda v: commit(v)
+    if "allow_gradient" in params and is_gradient_value(value):
+        kwargs["allow_gradient"] = True
+    box = ui.element("div").classes("ssx-color")
+    with box:
+        render_color_field(**kwargs)
+
+    def set_value(new_value: Any) -> None:
+        # Rebuild the field so its swatch and "last committed" value match the saved value.
+        box.clear()
+        with box:
+            render_color_field(**{**kwargs, "value": new_value})
+
+    return set_value
 
 
 def update_roulette_expansion_title(option_num, option_name):
-    """Update the title of a roulette option expansion"""
-    if option_num in roulette_expansions:
-        expansion = roulette_expansions[option_num]
-        # Create new title with option name always in parentheses
-        new_title = f"Option {option_num}"
-        if option_name:
-            new_title += f" ({option_name})"
-
-        # Update the expansion title
-        try:
-            # Try to update the expansion label via JavaScript
-            ui.run_javascript(f"""
-                const expansion = document.querySelector('[data-option="{option_num}"]');
-                if (expansion) {{
-                    const label = expansion.querySelector('.q-expansion-item__label');
-                    if (label) {{
-                        label.textContent = '{new_title}';
-                    }}
-                }}
-            """)
-        except Exception as e:
-            logger.error(f"Failed to update roulette expansion title: {str(e)}")
+    """Show a renamed roulette option in its section heading and the outline."""
+    for sec in _sections():
+        if sec.section.option_num == option_num:
+            sec.section.title = roulette_option_title(option_num, option_name)
+            _update_section_head(sec)
+            _render_nav()
+            return
 
 
 def update_form_data(form_data, element_id, value):
@@ -2919,7 +3408,6 @@ def update_form_data(form_data, element_id, value):
     old_value = form_data.get(element_id, "NOT_SET")
     form_data[element_id] = value
 
-    # Log important configuration changes for combobar (check form_data_store keys)
     config_name = None
     for name, data in form_data_store.items():
         if data is form_data:
@@ -2941,85 +3429,13 @@ def update_form_data(form_data, element_id, value):
 
     logger.debug(f"Form data updated: {element_id} = {value}")
 
-    # Update roulette expansion titles when option names change
-    if (
-        config_name == "roulette"
-        and element_id.startswith("Option")
-        and element_id.endswith("Name")
-    ):
-        # Extract option number from element_id (e.g., "Option1Name" -> 1)
-        option_num = ""
-        for char in element_id[6:]:  # Remove "Option" prefix, skip "Name" suffix
-            if char.isdigit():
-                option_num += char
-            else:
-                break
-        if option_num:
-            update_roulette_expansion_title(int(option_num), value)
-
-    # If we have an original value, compare and update styling
-    if element_id in original_values and element_id in element_ui_map:
-        original_value = original_values[element_id]
-        element = element_ui_map[element_id]
-
-        # Ensure element has an ID
-        if not element.id:
-            element.id = f"source-{element_id}-{id(element)}"
-
-        # Convert to same type for comparison
-        if isinstance(value, bool) and not isinstance(original_value, bool):
-            # Convert string 'True'/'False' to actual boolean
-            if isinstance(original_value, str):
-                original_value = original_value.lower() == "true"
-            else:
-                original_value = bool(original_value)
-        elif isinstance(original_value, bool) and not isinstance(value, bool):
-            value = value.lower() == "true" if isinstance(value, str) else bool(value)
-
-        # Apply or remove animation using JavaScript
-        if original_value != value:
-            # Detect if this is a switch
-            is_switch = "switch" in str(element.__class__).lower() or (
-                hasattr(element, "props") and 'type="checkbox"' in str(element.props)
-            )
-            ui.run_javascript(
-                f"window.addSourcePulseAnimation('{element.id}', {str(is_switch).lower()});"
-            )
-            logger.debug(
-                f"Change detected in {element_id}: {original_value} → {value}, applying animation to {element.id}"
-            )
-        else:
-            ui.run_javascript(f"window.removeSourcePulseAnimation('{element.id}');")
-            logger.debug(
-                f"No change in {element_id}, removing animation from {element.id}"
-            )
+    # Keep roulette option headings in step with their names
+    if config_name == ROULETTE_CONFIG_NAME and element_id.startswith("Option") and element_id.endswith("Name"):
+        option_num = roulette_option_number(element_id)
+        if option_num is not None:
+            update_roulette_expansion_title(option_num, value)
 
     _schedule_template_preview_refresh()
-
-
-def clear_changed_styling():
-    """Clear changed styling from all elements"""
-    logger.debug("Clearing all changed styling")
-
-    # Loop through all elements and remove styling
-    for element_id, element in element_ui_map.items():
-        if not element:
-            continue
-
-        # Reduced logging to prevent spam
-        pass
-
-
-def reset_original_values(config_name):
-    """Reset original values to current values in the form"""
-    if config_name in form_data_store:
-        form_data = form_data_store[config_name]
-        # Update original values with current values
-        for element_id, value in form_data.items():
-            original_values[element_id] = value
-
-    # Clear changed styling
-    clear_changed_styling()
 
 
 def _notify_no_template() -> None:
@@ -3101,7 +3517,7 @@ def save_config(config_parser, config_select, config_container):
                         logger.debug(
                             f"Preserved numeric type for {element_id}: {new_value} (type: {type(new_value).__name__})"
                         )
-                    except (ValueError, TypeError) as e:
+                    except (ValueError, TypeError):
                         logger.warning(
                             f"Failed to convert {element_id} value '{new_value}' to number, keeping original: {element.get('value')}"
                         )
@@ -3176,8 +3592,6 @@ def save_config(config_parser, config_select, config_container):
                         details=f"{type(e).__name__}: {e}",
                         actions=nav_actions_settings("Game Hooks"),
                     )
-            # Reset original values to current values
-            reset_original_values(config_name)
             _remember_disk_baseline(
                 config_name, form_data_store.get(config_name, {})
             )
@@ -3223,7 +3637,7 @@ def reset_config(config_parser, config_select, config_container):
     with ui.dialog().props("persistent") as dialog, ui.card().classes("w-[460px] p-4"):
         ui.label("Discard unsaved changes?").classes("text-lg font-bold mb-2")
         ui.label(
-            f"Reset {config_name} to the last saved file? Unsaved edits will be lost."
+            f"Go back to the last saved version of {config_name}? Your unsaved edits will be lost."
         ).classes("secondary-text mb-4")
 
         def confirm_reset() -> None:
@@ -3238,16 +3652,13 @@ def reset_config(config_parser, config_select, config_container):
 
 def _perform_config_reset(config_parser, config_name, config_container) -> None:
     """Reload a template from disk, dropping in-memory edits."""
-    # Clear element_ui_map before re-rendering
-    element_ui_map.clear()
-
     _invalidate_preview_route_cache(config_name)
 
-    # Discard in-memory edits so re-render loads values from disk
+    # Discard in-memory edits (and the old baseline) so the re-render reads the file
     _discard_config_edits(config_name)
+    _disk_baselines.pop(config_name, None)
 
-    # Re-render the config UI
-    render_config_ui(config_parser, config_name, config_container, "")
+    render_config_ui(config_parser, config_name, config_container)
     _flush_template_preview()
     notify("", type="success", source="source_settings", title=f"Reverted {config_name} to the last saved version")
 
@@ -3692,7 +4103,7 @@ def _notify_save_first(action: str) -> None:
         type="warning",
         source="source_settings",
         title=f"Save this template before {action}",
-        hint="Click Save (or Reset to drop your edits), then try again.",
+        hint="Click Save (or Discard to drop your edits), then try again.",
     )
 
 
@@ -4063,9 +4474,7 @@ def _refresh_config_dropdown(
         return
     _active_config_name = None
     _suppress_and_select(config_select, None)
-    config_container.clear()
-    with config_container:
-        ui.label("No configuration files found.").classes("text-sm opacity-75")
+    _show_no_configs(config_container)
     _flush_template_preview()
 
 
@@ -4172,51 +4581,3 @@ def delete_config_action(
             _notify_result_lost("delete")
 
     threading.Thread(target=work, name="TemplateDelete", daemon=True).start()
-
-
-def track_element_change(element_id, element, value):
-    """Track changes to an element and update UI accordingly
-
-    Args:
-        element_id (str): Identifier for the element
-        element (ui.element): UI element reference
-        value: New value of the element
-    """
-    # Get the original value for comparison
-    original_value = original_values.get(element_id, None)
-
-    # Store the element in the global map
-    element_ui_map[element_id] = element
-
-    # Log the change for debugging
-    logger.debug(f"Element {element_id} changed: {original_value} → {value}")
-
-
-def update_field_styling():
-    """Update styling for all tracked fields"""
-    logger.debug("Updating styling for all fields")
-
-    # Loop through all tracked elements
-    for element_id, element in element_ui_map.items():
-        if not element:
-            continue
-
-        # Skip if we don't have an original value
-        if element_id not in original_values:
-            continue
-
-        # Get current value
-        if hasattr(element, "value"):
-            value = element.value
-
-            # Compare with original value
-            original_value = original_values.get(element_id)
-
-            # Log the result for debugging
-            if original_value != value:
-                logger.debug(
-                    f"Change detected in {element_id}: {original_value} → {value}"
-                )
-            else:
-                logger.debug(f"No change in {element_id}")
-                logger.debug(f"No change in {element_id}")

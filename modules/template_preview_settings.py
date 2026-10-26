@@ -28,8 +28,14 @@ _DEFAULTS: Dict[str, Any] = {
     "enable_preview_sounds": True,
     "show_mock_toolbar": True,
     "show_inline_preview": True,
+    "split_editor_pct": 56.0,
     "resolutions": {},
 }
+
+# Source Settings editor/preview split: the editor's share of the width (percent).
+SPLIT_EDITOR_PCT_MIN = 28.0
+SPLIT_EDITOR_PCT_MAX = 78.0
+SPLIT_EDITOR_PCT_DEFAULT = 56.0
 
 PREVIEW_WIDTH_MIN = 50
 PREVIEW_WIDTH_MAX = 7680
@@ -55,6 +61,17 @@ def clamp_preview_resolution(width: Any, height: Any) -> Optional[Tuple[int, int
     return w, h
 
 
+def clamp_split_editor_pct(value: Any) -> float:
+    """Editor share of the Source Settings split, clamped; the default when unusable."""
+    try:
+        pct = float(value)
+    except (TypeError, ValueError):
+        return SPLIT_EDITOR_PCT_DEFAULT
+    if pct != pct:  # NaN
+        return SPLIT_EDITOR_PCT_DEFAULT
+    return max(SPLIT_EDITOR_PCT_MIN, min(pct, SPLIT_EDITOR_PCT_MAX))
+
+
 def load_template_preview_settings() -> Dict[str, Any]:
     path = settings_path()
     data = dict(_DEFAULTS)
@@ -75,6 +92,7 @@ def load_template_preview_settings() -> Dict[str, Any]:
         data["show_mock_toolbar"] = bool(data["show_mock_toolbar"])
     if "show_inline_preview" in data:
         data["show_inline_preview"] = bool(data["show_inline_preview"])
+    data["split_editor_pct"] = clamp_split_editor_pct(data.get("split_editor_pct"))
     resolutions = data.get("resolutions")
     if not isinstance(resolutions, dict):
         data["resolutions"] = {}
