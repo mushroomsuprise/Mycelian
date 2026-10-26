@@ -1450,3 +1450,21 @@ html[data-theme-type="light"] {
 
 /* [[highlighted]] text. Keep in sync with behavior_blocks.ACCENT_CSS. */
 .spore-accent { color: var(--spore-accent, inherit); background: var(--spore-accent-bg, transparent); padding: 0 0.25em; border-radius: 0.3em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+
+/* Colour fields (swatch opens the shared Mycelian colour picker) */
+.ss-color { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ss-color__swatch {
+    position: relative; width: 32px; height: 32px; flex: 0 0 auto; padding: 0; margin: 0;
+    border-radius: 6px; border: 1px solid var(--ss-border); overflow: hidden; cursor: pointer; background: none;
+}
+.ss-color__swatch:hover { border-color: var(--ss-accent); }
+.ss-color__swatch:focus-visible { outline: 2px solid var(--ss-accent); outline-offset: 2px; }
+.ss-color__swatch.is-picking { box-shadow: 0 0 0 2px var(--ss-accent); }
+.ss-color__checker, .ss-color__fill { position: absolute; inset: 0; }
+.ss-color__checker {
+    background-color: #fff;
+    background-image: linear-gradient(45deg, #cfcfcf 25%, transparent 25%, transparent 75%, #cfcfcf 75%),
+        linear-gradient(45deg, #cfcfcf 25%, transparent 25%, transparent 75%, #cfcfcf 75%);
+    background-size: 10px 10px; background-position: 0 0, 5px 5px;
+}
+.ss-color__text { flex: 1 1 auto; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

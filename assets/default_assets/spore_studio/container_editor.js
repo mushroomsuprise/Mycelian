@@ -643,6 +643,49 @@
         return input;
     }
 
+    /* Container backgrounds are opaque hex (the server rejects anything else). */
+    function buildBackgroundSwatch() {
+        var swatch = document.createElement("button");
+        swatch.type = "button";
+        swatch.className = "ss-color__swatch";
+        swatch.title = "Pick the background color";
+        swatch.setAttribute("aria-label", swatch.title);
+        var checker = document.createElement("span");
+        checker.className = "ss-color__checker";
+        var fill = document.createElement("span");
+        fill.className = "ss-color__fill";
+        fill.style.background = state.model.background;
+        swatch.appendChild(checker);
+        swatch.appendChild(fill);
+        swatch.addEventListener("click", function () {
+            var P = window.MycelianColorPicker;
+            if (!P) { return; }
+            var start = state.model.background;
+            function live(v) {
+                state.model.background = v;
+                fill.style.background = P.swatchBackground(v);
+                renderCanvas();
+            }
+            P.open({
+                anchor: swatch,
+                value: start,
+                allowAlpha: false,
+                preferredFormat: "hex",
+                title: "Container background",
+                onInput: live,
+                onDone: function (v) {
+                    live(start);
+                    if (v && v !== start && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(v)) {
+                        commit(function () { state.model.background = v; });
+                        fill.style.background = v;
+                    }
+                },
+                onCancel: function () { live(start); }
+            });
+        });
+        return swatch;
+    }
+
     function commit(fn) {
         pushHistory();
         fn();
@@ -755,13 +798,7 @@
         });
         fieldRow(host, "Background").appendChild(bg);
         if (state.model.background !== "transparent") {
-            var color = document.createElement("input");
-            color.type = "color";
-            color.value = state.model.background;
-            color.addEventListener("change", function () {
-                commit(function () { state.model.background = color.value; });
-            });
-            fieldRow(host, "Color").appendChild(color);
+            fieldRow(host, "Color").appendChild(buildBackgroundSwatch());
         }
 
         var spacingRow = fieldRow(host, "Space between templates");

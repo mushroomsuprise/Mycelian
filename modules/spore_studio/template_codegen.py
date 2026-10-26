@@ -372,6 +372,28 @@ def _compile_spore_font_css(
     return "\n".join(lines), lookup
 
 
+_CSS_GRADIENT_RE = re.compile(r"^\s*(repeating-)?(linear|radial|conic)-gradient\(", re.I)
+_CSS_URL_RE = re.compile(r"url\([^)]*\)", re.I)
+
+
+def _is_css_gradient(value: Any) -> bool:
+    """True for linear / radial / conic (repeating or not) gradient CSS text."""
+    return bool(_CSS_GRADIENT_RE.match(str(value or "")))
+
+
+def _fill_declarations(css_key: str, value: str, props: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """Declarations for a fill colour prop (``background_color``) that may be a gradient.
+
+    Solid colours stay ``background-color: <value>`` (unchanged output). A gradient
+    becomes a ``background-image`` layer; when the element also has a raw ``background``
+    with ``url()`` images, those images sit on top of the gradient.
+    """
+    if not _is_css_gradient(value):
+        return [(css_key, value)]
+    images = _CSS_URL_RE.findall(str(props.get("background") or ""))
+    return [("background-image", ", ".join(images + [value]))]
+
+
 def _css_kv(
     props: Dict[str, Any],
     *,
@@ -421,10 +443,24 @@ def _css_kv(
     if deco_parts:
         out.append(("text-decoration", " ".join(deco_parts)))
 
+    # A gradient fill must come after a raw ``background`` shorthand, which would reset it.
+    fill_after_background = (
+        _is_css_gradient(props.get("background_color"))
+        and props.get("background") not in (None, "")
+    )
+    deferred: List[Tuple[str, str]] = []
+
     for key, value in props.items():
         if key in _NON_STYLE_PROP_KEYS:
             continue
         if value in (None, ""):
+            continue
+        if key == "background_color":
+            fill = _fill_declarations("background-color", str(value), props)
+            if fill_after_background:
+                deferred.extend(fill)
+            else:
+                out.extend(fill)
             continue
         if key == "vertical_align":
             va = str(value).strip().lower()
@@ -462,6 +498,7 @@ def _css_kv(
             continue
         else:
             out.append((css_key, str(value)))
+    out.extend(deferred)
     return out
 
 

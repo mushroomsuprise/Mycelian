@@ -1,23 +1,31 @@
 # Copyright (c) 2024-2026 Mycelian
 # SPDX-License-Identifier: MIT
-"""Unified color field with swatch preview, text input, and custom alpha-aware picker."""
+"""Colour field (swatch + text box) and the bridge to the shared Mycelian colour picker.
+
+The picker itself is ``assets/default_assets/mycelian_color_picker.js`` / ``.css`` (Spore Studio loads the
+same files). This module injects them once per page, opens the picker next to an element and routes its
+live / done / cancel events back to Python callbacks.
+"""
 
 from __future__ import annotations
 
-import html
 import json
 import logging
 import re
 import uuid
+import weakref
 from dataclasses import dataclass
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from nicegui import ui
+from nicegui import context, ui
 
 from .ui_form_controls import form_input
-from .ui_timer import layout_schedule
 
 logger = logging.getLogger(__name__)
+
+PICKER_JS_ASSET = "default_assets/mycelian_color_picker.js"
+PICKER_CSS_ASSET = "default_assets/mycelian_color_picker.css"
+_PICKER_EVENT = "mycelian-color-picker"
 
 CHECKERBOARD_BG = (
     "linear-gradient(45deg, #ccc 25%, transparent 25%), "
@@ -27,432 +35,24 @@ CHECKERBOARD_BG = (
 )
 
 COLOR_CONTROL_CSS = """
-.mycelian-color-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-}
+.mycelian-color-row { display: flex; align-items: center; gap: 8px; width: 100%; }
 .mycelian-color-swatch {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
-    border-radius: 6px;
-    cursor: pointer;
-    border: 1px solid var(--color-border-default, #555);
-    position: relative;
-    overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    width: 32px; height: 32px; min-width: 32px; border-radius: 8px; cursor: pointer; position: relative; overflow: hidden;
+    border: 1px solid var(--color-border-default); flex: 0 0 auto;
 }
-.mycelian-color-swatch:hover {
-    transform: scale(1.05);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-}
+.mycelian-color-swatch:hover { border-color: var(--color-primary); }
+.mycelian-color-swatch:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.mycelian-color-swatch.is-picking { box-shadow: 0 0 0 2px var(--color-primary); }
 .mycelian-color-swatch__checker {
-    position: absolute;
-    inset: 0;
-    background-image: linear-gradient(45deg, #ccc 25%, transparent 25%),
-        linear-gradient(-45deg, #ccc 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, #ccc 75%),
-        linear-gradient(-45deg, transparent 75%, #ccc 75%);
-    background-size: 8px 8px;
-    background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+    position: absolute; inset: 0; background-color: #fff;
+    background-image: linear-gradient(45deg, #cfcfcf 25%, transparent 25%, transparent 75%, #cfcfcf 75%),
+        linear-gradient(45deg, #cfcfcf 25%, transparent 25%, transparent 75%, #cfcfcf 75%);
+    background-size: 10px 10px; background-position: 0 0, 5px 5px;
 }
-.mycelian-color-swatch__fill {
-    position: absolute;
-    inset: 0;
-}
-.mycelian-color-picker-preview {
-    width: 48px;
-    height: 48px;
-    min-width: 48px;
-    border-radius: 8px;
-    border: 1px solid var(--color-border-default, #555);
-    position: relative;
-    overflow: hidden;
-}
-.mycelian-color-picker-sv {
-    position: relative;
-    width: 100%;
-    height: 160px;
-    border-radius: 8px;
-    cursor: crosshair;
-    overflow: hidden;
-    border: 1px solid var(--color-border-default, #555);
-    touch-action: none;
-    user-select: none;
-}
-.mycelian-color-picker-sv__hue {
-    position: absolute;
-    inset: 0;
-}
-.mycelian-color-picker-sv__white {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to right, #fff, transparent);
-}
-.mycelian-color-picker-sv__black {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to top, #000, transparent);
-}
-.mycelian-color-picker-sv__cursor {
-    position: absolute;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid #fff;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-}
-.mycelian-color-picker-hue {
-    width: 100%;
-    height: 14px;
-    border-radius: 7px;
-    cursor: pointer;
-    border: 1px solid var(--color-border-default, #555);
-    background: linear-gradient(to right,
-        #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
-    position: relative;
-    touch-action: none;
-    user-select: none;
-}
-.mycelian-color-picker-hue__cursor {
-    position: absolute;
-    top: 50%;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid #fff;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-}
-.mycelian-color-picker-alpha {
-    width: 100%;
-    height: 14px;
-    border-radius: 7px;
-    cursor: pointer;
-    border: 1px solid var(--color-border-default, #555);
-    position: relative;
-    overflow: hidden;
-    touch-action: none;
-    user-select: none;
-}
-.mycelian-color-picker-alpha__checker {
-    position: absolute;
-    inset: 0;
-    background-image: linear-gradient(45deg, #ccc 25%, transparent 25%),
-        linear-gradient(-45deg, #ccc 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, #ccc 75%),
-        linear-gradient(-45deg, transparent 75%, #ccc 75%);
-    background-size: 8px 8px;
-    background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
-}
-.mycelian-color-picker-alpha__gradient {
-    position: absolute;
-    inset: 0;
-}
-.mycelian-color-picker-alpha__cursor {
-    position: absolute;
-    top: 50%;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid #fff;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-}
-.mycelian-color-presets {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    max-height: 120px;
-    overflow-y: auto;
-}
-.mycelian-color-preset {
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    cursor: pointer;
-    border: 1px solid var(--color-border-default, #555);
-    position: relative;
-    overflow: hidden;
-    flex-shrink: 0;
-}
-.mycelian-color-preset:hover {
-    transform: scale(1.1);
-}
-/* Override app-wide * { transition: background-color } so picker paints live during drag */
-.mycelian-color-picker-root,
-.mycelian-color-picker-root * {
-    transition: none !important;
-}
+.mycelian-color-swatch__fill { position: absolute; inset: 0; }
 """
 
-_COLOR_PICKER_BIND_IIFE = r"""
-(function () {
-  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
-  function hsvToRgb(h, s, v) {
-    h = ((h % 360) + 360) % 360;
-    s = clamp(s, 0, 1);
-    v = clamp(v, 0, 1);
-    var c = v * s;
-    var x = c * (1 - Math.abs((h / 60) % 2 - 1));
-    var m = v - c;
-    var r = 0, g = 0, b = 0;
-    if (h < 60) { r = c; g = x; }
-    else if (h < 120) { r = x; g = c; }
-    else if (h < 180) { g = c; b = x; }
-    else if (h < 240) { g = x; b = c; }
-    else if (h < 300) { r = x; b = c; }
-    else { r = c; b = x; }
-    return {
-      r: Math.round((r + m) * 255),
-      g: Math.round((g + m) * 255),
-      b: Math.round((b + m) * 255)
-    };
-  }
-
-  function rgbToHsv(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    var max = Math.max(r, g, b), min = Math.min(r, g, b);
-    var d = max - min;
-    var h = 0;
-    var s = max === 0 ? 0 : d / max;
-    var v = max;
-    if (d !== 0) {
-      if (max === r) { h = ((g - b) / d) % 6; }
-      else if (max === g) { h = (b - r) / d + 2; }
-      else { h = (r - g) / d + 4; }
-      h *= 60;
-      if (h < 0) { h += 360; }
-    }
-    return { h: h, s: s, v: v };
-  }
-
-  function parseColor(str) {
-    str = String(str || "").trim();
-    if (!str || str.toLowerCase() === "transparent") {
-      return { r: 255, g: 255, b: 255, a: 0, raw: "transparent" };
-    }
-    var m;
-    m = str.match(/^#([0-9a-f]{3})$/i);
-    if (m) {
-      var h3 = m[1];
-      return { r: parseInt(h3[0]+h3[0],16), g: parseInt(h3[1]+h3[1],16),
-        b: parseInt(h3[2]+h3[2],16), a: 1, raw: str };
-    }
-    m = str.match(/^#([0-9a-f]{6})$/i);
-    if (m) {
-      var h6 = m[1];
-      return { r: parseInt(h6.slice(0,2),16), g: parseInt(h6.slice(2,4),16),
-        b: parseInt(h6.slice(4,6),16), a: 1, raw: str };
-    }
-    m = str.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i);
-    if (m) {
-      return { r: +m[1], g: +m[2], b: +m[3], a: m[4] != null ? +m[4] : 1, raw: str };
-    }
-    return { r: 255, g: 255, b: 255, a: 1, raw: str };
-  }
-
-  function formatColor(rgb, a, prefer) {
-    prefer = prefer || "auto";
-    if (a <= 0) {
-      if (prefer === "transparent") { return "transparent"; }
-      if (prefer === "rgba") { return "rgba(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ", 0)"; }
-      return "transparent";
-    }
-    if (a >= 1) {
-      if (prefer === "hex") {
-        function hx(n) { var s = n.toString(16); return s.length < 2 ? "0" + s : s; }
-        return "#" + hx(rgb.r) + hx(rgb.g) + hx(rgb.b);
-      }
-      return "rgb(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ")";
-    }
-    return "rgba(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ", " + Math.round(a * 1000) / 1000 + ")";
-  }
-
-  function findRoot(el) {
-    return el && el.closest ? el.closest(".mycelian-color-picker-root") : null;
-  }
-
-  function queryParts(rootId) {
-    var root = document.getElementById(rootId);
-    if (!root) { return null; }
-    return {
-      root: root,
-      sv: root.querySelector(".mycelian-color-picker-sv"),
-      svHue: root.querySelector(".mycelian-color-picker-sv__hue"),
-      svCursor: root.querySelector(".mycelian-color-picker-sv__cursor"),
-      hueBar: root.querySelector(".mycelian-color-picker-hue"),
-      hueCursor: root.querySelector(".mycelian-color-picker-hue__cursor"),
-      alphaBar: root.querySelector(".mycelian-color-picker-alpha"),
-      alphaGrad: root.querySelector(".mycelian-color-picker-alpha__gradient"),
-      alphaCursor: root.querySelector(".mycelian-color-picker-alpha__cursor"),
-      previewFill: root.querySelector(".mycelian-color-picker-preview .mycelian-color-swatch__fill"),
-      textOut: document.getElementById(rootId + "-text")
-    };
-  }
-
-  function syncPicker(rootId, opts) {
-    opts = opts || {};
-    var inst = window.mycelianPickerInstances[rootId];
-    var p = queryParts(rootId);
-    if (!inst || !p || !p.sv) { return; }
-    var rgb = hsvToRgb(inst.hsv.h, inst.hsv.s, inst.hsv.v);
-    inst.state.r = rgb.r;
-    inst.state.g = rgb.g;
-    inst.state.b = rgb.b;
-    var hueRgb = hsvToRgb(inst.hsv.h, 1, 1);
-    function hx(n) { var s = n.toString(16); return s.length < 2 ? "0" + s : s; }
-    var hueHex = "#" + hx(hueRgb.r) + hx(hueRgb.g) + hx(hueRgb.b);
-    if (p.svHue) {
-      p.svHue.style.backgroundColor = hueHex;
-    } else if (p.sv) {
-      p.sv.style.backgroundColor = hueHex;
-    }
-    var a = clamp(inst.state.a, 0, 1);
-    if (p.alphaGrad) {
-      p.alphaGrad.style.background = "linear-gradient(to right, rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0), rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",1))";
-    }
-    if (p.previewFill) {
-      p.previewFill.style.backgroundColor = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + a + ")";
-    }
-    if (p.svCursor) {
-      p.svCursor.style.left = (inst.hsv.s * 100) + "%";
-      p.svCursor.style.top = ((1 - inst.hsv.v) * 100) + "%";
-    }
-    if (p.hueCursor) {
-      p.hueCursor.style.left = (inst.hsv.h / 360 * 100) + "%";
-    }
-    if (p.alphaCursor) {
-      p.alphaCursor.style.left = (a * 100) + "%";
-    }
-    var formatted = formatColor(rgb, a, inst.prefer);
-    inst._current = formatted;
-    p.root._mycelianCurrent = formatted;
-    p.root._mycelianGetValue = function () { return inst._current; };
-    if (!opts.skipText) {
-      var textEl = p.textOut || document.getElementById(inst.textId);
-      if (textEl) { textEl.value = formatted; }
-    }
-  }
-
-  window.mycelianPickerInstances = window.mycelianPickerInstances || {};
-  window.mycelianPickerApi = window.mycelianPickerApi || { activeDrag: null };
-  window.mycelianPickerApi.syncPicker = syncPicker;
-
-  window.mycelianPickerApi.onDragMove = function (ev) {
-    var activeDrag = window.mycelianPickerApi.activeDrag;
-    if (!activeDrag) { return; }
-    var inst = window.mycelianPickerInstances[activeDrag.rootId];
-    var p = queryParts(activeDrag.rootId);
-    if (!inst || !p) { return; }
-    if (activeDrag.type === "sv" && p.sv) {
-      var srect = p.sv.getBoundingClientRect();
-      inst.hsv.s = clamp((ev.clientX - srect.left) / srect.width, 0, 1);
-      inst.hsv.v = clamp(1 - (ev.clientY - srect.top) / srect.height, 0, 1);
-      if (inst.state.a <= 0) { inst.state.a = 1; }
-    } else if (activeDrag.type === "hue" && p.hueBar) {
-      var hrect = p.hueBar.getBoundingClientRect();
-      inst.hsv.h = clamp((ev.clientX - hrect.left) / hrect.width, 0, 1) * 360;
-    } else if (activeDrag.type === "alpha" && p.alphaBar) {
-      var arect = p.alphaBar.getBoundingClientRect();
-      inst.state.a = clamp((ev.clientX - arect.left) / arect.width, 0, 1);
-    }
-    syncPicker(activeDrag.rootId, { skipText: true });
-  };
-
-  window.mycelianPickerApi.endDrag = function (ev) {
-    var activeDrag = window.mycelianPickerApi.activeDrag;
-    if (activeDrag) {
-      syncPicker(activeDrag.rootId);
-      if (activeDrag.captureEl && activeDrag.captureEl.releasePointerCapture) {
-        try { activeDrag.captureEl.releasePointerCapture(ev.pointerId); } catch (e) {}
-      }
-    }
-    window.mycelianPickerApi.activeDrag = null;
-  };
-
-  if (!window._mycelianPickerDelegated) {
-    window._mycelianPickerDelegated = true;
-
-  window.addEventListener("pointerdown", function (ev) {
-    if (ev.button !== 0) { return; }
-    var preset = ev.target.closest ? ev.target.closest(".mycelian-color-preset") : null;
-    if (preset) {
-      var proot = findRoot(preset);
-      if (!proot) { return; }
-      var pinst = window.mycelianPickerInstances[proot.id];
-      if (!pinst) { return; }
-      var c = parseColor(preset.getAttribute("data-color") || "");
-      pinst.state.r = c.r; pinst.state.g = c.g; pinst.state.b = c.b; pinst.state.a = c.a;
-      pinst.hsv = rgbToHsv(c.r, c.g, c.b);
-      if (c.raw && c.raw.toLowerCase() === "transparent") { pinst.prefer = "transparent"; }
-      else if (c.raw && c.raw.charAt(0) === "#") { pinst.prefer = "hex"; }
-      syncPicker(proot.id);
-      ev.preventDefault();
-      return;
-    }
-    var root = null;
-    var type = null;
-    var hue = ev.target.closest ? ev.target.closest(".mycelian-color-picker-hue") : null;
-    var sv = ev.target.closest ? ev.target.closest(".mycelian-color-picker-sv") : null;
-    var alpha = ev.target.closest ? ev.target.closest(".mycelian-color-picker-alpha") : null;
-    if (hue) { root = findRoot(hue); type = "hue"; }
-    else if (sv) { root = findRoot(sv); type = "sv"; }
-    else if (alpha) { root = findRoot(alpha); type = "alpha"; }
-    if (!root || !type || !window.mycelianPickerInstances[root.id]) { return; }
-    var captureEl = hue || sv || alpha;
-    window.mycelianPickerApi.activeDrag = { rootId: root.id, type: type, captureEl: captureEl };
-    if (captureEl && captureEl.setPointerCapture) {
-      try { captureEl.setPointerCapture(ev.pointerId); } catch (e) {}
-    }
-    window.mycelianPickerApi.onDragMove(ev);
-    ev.preventDefault();
-  }, true);
-
-  window.addEventListener("pointermove", function (ev) {
-    if (!window.mycelianPickerApi.activeDrag) { return; }
-    window.mycelianPickerApi.onDragMove(ev);
-    ev.preventDefault();
-  }, true);
-
-  window.addEventListener("pointerup", function (ev) {
-    window.mycelianPickerApi.endDrag(ev);
-  }, true);
-  window.addEventListener("pointercancel", function (ev) {
-    window.mycelianPickerApi.endDrag(ev);
-  }, true);
-
-  }
-
-  window.mycelianColorPickerBind = function (cfg) {
-    var state = parseColor(cfg.initial);
-    var prefer = cfg.prefer || "auto";
-    if (state.a <= 0 && prefer === "auto") { prefer = state.raw === "transparent" ? "transparent" : "rgba"; }
-    else if (state.raw && state.raw.charAt(0) === "#" && state.a >= 1) { prefer = "hex"; }
-    else if (state.raw && state.raw.indexOf("rgba") === 0) { prefer = "rgba"; }
-    else if (state.raw && state.raw.indexOf("rgb") === 0) { prefer = "rgb"; }
-    var hsv = rgbToHsv(state.r, state.g, state.b);
-    if (state.a <= 0) { hsv = { h: 0, s: 0, v: 1 }; }
-    window.mycelianPickerInstances[cfg.rootId] = {
-      rootId: cfg.rootId,
-      textId: cfg.textId,
-      prefer: prefer,
-      hsv: hsv,
-      state: state,
-      _current: null
-    };
-    syncPicker(cfg.rootId);
-  };
-})();
-"""
+# -------------------------------------------------------------------------------------------- parsing
 
 
 @dataclass
@@ -471,6 +71,27 @@ def _clamp_channel(value: float) -> int:
 
 def _clamp_alpha(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
+
+
+_RGB_RE = re.compile(
+    r"^rgba?\(\s*([\d.]+%?)\s*[,\s]\s*([\d.]+%?)\s*[,\s]\s*([\d.]+%?)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$",
+    re.I,
+)
+_GRADIENT_RE = re.compile(r"^\s*(repeating-)?(linear|radial|conic)-gradient\(", re.I)
+_COLOUR_TOKEN_RE = re.compile(r"rgba?\([^()]*\)|hsla?\([^()]*\)|#[0-9a-f]{3,8}\b|\btransparent\b", re.I)
+_UNSAFE_CSS_RE = re.compile(r"[;{}<>\"\\]|url\(|expression\(", re.I)
+
+
+def _channel(token: str) -> float:
+    if token.endswith("%"):
+        return float(token[:-1]) * 2.55
+    return float(token)
+
+
+def _alpha(token: str) -> float:
+    if token.endswith("%"):
+        return float(token[:-1]) / 100
+    return float(token)
 
 
 def _detect_prefer(value: str, state: ColorState) -> str:
@@ -492,44 +113,45 @@ def _detect_prefer(value: str, state: ColorState) -> str:
 
 
 def parse_color_string(value: Any) -> ColorState:
-    """Parse #hex, rgb(), rgba(), or transparent into a ColorState."""
+    """Parse #hex (3/4/6/8 digits), rgb(), rgba() or transparent into a ColorState.
+
+    Anything else (gradients, names, ``inherit``) comes back opaque with ``raw`` holding the text.
+    """
     raw = str(value or "").strip()
     if not raw or raw.lower() == "transparent":
         return ColorState(r=255, g=255, b=255, a=0.0, raw="transparent", prefer="transparent")
 
     if raw.startswith("#"):
-        hex_clean = raw.lstrip("#")
-        if len(hex_clean) == 3:
+        hex_clean = raw[1:]
+        if len(hex_clean) in (3, 4):
             hex_clean = "".join(c * 2 for c in hex_clean)
-        if len(hex_clean) >= 6:
+        if len(hex_clean) in (6, 8):
             try:
                 r = int(hex_clean[0:2], 16)
                 g = int(hex_clean[2:4], 16)
                 b = int(hex_clean[4:6], 16)
-                return ColorState(r=r, g=g, b=b, a=1.0, raw=raw, prefer="hex")
+                a = round(int(hex_clean[6:8], 16) / 255, 3) if len(hex_clean) == 8 else 1.0
+                return ColorState(r=r, g=g, b=b, a=a, raw=raw, prefer="hex" if a >= 1 else "rgba")
             except ValueError:
                 pass
 
-    rgb_match = re.match(
-        r"^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$",
-        raw,
-        re.I,
-    )
+    rgb_match = _RGB_RE.match(raw)
     if rgb_match:
-        r = _clamp_channel(float(rgb_match.group(1)))
-        g = _clamp_channel(float(rgb_match.group(2)))
-        b = _clamp_channel(float(rgb_match.group(3)))
-        a = _clamp_alpha(float(rgb_match.group(4))) if rgb_match.group(4) is not None else 1.0
-        prefer = "rgba" if rgb_match.group(4) is not None else "rgb"
-        if a <= 0 and raw.lower() == "transparent":
-            prefer = "transparent"
-        return ColorState(r=r, g=g, b=b, a=a, raw=raw, prefer=prefer)
+        try:
+            r = _clamp_channel(_channel(rgb_match.group(1)))
+            g = _clamp_channel(_channel(rgb_match.group(2)))
+            b = _clamp_channel(_channel(rgb_match.group(3)))
+            has_alpha = rgb_match.group(4) is not None
+            a = _clamp_alpha(_alpha(rgb_match.group(4))) if has_alpha else 1.0
+        except ValueError:
+            return ColorState(raw=raw, prefer=_detect_prefer(raw, ColorState()))
+        return ColorState(r=r, g=g, b=b, a=a, raw=raw, prefer="rgba" if has_alpha else "rgb")
 
     return ColorState(raw=raw, prefer=_detect_prefer(raw, ColorState()))
 
 
 def format_color_string(state: ColorState, prefer: Optional[str] = None) -> str:
-    """Format ColorState back to a CSS color string."""
+    """Format ColorState back to a CSS colour string."""
     pref = prefer or state.prefer or "auto"
     a = _clamp_alpha(state.a)
 
@@ -546,152 +168,226 @@ def format_color_string(state: ColorState, prefer: Optional[str] = None) -> str:
     return f"rgba({state.r}, {state.g}, {state.b}, {round(a, 3)})"
 
 
+def is_gradient(value: Any) -> bool:
+    """True for linear / radial / conic (repeating or not) gradient CSS."""
+    return bool(_GRADIENT_RE.match(str(value or "")))
+
+
+def _is_solid_syntax(raw: str) -> bool:
+    return raw.lower() == "transparent" or bool(
+        re.match(r"^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$", raw, re.I) or _RGB_RE.match(raw)
+    )
+
+
 def is_color_transparent(value: Any) -> bool:
-    """Return True when the color is transparent or has alpha below 1."""
-    raw = str(value or "").strip().lower()
-    if raw == "transparent":
+    """True when the colour is transparent or has alpha below 1.
+
+    Gradients count as transparent when any stop is ``transparent`` or has alpha below 1.
+    """
+    raw = str(value or "").strip()
+    if raw.lower() == "transparent":
         return True
-    state = parse_color_string(value)
-    return state.a < 1.0
+    if is_gradient(raw):
+        for token in _COLOUR_TOKEN_RE.findall(raw):
+            low = token.lower()
+            if low == "transparent":
+                return True
+            if low.startswith("hsl"):
+                parts = re.split(r"[,/\s]+", low[low.index("(") + 1 : -1].strip())
+                try:
+                    if len(parts) >= 4 and _alpha(parts[3]) < 1:
+                        return True
+                except ValueError:
+                    continue
+                continue
+            if parse_color_string(token).a < 1:
+                return True
+        return False
+    return parse_color_string(raw).a < 1.0
+
+
+def swatch_background(value: Any) -> str:
+    """CSS ``background`` value for a checkerboard preview swatch (solid colours, gradients, names)."""
+    raw = str(value or "").strip()
+    if not raw:
+        return "transparent"
+    if _is_solid_syntax(raw):
+        state = parse_color_string(raw)
+        if state.a <= 0:
+            return "transparent"
+        return f"rgba({state.r}, {state.g}, {state.b}, {round(state.a, 3)})"
+    if _UNSAFE_CSS_RE.search(raw):
+        return "transparent"
+    if is_gradient(raw) or re.match(r"^[a-z]+$", raw, re.I) or re.match(r"^hsla?\([^()]*\)$", raw, re.I):
+        return raw
+    return "transparent"
 
 
 def swatch_fill_style(state: ColorState) -> str:
-    """Inline style for the color overlay inside a checkerboard swatch."""
+    """Inline style for the colour overlay inside a checkerboard swatch."""
     if state.a <= 0:
         return "background-color: transparent;"
     return f"background-color: rgba({state.r}, {state.g}, {state.b}, {state.a});"
 
 
-def ensure_color_control_assets() -> None:
-    """Inject shared CSS and JS; refresh CSS on each call so updates apply without reload."""
+# -------------------------------------------------------------------------------------------- page bridge
+
+
+class _PickerBridge:
+    """Per-client routing of picker events (one ``ui.on`` listener per page)."""
+
+    def __init__(self) -> None:
+        self.sessions: Dict[str, Dict[str, Optional[Callable]]] = {}
+
+    def dispatch(self, event: Any) -> None:
+        args = getattr(event, "args", None)
+        if isinstance(args, list):
+            args = args[0] if args else None
+        if not isinstance(args, dict):
+            return
+        token = str(args.get("token") or "")
+        kind = str(args.get("kind") or "")
+        session = self.sessions.get(token)
+        if session is None:
+            return
+        value = args.get("value")
+        value = "" if value is None else str(value)
+        if kind in ("done", "cancel"):
+            self.sessions.pop(token, None)
+        callback = session.get(kind)
+        if callback is None:
+            return
+        try:
+            if kind == "cancel":
+                callback()
+            else:
+                callback(value)
+        except Exception:
+            logger.exception("Colour picker %s handler failed", kind)
+
+
+_bridges: "weakref.WeakKeyDictionary[Any, _PickerBridge]" = weakref.WeakKeyDictionary()
+
+
+def _read_asset(relative: str) -> str:
     try:
-        ui.run_javascript(
-            "(function(){var id='mycelian-color-control-css';var el=document.getElementById(id);"
-            "if(!el){el=document.createElement('style');el.id=id;document.head.appendChild(el);}"
-            "el.textContent=" + json.dumps(COLOR_CONTROL_CSS) + ";})();"
-        )
-        ui.run_javascript(_COLOR_PICKER_BIND_IIFE)
+        from .path_utils import get_assets_path
+
+        with open(get_assets_path(relative), "r", encoding="utf-8") as fh:
+            return fh.read()
     except Exception as exc:
-        logger.debug("Color control asset injection skipped: %s", exc)
+        logger.error("Could not load %s: %s", relative, exc)
+        return ""
 
 
-def _update_swatch_fill(fill_el: Any, value: str) -> None:
-    state = parse_color_string(value)
-    fill_el.style(swatch_fill_style(state))
+def _bridge_for_client(client: Any = None) -> Optional[_PickerBridge]:
+    """The page's event bridge, injecting the picker on first use.
+
+    ``client`` defaults to the current context; pass the anchor's client from handlers whose element
+    may already have been rebuilt (its slot is gone, so ``context.client`` would raise).
+    """
+    if client is None:
+        try:
+            client = context.client
+        except Exception:
+            return None
+    bridge = _bridges.get(client)
+    if bridge is None:
+        bridge = _PickerBridge()
+        _bridges[client] = bridge
+        client.layout.on(_PICKER_EVENT, bridge.dispatch)
+        css = _read_asset(PICKER_CSS_ASSET) + "\n" + COLOR_CONTROL_CSS
+        js = _read_asset(PICKER_JS_ASSET)
+        client.run_javascript(
+            "(function(){var id='mycelian-color-picker-css';var el=document.getElementById(id);"
+            "if(!el){el=document.createElement('style');el.id=id;document.head.appendChild(el);}"
+            "el.textContent=" + json.dumps(css) + ";})();\n" + js
+        )
+    return bridge
 
 
-def _open_color_picker_dialog(
+def ensure_color_control_assets() -> None:
+    """Inject the picker JS / CSS and the event bridge once for the current page."""
+    try:
+        _bridge_for_client()
+    except Exception as exc:
+        logger.debug("Colour picker asset injection skipped: %s", exc)
+
+
+_OPEN_JS = """(function(){
+var P=window.MycelianColorPicker; if(!P){return;}
+var cfg=%s, n=0;
+(function go(){
+  var a=document.getElementById(cfg.anchor);
+  if(!a){ if(n++<80){setTimeout(go,25);} return; }
+  var fill=cfg.fill?a.querySelector(cfg.fill):null;
+  var paint=function(v){ if(fill){ fill.style.background=P.swatchBackground(v); } };
+  var send=function(kind,v){ if(typeof emitEvent==='function'){ emitEvent(cfg.event,{token:cfg.token,kind:kind,value:v==null?null:String(v)}); } };
+  var o={anchor:a,value:cfg.value,presets:cfg.presets,allowAlpha:cfg.allowAlpha,allowGradient:cfg.allowGradient,
+    preferredFormat:cfg.preferredFormat,title:cfg.title,note:cfg.note,
+    onDone:function(v){ paint(v); send('done',v); },
+    onCancel:function(){ paint(cfg.value); send('cancel',null); }};
+  if(cfg.live||cfg.fill){ o.onInput=function(v){ paint(v); if(cfg.live){ send('input',v); } }; }
+  P.open(o);
+})();
+})();"""
+
+
+def open_color_picker(
+    anchor: Any,
+    value: Any,
     *,
-    current_value: str,
-    preset_options: Optional[List[str]],
-    on_apply: Callable[[str], None],
+    on_done: Optional[Callable[[str], None]] = None,
+    on_input: Optional[Callable[[str], None]] = None,
+    on_cancel: Optional[Callable[[], None]] = None,
+    presets: Optional[List[str]] = None,
+    allow_alpha: bool = True,
+    allow_gradient: bool = False,
+    preferred_format: Optional[str] = None,
+    title: Optional[str] = None,
+    note: Optional[str] = None,
+    fill_selector: Optional[str] = None,
 ) -> None:
-    ensure_color_control_assets()
-    state = parse_color_string(current_value)
-    root_id = "mycelian-cp-" + uuid.uuid4().hex[:12]
-    text_id = root_id + "-text"
-    display = format_color_string(state)
-    display_attr = html.escape(display, quote=True)
+    """Open the shared picker next to ``anchor`` (a NiceGUI element).
 
-    with ui.dialog() as dlg, ui.card().classes("p-4 min-w-[320px]"):
-        ui.label("Pick color").classes("text-lg font-medium mb-3")
+    ``on_input`` gets live values while dragging (throttled in the browser), ``on_done`` the final value
+    (the untouched original when nothing changed), ``on_cancel`` fires on Cancel / Escape.
+    ``fill_selector`` names a child of the anchor whose background is painted live in the browser.
+    """
+    client = getattr(anchor, "client", None)
+    bridge = _bridge_for_client(client)
+    if bridge is None or client is None:
+        return
+    token = uuid.uuid4().hex
+    # Only the newest session per page matters; a picker replaced by another reports "done" first.
+    if len(bridge.sessions) > 32:
+        bridge.sessions.clear()
+    bridge.sessions[token] = {"input": on_input, "done": on_done, "cancel": on_cancel}
+    live = on_input is not None
+    if note is None and not live:
+        note = "Enter or Done applies the colour"
+    cfg = {
+        "anchor": f"c{anchor.id}",
+        "token": token,
+        "event": _PICKER_EVENT,
+        "value": "" if value is None else str(value),
+        "presets": [str(p) for p in (presets or []) if p is not None and str(p).strip()],
+        "allowAlpha": bool(allow_alpha),
+        "allowGradient": bool(allow_gradient),
+        "preferredFormat": preferred_format,
+        "title": title,
+        "note": note,
+        "live": live,
+        "fill": fill_selector,
+    }
+    client.run_javascript(_OPEN_JS % json.dumps(cfg))
 
-        presets_html = ""
-        if preset_options:
-            chips = []
-            for opt in preset_options:
-                opt_str = str(opt)
-                if opt_str.lower() == "transparent":
-                    inner = '<div class="mycelian-color-swatch__checker"></div>'
-                else:
-                    ps = parse_color_string(opt_str)
-                    inner = (
-                        '<div class="mycelian-color-swatch__checker"></div>'
-                        f'<div class="mycelian-color-swatch__fill" style="{swatch_fill_style(ps)}"></div>'
-                    )
-                chips.append(
-                    f'<div class="mycelian-color-preset" data-color="{opt_str}" title="{opt_str}">{inner}</div>'
-                )
-            presets_html = (
-                '<div class="mycelian-color-presets">' + "".join(chips) + "</div>"
-            )
 
-        picker_html = f"""
-        <div id="{root_id}" class="mycelian-color-picker-root w-full flex flex-col gap-3">
-          <div class="flex items-center gap-3 mb-1">
-            <div class="mycelian-color-picker-preview">
-              <div class="mycelian-color-swatch__checker"></div>
-              <div class="mycelian-color-swatch__fill"></div>
-            </div>
-            <input id="{text_id}" class="grow font-mono text-sm"
-              style="flex:1; padding:8px; border:1px solid var(--color-border-default,#555);
-              border-radius:4px; background:var(--color-bg-surface,#222); color:inherit;"
-              readonly value="{display_attr}" />
-          </div>
-          <div class="mycelian-color-picker-sv">
-            <div class="mycelian-color-picker-sv__hue"></div>
-            <div class="mycelian-color-picker-sv__white"></div>
-            <div class="mycelian-color-picker-sv__black"></div>
-            <div class="mycelian-color-picker-sv__cursor"></div>
-          </div>
-          <div class="mycelian-color-picker-hue">
-            <div class="mycelian-color-picker-hue__cursor"></div>
-          </div>
-          <div class="mycelian-color-picker-alpha">
-            <div class="mycelian-color-picker-alpha__checker"></div>
-            <div class="mycelian-color-picker-alpha__gradient"></div>
-            <div class="mycelian-color-picker-alpha__cursor"></div>
-          </div>
-          {presets_html}
-        </div>
-        """
-        ui.html(picker_html, sanitize=False)
+# -------------------------------------------------------------------------------------------- the field
 
-        with ui.row().classes("w-full justify-end gap-2 mt-2"):
-            ui.button("Cancel", on_click=dlg.close).props("flat dense")
 
-            async def apply_color() -> None:
-                js = (
-                    f"var r=document.getElementById({json.dumps(root_id)});"
-                    "if (r && r._mycelianGetValue) { return r._mycelianGetValue(); }"
-                    f"var t=document.getElementById({json.dumps(text_id)});"
-                    "return t ? t.value : null;"
-                )
-                chosen = None
-                try:
-                    result = await ui.run_javascript(js, timeout=2.0)
-                    if isinstance(result, str) and result.strip():
-                        chosen = result
-                except Exception:
-                    pass
-                if chosen:
-                    on_apply(chosen)
-                dlg.close()
-
-            ui.button("Apply", on_click=apply_color).props("dense color=primary")
-
-    prefer = state.prefer
-    bind_js = (
-        "window.mycelianColorPickerBind && window.mycelianColorPickerBind("
-        f"{json.dumps({'rootId': root_id, 'textId': text_id, 'initial': current_value, 'prefer': prefer})}"
-        ");"
-    )
-
-    def open_and_bind() -> None:
-        dlg.open()
-
-        def _try_bind(attempt: int = 0) -> None:
-            ui.run_javascript(bind_js)
-            if attempt < 4:
-                layout_schedule(
-                    0.08,
-                    lambda a=attempt + 1: _try_bind(a),
-                    once=True,
-                )
-
-        layout_schedule(0.05, lambda: _try_bind(0), once=True)
-
-    open_and_bind()
+def _set_fill(fill_el: Any, value: str) -> None:
+    fill_el.style(replace=f"background: {swatch_background(value)}")
 
 
 def render_color_field(
@@ -701,92 +397,106 @@ def render_color_field(
     tooltip: str,
     preset_options: Optional[List[str]] = None,
     on_change: Callable[[str], None],
+    on_input: Optional[Callable[[str], None]] = None,
+    allow_gradient: bool = False,
 ) -> Any:
-    """Render unified swatch + text input; returns the text input element."""
+    """Render a swatch + text input; returns the text input element.
+
+    ``on_change`` fires with the committed value (picker Done, or Enter / blur in the text box).
+    ``on_input`` (optional) fires with live values while the picker is open, and with the original
+    value again if the picker is cancelled. Gradients are offered when ``allow_gradient`` is set or the
+    current value already is one. Values are never reformatted unless the user picks a new colour.
+    """
     ensure_color_control_assets()
-    initial = str(value or "")
-    state = parse_color_string(initial)
-    display_value = format_color_string(state)
+    initial = "" if value is None else str(value)
+    committed = {"value": initial}
+    refs: Dict[str, Any] = {}
 
-    swatch_fill: dict[str, Any] = {"el": None}
-    text_input: dict[str, Any] = {"el": None}
+    def show(new_value: str) -> None:
+        text = refs.get("text")
+        if text is not None and text.value != new_value:
+            text.value = new_value
+        if refs.get("fill") is not None:
+            _set_fill(refs["fill"], new_value)
 
-    def apply_value(new_value: str, *, notify: bool = True) -> None:
-        parsed = parse_color_string(new_value)
-        formatted = format_color_string(parsed)
-        if text_input["el"] is not None:
-            text_input["el"].value = formatted
-        if swatch_fill["el"] is not None:
-            _update_swatch_fill(swatch_fill["el"], formatted)
-        if notify:
-            on_change(formatted)
+    def commit(new_value: str) -> None:
+        show(new_value)
+        if new_value != committed["value"]:
+            committed["value"] = new_value
+            on_change(new_value)
 
     def open_picker() -> None:
-        current = text_input["el"].value if text_input["el"] else display_value
+        text = refs.get("text")
+        start = str(text.value if text is not None and text.value is not None else committed["value"])
+        session = {"touched": False}
 
-        def on_apply(chosen: str) -> None:
-            apply_value(chosen)
+        def handle_input(new_value: str) -> None:
+            session["touched"] = True
+            show(new_value)
+            if on_input is not None:
+                on_input(new_value)
 
-        _open_color_picker_dialog(
-            current_value=current,
-            preset_options=preset_options,
-            on_apply=on_apply,
+        def handle_done(new_value: str) -> None:
+            if new_value != start:
+                commit(new_value)
+            else:
+                show(start)
+                if start != committed["value"]:
+                    commit(start)
+                elif session["touched"] and on_input is not None:
+                    on_input(start)
+
+        def handle_cancel() -> None:
+            show(start)
+            if session["touched"] and on_input is not None:
+                on_input(start)
+
+        open_color_picker(
+            refs["swatch"],
+            start,
+            presets=preset_options,
+            allow_gradient=allow_gradient or is_gradient(start),
+            on_input=handle_input if on_input is not None else None,
+            on_done=handle_done,
+            on_cancel=handle_cancel,
+            fill_selector=".mycelian-color-swatch__fill",
         )
-
-    def _try_parse_and_preview(raw: str) -> Optional[str]:
-        text = (raw or "").strip()
-        if not text:
-            return None
-        if text.lower() == "transparent":
-            return "transparent"
-        if re.match(r"^#([0-9a-f]{3}|[0-9a-f]{6})$", text, re.I):
-            return format_color_string(parse_color_string(text))
-        if re.match(
-            r"^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+(?:\s*,\s*[\d.]+)?\s*\)$",
-            text,
-            re.I,
-        ):
-            return format_color_string(parse_color_string(text))
-        return None
 
     def on_text_input(e: Any) -> None:
         raw = getattr(e, "value", None)
-        if raw is None and text_input["el"] is not None:
-            raw = text_input["el"].value
-        formatted = _try_parse_and_preview(str(raw or ""))
-        if formatted and swatch_fill["el"] is not None:
-            _update_swatch_fill(swatch_fill["el"], formatted)
+        if raw is None and refs.get("text") is not None:
+            raw = refs["text"].value
+        if refs.get("fill") is not None:
+            _set_fill(refs["fill"], str(raw or ""))
 
     def on_text_commit(_e: Any = None) -> None:
-        raw = text_input["el"].value if text_input["el"] else ""
-        formatted = _try_parse_and_preview(raw)
-        if formatted is None:
-            parsed = parse_color_string(raw)
-            if (raw or "").strip():
-                formatted = format_color_string(parsed)
-            else:
-                return
-        if text_input["el"] is not None and text_input["el"].value != formatted:
-            text_input["el"].value = formatted
-        if swatch_fill["el"] is not None:
-            _update_swatch_fill(swatch_fill["el"], formatted)
-        on_change(formatted)
+        text = refs.get("text")
+        raw = str(text.value or "").strip() if text is not None else ""
+        if text is not None and text.value != raw:
+            text.value = raw
+        commit(raw)
 
     with ui.row().classes("mycelian-color-row w-full"):
-        with ui.element("div").classes("mycelian-color-swatch").on("click", open_picker):
+        swatch = ui.element("div").on("click", open_picker)
+        swatch.classes("mycelian-color-swatch").props('tabindex=0 role=button aria-label="Pick a colour"')
+        swatch._props["data-color-field"] = str(element_id)
+        swatch.on("keydown.enter", open_picker)
+        refs["swatch"] = swatch
+        with swatch:
             ui.element("div").classes("mycelian-color-swatch__checker")
             fill_el = ui.element("div").classes("mycelian-color-swatch__fill")
-            swatch_fill["el"] = fill_el
-            _update_swatch_fill(fill_el, display_value)
+            refs["fill"] = fill_el
+            _set_fill(fill_el, initial)
 
-        text_input["el"] = form_input(
+        text_input = form_input(
             tooltip=tooltip,
-            value=display_value,
-            placeholder="#hex, rgb(), rgba(), transparent",
+            value=initial,
+            placeholder="#hex, rgb(), rgba(), transparent" + (", gradient" if allow_gradient else ""),
             classes="grow font-mono text-sm",
             on_change=on_text_input,
         )
-        text_input["el"].on("blur", on_text_commit)
-        text_input["el"].on("keydown.enter", on_text_commit)
+        refs["text"] = text_input
+        text_input.on("blur", on_text_commit)
+        text_input.on("keydown.enter", on_text_commit)
 
-    return text_input["el"]
+    return text_input

@@ -6,7 +6,7 @@ import copy
 import html
 import logging
 import re
-from typing import Dict, Any, Optional, Callable, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple
 
 from nicegui import ui
 
@@ -19,6 +19,7 @@ from ...theme_manager import (
 )
 from ...notification_engine import notify
 from ...ui_buttons import destructive_button, outline_button, primary_button
+from ...ui_color_control import open_color_picker
 from ...ui_form_controls import form_input, form_select
 from .theme_mock import build_mock_html
 from .theme_styles import THEME_CSS, THEME_MENU_CSS
@@ -205,6 +206,7 @@ class ThemeTab:
         self._option_dots_el = None
         self._select_dots = None
         self._focus_field: str = "primary"
+        self._swatch_els: Dict[str, Any] = {}
 
     # ----- helper methods -----
     def _get_theme_manager(self):
@@ -636,6 +638,7 @@ class ThemeTab:
         )
         swatch.classes(" ".join(classes))
         swatch.tooltip(f"{group} · {label}")
+        self._swatch_els[field_name] = swatch
         with swatch:
             ui.html(
                 f'<span class="thm-sw-fill" style="background:{html.escape(raw, quote=True)}"></span>',
@@ -1144,30 +1147,56 @@ class ThemeTab:
     #  Palette color picker                                                #
     # ------------------------------------------------------------------ #
     def _open_palette_color_picker(self, field_name: str, title: Optional[str] = None) -> None:
-        """Open a color picker for a palette swatch field."""
+        """Open the shared colour picker on a palette swatch; the mock preview follows live."""
         if not self._working_theme:
             return
-        current = getattr(self._working_theme, field_name, "") or ""
-        current_hex = self._convert_to_hex(current)
+        original = getattr(self._working_theme, field_name, "") or ""
         display_name = title or field_name.replace("_", " ").title()
-        parsed = _parse_color(current)
+        parts = display_name.split(" · ")
+        if len(parts) == 2 and parts[0] == parts[1]:
+            display_name = parts[0]
+        parsed = _parse_color(original)
         alpha = parsed[3] if parsed else 1.0
+        has_alpha = alpha < 0.999
+        anchor = self._swatch_els.get(field_name)
+        if anchor is None:
+            return
 
-        def on_apply(rgb_value: str) -> None:
-            if alpha < 0.999:
-                # The picker has no alpha channel; keep the color's transparency.
-                rgb_value = "rgba(" + rgb_value[4:-1] + f", {round(alpha, 3):g})"
-            current = getattr(self._working_theme, field_name, "") or ""
-            if current == rgb_value:
+        def live(value: str) -> None:
+            if not self._working_theme:
+                return
+            setattr(self._working_theme, field_name, value)
+            if self._vars_el is not None:
+                self._vars_el.set_content(f"<style>{generate_preview_css_variables(self._working_theme)}</style>")
+            self._refresh_focus()
+
+        def restore() -> None:
+            live(original)
+
+        def done(value: str) -> None:
+            if not self._working_theme:
+                return
+            setattr(self._working_theme, field_name, original)
+            if not value or value == original:
+                restore()
                 return
             self._push_undo_snapshot()
-            setattr(self._working_theme, field_name, rgb_value)
+            setattr(self._working_theme, field_name, value)
             self._mark_palette_dirty()
             self._apply_preview()
 
-        note = f"Keeps its {round(alpha * 100)}% opacity." if alpha < 0.999 else ""
-        self._show_color_picker_dialog(
-            display_name, current_hex, on_apply=on_apply, note=note
+        note = f"Started at {round(alpha * 100)}% opacity" if has_alpha else "The preview follows as you pick"
+        open_color_picker(
+            anchor,
+            original,
+            on_input=live,
+            on_done=done,
+            on_cancel=restore,
+            allow_alpha=has_alpha,
+            preferred_format="rgb",
+            title=display_name,
+            note=note,
+            fill_selector=".thm-sw-fill",
         )
 
     # ------------------------------------------------------------------ #
@@ -1228,53 +1257,3 @@ class ThemeTab:
                 pass
 
         return "#000000"
-
-    def _hex_to_rgb(self, hex_color: str) -> str:
-        """Convert hex color to RGB string format."""
-        if not hex_color or not hex_color.startswith("#"):
-            return hex_color
-        try:
-            hc = hex_color.lstrip("#")
-            if len(hc) == 3:
-                hc = "".join(c * 2 for c in hc)
-            r, g, b = int(hc[0:2], 16), int(hc[2:4], 16), int(hc[4:6], 16)
-            return f"rgb({r}, {g}, {b})"
-        except Exception:
-            return hex_color
-
-    def _show_color_picker_dialog(
-        self,
-        display_name: str,
-        current_hex: str,
-        *,
-        on_apply: Callable[[str], None],
-        note: str = "",
-    ) -> None:
-        """Show a color picker dialog and invoke *on_apply* with the chosen RGB value."""
-        with ui.dialog() as picker_dlg, ui.card().classes("p-4"):
-            ui.label(display_name).classes("text-lg font-semibold mb-4")
-            color_input = (
-                ui.color_input(value=current_hex)
-                .props("outlined")
-                .classes("w-full")
-            )
-            if note:
-                ui.label(note).classes("text-xs secondary-text mt-1")
-
-            with ui.row().classes("gap-2 mt-4 justify-end"):
-                ui.button("Cancel", on_click=picker_dlg.close).props("flat")
-
-                def _apply_color(
-                    _evt=None,
-                    _ci=color_input,
-                    _dlg=picker_dlg,
-                    _callback=on_apply,
-                ):
-                    new_hex = _ci.value
-                    if new_hex and new_hex.startswith("#"):
-                        _callback(self._hex_to_rgb(new_hex))
-                    _dlg.close()
-
-                ui.button("Apply", on_click=_apply_color).props("color=primary")
-
-        picker_dlg.open()

@@ -2026,7 +2026,7 @@
     function applyShapeDividerGradientStyles(node, el) {
         var props = el.props || {};
         if (el.type === "shape") {
-            node.style.background = props.background_color || "#a855f7";
+            node.style.background = props.background_color ? fillBackgroundCss(props) : "#a855f7";
             if (props.shape_kind === "ellipse") {
                 node.style.borderRadius = "50%";
             } else if (props.border_radius != null) {
@@ -2239,16 +2239,9 @@
             (el.props.color_stops || []).forEach(function (stop, idx) {
                 var row = document.createElement("div");
                 row.className = "ss-gradient-stop-row";
-                var colorIn = document.createElement("input");
-                colorIn.type = "color";
-                colorIn.value = stop.color || "#000000";
-                colorIn.title = "Color at this stop";
-                colorIn.addEventListener("change", function () {
-                    stop.color = colorIn.value;
-                    pushHistoryDebounced();
-                    renderStage();
-                    modelTouch();
-                });
+                var colorIn = buildColorPicker(stop.color || "#000000", function (v) {
+                    stop.color = v;
+                }, { noText: true, title: "Stop color" });
                 var stopIn = numberEl(stop.stop != null ? stop.stop : 0, function (v) {
                     stop.stop = Math.max(0, Math.min(100, parseInt(v, 10) || 0));
                     pushHistoryDebounced();
@@ -2533,95 +2526,119 @@
         return !!collapsed[group];
     }
 
-    function componentToHex(c) {
-        var h = Math.max(0, Math.min(255, parseInt(c, 10) || 0)).toString(16);
-        return h.length === 1 ? "0" + h : h;
+    /*
+     * Fill / background colour props: the stage and the exported overlay both paint these
+     * as a CSS background (a gradient becomes a background-image layer in the export), so
+     * they accept gradients. Text, border, shadow and outline colours stay solid, and so
+     * does the QR background (it is an SVG fill).
+     */
+    var GRADIENT_FILL_KEYS = { background_color: true, accent_background: true };
+    var GRADIENT_COLOR_PROPS = {
+        progress_bar: { track_color: true, fill_color: true },
+        poll: { track_color: true },
+        now_playing: { bar_color: true },
+        list: { row_background: true },
+        divider: { color: true }
+    };
+    var SOLID_ONLY_TYPES = { qr: true };
+
+    function colorPropAllowsGradient(el, key, value) {
+        if (/-gradient\(/i.test(String(value || ""))) { return true; }
+        var type = el && el.type;
+        if (GRADIENT_FILL_KEYS[key] && !SOLID_ONLY_TYPES[type]) { return true; }
+        var byType = GRADIENT_COLOR_PROPS[type];
+        return !!(byType && byType[key]);
     }
 
-    function rgbToHex(r, g, b) {
-        return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
+    /* Matches the exporter: url() images from a raw `background` sit on top of a gradient fill. */
+    function fillBackgroundCss(props) {
+        var fill = String(props.background_color || "");
+        if (!/^\s*(repeating-)?(linear|radial|conic)-gradient\(/i.test(fill)) { return fill; }
+        var images = String(props.background || "").match(/url\([^)]*\)/gi) || [];
+        return images.concat([fill]).join(", ");
     }
 
-    function parseColorForPicker(val) {
-        var s = String(val == null ? "" : val).trim();
-        if (!s || s === "transparent") {
-            return { hex: "#000000", raw: s || "transparent", transparent: true };
-        }
-        if (/^#[0-9a-f]{6}$/i.test(s)) {
-            return { hex: s, raw: s };
-        }
-        if (/^#[0-9a-f]{3}$/i.test(s)) {
-            var h = s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
-            return { hex: "#" + h, raw: s };
-        }
-        var m = s.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-        if (m) {
-            return { hex: rgbToHex(m[1], m[2], m[3]), raw: s };
-        }
-        return { hex: "#ffffff", raw: s };
-    }
-
+    /*
+     * Swatch (+ optional text box) that opens the shared Mycelian colour picker
+     * (assets/default_assets/mycelian_color_picker.js). onChange runs live while picking,
+     * followed by renderStage / pushHistoryDebounced / modelTouch (the debounce folds a drag
+     * into one history entry). opts: noText, allowGradient, allowAlpha, title, presets.
+     * The picker's opacity chip (⊘) sets "transparent".
+     */
     function buildColorPicker(current, onChange, opts) {
         opts = opts || {};
+        var P = window.MycelianColorPicker;
+        var value = current == null ? "" : String(current);
+        var applied = value;
         var wrap = document.createElement("div");
-        wrap.style.display = "flex";
-        wrap.style.flexDirection = "column";
-        wrap.style.gap = "6px";
-        var parsed = parseColorForPicker(current);
-        var row = document.createElement("div");
-        row.style.display = "flex";
-        row.style.gap = "8px";
-        row.style.alignItems = "center";
-        var colorInput = document.createElement("input");
-        colorInput.type = "color";
-        colorInput.value = parsed.hex;
-        colorInput.title = "Pick color";
-        colorInput.style.flex = "0 0 auto";
-        colorInput.style.width = "40px";
-        colorInput.style.height = "32px";
-        colorInput.style.padding = "0";
-        colorInput.style.border = "none";
-        colorInput.style.background = "transparent";
+        wrap.className = "ss-color";
+        var swatch = document.createElement("button");
+        swatch.type = "button";
+        swatch.className = "ss-color__swatch";
+        swatch.title = opts.title ? "Pick " + opts.title.toLowerCase() : "Pick a colour";
+        swatch.setAttribute("aria-label", swatch.title);
+        var checker = document.createElement("span");
+        checker.className = "ss-color__checker";
+        var fill = document.createElement("span");
+        fill.className = "ss-color__fill";
+        swatch.appendChild(checker);
+        swatch.appendChild(fill);
         var textInput = document.createElement("input");
         textInput.type = "text";
-        textInput.placeholder = "#hex or rgba(...)";
-        textInput.value = parsed.raw;
-        textInput.style.flex = "1";
-        var transBtn = document.createElement("button");
-        transBtn.type = "button";
-        transBtn.className = "ss-btn ss-btn--sm";
-        transBtn.textContent = "Clear";
-        transBtn.title = "Set transparent";
-        transBtn.addEventListener("click", function () {
-            textInput.value = "transparent";
-            onChange("transparent");
+        textInput.className = "ss-color__text";
+        textInput.placeholder = opts.allowGradient ? "#hex, rgba(...) or a gradient" : "#hex or rgba(...)";
+        textInput.spellcheck = false;
+        textInput.value = value;
+
+        function paint(v) {
+            fill.style.background = P ? P.swatchBackground(v) : String(v || "transparent");
+        }
+        function apply(v) {
+            applied = v;
+            onChange(v);
             renderStage();
             pushHistoryDebounced();
             modelTouch();
+        }
+        function show(v) {
+            value = v;
+            textInput.value = v;
+            paint(v);
+        }
+
+        swatch.addEventListener("click", function () {
+            if (!P) { textInput.focus(); return; }
+            var start = value;
+            P.open({
+                anchor: swatch,
+                value: start,
+                presets: opts.presets,
+                allowAlpha: opts.allowAlpha !== false,
+                allowGradient: !!opts.allowGradient,
+                title: opts.title,
+                onInput: function (v) {
+                    show(v);
+                    if (v !== applied) { apply(v); }
+                },
+                onDone: function (v) {
+                    show(v);
+                    if (v !== applied) { apply(v); }
+                },
+                onCancel: function () {
+                    show(start);
+                    if (applied !== start) { apply(start); }
+                }
+            });
         });
-        colorInput.addEventListener("input", function () {
-            textInput.value = colorInput.value;
-            onChange(colorInput.value);
-            renderStage();
-            pushHistoryDebounced();
-            modelTouch();
-        });
+        textInput.addEventListener("input", function () { paint(textInput.value); });
         textInput.addEventListener("change", function () {
-            var p2 = parseColorForPicker(textInput.value);
-            if (/^#[0-9a-f]{6}$/i.test(String(textInput.value).trim())) {
-                colorInput.value = textInput.value.trim();
-            } else if (p2.hex) {
-                colorInput.value = p2.hex;
-            }
-            onChange(textInput.value);
-            renderStage();
-            pushHistoryDebounced();
-            modelTouch();
+            var v = String(textInput.value || "").trim();
+            show(v);
+            if (v !== applied) { apply(v); }
         });
-        row.appendChild(colorInput);
-        if (!opts.noText) { row.appendChild(textInput); }
-        if (!opts.noClear) { row.appendChild(transBtn); }
-        wrap.appendChild(row);
+        paint(value);
+        wrap.appendChild(swatch);
+        if (!opts.noText) { wrap.appendChild(textInput); }
         return wrap;
     }
 
@@ -6205,7 +6222,7 @@
                 renderStage();
                 pushHistoryDebounced();
                 modelTouch();
-            }, { noText: true, noClear: true });
+            }, { noText: true, title: "Slice color" });
             var rm = document.createElement("button");
             rm.type = "button";
             rm.className = "ss-btn";
@@ -6308,7 +6325,7 @@
             buildColorPicker(p.result_color || "#ffffff", function (v) {
                 p.result_color = v;
                 commit(false);
-            }),
+            }, { title: "Winner label color" }),
             "Color of the winning label"
         ));
         var bold = buildToggle(!!p.result_bold, function (checked) {
@@ -6905,7 +6922,7 @@
     function applyPropsToNode(node, el) {
         var props = el.props || {};
         if (props.color) { node.style.color = props.color; }
-        if (props.background_color) { node.style.background = props.background_color; }
+        if (props.background_color) { node.style.background = fillBackgroundCss(props); }
         if (props.font_size != null) { node.style.fontSize = props.font_size + "px"; }
         if (props.font_family) {
             node.style.fontFamily = editorFontFamilyForPreview(props.font_family, el);
@@ -7319,10 +7336,10 @@
                 ctrl.appendChild(op);
             });
         } else if (fieldType === "color") {
-            ctrl = document.createElement("input");
-            ctrl.type = "color";
-            ctrl.value = /^#[0-9a-f]{6}$/i.test(String(el.props.value || ""))
-                ? el.props.value : "#ffffff";
+            var legacyColor = el.props.value == null ? "" : String(el.props.value);
+            ctrl = buildColorPicker(legacyColor, function (v) {
+                el.props.value = v;
+            }, { allowGradient: /-gradient\(/i.test(legacyColor), title: field.label || "Color" });
         } else if (fieldType === "number") {
             ctrl = document.createElement("input");
             ctrl.type = "number";
@@ -7340,6 +7357,7 @@
             ctrl.value = el.props.value == null ? "" : String(el.props.value);
         }
         ctrl.addEventListener("change", function () {
+            if (fieldType === "color") { return; }  /* the colour control saves itself */
             if (ctrl.type === "checkbox") { el.props.value = ctrl.checked; }
             else if (ctrl.type === "number") {
                 el.props.value = ctrl.value === "" ? null : Number(ctrl.value);
@@ -7473,10 +7491,12 @@
             var current = el.props && el.props[key];
             var ctrl;
             if (field.input === "color") {
-                ctrl = document.createElement("input");
-                ctrl.type = "color";
-                ctrl.value = /^#[0-9a-f]{6}$/i.test(String(current || ""))
-                    ? current : "#ffffff";
+                ctrl = buildColorPicker(current == null ? "" : String(current), function (v) {
+                    el.props = el.props || {};
+                    el.props[key] = v;
+                }, { title: field.label });
+                host.appendChild(formRow(field.label, ctrl, bindingTooltip(field.path)));
+                return;
             } else if (field.input === "number") {
                 ctrl = document.createElement("input");
                 ctrl.type = "number";
@@ -7626,7 +7646,7 @@
                 el.props = el.props || {};
                 el.props[entry.key] = v;
                 propChange(function () {});
-            });
+            }, { allowGradient: colorPropAllowsGradient(el, entry.key, current), title: entry.label });
             host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, colorCtrl, tip));
             return;
         }
