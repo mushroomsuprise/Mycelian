@@ -1990,6 +1990,7 @@ class AlertStateManager:
                 "gift_qty": int,
                 "resub_month": int,
                 "months_prepaid": int,
+                "duration_months": int,
                 "amt_cheered": int,
                 "point_cost": int,
                 "raider_count": int,
@@ -2739,6 +2740,8 @@ class AlertObj:
     gift_qty: int = 0
     resub_month: int = 0
     months_prepaid: int = 0
+    # Months one sub or gift covers (Twitch duration_months; 0/1 = a normal one-month sub)
+    duration_months: int = 0
     recipient: str = ""  # Gift recipient username (single gifts)
 
     # Bit options:
@@ -3222,6 +3225,7 @@ _REPLAY_EVENT_FIELDS = (
     "recipient",
     "resub_month",
     "months_prepaid",
+    "duration_months",
     "amt_cheered",
     "twitch_reward_id",
     "point_cost",

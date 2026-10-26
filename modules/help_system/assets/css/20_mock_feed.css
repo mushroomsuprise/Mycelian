@@ -102,6 +102,8 @@
 .help-doc .hm .hm-af-msg { margin-top: 2px; font-size: .92em; font-style: italic; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .help-doc .hm .hm-af-amt { flex: 0 0 auto; font-size: .78em; font-weight: 800; padding: 2px 7px; border-radius: 999px; white-space: nowrap; color: var(--hm-tc);
   background: color-mix(in srgb, var(--hm-tc) 14%, transparent); border: 1px solid color-mix(in srgb, var(--hm-tc) 30%, transparent); }
+.help-doc .hm .hm-af-dur { flex: 0 0 auto; font-size: .7em; font-weight: 800; padding: 1px 6px; border-radius: 5px; white-space: nowrap; color: var(--hm-tc);
+  background: color-mix(in srgb, var(--hm-tc) 10%, transparent); border: 1px solid color-mix(in srgb, var(--hm-tc) 40%, transparent); }
 .help-doc .hm .hm-af-row .hx-brand { flex: 0 0 auto; opacity: .85; }
 .help-doc .hm .hm-af-row .hx-brand svg { width: 14px; height: 14px; }
 .help-doc .hm .hm-af-time { flex: 0 0 auto; min-width: 46px; text-align: right; font-size: .78em; white-space: nowrap; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }

@@ -7,7 +7,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = 3;
+  var VERSION = 4;
   if (window.MycelianFeed && window.MycelianFeed.version >= VERSION) { return; }
 
   var FILTERS = [
@@ -18,7 +18,7 @@
     ['hype_train', 'Hype Train', 'rocket_launch']
   ];
   var DEFAULTS = {
-    layout: 'rows', density: 'comfortable', color: 'icon', icons: true, tier: 'icon', platform: true, messages: true,
+    layout: 'rows', density: 'comfortable', color: 'icon', icons: true, tier: 'icon', platform: true, messages: true, sub_duration: true,
     wrap: false, times: 'relative', earlier_minutes: 30, order_numbers: true, dots: true, new_minutes: 5,
     now_playing: true, timer: 'strip', up_next: 1, text_size: 'medium', person_hours: 12
   };
@@ -146,9 +146,11 @@
     what = what.replace(/!+\s*$/, '') || m[4];
     var ts = Number(a.timestamp) || Number(a.created_at) || nowSec();
     var id = a.alert_id && String(a.alert_id).indexOf('generated_') !== 0 ? String(a.alert_id) : null;
+    var months = parseInt(a.duration_months, 10);
+    var dur = (kind === 'sub' || kind === 'resub' || kind === 'giftsub') && months > 1 ? months + (kind === 'giftsub' ? '-month gift' : '-month sub') : '';
     return {
       id: id || ('row-' + Math.round(ts * 1000)), alert_id: id, kind: kind, icon: m[0], color: m[1], label: m[2],
-      filter: m[3], user: user, what: what, amount: '', tier: null, msg: a.user_message || '', ts: ts,
+      filter: m[3], user: user, what: what, amount: '', tier: null, duration: dur, msg: a.user_message || '', ts: ts,
       platform: kind === 'donation' ? '' : 'twitch', restored: !!a.is_restored, seq: a.seq != null ? a.seq : null
     };
   }
@@ -508,7 +510,8 @@
       return;
     }
     var row = this.findLive(playing.alert_id);
-    var who = row ? '<b>' + esc(row.user) + '</b> ' + esc(row.what) + (row.amount ? ' ' + esc(row.amount) : '')
+    var who = row ? '<b>' + esc(row.user) + '</b> ' + esc(row.what) + (this.s.settings.sub_duration && row.duration ? ' · ' + esc(row.duration) : '') +
+      (row.amount ? ' ' + esc(row.amount) : '')
       : (playing.username ? '<b>' + esc(playing.username) + '</b> ' + esc(meta(kindOf(playing.type))[4]) : 'An alert');
     if (playing.is_replay) { who += ' <span class="afx-upmore">(replay)</span>'; }
     var timer = '';
@@ -551,6 +554,10 @@
     var plat = !st.platform ? '' : (a.platform === 'youtube' ? YT : (a.platform === 'twitch' ? TW : ''));
     var amt = a.amount ? '<span class="amt">' + esc(a.amount) + '</span>' : '';
     var tierName = tierTxt ? '<span class="tier">' + tierTxt + '</span>' : '';
+    // Multi-month sub or gift ("3-month gift"), right after the tier; hidden by the Show multi-month subs setting.
+    if (st.sub_duration && a.duration) {
+      tierName += '<span class="dur" title="' + esc('Covers ' + parseInt(a.duration, 10) + ' months at once') + '">' + esc(a.duration) + '</span>';
+    }
     var extra = (a.replay ? '<span class="replaytag">Replay</span>' : '') + (it.newest ? '<span class="newest">Newest</span>' : '');
     var msg = st.messages && a.msg ? '<div class="msg">“' + esc(a.msg) + '”</div>' : '';
     var acts = '';

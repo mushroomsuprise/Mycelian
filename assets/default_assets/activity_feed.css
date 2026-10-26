@@ -149,6 +149,9 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx-row .amt { flex: 0 0 auto; font-size: .78em; font-weight: 800; padding: 2px 7px; border-radius: 999px; color: var(--tc);
   background: color-mix(in srgb, var(--tc) 14%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 30%, transparent); white-space: nowrap; }
 .afx-row .tier { font-size: .7em; font-weight: 800; padding: 1px 5px; border-radius: 5px; color: var(--color-warning); border: 1px solid color-mix(in srgb, var(--color-warning) 40%, transparent); white-space: nowrap; }
+/* Multi-month sub or gift ("3 months"): outlined like the tier chip, in the event colour */
+.afx-row .dur { flex: 0 0 auto; font-size: .7em; font-weight: 800; padding: 1px 6px; border-radius: 5px; white-space: nowrap; color: var(--tc);
+  background: color-mix(in srgb, var(--tc) 10%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 40%, transparent); }
 .afx-row .plat { width: 14px; height: 14px; flex: 0 0 auto; opacity: .85; }
 .afx-row .time { flex: 0 0 auto; font-size: .78em; color: var(--color-text-muted); font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; white-space: nowrap; }
 .afx-row .acts { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: none; gap: 4px; padding-left: 16px; z-index: 2;
@@ -177,7 +180,7 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx[data-color="bar"] .afx-row { border-left: 3px solid var(--tc); }
 .afx[data-color="tint"] .afx-row { background: color-mix(in srgb, var(--tc) 8%, var(--color-bg-base)); border-color: color-mix(in srgb, var(--tc) 25%, var(--color-border-subtle)); }
 .afx[data-color="none"] .afx-row .ico { color: var(--color-text-secondary); background: var(--color-bg-surface); }
-.afx[data-color="none"] .afx-row .amt { color: var(--color-text-secondary); background: var(--color-bg-surface); border-color: var(--color-border-subtle); }
+.afx[data-color="none"] .afx-row .amt, .afx[data-color="none"] .afx-row .dur { color: var(--color-text-secondary); background: var(--color-bg-surface); border-color: var(--color-border-subtle); }
 .afx.no-icons .afx-row .ico { display: none; }
 
 /* Tier badge on the icon corner (default) */
@@ -209,7 +212,7 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx[data-layout="ticker"] .afx-row .user { flex-shrink: 0; max-width: 55%; }
 .afx[data-layout="ticker"] .afx-row .line { min-width: 0; }
 .afx[data-layout="ticker"] .afx-row .msg { min-width: 0; flex: 0 1000 auto; }
-.afx-row .newest, .afx-row .replaytag, .afx-row .tier { flex-shrink: 0; }
+.afx-row .newest, .afx-row .replaytag, .afx-row .tier, .afx-row .dur { flex-shrink: 0; }
 .afx[data-layout="ticker"] .afx-row.is-new::after { display: none; }
 .afx[data-layout="ticker"] .afx-row.is-new .seq { color: var(--color-primary); }
 .afx[data-layout="ticker"] .afx-row.is-new .user::after { content: ' \2022'; color: var(--color-primary); }

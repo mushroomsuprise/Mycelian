@@ -796,32 +796,261 @@ def _finalize_resolved_pending_single_gifts() -> None:
         _emit_giftsub_alert_and_instant(entry["alert"])
 
 
+def _duration_months_of(meta: Any) -> int:
+    """``duration_months`` from an EventSub event / notice metadata (object or dict); 0 if missing."""
+    if meta is None:
+        return 0
+    value = meta.get("duration_months") if isinstance(meta, dict) else getattr(meta, "duration_months", None)
+    try:
+        months = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return months if months > 0 else 0
+
+
+def _show_sub_duration() -> bool:
+    """App Settings → Activity Feed → Show multi-month subs (plain feed text follows it)."""
+    try:
+        from .uiwindows.activity_feed import show_sub_duration
+
+        return show_sub_duration()
+    except Exception:
+        return True
+
+
+# ---- multi-month gifts
+# channel.subscription.gift (the gift alert) has no duration_months. The chat
+# notification sub_gift (one per gifted sub, community gift bombs included) has it.
+# Notices are kept briefly and matched to the gift alert by gifter + tier (+ recipient
+# for single gifts, + community_gift_id for bombs). A notice that arrives after the
+# alert updates the stored alert and its Activity Feed item in place. A bomb only gets
+# a duration when every gift in it reported the same one.
+_GIFT_DURATION_NOTICE_TTL_SECONDS = 30.0
+_GIFT_DURATION_WATCH_SECONDS = 60.0
+_gift_duration_lock = threading.Lock()
+# {gifter_login, gifter_id, anonymous, tier, duration, community_gift_id, recipient, ts}
+_gift_duration_notices: list = []
+# Gift alerts emitted before their notices: {alert, gifter_login, gifter_id, anonymous,
+# tier, qty, recipient, community_gift_id, ts}
+_gift_duration_watchers: list = []
+# alert_id -> gifter keys, from channel.subscription.gift until the alert is emitted.
+_gift_alert_gifters: Dict[str, dict] = {}
+
+
+def _note_gift_alert_gifter(
+    alert_id: str, *, gifter_login: Optional[str], gifter_id: Optional[str]
+) -> None:
+    with _gift_duration_lock:
+        _prune_gift_durations(time.time())
+        _gift_alert_gifters[str(alert_id)] = {
+            "gifter_login": gifter_login,
+            "gifter_id": str(gifter_id) if gifter_id else None,
+            "ts": time.time(),
+        }
+
+
+def _prune_gift_durations(now: float) -> None:
+    """Drop expired notices / watchers. Caller holds _gift_duration_lock."""
+    notice_cutoff = now - _GIFT_DURATION_NOTICE_TTL_SECONDS
+    watch_cutoff = now - _GIFT_DURATION_WATCH_SECONDS
+    _gift_duration_notices[:] = [n for n in _gift_duration_notices if n["ts"] >= notice_cutoff]
+    _gift_duration_watchers[:] = [w for w in _gift_duration_watchers if w["ts"] >= watch_cutoff]
+    for key in [k for k, v in _gift_alert_gifters.items() if v.get("ts", 0) < watch_cutoff]:
+        _gift_alert_gifters.pop(key, None)
+
+
+def _gift_duration_gifter_matches(notice: dict, target: dict) -> bool:
+    """Same gifter: both anonymous, or the same user id (or login when an id is missing)."""
+    if bool(notice.get("anonymous")) != bool(target.get("anonymous")):
+        return False
+    if target.get("anonymous"):
+        return True
+    n_id = _normalize_gift_match_key(notice.get("gifter_id"))
+    t_id = _normalize_gift_match_key(target.get("gifter_id"))
+    if n_id and t_id:
+        return n_id == t_id
+    n_login = _normalize_gift_match_key(notice.get("gifter_login"))
+    t_login = _normalize_gift_match_key(target.get("gifter_login"))
+    return bool(n_login and t_login and n_login == t_login)
+
+
+def _match_gift_duration(target: dict) -> tuple:
+    """("done", months, used_notices) or ("wait", 0, []). Caller holds the lock."""
+    candidates = [
+        n
+        for n in _gift_duration_notices
+        if n.get("tier") == target.get("tier") and _gift_duration_gifter_matches(n, target)
+    ]
+    qty = int(target.get("qty") or 1)
+    if qty <= 1:
+        recipient = _normalize_gift_match_key(target.get("recipient"))
+        if recipient:
+            exact = [n for n in candidates if _normalize_gift_match_key(n.get("recipient")) == recipient]
+            if exact:
+                return "done", exact[0]["duration"], [exact[0]]
+            # Never take a notice that names someone else.
+            candidates = [n for n in candidates if not n.get("recipient")]
+        pool = [n for n in candidates if not n.get("community_gift_id")] or candidates
+        if len(pool) == 1 or (pool and len({n["duration"] for n in pool}) == 1):
+            return "done", pool[0]["duration"], [pool[0]]
+        return "wait", 0, []
+    community_id = target.get("community_gift_id")
+    if not community_id:
+        ids = {n["community_gift_id"] for n in candidates if n.get("community_gift_id")}
+        if len(ids) != 1:
+            return "wait", 0, []
+        community_id = ids.pop()
+        target["community_gift_id"] = community_id
+    group = [n for n in candidates if n.get("community_gift_id") == community_id][:qty]
+    if len(group) < qty:
+        return "wait", 0, []
+    durations = {n["duration"] for n in group}
+    return "done", (group[0]["duration"] if len(durations) == 1 else 0), group
+
+
+def _drop_gift_notices(used: list) -> None:
+    """Remove matched notices so a later gift can't reuse them. Caller holds the lock."""
+    used_ids = {id(n) for n in used}
+    _gift_duration_notices[:] = [n for n in _gift_duration_notices if id(n) not in used_ids]
+
+
+def _gift_duration_at_emit(alert: alertutils.AlertObj) -> int:
+    """Months of a gift alert from the sub_gift notices seen so far (0 = none / not yet).
+
+    When the notices haven't all arrived, the alert waits (briefly) for them and is
+    updated in place by :func:`note_gift_duration`.
+    """
+    alert_id = str(getattr(alert, "alert_id", "") or "")
+    anonymous = bool(getattr(alert, "anonymous", False))
+    with _gift_duration_lock:
+        now = time.time()
+        _prune_gift_durations(now)
+        gifter = _gift_alert_gifters.pop(alert_id, None) or {}
+        target = {
+            "alert": alert,
+            "gifter_login": None if anonymous else gifter.get("gifter_login"),
+            "gifter_id": None if anonymous else gifter.get("gifter_id"),
+            "anonymous": anonymous,
+            "tier": int(getattr(alert, "tier", 1) or 1),
+            "qty": int(getattr(alert, "gift_qty", 1) or 1),
+            "recipient": str(getattr(alert, "recipient", "") or "").strip() or None,
+            "community_gift_id": None,
+            "ts": now,
+        }
+        if not anonymous and not (target["gifter_login"] or target["gifter_id"]):
+            return 0  # no gifter to match on
+        status, months, used = _match_gift_duration(target)
+        if status == "done":
+            _drop_gift_notices(used)
+            return months if months > 1 else 0
+        _gift_duration_watchers.append(target)
+    return 0
+
+
+def note_gift_duration(
+    *,
+    gifter_login: Optional[str] = None,
+    gifter_id: Optional[str] = None,
+    anonymous: bool = False,
+    tier: int = 1,
+    duration_months: int = 0,
+    community_gift_id: Optional[str] = None,
+    recipient: Optional[str] = None,
+) -> int:
+    """Record one chat-notification sub_gift and finish any gift alert waiting for it.
+
+    Returns how many emitted gift alerts got a multi-month duration from it.
+    """
+    months = int(duration_months or 0)
+    if months < 1:
+        return 0
+    updates = []
+    with _gift_duration_lock:
+        now = time.time()
+        _prune_gift_durations(now)
+        _gift_duration_notices.append(
+            {
+                "gifter_login": None if anonymous else gifter_login,
+                "gifter_id": None if anonymous else (str(gifter_id) if gifter_id else None),
+                "anonymous": bool(anonymous),
+                "tier": int(tier or 1),
+                "duration": months,
+                "community_gift_id": str(community_gift_id) if community_gift_id else None,
+                "recipient": str(recipient or "").strip() or None,
+                "ts": now,
+            }
+        )
+        for watcher in list(_gift_duration_watchers):
+            status, found, used = _match_gift_duration(watcher)
+            if status != "done":
+                continue
+            _gift_duration_watchers.remove(watcher)
+            _drop_gift_notices(used)
+            if found > 1:
+                updates.append((watcher["alert"], found))
+    for alert, found in updates:
+        _apply_late_gift_duration(alert, found)
+    return len(updates)
+
+
+def _giftsub_feed_message(alert: alertutils.AlertObj) -> str:
+    from .uiwindows.activity_feed_model import giftsub_message
+
+    return giftsub_message(
+        alert.username or "Anonymous",
+        getattr(alert, "tier", 1) or 1,
+        int(getattr(alert, "gift_qty", 0) or 0) or 1,
+        str(getattr(alert, "recipient", "") or "").strip() or None,
+        getattr(alert, "duration_months", 0),
+        show_duration=_show_sub_duration(),
+    )
+
+
+def _apply_late_gift_duration(alert: alertutils.AlertObj, months: int) -> None:
+    """A gift's months arrived after its alert: update the stored alert and the feed item."""
+    alert.duration_months = months
+    if not _twitch_alerts_enabled():
+        return
+    alert_id = str(getattr(alert, "alert_id", "") or "")
+    logger.debug("Gift alert %s covers %s months (late notice)", alert_id, months)
+    try:
+        stored = alertutils.alert_state_manager.get_stored_alert_by_id(alert_id)
+        if isinstance(stored, dict):
+            stored = dict(stored)
+            stored["duration_months"] = months
+            alertutils.alert_state_manager.store_completed_alert(alert_id, stored)
+    except Exception as e:
+        logger.debug("Could not store gift duration for %s: %s", alert_id, e)
+    try:
+        from .uiwindows.activity_feed import update_alert_in_feed
+
+        update_alert_in_feed(
+            alert_id, duration_months=months, message=_giftsub_feed_message(alert)
+        )
+    except Exception as e:
+        logger.debug("Could not update gift duration in the feed for %s: %s", alert_id, e)
+
+
 def _emit_giftsub_alert_and_instant(alert: alertutils.AlertObj) -> None:
     """Queue a giftsub alert, add to activity feed, and emit instant_alert."""
+    months = _gift_duration_at_emit(alert)
+    if months > 1:
+        alert.duration_months = months
     _queue_twitch_alert(alert)
     recipient = str(getattr(alert, "recipient", "") or "").strip()
     gift_qty = int(getattr(alert, "gift_qty", 0) or 0)
     tier = getattr(alert, "tier", 1) or 1
-    gifter_name = alert.username or "Anonymous"
-    if gift_qty == 1 and recipient:
-        feed_message = (
-            f"{gifter_name} gifted a Tier {tier} sub to {recipient}!"
-        )
-    elif gift_qty == 1:
-        feed_message = f"{gifter_name} gifted a Tier {tier} sub!"
-    else:
-        feed_message = (
-            f"{gifter_name} gifted {gift_qty} Tier {tier} subs!"
-        )
+    duration_months = int(getattr(alert, "duration_months", 0) or 0)
     _add_twitch_alert_to_feed(
         alert_type="Giftsub",
-        message=feed_message,
+        message=_giftsub_feed_message(alert),
         badge_type="giftsub",
         timestamp=str(int(alert.timestamp)),
         tier=tier,
         alert_id=alert.alert_id,
         gift_qty=gift_qty,
         recipient=recipient or None,
+        duration_months=duration_months if duration_months > 1 else None,
     )
     try:
         alert_data = {
@@ -831,6 +1060,7 @@ def _emit_giftsub_alert_and_instant(alert: alertutils.AlertObj) -> None:
             "tier": alert.tier,
             "gift_qty": alert.gift_qty,
             "recipient": recipient,
+            "duration_months": duration_months,
             "alert_id": alert.alert_id,
             "timestamp": alert.timestamp,
         }
@@ -856,6 +1086,10 @@ def _clear_pending_single_gifts_for_tests() -> None:
         _pending_single_gifts.clear()
     with _recent_gift_recipients_lock:
         _recent_gift_recipients.clear()
+    with _gift_duration_lock:
+        _gift_duration_notices.clear()
+        _gift_duration_watchers.clear()
+        _gift_alert_gifters.clear()
 
 
 async def _wait_and_emit_single_giftsub(entry: dict) -> None:
@@ -2559,6 +2793,18 @@ class Twitch_API:
                             source=f"chat.notification.{notice_type_str}.recipient",
                         )
                     recip_display = getattr(gift_meta, "recipient_user_name", None) or recip_login
+                    if notice_type_str == "sub_gift":
+                        # Before the recipient note: that can emit the waiting gift alert,
+                        # which then picks up this duration.
+                        note_gift_duration(
+                            gifter_login=chatter_login,
+                            gifter_id=str(chatter_id) if chatter_id else None,
+                            anonymous=bool(getattr(ev, "chatter_is_anonymous", False)),
+                            tier=_paid_tier_from_plan(getattr(gift_meta, "sub_tier", None)),
+                            duration_months=_duration_months_of(gift_meta),
+                            community_gift_id=getattr(gift_meta, "community_gift_id", None),
+                            recipient=recip_display,
+                        )
                     if recip_display and notice_type_str in {
                         "sub_gift",
                         "shared_chat_sub_gift",
@@ -3059,6 +3305,7 @@ class Twitch_API:
 
         # Handle as new subscription (cumulative_months == 1)
         logger.debug(f"Processing as new sub: {username}")
+        duration_months = _duration_months_of(data.event)
         alert, emit_overlay = _overlay_alert_or_placeholder(
             alertutils.fetch_sub_alert(1),
             username=username,
@@ -3068,6 +3315,7 @@ class Twitch_API:
         alert.username = username
         alert.alert_type = "sub"
         alert.tier = tier
+        alert.duration_months = duration_months
         alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_timestamp
         alert.message = user_msg or ""  # Use empty string if None
@@ -3101,6 +3349,7 @@ class Twitch_API:
                         "tier": tier,
                         "message": user_msg,
                         "emotes": alert.emotes,
+                        "duration_months": duration_months,
                         "alert_id": alert.alert_id,
                         "timestamp": alert.timestamp,
                     }
@@ -3146,14 +3395,19 @@ class Twitch_API:
             )
 
         # Add to activity feed for new subscription
+        from .uiwindows.activity_feed_model import sub_message
+
         _add_twitch_alert_to_feed(
             alert_type="Sub",
-            message=f"{username} subscribed (Tier {tier})!",
+            message=sub_message(
+                username, tier, duration_months, show_duration=_show_sub_duration()
+            ),
             badge_type="sub",
             timestamp=str(int(alert.timestamp)),
             tier=tier,
             user_message=user_msg,
             alert_id=alert.alert_id,
+            duration_months=duration_months if duration_months > 1 else None,
         )
 
         await _emit_connector_new_sub(
@@ -3205,7 +3459,9 @@ class Twitch_API:
         alert.emotes = _subscription_message_emotes(
             data.event.message if data.event.message else None
         )
+        duration_months = _duration_months_of(data.event)
         alert.months_prepaid = data.event.duration_months
+        alert.duration_months = duration_months
         alert.resub_month = cumulative_months
         alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_timestamp
@@ -3237,6 +3493,7 @@ class Twitch_API:
                         "message": user_msg,
                         "emotes": alert.emotes,
                         "cumulative_months": cumulative_months,
+                        "duration_months": duration_months,
                         "alert_id": alert.alert_id,
                         "timestamp": alert.timestamp,
                     }
@@ -3283,14 +3540,23 @@ class Twitch_API:
             )
 
         # Add to activity feed for resubscription
+        from .uiwindows.activity_feed_model import resub_message
+
         _add_twitch_alert_to_feed(
             alert_type="Resub",
-            message=f"{username} resubscribed for {cumulative_months} months (Tier {tier})!",
+            message=resub_message(
+                username,
+                cumulative_months,
+                tier,
+                duration_months,
+                show_duration=_show_sub_duration(),
+            ),
             badge_type="resub",
             timestamp=str(int(alert.timestamp)),
             tier=tier,
             user_message=user_msg,
             alert_id=alert.alert_id,
+            duration_months=duration_months if duration_months > 1 else None,
         )
 
         await _emit_connector_resub(
@@ -3361,6 +3627,7 @@ class Twitch_API:
             tier_raw=tier_raw,
             user_msg=user_msg,
             emotes=_subscription_message_emotes(message),
+            duration_months=_duration_months_of(sub_meta),
         )
 
     def _emit_modiversary_notice(self, ev) -> None:
@@ -3412,8 +3679,12 @@ class Twitch_API:
         tier_raw: Any = None,
         user_msg: Optional[str] = None,
         emotes=None,
+        duration_months: int = 0,
     ) -> None:
-        """Emit alert/feed/stats/chatbot/connector for a first-time sub."""
+        """Emit alert/feed/stats/chatbot/connector for a first-time sub.
+
+        ``duration_months`` > 1: the sub was paid for several months at once.
+        """
         from .twitch_subscriber_registry import get_subscriber_registry
 
         registry = get_subscriber_registry()
@@ -3440,9 +3711,11 @@ class Twitch_API:
             logger.warning("No sub alert configured, using default for %s", username)
             alert = alertutils.AlertObj()
             alert.alert_type = "sub"
+        duration_months = int(duration_months or 0)
         alert.username = username
         alert.alert_type = "sub"
         alert.tier = tier
+        alert.duration_months = duration_months
         alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_timestamp
         alert.message = user_msg or ""
@@ -3467,6 +3740,7 @@ class Twitch_API:
                     "tier": tier,
                     "message": user_msg,
                     "emotes": alert.emotes,
+                    "duration_months": duration_months,
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                 }
@@ -3504,14 +3778,19 @@ class Twitch_API:
                 exc_info=True,
             )
 
+        from .uiwindows.activity_feed_model import sub_message
+
         _add_twitch_alert_to_feed(
             alert_type="Sub",
-            message=f"{username} subscribed (Tier {tier})!",
+            message=sub_message(
+                username, tier, duration_months, show_duration=_show_sub_duration()
+            ),
             badge_type="sub",
             timestamp=str(int(alert.timestamp)),
             tier=tier,
             user_message=user_msg,
             alert_id=alert.alert_id,
+            duration_months=duration_months if duration_months > 1 else None,
         )
 
         await _emit_connector_new_sub(
@@ -3575,6 +3854,12 @@ class Twitch_API:
         alert.recipient = ""
         alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = time.time()
+        # So the emitted alert can find its months in the chat sub_gift notices.
+        _note_gift_alert_gifter(
+            alert.alert_id,
+            gifter_login=None if alert.anonymous else gifter_login,
+            gifter_id=None if alert.anonymous else (str(gifter_id) if gifter_id else None),
+        )
 
         # Process through chatbot system
         try:

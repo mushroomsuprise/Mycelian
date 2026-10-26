@@ -104,6 +104,35 @@
 
 <p>Rows are newest first. Each one shows the event icon (with the sub tier on its corner), the viewer, what happened, the viewer's message, the amount, a Twitch or YouTube mark, the time (<em>just now</em>, <em>3m</em>, <em>2h</em>) and an order number (<em>#41</em>, <em>#42</em>…) in the order alerts arrived. On the Live view, events older than 30 minutes move under <strong>Earlier</strong>. All of this can be changed in the <a href="#hx-activity-feed-settings">settings</a>.</p>
 
+<h3>Multi-month subs and gifts</h3>
+
+<p>When a viewer pays for several months at once, or gifts a sub that lasts several months, the row gets a chip such as <strong>3-month gift</strong> or <strong>6-month sub</strong> after what happened. The chip counts the months bought at once, so a resub reads <em>resubscribed · 14 months</em> with a <strong>6-month sub</strong> chip beside it. The tier stays on the icon corner (or after the name, with <strong>Tier badge</strong> set that way).</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-af"><div class="hm-af-list is-rows">
+      <div class="hm-af-row hm-af-k-gift">
+        <span class="hm-af-ico"><span class="hx-mi">redeem</span></span>
+        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">CoolGifter</span><span class="hm-af-what">gifted a Tier 1 sub to NightOwl</span><span class="hm-af-dur">3-month gift</span></span></span>
+        {{brand:twitch}}<span class="hm-af-time">2m</span><span class="hm-af-seq">#47</span>
+      </div>
+      <div class="hm-af-row hm-af-k-sub">
+        <span class="hm-af-ico"><span class="hx-mi">autorenew</span><span class="hm-af-tb">T1</span></span>
+        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">LongtimeFan</span><span class="hm-af-what">resubscribed · 14 months</span><span class="hm-af-dur">6-month sub</span></span></span>
+        {{brand:twitch}}<span class="hm-af-time">5m</span><span class="hm-af-seq">#46</span>
+      </div>
+    </div></div>
+  </div>
+  <figcaption>A gifted 3-month sub, and a resub (14 months in total) paid for 6 months at once.</figcaption>
+</figure>
+
+<ul>
+  <li>Twitch reports the months for new subs, resubs and gifts to one viewer. A gift can show its chip a moment after the row appears, because Twitch sends the months separately from the gift.</li>
+  <li>A gift bomb (subs gifted to the community) shows the chip only when every sub in it has the same length; otherwise it shows none.</li>
+  <li>The Now playing strip, History and By person show the months too, for example <em>Gifted 5 Tier 1 subs · 3 months</em>. Different lengths get separate By person lines.</li>
+  <li>Turn it off with <strong>Show multi-month subs</strong> in the <a href="#hx-activity-feed-settings">settings</a>.</li>
+</ul>
+
 <h2>Paused alerts</h2>
 
 <p>While alerts are paused, an amber banner replaces the Now playing strip and lists the waiting alerts in the order they will play. Click <strong>Resume</strong> in the banner or in the header to play them.</p>
@@ -381,6 +410,7 @@
           <div class="hm-af-set"><span><span class="hm-af-set-name">Tier badge</span><span class="hm-af-set-hint">Where T1 / T2 / T3 appears.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">On the icon corner</span></div></div>
           <div class="hm-af-set"><span><span class="hm-af-set-name">Show platform marks</span><span class="hm-af-set-hint">Twitch / YouTube logo on each row.</span></span><span class="hm-switch is-on"><i></i></span></div>
           <div class="hm-af-set"><span><span class="hm-af-set-name">Show viewer messages</span><span class="hm-af-set-hint">The message a viewer sent with a cheer, sub or tip.</span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Show multi-month subs</span><span class="hm-af-set-hint">A “3-month gift” or “6-month sub” tag when a sub or gifted sub covers several months.</span></span><span class="hm-switch is-on"><i></i></span></div>
           <div class="hm-af-set"><span><span class="hm-af-set-name">Wrap long text</span><span class="hm-af-set-hint">Off: one line per event.</span></span><span class="hm-switch"><i></i></span></div>
           <div class="hm-af-set"><span class="hm-af-set-name">Text size</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Medium</span></div></div>
         </div>
@@ -413,6 +443,7 @@
 <tr><td><strong>Tier badge</strong></td><td>On the icon corner, After the name, Hidden</td><td>Where T1 / T2 / T3 shows. With icons off, the corner badge moves after the name.</td></tr>
 <tr><td><strong>Show platform marks</strong></td><td>On</td><td>Twitch or YouTube logo on each row.</td></tr>
 <tr><td><strong>Show viewer messages</strong></td><td>On</td><td>The message sent with a cheer, sub or tip, in quotes under the row.</td></tr>
+<tr><td><strong>Show multi-month subs</strong></td><td>On</td><td>A <strong>3-month gift</strong> or <strong>6-month sub</strong> chip when a sub, resub or gifted sub covers several months, and the months in the Now playing strip and By person. See <a href="#hx-multi-month-subs-and-gifts">Multi-month subs and gifts</a>.</td></tr>
 <tr><td><strong>Wrap long text</strong></td><td>Off</td><td>Off keeps one line per event and cuts long text short.</td></tr>
 <tr><td><strong>Text size</strong></td><td>Medium, Small, Large</td><td>Feed text size.</td></tr>
 <tr><td><strong>Times</strong></td><td>Relative, Clock, Hidden</td><td><em>3m</em> or <em>14:32</em>, or no time.</td></tr>

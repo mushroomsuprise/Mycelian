@@ -235,6 +235,7 @@ class AppSettings:
     activity_feed_tier_badge: str = "icon"  # icon | name | hidden
     activity_feed_platform_marks: bool = True
     activity_feed_viewer_messages: bool = True
+    activity_feed_show_sub_duration: bool = True  # "3 months" chip on multi-month subs and gifts
     activity_feed_wrap_text: bool = False
     activity_feed_times: str = "relative"  # relative | clock | hidden
     activity_feed_earlier_after_minutes: int = 30  # 0 = never

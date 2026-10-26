@@ -25,6 +25,7 @@ FEED_SETTINGS: Dict[str, tuple] = {
     "tier": ("activity_feed_tier_badge", "icon", ("icon", "name", "hidden")),
     "platform": ("activity_feed_platform_marks", True, None),
     "messages": ("activity_feed_viewer_messages", True, None),
+    "sub_duration": ("activity_feed_show_sub_duration", True, None),
     "wrap": ("activity_feed_wrap_text", False, None),
     "times": ("activity_feed_times", "relative", ("relative", "clock", "hidden")),
     "earlier_minutes": ("activity_feed_earlier_after_minutes", 30, (15, 30, 60, 120, 0)),
@@ -113,6 +114,80 @@ def feed_setting_value(key: str, value: Any) -> Any:
         hours = _coerce_int(value, DEFAULT_PERSON_HOURS)
         return hours if hours > 0 else DEFAULT_PERSON_HOURS
     return normalized[key]
+
+
+# --------------------------------------------------------------------------- multi-month subs
+
+
+def duration_months_value(value: Any) -> int:
+    """Months a sub or gift covers (Twitch ``duration_months``); 0 when unknown or 1."""
+    try:
+        months = int(float(str(value).replace(",", "")))
+    except (TypeError, ValueError):
+        return 0
+    return months if months > 1 else 0
+
+
+def alert_duration_months(alert: Mapping[str, Any]) -> int:
+    """``duration_months`` of a payload or stored alert (resubs stored it as months_prepaid)."""
+    if not isinstance(alert, Mapping):
+        return 0
+    return max(
+        duration_months_value(_pick(alert, "duration_months")),
+        duration_months_value(_pick(alert, "months_prepaid")),
+    )
+
+
+def format_sub_duration(months: Any, kind: str = "sub") -> str:
+    """Chip text: "6-month sub" / "3-month gift" (empty for single-month or unknown).
+
+    Says "sub"/"gift" so it isn't confused with a resub's total months shown beside it.
+    """
+    n = duration_months_value(months)
+    if not n:
+        return ""
+    return f"{n}-month gift" if kind == "giftsub" else f"{n}-month sub"
+
+
+def sub_message(username: str, tier: Any, duration_months: Any = 0, *, show_duration: bool = True) -> str:
+    """Plain feed text for a first-time sub."""
+    n = duration_months_value(duration_months) if show_duration else 0
+    if n:
+        return f"{username} subscribed for {n} months (Tier {tier})!"
+    return f"{username} subscribed (Tier {tier})!"
+
+
+def resub_message(
+    username: str, months: Any, tier: Any = None, duration_months: Any = 0, *, show_duration: bool = True
+) -> str:
+    """Plain feed text for a resub (``months`` is the cumulative total)."""
+    n = duration_months_value(duration_months) if show_duration else 0
+    text = f"{username} resubscribed for {months} months" + (f" (Tier {tier})" if tier else "")
+    if n:
+        text += f" with a {n}-month sub"
+    return text + "!"
+
+
+def giftsub_message(
+    gifter: str,
+    tier: Any,
+    qty: Any = 1,
+    recipient: Optional[str] = None,
+    duration_months: Any = 0,
+    *,
+    show_duration: bool = True,
+) -> str:
+    """Plain feed text for a gift: "gifted a 3-month Tier 1 sub to X"."""
+    n = duration_months_value(duration_months) if show_duration else 0
+    try:
+        count = int(qty or 1)
+    except (TypeError, ValueError):
+        count = 1
+    recipient = str(recipient or "").strip()
+    if count <= 1:
+        sub = f"a {n}-month Tier {tier} sub" if n else f"a Tier {tier} sub"
+        return f"{gifter} gifted {sub}" + (f" to {recipient}" if recipient else "") + "!"
+    return f"{gifter} gifted {count:,} Tier {tier} subs" + (f" ({n} months each)" if n else "") + "!"
 
 
 # --------------------------------------------------------------------------- kinds
@@ -323,6 +398,10 @@ def feed_row_model(alert: Mapping[str, Any], *, seq: Optional[int] = None) -> Di
     raw_tier = _to_int(_pick(alert, "tier"))
     if kind in ("sub", "resub") and raw_tier and 1 <= raw_tier <= 3:
         tier = f"T{raw_tier}"
+    # Months one sub or gift covers ("6-month sub"); the renderer hides it when the setting is off.
+    duration = ""
+    if kind in ("sub", "resub", "giftsub"):
+        duration = format_sub_duration(alert_duration_months(alert), kind)
 
     if kind == "follow":
         what = "followed"
@@ -477,6 +556,7 @@ def feed_row_model(alert: Mapping[str, Any], *, seq: Optional[int] = None) -> Di
         "what": what,
         "amount": amount,
         "tier": tier,
+        "duration": duration,
         "msg": msg,
         "ts": _ts(alert),
         "platform": platform,

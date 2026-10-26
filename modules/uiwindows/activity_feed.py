@@ -46,13 +46,17 @@ from .. import alertutils
 from ..ui_timer import app_schedule, run_on_ui_loop
 from .activity_feed_model import (
     FEED_SETTINGS,
+    alert_duration_months,
     feed_row_model,
     feed_setting_value,
+    giftsub_message,
     mode_patch,
     normalize_feed_settings,
     normalize_queue_state,
     normalize_search,
     person_totals,
+    resub_message,
+    sub_message,
     view_mode,
 )
 
@@ -734,6 +738,19 @@ def current_feed_settings(app_settings: Any = None) -> Dict[str, Any]:
     return settings
 
 
+def show_sub_duration(app_settings: Any = None) -> bool:
+    """App Settings → Activity Feed → Show multi-month subs (default on)."""
+    if app_settings is None:
+        try:
+            from modules import dataobjects
+
+            sm = dataobjects.state_manager
+            app_settings = sm.get_app_settings() if getattr(sm, "_initialized", False) else None
+        except Exception:
+            app_settings = None
+    return bool(normalize_feed_settings(app_settings).get("sub_duration", True))
+
+
 def broadcast_feed_settings(*, to: Optional[str] = None) -> Dict[str, Any]:
     """Send the feed settings to the docks (all, or one sid)."""
     settings = current_feed_settings()
@@ -747,6 +764,9 @@ def apply_feed_settings_changed(changed_keys: Optional[set] = None) -> None:
     _push_slot("settings", settings)
     if changed_keys and "person_hours" in changed_keys:
         schedule_condensed_view_update("person_hours")
+    elif changed_keys and "sub_duration" in changed_keys:
+        # By person lines group and word multi-month subs on the server side.
+        schedule_condensed_view_update("sub_duration")
 
 
 def set_feed_setting(key: str, value: Any) -> bool:
@@ -1016,6 +1036,7 @@ _PAYLOAD_EXTRA_FIELDS = frozenset(
         "is_supersticker",
         "resub_month",
         "months",
+        "duration_months",
         "amt_cheered",
         "alert_name",
     }
@@ -1074,12 +1095,13 @@ def build_activity_feed_alert_payload(
         ("gift_qty", gift_qty),
         ("streak_count", streak_count),
         ("raider_count", raider_count),
+        ("duration_months", extra.get("duration_months")),
     ):
         if value is not None:
             try:
                 alert_data[key] = int(str(value).replace(",", ""))
             except (TypeError, ValueError):
-                pass
+                alert_data.pop(key, None)
 
     if hype_train_type:
         alert_data["hype_train_type"] = str(hype_train_type).strip().lower()
@@ -1112,6 +1134,8 @@ def build_activity_feed_alert_payload(
                     for field in (
                         "game_name",
                         "resub_month",
+                        "duration_months",
+                        "months_prepaid",
                         "gift_qty",
                         "amt_cheered",
                         "tier",
@@ -1536,6 +1560,42 @@ def add_alert_to_feed(
         logger.error("Error sending alert to the activity feed dock: %s", e, exc_info=True)
 
 
+def update_alert_in_feed(alert_id: Optional[str], **fields: Any) -> bool:
+    """Change fields of an alert already in the live feed (tab and docks repaint in place).
+
+    Used when a detail arrives after the alert, such as the months of a gifted sub.
+    Returns False when the alert isn't in the live feed.
+    """
+    if not alert_id:
+        return False
+    changes = {k: v for k, v in fields.items() if v is not None}
+    if not changes:
+        return False
+    with _live_lock:
+        entry = next(
+            (a for a in activity_feed_state.live_alerts if isinstance(a, dict) and a.get("alert_id") == alert_id),
+            None,
+        )
+        if entry is None:
+            return False
+        entry.update(changes)
+        stored = entry.get("stored_alert_data")
+        if isinstance(stored, dict):
+            stored = dict(stored)
+            stored.update({k: v for k, v in changes.items() if k != "message"})
+            entry["stored_alert_data"] = stored
+        entry["row"] = feed_row_model(entry)
+    _schedule_live_push()
+    try:
+        # The dock replaces its live list in place (no new row, order kept).
+        broadcast_activity_feed_view(view_manager.snapshot(), include_live_alerts=True)
+        if view_mode(view_manager.snapshot()) == "person":
+            schedule_condensed_view_update("alert_updated")
+    except Exception as exc:
+        logger.debug("activity_feed: could not send the updated alert: %s", exc)
+    return True
+
+
 def start_alert_processor():
     """Kept for callers: new alerts are handled as they arrive."""
     logger.debug("Activity feed is event driven - nothing to start")
@@ -1620,6 +1680,8 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
             except (TypeError, ValueError):
                 return default
 
+        show_duration = show_sub_duration()
+        duration_months = alert_duration_months(stored_alert_data)
         message = ""
         if original_type == "bit":
             message = f"{username} cheered {_int(stored_alert_data.get('amt_cheered')):,} bits!"
@@ -1631,9 +1693,9 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
                 message = f"{username} became a channel member" + (f" ({level})!" if level else "!")
             elif resub_month > 1:
                 display_type, badge = "Resub", "resub"
-                message = f"{username} has resubscribed for {resub_month} months!"
+                message = resub_message(username, resub_month, None, duration_months, show_duration=show_duration)
             else:
-                message = f"{username} subscribed (Tier {tier})!"
+                message = sub_message(username, tier, duration_months, show_duration=show_duration)
         elif original_type == "resub":
             resub_month = (
                 _int(stored_alert_data.get("resub_month"))
@@ -1649,19 +1711,17 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
                     + ")!"
                 )
             else:
-                message = f"{username} has resubscribed for {resub_month} months!"
+                message = resub_message(username, resub_month, None, duration_months, show_duration=show_duration)
         elif original_type == "giftsub":
             gift_qty = _int(stored_alert_data.get("gift_qty"), 1) or 1
             tier = stored_alert_data.get("tier", 1)
             recipient = str(stored_alert_data.get("recipient") or "").strip()
             if source == "youtube":
                 message = f"{username} gifted {gift_qty} memberships!"
-            elif gift_qty == 1 and recipient:
-                message = f"{username} gifted a Tier {tier} sub to {recipient}!"
-            elif gift_qty == 1:
-                message = f"{username} gifted a Tier {tier} sub!"
             else:
-                message = f"{username} gifted {gift_qty} Tier {tier} subs!"
+                message = giftsub_message(
+                    username, tier, gift_qty, recipient, duration_months, show_duration=show_duration
+                )
         elif original_type == "follow":
             message = f"{username} just followed!"
         elif original_type == "point":
@@ -1718,6 +1778,8 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
             # The full stored alert, used by replay and the condensed grouping.
             "stored_alert_data": stored_alert_data,
         }
+        if duration_months and source != "youtube" and original_type in ("sub", "resub", "giftsub"):
+            result["duration_months"] = duration_months
         if original_type == "giftsub":
             gift_qty = stored_alert_data.get("gift_qty")
             if gift_qty is not None:
@@ -1943,8 +2005,14 @@ def _accumulate_condensed_alert(
     filter_state: Dict[str, Any],
     type_to_filter: Dict[str, str],
     search: Optional[str] = None,
+    *,
+    show_duration: bool = True,
 ) -> str:
-    """Fold one alert into condensed grouping. Returns ok, excluded, or unknown."""
+    """Fold one alert into condensed grouping. Returns ok, excluded, or unknown.
+
+    With ``show_duration`` multi-month subs and gifts (``duration_months`` > 1) get their
+    own group per length, so "Gifted 5 Tier 1 subs · 3 months" never mixes lengths.
+    """
     import re
 
     alert_type = alert_data.get("type", "").lower()
@@ -1986,6 +2054,7 @@ def _accumulate_condensed_alert(
     stored_data = alert_data.get("stored_alert_data")
     if not isinstance(stored_data, dict):
         stored_data = {}
+    sub_duration = 0
 
     if alert_type in ["sub", "resub", "giftsub"]:
         tier = alert_data.get("tier", 1)
@@ -2010,6 +2079,10 @@ def _accumulate_condensed_alert(
                 grouping_key = f"{alert_type}_tier{tier}_multi_month"
             else:
                 grouping_key = f"{alert_type}_tier{tier}_1month"
+        if show_duration:
+            sub_duration = alert_duration_months(alert_data)
+            if sub_duration:
+                grouping_key = f"{grouping_key}_dur{sub_duration}"
     elif alert_type in (
         "membership",
         "member milestone",
@@ -2061,6 +2134,8 @@ def _accumulate_condensed_alert(
         }
         if reward_name is not None:
             user_alerts[username][grouping_key]["reward_name"] = reward_name
+        if sub_duration:
+            user_alerts[username][grouping_key]["duration_months"] = sub_duration
 
     group = user_alerts[username][grouping_key]
     group["count"] += 1
@@ -2164,8 +2239,11 @@ def _group_alerts_for_condensed(
     alerts_to_process: List[Dict[str, Any]],
     filter_state: Optional[Dict[str, Any]] = None,
     search: Optional[str] = None,
+    show_duration: Optional[bool] = None,
 ):
     """Group alerts by user and type for the condensed view (CPU-only)."""
+    if show_duration is None:
+        show_duration = show_sub_duration()
     user_alerts: Dict[str, Dict[str, Any]] = {}
     excluded_count = 0
     unknown_username_count = 0
@@ -2179,7 +2257,8 @@ def _group_alerts_for_condensed(
             continue
         try:
             result = _accumulate_condensed_alert(
-                alert_data, user_alerts, filter_state, type_to_filter, search
+                alert_data, user_alerts, filter_state, type_to_filter, search,
+                show_duration=show_duration,
             )
         except Exception as exc:
             excluded_count += 1
@@ -2241,7 +2320,8 @@ def person_line(grouping_key: str, data: Dict[str, Any]) -> Dict[str, Any]:
         text = f"Resubscribed for {months} months (Tier {tier})" if months > 1 else f"Resubscribed (Tier {tier})"
         biggest = months
     elif kind == "giftsub":
-        text = f"Gifted {int(total or count):,} Tier {tier} subs"
+        gifts = int(total or count)
+        text = f"Gifted {gifts:,} Tier {tier} sub" + ("s" if gifts != 1 else "")
         amount = float(total or count)
         count = 1 if total else count
     elif kind == "follow":
@@ -2276,6 +2356,9 @@ def person_line(grouping_key: str, data: Dict[str, Any]) -> Dict[str, Any]:
         text = f"Redeemed “{reward}”"
     else:
         text = grouping_key.replace("_", " ").title()
+    duration = int(data.get("duration_months") or 0)
+    if duration > 1 and kind in ("sub", "resub", "giftsub"):
+        text += f" · {duration} months"
     icon, color = KIND_META.get(kind, KIND_META["alert"])[:2]
     return {
         "kind": kind,
@@ -2487,6 +2570,7 @@ def create_aggregated_alert_text(grouping_key, data):
         tier = data["tier"]
         months = data["months"]
         original_type = data.get("original_type", grouping_key.split("_")[0])
+        duration = int(data.get("duration_months") or 0)
 
         if grouping_key.startswith("sub_tier"):
             if count > 1:
@@ -2500,6 +2584,12 @@ def create_aggregated_alert_text(grouping_key, data):
             if count > 1:
                 return f"Resubscribed {count} times for {months} months (Tier {tier})!"
             return f"Resubscribed for {months} months (Tier {tier})!"
+        elif grouping_key.startswith("giftsub_tier") and duration > 1:
+            try:
+                formatted_amount = f"{int(total_amount):,}"
+            except (ValueError, TypeError):
+                formatted_amount = str(total_amount)
+            return f"Gifted {formatted_amount} Tier {tier} subs ({duration} months)!"
         elif grouping_key.startswith("giftsub_tier") and "_1month" in grouping_key:
             try:
                 formatted_amount = f"{int(total_amount):,}"
@@ -3285,9 +3375,12 @@ def render_fallback_html(rows: List[Dict[str, Any]], *, limit: int = 150) -> str
         '<div class="afx-fb-note">The live feed view couldn\'t start, so this is a simple list. '
         "It updates as events arrive; reopening the tab usually brings the full view back.</div>"
     ]
+    show_duration = show_sub_duration()
     for row in rows[:limit]:
         user = html.escape(str(row.get("user") or ""))
         what = html.escape(str(row.get("what") or ""))
+        if show_duration and row.get("duration"):
+            what += f" · {html.escape(str(row.get('duration')))}"
         amount = html.escape(str(row.get("amount") or ""))
         when = html.escape(format_timestamp(row.get("ts") or time.time()))
         msg = html.escape(str(row.get("msg") or ""))

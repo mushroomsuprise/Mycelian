@@ -585,6 +585,8 @@ class AppSettingsTab:
                         self._feed_switch("platform")
                     with self._row("Show viewer messages", "The message a viewer sent with a cheer, sub or tip."):
                         self._feed_switch("messages")
+                    with self._row("Show multi-month subs", "A \u201c3 months\u201d tag when a sub or gifted sub covers several months."):
+                        self._feed_switch("sub_duration")
                     with self._row("Wrap long text", "Off: one line per event."):
                         self._feed_switch("wrap")
                     with self._row("Text size"):
