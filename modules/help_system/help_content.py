@@ -331,8 +331,16 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         title='Configuring Template Settings',
         category=HelpCategory.TEMPLATES,
         summary='Edit template settings in the Source Settings tab',
-        keywords=['configuration', 'settings', 'customization', 'json', 'css', 'spore studio', 'source settings', 'preview'],
-        related_topics=['templates_intro', 'source_controls', 'template_custom_css', 'spore_studio_design', 'spore_studio_dynamic_controls'],
+        keywords=['configuration', 'settings', 'customization', 'json', 'css', 'spore studio', 'source settings', 'preview', 'search settings', 'changed only', 'sample events', 'revert', 'discard'],
+        related_topics=['templates_intro', 'source_controls', 'color_picker', 'template_custom_css', 'spore_studio_design', 'spore_studio_dynamic_controls'],
+    ),
+    'color_picker': HelpTopic(
+        id='color_picker',
+        title='Color Picker',
+        category=HelpCategory.TEMPLATES,
+        summary='Pick solid colors, transparency and gradients in Source Settings, the Theme tab and Spore Studio',
+        keywords=['color', 'colour', 'color picker', 'colour picker', 'swatch', 'transparent', 'transparency', 'opacity', 'alpha', 'gradient', 'eyedropper', 'hex', 'rgba', 'theme', 'spore studio', 'source settings'],
+        related_topics=['template_configuration', 'settings_overview', 'spore_studio_design', 'spore_studio_widgets'],
     ),
     'template_custom_css': HelpTopic(
         id='template_custom_css',
@@ -385,7 +393,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         category=HelpCategory.SPORE_STUDIO,
         summary='Blocks, canvas, assets, element properties, and Source Settings exposure',
         keywords=['spore studio', 'blocks', 'canvas', 'assets', 'properties', 'container', 'text', 'image', 'video', 'expose', 'source settings', 'counter', 'data display'],
-        related_topics=['spore_studio_overview', 'spore_studio_counters', 'spore_studio_data_feed', 'spore_studio_data_sources', 'spore_studio_dynamic_controls', 'spore_studio_bindings', 'spore_studio_widgets', 'template_configuration', 'source_controls'],
+        related_topics=['spore_studio_overview', 'spore_studio_counters', 'spore_studio_data_feed', 'spore_studio_data_sources', 'spore_studio_dynamic_controls', 'spore_studio_bindings', 'spore_studio_widgets', 'color_picker', 'template_configuration', 'source_controls'],
     ),
     'spore_studio_widgets': HelpTopic(
         id='spore_studio_widgets',
@@ -488,7 +496,7 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         category=HelpCategory.SETTINGS,
         summary='Understanding and configuring Mycelian settings',
         keywords=['settings', 'configuration', 'preferences', 'setup', 'about', 'theme', 'database', 'backup'],
-        related_topics=['integrations_twitch', 'getting_started_intro', 'game_hooks', 'database', 'status_footer', 'notifications'],
+        related_topics=['integrations_twitch', 'getting_started_intro', 'game_hooks', 'database', 'status_footer', 'notifications', 'color_picker'],
     ),
     'settings_statistics': HelpTopic(
         id='settings_statistics',

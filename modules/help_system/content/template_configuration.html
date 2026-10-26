@@ -1,4 +1,4 @@
-<p class="hx-lead">Every template's settings live in the <strong>Source Settings</strong> tab. Pick a template, change its fields, watch the preview, then click <strong>Save</strong>. Open overlays pick up saved changes without you touching OBS.</p>
+<p class="hx-lead">Every template's settings live in the <strong>Source Settings</strong> tab. Pick a template, change its settings, watch the preview, then click <strong>Save</strong>. Open overlays pick up saved changes without you touching OBS.</p>
 
 <div class="hx-meta">
   <span>{{icon:place}} <span class="hx-path"><span>Source Settings</span></span></span>
@@ -20,151 +20,175 @@
       <span class="hm-tab">Settings</span>
       <span class="hm-tabs-tail"><span class="hx-mi">help_outline</span><span class="hx-mi">notifications</span></span>
     </div>
-    <div class="hm-frame hm-stack">
-      <div class="hm-row hm-nowrap">
-        <span class="hm-btn hm-outline hm-icon-only"><span class="hx-mi">refresh</span></span>
-        <div class="hm-field hm-select hm-nolabel hm-base"><span class="hm-value">title</span></div>
-        <span class="hm-marker" data-n="1"></span>
-        <span class="hm-btn hm-outline"><span class="hx-mi">content_copy</span>Duplicate</span>
-        <span class="hm-btn hm-outline"><span class="hx-mi">drive_file_rename_outline</span>Rename</span>
-        <span class="hm-btn hm-danger"><span class="hx-mi">delete</span>Delete</span>
-        <span class="hm-marker" data-n="2"></span>
-      </div>
-      <div class="hm-row hm-nowrap">
-        <div class="hm-field hm-grow hm-base" data-label="🔍 Search properties"><span class="hm-placeholder">Type to search by property label...</span></div>
-        <span class="hm-marker" data-n="3"></span>
-        <span class="hm-btn hm-outline"><span class="hx-mi">restart_alt</span>Reset</span>
-        <span class="hm-btn"><span class="hx-mi">save</span>Save</span>
-        <span class="hm-marker" data-n="4"></span>
-      </div>
-      <div class="hm-row hm-end">
-        <span class="hm-switch is-on"><i></i>Show preview</span>
-        <span class="hm-btn hm-flat hm-dense"><span class="hx-mi">open_in_new</span>Pop out preview</span>
-      </div>
-
-      <div class="hm-cs-split">
-        <div class="hm-cs-editor">
-          <div class="hm-expansion is-open">
-            <div class="hm-expansion-head">Text Size<span class="hm-marker" data-n="5"></span></div>
-            <div class="hm-expansion-body">
-              <div class="hm-cs-grid">
-                <div class="hm-cs-cell">
-                  <span class="hm-cs-label">Font File</span>
-                  <span class="hm-cs-desc">Font file name, including the extension.</span>
-                  <div class="hm-field hm-nolabel"><span class="hm-value">Renogare.ttf</span></div>
-                </div>
-                <div class="hm-cs-cell">
-                  <span class="hm-cs-label">Auto Fit Text To Source</span>
-                  <span class="hm-cs-desc">Shrink the text automatically so it always fits.</span>
-                  <span class="hm-switch is-on"><i></i></span>
-                </div>
-                <div class="hm-cs-cell is-changed">
-                  <span class="hm-cs-label">Max Font Size</span>
-                  <span class="hm-cs-desc">Largest size the text is allowed to be, in pixels.</span>
-                  <div class="hm-field hm-nolabel"><span class="hm-value">72</span></div>
-                  <span class="hm-marker" data-n="6"></span>
-                </div>
-                <div class="hm-cs-cell">
-                  <span class="hm-cs-label">Text Wrapping</span>
-                  <span class="hm-cs-desc">wrap = long text breaks onto multiple lines.</span>
-                  <div class="hm-field hm-select hm-nolabel"><span class="hm-value">wrap</span></div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="hm-expansion">
-            <div class="hm-expansion-head">Text Appearance</div>
-            <div class="hm-expansion-body">
-              <div class="hm-cs-grid">
-                <div class="hm-cs-cell">
-                  <span class="hm-cs-label">Font Color</span>
-                  <span class="hm-cs-desc">Color of the text.</span>
-                  <div class="hm-color-row"><span class="hm-tp-swatch"><i style="--hm-sw: var(--color-text-primary)"></i></span><div class="hm-field hm-nolabel"><span class="hm-value hm-mono">#ffffff</span></div></div>
-                </div>
-                <div class="hm-cs-cell">
-                  <span class="hm-cs-label">Text Shadow</span>
-                  <span class="hm-cs-desc">CSS text-shadow value.</span>
-                  <div class="hm-field hm-nolabel"><span class="hm-value hm-mono">2px 2px 4px rgba(0,0,0,0.8)</span></div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="hm-expansion">
-            <div class="hm-expansion-head">Text Placement</div>
-            <div class="hm-expansion-body"><span class="hm-muted hm-xs">Horizontal Alignment, Vertical Alignment, Edge Padding</span></div>
-          </div>
-          <div class="hm-expansion">
-            <div class="hm-expansion-head">Stream Data</div>
-            <div class="hm-expansion-body"><span class="hm-muted hm-xs">Category Data Source, API Refresh Interval, Show Category, Custom Title…</span></div>
-          </div>
+    <div class="hm-frame">
+      <div class="hm-tp-shell">
+        <div class="hm-tp-head">
+          <span class="hm-tp-tile"><span class="hx-mi">tune</span></span>
+          <span class="hm-tp-titlecol">
+            <span class="hm-tp-kicker">Source Settings</span>
+            <span class="hm-tp-titlerow"><span class="hm-tp-picker">title<span class="hx-mi">unfold_more</span></span><span class="hm-tp-meta">32 settings · 7 sections</span><span class="hm-marker" data-n="1"></span></span>
+          </span>
+          <span class="hm-tp-pill is-warn"><span class="hx-mi">edit</span>2 unsaved changes</span><span class="hm-marker" data-n="2"></span>
+          <span class="hm-tp-spacer"></span>
+          <span class="hm-tp-ibtn"><span class="hx-mi">refresh</span></span>
+          <span class="hm-tp-ibtn"><span class="hx-mi">content_copy</span></span>
+          <span class="hm-tp-ibtn"><span class="hx-mi">drive_file_rename_outline</span></span>
+          <span class="hm-tp-ibtn is-danger"><span class="hx-mi">delete_outline</span></span><span class="hm-marker" data-n="3"></span>
+          <span class="hm-tp-sep"></span>
+          <span class="hm-tp-ibtn"><span class="hx-mi">help_outline</span></span>
+          <span class="hm-btn hm-outline hm-dense">Discard</span>
+          <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span><span class="hm-marker" data-n="4"></span>
         </div>
-        <div class="hm-cs-divider"></div>
-        <div class="hm-cs-preview">
-          <div class="hm-cs-prevbar">
-            <span class="hm-bold hm-sm">Preview</span>
-            <span class="hm-muted">Size</span>
-            <div class="hm-field hm-nolabel"><span class="hm-value">900</span></div>
-            <span class="hm-muted">×</span>
-            <div class="hm-field hm-nolabel"><span class="hm-value">120</span></div>
-            <span class="hm-btn hm-flat hm-dense">Reset</span>
-            <span class="hm-marker" data-n="7"></span>
+        <div class="hm-tp-body">
+          <div class="hm-tp-nav">
+            <span class="hm-tp-search"><span class="hx-mi">search</span>Search settings</span>
+            <div class="hm-tp-navlist">
+              <div class="hm-tp-navhead">Sections<span class="hm-marker" data-n="5"></span></div>
+              <div class="hm-tp-navitem is-on"><span class="nm">Text Size</span><span class="dot"></span><span class="n">5</span></div>
+              <div class="hm-tp-navitem"><span class="nm">Text Appearance</span><span class="dot"></span><span class="n">4</span></div>
+              <div class="hm-tp-navitem"><span class="nm">Text Placement</span><span class="n">3</span></div>
+              <div class="hm-tp-navitem"><span class="nm">Background &amp; Border</span><span class="n">4</span></div>
+              <div class="hm-tp-navitem"><span class="nm">Stream Data</span><span class="n">6</span></div>
+              <div class="hm-tp-navitem"><span class="nm">Animation Settings</span><span class="n">7</span></div>
+              <div class="hm-tp-navitem"><span class="nm">Wipe Animation Settings</span><span class="n">3</span></div>
+            </div>
+            <div class="hm-tp-navfoot"><span>Changed only</span><span class="hm-switch"><i></i></span></div>
           </div>
-          <div class="hm-cs-prevbar">
-            <span class="hm-muted">Zoom</span>
-            <span class="hm-slider" style="--hm-val:40%"></span>
-            <span class="hm-btn hm-flat hm-dense">Fit</span>
-            <span class="hm-btn hm-flat hm-round hm-icon-only"><span class="hx-mi">settings</span></span>
+          <div class="hm-tp-split">
+            <div class="hm-tp-form">
+              <div class="hm-expansion hm-tp-sec is-open">
+                <div class="hm-expansion-head">Text Size<span class="hm-tp-n">5</span><span class="hm-marker" data-n="6"></span></div>
+                <div class="hm-expansion-body">
+                  <div class="hm-tp-row">
+                    <div class="hm-tp-row-text"><div class="hm-tp-row-title">Font File</div><div class="hm-tp-row-sub">Font file name, including the extension. The file must exist in assets/default_assets/fonts/.</div></div>
+                    <div class="hm-tp-ctrl"><span class="hm-tp-thumb"><span class="hx-mi">font_download</span></span><span class="hm-tp-input is-asset">Renogare.ttf</span><span class="hm-tp-ibtn"><span class="hx-mi">folder_open</span></span></div>
+                  </div>
+                  <div class="hm-tp-row">
+                    <div class="hm-tp-row-text"><div class="hm-tp-row-title">Auto Fit Text To Source</div><div class="hm-tp-row-sub">Shrink the text automatically so it always fits inside the browser source.</div></div>
+                    <div class="hm-tp-ctrl"><span class="hm-switch is-on"><i></i></span></div>
+                  </div>
+                  <div class="hm-tp-row is-changed">
+                    <div class="hm-tp-row-text"><div class="hm-tp-row-title">Max Font Size<span class="hm-tp-changed">Changed</span><span class="hm-tp-revert"><span class="hx-mi">undo</span></span><span class="hm-marker" data-n="7"></span></div><div class="hm-tp-row-sub">Largest size the text is allowed to be, in pixels.</div></div>
+                    <div class="hm-tp-ctrl"><span class="hm-tp-input is-num">72</span></div>
+                  </div>
+                  <div class="hm-tp-row">
+                    <div class="hm-tp-row-text"><div class="hm-tp-row-title">Text Wrapping</div><div class="hm-tp-row-sub">wrap = long text breaks onto multiple lines and then shrinks to fit.</div></div>
+                    <div class="hm-tp-ctrl"><span class="hm-tp-input is-sel">wrap</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="hm-expansion hm-tp-sec is-open">
+                <div class="hm-expansion-head">Text Appearance<span class="hm-tp-n">4</span></div>
+                <div class="hm-expansion-body">
+                  <div class="hm-tp-row is-changed">
+                    <div class="hm-tp-row-text"><div class="hm-tp-row-title">Font Color<span class="hm-tp-changed">Changed</span><span class="hm-tp-revert"><span class="hx-mi">undo</span></span></div><div class="hm-tp-row-sub">Color of the text.</div></div>
+                    <div class="hm-tp-ctrl"><span class="hm-tp-swatch"><i style="--hm-sw: var(--color-warning)"></i></span><span class="hm-tp-input is-color">#facc15</span></div>
+                  </div>
+                  <div class="hm-tp-row">
+                    <div class="hm-tp-row-text"><div class="hm-tp-row-title">Line Height</div><div class="hm-tp-row-sub">Spacing between lines, as a multiple of the font size.</div></div>
+                    <div class="hm-tp-ctrl"><span class="hm-tp-input is-num">1.2</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="hm-expansion hm-tp-sec">
+                <div class="hm-expansion-head">Text Placement<span class="hm-tp-n">3</span></div>
+                <div class="hm-expansion-body">
+                  <div class="hm-tp-row">
+                    <div class="hm-tp-row-text"><div class="hm-tp-row-title">Edge Padding</div><div class="hm-tp-row-sub">Blank margin in pixels kept clear inside every edge of the source.</div></div>
+                    <div class="hm-tp-ctrl"><span class="hm-tp-input is-num">0</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="hm-tp-divider"></div>
+            <div class="hm-tp-prev">
+              <div class="hm-tp-prev-bar"><span class="hm-tp-prev-title">Preview</span><span class="hm-tp-chip is-live">Live · shows unsaved changes</span><span class="hm-tp-spacer"></span><span class="hm-tp-ibtn is-small"><span class="hx-mi">refresh</span></span><span class="hm-tp-ibtn is-small"><span class="hx-mi">open_in_new</span></span><span class="hm-tp-ibtn is-small"><span class="hx-mi">settings</span></span><span class="hm-tp-ibtn is-small"><span class="hx-mi">visibility_off</span></span></div>
+              <div class="hm-tp-stage"><div class="hm-tp-frame"><span class="hm-tp-frame-txt">Just Chatting</span></div></div>
+              <div class="hm-tp-mocks"><span class="hm-tp-mocks-label">Sample events</span><span class="hm-tp-mock"><span class="hx-mi">play_arrow</span>Streamer info</span><span class="hm-tp-mock"><span class="hx-mi">play_arrow</span>Category update</span></div>
+            </div>
           </div>
-          <span class="hm-muted hm-xs">From OBS: Title</span>
-          <span class="hm-warn hm-xs">Unsaved changes reflected in preview</span>
-          <div class="hm-cs-mockbar">
-            <span class="hm-btn hm-flat">Streamer info</span>
-            <span class="hm-btn hm-flat">Category update</span>
-            <span class="hm-marker" data-n="8"></span>
-          </div>
-          <div class="hm-stage hm-stage-strip"><span class="hm-ov-title hm-ov-lg">Just Chatting</span></div>
         </div>
       </div>
     </div>
   </div>
-  <figcaption>Source Settings with the <strong>title</strong> template open. Click a group header to open or close it. The switch is only a picture.</figcaption>
+  <figcaption>Source Settings with the <strong>title</strong> template open and two unsaved changes. Click a section header to fold it. The switches only flip the picture. The preview is explained <a href="#hx-the-preview">below</a>.</figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1">Template list. Type to filter it. It is sorted by name and leaves out hidden templates. The <span class="hx-mi">refresh</span> button rescans the folder after you add files.</li>
-  <li data-n="2"><strong>Duplicate</strong> copies the HTML, settings, Spore Studio file and asset folder under a new name. <strong>Rename</strong> renames the HTML, settings and Spore Studio file. <strong>Delete</strong> removes all of them after you confirm. Save your edits first; Duplicate and Rename refuse while there are unsaved changes.</li>
-  <li data-n="3">Filters the fields by label or description and shows <em>Showing N of M properties</em>.</li>
-  <li data-n="4"><strong>Reset</strong> throws away unsaved edits and reloads the saved file. <strong>Save</strong> writes the JSON and shows <em>Configuration saved for title.</em></li>
-  <li data-n="5">Each group comes from a <code>separator</code> in the JSON. Fields before the first separator go in <strong>Other Settings</strong>.</li>
-  <li data-n="6">A field you changed but have not saved is highlighted.</li>
-  <li data-n="7">Preview size. When OBS is connected and has a browser source for this template, the size is read from it (<em>From OBS: …</em>). Type a size to override it; <strong>Reset</strong> clears your size and detects it again.</li>
-  <li data-n="8">Mock event buttons send fake events to the preview only, so you can see an alert or update without going live. Templates without mocks show <em>No mock events for this template.</em></li>
+  <li data-n="1">The template you are editing. Click it and type to filter the list; it is sorted by name and leaves out hidden templates. Next to it: how many settings and sections the template has.</li>
+  <li data-n="2"><strong>N unsaved changes</strong> while you have edits, <strong>Saved</strong> when the form matches the file.</li>
+  <li data-n="3">{{icon:refresh}} <strong>Reload the template list</strong> rescans the folder after you add files. It keeps the open template and, if you have no unsaved edits, reads its file again. {{icon:content_copy}} <strong>Duplicate</strong> copies the HTML, configuration, Spore Studio file and asset folder under a new name. {{icon:drive_file_rename_outline}} <strong>Rename</strong> renames the HTML, configuration and Spore Studio file. {{icon:delete_outline}} <strong>Delete</strong> removes all of them after you confirm. Duplicate and Rename refuse while you have unsaved changes (<em>Save this template before duplicating</em>).</li>
+  <li data-n="4">{{icon:help_outline}} opens this page. <strong>Discard</strong> is greyed out until you change something; it asks <em>Discard unsaved changes?</em> and goes back to the last saved version. <strong>Save</strong> writes the JSON and shows <em>Saved title</em>.</li>
+  <li data-n="5">The outline. <strong>Search settings</strong> looks at setting names and descriptions; matches stay under their section headings, sections with no match disappear, and the counts show how many matched. Click a section to jump to it; the one you are looking at is highlighted. A dot means the section has unsaved changes. <strong>Changed only</strong> shows just the settings you changed. In a narrow window the outline is replaced by a <strong>Jump to section…</strong> list above the settings.</li>
+  <li data-n="6">Each section comes from a <code>separator</code> in the JSON, with its number of settings. Settings before the first separator go in <strong>General</strong>. The first three sections start open.</li>
+  <li data-n="7">A changed setting gets a <strong>Changed</strong> tag and a bar on its left. {{icon:undo}} (<em>Back to the saved value</em>) undoes just that setting.</li>
 </ol>
+
+<p>Each setting is one row: its name and a short description on the left (hover a cut-off description to read all of it), the control on the right. Number boxes use the template's <code>step</code> (for example 0.1 for <strong>Line Height</strong>) and show a unit such as <strong>s</strong> or <strong>px</strong> when the name or description gives one in brackets, like <em>API Refresh Interval (seconds)</em>.</p>
+
+<h3>Files, fonts and images</h3>
+
+<p>Settings that hold a file (images, fonts, sounds, videos) show a small thumbnail before the box: the picture itself for images, an icon for the rest. The {{icon:folder_open}} button (<em>Browse the assets folder</em>) opens the <a href="help:alert_media">file picker</a> and fills in the path in the form the template expects. You can still type a path by hand.</p>
+
+<h3>Colors</h3>
+
+<p>Color settings have a swatch and a text box. Click the swatch to open the <a href="help:color_picker">color picker</a>; the preview follows while you drag, <strong>Done</strong> keeps the color and <strong>Cancel</strong> or <kbd>Esc</kbd> puts the old one back. Or type a value (<code>#hex</code>, <code>rgb()</code>, <code>rgba()</code> or <code>transparent</code>) and press <kbd>Enter</kbd>. The checkerboard behind the swatch shows through transparent colors. A color that is already a CSS gradient gets the picker's <strong>Gradient</strong> tab.</p>
+
+<h2>The preview</h2>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-tp-shell hm-tp-prev">
+      <div class="hm-tp-prev-bar"><span class="hm-tp-prev-title">Preview</span><span class="hm-tp-chip is-live">Live · shows unsaved changes</span><span class="hm-marker" data-n="8"></span><span class="hm-tp-spacer"></span><span class="hm-tp-ibtn"><span class="hx-mi">refresh</span></span><span class="hm-tp-ibtn"><span class="hx-mi">open_in_new</span></span><span class="hm-tp-ibtn"><span class="hx-mi">settings</span></span><span class="hm-tp-ibtn"><span class="hx-mi">visibility_off</span></span><span class="hm-marker" data-n="9"></span></div>
+      <div class="hm-tp-prev-bar is-sub">
+        <span class="hm-tp-size"><span class="hx-mi">aspect_ratio</span><span class="hm-tp-input">900</span>×<span class="hm-tp-input">120</span></span>
+        <span class="hm-tp-chip"><span class="hx-mi">videocam</span>From OBS: Title</span><span class="hm-marker" data-n="10"></span>
+        <span class="hm-tp-spacer"></span>
+        <span class="hm-tp-zoom"><span>−</span><span class="is-pct">62%</span><span>+</span><span>Fit</span></span>
+        <span class="hm-tp-ibtn is-small"><span class="hx-mi">restart_alt</span></span><span class="hm-marker" data-n="11"></span>
+      </div>
+      <div class="hm-tp-stage"><div class="hm-tp-frame"><span class="hm-tp-frame-txt">Just Chatting</span></div><span class="hm-marker hm-pin" data-n="12" style="top:10px;left:10px"></span></div>
+      <div class="hm-tp-mocks"><span class="hm-tp-mocks-label">Sample events</span><span class="hm-tp-mock"><span class="hx-mi">play_arrow</span>Streamer info</span><span class="hm-tp-mock"><span class="hx-mi">play_arrow</span>Category update</span><span class="hm-marker" data-n="13"></span></div>
+    </div>
+  </div>
+  <figcaption>The preview pane for the <strong>title</strong> template, with OBS connected.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="8">What the preview shows: <strong>Live</strong> (the saved settings), <strong>Live · shows unsaved changes</strong>, <strong>Waiting for the overlay server</strong> or <strong>No preview for this template</strong>.</li>
+  <li data-n="9">{{icon:refresh}} <strong>Reload preview</strong>. {{icon:open_in_new}} <strong>Pop out the preview</strong> into a floating <em>Live preview</em> window you can drag and resize; it has its own reload and sample-event buttons. {{icon:settings}} <strong>Preview settings</strong>: <strong>Enable preview sounds</strong> and <strong>Show sample events bar</strong> (preview only, never saved into the template). {{icon:visibility_off}} <strong>Hide the preview</strong> gives the settings the full width; a <strong>Show preview</strong> button appears in the header to bring it back. Mycelian remembers whether the preview was hidden.</li>
+  <li data-n="10">The overlay's size. When OBS is connected and has a browser source for this template, it is read from OBS (<em>From OBS: …</em>). Type a width and height to use your own; that size is remembered for this template (<em>Saved size</em>). Otherwise the template's own design size is used.</li>
+  <li data-n="11">Zoom: <strong>−</strong> and <strong>+</strong> step the zoom, the number is the current scale, <strong>Fit</strong> fits the whole overlay in the pane. {{icon:restart_alt}} clears your saved size and detects it again from OBS or the template.</li>
+  <li data-n="12">The stage. The checkerboard is the transparent part of the browser source; the dashed outline is the overlay's size.</li>
+  <li data-n="13"><strong>Sample events</strong> plays fake events in the preview only, so you can see an alert or update without going live. Templates without them show <em>No sample events for this template.</em> The <strong>alerts</strong> template has <strong>Queue alert</strong>, <strong>Play alert</strong> and <strong>Refresh</strong>.</li>
+</ol>
+
+<p>Drag the line between the settings and the preview to give either side more room. Mycelian remembers where you left it.</p>
 
 <h2>Change and save settings</h2>
 
 <section class="hx-guide" data-guide="template_configuration_edit" data-title="Edit template settings">
   <div class="hx-step">
     <h3>Pick the template</h3>
-    <p>Open <span class="hx-path"><span>Source Settings</span></span> and choose the template from the list. The name matches the URL: <code>/title</code> is <strong>title</strong>.</p>
+    <p>Open <span class="hx-path"><span>Source Settings</span></span> and choose the template from the list at the top. The name matches the URL: <code>/title</code> is <strong>title</strong>.</p>
   </div>
   <div class="hx-step">
-    <h3>Change fields</h3>
-    <p>Open a group and edit. Use <strong>Search properties</strong> when a template has many fields. Each field's grey description says what it does and which values it takes.</p>
+    <h3>Find the setting</h3>
+    <p>Click a section in the outline, or type part of a name or description into <strong>Search settings</strong>. The grey description under each setting says what it does and which values it takes.</p>
   </div>
   <div class="hx-step">
-    <h3>Check the preview</h3>
-    <p>The preview on the right redraws with your unsaved values and says <em>Unsaved changes reflected in preview</em>. Use the mock buttons to trigger sample events. Turn <strong>Show preview</strong> off for more room, or use <strong>Pop out preview</strong> for a floating <em>Live preview</em> window you can drag and resize.</p>
+    <h3>Change it and check the preview</h3>
+    <p>The preview redraws with your unsaved values and its chip says <em>Live · shows unsaved changes</em>. Use <strong>Sample events</strong> to trigger an update. Changed settings are marked <strong>Changed</strong>; turn on <strong>Changed only</strong> to review them, and use {{icon:undo}} on a row to undo one.</p>
   </div>
   <div class="hx-step">
     <h3>Save</h3>
-    <p>Click <strong>Save</strong>. The preview label changes to <em>Preview matches saved file</em>. Mycelian tells open overlays the file changed and most reload their settings straight away. If an overlay in OBS still looks old, refresh that browser source.</p>
+    <p>Click <strong>Save</strong>. The header pill changes to <strong>Saved</strong>. Mycelian tells open overlays the file changed and most reload their settings straight away. If an overlay in OBS still looks old, refresh that browser source.</p>
   </div>
 </section>
 
 <div class="hx-callout hx-note"><p>Switching to another template with unsaved edits asks <em>"You have unsaved changes to … Save them before switching?"</em> with <strong>Stay</strong>, <strong>Discard and switch</strong> and <strong>Save and switch</strong>.</p></div>
 
-<h2>Field types</h2>
+<h2>Setting types</h2>
 
 <p>Each entry in a config's <code>elements</code> list has a <code>type</code>. Source Settings draws a different control for each one. Pick a type to see it.</p>
 
@@ -182,96 +206,83 @@
     </div>
     <div class="hm-frame">
       <div data-panel="text" class="is-active hm-stack">
-        <div class="hm-cs-cell">
-          <span class="hm-cs-label">Category Prefix</span>
-          <span class="hm-cs-desc">Text placed before the category name, e.g. 'Now playing: '.</span>
-          <div class="hm-field hm-nolabel is-focused"><span class="hm-value">Now playing: </span></div>
+        <div class="hm-tp-row">
+          <div class="hm-tp-row-text"><div class="hm-tp-row-title">Category Prefix</div><div class="hm-tp-row-sub">Text placed before the category name, e.g. 'Now playing: '.</div></div>
+          <div class="hm-tp-ctrl"><span class="hm-tp-input is-text is-focus">Now playing: </span></div>
         </div>
-        <span class="hm-muted hm-xs">One-line text box. When the value is a path under <code>/assets/</code> (an image, sound or video), and for fields of type <code>file</code>, a folder button (<span class="hx-mi">folder_open</span>) next to the box opens the <a href="help:alert_media">file picker</a> and fills in the path. Any other type Source Settings does not know is shown as a plain text box.</span>
+        <div class="hm-tp-row">
+          <div class="hm-tp-row-text"><div class="hm-tp-row-title">Background Image URL</div><div class="hm-tp-row-sub">URL or path to background image (when media type is 'image')</div></div>
+          <div class="hm-tp-ctrl"><span class="hm-tp-thumb is-img"><span class="hx-mi">image</span></span><span class="hm-tp-input is-asset">/assets/alerts/bg.png</span><span class="hm-tp-ibtn"><span class="hx-mi">folder_open</span></span></div>
+        </div>
+        <span class="hm-muted hm-xs">One-line text box. When the setting holds a file (an image, font, sound or video, and every <code>file</code> type), it gets a thumbnail and a {{icon:folder_open}} button that opens the file picker. Any other type Source Settings does not know is shown as a plain text box.</span>
       </div>
       <div data-panel="textarea" class="hm-stack">
-        <div class="hm-cs-cell">
-          <span class="hm-cs-label">Random Font List</span>
-          <span class="hm-cs-desc">List of font files to randomly choose from (one per line).</span>
-          <div class="hm-field hm-textarea hm-nolabel"><span class="hm-value">Roboto-Regular.ttf
+        <div class="hm-tp-row is-stack">
+          <div class="hm-tp-row-text"><div class="hm-tp-row-title">Random Font List</div><div class="hm-tp-row-sub">List of font files to randomly choose from (one per line).</div></div>
+          <span class="hm-tp-input is-area">Roboto-Regular.ttf
 Roboto-Bold.ttf
-Montserrat-Regular.ttf</span></div>
+Montserrat-Regular.ttf</span>
         </div>
-        <span class="hm-muted hm-xs">Multi-line text box, four rows tall.</span>
+        <span class="hm-muted hm-xs">Multi-line box, four rows tall, under the name instead of beside it.</span>
       </div>
       <div data-panel="number" class="hm-stack">
-        <div class="hm-cs-cell">
-          <span class="hm-cs-label">Max Font Size</span>
-          <span class="hm-cs-desc">Largest size the text is allowed to be, in pixels.</span>
-          <div class="hm-field hm-nolabel"><span class="hm-value">60</span><span class="hx-mi">unfold_more</span></div>
+        <div class="hm-tp-row">
+          <div class="hm-tp-row-text"><div class="hm-tp-row-title">API Refresh Interval (seconds)</div><div class="hm-tp-row-sub">How often to re-read the category from the Twitch API.</div></div>
+          <div class="hm-tp-ctrl"><span class="hm-tp-input is-num">60</span><span class="hm-tp-unit">s</span></div>
         </div>
-        <span class="hm-muted hm-xs">Number box. <code>min</code> and <code>max</code> limit the value.</span>
+        <div class="hm-tp-row">
+          <div class="hm-tp-row-text"><div class="hm-tp-row-title">Transition Duration</div><div class="hm-tp-row-sub">How long a text change animation takes, in seconds.</div></div>
+          <div class="hm-tp-ctrl"><span class="hm-tp-input is-num">0.3</span><span class="hm-tp-unit"></span></div>
+        </div>
+        <span class="hm-muted hm-xs">Number box. <code>min</code> and <code>max</code> limit the value; <code>step</code> sets how far the arrow keys move it. A unit in brackets in the name or description, such as <em>(seconds)</em>, <em>(px)</em>, <em>(ms)</em>, <em>(%)</em> or <em>(deg)</em>, is shown after the box.</span>
       </div>
       <div data-panel="slider" class="hm-stack">
-        <div class="hm-cs-cell">
-          <span class="hm-cs-label">Option 1 Size</span>
-          <span class="hm-cs-desc">Relative width of this slice.</span>
-          <div class="hm-cs-slider-row"><span class="hm-slider" style="--hm-val:67%"></span><span class="hm-cs-readout">7</span></div>
+        <div class="hm-tp-row">
+          <div class="hm-tp-row-text"><div class="hm-tp-row-title">Option 1 Size</div><div class="hm-tp-row-sub">Relative width of this slice.</div></div>
+          <div class="hm-tp-ctrl"><span class="hm-slider" style="--hm-val:67%"></span><span class="hm-tp-readout">7</span></div>
         </div>
         <span class="hm-muted hm-xs">Slider with the current value beside it. Uses <code>min</code>, <code>max</code> and <code>step</code> (defaults 0, 100, 1).</span>
       </div>
       <div data-panel="checkbox" class="hm-stack">
-        <div class="hm-cs-cell">
-          <span class="hm-cs-label">Show Category</span>
-          <span class="hm-cs-desc">On: display your live Twitch category. Off: display the Custom Title text instead.</span>
-          <span class="hm-switch is-on"><i></i></span>
+        <div class="hm-tp-row">
+          <div class="hm-tp-row-text"><div class="hm-tp-row-title">Show Category</div><div class="hm-tp-row-sub">On: display your live Twitch category. Off: display the Custom Title text instead.</div></div>
+          <div class="hm-tp-ctrl"><span class="hm-switch is-on"><i></i></span></div>
         </div>
         <span class="hm-muted hm-xs">Despite the name, a <code>checkbox</code> is drawn as an on/off switch. Click it to flip the picture.</span>
       </div>
       <div data-panel="color" class="hm-stack">
-        <div class="hm-row hm-top hm-gap-xl">
-          <div class="hm-cs-cell hm-grow">
-            <span class="hm-cs-label">Glow Color</span>
-            <span class="hm-cs-desc">Color of the glow.</span>
-            <div class="hm-color-row"><span class="hm-tp-swatch"><i style="--hm-sw: var(--color-primary)"></i></span><div class="hm-field hm-nolabel"><span class="hm-value hm-mono">#9333ea</span></div></div>
-            <div class="hm-cs-label hm-xs hm-muted">Empty box placeholder: #hex, rgb(), rgba(), transparent</div>
-          </div>
-          <div class="hm-tp-dialog">
-            <span class="hm-tp-dialog-title">Pick color</span>
-            <div class="hm-sv-box"></div>
-            <div class="hm-presets">
-              <span class="hm-tp-swatch"><i style="--hm-sw: var(--color-error)"></i></span>
-              <span class="hm-tp-swatch"><i style="--hm-sw: var(--color-warning)"></i></span>
-              <span class="hm-tp-swatch"><i style="--hm-sw: var(--color-success)"></i></span>
-              <span class="hm-tp-swatch"><i style="--hm-sw: var(--color-info)"></i></span>
-              <span class="hm-tp-swatch"><i style="--hm-sw: var(--color-primary)"></i></span>
-              <span class="hm-tp-swatch"><i style="--hm-sw: var(--color-text-primary)"></i></span>
-              <span class="hm-tp-swatch"><i style="--hm-sw: var(--color-bg-base)"></i></span>
-              <span class="hm-tp-swatch hm-sw-clear"><i></i></span>
-            </div>
-            <div class="hm-row hm-end"><span class="hm-btn hm-flat hm-dense">Cancel</span><span class="hm-btn hm-dense">Apply</span></div>
-          </div>
+        <div class="hm-tp-row">
+          <div class="hm-tp-row-text"><div class="hm-tp-row-title">Glow Color</div><div class="hm-tp-row-sub">Color of the glow. Only used when Enable Glow Effect is on.</div></div>
+          <div class="hm-tp-ctrl"><span class="hm-tp-swatch"><i style="--hm-sw: var(--color-primary)"></i></span><span class="hm-tp-input is-color">#9333ea</span></div>
         </div>
-        <span class="hm-muted hm-xs">Type a color, or click the swatch to open <strong>Pick color</strong>. The config's <code>options</code> list becomes the preset row. The checkerboard shows through for <code>transparent</code>.</span>
+        <div class="hm-tp-row">
+          <div class="hm-tp-row-text"><div class="hm-tp-row-title">Background Color</div><div class="hm-tp-row-sub">Fills the whole browser source behind the text. Leave transparent for a text-only overlay.</div></div>
+          <div class="hm-tp-ctrl"><span class="hm-tp-swatch is-clear"><i></i></span><span class="hm-tp-input is-color">transparent</span></div>
+        </div>
+        <span class="hm-muted hm-xs">Swatch and text box. Click the swatch for the <a href="help:color_picker">color picker</a>; the config's <code>options</code> list becomes its <strong>Template colours</strong>. The checkerboard shows through for <code>transparent</code> and see-through colors.</span>
       </div>
       <div data-panel="select" class="hm-stack">
-        <div class="hm-cs-cell">
-          <span class="hm-cs-label">Category Data Source</span>
-          <span class="hm-cs-desc">How the current category is kept up to date.</span>
-          <div class="hm-field hm-select hm-nolabel is-focused"><span class="hm-value">api_and_eventsub</span></div>
-          <div class="hm-list">
-            <div class="hm-list-item is-selected">api_and_eventsub</div>
-            <div class="hm-list-item">eventsub_only</div>
-            <div class="hm-list-item">api_only</div>
-          </div>
+        <div class="hm-tp-row">
+          <div class="hm-tp-row-text"><div class="hm-tp-row-title">Category Data Source</div><div class="hm-tp-row-sub">How the current category is kept up to date.</div></div>
+          <div class="hm-tp-ctrl"><span class="hm-tp-input is-sel is-focus">api_and_eventsub</span></div>
         </div>
-        <span class="hm-muted hm-xs">Dropdown of the <code>options</code> list. With <code>"options_from": "fonts"</code> it lists the files in <code>assets/default_assets/fonts/</code>. With <code>"display": "color_grid"</code> it is drawn as a color field.</span>
+        <div class="hm-list">
+          <div class="hm-list-item is-selected">api_and_eventsub</div>
+          <div class="hm-list-item">eventsub_only</div>
+          <div class="hm-list-item">api_only</div>
+        </div>
+        <span class="hm-muted hm-xs">Dropdown of the <code>options</code> list. With <code>"options_from": "fonts"</code> it lists the files in <code>assets/default_assets/fonts/</code>. With <code>"display": "color_grid"</code> it is drawn as a color setting.</span>
       </div>
       <div data-panel="separator" class="hm-stack">
-        <div class="hm-expansion is-open">
-          <div class="hm-expansion-head">Background &amp; Border</div>
-          <div class="hm-expansion-body"><span class="hm-muted hm-xs">Background Color · Border Width · Border Color · Corner Radius</span></div>
+        <div class="hm-expansion hm-tp-sec is-open">
+          <div class="hm-expansion-head">Background &amp; Border<span class="hm-tp-n">4</span></div>
+          <div class="hm-expansion-body"><div class="hm-tp-row"><span class="hm-muted hm-xs">Background Color · Border Width · Border Color · Corner Radius</span></div></div>
         </div>
-        <span class="hm-muted hm-xs">Not a field. Its <code>label</code> starts a new collapsible group that holds every field after it, up to the next separator.</span>
+        <span class="hm-muted hm-xs">Not a setting. Its <code>label</code> starts a new section that holds every setting after it, up to the next separator. It also becomes an entry in the outline. Separators with the same label share one section.</span>
       </div>
     </div>
   </div>
-  <figcaption>The eight element types. Examples are real fields from the built-in templates.</figcaption>
+  <figcaption>The eight element types. Examples are real settings from the built-in templates.</figcaption>
 </figure>
 
 <h2>The JSON file</h2>
@@ -314,23 +325,24 @@ Montserrat-Regular.ttf</span></div>
 <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
 <tbody>
 <tr><td><code>id</code></td><td>The setting's name. The template's HTML uses it as a variable, for example <code>{{ FontSize }}</code>.</td></tr>
-<tr><td><code>label</code>, <code>description</code></td><td>Text shown in Source Settings (and searched by <strong>Search properties</strong>).</td></tr>
-<tr><td><code>value</code></td><td>The saved value. This is the only key Save changes, plus <code>transparent</code> on color fields.</td></tr>
-<tr><td><code>min</code>, <code>max</code>, <code>step</code>, <code>options</code></td><td>Limits and choices for number, slider, select and color fields.</td></tr>
+<tr><td><code>label</code>, <code>description</code></td><td>Text shown in Source Settings (and searched by <strong>Search settings</strong>).</td></tr>
+<tr><td><code>value</code></td><td>The saved value. This is the only key Save changes, plus <code>transparent</code> on color settings.</td></tr>
+<tr><td><code>min</code>, <code>max</code>, <code>step</code>, <code>options</code></td><td>Limits and choices for number, slider, select and color settings.</td></tr>
 <tr><td><code>hidden</code> (top level)</td><td><code>true</code> leaves the template out of Source Settings and Browser source URLs.</td></tr>
 <tr><td><code>dynamic_controls</code> (top level)</td><td>Live controls shown in <a href="help:source_controls">Source Controls</a>. Not shown in Source Settings.</td></tr>
+<tr><td><code>preview_mocks</code> (top level)</td><td>The <strong>Sample events</strong> buttons for a Spore Studio template.</td></tr>
 </tbody>
 </table></div>
 
 <h3>Editing the file by hand</h3>
 
-<p>You can edit the JSON in a text editor, for example to add a field to a template you wrote yourself. Keep the JSON valid, then click the <span class="hx-mi">refresh</span> button in Source Settings and reselect the template. Refresh the browser source in OBS to load the new values.</p>
+<p>You can edit the JSON in a text editor, for example to add a setting to a template you wrote yourself. Keep the JSON valid, then click {{icon:refresh}} <strong>Reload the template list</strong> in Source Settings. If you have no unsaved edits for that template, it reads the file again. Refresh the browser source in OBS to load the new values.</p>
 
-<div class="hx-callout hx-warning"><p>Copy the file before large hand edits. Source Settings has no undo after <strong>Save</strong>, and there is no "restore defaults" button. If the file has a JSON syntax error, Mycelian cannot read it: the template shows no fields in Source Settings and the overlay loses its saved values until you fix the file.</p></div>
+<div class="hx-callout hx-warning"><p>Copy the file before large hand edits. Source Settings has no undo after <strong>Save</strong>, and there is no "restore defaults" button. If the file has a JSON syntax error, Mycelian cannot read it: the template shows no settings in Source Settings and the overlay loses its saved values until you fix the file.</p></div>
 
 <h2>Templates from Spore Studio</h2>
 
-<p>For new overlays, use <a href="help:spore_studio_overview">Spore Studio</a>. Fields you mark <strong>Expose in Source Settings (JSON)</strong> appear here automatically; see <a href="help:spore_studio_design">Designing Templates in Spore Studio</a>. Live buttons for the stream are authored in <a href="help:spore_studio_dynamic_controls">Dynamic Controls</a>.</p>
+<p>For new overlays, use <a href="help:spore_studio_overview">Spore Studio</a>. Settings you mark <strong>Expose in Source Settings (JSON)</strong> appear here automatically; see <a href="help:spore_studio_design">Designing Templates in Spore Studio</a>. Live buttons for the stream are authored in <a href="help:spore_studio_dynamic_controls">Dynamic Controls</a>.</p>
 
 <h2>Common questions</h2>
 
@@ -341,21 +353,27 @@ Montserrat-Regular.ttf</span></div>
 
 <details class="hx-details">
   <summary>A template is missing from the list</summary>
-  <p>It is marked <code>"hidden": true</code>, or its JSON is not in <code>templates/template_configs/</code>. Click the <span class="hx-mi">refresh</span> button after copying files in.</p>
+  <p>It is marked <code>"hidden": true</code>, or its JSON is not in <code>templates/template_configs/</code>. Click {{icon:refresh}} after copying files in.</p>
 </details>
 
 <details class="hx-details">
-  <summary>The preview says "Waiting for overlay server…"</summary>
+  <summary>I can't find a setting</summary>
+  <p>Type part of its name or description into <strong>Search settings</strong>. Check that <strong>Changed only</strong> is off; with it on, only settings you changed are shown, and the form says <em>No unsaved changes</em> when there are none.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The preview says "Waiting for the overlay server"</summary>
   <p>The built-in web server is still starting or has stopped. Check the overlay server status in the <a href="help:status_footer">status footer</a>.</p>
 </details>
 
 <details class="hx-details">
-  <summary>Where are the mock event and sound settings?</summary>
-  <p>Click the <span class="hx-mi">settings</span> gear in the preview bar. <strong>Preview settings</strong> has <strong>Enable preview sounds</strong> and <strong>Show mock event toolbar</strong>. These only affect the preview, not the saved template.</p>
+  <summary>Where did the preview go?</summary>
+  <p>It was hidden with {{icon:visibility_off}}. Click <strong>Show preview</strong> in the header. If the sample-event buttons are missing, open {{icon:settings}} <strong>Preview settings</strong> and turn on <strong>Show sample events bar</strong>.</p>
 </details>
 
 <div class="hx-cards">
-  <a class="hx-card" href="help:template_custom_css">{{icon:css}}<span><strong>Custom CSS</strong><span class="hx-card-text">Restyle beyond the available fields</span></span></a>
+  <a class="hx-card" href="help:color_picker">{{icon:palette}}<span><strong>Color picker</strong><span class="hx-card-text">Transparency, gradients and template colors</span></span></a>
+  <a class="hx-card" href="help:template_custom_css">{{icon:css}}<span><strong>Custom CSS</strong><span class="hx-card-text">Restyle beyond the available settings</span></span></a>
   <a class="hx-card" href="help:source_controls">{{icon:gamepad}}<span><strong>Source Controls</strong><span class="hx-card-text">Change overlays live during the stream</span></span></a>
   <a class="hx-card" href="help:template_title">{{icon:title}}<span><strong>Title Overlay</strong><span class="hx-card-text">A worked example of one template's settings</span></span></a>
 </div>
