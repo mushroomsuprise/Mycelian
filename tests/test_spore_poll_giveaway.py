@@ -40,7 +40,9 @@ def test_poll_compiles_new_look_settings_without_style_leaks():
     style = re.search(r'style="([^"]*)"', tag).group(1)
     for leaked in ("style:", "title", "bar-color-2", "winner-effect", "bar-height", "panel-shadow", "show-rank"):
         assert leaked not in style
-    assert "border-radius: 18px" in style
+    # Exposed style props are config-driven #id rules in the head, not inline.
+    assert "border-radius" not in style
+    assert '#poll1 { ' in html and 'border-radius: {{ (poll1_border_radius|default(18))' in html
     assert "spore-poll-head" in html and "spore-poll-foot" in html
     fields = {e["id"]: e for e in cfg["elements"] if isinstance(e, dict) and e.get("id")}
     assert fields["poll1_style"]["type"] == "select" and fields["poll1_style"]["options"] == ["bars", "inside", "cards"]

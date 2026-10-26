@@ -394,6 +394,89 @@ def _fill_declarations(css_key: str, value: str, props: Dict[str, Any]) -> List[
     return [("background-image", ", ".join(images + [value]))]
 
 
+# Generic style props exported to Source Settings as ``{eid}_{key}`` (see
+# ``_derived_json_config``): key -> (CSS property, unit). Exposed ones are written as
+# ``#eid`` rules in the head <style> block that read the config value (default = the
+# editor value), so a Source Settings change applies, and the preview's style refresh
+# picks it up live.
+_EXPOSED_STYLE_PROPS: Dict[str, Tuple[str, str]] = {
+    "color": ("color", ""),
+    "background_color": ("background-color", ""),
+    "border_color": ("border-color", ""),
+    "font_weight": ("font-weight", ""),
+    "font_style": ("font-style", ""),
+    "text_align": ("text-align", ""),
+    "text_decoration": ("text-decoration", ""),
+    "opacity": ("opacity", ""),
+    "font_size": ("font-size", "px"),
+    "letter_spacing": ("letter-spacing", "px"),
+    "line_height_px": ("line-height", "px"),
+    "border_radius": ("border-radius", "px"),
+    "border_width": ("border-width", "px"),
+}
+_JINJA_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _exposed_style_keys(element: Optional[Dict[str, Any]]) -> List[str]:
+    """Style props of ``element`` that are bound to their Source Settings value."""
+    if not isinstance(element, dict) or element.get("legacy"):
+        return []
+    eid = _slugify_id(element.get("id"))
+    if not _JINJA_IDENT_RE.match(eid):
+        return []
+    props = element.get("props") if isinstance(element.get("props"), dict) else {}
+    keys: List[str] = []
+    for key in _EXPOSED_STYLE_PROPS:
+        if props.get(key) in (None, "") or not _expose_field(element, key):
+            continue
+        # These two combine with other inline declarations; keep them inline.
+        if key == "background_color" and props.get("background") not in (None, ""):
+            continue
+        if key == "text_decoration" and (props.get("text_underline") or props.get("text_strikethrough")):
+            continue
+        keys.append(key)
+    return keys
+
+
+def _style_jinja_value(var_name: str, default: Any) -> str:
+    """Jinja expression for a config-driven CSS value (``;`` and braces stripped)."""
+    if isinstance(default, (int, float)) and not isinstance(default, bool):
+        literal = str(default)
+    else:
+        literal = json.dumps(str(default), ensure_ascii=False)
+    return (
+        "(" + var_name + "|default(" + literal + "))"
+        + '|string|replace(";", "")|replace("{", "")|replace("}", "")'
+    )
+
+
+def _exposed_style_css(elements: Any) -> str:
+    """``#eid { ... }`` rules for exposed style props, reading the template config."""
+    rules: List[str] = []
+    for element in elements or []:
+        keys = _exposed_style_keys(element)
+        if not keys:
+            continue
+        eid = _slugify_id(element.get("id"))
+        props = element.get("props") or {}
+        decls: List[str] = []
+        for key in keys:
+            css_prop, unit = _EXPOSED_STYLE_PROPS[key]
+            value = _style_jinja_value(f"{eid}_{key}", props[key])
+            if key == "background_color":
+                # A gradient is a background-image layer; a solid stays background-color.
+                fill = f"_spore_fill_{eid}"
+                decls.append(
+                    "{% set " + fill + " = " + value + " %}"
+                    + '{% if "gradient(" in ' + fill + " %}background-image: {{ " + fill + " }}"
+                    + "{% else %}background-color: {{ " + fill + " }}{% endif %}"
+                )
+            else:
+                decls.append(f"{css_prop}: {{{{ {value} }}}}{unit}")
+        rules.append(f"#{eid} {{ " + "; ".join(decls) + "; }")
+    return "\n".join(rules)
+
+
 def _css_kv(
     props: Dict[str, Any],
     *,
@@ -449,12 +532,15 @@ def _css_kv(
         and props.get("background") not in (None, "")
     )
     deferred: List[Tuple[str, str]] = []
+    bound = set(_exposed_style_keys(element)) if element is not None else set()
 
     for key, value in props.items():
         if key in _NON_STYLE_PROP_KEYS:
             continue
         if value in (None, ""):
             continue
+        if key in bound:
+            continue  # written by _exposed_style_css as a config-driven rule
         if key == "background_color":
             fill = _fill_declarations("background-color", str(value), props)
             if fill_after_background:
@@ -2589,6 +2675,9 @@ def compile_model(
         style_parts.append(font_css.strip())
     if bindings["css"].strip():
         style_parts.append(bindings["css"].strip())
+    exposed_css = _exposed_style_css(elements)
+    if exposed_css:
+        style_parts.append(exposed_css)
     if style_parts:
         styles = (
             '<style id="spore-studio-styles">\n'
