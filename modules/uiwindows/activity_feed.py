@@ -2305,7 +2305,7 @@ def _person_kind(grouping_key: str, data: Dict[str, Any]) -> str:
 
 def person_line(grouping_key: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """One "By person" line: kind, readable text without the count, and the count."""
-    from .activity_feed_model import KIND_META, format_money
+    from .activity_feed_model import KIND_META, format_money, sub_duration_caption, sub_duration_kind
 
     kind = _person_kind(grouping_key, data)
     count = int(data.get("count") or 1)
@@ -2358,7 +2358,8 @@ def person_line(grouping_key: str, data: Dict[str, Any]) -> Dict[str, Any]:
         text = grouping_key.replace("_", " ").title()
     duration = int(data.get("duration_months") or 0)
     if duration > 1 and kind in ("sub", "resub", "giftsub"):
-        text += f" · {duration} months"
+        gifts = int(total or data.get("count") or 1) if kind == "giftsub" else 1
+        text += " · " + sub_duration_caption(duration, sub_duration_kind(kind, gifts))
     icon, color = KIND_META.get(kind, KIND_META["alert"])[:2]
     return {
         "kind": kind,
@@ -3378,9 +3379,8 @@ def render_fallback_html(rows: List[Dict[str, Any]], *, limit: int = 150) -> str
     show_duration = show_sub_duration()
     for row in rows[:limit]:
         user = html.escape(str(row.get("user") or ""))
-        what = html.escape(str(row.get("what") or ""))
-        if show_duration and row.get("duration"):
-            what += f" · {html.escape(str(row.get('duration')))}"
+        # The plain list has no tag, so a multi-month row uses its full sentence.
+        what = html.escape(str((show_duration and row.get("what_full")) or row.get("what") or ""))
         amount = html.escape(str(row.get("amount") or ""))
         when = html.escape(format_timestamp(row.get("ts") or time.time()))
         msg = html.escape(str(row.get("msg") or ""))

@@ -20,12 +20,14 @@
   var DEFAULTS = {
     layout: 'rows', density: 'comfortable', color: 'icon', icons: true, tier: 'icon', platform: true, messages: true, sub_duration: true,
     wrap: false, times: 'relative', earlier_minutes: 30, order_numbers: true, dots: true, new_minutes: 5,
-    now_playing: true, timer: 'strip', up_next: 1, text_size: 'medium', person_hours: 12
+    now_playing: true, timer: 'strip', up_next: 1, text_size: 'medium', person_hours: 12,
+    sub_duration_style: 'split', sub_duration_place: 'inline'
   };
   var CHOICES = {
     layout: ['rows', 'cards', 'ticker'], density: ['compact', 'comfortable', 'spacious'], color: ['icon', 'bar', 'tint', 'none'],
     tier: ['icon', 'name', 'hidden'], times: ['relative', 'clock', 'hidden'], timer: ['strip', 'item', 'off'],
-    text_size: ['small', 'medium', 'large']
+    text_size: ['small', 'medium', 'large'], sub_duration_style: ['split', 'chip', 'calendar', 'dots'],
+    sub_duration_place: ['inline', 'right', 'below']
   };
   // kind -> [icon, colour, label, filter key, verb used for queue-only rows]
   var KINDS = {
@@ -140,6 +142,11 @@
     var s = String(a.donation_source || a.source || (a.stored_alert_data || {}).donation_source || '').toLowerCase();
     return s === 'streamlabs' || s === 'streamelements' ? s : '';
   }
+  // Multi-month tag captions: [full, short]; the short one only shows where a row runs out of room.
+  var DURATION_CAPTIONS = {
+    sub: ['months in advance', 'mo up front'], resub: ['months paid ahead', 'mo ahead'],
+    gift: ['months gifted', 'mo gift'], each: ['months each', 'mo each']
+  };
   /* Fallback for payloads without a precomputed row (older senders). */
   function rowFromAlert(a) {
     if (a && a.row && a.row.kind) { return a.row; }
@@ -154,10 +161,14 @@
     var ts = Number(a.timestamp) || Number(a.created_at) || nowSec();
     var id = a.alert_id && String(a.alert_id).indexOf('generated_') !== 0 ? String(a.alert_id) : null;
     var months = parseInt(a.duration_months, 10);
-    var dur = (kind === 'sub' || kind === 'resub' || kind === 'giftsub') && months > 1 ? months + (kind === 'giftsub' ? '-month gift' : '-month sub') : '';
+    months = (kind === 'sub' || kind === 'resub' || kind === 'giftsub') && months > 1 ? months : 0;
+    var capKind = !months ? '' : (kind === 'giftsub' ? (parseInt(a.gift_qty, 10) > 1 ? 'each' : 'gift') : (kind === 'resub' ? 'resub' : 'sub'));
+    var dur = months ? months + ' ' + DURATION_CAPTIONS[capKind][0] : '';
     return {
       id: id || ('row-' + Math.round(ts * 1000)), alert_id: id, kind: kind, icon: m[0], color: m[1], label: m[2],
-      filter: m[3], user: user, what: what, amount: '', tier: null, duration: dur, msg: a.user_message || '', ts: ts,
+      filter: m[3], user: user, what: what, amount: '', tier: null, msg: a.user_message || '', ts: ts,
+      months: months, duration: dur, duration_short: months ? months + ' ' + DURATION_CAPTIONS[capKind][1] : '', duration_kind: capKind,
+      what_tagged: months ? what : '', what_full: months ? what + ' · ' + dur : '',
       platform: kind === 'donation' ? tipPlatform(a) : 'twitch', restored: !!a.is_restored, seq: a.seq != null ? a.seq : null
     };
   }
@@ -517,7 +528,7 @@
       return;
     }
     var row = this.findLive(playing.alert_id);
-    var who = row ? '<b>' + esc(row.user) + '</b> ' + esc(row.what) + (this.s.settings.sub_duration && row.duration ? ' · ' + esc(row.duration) : '') +
+    var who = row ? '<b>' + esc(row.user) + '</b> ' + esc(this.s.settings.sub_duration && row.what_full ? row.what_full : row.what) +
       (row.amount ? ' ' + esc(row.amount) : '')
       : (playing.username ? '<b>' + esc(playing.username) + '</b> ' + esc(meta(kindOf(playing.type))[4]) : 'An alert');
     if (playing.is_replay) { who += ' <span class="afx-upmore">(replay)</span>'; }
@@ -548,6 +559,57 @@
     return '<span class="time" data-ts="' + Number(ts || 0) + '">' + esc(mode === 'clock' ? clockTime(ts) : relTime(ts)) + '</span>';
   };
 
+  /* Multi-month tag: the same look in every layout, chosen in App Settings. */
+  function monthsTag(a, style) {
+    var m = Number(a.months) || 0;
+    if (m < 2 || !a.duration) { return ''; }
+    var tip = a.duration_kind === 'resub' ? 'Renewed ' + m + ' months at once'
+      : a.duration_kind === 'each' ? 'Each gifted sub lasts ' + m + ' months'
+      : a.duration_kind === 'gift' ? 'This gift lasts ' + m + ' months' : 'Paid for ' + m + ' months at once';
+    var full = esc(a.duration), brief = esc(a.duration_short || a.duration);
+    function cap(withNum) {
+      var strip = function (t) { return withNum ? t : t.replace(/^\d+\s/, ''); };
+      return '<span class="cap"><span class="l">' + strip(full) + '</span><span class="s">' + strip(brief) + '</span></span>';
+    }
+    var inner;
+    if (style === 'chip') {
+      inner = cap(true);
+    } else if (style === 'calendar') {
+      inner = '<span class="cal"><i></i><b class="n">' + m + '</b></span>' + cap(false);
+    } else if (style === 'dots') {
+      var pips = '';
+      for (var i = 0; i < Math.min(m, 12); i++) { pips += '<i></i>'; }
+      inner = '<span class="pips">' + pips + '</span>' + cap(true);
+    } else {
+      inner = '<b class="n">' + m + '</b>' + cap(false);
+    }
+    return '<span class="mm mm-' + style + '" title="' + esc(tip) + '">' + inner + '</span>';
+  }
+  /* A tag sharing the text's line shortens when the text is cut off; one on its own line only if it doesn't fit. */
+  function crampedTag(tag) {
+    var row = tag.closest('.afx-row');
+    var below = tag.closest('.mm-below');
+    var what = !below && row && row.querySelector('.what');
+    if (what && what.scrollWidth > what.clientWidth + 1) { return true; }
+    var box = below || tag.closest('.line') || row;
+    return !!box && box.scrollWidth > box.clientWidth + 1;
+  }
+  Feed.prototype.fitMonths = function () {
+    var self = this, tags = this.r.list.querySelectorAll('.afx-row .mm');
+    if (!this.mmObserver && window.ResizeObserver) {
+      // Re-fit when the panel width changes (dock resized, window narrowed).
+      this.mmObserver = new ResizeObserver(function () {
+        var w = self.r.list.clientWidth;
+        if (w !== self.mmWidth) { self.mmWidth = w; self.fitMonths(); }
+      });
+      this.mmObserver.observe(this.r.list);
+    }
+    Array.prototype.forEach.call(tags, function (tag) {
+      tag.classList.remove('is-short');
+      if (crampedTag(tag)) { tag.classList.add('is-short'); }
+    });
+  };
+
   Feed.prototype.rowHtml = function (it) {
     var a = it.row, st = this.s.settings, q = this.s.queue, tag = it.tag;
     var queued = tag && tag.state === 'queued', playing = tag && tag.state === 'playing';
@@ -561,10 +623,15 @@
     var plat = !st.platform ? '' : (PLAT_MARKS[a.platform] || '');
     var amt = a.amount ? '<span class="amt">' + esc(a.amount) + '</span>' : '';
     var tierName = tierTxt ? '<span class="tier">' + tierTxt + '</span>' : '';
-    // Multi-month sub or gift ("3-month gift"), right after the tier; hidden by the Show multi-month subs setting.
-    if (st.sub_duration && a.duration) {
-      tierName += '<span class="dur" title="' + esc('Covers ' + parseInt(a.duration, 10) + ' months at once') + '">' + esc(a.duration) + '</span>';
-    }
+    // Multi-month tag (Show multi-month subs): after the text, on the right, or on its own line.
+    var mk = st.sub_duration ? monthsTag(a, st.sub_duration_style) : '';
+    var place = st.sub_duration_place;
+    // The ticker is one line per event; narrow dock rows would squeeze the text to nothing beside the tag.
+    if (st.layout === 'ticker' && place === 'below') { place = 'inline'; }
+    if (this.dock && st.layout === 'rows' && place === 'inline') { place = 'below'; }
+    var mkInline = place === 'inline' ? mk : '', mkRight = place === 'right' ? mk : '';
+    var mkBelow = place === 'below' && mk ? '<div class="mm-below">' + mk + '</div>' : '';
+    var whatTxt = mk ? (a.what_tagged || a.what) : a.what;
     var extra = (a.replay ? '<span class="replaytag">Replay</span>' : '') + (it.newest ? '<span class="newest">Newest</span>' : '');
     var msg = st.messages && a.msg ? '<div class="msg">“' + esc(a.msg) + '”</div>' : '';
     var acts = '';
@@ -596,16 +663,17 @@
     if (st.layout === 'cards') {
       return '<div' + attrs + '>' + timer + '<div class="top">' + ico + '<span class="user">' + esc(a.user) + '</span>' + plat + seq +
         (time ? time.replace('class="time"', 'class="time" style="margin-left:6px"') : '') + '</div>' +
-        (state ? '<div>' + state + '</div>' : '') + '<div class="line"><span class="what">' + esc(a.what) + '</span>' + tierName + amt + extra + '</div>' +
+        (state ? '<div>' + state + '</div>' : '') + '<div class="line"><span class="what">' + esc(whatTxt) + '</span>' + tierName + mkInline + amt +
+        (mkRight ? '<span class="mm-push"></span>' + mkRight : '') + extra + '</div>' + mkBelow +
         msg + acts + '</div>';
     }
-    var line = '<div class="line"><span class="user">' + esc(a.user) + '</span><span class="what">' + esc(a.what) + '</span>' + tierName + extra + '</div>' + msg;
+    var line = '<div class="line"><span class="user">' + esc(a.user) + '</span><span class="what">' + esc(whatTxt) + '</span>' + tierName + mkInline + extra + '</div>' + mkBelow + msg;
     if (this.dock && state) {
       // Narrow dock: the Up next / Playing tag goes under the name instead of beside it.
       line += '<div class="st">' + state + '</div>';
       state = '';
     }
-    return '<div' + attrs + '>' + timer + ico + '<div class="body">' + line + '</div>' + state + amt + plat + time + seq + acts + '</div>';
+    return '<div' + attrs + '>' + timer + ico + '<div class="body">' + line + '</div>' + state + mkRight + amt + plat + time + seq + acts + '</div>';
   };
 
   Feed.prototype.head = function (text, arrow, cls) {
@@ -636,6 +704,11 @@
   };
 
   Feed.prototype.renderList = function () {
+    this.renderListHtml();
+    this.fitMonths();
+  };
+
+  Feed.prototype.renderListHtml = function () {
     var list = this.r.list, s = this.s, mode = s.view.mode, self = this;
     list.classList.toggle('is-feed', mode !== 'person');
     if (mode === 'person') { list.innerHTML = this.personHtml(); return; }
@@ -838,7 +911,7 @@
   window.MycelianFeed = {
     version: VERSION, Feed: Feed, create: function (mount, opts) { return new Feed(mount, opts); },
     bindHosts: bindHosts, health: health, rowFromAlert: rowFromAlert, normSettings: normSettings, normQueue: normQueue,
-    filterMatch: filterMatch, kindOf: kindOf, ordinal: ordinal, instances: instances
+    filterMatch: filterMatch, kindOf: kindOf, ordinal: ordinal, instances: instances, monthsTag: monthsTag
   };
   if (!window.__mycelianFeedBinder) {
     window.__mycelianFeedBinder = setInterval(function () { try { window.MycelianFeed.bindHosts(); } catch (e) { /* retry next tick */ } }, 250);

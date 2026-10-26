@@ -149,9 +149,35 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx-row .amt { flex: 0 0 auto; font-size: .78em; font-weight: 800; padding: 2px 7px; border-radius: 999px; color: var(--tc);
   background: color-mix(in srgb, var(--tc) 14%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 30%, transparent); white-space: nowrap; }
 .afx-row .tier { font-size: .7em; font-weight: 800; padding: 1px 5px; border-radius: 5px; color: var(--color-warning); border: 1px solid color-mix(in srgb, var(--color-warning) 40%, transparent); white-space: nowrap; }
-/* Multi-month sub or gift ("3 months"): outlined like the tier chip, in the event colour */
-.afx-row .dur { flex: 0 0 auto; font-size: .7em; font-weight: 800; padding: 1px 6px; border-radius: 5px; white-space: nowrap; color: var(--tc);
-  background: color-mix(in srgb, var(--tc) 10%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 40%, transparent); }
+/* Multi-month tag (.mm): every style sits at chip height, in the event colour */
+.afx-row .mm { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 1.45em; margin-left: 8px; box-sizing: border-box;
+  font-size: .74em; font-weight: 700; line-height: 1; white-space: nowrap; color: var(--tc); vertical-align: middle; }
+.afx-row .mm .cap .s { display: none; }
+.afx-row .mm.is-short .cap .l { display: none; }
+.afx-row .mm.is-short .cap .s { display: inline; }
+/* Split tag: solid number segment + tinted caption segment */
+.afx-row .mm-split { gap: 0; border-radius: 6px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--tc) 40%, transparent); }
+.afx-row .mm-split .n { display: inline-flex; align-items: center; height: 100%; padding: 0 6px; font-weight: 800;
+  background: var(--tc); color: var(--color-text-inverse); font-variant-numeric: tabular-nums; }
+.afx-row .mm-split .cap { display: inline-flex; align-items: center; height: 100%; padding: 0 7px 0 6px; background: color-mix(in srgb, var(--tc) 12%, transparent); }
+/* Chip: one tinted tag */
+.afx-row .mm-chip { padding: 0 7px; border-radius: 6px; font-weight: 800; background: color-mix(in srgb, var(--tc) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tc) 35%, transparent); }
+/* Calendar: a text-height calendar holding the number */
+.afx-row .mm-calendar .cal { position: relative; display: inline-flex; align-items: flex-end; justify-content: center; min-width: 1.55em; height: 1.45em; padding: 0 2px;
+  border-radius: 3px; border: 1px solid color-mix(in srgb, var(--tc) 55%, transparent); background: color-mix(in srgb, var(--tc) 10%, transparent);
+  overflow: hidden; box-sizing: border-box; }
+.afx-row .mm-calendar .cal i { position: absolute; left: 0; right: 0; top: 0; height: .32em; background: var(--tc); }
+.afx-row .mm-calendar .cal .n { font-size: .92em; font-weight: 800; padding-bottom: .1em; color: var(--color-text-primary); }
+/* Dots: one pip per month + caption */
+.afx-row .mm-dots .pips { display: inline-flex; gap: 2px; }
+.afx-row .mm-dots .pips i { width: 6px; height: 6px; border-radius: 2px; background: var(--tc); }
+/* Placement: right side pushes to the end of the line; below gets its own line */
+.afx-row > .mm { margin: 0 2px 0 0; }
+.afx-row .mm-push { flex: 1 1 auto; }
+.afx-row .mm-below { margin-top: 4px; line-height: 1; }
+.afx-row .mm-below .mm { margin-left: 0; }
+.afx[data-layout="cards"] .afx-row .mm-below { margin-top: 6px; }
 .afx-row .plat { width: 14px; height: 14px; flex: 0 0 auto; opacity: .85; }
 .afx-row .time { flex: 0 0 auto; font-size: .78em; color: var(--color-text-muted); font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; white-space: nowrap; }
 .afx-row .acts { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: none; gap: 4px; padding-left: 16px; z-index: 2;
@@ -180,7 +206,8 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx[data-color="bar"] .afx-row { border-left: 3px solid var(--tc); }
 .afx[data-color="tint"] .afx-row { background: color-mix(in srgb, var(--tc) 8%, var(--color-bg-base)); border-color: color-mix(in srgb, var(--tc) 25%, var(--color-border-subtle)); }
 .afx[data-color="none"] .afx-row .ico { color: var(--color-text-secondary); background: var(--color-bg-surface); }
-.afx[data-color="none"] .afx-row .amt, .afx[data-color="none"] .afx-row .dur { color: var(--color-text-secondary); background: var(--color-bg-surface); border-color: var(--color-border-subtle); }
+.afx[data-color="none"] .afx-row .mm { --tc: var(--color-text-secondary); }
+.afx[data-color="none"] .afx-row .amt { color: var(--color-text-secondary); background: var(--color-bg-surface); border-color: var(--color-border-subtle); }
 .afx.no-icons .afx-row .ico { display: none; }
 
 /* Tier badge on the icon corner (default) */
@@ -212,7 +239,7 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx[data-layout="ticker"] .afx-row .user { flex-shrink: 0; max-width: 55%; }
 .afx[data-layout="ticker"] .afx-row .line { min-width: 0; }
 .afx[data-layout="ticker"] .afx-row .msg { min-width: 0; flex: 0 1000 auto; }
-.afx-row .newest, .afx-row .replaytag, .afx-row .tier, .afx-row .dur { flex-shrink: 0; }
+.afx-row .newest, .afx-row .replaytag, .afx-row .tier, .afx-row .mm { flex-shrink: 0; }
 .afx[data-layout="ticker"] .afx-row.is-new::after { display: none; }
 .afx[data-layout="ticker"] .afx-row.is-new .seq { color: var(--color-primary); }
 .afx[data-layout="ticker"] .afx-row.is-new .user::after { content: ' \2022'; color: var(--color-primary); }

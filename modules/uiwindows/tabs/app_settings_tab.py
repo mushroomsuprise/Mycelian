@@ -539,7 +539,7 @@ class AppSettingsTab:
             notify("It shows now but may reset after a restart.", type="warning", source="app",
                    title="Couldn't save the Activity Feed setting",
                    hint="Check your database connection in Settings → Database.")
-        if key == "layout":
+        if key in ("layout", "sub_duration"):
             self._render_feed_panel()
 
     def _feed_select(self, key: str, options: dict, tooltip: str, width: str = "w-44") -> None:
@@ -585,8 +585,18 @@ class AppSettingsTab:
                         self._feed_switch("platform")
                     with self._row("Show viewer messages", "The message a viewer sent with a cheer, sub or tip."):
                         self._feed_switch("messages")
-                    with self._row("Show multi-month subs", "A \u201c3 months\u201d tag when a sub or gifted sub covers several months."):
+                    with self._row("Show multi-month subs", "A tag such as \u201c6 months paid ahead\u201d when a sub or gifted sub covers several months."):
                         self._feed_switch("sub_duration")
+                    with self._row("Multi-month tag style", "How the months look. Shortens to \u201c6 mo ahead\u201d only where a row runs out of room.",
+                                   key="feed_sub_duration_style"):
+                        self._feed_select("sub_duration_style", {"split": "Split tag", "chip": "Chip", "calendar": "Calendar", "dots": "Dots"},
+                                          "How multi-month subs are marked", "w-36")
+                    with self._row("Multi-month tag placement", "Where the tag sits on a row.", key="feed_sub_duration_place"):
+                        self._feed_select("sub_duration_place", {"inline": "After the text", "right": "Right side", "below": "Below the text"},
+                                          "Where the multi-month tag sits", "w-44")
+                    if not values["sub_duration"]:
+                        for dim_key in ("feed_sub_duration_style", "feed_sub_duration_place"):
+                            self._dims[dim_key].classes(add="is-dim")
                     with self._row("Wrap long text", "Off: one line per event."):
                         self._feed_switch("wrap")
                     with self._row("Text size"):

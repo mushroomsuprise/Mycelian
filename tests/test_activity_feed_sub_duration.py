@@ -51,6 +51,21 @@ def test_setting_defaults_on_and_normalises():
     assert model.normalize_feed_settings({"sub_duration": 0})["sub_duration"] is False
     assert model.feed_setting_value("sub_duration", "on") is True
     assert model.FEED_SETTINGS["sub_duration"][0] == "activity_feed_show_sub_duration"
+    norm = model.normalize_feed_settings(None)
+    assert (norm["sub_duration_style"], norm["sub_duration_place"]) == ("split", "inline")
+    norm = model.normalize_feed_settings({"activity_feed_sub_duration_style": "dots", "activity_feed_sub_duration_place": "nowhere"})
+    assert (norm["sub_duration_style"], norm["sub_duration_place"]) == ("dots", "inline")
+    from modules.dataobjects import AppSettings
+    assert (AppSettings().activity_feed_sub_duration_style, AppSettings().activity_feed_sub_duration_place) == ("split", "inline")
+
+
+def test_captions_full_and_short():
+    assert model.sub_duration_caption(12, "sub") == "12 months in advance"
+    assert model.sub_duration_caption(12, "sub", short=True) == "12 mo up front"
+    assert model.sub_duration_caption(6, "resub", short=True) == "6 mo ahead"
+    assert model.sub_duration_caption(3, model.sub_duration_kind("giftsub", 1)) == "3 months gifted"
+    assert model.sub_duration_caption(3, model.sub_duration_kind("giftsub", 5)) == "3 months each"
+    assert model.sub_duration_caption(1, "sub") == "" and model.sub_duration_caption(None, "gift") == ""
 
 
 def test_show_sub_duration_reads_app_settings():
@@ -87,13 +102,22 @@ def test_plain_text_messages():
 def test_row_duration_only_for_multi_month_twitch_subs():
     gift = model.feed_row_model({"type": "Giftsub", "badge_type": "giftsub", "username": "Cy", "tier": 1,
                                  "gift_qty": 1, "recipient": "Dee", "duration_months": 3})
-    assert gift["duration"] == "3-month gift" and gift["what"] == "gifted a Tier 1 sub to Dee"
+    assert gift["duration"] == "3 months gifted" and gift["what"] == "gifted a Tier 1 sub to Dee"
+    assert (gift["months"], gift["duration_short"], gift["duration_kind"]) == (3, "3 mo gift", "gift")
+    assert gift["what_tagged"] == "gifted Dee a Tier 1 sub"
+    assert gift["what_full"] == "gifted Dee a 3-month Tier 1 sub"
     one = model.feed_row_model({"type": "Sub", "badge_type": "sub", "username": "A", "tier": 1, "duration_months": 1})
-    assert one["duration"] == ""
+    assert one["duration"] == "" and one["months"] == 0 and one["what_full"] == "" and one["what_tagged"] == ""
     # resubs stored before this change kept the months in months_prepaid
     resub = model.feed_row_model({"type": "Resub", "badge_type": "resub", "username": "B", "tier": 1,
                                   "stored_alert_data": {"resub_month": 14, "months_prepaid": 6, "duration_months": 0}})
-    assert resub["duration"] == "6-month sub" and resub["tier"] == "T1"
+    assert resub["duration"] == "6 months paid ahead" and resub["tier"] == "T1"
+    assert resub["duration_short"] == "6 mo ahead"
+    assert resub["what_tagged"] == "resubscribed · 14 months total"
+    assert resub["what_full"] == "resubscribed for 6 months · 14 months total"
+    sub = model.feed_row_model({"type": "Sub", "badge_type": "sub", "username": "A", "tier": 1, "duration_months": 12})
+    assert (sub["duration"], sub["duration_short"]) == ("12 months in advance", "12 mo up front")
+    assert (sub["what"], sub["what_tagged"], sub["what_full"]) == ("subscribed", "subscribed", "subscribed for 12 months")
     bits = model.feed_row_model({"type": "Bits", "badge_type": "bits", "username": "C", "duration_months": 3})
     assert bits["duration"] == ""
     member = model.feed_row_model({"type": "Membership", "badge_type": "membership", "source": "youtube", "duration_months": 3})
@@ -104,7 +128,9 @@ def test_feed_payload_carries_duration():
     payload = _payload("Giftsub", "Cy gifted 5 Tier 1 subs (3 months each)!", "giftsub", tier=1, gift_qty=5,
                        alert_id="G1", username="Cy", duration_months="3")
     assert payload["duration_months"] == 3
-    assert payload["row"]["duration"] == "3-month gift" and payload["row"]["amount"] == "×5"
+    assert payload["row"]["duration"] == "3 months each" and payload["row"]["amount"] == "×5"
+    assert payload["row"]["duration_kind"] == "each"
+    assert payload["row"]["what_full"] == "gifted 5 Tier 1 subs · 3 months each"
     json.dumps(feed.serialize_live_alert(payload))
     plain = _payload("Sub", "A subscribed (Tier 1)!", "sub", tier=1, username="A")
     assert "duration_months" not in plain and plain["row"]["duration"] == ""
@@ -117,16 +143,16 @@ def test_history_conversion_with_duration(monkeypatch):
          "duration_months": 3, "alert_id": "G", "timestamp": 1}
     )
     assert gift["message"] == "Cy gifted a 3-month Tier 1 sub to Dee!"
-    assert gift["duration_months"] == 3 and gift["row"]["duration"] == "3-month gift"
+    assert gift["duration_months"] == 3 and gift["row"]["duration"] == "3 months gifted"
     resub = feed.convert_stored_alert_to_feed_format(
         {"alert_type": "resub", "username": "Bo", "tier": 1, "resub_month": 14, "months_prepaid": 6, "timestamp": 1}
     )
     assert resub["message"] == "Bo resubscribed for 14 months with a 6-month sub!"
-    assert resub["row"]["duration"] == "6-month sub"
+    assert resub["row"]["duration"] == "6 months paid ahead"
     sub = feed.convert_stored_alert_to_feed_format(
         {"alert_type": "sub", "username": "Ann", "tier": 2, "duration_months": 6, "timestamp": 1}
     )
-    assert sub["message"] == "Ann subscribed for 6 months (Tier 2)!" and sub["row"]["duration"] == "6-month sub"
+    assert sub["message"] == "Ann subscribed for 6 months (Tier 2)!" and sub["row"]["duration"] == "6 months in advance"
 
     monkeypatch.setattr(feed, "show_sub_duration", lambda app_settings=None: False)
     off = feed.convert_stored_alert_to_feed_format(
@@ -134,16 +160,19 @@ def test_history_conversion_with_duration(monkeypatch):
          "duration_months": 3, "timestamp": 1}
     )
     assert off["message"] == "Cy gifted a Tier 1 sub to Dee!"
-    # The row keeps the value; the renderer hides the chip while the setting is off.
-    assert off["row"]["duration"] == "3-month gift"
+    # The row keeps the value; the renderer hides the tag while the setting is off.
+    assert off["row"]["duration"] == "3 months gifted"
 
 
 def test_fallback_list_follows_the_setting(monkeypatch):
-    row = {"user": "Cy", "what": "gifted a Tier 1 sub to Dee", "duration": "3-month gift", "ts": time.time()}
+    # No tag in the plain list, so a multi-month row uses its full sentence.
+    row = {"user": "Cy", "what": "gifted a Tier 1 sub to Dee", "what_full": "gifted Dee a 3-month Tier 1 sub",
+           "duration": "3 months gifted", "ts": time.time()}
     monkeypatch.setattr(feed, "show_sub_duration", lambda app_settings=None: True)
-    assert "gifted a Tier 1 sub to Dee · 3-month gift" in feed.render_fallback_html([row])
+    assert "gifted Dee a 3-month Tier 1 sub" in feed.render_fallback_html([row])
     monkeypatch.setattr(feed, "show_sub_duration", lambda app_settings=None: False)
-    assert "3-month gift" not in feed.render_fallback_html([row])
+    html = feed.render_fallback_html([row])
+    assert "gifted a Tier 1 sub to Dee" in html and "3-month" not in html
 
 
 # --------------------------------------------------------------------------- by person
@@ -163,9 +192,9 @@ def test_by_person_lines_show_duration_and_keep_lengths_apart():
     users, _ex, _unk = feed._group_alerts_for_condensed(alerts, filter_state={"all": True}, search="", show_duration=True)
     group = feed.serialize_condensed_groups(users)[0]
     texts = sorted(i["text"] for i in group["items"])
-    assert "Gifted 7 Tier 1 subs · 3 months" in texts
+    assert "Gifted 7 Tier 1 subs · 3 months each" in texts
     assert "Gifted 1 Tier 1 sub" in texts
-    assert "Resubscribed for 14 months (Tier 1) · 6 months" in texts
+    assert "Resubscribed for 14 months (Tier 1) · 6 months paid ahead" in texts
     assert "Gifted 7 Tier 1 subs (3 months)!" in group["lines"]
 
     users, _ex, _unk = feed._group_alerts_for_condensed(alerts, filter_state={"all": True}, search="", show_duration=False)
@@ -187,10 +216,10 @@ def test_update_alert_in_feed_repaints_in_place(monkeypatch):
     monkeypatch.setattr(feed, "_emit_overlay_event", lambda event, data, to=None: sent.append((event, data)) or True)
     assert feed.update_alert_in_feed("G9", duration_months=3, message="Cy gifted 3 Tier 1 subs (3 months each)!") is True
     entry = feed.live_alerts_snapshot()[1]
-    assert entry["row"]["duration"] == "3-month gift" and entry["row"]["seq"] == 7
+    assert entry["row"]["duration"] == "3 months each" and entry["row"]["seq"] == 7
     assert [a.get("alert_id") for a in feed.live_alerts_snapshot()] == ["F1", "G9"]  # order kept
     event, data = sent[-1]
-    assert event == "activity_feed_view" and data["live_alerts"][1]["row"]["duration"] == "3-month gift"
+    assert event == "activity_feed_view" and data["live_alerts"][1]["row"]["duration"] == "3 months each"
     assert feed.update_alert_in_feed("missing", duration_months=3) is False
 
 
@@ -445,11 +474,23 @@ global.window = global;
 global.document = { querySelectorAll: function () { return []; }, addEventListener: function () {} };
 require(process.argv[2]);
 var F = window.MycelianFeed;
+var resub = { months: 6, duration: '6 months paid ahead', duration_short: '6 mo ahead', duration_kind: 'resub' };
+var tags = {};
+['split', 'chip', 'calendar', 'dots'].forEach(function (k) { tags[k] = F.monthsTag(resub, k); });
+var gift = F.rowFromAlert({ type: 'Giftsub', badge_type: 'giftsub', username: 'c', message: 'c gifted', duration_months: 3 });
 console.log(JSON.stringify({
   on: F.normSettings({}).sub_duration,
   off: F.normSettings({ sub_duration: false }).sub_duration,
-  gift: F.rowFromAlert({ type: 'Giftsub', badge_type: 'giftsub', username: 'c', message: 'c gifted', duration_months: 3 }).duration,
-  bits: F.rowFromAlert({ type: 'Bits', badge_type: 'bits', username: 'c', message: 'c cheered', duration_months: 3 }).duration
+  gift: gift.duration,
+  gift_short: gift.duration_short,
+  bits: F.rowFromAlert({ type: 'Bits', badge_type: 'bits', username: 'c', message: 'c cheered', duration_months: 3 }).duration,
+  style: F.normSettings({}).sub_duration_style,
+  place: F.normSettings({}).sub_duration_place,
+  bad: [F.normSettings({ sub_duration_style: 'x', sub_duration_place: 'y' }).sub_duration_style,
+        F.normSettings({ sub_duration_style: 'x', sub_duration_place: 'y' }).sub_duration_place],
+  dots: F.normSettings({ sub_duration_style: 'DOTS', sub_duration_place: 'below' }),
+  tags: tags,
+  none: F.monthsTag({ months: 1, duration: '' }, 'split')
 }));
 process.exit(0);
 """
@@ -465,8 +506,22 @@ def test_renderer_setting_and_fallback_rows(tmp_path):
     done = subprocess.run([node, str(harness), str(js)], capture_output=True, text=True, timeout=30)
     assert done.returncode == 0, done.stderr
     out = json.loads(done.stdout)
-    assert out == {"on": True, "off": False, "gift": "3-month gift", "bits": ""}
+    assert (out["on"], out["off"], out["gift"], out["gift_short"], out["bits"]) == (True, False, "3 months gifted", "3 mo gift", "")
+    assert (out["style"], out["place"], out["bad"]) == ("split", "inline", ["split", "inline"])
+    assert (out["dots"]["sub_duration_style"], out["dots"]["sub_duration_place"]) == ("dots", "below")
+    tags = out["tags"]
+    # Every style carries both captions; CSS shows the short one only on .is-short.
+    for style, tag in tags.items():
+        assert f'class="mm mm-{style}"' in tag and 'title="Renewed 6 months at once"' in tag
+        assert '<span class="s">' in tag and '<span class="l">' in tag
+    assert '<b class="n">6</b><span class="cap"><span class="l">months paid ahead</span><span class="s">mo ahead</span>' in tags["split"]
+    assert '<span class="l">6 months paid ahead</span><span class="s">6 mo ahead</span>' in tags["chip"]
+    assert '<span class="cal"><i></i><b class="n">6</b></span>' in tags["calendar"]
+    assert tags["dots"].count("<i></i>") == 6 and '<span class="l">6 months paid ahead</span>' in tags["dots"]
+    assert out["none"] == ""
     source = js.read_text(encoding="utf-8")
-    assert 'class="dur"' in source and "st.sub_duration && a.duration" in source
+    assert "Feed.prototype.fitMonths" in source and "this.fitMonths();" in source
     css = (ROOT / "assets" / "default_assets" / "activity_feed.css").read_text(encoding="utf-8")
-    assert ".afx-row .dur" in css
+    for rule in (".afx-row .mm-split", ".afx-row .mm-chip", ".afx-row .mm-calendar", ".afx-row .mm-dots",
+                 ".afx-row .mm.is-short .cap .s", ".afx-row .mm-below"):
+        assert rule in css

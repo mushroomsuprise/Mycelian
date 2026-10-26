@@ -106,31 +106,90 @@
 
 <h3>Multi-month subs and gifts</h3>
 
-<p>When a viewer pays for several months at once, or gifts a sub that lasts several months, the row gets a chip such as <strong>3-month gift</strong> or <strong>6-month sub</strong> after what happened. The chip counts the months bought at once, so a resub reads <em>resubscribed · 14 months</em> with a <strong>6-month sub</strong> chip beside it. The tier stays on the icon corner (or after the name, with <strong>Tier badge</strong> set that way).</p>
+<p>When a viewer pays for several months at once, or gifts a sub that lasts several months, the row gets a tag after what happened. The tag counts the months bought at once and says what they are, so a resub that has run 14 months in total and was just paid 6 months ahead reads <em>resubscribed · 14 months total</em> with a <strong>6 months paid ahead</strong> tag beside it. The tier stays on the icon corner (or after the name, with <strong>Tier badge</strong> set that way).</p>
 
 <figure class="hx-figure hx-static">
   <div class="hm">
     <div class="hm-af"><div class="hm-af-list is-rows">
       <div class="hm-af-row hm-af-k-gift">
         <span class="hm-af-ico"><span class="hx-mi">redeem</span></span>
-        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">CoolGifter</span><span class="hm-af-what">gifted a Tier 1 sub to NightOwl</span><span class="hm-af-dur">3-month gift</span></span></span>
-        {{brand:twitch}}<span class="hm-af-time">2m</span><span class="hm-af-seq">#47</span>
+        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">BigSpender</span><span class="hm-af-what">gifted 5 Tier 1 subs</span><span class="hm-af-mm is-split"><b class="n">3</b><span class="cap">months each</span></span></span></span>
+        <span class="hm-af-amt">×5</span>{{brand:twitch}}<span class="hm-af-time">1m</span><span class="hm-af-seq">#48</span>
       </div>
       <div class="hm-af-row hm-af-k-sub">
-        <span class="hm-af-ico"><span class="hx-mi">autorenew</span><span class="hm-af-tb">T1</span></span>
-        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">LongtimeFan</span><span class="hm-af-what">resubscribed · 14 months</span><span class="hm-af-dur">6-month sub</span></span></span>
-        {{brand:twitch}}<span class="hm-af-time">5m</span><span class="hm-af-seq">#46</span>
+        <span class="hm-af-ico"><span class="hx-mi">autorenew</span><span class="hm-af-tb">T2</span></span>
+        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">LongtimeFan</span><span class="hm-af-what">resubscribed · 14 months total</span><span class="hm-af-mm is-split"><b class="n">6</b><span class="cap">months paid ahead</span></span></span></span>
+        {{brand:twitch}}<span class="hm-af-time">2m</span><span class="hm-af-seq">#47</span>
+      </div>
+      <div class="hm-af-row hm-af-k-gift">
+        <span class="hm-af-ico"><span class="hx-mi">redeem</span></span>
+        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">CoolGifter</span><span class="hm-af-what">gifted NightOwl a Tier 1 sub</span><span class="hm-af-mm is-split"><b class="n">3</b><span class="cap">months gifted</span></span></span></span>
+        {{brand:twitch}}<span class="hm-af-time">4m</span><span class="hm-af-seq">#46</span>
+      </div>
+      <div class="hm-af-row hm-af-k-sub">
+        <span class="hm-af-ico"><span class="hx-mi">star</span><span class="hm-af-tb">T1</span></span>
+        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">NewFriend</span><span class="hm-af-what">subscribed</span><span class="hm-af-mm is-split"><b class="n">12</b><span class="cap">months in advance</span></span></span></span>
+        {{brand:twitch}}<span class="hm-af-time">6m</span><span class="hm-af-seq">#45</span>
       </div>
     </div></div>
   </div>
-  <figcaption>A gifted 3-month sub, and a resub (14 months in total) paid for 6 months at once.</figcaption>
+  <figcaption>The four kinds of tag: a gift bomb, a resub paid 6 months ahead, a 3-month gift to one viewer, and a new sub paid for a year.</figcaption>
 </figure>
 
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Event</th><th>Tag</th><th>When the row is short on room</th></tr></thead>
+<tbody>
+<tr><td>New sub paid for several months</td><td><strong>12 months in advance</strong></td><td>12 mo up front</td></tr>
+<tr><td>Resub paid for several months</td><td><strong>6 months paid ahead</strong></td><td>6 mo ahead</td></tr>
+<tr><td>Sub gifted to one viewer</td><td><strong>3 months gifted</strong></td><td>3 mo gift</td></tr>
+<tr><td>Gift bomb</td><td><strong>3 months each</strong></td><td>3 mo each</td></tr>
+</tbody>
+</table></div>
+
+<p>The tag always uses the full wording when it fits. Only a row whose text would otherwise be cut off (a narrow dock, a long name) switches to the short form, and it switches back when there is room again.</p>
+
+<h3>Multi-month tag style and placement</h3>
+
+<p>Pick how the tag looks with <strong>Multi-month tag style</strong>. Every layout (Rows, Cards and Ticker) and the OBS dock use the same style.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-af"><div class="hm-af-list is-rows">
+      <div class="hm-af-row hm-af-k-sub">
+        <span class="hm-af-mm-style">Split tag</span>
+        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">LongtimeFan</span><span class="hm-af-what">resubscribed · 14 months total</span><span class="hm-af-mm is-split"><b class="n">6</b><span class="cap">months paid ahead</span></span></span></span>
+      </div>
+      <div class="hm-af-row hm-af-k-sub">
+        <span class="hm-af-mm-style">Chip</span>
+        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">LongtimeFan</span><span class="hm-af-what">resubscribed · 14 months total</span><span class="hm-af-mm is-chip">6 months paid ahead</span></span></span>
+      </div>
+      <div class="hm-af-row hm-af-k-sub">
+        <span class="hm-af-mm-style">Calendar</span>
+        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">LongtimeFan</span><span class="hm-af-what">resubscribed · 14 months total</span><span class="hm-af-mm"><span class="cal"><i></i><b>6</b></span>months paid ahead</span></span></span>
+      </div>
+      <div class="hm-af-row hm-af-k-sub">
+        <span class="hm-af-mm-style">Dots</span>
+        <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">LongtimeFan</span><span class="hm-af-what">resubscribed · 14 months total</span><span class="hm-af-mm"><span class="pips"><i></i><i></i><i></i><i></i><i></i><i></i></span>6 months paid ahead</span></span></span>
+      </div>
+    </div></div>
+  </div>
+  <figcaption>The same resub in each style: Split tag (the default), Chip, Calendar and Dots (one dot per month).</figcaption>
+</figure>
+
+<p><strong>Multi-month tag placement</strong> puts the tag <strong>After the text</strong> (the default), on the <strong>Right side</strong> next to the amount, or <strong>Below the text</strong> on its own line.</p>
+
 <ul>
-  <li>Twitch reports the months for new subs, resubs and gifts to one viewer. A gift can show its chip a moment after the row appears, because Twitch sends the months separately from the gift.</li>
-  <li>A gift bomb (subs gifted to the community) shows the chip only when every sub in it has the same length; otherwise it shows none.</li>
-  <li>The Now playing strip, History and By person show the months too, for example <em>Gifted 5 Tier 1 subs · 3 months</em>. Different lengths get separate By person lines.</li>
-  <li>Turn it off with <strong>Show multi-month subs</strong> in the <a href="#hx-activity-feed-settings">settings</a>.</li>
+  <li>The Ticker keeps one line per event, so <em>Below the text</em> shows the tag after the text there.</li>
+  <li>In the OBS dock's Rows layout, <em>After the text</em> puts the tag under the name, so the text isn't squeezed out by it.</li>
+</ul>
+
+<p>Good to know:</p>
+
+<ul>
+  <li>Twitch reports the months for new subs, resubs and gifts to one viewer. A gift can show its tag a moment after the row appears, because Twitch sends the months separately from the gift.</li>
+  <li>A gift bomb (subs gifted to the community) shows the tag only when every sub in it has the same length; otherwise it shows none.</li>
+  <li>Places without a tag spell it out: the Now playing strip shows <em>LongtimeFan resubscribed for 6 months · 14 months total</em>, and By person shows <em>Gifted 5 Tier 1 subs · 3 months each</em>. Different lengths get separate By person lines.</li>
+  <li>Turn it all off with <strong>Show multi-month subs</strong> in the <a href="#hx-activity-feed-settings">settings</a>.</li>
 </ul>
 
 <h2>Paused alerts</h2>
@@ -410,7 +469,9 @@
           <div class="hm-af-set"><span><span class="hm-af-set-name">Tier badge</span><span class="hm-af-set-hint">Where T1 / T2 / T3 appears.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">On the icon corner</span></div></div>
           <div class="hm-af-set"><span><span class="hm-af-set-name">Show platform marks</span><span class="hm-af-set-hint">Twitch / YouTube logo on each row; tips get a Streamlabs or StreamElements logo.</span></span><span class="hm-switch is-on"><i></i></span></div>
           <div class="hm-af-set"><span><span class="hm-af-set-name">Show viewer messages</span><span class="hm-af-set-hint">The message a viewer sent with a cheer, sub or tip.</span></span><span class="hm-switch is-on"><i></i></span></div>
-          <div class="hm-af-set"><span><span class="hm-af-set-name">Show multi-month subs</span><span class="hm-af-set-hint">A “3-month gift” or “6-month sub” tag when a sub or gifted sub covers several months.</span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Show multi-month subs</span><span class="hm-af-set-hint">A tag such as “6 months paid ahead” when a sub or gifted sub covers several months.</span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Multi-month tag style</span><span class="hm-af-set-hint">How the months look.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Split tag</span></div></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Multi-month tag placement</span><span class="hm-af-set-hint">Where the tag sits on a row.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">After the text</span></div></div>
           <div class="hm-af-set"><span><span class="hm-af-set-name">Wrap long text</span><span class="hm-af-set-hint">Off: one line per event.</span></span><span class="hm-switch"><i></i></span></div>
           <div class="hm-af-set"><span class="hm-af-set-name">Text size</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Medium</span></div></div>
         </div>
@@ -443,7 +504,9 @@
 <tr><td><strong>Tier badge</strong></td><td>On the icon corner, After the name, Hidden</td><td>Where T1 / T2 / T3 shows. With icons off, the corner badge moves after the name.</td></tr>
 <tr><td><strong>Show platform marks</strong></td><td>On</td><td>Twitch or YouTube logo on each row. Tips show the service they came through: Streamlabs or StreamElements.</td></tr>
 <tr><td><strong>Show viewer messages</strong></td><td>On</td><td>The message sent with a cheer, sub or tip, in quotes under the row.</td></tr>
-<tr><td><strong>Show multi-month subs</strong></td><td>On</td><td>A <strong>3-month gift</strong> or <strong>6-month sub</strong> chip when a sub, resub or gifted sub covers several months, and the months in the Now playing strip and By person. See <a href="#hx-multi-month-subs-and-gifts">Multi-month subs and gifts</a>.</td></tr>
+<tr><td><strong>Show multi-month subs</strong></td><td>On</td><td>A tag such as <strong>6 months paid ahead</strong> when a sub, resub or gifted sub covers several months, and the months in the Now playing strip and By person. See <a href="#hx-multi-month-subs-and-gifts">Multi-month subs and gifts</a>.</td></tr>
+<tr><td><strong>Multi-month tag style</strong></td><td>Split tag, Chip, Calendar, Dots</td><td>How the tag looks, the same in every layout and the OBS dock.</td></tr>
+<tr><td><strong>Multi-month tag placement</strong></td><td>After the text, Right side, Below the text</td><td>Where the tag sits on a row. The Ticker always shows it after the text; the dock's Rows layout puts an <em>After the text</em> tag under the name.</td></tr>
 <tr><td><strong>Wrap long text</strong></td><td>Off</td><td>Off keeps one line per event and cuts long text short.</td></tr>
 <tr><td><strong>Text size</strong></td><td>Medium, Small, Large</td><td>Feed text size.</td></tr>
 <tr><td><strong>Times</strong></td><td>Relative, Clock, Hidden</td><td><em>3m</em> or <em>14:32</em>, or no time.</td></tr>

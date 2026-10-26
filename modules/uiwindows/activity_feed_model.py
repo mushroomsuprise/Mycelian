@@ -26,6 +26,8 @@ FEED_SETTINGS: Dict[str, tuple] = {
     "platform": ("activity_feed_platform_marks", True, None),
     "messages": ("activity_feed_viewer_messages", True, None),
     "sub_duration": ("activity_feed_show_sub_duration", True, None),
+    "sub_duration_style": ("activity_feed_sub_duration_style", "split", ("split", "chip", "calendar", "dots")),
+    "sub_duration_place": ("activity_feed_sub_duration_place", "inline", ("inline", "right", "below")),
     "wrap": ("activity_feed_wrap_text", False, None),
     "times": ("activity_feed_times", "relative", ("relative", "clock", "hidden")),
     "earlier_minutes": ("activity_feed_earlier_after_minutes", 30, (15, 30, 60, 120, 0)),
@@ -138,15 +140,30 @@ def alert_duration_months(alert: Mapping[str, Any]) -> int:
     )
 
 
-def format_sub_duration(months: Any, kind: str = "sub") -> str:
-    """Chip text: "6-month sub" / "3-month gift" (empty for single-month or unknown).
+# Tag caption kind -> (full caption, short caption used only when the row runs out of room).
+# Worded so a resub's prepaid months can't be mistaken for its cumulative total.
+SUB_DURATION_CAPTIONS: Dict[str, tuple] = {
+    "sub": ("months in advance", "mo up front"),
+    "resub": ("months paid ahead", "mo ahead"),
+    "gift": ("months gifted", "mo gift"),
+    "each": ("months each", "mo each"),
+}
 
-    Says "sub"/"gift" so it isn't confused with a resub's total months shown beside it.
-    """
+
+def sub_duration_kind(kind: str, gift_count: Any = 1) -> str:
+    """Caption kind for a feed kind: sub / resub / gift (one sub) / each (several gifted subs)."""
+    if kind == "giftsub":
+        return "each" if (_to_int(gift_count) or 1) > 1 else "gift"
+    return "resub" if kind == "resub" else "sub"
+
+
+def sub_duration_caption(months: Any, caption_kind: str, *, short: bool = False) -> str:
+    """Tag text: "6 months paid ahead" (short: "6 mo ahead"); empty for single-month or unknown."""
     n = duration_months_value(months)
     if not n:
         return ""
-    return f"{n}-month gift" if kind == "giftsub" else f"{n}-month sub"
+    full, brief = SUB_DURATION_CAPTIONS.get(caption_kind, SUB_DURATION_CAPTIONS["sub"])
+    return f"{n} {brief if short else full}"
 
 
 def sub_message(username: str, tier: Any, duration_months: Any = 0, *, show_duration: bool = True) -> str:
@@ -395,25 +412,31 @@ def feed_row_model(alert: Mapping[str, Any], *, seq: Optional[int] = None) -> Di
     what = ""
     amount = ""
     tier = None
+    gift_count = 1
 
     raw_tier = _to_int(_pick(alert, "tier"))
     if kind in ("sub", "resub") and raw_tier and 1 <= raw_tier <= 3:
         tier = f"T{raw_tier}"
-    # Months one sub or gift covers ("6-month sub"); the renderer hides it when the setting is off.
-    duration = ""
-    if kind in ("sub", "resub", "giftsub"):
-        duration = format_sub_duration(alert_duration_months(alert), kind)
+    # Months one sub or gift covers; the renderer draws the tag (or hides it when the setting is off).
+    sub_months = alert_duration_months(alert) if kind in ("sub", "resub", "giftsub") else 0
+    what_tagged = what_full = ""
 
     if kind == "follow":
         what = "followed"
     elif kind == "sub":
         what = "subscribed"
+        if sub_months:
+            what_full = f"subscribed for {sub_months} months"
     elif kind == "resub":
         months = _to_int(_pick(alert, "resub_month", "months", "total_months"))
         if not months:
             match = _MONTHS_RE.search(message)
             months = int(match.group(1)) if match else None
         what = f"resubscribed · {months} months" if months and months > 1 else "resubscribed"
+        if sub_months:
+            total = f" · {months} months total" if months and months > 1 else ""
+            what_tagged = f"resubscribed{total}"
+            what_full = f"resubscribed for {sub_months} months{total}"
     elif kind == "giftsub":
         qty = _to_int(_pick(alert, "gift_qty"))
         if not qty:
@@ -424,9 +447,17 @@ def feed_row_model(alert: Mapping[str, Any], *, seq: Optional[int] = None) -> Di
         recipient = str(_pick(alert, "recipient") or "").strip()
         if qty == 1:
             what = f"gifted a Tier {t} sub" + (f" to {recipient}" if recipient else "")
+            if sub_months and recipient:
+                what_tagged = f"gifted {recipient} a Tier {t} sub"
+                what_full = f"gifted {recipient} a {sub_months}-month Tier {t} sub"
+            elif sub_months:
+                what_full = f"gifted a {sub_months}-month Tier {t} sub"
         else:
             what = f"gifted {_num(qty)} Tier {t} subs"
             amount = f"×{_num(qty)}"
+            if sub_months:
+                what_full = f"{what} · {sub_months} months each"
+        gift_count = qty
     elif kind == "bits":
         bits = _to_int(_pick(alert, "amt_cheered", "bits"))
         if not bits:
@@ -547,6 +578,7 @@ def feed_row_model(alert: Mapping[str, Any], *, seq: Optional[int] = None) -> Di
     if seq is None:
         seq = _to_int(alert.get("seq"))
     row_id = alert_id or f"row-{seq if seq is not None else int(_ts(alert) * 1000)}"
+    caption_kind = sub_duration_kind(kind, gift_count) if sub_months else ""
     return {
         "id": row_id,
         "alert_id": alert_id,
@@ -559,7 +591,14 @@ def feed_row_model(alert: Mapping[str, Any], *, seq: Optional[int] = None) -> Di
         "what": what,
         "amount": amount,
         "tier": tier,
-        "duration": duration,
+        # Multi-month tag: months, its full / short caption, and the wording that goes with it
+        # (what_tagged beside the tag, what_full where there is no tag, e.g. Now playing).
+        "months": sub_months,
+        "duration": sub_duration_caption(sub_months, caption_kind) if sub_months else "",
+        "duration_short": sub_duration_caption(sub_months, caption_kind, short=True) if sub_months else "",
+        "duration_kind": caption_kind,
+        "what_tagged": (what_tagged or what) if sub_months else "",
+        "what_full": (what_full or what) if sub_months else "",
         "msg": msg,
         "ts": _ts(alert),
         "platform": platform,
