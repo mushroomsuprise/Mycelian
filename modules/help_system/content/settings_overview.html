@@ -1,4 +1,4 @@
-<p class="hx-lead">The <strong>Settings</strong> tab holds service connections, the theme and app-wide options. Each sub-tab has its own <strong>Discard</strong> and <strong>Save</strong> (or <strong>Apply</strong>) buttons; nothing changes until you save.</p>
+<p class="hx-lead">The <strong>Settings</strong> tab holds service connections, the theme and app-wide options. Each sub-tab has its own <strong>Discard</strong> and <strong>Save</strong> (or <strong>Apply</strong>) buttons; nothing changes until you save. The one exception is the <strong>Activity Feed</strong> panel in App Settings, which applies each change straight away.</p>
 
 <div class="hx-meta">
   <span>{{icon:place}} <span class="hx-path"><span>Settings</span></span> (last main tab)</span>
@@ -154,6 +154,24 @@
           </div>
         </div>
         <div class="hm-panel">
+          <div class="hm-row"><span class="hm-panel-title">Activity Feed</span><span class="hm-chip hm-plain">Applies instantly</span></div>
+          <div class="hm-grid-2">
+            <div class="hm-col hm-tight">
+              <span class="hm-muted hm-xs">Look</span>
+              <div class="hm-row"><span class="hm-chip">Rows</span><span class="hm-chip hm-plain">Cards</span><span class="hm-chip hm-plain">Ticker</span></div>
+              <div class="hm-row hm-between"><span class="hm-sm">Density</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Comfortable</span></div></div>
+              <div class="hm-row hm-between"><span class="hm-sm">Event colours</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Coloured icon</span></div></div>
+            </div>
+            <div class="hm-col hm-tight">
+              <span class="hm-muted hm-xs">Behaviour</span>
+              <div class="hm-row hm-between"><span class="hm-sm">Times</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Relative</span></div></div>
+              <span class="hm-switch is-on"><i></i>Show “Now playing” strip</span>
+              <div class="hm-row hm-between"><span class="hm-sm">Alert timer</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">In the Now playing strip</span></div></div>
+            </div>
+          </div>
+          <span class="hm-muted hm-xs">More options below these; see the Activity Feed help topic.</span>
+        </div>
+        <div class="hm-panel">
           <div class="hm-row hm-between">
             <span class="hm-row"><span class="hm-panel-title">Notifications</span><span class="hx-mi hm-muted">help_outline</span></span>
             <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">science</span>Send a test</span>
@@ -231,8 +249,9 @@
 <tr><td><strong>Start maximized</strong></td><td>Opens the window maximized. Applies on next launch</td></tr>
 <tr><td><strong>Run at login</strong>, <strong>Minimize to tray</strong>, <strong>Start minimized to tray</strong></td><td>Keep Mycelian running in the background. <strong>Run at login</strong> only works in an installed build</td></tr>
 <tr><td><strong>Check for updates automatically</strong>, <strong>Check every</strong></td><td>Check for new versions on a schedule; how often to check (5 to 120 minutes). With it off, use <strong>Check for updates</strong> on the About tab</td></tr>
-<tr><td><strong>Items per page</strong>, <strong>Pages to load</strong></td><td>How many Activity Feed items load per page and how many pages you can go back. The line under the section shows the total</td></tr>
+<tr><td><strong>Items per page</strong>, <strong>Pages to load</strong></td><td>How many Activity Feed items load per History page and how many pages you can go back. The line under the section shows the total. The <strong>Storage settings</strong> link under the feed's History view opens this section</td></tr>
 <tr><td><strong>Auto-trim stored alerts</strong>, <strong>Trim by</strong>, <strong>Keep the newest</strong>, <strong>Delete alerts older than</strong></td><td>Delete old stored alerts by number, age, or both</td></tr>
+<tr><td><strong>Activity Feed</strong> (panel above Notifications)</td><td>The look and behaviour of the Activity Feed tab and its OBS dock: layout (Rows, Cards, Ticker), density, event colours, icons, tier badge, platform marks, viewer messages, wrapping, text size, times, when events move to Earlier, order numbers, timeline dots, the NEW highlight, the Now playing strip, the alert timer, Up next and the By person window. Marked <strong>Applies instantly</strong>: changes save and show straight away, without <strong>Save</strong>. See <a href="help:activity_feed">Activity Feed</a></td></tr>
 <tr><td><strong>Stream Deck plugin</strong></td><td>Shows whether the plugin is installed and current (hover the badge for versions), and installs or reinstalls the bundled plugin. See <a href="help:guide_streamdeck">Connect Stream Deck</a></td></tr>
 <tr><td><strong>Notifications</strong> (panel across the bottom)</td><td>Turn pop-ups on or off, where they appear, how many show at once, desktop notifications while minimized to the tray, how long each level stays, and which features may pop up. <strong>Send a test</strong> shows one of each. See <a href="help:notifications">Notifications</a></td></tr>
 </tbody>

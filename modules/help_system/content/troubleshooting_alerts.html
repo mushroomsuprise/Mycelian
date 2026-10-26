@@ -10,19 +10,21 @@
       <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span><span class="hm-marker" data-n="2"></span></span>
       <span class="hm-footer-item">{{brand:obs}} OBS <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
     </div>
-    <div class="hma-feed-controls" style="margin-top:10px">
-      <span class="hma-ctrl is-paused"><span class="hx-mi">play_arrow</span>RESUME ALERTS<span class="hm-marker" data-n="3"></span></span>
-      <span class="hma-ctrl"><span class="hx-mi">notifications_off</span>MUTE ALERTS</span>
-      <span class="hma-ctrl"><span class="hx-mi">skip_next</span>SKIP ALERT</span>
+    <div class="hm-af" style="margin-top:10px">
+      <div class="hm-af-head">
+        <span class="hm-af-pill is-warn">Alerts paused · 3 waiting</span><span class="hm-marker" data-n="3"></span>
+        <span class="hm-af-spacer"></span>
+        <span class="hm-af-play"><span class="is-paused"><span class="hx-mi">play_arrow</span>Resume</span><span><span class="hx-mi">volume_up</span>Mute</span><span class="is-skip"><span class="hx-mi">skip_next</span>Skip</span></span>
+      </div>
     </div>
   </div>
-  <figcaption>The status footer at the bottom of the window, and the Activity Feed controls.</figcaption>
+  <figcaption>The status footer at the bottom of the window, and the top of the Activity Feed while alerts are paused.</figcaption>
 </figure>
 
 <ol class="hx-annotations">
   <li data-n="1"><strong>Overlay Server</strong> serves every browser source. If it is not <strong>Running</strong>, no alert can show. See <a href="help:status_footer">Status Footer</a>.</li>
   <li data-n="2"><strong>Twitch</strong> (or the donation service) must be green to receive events. See <a href="help:troubleshooting_connections">Connection Problems</a>.</li>
-  <li data-n="3">If the Activity Feed button says <strong>RESUME ALERTS</strong>, alerts are paused. Click it.</li>
+  <li data-n="3">If the Activity Feed shows <strong>Alerts paused</strong> and a <strong>Resume</strong> button, alerts are paused. Click <strong>Resume</strong>; waiting alerts play in order. See <a href="help:activity_feed">Activity Feed</a>.</li>
 </ol>
 
 <h2>Find your symptom</h2>
@@ -53,8 +55,8 @@
 
     <details class="hx-details">
       <summary>Test does not show: alerts are paused</summary>
-      <p><strong>Cause:</strong> <strong>PAUSE ALERTS</strong> was clicked. The queue holds every alert until you resume.</p>
-      <p><strong>Fix:</strong> On the <strong>Activity Feed</strong>, click <strong>RESUME ALERTS</strong>. Held alerts then play in order.</p>
+      <p><strong>Cause:</strong> <strong>Pause</strong> was clicked (on the Activity Feed, its dock, a Stream Deck key or a control). The queue holds every alert until you resume; the feed shows an amber <strong>Alerts paused</strong> banner listing them.</p>
+      <p><strong>Fix:</strong> On the <strong>Activity Feed</strong>, click <strong>Resume</strong>. Held alerts then play in order.</p>
     </details>
 
     <details class="hx-details">
@@ -79,8 +81,8 @@
   <div class="hx-tab-panel" data-panel="sound">
     <details class="hx-details">
       <summary>Alerts are muted</summary>
-      <p><strong>Cause:</strong> <strong>MUTE ALERTS</strong> on the Activity Feed silences sound and text-to-speech; the image still shows.</p>
-      <p><strong>Fix:</strong> Click <strong>MUTE ALERTS</strong> again.</p>
+      <p><strong>Cause:</strong> <strong>Mute</strong> on the Activity Feed silences sound and text-to-speech; the image still shows. The button then reads <strong>Unmute</strong>.</p>
+      <p><strong>Fix:</strong> Click <strong>Unmute</strong>.</p>
     </details>
     <details class="hx-details">
       <summary>The browser source is muted or not routed in OBS</summary>
@@ -110,7 +112,7 @@
       <p><strong>Cause:</strong> Tips are converted to the <strong>Alert currency</strong> and rounded to a whole number before matching. A 4.60 tip matches 5.</p>
       <p><strong>Fix:</strong> Check <strong>Alert currency</strong> in <span class="hx-path"><span>Settings</span><span>Streamlabs</span></span> or <span class="hx-path"><span>Settings</span><span>StreamElements</span></span>, and set your ranges in that currency.</p>
     </details>
-    <p>To confirm a fix, replay the event from the Activity Feed; replay matches against your current saved alerts. See <a href="help:alert_testing">Testing Your Alerts</a>.</p>
+    <p>To confirm a fix, click the event in the Activity Feed to replay it; replay matches against your current saved alerts. See <a href="help:activity_feed">Activity Feed</a>.</p>
   </div>
 
   <div class="hx-tab-panel" data-panel="gif">
@@ -140,7 +142,7 @@
     <details class="hx-details">
       <summary>One alert is stuck on screen</summary>
       <p><strong>Cause:</strong> The overlay never reported the alert finished, for example after OBS reloaded the source mid-alert.</p>
-      <p><strong>Fix:</strong> Click <strong>SKIP ALERT</strong> on the Activity Feed. If it happens again, refresh the browser source in OBS.</p>
+      <p><strong>Fix:</strong> Click <strong>Skip</strong> on the Activity Feed (in the header or on the playing row). It stops the alert at once and starts the next one. If it happens again, refresh the browser source in OBS.</p>
     </details>
     <details class="hx-details">
       <summary>Alerts arrive several seconds after the event</summary>
@@ -149,7 +151,7 @@
     </details>
     <details class="hx-details">
       <summary>I want to empty the queue</summary>
-      <p>The Activity Feed has no clear-queue button. <strong>SKIP ALERT</strong> ends the current one. A Spore Studio or Stream Deck control can use the <strong>Clear alert queue</strong> action; see <a href="help:spore_studio_dynamic_controls">Dynamic Controls</a>. Restarting Mycelian also empties it.</p>
+      <p>The Activity Feed has no clear-queue button. <strong>Skip</strong> ends the current one, one alert per click. A Spore Studio or Stream Deck control can use the <strong>Clear alert queue</strong> action; see <a href="help:spore_studio_dynamic_controls">Dynamic Controls</a>. Restarting Mycelian also empties it.</p>
     </details>
   </div>
 </div>

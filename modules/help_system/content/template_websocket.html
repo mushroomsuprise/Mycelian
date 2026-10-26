@@ -70,6 +70,8 @@ socket.on('connect', () =&gt; {
     <tr><td><code>instant_alert</code></td><td>An alert that skips the queue</td><td>Alert object</td></tr>
     <tr><td><code>activity_feed_alert</code></td><td>An alert to list in the Activity Feed</td><td>Alert object</td></tr>
     <tr><td><code>alert_complete_ack</code></td><td>Reply to your <code>alert_complete</code></td><td><code>{ queue_seq }</code></td></tr>
+    <tr><td><code>alerts_skip_alert</code></td><td>An alert was skipped. Stop it now if <code>queue_seq</code> is the one you are showing.</td><td><code>{ queue_seq, alert_id, source }</code></td></tr>
+    <tr><td><code>instant_alert_replay</code></td><td>An alert was replayed from the Activity Feed (the instant-alert copy of a replay)</td><td>Alert object with <code>is_replay: true</code></td></tr>
     </tbody>
     </table></div>
   </div>
@@ -79,6 +81,7 @@ socket.on('connect', () =&gt; {
     <tbody>
     <tr><td><code>alerts_paused</code> / <code>alerts_resumed</code></td><td>Alerts were paused or resumed</td><td><code>{ paused: true }</code> / <code>{ paused: false }</code></td></tr>
     <tr><td><code>pause_status_update</code></td><td>Pause state changed, or reply to <code>get_pause_status</code></td><td><code>{ paused }</code></td></tr>
+    <tr><td><code>alert_queue_state</code></td><td>What is playing or waiting changed, or reply to <code>get_alert_queue_state</code></td><td><code>{ paused, muted, playing, queue, server_now_ms, revision }</code>. <code>playing</code> is <code>null</code> or <code>{ alert_id, type, username, started_at_ms, duration_ms, queue_seq }</code>; <code>queue</code> lists waiting alerts in play order.</td></tr>
     <tr><td><code>template_config_updated</code></td><td>A template was saved in Source Settings</td><td><code>{ template }</code>. Reload your settings if it is your template.</td></tr>
     <tr><td><code>theme_update</code></td><td>The app theme changed, or reply to <code>get_current_theme</code></td><td><code>{ css, theme_name, … }</code></td></tr>
     <tr><td><code>overlay-recovery</code></td><td>Mycelian asks overlays to resync</td><td><code>{ service, … }</code>. Handled by the helper.</td></tr>
@@ -145,7 +148,8 @@ socket.on('connect', () =&gt; {
 <tr><td><code>alert_complete</code></td><td><code>{ queue_seq }</code></td><td>Tells the queue the alert finished. The main Alerts overlay sends this; a template that only reacts to alerts does not need to.</td></tr>
 <tr><td><code>get_pause_status</code></td><td>none</td><td>Replies with <code>pause_status_update</code></td></tr>
 <tr><td><code>pause_alerts</code>, <code>resume_alerts</code>, <code>toggle_alerts</code></td><td>none</td><td>Changes the alert pause state</td></tr>
-<tr><td><code>skip_alert</code></td><td>none</td><td>Skips the playing alert</td></tr>
+<tr><td><code>skip_alert</code></td><td>none, <code>{ queue_seq }</code> or <code>{ alert_id }</code></td><td>Stops the playing alert at once and starts the next one; a repeated press within a moment does not skip the next alert too. With <code>queue_seq</code> it only skips if that alert is still playing. With the <code>alert_id</code> of a waiting alert, removes it from the queue. Accepted from this computer only.</td></tr>
+<tr><td><code>get_alert_queue_state</code></td><td>none</td><td>Replies with <code>alert_queue_state</code></td></tr>
 <tr><td><code>get_data</code></td><td><code>{ path, request_id }</code></td><td>Reads a value from Mycelian's data store; replies with <code>get_data</code></td></tr>
 <tr><td><code>set_data</code>, <code>update_data</code></td><td><code>{ path, data }</code></td><td>Writes or merges a value. Accepted from this computer only.</td></tr>
 <tr><td><code>get-streamer-info</code></td><td>none</td><td>Replies with <code>streamer-info</code></td></tr>

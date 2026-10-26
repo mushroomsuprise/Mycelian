@@ -1,4 +1,4 @@
-<p class="hx-lead">Mycelian has three ways to try an alert without waiting for a real viewer: <strong>Test Alert</strong> on the Alerts tab, <strong>Replay</strong> in the Activity Feed, and the <strong>Sample events</strong> buttons in the Source Settings preview. Each one checks something different.</p>
+<p class="hx-lead">Mycelian has three ways to try an alert without waiting for a real viewer: <strong>Test Alert</strong> on the Alerts tab, <strong>Replay</strong> (click a past alert) in the Activity Feed, and the <strong>Sample events</strong> buttons in the Source Settings preview. Each one checks something different.</p>
 
 <div class="hx-callout hx-important"><p>Test before you go live. Tests play on the real alerts browser source, so viewers see them if you are streaming.</p></div>
 
@@ -8,7 +8,7 @@
 <thead><tr><th>Tool</th><th>Where</th><th>Uses</th><th>Good for</th></tr></thead>
 <tbody>
 <tr><td><strong>Test Alert</strong></td><td><span class="hx-path"><span>Alerts</span><span>any sub-tab</span></span></td><td>The alert as it is now, saved or not</td><td>Checking the GIF, sound, volume, duration and TTS of one alert while you edit</td></tr>
-<tr><td><strong>Replay Alert</strong></td><td><span class="hx-path"><span>Activity Feed</span></span>, on a past event</td><td>Your saved alerts, matched again for that event's amount</td><td>Checking which alert a real amount picks after you change ranges</td></tr>
+<tr><td><strong>Replay</strong></td><td><span class="hx-path"><span>Activity Feed</span></span>, click a past event</td><td>Your saved alerts as they are now, matched again for that event's amount</td><td>Checking which alert a real amount picks after you change ranges</td></tr>
 <tr><td><strong>Queue alert</strong> / <strong>Play alert</strong></td><td><span class="hx-path"><span>Source Settings</span><span>alerts</span></span> preview, <strong>Sample events</strong></td><td>A sample alert in the preview pane only</td><td>Checking layout, fonts and colors of the alerts template without touching OBS</td></tr>
 </tbody>
 </table></div>
@@ -83,43 +83,42 @@
 
 <h2>Replay from the Activity Feed</h2>
 
-<p>Every real event is listed on the <strong>Activity Feed</strong> tab. Hover a row to show its buttons.</p>
+<p>Every real event is listed on the <strong>Activity Feed</strong> tab (and in its OBS dock). Point at a played alert and it shows <strong>Click to replay</strong>; click anywhere on the row.</p>
 
 <figure class="hx-figure hx-static">
   <div class="hm">
-    <div class="hma-feed-controls">
-      <span class="hma-ctrl"><span class="hx-mi">pause</span>PAUSE ALERTS</span>
-      <span class="hma-ctrl"><span class="hx-mi">notifications_off</span>MUTE ALERTS</span>
-      <span class="hma-ctrl"><span class="hx-mi">skip_next</span>SKIP ALERT</span>
-      <span class="hma-ctrl"><span class="hx-mi">inventory_2</span>FEED STORAGE</span>
-      <span class="hma-spacer"></span>
-      <div class="hm-field hm-nolabel" style="width:9rem"><span class="hm-placeholder">User or message</span></div>
-      <span class="hm-switch"><i></i>Condense List</span>
-    </div>
-    <div class="hma-feed-controls">
-      <span class="hma-ctrl is-active">CURRENT ALERTS</span>
-      <span class="hma-ctrl">PREVIOUS ALERTS</span>
-    </div>
-    <div class="hma-feed-row">
-      <span class="hma-feed-type">Bits</span>
-      <span class="hma-feed-msg">viewer42 cheered 500 bits!</span>
-      <span class="hma-feed-acts"><span class="hma-mini"><span class="hx-mi">replay</span></span><span class="hma-mini"><span class="hx-mi">skip_next</span></span><span class="hm-marker" data-n="1"></span></span>
-      <span class="hma-feed-time">just now</span>
-    </div>
-    <div class="hma-feed-row">
-      <span class="hma-feed-type">Follow</span>
-      <span class="hma-feed-msg">newfriend just followed!</span>
-      <span class="hma-feed-time">3m ago</span>
+    <div class="hm-af">
+      <div class="hm-af-list is-rows">
+        <div class="hm-af-row is-playing hm-af-k-bits">
+          <span class="hm-af-ico"><span class="hx-mi">diamond</span></span>
+          <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">viewer42</span><span class="hm-af-what">replay · bits</span><span class="hm-af-tag is-replay">Replay</span></span></span>
+          <span class="hm-af-state is-play"><span class="hx-mi">graphic_eq</span>Playing</span><span class="hm-af-time">just now</span>
+          <span class="hm-af-acts"><span><span class="hx-mi">skip_next</span>Skip</span></span><span class="hm-marker" data-n="2"></span>
+        </div>
+        <div class="hm-af-row is-hover hm-af-k-bits">
+          <span class="hm-af-ico"><span class="hx-mi">diamond</span></span>
+          <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">viewer42</span><span class="hm-af-what">cheered</span></span></span>
+          <span class="hm-af-amt">500 bits</span>
+          <span class="hm-af-acts"><span class="hm-af-hint"><span class="hx-mi">replay</span>Click to replay</span></span><span class="hm-marker" data-n="1"></span>
+          <span class="hm-af-time">12m</span><span class="hm-af-seq">#38</span>
+        </div>
+        <div class="hm-af-row hm-af-k-follow">
+          <span class="hm-af-ico"><span class="hx-mi">favorite</span></span>
+          <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">newfriend</span><span class="hm-af-what">followed</span></span></span>
+          <span class="hm-af-time">15m</span><span class="hm-af-seq">#37</span>
+        </div>
+      </div>
     </div>
   </div>
-  <figcaption>Activity Feed with the action buttons shown on the first row.</figcaption>
+  <figcaption>Replaying the 500-bit cheer: the replay plays at the top with a <strong>Replay</strong> tag.</figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1"><strong>Replay Alert</strong> (<span class="hx-mi">replay</span>) and <strong>Skip Alert</strong> (<span class="hx-mi">skip_next</span>).</li>
+  <li data-n="1">Click a played row to replay it. A pop-up says <em>Replaying the Bits alert</em>.</li>
+  <li data-n="2">The replay joins the queue like a new alert and can be stopped with <strong>Skip</strong>.</li>
 </ol>
 
-<p><strong>Replay Alert</strong> takes the stored event (user, amount, message) and matches it against your <em>current</em> saved alerts. If you just changed a range, replaying a 500-bit cheer shows which alert 500 bits now picks. If no saved alert matches, it uses the media stored with the event. A toast says <em>Replaying Bits alert</em>.</p>
+<p>A replay keeps the stored event (viewer, amount, message and details) and matches it against your <em>current</em> saved alerts, using their media, sound, duration and text-to-speech as they are now. If you just changed a range, replaying a 500-bit cheer shows which alert 500 bits now picks. If no alert matches that event any more, Mycelian says <em>This alert can't be replayed</em> instead. Replays don't add a feed row, aren't stored, and don't change statistics, counters, goals or connectors. While alerts are paused, a replay waits until you resume. More in <a href="help:activity_feed">Activity Feed</a>.</p>
 
 <div class="hx-callout hx-tip"><p>No events yet? Have a friend follow, or cheer 1 bit yourself, then replay that row while you tune your alerts.</p></div>
 
@@ -156,8 +155,8 @@
 <h3>Under load</h3>
 <ul class="hx-checklist" data-checklist="alert_testing_load">
   <li>Five quick tests in a row play cleanly, one after another.</li>
-  <li><strong>PAUSE ALERTS</strong> holds the queue and <strong>RESUME ALERTS</strong> releases it.</li>
-  <li><strong>SKIP ALERT</strong> ends the alert on screen.</li>
+  <li><strong>Pause</strong> on the Activity Feed holds the queue (the waiting alerts are listed in order) and <strong>Resume</strong> releases it.</li>
+  <li><strong>Skip</strong> ends the alert on screen at once and the next one starts.</li>
   <li>OBS stays smooth while large GIFs play.</li>
 </ul>
 
@@ -165,17 +164,17 @@
 
 <details class="hx-details">
   <summary>Nothing appears</summary>
-  <p>Check the alerts browser source URL in OBS (<span class="hx-copy" data-copy="http://127.0.0.1:5000/alerts">http://127.0.0.1:5000/alerts</span>), that the source is visible, and that <strong>Overlay Server</strong> in the status footer is green. Also check the Activity Feed is not showing <strong>RESUME ALERTS</strong>, which means alerts are paused. More in <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
+  <p>Check the alerts browser source URL in OBS (<span class="hx-copy" data-copy="http://127.0.0.1:5000/alerts">http://127.0.0.1:5000/alerts</span>), that the source is visible, and that <strong>Overlay Server</strong> in the status footer is green. Also check the Activity Feed does not show <strong>Alerts paused</strong>; if it does, click <strong>Resume</strong>. More in <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
 </details>
 
 <details class="hx-details">
   <summary>The image shows but there is no sound</summary>
-  <p>Check <strong>MUTE ALERTS</strong> is not on, the alert's <strong>Volume</strong> is above 0, and the browser source is not muted in the OBS mixer. See <a href="help:troubleshooting_audio">Audio Troubleshooting</a>.</p>
+  <p>Check the Activity Feed is not muted (the button reads <strong>Unmute</strong> when it is), the alert's <strong>Volume</strong> is above 0, and the browser source is not muted in the OBS mixer. See <a href="help:troubleshooting_audio">Audio Troubleshooting</a>.</p>
 </details>
 
 <details class="hx-details">
   <summary>The wrong alert plays for a real event</summary>
-  <p>Test Alert always plays the open alert, so it cannot show this. Replay the event from the Activity Feed, then look for overlapping ranges or a missing range. See <a href="help:alert_configuration">Configuring Alert Settings</a>.</p>
+  <p>Test Alert always plays the open alert, so it cannot show this. Click the event in the Activity Feed to replay it, then look for overlapping ranges or a missing range. See <a href="help:alert_configuration">Configuring Alert Settings</a>.</p>
 </details>
 
 <details class="hx-details">

@@ -45,7 +45,7 @@
 <details class="hx-details">
   <summary>The Activity Feed is slow to open or scroll</summary>
   <p><strong>Cause:</strong> It loads a lot of history.</p>
-  <p><strong>Fix:</strong> Click <strong>FEED STORAGE</strong> on the Activity Feed (or open <span class="hx-path"><span>Settings</span><span>App Settings</span></span>) and lower <strong>History limit</strong> or <strong>Max pages</strong>.</p>
+  <p><strong>Fix:</strong> On the Activity Feed, open <strong>History</strong> and click <strong>Storage settings</strong> under the list (or open <span class="hx-path"><span>Settings</span><span>App Settings</span></span>). Lower <strong>Items per page</strong> or <strong>Pages to load</strong> under <strong>Activity feed and storage</strong> and click <strong>Save</strong>. See <a href="help:activity_feed">Activity Feed</a>.</p>
 </details>
 
 <details class="hx-details">
@@ -57,24 +57,23 @@
 <figure class="hx-figure">
   <div class="hm">
     <div class="hm-panel">
-      <div class="hm-panel-title">Storage</div>
-      <span class="hm-xs hm-muted">Activity feed paging and stored-alert retention.</span>
+      <div class="hm-panel-title">Activity feed and storage</div>
       <div class="hm-grid-2">
-        <div class="hm-row"><span class="hm-sm">History limit</span><div class="hm-field hm-nolabel" style="width:4.5rem"><span class="hm-value">20</span></div><span class="hm-sm hm-muted">per page</span></div>
-        <div class="hm-row"><span class="hm-sm">Max pages</span><div class="hm-field hm-nolabel" style="width:4.5rem"><span class="hm-value">5</span></div><span class="hm-sm hm-muted">to load</span></div>
+        <div class="hm-row"><span class="hm-sm">Items per page</span><div class="hm-field hm-nolabel" style="width:4.5rem"><span class="hm-value">20</span></div><span class="hm-sm hm-muted">items</span></div>
+        <div class="hm-row"><span class="hm-sm">Pages to load</span><div class="hm-field hm-nolabel" style="width:4.5rem"><span class="hm-value">5</span></div><span class="hm-sm hm-muted">pages</span></div>
         <div class="hm-row"><span class="hm-switch is-on"><i></i>Auto-trim stored alerts</span><span class="hm-marker" data-n="1"></span></div>
-        <div class="hm-field hm-select" data-label="Trim using"><span class="hm-value">Number and age</span></div>
-        <div class="hm-row"><span class="hm-sm">Keep</span><div class="hm-field hm-nolabel" style="width:5rem"><span class="hm-value">500</span></div><span class="hm-sm hm-muted">alerts</span></div>
-        <div class="hm-row"><span class="hm-sm">Keep</span><div class="hm-field hm-nolabel" style="width:5rem"><span class="hm-value">30</span></div><span class="hm-sm hm-muted">days</span><span class="hm-marker" data-n="2"></span></div>
+        <div class="hm-row"><span class="hm-sm">Trim by</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Number and age</span></div></div>
+        <div class="hm-row"><span class="hm-sm">Keep the newest</span><div class="hm-field hm-nolabel" style="width:5rem"><span class="hm-value">500</span></div><span class="hm-sm hm-muted">alerts</span></div>
+        <div class="hm-row"><span class="hm-sm">Delete alerts older than</span><div class="hm-field hm-nolabel" style="width:5rem"><span class="hm-value">30</span></div><span class="hm-sm hm-muted">days</span><span class="hm-marker" data-n="2"></span></div>
       </div>
     </div>
   </div>
-  <figcaption><span class="hx-path"><span>Settings</span><span>App Settings</span></span> → <strong>Storage</strong>, shown with auto-trim turned on. Click the switch to see it off.</figcaption>
+  <figcaption><span class="hx-path"><span>Settings</span><span>App Settings</span></span> → <strong>Activity feed and storage</strong>, shown with auto-trim turned on. Click the switch to see it off.</figcaption>
 </figure>
 
 <ol class="hx-annotations">
   <li data-n="1"><strong>Auto-trim stored alerts</strong> deletes old stored alerts. Trimmed alerts can no longer be replayed.</li>
-  <li data-n="2"><strong>Trim using</strong>: <strong>Max number</strong> keeps the newest N alerts, <strong>Age</strong> deletes alerts older than the days set, <strong>Number and age</strong> applies both. Defaults are 500 alerts and 30 days.</li>
+  <li data-n="2"><strong>Trim by</strong>: <strong>Max number</strong> keeps the newest N alerts, <strong>Age</strong> deletes alerts older than the days set, <strong>Number and age</strong> applies both. Defaults are 500 alerts and 30 days.</li>
 </ol>
 
 <p>While a trim runs, the status footer shows its progress.</p>

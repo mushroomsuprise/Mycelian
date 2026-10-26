@@ -197,13 +197,23 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         keywords=['gif', 'audio', 'sound', 'media', 'randomization', 'animation'],
         related_topics=['alerts_overview', 'alert_configuration'],
     ),
+    'activity_feed': HelpTopic(
+        id='activity_feed',
+        title='Activity Feed',
+        category=HelpCategory.ALERTS,
+        summary='Watch events live, pause, skip or replay alerts, and use the feed as an OBS dock',
+        keywords=['activity feed', 'feed', 'replay', 'skip', 'pause', 'mute', 'up next', 'now playing',
+                  'queue', 'history', 'by person', 'dock', 'layout', 'ticker', 'cards'],
+        related_topics=['alert_testing', 'alerts_overview', 'obs_setup', 'settings_overview', 'troubleshooting_alerts'],
+        ui_context='activity_feed',
+    ),
     'alert_testing': HelpTopic(
         id='alert_testing',
         title='Testing Your Alerts',
         category=HelpCategory.ALERTS,
         summary='How to test alerts before going live',
-        keywords=['test', 'testing', 'preview', 'verify', 'check', 'debug'],
-        related_topics=['alerts_overview', 'alert_configuration'],
+        keywords=['test', 'testing', 'preview', 'verify', 'check', 'debug', 'replay'],
+        related_topics=['alerts_overview', 'alert_configuration', 'activity_feed'],
     ),
     # =========================================
     # Chatbot

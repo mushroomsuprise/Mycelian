@@ -1,0 +1,474 @@
+<p class="hx-lead">The <strong>Activity Feed</strong> lists every follow, sub, cheer, raid, tip and other event as it happens. It shows which alert is playing and which ones are next, lets you pause, mute and skip alerts, and replays a past alert with one click. The same feed runs as an OBS dock and stays in sync with the tab.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Activity Feed</span></span></span>
+  <span>{{icon:web_asset}} OBS dock: <span class="hx-copy" data-copy="http://127.0.0.1:5000/activity_feed">http://127.0.0.1:5000/activity_feed</span></span>
+  <span>{{icon:tune}} Look: <span class="hx-path"><span>Settings</span><span>App Settings</span><span>Activity Feed</span></span></span>
+</div>
+
+<h2>The Activity Feed tab</h2>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-tabs">
+      <span class="hm-tab is-active">Activity Feed</span>
+      <span class="hm-tab">Alerts</span>
+      <span class="hm-tab">Source Settings</span>
+      <span class="hm-tab">Source Controls</span>
+      <span class="hm-tab">Connectors</span>
+      <span class="hm-tab">Chatbot</span>
+      <span class="hm-tab">Spore Studio</span>
+      <span class="hm-tab">Settings</span>
+      <span class="hm-tabs-tail"><span class="hx-mi">help_outline</span><span class="hx-mi">notifications</span></span>
+    </div>
+    <div class="hm-frame">
+      <div class="hm-af">
+        <div class="hm-af-head">
+          <span class="hm-af-tile"><span class="hx-mi">dynamic_feed</span></span>
+          <span><span class="hm-af-title">Activity Feed</span><span class="hm-af-sub">Everything that happened on stream · mirrored in the OBS dock</span></span>
+          <span class="hm-af-pill is-ok">Playing · 2 up next</span><span class="hm-marker" data-n="1"></span>
+          <span class="hm-af-spacer"></span>
+          <span class="hm-af-play"><span class="is-breath"><span class="hx-mi">pause</span>Pause</span><span><span class="hx-mi">volume_up</span>Mute</span><span class="is-skip"><span class="hx-mi">skip_next</span>Skip</span></span><span class="hm-marker" data-n="2"></span>
+          <span class="hm-af-ibtn"><span class="hx-mi">tune</span></span><span class="hm-marker" data-n="3"></span>
+          <span class="hm-af-ibtn"><span class="hx-mi">help_outline</span></span>
+        </div>
+        <div class="hm-af-bar">
+          <span class="hm-af-seg"><span class="is-on"><span class="hx-mi">bolt</span>Live</span><span><span class="hx-mi">history</span>History</span><span><span class="hx-mi">group_work</span>By person</span></span><span class="hm-marker" data-n="4"></span>
+          <span class="hm-af-sync"><span class="hx-mi">sync</span>In sync with the OBS dock</span><span class="hm-marker" data-n="5"></span>
+          <span class="hm-af-spacer"></span>
+          <span class="hm-af-search"><span class="hx-mi">search</span>Search people or messages</span>
+          <span class="hm-af-filter"><span class="hx-mi">filter_list</span>Filters</span><span class="hm-marker" data-n="6"></span>
+        </div>
+        <div class="hm-af-now">
+          <span class="hm-af-lbl"><span class="hx-mi">graphic_eq</span>Now playing</span>
+          <span class="hm-af-who"><strong>viewer42</strong> cheered 500 bits</span>
+          <span class="hm-af-tbar"><i></i></span><span class="hm-af-left">0:04</span>
+          <span class="hm-af-spacer"></span>
+          <span class="hm-af-up"><span class="hm-af-up-k">Up next</span><span class="hm-af-upi hm-af-k-sub"><b>1</b><span class="hx-mi">star</span>NightOwl</span><span class="hm-af-more">+1 more</span></span>
+          <span class="hm-marker" data-n="7"></span>
+        </div>
+        <div class="hm-af-list is-rows">
+          <div class="hm-af-day">Recent · last 30 min<span class="hm-af-arrow"><span class="hx-mi">north</span>newest first</span></div>
+          <div class="hm-af-row is-waiting hm-af-k-raid">
+            <span class="hm-af-ico"><span class="hx-mi">groups</span></span>
+            <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">RaidLeader</span><span class="hm-af-what">raided · last playing Celeste</span></span></span>
+            <span class="hm-af-state is-wait">Up next · 2nd</span><span class="hm-af-amt">25 viewers</span>{{brand:twitch}}<span class="hm-af-time">just now</span><span class="hm-af-seq">#45</span>
+          </div>
+          <div class="hm-af-row is-waiting hm-af-k-sub">
+            <span class="hm-af-ico"><span class="hx-mi">star</span><span class="hm-af-tb">T1</span></span>
+            <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">NightOwl</span><span class="hm-af-what">subscribed</span></span></span>
+            <span class="hm-af-state is-wait">Up next · 1st</span>{{brand:twitch}}<span class="hm-af-time">just now</span><span class="hm-af-seq">#44</span><span class="hm-marker" data-n="8"></span>
+          </div>
+          <div class="hm-af-row is-playing hm-af-k-bits">
+            <span class="hm-af-ico"><span class="hx-mi">diamond</span></span>
+            <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">viewer42</span><span class="hm-af-what">cheered</span></span><span class="hm-af-msg">“Take my bits!”</span></span>
+            <span class="hm-af-state is-play"><span class="hx-mi">graphic_eq</span>Playing</span><span class="hm-af-amt">500 bits</span>{{brand:twitch}}<span class="hm-af-time">1m</span><span class="hm-af-seq">#43</span>
+            <span class="hm-af-acts"><span><span class="hx-mi">skip_next</span>Skip</span></span><span class="hm-marker" data-n="9"></span>
+          </div>
+          <div class="hm-af-row is-new is-hover hm-af-k-follow">
+            <span class="hm-af-ico"><span class="hx-mi">favorite</span></span>
+            <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">newfriend</span><span class="hm-af-what">followed</span></span></span>
+            <span class="hm-af-acts"><span class="hm-af-hint"><span class="hx-mi">replay</span>Click to replay</span></span><span class="hm-marker" data-n="10"></span>
+            <span class="hm-af-time">3m</span><span class="hm-af-seq">#42</span>
+          </div>
+          <div class="hm-af-row hm-af-k-sub">
+            <span class="hm-af-ico"><span class="hx-mi">autorenew</span><span class="hm-af-tb">T2</span></span>
+            <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">LongtimeFan</span><span class="hm-af-what">resubscribed · 12 months</span></span><span class="hm-af-msg">“A whole year already!”</span></span>
+            {{brand:twitch}}<span class="hm-af-time">18m</span><span class="hm-af-seq">#41</span>
+          </div>
+          <div class="hm-af-day">Earlier</div>
+          <div class="hm-af-row hm-af-k-tip">
+            <span class="hm-af-ico"><span class="hx-mi">payments</span></span>
+            <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">GenerousPal</span><span class="hm-af-what">tipped</span></span></span>
+            <span class="hm-af-amt">$5.00</span><span class="hm-af-time">47m</span><span class="hm-af-seq">#40</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>The tab while an alert plays with two more waiting. The mouse is over the <em>newfriend</em> row.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Status pill.</strong> <em>Playing · 2 up next</em> while an alert plays, <em>2 up next</em> between alerts, <em>Ready</em> when the queue is empty (<em>Ready · muted</em> when muted), and an amber <em>Alerts paused · 2 waiting</em> while paused.</li>
+  <li data-n="2"><strong>Pause</strong> holds new alerts until you click <strong>Resume</strong>; waiting alerts then play in order. <strong>Mute</strong> turns alert sound off (alerts still show) and becomes <strong>Unmute</strong>. <strong>Skip</strong> stops the alert that is playing now. The Pause button glows softly while an alert plays.</li>
+  <li data-n="3">{{icon:tune}} <strong>Feed look &amp; storage</strong> opens <span class="hx-path"><span>Settings</span><span>App Settings</span></span> at the <a href="#hx-activity-feed-settings">Activity Feed</a> panel. {{icon:help_outline}} opens this page.</li>
+  <li data-n="4"><strong>Live</strong> is this session's events, <strong>History</strong> is every stored alert page by page, <strong>By person</strong> sums up each viewer. See <a href="#hx-live-history-and-by-person">Live, History and By person</a>.</li>
+  <li data-n="5"><strong>In sync with the OBS dock</strong>: the open view, filters, search and history page are shared with the dock both ways. When the dock isn't open it reads <em>OBS dock not open · copy link</em>. Click it to copy the dock address.</li>
+  <li data-n="6"><strong>Search</strong> matches names, what happened, viewer messages and amounts. <strong>Filters</strong> picks which event types show; the badge shows how many are on, for example <em>8/11</em>.</li>
+  <li data-n="7"><strong>Now playing</strong> strip: the playing alert, a countdown bar with the time left, and the next alerts as numbered <strong>Up next</strong> chips (<em>+1 more</em> when more are waiting). It shows on the Live view only.</li>
+  <li data-n="8">Alerts waiting to play stay in the list with a dashed border and an <strong>Up next · 1st</strong>, <strong>2nd</strong>… tag in play order.</li>
+  <li data-n="9">The playing alert has sound bars, a green outline and its own <strong>Skip</strong> button.</li>
+  <li data-n="10">A played alert shows <strong>Click to replay</strong> when you point at it. Click anywhere on the row to replay it. The <strong>NEW</strong> tag marks events from the last 5 minutes.</li>
+</ol>
+
+<p>Rows are newest first. Each one shows the event icon (with the sub tier on its corner), the viewer, what happened, the viewer's message, the amount, a Twitch or YouTube mark, the time (<em>just now</em>, <em>3m</em>, <em>2h</em>) and an order number (<em>#41</em>, <em>#42</em>…) in the order alerts arrived. On the Live view, events older than 30 minutes move under <strong>Earlier</strong>. All of this can be changed in the <a href="#hx-activity-feed-settings">settings</a>.</p>
+
+<h2>Paused alerts</h2>
+
+<p>While alerts are paused, an amber banner replaces the Now playing strip and lists the waiting alerts in the order they will play. Click <strong>Resume</strong> in the banner or in the header to play them.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-af">
+      <div class="hm-af-head">
+        <span class="hm-af-tile"><span class="hx-mi">dynamic_feed</span></span>
+        <span><span class="hm-af-title">Activity Feed</span><span class="hm-af-sub">Everything that happened on stream · mirrored in the OBS dock</span></span>
+        <span class="hm-af-pill is-warn">Alerts paused · 2 waiting</span>
+        <span class="hm-af-spacer"></span>
+        <span class="hm-af-play"><span class="is-paused"><span class="hx-mi">play_arrow</span>Resume</span><span><span class="hx-mi">volume_up</span>Mute</span><span class="is-skip"><span class="hx-mi">skip_next</span>Skip</span></span>
+        <span class="hm-af-ibtn"><span class="hx-mi">tune</span></span>
+        <span class="hm-af-ibtn"><span class="hx-mi">help_outline</span></span>
+      </div>
+      <div class="hm-af-paused">
+        <span class="hm-af-lbl"><span class="hx-mi">pause_circle</span>Alerts paused</span>
+        <span class="hm-af-txt">These play in this order when you resume</span>
+        <span class="hm-af-up"><span class="hm-af-up-k">Waiting</span><span class="hm-af-upi hm-af-k-bits"><b>1</b><span class="hx-mi">diamond</span>viewer42</span><span class="hm-af-upi hm-af-k-sub"><b>2</b><span class="hx-mi">star</span>NightOwl</span></span>
+        <span class="hm-af-resume"><span class="hx-mi">play_arrow</span>Resume</span>
+      </div>
+      <div class="hm-af-list is-rows">
+        <div class="hm-af-day">Recent · last 30 min<span class="hm-af-arrow"><span class="hx-mi">north</span>newest first</span></div>
+        <div class="hm-af-row is-waiting hm-af-k-sub">
+          <span class="hm-af-ico"><span class="hx-mi">star</span><span class="hm-af-tb">T1</span></span>
+          <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">NightOwl</span><span class="hm-af-what">subscribed</span></span></span>
+          <span class="hm-af-state is-wait">Waiting · 2nd</span>{{brand:twitch}}<span class="hm-af-time">just now</span><span class="hm-af-seq">#44</span>
+        </div>
+        <div class="hm-af-row is-waiting hm-af-k-bits">
+          <span class="hm-af-ico"><span class="hx-mi">diamond</span></span>
+          <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">viewer42</span><span class="hm-af-what">cheered</span></span></span>
+          <span class="hm-af-state is-wait">Waiting · 1st</span><span class="hm-af-amt">500 bits</span>{{brand:twitch}}<span class="hm-af-time">1m</span><span class="hm-af-seq">#43</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Paused with two alerts waiting. Up next tags read <em>Waiting</em> while paused.</figcaption>
+</figure>
+
+<p>With nothing waiting, the banner says <em>New alerts wait in order below and play when you resume</em>. Pausing also works from a Stream Deck <strong>Toggle Alerts</strong> key or a Source Controls button, and the feed follows.</p>
+
+<h2>Replay an alert</h2>
+
+<p>Click a played alert in the Live or History view to play it again. The tooltip says <em>Click to replay this alert for</em> the viewer, and a pop-up confirms, for example <em>Replaying the Bits alert</em>. If alerts are paused, the pop-up says the replay will play when you resume.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>A replay…</th><th>Details</th></tr></thead>
+<tbody>
+<tr><td>keeps the original event</td><td>Same viewer, amount, message and details (reward title, months, gift count, raid size).</td></tr>
+<tr><td>uses the alert as it is set up today</td><td>Media, sound, duration, text-to-speech and other settings come from your current alert. Amounts are matched against your ranges again, so replaying a 500-bit cheer shows which alert 500 bits picks now.</td></tr>
+<tr><td>queues like a new alert</td><td>It joins the queue (shown as <strong>Up next</strong> with a <strong>Replay</strong> tag, and <em>(replay)</em> in the Now playing strip) and can be skipped like any alert. Overlays that show instant alerts get it too; Hype Train events and channel point rewards without an alert replay there only.</td></tr>
+<tr><td>changes nothing else</td><td>No new feed row or stored record, and no change to statistics, counters, goals or connectors.</td></tr>
+</tbody>
+</table></div>
+
+<p>Waiting and playing rows can't be replayed. Rows without a saved alert show <em>This event has no saved alert, so it can't be replayed</em> as their tooltip and don't react to clicks. If no alert is set up for that event type any more (for example you deleted your follow alert), Mycelian says <em>This alert can't be replayed</em> and asks you to set one up in the Alerts tab.</p>
+
+<div class="hx-callout hx-tip"><p>Replay is the quickest way to check alert ranges with real amounts. To test an alert you are editing, use <strong>Test Alert</strong> on the Alerts tab instead. See <a href="help:alert_testing">Testing Your Alerts</a>.</p></div>
+
+<h2>Skip an alert</h2>
+
+<ul>
+  <li><strong>Skip</strong> in the header, or on the playing row, stops the playing alert straight away: the overlay hides it without its exit animation and stops its sound, speech and video. The next waiting alert starts, or the queue ends if nothing is waiting. While alerts are paused, nothing else starts.</li>
+  <li>One skip skips one alert. A quick double click, or a skip that arrives after the alert already ended, does not skip the next alert too. If nothing is playing, you get <em>That alert isn't playing</em> and nothing changes.</li>
+  <li>A skip sent with the id of a waiting alert (the <code>skip_alert</code> WebSocket event can carry an <code>alert_id</code>) removes that alert from the queue so it never plays.</li>
+  <li>Stream Deck keys, Spore Studio and Source Controls <strong>Skip current alert</strong> buttons and connector actions all skip the same way.</li>
+</ul>
+
+<h2>Live, History and By person</h2>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-af">
+      <div class="hm-af-bar">
+        <span class="hm-af-seg"><span data-tab="hist" class="is-on"><span class="hx-mi">history</span>History</span><span data-tab="person"><span class="hx-mi">group_work</span>By person</span></span>
+      </div>
+      <div data-panel="hist">
+        <div class="hm-af-list is-rows">
+          <div class="hm-af-day">Today</div>
+          <div class="hm-af-row hm-af-k-bits">
+            <span class="hm-af-ico"><span class="hx-mi">diamond</span></span>
+            <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">viewer42</span><span class="hm-af-what">cheered</span></span></span>
+            <span class="hm-af-amt">500 bits</span>{{brand:twitch}}<span class="hm-af-time">1h</span>
+          </div>
+          <div class="hm-af-day">Yesterday</div>
+          <div class="hm-af-row hm-af-k-raid">
+            <span class="hm-af-ico"><span class="hx-mi">groups</span></span>
+            <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">FriendlyStreamer</span><span class="hm-af-what">raided</span></span></span>
+            <span class="hm-af-amt">1,204 viewers</span>{{brand:twitch}}<span class="hm-af-time">1d</span>
+          </div>
+        </div>
+        <div class="hm-row hm-nowrap" style="justify-content:center;padding:6px 0 4px">
+          <span class="hm-btn hm-outline hm-dense is-disabled"><span class="hx-mi">chevron_left</span></span>
+          <span class="hm-sm">Page 1 of 5</span><span class="hm-sm hm-muted">(98 alerts)</span>
+          <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">chevron_right</span></span>
+          <span class="hm-sm hm-accent"><span class="hx-mi">inventory_2</span> Storage settings</span>
+        </div>
+      </div>
+      <div data-panel="person">
+        <div class="hm-af-list">
+          <div class="hm-af-cond-head"><span class="hx-mi">history</span>7 events from 2 people in the last 12 hours</div>
+          <div class="hm-af-cond">
+            <div class="hm-af-person">
+              <div class="hm-af-person-head"><span class="hm-af-ava">V</span><span><span class="hm-af-pname">viewer42</span><span class="hm-af-psub">5 events · last 1h ago</span></span>
+                <span class="hm-af-totals"><span class="hm-af-total hm-af-k-bits"><span class="hx-mi">diamond</span>1,500 bits</span><span class="hm-af-total hm-af-k-sub"><span class="hx-mi">star</span>T1</span></span></div>
+              <div class="hm-af-lines">
+                <div class="hm-af-ln hm-af-k-bits"><span class="hx-mi">diamond</span><span>Cheered 1,500 bits</span><span class="hm-af-x">×4</span></div>
+                <div class="hm-af-ln hm-af-k-sub"><span class="hx-mi">star</span><span>Subscribed (Tier 1)</span></div>
+              </div>
+            </div>
+            <div class="hm-af-person">
+              <div class="hm-af-person-head"><span class="hm-af-ava">G</span><span><span class="hm-af-pname">GenerousPal</span><span class="hm-af-psub">2 events · last 3h ago</span></span>
+                <span class="hm-af-totals"><span class="hm-af-total hm-af-k-tip"><span class="hx-mi">payments</span>$15.00</span></span></div>
+              <div class="hm-af-lines">
+                <div class="hm-af-ln hm-af-k-tip"><span class="hx-mi">payments</span><span>Tipped $15.00</span><span class="hm-af-x">×2</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Click <strong>History</strong> or <strong>By person</strong> to switch the picture.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>View</th><th>Shows</th></tr></thead>
+<tbody>
+<tr><td>{{icon:bolt}} <strong>Live</strong></td><td>This session's events, split into <strong>Recent</strong> and <strong>Earlier</strong>, with the Now playing strip and Up next rows.</td></tr>
+<tr><td>{{icon:history}} <strong>History</strong></td><td>Stored alerts, including past streams, grouped by day (<em>Today</em>, <em>Yesterday</em>, then dates), one page at a time. The pager shows <em>Page 1 of 5 (98 alerts)</em>; <strong>Storage settings</strong> opens the storage options. Click a row to replay it.</td></tr>
+<tr><td>{{icon:group_work}} <strong>By person</strong></td><td>One card per viewer for the last 12 hours (change it with <strong>“By person” covers the last</strong>): the number of events and when the last one was, totals such as <em>1,500 bits</em>, <em>T1</em> or <em>3 gifts</em>, and one line per kind of event with <em>×4</em> when it happened more than once. Filters and search apply.</td></tr>
+</tbody>
+</table></div>
+
+<p>The filter menu has <strong>All events</strong>, Follows, Subscriptions, Resubscriptions, Gift subs, Bits, Channel points, Tips &amp; Super Chats, Raids, Watch streaks, Modiversaries and Hype Train. YouTube memberships count as subscriptions, Super Chats and Super Stickers as tips. If nothing matches, the list says so with a <strong>Show everything</strong> button that clears filters and search. The open view, filters and history page are remembered after a restart; search starts empty.</p>
+
+<h2>Layouts</h2>
+
+<p>Pick a layout in the settings. All three show the same events and the same playing and waiting states.</p>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-row" style="margin-bottom:8px">
+      <span class="hm-af-seg"><span data-tab="rows" class="is-on">Rows</span><span data-tab="cards">Cards</span><span data-tab="ticker">Ticker</span></span>
+    </div>
+    <div data-panel="rows">
+      <div class="hm-af"><div class="hm-af-list is-rows">
+        <div class="hm-af-row is-waiting hm-af-k-sub"><span class="hm-af-ico"><span class="hx-mi">star</span></span><span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">NightOwl</span><span class="hm-af-what">subscribed</span></span></span><span class="hm-af-state is-wait">Up next · 1st</span><span class="hm-af-time">just now</span><span class="hm-af-seq">#44</span></div>
+        <div class="hm-af-row is-playing hm-af-k-bits"><span class="hm-af-ico"><span class="hx-mi">diamond</span></span><span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">viewer42</span><span class="hm-af-what">cheered</span></span></span><span class="hm-af-state is-play"><span class="hx-mi">graphic_eq</span>Playing</span><span class="hm-af-amt">500 bits</span><span class="hm-af-time">1m</span><span class="hm-af-seq">#43</span></div>
+        <div class="hm-af-row hm-af-k-follow"><span class="hm-af-ico"><span class="hx-mi">favorite</span></span><span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">newfriend</span><span class="hm-af-what">followed</span></span></span><span class="hm-af-time">3m</span><span class="hm-af-seq">#42</span></div>
+      </div></div>
+    </div>
+    <div data-panel="cards">
+      <div class="hm-af"><div class="hm-af-list is-cards">
+        <div class="hm-af-row is-waiting hm-af-k-sub"><div class="hm-af-top"><span class="hm-af-ico"><span class="hx-mi">star</span></span><span class="hm-af-user">NightOwl</span><span class="hm-af-seq">#44</span><span class="hm-af-time">just now</span></div><span class="hm-af-state is-wait">Up next · 1st</span><div class="hm-af-line"><span class="hm-af-what">subscribed</span></div></div>
+        <div class="hm-af-row is-playing hm-af-k-bits"><div class="hm-af-top"><span class="hm-af-ico"><span class="hx-mi">diamond</span></span><span class="hm-af-user">viewer42</span><span class="hm-af-seq">#43</span><span class="hm-af-time">1m</span></div><span class="hm-af-state is-play"><span class="hx-mi">graphic_eq</span>Playing</span><div class="hm-af-line"><span class="hm-af-what">cheered</span><span class="hm-af-amt">500 bits</span></div></div>
+        <div class="hm-af-row hm-af-k-follow"><div class="hm-af-top"><span class="hm-af-ico"><span class="hx-mi">favorite</span></span><span class="hm-af-user">newfriend</span><span class="hm-af-seq">#42</span><span class="hm-af-time">3m</span></div><div class="hm-af-line"><span class="hm-af-what">followed</span></div></div>
+      </div></div>
+    </div>
+    <div data-panel="ticker">
+      <div class="hm-af"><div class="hm-af-list is-ticker">
+        <div class="hm-af-block is-warn">Up next<span class="hm-af-arrow"><span class="hx-mi">south</span>plays in this order</span></div>
+        <div class="hm-af-row is-waiting hm-af-k-sub"><span class="hm-af-ico"><span class="hx-mi">star</span></span><span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">NightOwl</span><span class="hm-af-what">subscribed</span></span></span><span class="hm-af-state is-wait">Up next · 1st</span><span class="hm-af-time">just now</span></div>
+        <div class="hm-af-block is-ok">Now playing</div>
+        <div class="hm-af-row is-playing hm-af-k-bits"><span class="hm-af-ico"><span class="hx-mi">diamond</span></span><span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">viewer42</span><span class="hm-af-what">cheered</span></span></span><span class="hm-af-state is-play"><span class="hx-mi">graphic_eq</span>Playing</span><span class="hm-af-amt">500 bits</span><span class="hm-af-time">1m</span></div>
+        <div class="hm-af-block">Feed · newest first<span class="hm-af-arrow"><span class="hx-mi">north</span>latest at the top</span></div>
+        <div class="hm-af-row hm-af-k-follow"><span class="hm-af-ico"><span class="hx-mi">favorite</span></span><span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">newfriend</span><span class="hm-af-what">followed</span><span class="hm-af-tag is-newest">Newest</span></span></span><span class="hm-af-time">3m</span></div>
+      </div></div>
+    </div>
+  </div>
+  <figcaption>The same three alerts in each layout. Click a layout name to switch the picture.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>Rows</strong> (default): a timeline with a coloured dot per event and a line down the left. The playing dot is filled green and waiting dots are dashed amber.</li>
+  <li><strong>Cards</strong>: a grid of cards that fills the width, with messages wrapped.</li>
+  <li><strong>Ticker</strong>: one dense line per event in three blocks: <strong>Up next</strong> (plays in this order), <strong>Now playing</strong>, and <strong>Feed · newest first</strong>, where the latest event has a <strong>Newest</strong> tag. Fresh events get a dot after the name instead of the NEW tag.</li>
+</ul>
+
+<h2>The OBS dock</h2>
+
+<p>The dock is the same feed in a narrow panel inside OBS. It follows the Activity Feed settings and the app theme, and changes show in the open dock straight away.</p>
+
+<section class="hx-guide" data-guide="activity_feed_dock" data-title="Add the Activity Feed dock">
+  <div class="hx-step">
+    <h3>Copy the dock address</h3>
+    <p>On the Activity Feed tab, click <strong>OBS dock not open · copy link</strong> (or <strong>In sync with the OBS dock</strong> if one is already open). A pop-up confirms <em>Activity Feed dock link copied</em>. The address is <span class="hx-copy" data-copy="http://127.0.0.1:5000/activity_feed">http://127.0.0.1:5000/activity_feed</span>; it is also listed under <span class="hx-path"><span>Settings</span><span>About</span></span>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Add a custom browser dock in OBS</h3>
+    <p>In OBS, open <strong>Docks → Custom Browser Docks…</strong> (older versions: <strong>View → Docks</strong>). Name it, for example <em>Activity Feed</em>, paste the address as the URL and click <strong>Apply</strong>.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Use it while live</h3>
+    <p>Pause, mute, skip, replay, search and filter from the dock. The tab shows <strong>In sync with the OBS dock</strong> while it is open.</p>
+  </div>
+</section>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-af-dock">
+          <div class="hm-af">
+            <div class="hm-af-head">
+              <span class="hm-af-play"><span class="is-breath"><span class="hx-mi">pause</span>Pause</span><span><span class="hx-mi">volume_up</span>Mute</span><span class="is-skip"><span class="hx-mi">skip_next</span>Skip</span></span>
+              <span class="hm-af-ibtn"><span class="hx-mi">tune</span></span><span class="hm-marker" data-n="11"></span>
+            </div>
+            <div class="hm-af-bar"><span class="hm-af-seg"><span class="is-on"><span class="hx-mi">bolt</span>Live</span><span><span class="hx-mi">history</span>History</span><span><span class="hx-mi">group_work</span>By person</span></span></div>
+            <div class="hm-af-bar"><span class="hm-af-search"><span class="hx-mi">search</span>Search people or messages</span><span class="hm-af-filter"><span class="hx-mi">filter_list</span>Filters</span></div>
+            <div class="hm-af-now">
+              <span class="hm-af-lbl"><span class="hx-mi">graphic_eq</span>Now playing</span>
+              <span class="hm-af-who"><strong>viewer42</strong> cheered 500 bits</span>
+              <span class="hm-af-left">0:04</span>
+              <span class="hm-af-tbar"><i></i></span>
+              <span class="hm-af-up"><span class="hm-af-up-k">Up next</span><span class="hm-af-upi hm-af-k-sub"><b>1</b><span class="hx-mi">star</span>NightOwl</span></span>
+            </div>
+            <div class="hm-af-list is-rows">
+              <div class="hm-af-row is-waiting hm-af-k-sub">
+                <span class="hm-af-ico"><span class="hx-mi">star</span></span>
+                <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">NightOwl</span><span class="hm-af-what">subscribed</span></span><span class="hm-af-st"><span class="hm-af-state is-wait">Up next · 1st</span></span></span>
+                <span class="hm-af-time">just now</span>
+              </div>
+              <div class="hm-af-row is-playing hm-af-k-bits">
+                <span class="hm-af-ico"><span class="hx-mi">diamond</span></span>
+                <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">viewer42</span><span class="hm-af-what">cheered</span></span><span class="hm-af-st"><span class="hm-af-state is-play"><span class="hx-mi">graphic_eq</span>Playing</span></span></span>
+                <span class="hm-af-acts"><span><span class="hx-mi">skip_next</span>Skip</span></span>
+              </div>
+              <div class="hm-af-row hm-af-k-follow">
+                <span class="hm-af-ico"><span class="hx-mi">favorite</span></span>
+                <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">newfriend</span><span class="hm-af-what">followed</span></span></span>
+                <span class="hm-af-time">3m</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>The dock in OBS.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <ul>
+      <li>The header is compact: Pause, Mute and Skip fill the width, with the view buttons and search on their own rows. Very narrow docks show the buttons as icons only.</li>
+      <li>Up next and Playing tags sit under the name.</li>
+      <li>A wide dock shows several columns only in the <strong>Cards</strong> layout and in <strong>By person</strong>; Rows and Ticker stay one column.</li>
+      <li><span class="hm-marker" data-n="11"></span> {{icon:tune}} in the dock pops up <em>Feed look lives in Mycelian</em> with <strong>Open in Mycelian</strong>, which opens the settings in the app.</li>
+      <li>If the dock loses Mycelian, the strip reads <em>Offline · Reconnecting to Mycelian…</em> and it reconnects on its own.</li>
+      <li>Pause, mute, skip and replay only work from a dock on the computer running Mycelian.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="hx-callout hx-note"><p>The dock's look is set only in <span class="hx-path"><span>Settings</span><span>App Settings</span><span>Activity Feed</span></span>. The <code>activity_feed</code> template in Source Settings has no settings of its own (it says <em>This template has no settings</em>). The dock's pop-ups are described in <a href="help:notifications">Notifications</a>.</p></div>
+
+<h2>Activity Feed settings</h2>
+
+<p>Open <span class="hx-path"><span>Settings</span><span>App Settings</span></span>, or click {{icon:tune}} on the tab. The <strong>Activity Feed</strong> panel is marked <strong>Applies instantly</strong>: each change is saved straight away (no Save button) and shows in the tab and the dock at once.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-panel">
+      <div class="hm-row"><span class="hm-panel-title"><span class="hx-mi">dynamic_feed</span> Activity Feed</span><span class="hm-af-tagline">Applies instantly</span></div>
+      <div class="hm-grid-2">
+        <div class="hm-col hm-tight">
+          <div class="hm-af-subhead">Look</div>
+          <div class="hm-af-tiles">
+            <div class="hm-af-ltile is-on"><span class="hm-af-art is-rows"><i></i><i></i><i></i><i></i></span><span class="hm-af-ltile-name">Rows</span><span class="hm-af-ltile-hint">Timeline list</span></div>
+            <div class="hm-af-ltile"><span class="hm-af-art is-cards"><i></i><i></i><i></i><i></i></span><span class="hm-af-ltile-name">Cards</span><span class="hm-af-ltile-hint">Grid of cards</span></div>
+            <div class="hm-af-ltile"><span class="hm-af-art is-ticker"><i></i><i></i><i></i><i></i></span><span class="hm-af-ltile-name">Ticker</span><span class="hm-af-ltile-hint">One dense line each</span></div>
+          </div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Density</span><span class="hm-af-set-hint">Row height and spacing.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Comfortable</span></div></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Event colours</span><span class="hm-af-set-hint">How each event type is marked.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Coloured icon</span></div></div>
+          <div class="hm-af-set"><span class="hm-af-set-name">Show event icons</span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Tier badge</span><span class="hm-af-set-hint">Where T1 / T2 / T3 appears.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">On the icon corner</span></div></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Show platform marks</span><span class="hm-af-set-hint">Twitch / YouTube logo on each row.</span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Show viewer messages</span><span class="hm-af-set-hint">The message a viewer sent with a cheer, sub or tip.</span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Wrap long text</span><span class="hm-af-set-hint">Off: one line per event.</span></span><span class="hm-switch"><i></i></span></div>
+          <div class="hm-af-set"><span class="hm-af-set-name">Text size</span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Medium</span></div></div>
+        </div>
+        <div class="hm-col hm-tight">
+          <div class="hm-af-subhead">Behaviour</div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Times</span><span class="hm-af-set-hint">“3m” or “14:32”.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Relative</span></div></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Move to “Earlier” after</span><span class="hm-af-set-hint">Splits the live feed into Recent and Earlier.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">30 minutes</span></div></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Show order numbers</span><span class="hm-af-set-hint">#41, #42 … in the order alerts arrived.</span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Timeline dots</span><span class="hm-af-set-hint">Coloured dots and a line down the left (Rows).</span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Highlight new events for</span><span class="hm-af-set-hint">NEW tag on fresh rows.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">5 minutes</span></div></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Show “Now playing” strip</span><span class="hm-af-set-hint">What is playing now, above the live feed.</span></span><span class="hm-switch is-on"><i></i></span></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Alert timer</span><span class="hm-af-set-hint">Where the countdown for each alert shows.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">In the Now playing strip</span></div></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">Up next</span><span class="hm-af-set-hint">Upcoming alerts in the Now playing strip.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Next alert</span></div></div>
+          <div class="hm-af-set"><span><span class="hm-af-set-name">“By person” covers the last</span><span class="hm-af-set-hint">How far back the By person summary looks.</span></span><div class="hm-field hm-select hm-nolabel"><span class="hm-value">12 hours</span></div></div>
+        </div>
+      </div>
+      <span class="hm-xs hm-muted"><span class="hx-mi">info</span> Applies to the Activity Feed tab and the OBS dock straight away. Rows per page and how much history is kept stay under <strong>Activity feed and storage</strong>.</span>
+    </div>
+  </div>
+  <figcaption>The Activity Feed panel with its default values.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>Choices (default first)</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Layout</strong> tiles</td><td>Rows, Cards, Ticker</td><td>See <a href="#hx-layouts">Layouts</a>.</td></tr>
+<tr><td><strong>Density</strong></td><td>Comfortable, Compact, Spacious</td><td>Row height and spacing.</td></tr>
+<tr><td><strong>Event colours</strong></td><td>Coloured icon, Accent bar, Tinted row, Off</td><td>How each event type is marked: a coloured icon, a coloured bar on the left edge, a tinted row, or no colour.</td></tr>
+<tr><td><strong>Show event icons</strong></td><td>On</td><td>The icon at the start of each row.</td></tr>
+<tr><td><strong>Tier badge</strong></td><td>On the icon corner, After the name, Hidden</td><td>Where T1 / T2 / T3 shows. With icons off, the corner badge moves after the name.</td></tr>
+<tr><td><strong>Show platform marks</strong></td><td>On</td><td>Twitch or YouTube logo on each row.</td></tr>
+<tr><td><strong>Show viewer messages</strong></td><td>On</td><td>The message sent with a cheer, sub or tip, in quotes under the row.</td></tr>
+<tr><td><strong>Wrap long text</strong></td><td>Off</td><td>Off keeps one line per event and cuts long text short.</td></tr>
+<tr><td><strong>Text size</strong></td><td>Medium, Small, Large</td><td>Feed text size.</td></tr>
+<tr><td><strong>Times</strong></td><td>Relative, Clock, Hidden</td><td><em>3m</em> or <em>14:32</em>, or no time.</td></tr>
+<tr><td><strong>Move to “Earlier” after</strong></td><td>30 minutes, 15 minutes, 1 hour, 2 hours, Never</td><td>When live events move under <strong>Earlier</strong>. With <em>Never</em> the list is headed <em>This session</em>.</td></tr>
+<tr><td><strong>Show order numbers</strong></td><td>On</td><td><em>#41</em>, <em>#42</em>… in arrival order.</td></tr>
+<tr><td><strong>Timeline dots</strong></td><td>On</td><td>Dots and the line down the left in the Rows layout.</td></tr>
+<tr><td><strong>Highlight new events for</strong></td><td>5 minutes, Off, 1, 2, 10, 15 or 30 minutes</td><td>How long the <strong>NEW</strong> tag stays on a fresh row.</td></tr>
+<tr><td><strong>Show “Now playing” strip</strong></td><td>On</td><td>The strip above the Live view. The amber paused banner shows even when this is off.</td></tr>
+<tr><td><strong>Alert timer</strong></td><td>In the Now playing strip, On each alert, Off</td><td>Where the countdown shows. <em>On each alert</em> draws a draining bar along the bottom of the playing row (and a full amber bar on waiting rows).</td></tr>
+<tr><td><strong>Up next</strong></td><td>Next alert, Off, Next 3 alerts, Next 5 alerts</td><td>How many Up next chips the strip shows. Waiting rows stay in the list either way.</td></tr>
+<tr><td><strong>“By person” covers the last</strong></td><td>12 hours, 1 hour to 7 days</td><td>How far back By person looks.</td></tr>
+</tbody>
+</table></div>
+
+<p><strong>Items per page</strong>, <strong>Pages to load</strong> and the auto-trim options for stored alerts stay in the <strong>Activity feed and storage</strong> section of App Settings and use its <strong>Save</strong> button. See <a href="help:settings_overview">Settings Overview</a>. The countdown needs an alerts overlay open to report how long the alert runs; until then the bar just pulses.</p>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>Replay says the alert can't be replayed or can't be found</summary>
+  <p>The pop-up says why. <em>Its saved details were cleaned up or couldn't be read from the database</em> means the stored alert is gone: it was trimmed by the storage settings, or the database could not be read (check <span class="hx-path"><span>Settings</span><span>Database</span></span> if it happens for recent alerts).</p>
+  <p>Alerts saved before this update used ids that could repeat within the same second, so an older alert may have been overwritten by another one saved at the same moment. Replaying such an alert can fail, or play the other event. Alerts saved from now on have unique ids and replay the right event.</p>
+</details>
+
+<details class="hx-details">
+  <summary>A row doesn't react when I click it</summary>
+  <p>Its tooltip says <em>This event has no saved alert, so it can't be replayed</em>. Some events have no saved record, for example raids and follows from before this update that had no alert set up (they are stored now). Waiting and playing rows can't be replayed either; use Skip on the playing one.</p>
+</details>
+
+<details class="hx-details">
+  <summary><em>There's no alert set up for this kind of event any more</em></summary>
+  <p>Replay uses your current alerts, and none matches this event. Set one up on the <strong>Alerts</strong> tab (check its range covers the amount), then replay again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Skip does nothing</summary>
+  <p>Nothing is playing (<em>That alert isn't playing</em>), or alerts are paused and the queue is waiting. Resume alerts first. If an alert stays on screen after Skip, refresh the alerts browser source in OBS. See <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The Now playing strip or timer doesn't show</summary>
+  <p>The strip shows only on the Live view, while an alert plays or waits, and when <strong>Show “Now playing” strip</strong> is on. A pulsing bar means the length is not known yet; keep the alerts browser source open in OBS. With <strong>Alert timer</strong> set to <em>On each alert</em> the countdown is on the playing row instead.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The dock looks different from the tab, or doesn't change</summary>
+  <p>Both use the App Settings look. If the dock still shows an old design, right-click it in OBS and choose <strong>Refresh</strong>. If it shows a blank page because OBS started first, restart OBS with Mycelian running. See <a href="help:obs_setup">Setting Up Browser Sources in OBS</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>History says <em>Couldn't load stored alerts</em></summary>
+  <p>The database could not be read. Check <span class="hx-path"><span>Settings</span><span>Database</span></span>. If the feed is slow, lower the storage limits; see <a href="help:troubleshooting_performance">Performance</a>.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:alert_testing">{{icon:play_circle}}<span><strong>Testing Your Alerts</strong><span class="hx-card-text">Test Alert, replay and previews</span></span></a>
+  <a class="hx-card" href="help:alerts_overview">{{icon:notifications}}<span><strong>Alert System Overview</strong><span class="hx-card-text">How events become alerts</span></span></a>
+  <a class="hx-card" href="help:obs_setup">{{brand:obs}}<span><strong>OBS Browser Sources</strong><span class="hx-card-text">Sources and custom docks</span></span></a>
+</div>

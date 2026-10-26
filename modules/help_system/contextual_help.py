@@ -235,7 +235,7 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
         Help category name, topic ID, or None if no mapping found
     """
     main_tab_topic_mapping = {
-        "Activity Feed": "getting_started_intro",
+        "Activity Feed": "activity_feed",
         "Alerts": "alerts_overview",
         "Source Settings": "templates_intro",
         "Source Controls": "source_controls",

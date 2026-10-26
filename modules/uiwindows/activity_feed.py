@@ -919,12 +919,14 @@ def skip_alert(alert_data):
         result = web_engine.skip_current_alert(alert_id, source="app")
         if result.get("ok"):
             kind = _alert_kind(alert_data)
+            # Rows send only an id: no type to name, so say it plainly ("the alert alert" otherwise).
+            named = kind not in ("", "alert", "current")
             if result.get("reason") == "removed_from_queue":
-                title = f"Removed the {kind} alert from the queue"
-            elif kind == "current":
-                title = "Skipped the current alert"
-            else:
+                title = f"Removed the {kind} alert from the queue" if named else "Removed the alert from the queue"
+            elif named:
                 title = f"Skipped the {kind} alert"
+            else:
+                title = "Skipped the current alert"
             notify("", type="info", source="activity_feed", title=title)
         elif result.get("reason") == "not_playing":
             notify(

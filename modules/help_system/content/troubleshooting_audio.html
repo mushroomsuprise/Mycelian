@@ -9,7 +9,7 @@
     <div class="hma-flow">
       <div class="hma-flow-step"><span class="hx-mi">tune</span><strong>1. Alert</strong><span class="hm-xs">Sound file set, <strong>Volume</strong> above 0</span></div>
       <span class="hma-flow-arrow">arrow_forward</span>
-      <div class="hma-flow-step"><span class="hx-mi">notifications_off</span><strong>2. Activity Feed</strong><span class="hm-xs"><strong>MUTE ALERTS</strong> off</span></div>
+      <div class="hma-flow-step"><span class="hx-mi">volume_up</span><strong>2. Activity Feed</strong><span class="hm-xs">Not muted (button reads <strong>Mute</strong>)</span></div>
       <span class="hma-flow-arrow">arrow_forward</span>
       <div class="hma-flow-step"><span class="hx-mi">web</span><strong>3. Browser source</strong><span class="hm-xs"><strong>Control audio via OBS</strong> on</span></div>
       <span class="hma-flow-arrow">arrow_forward</span>
@@ -26,7 +26,7 @@
 <ul class="hx-checklist" data-checklist="troubleshooting_audio_chain">
   <li><strong>Test Alert</strong> on the alert shows the image. (If not, the problem is not audio: see <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.)</li>
   <li>The sound card in the alert's <strong>Sound</strong> section shows a file name, and <strong>Volume</strong> is above 0%.</li>
-  <li>The Activity Feed button reads <strong>MUTE ALERTS</strong> and is not highlighted.</li>
+  <li>The Activity Feed button reads <strong>Mute</strong>, not a red <strong>Unmute</strong>, and the status pill does not say <em>Ready · muted</em>.</li>
   <li>The browser source has <strong>Control audio via OBS</strong> on and shows in the OBS <strong>Audio Mixer</strong>.</li>
   <li>The source is not muted in the mixer and its fader is up.</li>
   <li>OBS's monitoring or your system volume lets you hear it.</li>
@@ -47,8 +47,8 @@
   <div class="hx-tab-panel" data-panel="none">
     <details class="hx-details">
       <summary>Alerts are muted in Mycelian</summary>
-      <p><strong>Cause:</strong> <strong>MUTE ALERTS</strong> silences every alert sound and text-to-speech. Images still show.</p>
-      <p><strong>Fix:</strong> Click <strong>MUTE ALERTS</strong> on the <strong>Activity Feed</strong> again to unmute.</p>
+      <p><strong>Cause:</strong> <strong>Mute</strong> on the Activity Feed (or its OBS dock) silences every alert sound and text-to-speech. Images still show.</p>
+      <p><strong>Fix:</strong> Click <strong>Unmute</strong> at the top of the <strong>Activity Feed</strong>.</p>
     </details>
     <details class="hx-details">
       <summary>The browser source is not in the Audio Mixer</summary>
@@ -126,7 +126,7 @@
     <details class="hx-details">
       <summary>An unexpected sound plays</summary>
       <p><strong>Cause:</strong> A different alert matched (overlapping ranges), or the randomizer picked a file.</p>
-      <p><strong>Fix:</strong> Replay the event from the Activity Feed to see which alert it picks. Check the alert's <strong>Randomizer</strong> section; the <strong>Extra random sound</strong> roll comes first. See <a href="help:alert_configuration">Configuring Alert Settings</a>.</p>
+      <p><strong>Fix:</strong> Click the event in the Activity Feed to replay it and see which alert it picks. Check the alert's <strong>Randomizer</strong> section; the <strong>Extra random sound</strong> roll comes first. See <a href="help:alert_configuration">Configuring Alert Settings</a>.</p>
     </details>
     <details class="hx-details">
       <summary>Sound plays twice</summary>

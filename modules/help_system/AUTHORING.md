@@ -136,6 +136,7 @@ area class needs its file's prefix:
 | `20_mock_guides_b.css` | (Stream Deck pieces) |
 | `20_mock_integrations.css` | `hm-it-` (Settings service tabs: header with pills and Save, account card, credentials fold as `hm-expansion hm-it-fold`, rows, lists, steps; see `content/twitch_setup.html`. Game hook cards, choice cards, tool rows, dialogs and the Database Explorer: see `content/game_hooks.html`, `content/database.html`) |
 | `20_mock_alerts.css` | `hma-` |
+| `20_mock_feed.css` | `hm-af-` (Activity Feed tab, OBS dock, Rows/Cards/Ticker rows, Now playing and paused strips, By person cards, App Settings → Activity Feed panel; see `content/activity_feed.html`) |
 | `20_mock_chatbot.css` | `hm-cb-`, `hm-chat` |
 | `20_mock_connectors.css` | `hm-cx-` |
 | `20_mock_templates.css` | `hm-tp-` (Source Settings: header, outline, setting rows, preview pane; colour picker popover as `hm-tp-cp-*`; see `content/template_configuration.html`, `content/color_picker.html`), `hm-sc-` (Source Controls tab and OBS dock: header, cards, every control type; see `content/source_controls.html`) |
