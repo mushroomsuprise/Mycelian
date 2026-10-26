@@ -189,7 +189,9 @@ class AppSettingsTab:
                             self._build_updates()
                         with ui.element("div").classes("aps-col"):
                             self._build_storage()
+                    self._feed_panel = ui.element("div").classes("aps-npanel aps-feed").props('id="aps-activity-feed"')
                     self._notify_panel = ui.element("div").classes("aps-npanel")
+        self._render_feed_panel()
         self._render_notify_panel()
         self._apply_plugin_status_display(initial_status)
         self._refresh_derived()
@@ -481,7 +483,7 @@ class AppSettingsTab:
                 )
 
     def _build_storage(self) -> None:
-        with self._section("inventory_2", "Activity feed and storage"):
+        with self._section("inventory_2", "Activity feed and storage").props('id="aps-storage"'):
             with self._row("Items per page", "How many events the Activity Feed shows at a time."):
                 self._number(
                     "activity_feed_limit", "Number of activity items shown per page",
@@ -515,6 +517,101 @@ class AppSettingsTab:
                     lo=1, hi=3650, step=1, default=1, unit="days",
                 )
             self._storage_note = ui.html("", sanitize=False).classes("aps-foot")
+
+    # ----- activity feed look (applies and saves straight away) -----
+    _FEED_LAYOUTS = (("rows", "Rows", "Timeline list"), ("cards", "Cards", "Grid of cards"), ("ticker", "Ticker", "One dense line each"))
+
+    def _feed_values(self) -> Dict[str, Any]:
+        from ..activity_feed import current_feed_settings
+
+        return current_feed_settings(self.buffer)
+
+    def _set_feed(self, key: str, value: Any) -> None:
+        """Feed look settings skip the Save button: stored now, shown live in the tab and the dock."""
+        from ..activity_feed import set_feed_setting
+        from ..activity_feed_model import FEED_SETTINGS, feed_setting_value
+
+        field = FEED_SETTINGS[key][0]
+        stored = feed_setting_value(key, value)
+        if self.buffer is not None:
+            setattr(self.buffer, field, stored)
+        if not set_feed_setting(key, stored):
+            notify("It shows now but may reset after a restart.", type="warning", source="app",
+                   title="Couldn't save the Activity Feed setting",
+                   hint="Check your database connection in Settings → Database.")
+        if key == "layout":
+            self._render_feed_panel()
+
+    def _feed_select(self, key: str, options: dict, tooltip: str, width: str = "w-44") -> None:
+        values = self._feed_values()
+        form_select(tooltip=tooltip, options=options, value=values[key], classes=width,
+                    on_change=lambda e, k=key: self._set_feed(k, e.value))
+
+    def _feed_switch(self, key: str) -> None:
+        values = self._feed_values()
+        ui.switch(value=bool(values[key]), on_change=lambda e, k=key: self._set_feed(k, bool(e.value))).props("dense")
+
+    def _render_feed_panel(self) -> None:
+        panel = getattr(self, "_feed_panel", None)
+        if panel is None or getattr(panel, "is_deleted", False):
+            return
+        values = self._feed_values()
+        panel.clear()
+        with panel:
+            with ui.element("div").classes("aps-nhead"):
+                ui.html('<span class="aps-icon">dynamic_feed</span>Activity Feed', sanitize=False).classes("aps-sec-head")
+                ui.label("Applies instantly").classes("aps-tag")
+                ui.element("div").classes("aps-spacer")
+            with ui.element("div").classes("aps-ngrid"):
+                with ui.element("div"):
+                    ui.label("Look").classes("aps-nsub aps-feed-sub")
+                    with ui.element("div").classes("aps-feed-tiles"):
+                        for key, label, hint in self._FEED_LAYOUTS:
+                            tile = ui.element("button").classes("aps-feed-tile" + (" is-on" if values["layout"] == key else "")).props('type="button"')
+                            with tile:
+                                ui.html(f'<span class="aps-feed-art is-{key}"><i></i><i></i><i></i><i></i></span>', sanitize=False).classes("contents")
+                                ui.label(label).classes("aps-feed-tile-name")
+                                ui.label(hint).classes("aps-feed-tile-hint")
+                            tile.on("click", lambda _e, k=key: self._set_feed("layout", k))
+                    with self._row("Density", "Row height and spacing."):
+                        self._feed_select("density", {"compact": "Compact", "comfortable": "Comfortable", "spacious": "Spacious"}, "Row height and spacing")
+                    with self._row("Event colours", "How each event type is marked."):
+                        self._feed_select("color", {"icon": "Coloured icon", "bar": "Accent bar", "tint": "Tinted row", "none": "Off"}, "How each event type is marked")
+                    with self._row("Show event icons"):
+                        self._feed_switch("icons")
+                    with self._row("Tier badge", "Where T1 / T2 / T3 appears."):
+                        self._feed_select("tier", {"icon": "On the icon corner", "name": "After the name", "hidden": "Hidden"}, "Where the sub tier shows", "w-52")
+                    with self._row("Show platform marks", "Twitch / YouTube logo on each row."):
+                        self._feed_switch("platform")
+                    with self._row("Show viewer messages", "The message a viewer sent with a cheer, sub or tip."):
+                        self._feed_switch("messages")
+                    with self._row("Wrap long text", "Off: one line per event."):
+                        self._feed_switch("wrap")
+                    with self._row("Text size"):
+                        self._feed_select("text_size", {"small": "Small", "medium": "Medium", "large": "Large"}, "Feed text size", "w-32")
+                with ui.element("div"):
+                    ui.label("Behaviour").classes("aps-nsub aps-feed-sub")
+                    with self._row("Times", "\u201c3m\u201d or \u201c14:32\u201d."):
+                        self._feed_select("times", {"relative": "Relative", "clock": "Clock", "hidden": "Hidden"}, "How event times show", "w-32")
+                    with self._row("Move to \u201cEarlier\u201d after", "Splits the live feed into Recent and Earlier."):
+                        self._feed_select("earlier_minutes", {15: "15 minutes", 30: "30 minutes", 60: "1 hour", 120: "2 hours", 0: "Never"}, "When events move under Earlier", "w-36")
+                    with self._row("Show order numbers", "#41, #42 \u2026 in the order alerts arrived."):
+                        self._feed_switch("order_numbers")
+                    with self._row("Timeline dots", "Coloured dots and a line down the left (Rows)."):
+                        self._feed_switch("dots")
+                    with self._row("Highlight new events for", "NEW tag on fresh rows."):
+                        self._feed_select("new_minutes", {0: "Off", 1: "1 minute", 2: "2 minutes", 5: "5 minutes", 10: "10 minutes", 15: "15 minutes", 30: "30 minutes"}, "How long the NEW tag stays", "w-36")
+                    with self._row("Show \u201cNow playing\u201d strip", "What is playing now, above the live feed."):
+                        self._feed_switch("now_playing")
+                    with self._row("Alert timer", "Where the countdown for each alert shows."):
+                        self._feed_select("timer", {"strip": "In the Now playing strip", "item": "On each alert", "off": "Off"}, "Where the alert countdown shows", "w-60")
+                    with self._row("Up next", "Upcoming alerts in the Now playing strip."):
+                        self._feed_select("up_next", {0: "Off", 1: "Next alert", 3: "Next 3 alerts", 5: "Next 5 alerts"}, "Upcoming alerts in the strip", "w-40")
+                    with self._row("\u201cBy person\u201d covers the last", "How far back the By person summary looks."):
+                        self._feed_select("person_hours", {h: (f"{h} hours" if h < 48 else f"{h // 24} days") if h != 1 else "1 hour" for h in (1, 2, 4, 6, 8, 12, 24, 48, 72, 168)} | ({values["person_hours"]: f"{values['person_hours']} hours"} if values["person_hours"] not in (1, 2, 4, 6, 8, 12, 24, 48, 72, 168) else {}), "By person time window", "w-36")
+            ui.html('<span class="aps-icon">info</span><span>Applies to the Activity Feed tab and the OBS dock straight away. '
+                    'Rows per page and how much history is kept stay under <b>Activity feed and storage</b>.</span>',
+                    sanitize=False).classes("aps-foot aps-feed-foot")
 
     def _build_streamdeck(self, initial_status) -> None:
         with self._section("grid_view", "Stream Deck plugin"):

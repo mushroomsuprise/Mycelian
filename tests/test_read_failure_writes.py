@@ -186,13 +186,13 @@ def test_feed_view_failed_load_merges_stored_fields(backend):
     backend.store[af.ACTIVITY_FEED_VIEW_PATH] = {"condensed": True, "tab": "current", "page": 3}
     backend.fail_reads = True
     vm.load()
-    vm.update({"page": 5}, apply_desktop=False, broadcast=False)
+    vm.update({"page": 2}, apply_desktop=False, broadcast=False)
     assert backend.writes == []  # unreadable: defaults are not saved over the view
     backend.fail_reads = False
-    vm.update({"page": 6}, apply_desktop=False, broadcast=False)
+    vm.update({"page": 4}, apply_desktop=False, broadcast=False)
     payload = backend.writes[-1][1]
     assert payload["condensed"] is True  # stored field kept
-    assert payload["page"] == 6  # this session's change on top
+    assert payload["page"] == 4  # this session's change on top
 
 
 # --- PSN game cache --------------------------------------------------------------

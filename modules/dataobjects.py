@@ -227,6 +227,25 @@ class AppSettings:
     auto_update: bool = True
     activity_feed_limit: int = 20
     activity_feed_max_pages: int = 5
+    # Activity Feed look (tab and OBS dock; see uiwindows/activity_feed_model.FEED_SETTINGS)
+    activity_feed_layout: str = "rows"  # rows | cards | ticker
+    activity_feed_density: str = "comfortable"  # compact | comfortable | spacious
+    activity_feed_color_mode: str = "icon"  # icon | bar | tint | none
+    activity_feed_show_icons: bool = True
+    activity_feed_tier_badge: str = "icon"  # icon | name | hidden
+    activity_feed_platform_marks: bool = True
+    activity_feed_viewer_messages: bool = True
+    activity_feed_wrap_text: bool = False
+    activity_feed_times: str = "relative"  # relative | clock | hidden
+    activity_feed_earlier_after_minutes: int = 30  # 0 = never
+    activity_feed_order_numbers: bool = True
+    activity_feed_timeline_dots: bool = True
+    activity_feed_highlight_new_minutes: int = 5  # 0 = off
+    activity_feed_now_playing: bool = True
+    activity_feed_alert_timer: str = "strip"  # strip | item | off
+    activity_feed_up_next: int = 1  # 0 | 1 | 3 | 5
+    activity_feed_text_size: str = "medium"  # small | medium | large
+    activity_feed_person_hours: int = 0  # 0 = not chosen yet (uses the old dock setting, else 12)
     alert_storage_auto_trim: bool = False
     alert_storage_trim_mode: str = "both"
     alert_storage_keep_count: int = 500

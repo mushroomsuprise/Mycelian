@@ -15,7 +15,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from modules import alertutils
-from modules.uiwindows import activity_feed as feed
 
 
 class AppSettingsTrimDefaultsTests(unittest.TestCase):
@@ -339,37 +338,6 @@ class TrimProgressBadgeTests(unittest.TestCase):
             ),
             ("37 of 142", "warning"),
         )
-
-
-class FeedCardSkipTests(unittest.TestCase):
-    def test_create_alert_element_skips_non_stale_errors(self) -> None:
-        class _DummyContainer:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                return False
-
-        previous = feed.activity_feed_state.current_alerts_container
-        feed.activity_feed_state.current_alerts_container = _DummyContainer()
-        try:
-            with (
-                patch.object(feed, "_element_alive", return_value=True),
-                patch.object(feed, "_is_stale_client_error", return_value=False),
-                patch.object(feed.logger, "error"),
-                patch.object(feed.ui, "element", side_effect=RuntimeError("bad card")),
-            ):
-                result = feed.create_alert_element(
-                    {
-                        "alert_id": "poison",
-                        "type": "Bits",
-                        "message": "hi",
-                        "timestamp": 1,
-                    }
-                )
-            self.assertTrue(result)
-        finally:
-            feed.activity_feed_state.current_alerts_container = previous
 
 
 class ChatStreakMediaTests(unittest.TestCase):

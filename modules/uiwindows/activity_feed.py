@@ -23,451 +23,52 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import asyncio
+# Activity Feed: the app tab, the shared view (app <-> OBS dock) and the feed payloads.
+#
+# Rendering is done by assets/default_assets/activity_feed.js in both the tab and the
+# dock. The tab is one NiceGUI host element: Python writes state into hidden "slot"
+# elements (data-json + data-rev attributes) and the renderer paints from them, so a
+# NiceGUI remount or reconnect re-sends the state and the feed repaints by itself. A
+# watchdog asks the renderer for its health and falls back to a plain server-rendered
+# list if it can't run (fail open, never a blank tab).
+
 import html
+import json
 import logging
-import math
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import current_process
 from typing import Any, Callable, Dict, List, Optional
 
-from nicegui import app, background_tasks, run, ui
+from nicegui import background_tasks, run, ui
 
 from ..notification_engine import nav_actions_main_tab, nav_actions_settings, notify
 from .. import alertutils
 from ..ui_timer import app_schedule, run_on_ui_loop
+from .activity_feed_model import (
+    FEED_SETTINGS,
+    feed_row_model,
+    feed_setting_value,
+    mode_patch,
+    normalize_feed_settings,
+    normalize_queue_state,
+    normalize_search,
+    person_totals,
+    view_mode,
+)
 
 logger = logging.getLogger(__name__)
 
-_DOCK_BTN_PROPS = "flat no-caps dense"
-_recovery_scheduled = False
-_integrity_check_reason: Optional[str] = None
-_integrity_check_scheduled = False
-_condensed_update_scheduled = False
-_condensed_rebuild_running = False
-_condensed_rebuild_rerun = False
-_condensed_integrity_failures = 0
-_ignore_condense_toggle_event = False
-_ignore_view_apply = False
-_dom_desync_failures = 0
-_feed_watchdog_started = False
-_FEED_WATCHDOG_INTERVAL_SEC = 30.0
-_DOM_DESYNC_RELOAD_THRESHOLD = 3
-_DOM_DESYNC_WARN_COOLDOWN_SEC = 30.0
-_last_dom_desync_warn_at = 0.0
-_UNPAINTED_WARN_COOLDOWN_SEC = 60.0
-_last_unpainted_warn_at = 0.0
-_stale_ui_skip_logged = False
+_FEED_EVENT = "mycelian-afx"
+_STYLE_ID = "mycelian-activity-feed"
+_SLOT_NAMES = ("settings", "view", "live", "history", "person", "queue", "meta")
+_QUEUE_POLL_SEC = 0.5
+_FEED_WATCHDOG_INTERVAL_SEC = 20.0
+_LIVE_PUSH_DEBOUNCE_SEC = 0.15
 
-# Probe reasons that mean the feed exists but is not on screen (inactive Quasar
-# tab, tray about:blank, parent display:none). These are not content desyncs.
-_OFFSCREEN_PROBE_REASONS = frozenset({"offscreen", "no_visible_surface"})
-
-# Shared hit-test used by both the commit script and the watchdog probe so the
-# two can never disagree about what "painted" means.
-_CONDENSED_HITTEST_JS = """
-  function _afDescribe(el) {
-    if (!el) return null;
-    return {
-      tag: el.tagName || '',
-      id: el.id || '',
-      cls: (typeof el.className === 'string' ? el.className : '')
-    };
-  }
-  function _afViewport() {
-    return {
-      w: window.innerWidth || document.documentElement.clientWidth || 0,
-      h: window.innerHeight || document.documentElement.clientHeight || 0
-    };
-  }
-  function _afBox(r) {
-    if (!r) return null;
-    return {
-      l: Math.round(r.left), t: Math.round(r.top),
-      w: Math.round(r.width), h: Math.round(r.height)
-    };
-  }
-  function _afHasLayoutBox(r) {
-    return !!(r && r.width >= 2 && r.height >= 2);
-  }
-  function _afIntersect(a, b) {
-    if (!a) return null;
-    var left = a.left, right = a.right, top = a.top, bottom = a.bottom;
-    if (b) {
-      left = Math.max(left, b.left);
-      right = Math.min(right, b.right);
-      top = Math.max(top, b.top);
-      bottom = Math.min(bottom, b.bottom);
-    }
-    if (right - left < 2 || bottom - top < 2) return null;
-    return {left: left, right: right, top: top, bottom: bottom};
-  }
-  // elementFromPoint returns null outside the viewport, so every candidate is
-  // clamped in. A point is only usable if it lands inside the visible window.
-  function _afPoint(x, y) {
-    var v = _afViewport();
-    if (v.w < 2 || v.h < 2) return null;
-    if (x < 0 || y < 0 || x > v.w - 1 || y > v.h - 1) return null;
-    return {x: Math.round(x), y: Math.round(y)};
-  }
-  // Several candidates, because any single box can be degenerate: a child may
-  // render no box, and a long list can start or end outside the scroll port.
-  function _afSamplePoints(root, clip) {
-    var boxes = [];
-    for (var i = 0; i < root.children.length && i < 3; i++) {
-      boxes.push(_afIntersect(root.children[i].getBoundingClientRect(), clip));
-    }
-    boxes.push(_afIntersect(root.getBoundingClientRect(), clip));
-    boxes.push(_afIntersect(clip, null));
-    var pts = [];
-    var raw = [];
-    for (var j = 0; j < boxes.length; j++) {
-      var b = boxes[j];
-      if (!b) continue;
-      var mid = _afPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2);
-      if (mid) pts.push(mid);
-      var near = _afPoint(b.left + 8, b.top + 8);
-      if (near) pts.push(near);
-      raw.push({
-        x: Math.round((b.left + b.right) / 2),
-        y: Math.round((b.top + b.bottom) / 2)
-      });
-    }
-    // A bogus viewport size would reject every clamped point, so fall back to
-    // the raw centres: elementFromPoint just returns null off-viewport, which
-    // the caller already skips.
-    return pts.length ? pts : raw;
-  }
-  // Geometry of every ancestor, so a collapsed or display:none parent can be
-  // named from the log instead of guessed at.
-  function _afAncestry(el) {
-    var out = [];
-    var node = el;
-    for (var i = 0; node && i < 14; i++) {
-      var r = node.getBoundingClientRect();
-      var s = getComputedStyle(node);
-      out.push({
-        tag: node.tagName || '',
-        cls: (typeof node.className === 'string' ? node.className.slice(0, 70) : ''),
-        w: Math.round(r.width),
-        h: Math.round(r.height),
-        top: Math.round(r.top),
-        left: Math.round(r.left),
-        disp: s.display,
-        vis: s.visibility,
-        pos: s.position,
-        ovf: s.overflow,
-        op: s.opacity,
-        tf: (s.transform || 'none').slice(0, 40)
-      });
-      if (node === document.documentElement) break;
-      node = node.parentElement;
-    }
-    return out;
-  }
-  function _afFeedScope() {
-    var chrome = document.querySelector('.activity-feed-controls') ||
-                 document.querySelector('.activity-feed-tab-row') ||
-                 document.querySelector('.condense-toggle');
-    if (chrome && chrome.closest) {
-      return chrome.closest('.tab-surface') ||
-             chrome.closest('.q-tab-panel') ||
-             document;
-    }
-    return document;
-  }
-  function _afReseatFeed(el) {
-    var n = 0;
-    var shell = el.closest ? el.closest('.mycelian-main-tab-shell') : null;
-    var content = el.closest ? el.closest('.main-content') : null;
-    if (shell) {
-      try {
-        shell.style.setProperty('flex-direction', 'column', 'important');
-        shell.style.setProperty('flex-wrap', 'nowrap', 'important');
-        shell.style.setProperty('display', 'flex', 'important');
-        n += 1;
-      } catch (err) {}
-    }
-    if (content) {
-      try {
-        content.style.setProperty('margin-left', '0', 'important');
-        content.style.setProperty('left', 'auto', 'important');
-        content.style.setProperty('width', '100%', 'important');
-        content.style.setProperty('max-width', '100%', 'important');
-        content.style.setProperty('min-width', '0', 'important');
-        content.style.setProperty('flex', '1 1 auto', 'important');
-        content.style.setProperty('transform', 'none', 'important');
-        n += 1;
-      } catch (err) {}
-    }
-    if (shell && content) {
-      var sr = shell.getBoundingClientRect();
-      var cr = content.getBoundingClientRect();
-      // Still parked beside the tab strip (shell.left + shell.width).
-      if (cr.left > sr.left + 80) {
-        try {
-          content.style.setProperty(
-            'transform',
-            'translateX(' + Math.round(sr.left - cr.left) + 'px)',
-            'important'
-          );
-          n += 1;
-        } catch (err) {}
-      }
-    }
-    return n;
-  }
-  function _afUnswipe(el) {
-    var n = 0;
-    var node = el;
-    for (var i = 0; node && i < 16; i++) {
-      var cls = typeof node.className === 'string' ? node.className : '';
-      if (/\bq-panel\b/.test(cls) || /\bq-tab-panel\b/.test(cls)) {
-        try {
-          node.style.setProperty('transform', 'none', 'important');
-          node.style.setProperty('-webkit-transform', 'none', 'important');
-          node.style.setProperty('translate', 'none', 'important');
-          node.style.setProperty('left', '0px', 'important');
-          node.style.setProperty('animation', 'none', 'important');
-          node.style.setProperty('transition', 'none', 'important');
-          node.style.setProperty('z-index', '4', 'important');
-          n += 1;
-        } catch (err) {}
-      }
-      if (node === document.documentElement) break;
-      node = node.parentElement;
-    }
-    return n;
-  }
-  function _afHitTest(root) {
-    // Quasar tab panels swipe with translateX. A leftover swipe parks this
-    // panel one viewport to the right, which reads as a blank Activity Feed.
-    var unswiped = _afUnswipe(root);
-    var reseated = _afReseatFeed(root);
-    var con = root.closest ? root.closest('.activity-feed-condensed') : null;
-    var clip = con ? con.getBoundingClientRect() : null;
-    var v = _afViewport();
-    var metrics = {
-      vw: v.w,
-      vh: v.h,
-      unswiped: unswiped,
-      reseated: reseated,
-      root: _afBox(root.getBoundingClientRect()),
-      clip: _afBox(clip),
-      child0: root.children.length
-        ? _afBox(root.children[0].getBoundingClientRect())
-        : null,
-      kids: root.children.length
-    };
-    var pts = _afSamplePoints(root, clip);
-    metrics.points = pts.length;
-    var lastHit = null;
-    for (var i = 0; i < pts.length; i++) {
-      var hit = document.elementFromPoint(pts[i].x, pts[i].y);
-      if (!hit) continue;
-      lastHit = {point: pts[i], hit: hit};
-      // An ancestor of the root means nothing is covering the point; only
-      // document/body mean the surface itself never painted.
-      if (
-        root.contains(hit) ||
-        hit === root ||
-        (hit !== document.body &&
-         hit !== document.documentElement &&
-         hit.contains(root))
-      ) {
-        return {
-          verdict: 'ok',
-          reason: 'ok',
-          point: pts[i],
-          hit: _afDescribe(hit),
-          metrics: metrics
-        };
-      }
-    }
-    if (lastHit) {
-      return {
-        verdict: 'occluded',
-        reason: 'occluded',
-        point: lastHit.point,
-        hit: _afDescribe(lastHit.hit),
-        metrics: metrics,
-        chain: _afAncestry(root)
-      };
-    }
-    // After unswipe: a real layout box that intersects the viewport is
-    // painted. A box parked past innerWidth (leftover swipe) is not.
-    var view = {left: 0, top: 0, right: v.w, bottom: v.h};
-    var box = clip || root.getBoundingClientRect();
-    var vis = (v.w >= 2 && v.h >= 2)
-      ? _afIntersect(box, view)
-      : _afIntersect(box, null);
-    if (root.children.length > 0 && vis) {
-      metrics.via = 'geometry';
-      return {
-        verdict: 'ok',
-        reason: 'geometry',
-        point: null,
-        hit: null,
-        metrics: metrics
-      };
-    }
-    return {
-      verdict: 'offscreen',
-      reason: 'offscreen',
-      point: null,
-      hit: null,
-      metrics: metrics,
-      chain: _afAncestry(root)
-    };
-  }
-"""
-
-_FEED_DOM_PROBE_JS = """
-(function () {
-""" + _CONDENSED_HITTEST_JS + """
-  function visible(el) {
-    if (!el) return false;
-    if (el.classList && el.classList.contains('hidden')) return false;
-    var s = getComputedStyle(el);
-    return s.display !== 'none' && s.visibility !== 'hidden';
-  }
-  var scope = _afFeedScope();
-  var surfaces = scope.querySelector('.activity-feed-surfaces') ||
-                 document.querySelector('.activity-feed-surfaces');
-  var condensedMode = !!(surfaces && surfaces.getAttribute('data-view') === 'condensed');
-  var cur = scope.querySelector('.activity-feed-current') ||
-            document.querySelector('.activity-feed-current');
-  var con = scope.querySelector('.activity-feed-condensed') ||
-            document.querySelector('.activity-feed-condensed');
-  var prev = scope.querySelector('.activity-feed-previous') ||
-             document.querySelector('.activity-feed-previous');
-  var root = scope.querySelector('.activity-feed-condensed-root') ||
-             document.querySelector('.activity-feed-condensed-root');
-  var chrome = document.querySelector('.activity-feed-controls') ||
-               document.querySelector('.activity-feed-tab-row') ||
-               document.querySelector('.condense-toggle');
-  var exists = !!(cur || con || prev);
-  if (!chrome && !exists) {
-    return {ok: false, reason: 'panel_missing', children: 0};
-  }
-  if (!chrome) {
-    return {ok: false, reason: 'toolbar_missing', children: 0};
-  }
-  if (!exists) {
-    return {ok: false, reason: 'elements_missing', children: 0};
-  }
-  if (condensedMode) {
-    if (!root || !visible(con)) {
-      return {ok: false, reason: 'offscreen', children: 0};
-    }
-    var condensedChildren = root.children.length;
-    if (condensedChildren <= 0) {
-      return {ok: false, reason: 'empty', children: 0};
-    }
-    var test = _afHitTest(root);
-    if (test.verdict !== 'ok') {
-      return {
-        ok: false,
-        reason: test.reason || test.verdict,
-        condensed: true,
-        children: condensedChildren,
-        point: test.point,
-        hit: test.hit,
-        metrics: test.metrics || null,
-        chain: test.chain || null
-      };
-    }
-    return {
-      ok: true,
-      reason: test.reason || 'ok',
-      condensed: true,
-      children: condensedChildren,
-      metrics: test.metrics || null
-    };
-  }
-  var targets = [cur, prev].filter(visible);
-  if (!targets.length) {
-    return {ok: false, reason: 'offscreen', condensed: false, children: 0};
-  }
-  var children = 0;
-  for (var i = 0; i < targets.length; i++) {
-    children += targets[i].children.length;
-  }
-  // getComputedStyle still reports display:block inside a display:none
-  // ancestor, so a painted-looking feed can occupy no area at all. Reported
-  // for diagnosis only — acting on it here risks reload loops.
-  var area = false;
-  for (var j = 0; j < targets.length; j++) {
-    var tr = targets[j].getBoundingClientRect();
-    if (tr.width >= 2 && tr.height >= 2) { area = true; break; }
-  }
-  return {
-    ok: children > 0,
-    reason: 'ok',
-    condensed: false,
-    children: children,
-    zeroArea: (children > 0 && !area),
-    chain: (children > 0 && !area) ? _afAncestry(targets[0]) : null
-  };
-})()
-"""
-
-# Commit condensed visibility only after a hit-test confirms the surface is
-# painted. Temporarily set data-view so the (otherwise display:none) root can
-# be measured; revert immediately if the hit-test fails.
-_CONDENSED_COMMIT_JS = """
-(function () {
-""" + _CONDENSED_HITTEST_JS + """
-  var portal = document.getElementById('mycelian-condensed-portal');
-  if (portal) portal.remove();
-  document.documentElement.classList.remove('mycelian-af-condensed');
-  var scope = _afFeedScope();
-  var surfaces = scope.querySelector('.activity-feed-surfaces') ||
-                 document.querySelector('.activity-feed-surfaces');
-  var root = scope.querySelector('.activity-feed-condensed-root') ||
-             document.querySelector('.activity-feed-condensed-root');
-  var chromeCount = document.querySelectorAll('.activity-feed-controls').length;
-  if (!surfaces || !root) {
-    return {ok: false, reason: 'root_missing', children: 0, chromeCount: chromeCount};
-  }
-  var children = root.children.length;
-  if (children <= 0) {
-    surfaces.removeAttribute('data-view');
-    return {ok: false, reason: 'empty', children: 0, chromeCount: chromeCount};
-  }
-  surfaces.setAttribute('data-view', 'condensed');
-  var test = _afHitTest(root);
-  // Only a verified paint may hide the regular feed. Anything else — occluded
-  // or unmeasurable — reverts, because the alternative is a blank panel.
-  if (test.verdict !== 'ok') {
-    surfaces.removeAttribute('data-view');
-  }
-  return {
-    ok: test.verdict === 'ok',
-    reason: test.reason || test.verdict,
-    children: children,
-    chromeCount: chromeCount,
-    point: test.point,
-    hit: test.hit,
-    metrics: test.metrics || null,
-    chain: test.chain || null
-  };
-})()
-"""
-
-_CONDENSED_HIDE_JS = """
-(function () {
-  var portal = document.getElementById('mycelian-condensed-portal');
-  if (portal) portal.remove();
-  document.documentElement.classList.remove('mycelian-af-condensed');
-  document.querySelectorAll('.activity-feed-surfaces').forEach(function (el) {
-    el.removeAttribute('data-view');
-  });
-  return {ok: true, reason: 'hidden', children: 0};
-})()
-"""
+# The live feed is a session view, not history: older alerts stay available on the
+# History view, which is paged from the database.
+MAX_LIVE_ALERTS = 500
+MAX_CONDENSED_GROUPS = 200
 
 
 def _is_stale_client_error(exc: BaseException) -> bool:
@@ -492,1086 +93,114 @@ def _element_alive(el: Any) -> bool:
         return False
 
 
-def _slot_child_count(el: Any) -> int:
-    """Return child count for a NiceGUI element's default slot (3.x safe)."""
-    if not _element_alive(el):
-        return 0
-    try:
-        slot = getattr(el, "default_slot", None)
-        if slot is None:
-            return 0
-        return len(slot.children)
-    except Exception:
-        return 0
+# --------------------------------------------------------------------------- live list
+
+_live_lock = threading.RLock()
+_seq_lock = threading.Lock()
+_live_seq = 0
 
 
-def _null_live_alert_element_refs() -> None:
-    """Drop stale UI refs before a clear()/rebuild so callers never touch deleted elements."""
-    for alert_data in activity_feed_state.live_alerts:
-        alert_data["element"] = None
-        alert_data["new_badge"] = None
-        alert_data["timestamp_label"] = None
-
-
-# The live feed is a session view, not history: older alerts stay available on the
-# Previous tab, which is paged from the database.
-MAX_LIVE_ALERTS = 500
-MAX_CONDENSED_GROUPS = 200
+def _next_seq() -> int:
+    """Arrival number of a live alert (#1, #2 ... this session)."""
+    global _live_seq
+    with _seq_lock:
+        _live_seq += 1
+        return _live_seq
 
 
 def _trim_live_alerts() -> None:
     """Drop the oldest live alerts once the session feed exceeds its cap.
 
-    ``live_alerts`` used to be insert-only, which was survivable when a session lasted
-    an evening. With minimize-to-tray a session can run for weeks, and every entry
-    pins a NiceGUI element, so the list and its DOM nodes have to be bounded.
+    With minimize-to-tray a session can run for weeks, so the list has to be bounded.
+    Elements left over from older builds are deleted too.
     """
-    overflow = len(activity_feed_state.live_alerts) - MAX_LIVE_ALERTS
-    if overflow <= 0:
-        return
-
-    for alert_data in activity_feed_state.live_alerts[-overflow:]:
-        for key in ("element", "new_badge", "timestamp_label"):
-            element = alert_data.get(key)
+    with _live_lock:
+        overflow = len(activity_feed_state.live_alerts) - MAX_LIVE_ALERTS
+        if overflow <= 0:
+            return
+        for alert_data in activity_feed_state.live_alerts[-overflow:]:
+            element = alert_data.get("element") if isinstance(alert_data, dict) else None
             if _element_alive(element):
                 try:
                     element.delete()
                 except Exception as exc:
                     logger.debug("activity_feed: could not delete trimmed element: %s", exc)
-            alert_data[key] = None
-
-    del activity_feed_state.live_alerts[-overflow:]
+            if isinstance(alert_data, dict):
+                alert_data["element"] = None
+        del activity_feed_state.live_alerts[-overflow:]
     logger.debug("activity_feed: trimmed %d live alert(s) over the cap", overflow)
 
 
-def _containers_alive() -> bool:
-    current_alive = _element_alive(activity_feed_state.current_alerts_container)
-    if (
-        activity_feed_state.condense_list
-        and activity_feed_state.current_tab == "current"
-    ):
-        return current_alive or _element_alive(activity_feed_state.condensed_container)
-    return current_alive
+def live_alerts_snapshot() -> List[Dict[str, Any]]:
+    """Copy of the session feed (newest first), safe to iterate off the UI loop."""
+    with _live_lock:
+        return list(activity_feed_state.live_alerts)
 
 
-def _condensed_view_has_content() -> bool:
-    """True when the in-tree condensed root still has rendered children."""
-    root = getattr(activity_feed_state, "condensed_root", None)
-    if _element_alive(root):
-        return _slot_child_count(root) > 0
-    return _slot_child_count(activity_feed_state.condensed_container) > 0
+def _row_for(alert: Dict[str, Any]) -> Dict[str, Any]:
+    row = alert.get("row") if isinstance(alert, dict) else None
+    if isinstance(row, dict) and row.get("kind"):
+        return row
+    return feed_row_model(alert or {})
 
 
-def _count_rendered_live_alerts() -> int:
-    """Return how many live alerts still have a bound, alive UI element."""
-    count = 0
-    for alert_data in activity_feed_state.live_alerts:
-        element = alert_data.get("element")
-        if element is not None and _element_alive(element):
-            count += 1
-    return count
-
-
-def _feed_expects_visible_content() -> bool:
-    """True when the Current Alerts tab should show at least one card/group."""
-    if activity_feed_state.current_tab != "current":
-        return False
-    if activity_feed_state.condense_list:
-        # Condensed can show stored alerts with an empty live list. Keep probing
-        # so a wiped in-tab toolbar is still detected after a long session.
-        return True
-    return bool(activity_feed_state.live_alerts)
-
-
-def _feed_ui_is_on_screen() -> bool:
-    """False when the feed cannot be visible (tray, other main tab, no socket)."""
-    try:
-        from ..tray_controller import is_minimized
-
-        if is_minimized():
-            return False
-    except Exception:
-        pass
-
-    try:
-        from ..help_system.contextual_help import get_current_tab_context
-
-        main_tab, _ = get_current_tab_context()
-        if (
-            main_tab
-            and main_tab not in ("Activity Feed", "unknown")
-            and "activity feed" not in str(main_tab).lower()
-        ):
-            return False
-    except Exception:
-        pass
-
-    if _get_feed_client() is None and _get_connected_client() is None:
-        return False
-    return True
-
-
-def _python_feed_has_children() -> bool:
-    """True when Python-side feed containers already have rendered cards."""
-    if activity_feed_state.condense_list and _condensed_view_has_content():
-        return True
-    return _count_rendered_live_alerts() > 0
-
-
-def _ensure_regular_feed_populated(reason: str) -> None:
-    """Rebuild the regular feed when rendered cards are missing or out of date.
-
-    While condensed mode is on, new alerts are state-only (no cards). Toggle-off
-    and fallback paths must rebuild whenever rendered count lags live state.
-    """
-    if not activity_feed_state.live_alerts:
-        return
-    if not _element_alive(activity_feed_state.current_alerts_container):
-        return
-    rendered = _count_rendered_live_alerts()
-    live_count = len(activity_feed_state.live_alerts)
-    if rendered >= live_count:
-        return
-    logger.warning(
-        "activity_feed: regular feed stale (%s) — rebuilding "
-        "(rendered=%d live=%d)",
-        reason,
-        rendered,
-        live_count,
-    )
-    rebuild_current_alerts_feed()
-
-
-def _fallback_to_regular_feed(reason: str, *, disable_condense: bool = False) -> None:
-    """Show the regular feed and rebuild it if the surface is empty."""
-    global _condensed_integrity_failures, _ignore_condense_toggle_event
-
-    logger.warning("activity_feed: falling back to regular feed (%s)", reason)
-    _condensed_integrity_failures = 0
-
-    if disable_condense and activity_feed_state.condense_list:
-        try:
-            view_manager.update({"condensed": False}, apply_desktop=False)
-        except Exception as exc:
-            logger.debug("activity_feed: could not sync condensed fallback: %s", exc)
-            activity_feed_state.condense_list = False
-        toggle = activity_feed_state.condense_toggle
-        if _element_alive(toggle) and getattr(toggle, "value", False):
-            _ignore_condense_toggle_event = True
-            try:
-                toggle.value = False
-            except Exception:
-                pass
-            finally:
-                _ignore_condense_toggle_event = False
-
-    _hide_condensed_view()
-    _ensure_regular_feed_populated(f"fallback:{reason}")
-
-
-def _condensed_unavailable_text() -> str:
-    """Fail-open notice. One line for every case — condensed already includes
-    stored alerts, so this must not imply the view is session-only."""
-    return "Condensed view unavailable - showing full feed"
-
-
-def _set_condensed_unavailable_notice(visible: bool) -> None:
-    """Show or hide the fail-open notice above the regular feed."""
-    notice = getattr(activity_feed_state, "condensed_notice", None)
-    if not _element_alive(notice):
-        return
-    try:
-        if visible:
-            try:
-                notice.set_text(_condensed_unavailable_text())
-            except Exception:
-                pass
-            notice.classes(add="is-visible")
-        else:
-            notice.classes(remove="is-visible")
-    except Exception:
-        pass
-
-
-def _abandon_condensed_view(reason: str, *, reload: bool = True) -> None:
-    """Leave condensed mode; keep the regular feed on screen (fail open).
-
-    ``reload`` is accepted for call-site compatibility and ignored — a page
-    reload to recover a grouping view is what used to lose the live feed.
-    """
-    logger.warning("activity_feed: abandoning condensed view (%s)", reason)
-    if activity_feed_state.condense_list:
-        _set_condensed_unavailable_notice(True)
-    _fallback_to_regular_feed(reason, disable_condense=True)
-
-
-def _ensure_feed_integrity(reason: str) -> None:
-    """Rebuild the feed when state has alerts but nothing is rendered."""
-    global _condensed_integrity_failures
-
-    if activity_feed_state.current_tab != "current":
-        return
-    if not _feed_ui_is_on_screen():
-        return
-    if not _containers_alive():
-        return
-
-    if activity_feed_state.condense_list:
-        if _condensed_view_has_content():
-            _condensed_integrity_failures = 0
-            # Python thinks condensed is healthy — still verify the browser DOM.
-            schedule_feed_dom_probe(f"condensed_ok:{reason}")
-            return
-        # A rebuild in flight is expected to leave the surface empty briefly;
-        # re-check after it finishes instead of counting a failure.
-        if _condensed_rebuild_running or _condensed_update_scheduled:
-            app_schedule(
-                0.5,
-                lambda: _ensure_feed_integrity(f"{reason}_await_rebuild"),
-                once=True,
-            )
-            return
-        _condensed_integrity_failures += 1
-        logger.warning(
-            "activity_feed: condensed integrity mismatch (%s) — "
-            "empty condensed surface (failure %d)",
-            reason,
-            _condensed_integrity_failures,
-        )
-        if _condensed_integrity_failures >= 2:
-            _abandon_condensed_view(f"integrity_exhausted:{reason}")
-            return
-        # Schedule a rebuild; do not treat "scheduled" as a healthy surface.
-        _schedule_condensed_rebuild(f"integrity:{reason}")
-        app_schedule(
-            0.5,
-            lambda: _ensure_feed_integrity(f"{reason}_recheck"),
-            once=True,
-        )
-        return
-
-    if not activity_feed_state.live_alerts:
-        return
-    if _count_rendered_live_alerts() > 0:
-        schedule_feed_dom_probe(f"regular_ok:{reason}")
-        return
-
-    logger.warning(
-        "activity_feed: integrity mismatch (%s) — %d live alerts, 0 rendered",
-        reason,
-        len(activity_feed_state.live_alerts),
-    )
-    recover_activity_feed_panel()
-
-
-def schedule_condensed_view_update(reason: str) -> None:
-    """Debounced condensed view refresh (avoids clear/rebuild storms)."""
-    global _condensed_update_scheduled
-
-    if not activity_feed_state.condense_list:
-        return
-    if activity_feed_state.current_tab != "current":
-        return
-    if _condensed_update_scheduled:
-        return
-    _condensed_update_scheduled = True
-
-    def _deferred() -> None:
-        global _condensed_update_scheduled
-        _condensed_update_scheduled = False
-        try:
-            update_condensed_view()
-        except Exception as exc:
-            logger.error(
-                "activity_feed: debounced condensed update failed (%s): %s",
-                reason,
-                exc,
-                exc_info=True,
-            )
-
-    app_schedule(0.3, _deferred, once=True)
-
-
-def schedule_feed_integrity_check(reason: str) -> None:
-    """Debounced integrity check after destructive UI operations."""
-    global _integrity_check_reason, _integrity_check_scheduled
-
-    _integrity_check_reason = reason
-    if _integrity_check_scheduled:
-        return
-    _integrity_check_scheduled = True
-
-    def _deferred() -> None:
-        global _integrity_check_scheduled
-        _integrity_check_scheduled = False
-        _ensure_feed_integrity(_integrity_check_reason or "unspecified")
-
-    app_schedule(0.2, _deferred, once=True)
-
-
-_dom_probe_scheduled = False
-_dom_probe_reason: Optional[str] = None
-
-
-def schedule_feed_dom_probe(reason: str) -> None:
-    """Debounced client-side DOM probe (catches Vue remount / outbox desync)."""
-    global _dom_probe_scheduled, _dom_probe_reason
-
-    if not _feed_expects_visible_content():
-        return
-    if not _feed_ui_is_on_screen():
-        return
-    _dom_probe_reason = reason
-    if _dom_probe_scheduled:
-        return
-    _dom_probe_scheduled = True
-
-    def _deferred() -> None:
-        global _dom_probe_scheduled
-        _dom_probe_scheduled = False
-        background_tasks.create(
-            _probe_feed_dom_async(_dom_probe_reason or "unspecified"),
-            name="activity_feed_dom_probe",
-        )
-
-    app_schedule(0.3, _deferred, once=True)
-
-
-def _get_connected_client() -> Any:
-    """Return a NiceGUI client with an active socket, if any."""
-    try:
-        from nicegui import Client
-
-        for inst in Client.instances.values():
-            if getattr(inst, "has_socket_connection", False):
-                return inst
-    except Exception:
-        pass
-    return None
-
-
-def _get_feed_client() -> Any:
-    """Return the NiceGUI client that owns the activity-feed containers."""
-    for el in (
-        activity_feed_state.current_alerts_container,
-        activity_feed_state.condensed_container,
-        activity_feed_state.previous_alerts_container,
-    ):
-        if not _element_alive(el):
-            continue
-        try:
-            client = el.client
-        except Exception:
-            continue
-        if client is not None and getattr(client, "has_socket_connection", False):
-            return client
-    return _get_connected_client()
-
-
-def _apply_dom_probe_result(reason: str, result: Dict[str, Any]) -> str:
-    """Handle a DOM probe payload. Returns the action taken (for tests)."""
-    global _dom_desync_failures, _last_dom_desync_warn_at, _last_unpainted_warn_at
-
-    if not isinstance(result, dict):
-        return "ignored"
-
-    ok = bool(result.get("ok"))
-    probe_reason = str(result.get("reason") or "unknown")
-    children = int(result.get("children") or 0)
-    expected = len(activity_feed_state.live_alerts)
-
-    if result.get("zeroArea") and _feed_ui_is_on_screen():
-        now = time.monotonic()
-        if now - _last_unpainted_warn_at >= _UNPAINTED_WARN_COOLDOWN_SEC:
-            _last_unpainted_warn_at = now
-            logger.warning(
-                "activity_feed: regular feed has children but no on-screen area "
-                "(%s) children=%d — panel is not painting",
-                reason,
-                children,
-            )
-            _log_condensed_ancestry(f"unpainted:{reason}", result)
-
-    # Condensed is on but the DOM never revealed it (a deferred commit, e.g.
-    # alerts landed while the app sat in the tray). Retry now that it is up.
-    if activity_feed_state.condense_list and result.get("condensed") is False:
-        logger.debug(
-            "activity_feed: condensed pending reveal (%s) — rebuilding", reason
-        )
-        _schedule_condensed_rebuild(f"commit_retry:{reason}")
-        if ok and children > 0:
-            _dom_desync_failures = 0
-            return "pending_reveal"
-
-    if ok and children > 0:
-        _dom_desync_failures = 0
-        return "ok"
-
-    # Condensed rebuilds can delete in-tab chrome (and the feed containers)
-    # while leaving main app tabs intact. Python still holds live element
-    # refs, so "elements_missing" here is a wipe — not an off-screen tab.
-    if probe_reason in ("toolbar_missing", "panel_missing") or (
-        probe_reason == "elements_missing" and _feed_ui_is_on_screen()
-    ):
-        _dom_desync_failures = 0
-        logger.warning(
-            "activity_feed: feed panel missing from DOM (%s, %s) — leaving condensed mode",
-            probe_reason,
-            reason,
-        )
-        _abandon_condensed_view(f"dom_{probe_reason}")
-        if not recover_activity_feed_panel():
-            _escalate_page_reload("feed_panel_missing")
-            return "reload"
-        return "abandon"
-
-    if probe_reason == "occluded" and activity_feed_state.condense_list:
-        _dom_desync_failures = 0
-        logger.warning(
-            "activity_feed: condensed surface occluded (%s) hit=%s — failing open",
-            reason,
-            result.get("hit"),
-        )
-        _abandon_condensed_view("dom_occluded")
-        return "abandon"
-
-    # A revealed condensed surface that cannot be measured while the feed is
-    # meant to be visible is a blank panel, not a hidden tab.
-    if (
-        probe_reason == "offscreen"
-        and bool(result.get("condensed"))
-        and _feed_ui_is_on_screen()
-    ):
-        _dom_desync_failures = 0
-        logger.warning(
-            "activity_feed: condensed surface unmeasurable (%s) point=%s — failing open",
-            reason,
-            result.get("point"),
-        )
-        _log_condensed_ancestry(reason, result)
-        _abandon_condensed_view("dom_condensed_offscreen")
-        return "abandon"
-
-    # Hidden tab / tray / parent display:none is not a content desync.
-    if probe_reason == "offscreen":
-        _dom_desync_failures = 0
-        logger.debug(
-            "activity_feed: dom probe offscreen (%s) — skipping recover", reason
-        )
-        return "skip_offscreen"
-
-    if probe_reason in _OFFSCREEN_PROBE_REASONS and _python_feed_has_children():
-        _dom_desync_failures = 0
-        logger.debug(
-            "activity_feed: dom probe %s (%s) with python children — skipping recover",
-            probe_reason,
-            reason,
-        )
-        return "skip_offscreen"
-
-    if probe_reason == "elements_missing" and _python_feed_has_children():
-        # JS ran on a document that does not host the feed.
-        _dom_desync_failures = 0
-        logger.debug(
-            "activity_feed: dom probe elements_missing (%s) with python children "
-            "— skipping recover",
-            reason,
-        )
-        return "skip_offscreen"
-
-    _dom_desync_failures += 1
-    logger.debug(
-        "activity_feed: dom_desync (%s) — probe=%s children=%d expected=%d "
-        "(failure %d)",
-        reason,
-        probe_reason,
-        children,
-        expected,
-        _dom_desync_failures,
-    )
-
-    if _dom_desync_failures >= _DOM_DESYNC_RELOAD_THRESHOLD:
-        now = time.monotonic()
-        if now - _last_dom_desync_warn_at >= _DOM_DESYNC_WARN_COOLDOWN_SEC:
-            _last_dom_desync_warn_at = now
-            logger.warning(
-                "activity_feed: dom_desync (%s) — probe=%s children=%d expected=%d "
-                "(failure %d); escalating reload",
-                reason,
-                probe_reason,
-                children,
-                expected,
-                _dom_desync_failures,
-            )
-        _dom_desync_failures = 0
-        _escalate_page_reload("feed_dom_desync")
-        return "reload"
-
-    if activity_feed_state.condense_list:
-        _ensure_regular_feed_populated(f"dom_desync:{reason}")
-        _hide_condensed_view()
-        _schedule_condensed_rebuild(f"dom_desync:{reason}")
-        schedule_feed_integrity_check(f"dom_desync:{reason}")
-        return "recover"
-
-    if not recover_activity_feed_panel():
-        _escalate_page_reload("feed_dom_desync_recover_failed")
-        return "reload"
-    return "recover"
-
-
-async def _probe_feed_dom_async(reason: str) -> None:
-    """Ask the browser whether a visible feed surface has children."""
-    global _dom_desync_failures
-
-    if not _feed_expects_visible_content() or not _feed_ui_is_on_screen():
-        if activity_feed_state.condense_list:
-            logger.warning(
-                "activity_feed: condensed probe skipped expects=%s on_screen=%s (%s)",
-                _feed_expects_visible_content(),
-                _feed_ui_is_on_screen(),
-                reason,
-            )
-        _dom_desync_failures = 0
-        return
-    if _condensed_rebuild_running or _condensed_update_scheduled:
-        # Rebuild in flight — re-check shortly instead of false-positive desync.
-        app_schedule(
-            0.5,
-            lambda: schedule_feed_dom_probe(f"{reason}_await_rebuild"),
-            once=True,
-        )
-        return
-
-    client = _get_feed_client()
-    if client is None:
-        return
-
-    try:
-        result = await client.run_javascript(_FEED_DOM_PROBE_JS, timeout=5.0)
-    except Exception as exc:
-        msg = str(exc).lower()
-        if "client" in msg and "deleted" in msg:
-            _handle_stale_client(f"dom_probe:{reason}")
-            return
-        logger.debug("activity_feed: dom probe failed (%s): %s", reason, exc)
-        return
-
-    if not (isinstance(result, dict) and result.get("ok") and int(result.get("children") or 0) > 0):
-        logger.warning(
-            "activity_feed: dom probe (%s) result=%s",
-            reason,
-            result,
-        )
-    _apply_dom_probe_result(reason, result)
-
-
-def _run_feed_watchdog() -> None:
-    """Periodic integrity + DOM probe — catches silent blanks with no mutations."""
-    try:
-        from modules.shutdown import is_shutdown_in_progress
-
-        if is_shutdown_in_progress():
-            return
-    except Exception:
-        pass
-
-    if not activity_feed_state.is_initialized:
-        return
-    if activity_feed_state.current_tab != "current":
-        return
-    if not _feed_expects_visible_content():
-        return
-    if not _feed_ui_is_on_screen():
-        return
-
-    schedule_feed_integrity_check("periodic_watchdog")
-
-
-def _start_feed_watchdog() -> None:
-    """Start the repeating feed-blank watchdog (idempotent)."""
-    global _feed_watchdog_started
-    if _feed_watchdog_started:
-        return
-    _feed_watchdog_started = True
-    app_schedule(_FEED_WATCHDOG_INTERVAL_SEC, _run_feed_watchdog, active=True)
-    logger.debug(
-        "activity_feed: feed watchdog started (interval=%ss)",
-        int(_FEED_WATCHDOG_INTERVAL_SEC),
-    )
-
-
-def _run_on_ui_loop(fn: Callable[[], Any]) -> None:
-    """Marshal UI mutations onto NiceGUI's loop and into a live client slot.
-
-    ``app.timer`` / raw ``call_soon_threadsafe`` have no client context, so creating
-    feed elements after tray restore fails with a slot-stack error. Enter the
-    connected client the same way custom-sources OBS apply does.
-    """
-
-    def _invoke() -> None:
-        client = None
-        try:
-            from nicegui import Client
-
-            for inst in list(Client.instances.values()):
-                if getattr(inst, "is_deleted", False):
-                    continue
-                if getattr(inst, "has_socket_connection", False):
-                    client = inst
-                    break
-        except Exception:
-            client = None
-        try:
-            if client is not None:
-                with client:
-                    fn()
-            else:
-                fn()
-        except Exception as exc:
-            logger.error("activity_feed UI callback failed: %s", exc, exc_info=True)
-
-    run_on_ui_loop(_invoke)
-
-
-def _handle_stale_client(reason: str) -> None:
-    """Mark feed stale and schedule recovery (idempotent)."""
-    global _recovery_scheduled
-
-    logger.warning("activity_feed: client_stale (%s)", reason)
-    activity_feed_state.is_initialized = False
-    if _recovery_scheduled:
-        return
-    _recovery_scheduled = True
-
-    def _recover() -> None:
-        global _recovery_scheduled
-        try:
-            recover_after_client_reconnect()
-        finally:
-            _recovery_scheduled = False
-
-    _run_on_ui_loop(_recover)
-
-
-def _escalate_page_reload(reason: str) -> None:
-    try:
-        from modules.shutdown import is_shutdown_in_progress
-
-        if is_shutdown_in_progress():
-            logger.debug(
-                "activity_feed: reload_escalation skipped during shutdown (%s)", reason
-            )
-            return
-    except Exception:
-        pass
-
-    logger.warning("activity_feed: reload_escalation (%s)", reason)
-    try:
-        from nicegui import Client, background_tasks
-
-        client = None
-        for inst in Client.instances.values():
-            if getattr(inst, "has_socket_connection", False):
-                client = inst
-                break
-        if client is None:
-            logger.debug("activity_feed: reload skipped (no connected client)")
-            return
-
-        async def _reload() -> None:
-            try:
-                await client.run_javascript(
-                    "window.location.reload()", timeout=5.0
-                )
-            except Exception as exc:
-                logger.error("activity_feed: page reload failed: %s", exc, exc_info=True)
-
-        background_tasks.create(_reload(), name="activity_feed_reload")
-    except Exception as exc:
-        logger.error("activity_feed: page reload failed: %s", exc, exc_info=True)
-
-
-def recover_activity_feed_panel() -> bool:
-    """Rebuild visible feed content when containers are still bound to a live client."""
-    global _dom_desync_failures, _stale_ui_skip_logged
-
-    if not _containers_alive():
-        return False
-
-    try:
-        _null_live_alert_element_refs()
-        rebuild_current_alerts_feed()
-        if activity_feed_state.condense_list and activity_feed_state.current_tab == "current":
-            # Schedule async condensed rebuild; regular feed stays populated as fallback.
-            _schedule_condensed_rebuild("recover_activity_feed_panel")
-            schedule_feed_integrity_check("recover_activity_feed_panel")
-        else:
-            _hide_condensed_view()
-        update_alert_visibility()
-        activity_feed_state.is_initialized = True
-        _stale_ui_skip_logged = False
-        _dom_desync_failures = 0
-        logger.debug(
-            "activity_feed: recovered (%d live alerts)",
-            len(activity_feed_state.live_alerts),
-        )
-        if _feed_ui_is_on_screen():
-            schedule_feed_dom_probe("after_recover")
-        return True
-    except Exception as exc:
-        logger.error("activity_feed: recover_activity_feed_panel failed: %s", exc, exc_info=True)
-        return False
-
-
-def recover_after_client_reconnect() -> None:
-    """Called after NiceGUI socket reconnect or stale-client detection."""
-    from ..shutdown import is_shutdown_in_progress
-
-    if is_shutdown_in_progress():
-        return
-
-    if recover_activity_feed_panel():
-        return
-
-    _escalate_page_reload("containers_dead_after_reconnect")
-
-
-_connect_recovery_enabled = False
-
-
-_hooks_registered_client_ids: set[str] = set()
-
-
-def register_client_lifecycle_hooks() -> None:
-    """Register connect/disconnect/delete handlers for Activity Feed recovery."""
-    global _connect_recovery_enabled
-    try:
-        from nicegui import context
-
-        client = context.client
-    except Exception as exc:
-        logger.debug("activity_feed: could not register lifecycle hooks: %s", exc)
-        return
-
-    if client.id in _hooks_registered_client_ids:
-        return
-    _hooks_registered_client_ids.add(client.id)
-    client_id = client.id
-
-    def _on_disconnect(_client=None) -> None:
-        # Transient socket blips are common under load. Do not flip
-        # is_initialized — that used to drop alerts until reconnect recovery.
-        logger.debug("activity_feed: client_disconnected")
-
-    def _on_connect(_client=None) -> None:
-        if not _connect_recovery_enabled:
-            return
-        logger.debug("activity_feed: client_connected — scheduling recovery")
-        app_schedule(0.5, recover_after_client_reconnect, once=True)
-
-    def _on_delete(_client=None) -> None:
-        # Every minimize/restore cycle retires a client id, so the guard set has to
-        # give the id back or it grows for the life of the process.
-        _hooks_registered_client_ids.discard(client_id)
-        logger.debug("activity_feed: client_deleted — scheduling recovery")
-        _handle_stale_client("client_deleted")
-
-    client.on_disconnect(_on_disconnect)
-    client.on_connect(_on_connect)
-    client.on_delete(_on_delete)
-    app_schedule(3.0, _enable_connect_recovery, once=True)
-    logger.debug("activity_feed: client lifecycle hooks registered")
-
-
-def _enable_connect_recovery() -> None:
-    global _connect_recovery_enabled
-    _connect_recovery_enabled = True
-
-
-# Event-based system instead of continuous polling
 class AlertEventHandler:
-    """Thread-safe event handler for processing alerts without continuous polling"""
+    """Puts a new alert into the shared live list and repaints the feeds.
 
-    def __init__(self):
-        self._executor = ThreadPoolExecutor(
-            max_workers=2, thread_name_prefix="AlertEvent"
-        )
-        self._ui_update_lock = threading.Lock()
-        self._timestamp_update_event = threading.Event()
-        self._timestamp_update_timer = None
+    The insert happens synchronously (before the overlay is told about the alert), so a
+    dock that resyncs in between can never miss it, and arrival order is call order.
+    """
+
+    def __init__(self) -> None:
         self._should_stop = False
 
     def process_alert_immediately(self, alert_data: Dict[str, Any]) -> None:
-        """Process an alert immediately in a thread-safe manner"""
-        try:
-            # Submit to thread pool for thread-safe processing
-            future = self._executor.submit(self._process_alert_threadsafe, alert_data)
-
-            # Don't wait for completion to avoid blocking the caller
-            logger.debug(
-                f"Submitted alert for processing: {alert_data.get('type', 'Unknown')}"
-            )
-
-        except Exception as e:
-            logger.error(f"Error submitting alert for processing: {e}", exc_info=True)
-
-    def _process_alert_threadsafe(self, alert_data: Dict[str, Any]) -> None:
-        """Process alert in a thread-safe manner (runs in thread pool)"""
-        try:
-            current_time = time.time()
-            created_time = alertutils.safe_alert_timestamp(
-                alert_data.get("created_at"), default=current_time
-            )
-            is_recent = (current_time - created_time) < 300  # 5 minutes
-
-            new_alert_data = {
-                "type": alert_data["type"],
-                "message": alert_data["message"],
-                "badge_type": alert_data["badge_type"],
-                "timestamp": alertutils.safe_alert_timestamp(
-                    alert_data.get("timestamp"), default=current_time
-                ),
-                "created_at": created_time,
-                "element": None,
-                "tier": alert_data.get("tier"),
-                "user_message": alert_data.get("user_message"),
-                "new_badge": None,
-                "timestamp_label": None,
-                "is_recent": is_recent,
-                "is_restored": False,
-                "stored_alert_data": alert_data.get("stored_alert_data"),
-                "alert_id": alert_data.get("alert_id"),
-                "username": alert_data.get("username"),
-            }
-
-            _run_on_ui_loop(
-                lambda: self._apply_alert_on_ui(new_alert_data, alert_data["type"])
-            )
-            self._trigger_timestamp_update()
-
-        except Exception as e:
-            logger.error(f"Error in thread-safe alert processing: {e}", exc_info=True)
-
-    def _apply_alert_on_ui(
-        self, new_alert_data: Dict[str, Any], alert_type: str
-    ) -> None:
-        """Apply a new alert to UI state (must run on NiceGUI loop)."""
-        global _stale_ui_skip_logged
-
-        with self._ui_update_lock:
-            # Always keep alert state so recovery can repaint after desync.
-            activity_feed_state.live_alerts.insert(0, new_alert_data)
-            _trim_live_alerts()
-
-            ui_ready = (
-                activity_feed_state.is_initialized and _containers_alive()
-            )
-            if not ui_ready:
-                if not _stale_ui_skip_logged:
-                    logger.warning(
-                        "activity_feed: UI stale — alert kept in state, "
-                        "skipping paint (%s); scheduling recovery",
-                        alert_type,
-                    )
-                    _stale_ui_skip_logged = True
-                # Only recover when containers existed and then went stale —
-                # never escalate during pre-init startup.
-                if (
-                    activity_feed_state.current_alerts_container is not None
-                    or activity_feed_state.condensed_container is not None
-                ):
-                    _handle_stale_client("apply_alert_on_ui")
-                if (
-                    activity_feed_state.condense_list
-                    and activity_feed_state.current_tab == "current"
-                ):
-                    schedule_condensed_view_update("apply_alert_on_ui_no_desktop")
-                return
-
-            _stale_ui_skip_logged = False
-
-            should_display_new_alert = activity_feed_state.current_tab == "current"
-            condensed_active = (
-                activity_feed_state.condense_list
-                and activity_feed_state.current_tab == "current"
-            )
-
-            if condensed_active:
-                # Avoid dual-feed churn: keep state only; condensed rebuild owns the surface.
-                schedule_condensed_view_update("apply_alert_on_ui")
-                logger.debug(
-                    "Queued condensed update for new alert: %s (skipped regular card)",
-                    alert_type,
-                )
-            elif should_display_new_alert:
-                if not create_alert_element(new_alert_data):
-                    return
-                element = new_alert_data.get("element")
-                if _element_alive(element):
-                    element.update()
-                logger.debug(
-                    f"Displayed new alert: {alert_type} (current tab: {activity_feed_state.current_tab})"
-                )
-                update_alert_visibility()
-                schedule_feed_integrity_check("apply_alert_on_ui")
-            else:
-                logger.debug(
-                    f"New alert {alert_type} added to state but not displayed - on {activity_feed_state.current_tab} tab"
-                )
-
-    def _trigger_timestamp_update(self) -> None:
-        """Trigger a timestamp update cycle instead of continuous polling"""
-        self._timestamp_update_event.set()
-
-        # Cancel existing timer if any
-        if self._timestamp_update_timer:
-            self._timestamp_update_timer.cancel()
-
-        # Schedule next update in 30 seconds (instead of continuous 5-second polling)
-        self._timestamp_update_timer = threading.Timer(
-            30.0, self._scheduled_timestamp_update
-        )
-        self._timestamp_update_timer.daemon = True
-        self._timestamp_update_timer.start()
-
-    def _scheduled_timestamp_update(self) -> None:
-        """Perform scheduled timestamp update (threading.Timer callback)."""
-        if self._should_stop:
+        if self._should_stop or not isinstance(alert_data, dict):
             return
-        _run_on_ui_loop(self._run_scheduled_timestamp_update_ui)
-
-    def _run_scheduled_timestamp_update_ui(self) -> None:
         try:
-            if (
-                activity_feed_state.current_tab == "current"
-                and len(activity_feed_state.live_alerts) > 0
-                and _containers_alive()
-            ):
-                with self._ui_update_lock:
-                    self._update_timestamps_and_recent_status()
-                self._trigger_timestamp_update()
-            else:
-                logger.debug("No live alerts to update, skipping timestamp update")
-        except Exception as e:
-            logger.error(f"Error in scheduled timestamp update: {e}", exc_info=True)
-
-    def _update_timestamps_and_recent_status(self) -> None:
-        """Update timestamps and recent status for live alerts"""
-        current_time = time.time()
-        updates_made = False
-
-        # Update each LIVE alert's recent status (not restored alerts)
-        for alert_data in activity_feed_state.live_alerts:
-            # Skip restored alerts entirely
-            if alert_data.get("is_restored", False):
-                continue
-
-            element = alert_data.get("element")
-            new_badge = alert_data.get("new_badge")
-            if not _element_alive(element) or not _element_alive(new_badge):
-                continue
-
-            try:
-                created_time = alertutils.safe_alert_timestamp(
-                    alert_data.get("created_at"), default=current_time
-                )
-                time_diff = current_time - created_time
-                is_recent = time_diff < 300  # 5 minutes
-
-                # Check if badge visibility needs to change
-                badge_hidden = "hidden" in getattr(new_badge, "_classes", [])
-                should_hide = not is_recent
-
-                if badge_hidden != should_hide:
-                    if should_hide:
-                        new_badge.classes(add="hidden")
-                    else:
-                        new_badge.classes(remove="hidden")
-                    updates_made = True
-
-                # Update timestamp if it exists
-                timestamp_label = alert_data.get("timestamp_label")
-                if _element_alive(timestamp_label):
-                    old_timestamp = timestamp_label.text
-                    new_timestamp = format_timestamp(alert_data.get("timestamp", ""))
-                    if old_timestamp != new_timestamp:
-                        timestamp_label.set_text(new_timestamp)
-                        updates_made = True
-
-            except Exception as e:
-                logger.error(f"Error updating individual live alert status: {str(e)}")
-
-        # Only force UI update if changes were made
-        if updates_made:
-            container = activity_feed_state.current_alerts_container
-            if _element_alive(container):
-                container.update()
-            logger.debug("Completed timestamp/recent status update cycle with changes")
+            entry = dict(alert_data)
+            entry.setdefault("is_restored", False)
+            if not isinstance(entry.get("row"), dict):
+                entry["row"] = feed_row_model(entry)
+            with _live_lock:
+                activity_feed_state.live_alerts.insert(0, entry)
+            _trim_live_alerts()
+            _schedule_live_push()
+            if view_mode(view_manager.snapshot()) == "person":
+                schedule_condensed_view_update("new_alert")
+        except Exception as exc:
+            logger.error("activity_feed: could not add alert: %s", exc, exc_info=True)
 
     def force_timestamp_update(self) -> None:
-        """Force an immediate timestamp update (called when switching tabs, etc.)"""
-        _run_on_ui_loop(self._force_timestamp_update_ui)
-
-    def _force_timestamp_update_ui(self) -> None:
-        try:
-            if activity_feed_state.current_tab == "current" and _containers_alive():
-                with self._ui_update_lock:
-                    self._update_timestamps_and_recent_status()
-        except Exception as e:
-            logger.error(f"Error in forced timestamp update: {e}", exc_info=True)
+        """Kept for callers: times are kept current by the renderer itself."""
 
     def shutdown(self) -> None:
-        """Shutdown the event handler"""
         self._should_stop = True
-        if self._timestamp_update_timer:
-            self._timestamp_update_timer.cancel()
-        self._executor.shutdown(wait=False)
-        logger.debug("Alert event handler shutdown complete")
 
 
-# Global event handler instance
 alert_event_handler = AlertEventHandler()
-
-# Dropdown visibility is now tracked in activity_feed_state.dropdown_visible
 
 
 def format_timestamp(timestamp):
-    """Format a timestamp in a user-friendly way.
-
-    Args:
-        timestamp (float or str): Unix timestamp or "now"
-
-    Returns:
-        str: Formatted timestamp like "just now", "2m ago", "1h ago", etc.
-    """
+    """Format a timestamp like "just now", "2m ago", "1h ago"."""
     if timestamp == "now":
         return "just now"
-
-    # Convert timestamp to float if it's a string
     try:
         timestamp_float = float(timestamp)
     except (ValueError, TypeError):
-        logger.warning(f"Invalid timestamp format: {timestamp}, using current time")
         timestamp_float = time.time()
-
-    current_time = time.time()
-    diff_seconds = current_time - timestamp_float
-
+    diff_seconds = time.time() - timestamp_float
     if diff_seconds < 60:
         return "just now"
-    elif diff_seconds < 3600:
-        minutes = int(diff_seconds / 60)
-        return f"{minutes}m ago"
-    elif diff_seconds < 86400:
-        hours = int(diff_seconds / 3600)
-        return f"{hours}h ago"
-    else:
-        days = int(diff_seconds / 86400)
-        return f"{days}d ago"
+    if diff_seconds < 3600:
+        return f"{int(diff_seconds / 60)}m ago"
+    if diff_seconds < 86400:
+        return f"{int(diff_seconds / 3600)}h ago"
+    return f"{int(diff_seconds / 86400)}d ago"
 
 
-# Shared display state for the desktop window and the browser overlay.
+# --------------------------------------------------------------------------- shared view
+
 ACTIVITY_FEED_VIEW_PATH = "ActivityFeedView"
 FILTER_KEYS = (
     "all",
@@ -1645,6 +274,18 @@ def apply_filter_rules(
     return result
 
 
+def _max_history_pages() -> int:
+    try:
+        from modules import dataobjects
+
+        sm = dataobjects.state_manager
+        if not getattr(sm, "_initialized", False):
+            return 50  # never trigger a settings load just to clamp a page
+        return max(1, int(sm.get_app_settings().activity_feed_max_pages or 1))
+    except Exception:
+        return 50
+
+
 def normalize_view(raw: Any) -> Dict[str, Any]:
     """Fill a complete activity-feed view from a partial or invalid document."""
     source = raw if isinstance(raw, dict) else {}
@@ -1662,6 +303,7 @@ def normalize_view(raw: Any) -> Dict[str, Any]:
         "condensed": _coerce_bool(source.get("condensed", False), False),
         "tab": tab,
         "page": page,
+        "search": normalize_search(source.get("search", "")),
     }
 
 
@@ -1707,29 +349,15 @@ def serialize_live_alerts(alerts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return serialized
 
 
-# Create a class to store the reference to the activity feed container
 class ActivityFeedState:
+    """Module state the rest of Mycelian reads (filters, view, live list, tab refs)."""
+
     def __init__(self):
-        self.activity_feed_container: Optional[ui.element] = None
-        self.current_alerts_container: Optional[ui.element] = None
-        self.previous_alerts_container: Optional[ui.element] = None
         self.is_initialized: bool = False
-        self.alert_processor_thread: Optional[threading.Thread] = None
         self.should_stop: bool = False
-        self.update_status_thread: Optional[threading.Thread] = None
-        self.alert_elements: List[
-            Dict[str, Any]
-        ] = []  # Store references to alert elements for updating
-        self.live_alerts: List[Dict[str, Any]] = []  # Store live alerts separately
-        self.timestamp_labels: Dict[
-            str, Any
-        ] = {}  # Store references to timestamp labels for updating
-        # Add filter state to track which event types are visible
+        self.live_alerts: List[Dict[str, Any]] = []  # newest first
         self.filter_state: Dict[str, bool] = default_filter_state()
-        self.filter_checkboxes: Dict[str, Any] = {}
-        self.current_tab_btn: Optional[Any] = None
-        self.previous_tab_btn: Optional[Any] = None
-        # Map alert types to filter keys
+        # Display type -> filter key (YouTube-native labels map onto the Twitch chips)
         self.alert_type_to_filter: Dict[str, str] = {
             "Follow": "follows",
             "Sub": "subs",
@@ -1742,65 +370,40 @@ class ActivityFeedState:
             "Streak": "streaks",
             "Modiversary": "modiversaries",
             "Hype Train": "hype_train",
-            # YouTube-native labels (map onto existing filter chips)
             "Membership": "subs",
             "Member Milestone": "resubs",
             "Gift Membership": "giftsubs",
             "Super Chat": "donations",
             "Super Sticker": "donations",
         }
-        # Track dropdown visibility state
-        self.dropdown_visible: bool = False
-        # Pagination state for restored alerts
         self.current_page: int = 1
         self.total_pages: int = 1
         self.pagination_limit: int = 25
-        self.restored_alerts_loaded: bool = False
-        self.pagination_container: Optional[ui.element] = None
-        # Tab state
         self.current_tab: str = "current"  # "current" or "previous"
-        self.tab_container: Optional[ui.element] = None
-        # Condense list state
         self.condense_list: bool = False
-        self.condense_toggle: Optional[ui.element] = None
-        self.condensed_container: Optional[ui.element] = None
-        self.condensed_body: Optional[ui.element] = None
-        self.condensed_root: Optional[ui.element] = None
-        self.condensed_notice: Optional[ui.element] = None
-        self.feed_surfaces: Optional[ui.element] = None
-        self.alerts_muted: bool = False
-        self.pause_btn: Optional[Any] = None
-        self.mute_btn: Optional[Any] = None
-        self.pause_breath_phase: float = 0.0
-        self.pause_breath_timer: Optional[ui.timer] = None
-        # Filter dropdown reference
-        self.filter_dropdown: Optional[ui.element] = None
-        self.filter_host: Optional[ui.element] = None
-        self.search_input: Optional[ui.element] = None
         self.search_text: str = ""
-        # Timer for click-outside detection
-        self.dropdown_timer: Optional[ui.timer] = None
-        # Backdrop reference
-        self.backdrop: Optional[ui.element] = None
+        self.alerts_muted: bool = False
 
 
-# Global instance
 activity_feed_state = ActivityFeedState()
 
 
 class ActivityFeedViewManager:
     """Canonical display state for every activity-feed surface.
 
-    The desktop window and the browser overlay both read and write this view.
-    A revision stops an older echo from rolling the display backward.
+    The app tab and the OBS dock both read and write this view (filters, Live / History /
+    By person, history page and the search text). A revision stops an older echo from
+    rolling the display backward. Search is shared but not saved across restarts.
     """
 
-    _VIEW_FIELDS = ("filters", "condensed", "tab", "page")
+    _VIEW_FIELDS = ("filters", "condensed", "tab", "page", "search")
+    _SAVED_FIELDS = ("filters", "condensed", "tab", "page")
 
     def __init__(self) -> None:
         self.revision = 0
         self._loaded = False
         self._view = normalize_view({})
+        self._lock = threading.RLock()
         # The stored view could not be read (not merely empty): saves must merge
         # onto the stored copy instead of writing defaults over it.
         self._read_failed = False
@@ -1809,43 +412,50 @@ class ActivityFeedViewManager:
 
     def load(self) -> Dict[str, Any]:
         """Read ActivityFeedView once per process. Failures keep the defaults."""
-        if self._loaded:
+        with self._lock:
+            if self._loaded:
+                self._sync_state()
+                return self.snapshot()
+            self._loaded = True
+            try:
+                from ..database_manager import get_data, get_data_checked
+
+                raw = get_data(ACTIVITY_FEED_VIEW_PATH)
+                if not raw:
+                    # get_data returns {} for a failed read too; ask once more in a
+                    # way that tells the two apart.
+                    raw, ok = get_data_checked(ACTIVITY_FEED_VIEW_PATH)
+                    if not ok:
+                        self._read_failed = True
+                        raise RuntimeError("the read failed")
+                raw = raw or {}
+                if not isinstance(raw, dict):
+                    raise TypeError("ActivityFeedView document is not a dict")
+                view = normalize_view(raw)
+                view["search"] = ""
+                self._view = view
+            except Exception as exc:
+                logger.warning(
+                    "activity_feed: could not load saved view, using defaults: %s", exc
+                )
+                self._view = normalize_view({})
             self._sync_state()
             return self.snapshot()
-        self._loaded = True
-        try:
-            from ..database_manager import get_data, get_data_checked
-
-            raw = get_data(ACTIVITY_FEED_VIEW_PATH)
-            if not raw:
-                # get_data returns {} for a failed read too; ask once more in a
-                # way that tells the two apart.
-                raw, ok = get_data_checked(ACTIVITY_FEED_VIEW_PATH)
-                if not ok:
-                    self._read_failed = True
-                    raise RuntimeError("the read failed")
-            raw = raw or {}
-            if not isinstance(raw, dict):
-                raise TypeError("ActivityFeedView document is not a dict")
-            self._view = normalize_view(raw)
-        except Exception as exc:
-            logger.warning(
-                "activity_feed: could not load saved view, using defaults: %s", exc
-            )
-            self._view = normalize_view({})
-        self._sync_state()
-        return self.snapshot()
 
     def snapshot(self) -> Dict[str, Any]:
         """Return the live view plus its revision."""
-        view = self._view
-        return {
-            "revision": self.revision,
-            "filters": dict(view["filters"]),
-            "condensed": bool(view["condensed"]),
-            "tab": view["tab"],
-            "page": int(view["page"]),
-        }
+        with self._lock:
+            view = self._view
+            snap = {
+                "revision": self.revision,
+                "filters": dict(view["filters"]),
+                "condensed": bool(view["condensed"]),
+                "tab": view["tab"],
+                "page": int(view["page"]),
+                "search": str(view.get("search") or ""),
+            }
+        snap["mode"] = view_mode(snap)
+        return snap
 
     def _merge_onto_stored_view(self) -> bool:
         """After a failed load: re-read and keep this session's changes on top.
@@ -1861,10 +471,11 @@ class ActivityFeedViewManager:
             )
             return False
         base = normalize_view(raw if isinstance(raw, dict) and raw else {})
+        base["search"] = self._view.get("search", "")
         for field in self._unsaved_fields:
             base[field] = self._view[field]
         self._restored_fields = {
-            f for f in self._VIEW_FIELDS if base[f] != self._view[f]
+            f for f in self._SAVED_FIELDS if base[f] != self._view[f]
         }
         self._view = base
         self._read_failed = False
@@ -1872,20 +483,21 @@ class ActivityFeedViewManager:
         return True
 
     def save(self) -> bool:
-        """Persist filters, condensed mode, tab, and page. Revision stays in memory."""
-        if self._read_failed:
-            try:
-                if not self._merge_onto_stored_view():
+        """Persist filters, view and page. Revision and search stay in memory."""
+        with self._lock:
+            if self._read_failed:
+                try:
+                    if not self._merge_onto_stored_view():
+                        return False
+                except Exception as exc:
+                    logger.warning("activity_feed: could not save view: %s", exc)
                     return False
-            except Exception as exc:
-                logger.warning("activity_feed: could not save view: %s", exc)
-                return False
-        payload = {
-            "filters": dict(self._view["filters"]),
-            "condensed": bool(self._view["condensed"]),
-            "tab": self._view["tab"],
-            "page": int(self._view["page"]),
-        }
+            payload = {
+                "filters": dict(self._view["filters"]),
+                "condensed": bool(self._view["condensed"]),
+                "tab": self._view["tab"],
+                "page": int(self._view["page"]),
+            }
         try:
             from ..database_manager import set_data
 
@@ -1903,20 +515,23 @@ class ActivityFeedViewManager:
     ) -> Dict[str, Any]:
         """Merge a partial change, save it, and push it to both surfaces."""
         self.load()
-        changed = self._merge_patch(patch or {})
-        if not changed:
-            return self.snapshot()
-        self.revision += 1
-        if self._read_failed:
-            self._unsaved_fields |= changed & set(self._VIEW_FIELDS)
-        if not self.save():
+        with self._lock:
+            changed = self._merge_patch(patch or {})
+            if not changed:
+                return self.snapshot()
+            self.revision += 1
+            saved_change = bool(changed & set(self._SAVED_FIELDS))
+            if self._read_failed:
+                self._unsaved_fields |= changed & set(self._SAVED_FIELDS)
+        if saved_change and not self.save():
             _notify_view_not_saved()
-        if self._restored_fields:
-            # Stored fields brought back by a late successful read repaint too.
-            changed = changed | self._restored_fields
-            self._restored_fields = set()
-        self._sync_state()
-        snapshot = self.snapshot()
+        with self._lock:
+            if self._restored_fields:
+                # Stored fields brought back by a late successful read repaint too.
+                changed = changed | self._restored_fields
+                self._restored_fields = set()
+            self._sync_state()
+            snapshot = self.snapshot()
         if apply_desktop:
             _run_on_ui_loop(lambda: _apply_view_to_desktop(changed))
         if broadcast:
@@ -1932,23 +547,41 @@ class ActivityFeedViewManager:
             revision = int(snapshot.get("revision"))
         except (TypeError, ValueError):
             return False
-        if revision <= self.revision:
-            return False
-        self._view = normalize_view(snapshot)
-        self.revision = revision
-        if self._read_failed:
-            self._unsaved_fields |= set(self._VIEW_FIELDS)
+        with self._lock:
+            if revision <= self.revision:
+                return False
+            self._view = normalize_view(snapshot)
+            self.revision = revision
+            if self._read_failed:
+                self._unsaved_fields |= set(self._SAVED_FIELDS)
         if not self.save():
             _notify_view_not_saved()
-        self._sync_state()
+        with self._lock:
+            self._sync_state()
+        return True
+
+    def set_page_quietly(self, page: int) -> bool:
+        """Correct a stale page (history shrank) without a user-visible change event."""
+        with self._lock:
+            page = max(1, int(page))
+            if page == int(self._view["page"]):
+                return False
+            self._view = dict(self._view, page=page)
+            self.revision += 1
+            self._sync_state()
+        self.save()
         return True
 
     def _merge_patch(self, patch: Dict[str, Any]) -> set:
         """Apply one partial update. Returns the field names that changed."""
         if not isinstance(patch, dict):
             return set()
+        patch = dict(patch)
+        if patch.get("mode") in ("live", "history", "person"):
+            for key, value in mode_patch(patch["mode"]).items():
+                patch.setdefault(key, value)
         changed: set = set()
-        view = self._view
+        view = dict(self._view)
 
         if "condensed" in patch:
             condensed = _coerce_bool(patch.get("condensed"), bool(view["condensed"]))
@@ -1967,11 +600,16 @@ class ActivityFeedViewManager:
                 page = int(patch.get("page"))
             except (TypeError, ValueError):
                 page = int(view["page"])
-            if page < 1:
-                page = 1
+            page = min(max(page, 1), _max_history_pages())
             if page != int(view["page"]):
                 view["page"] = page
                 changed.add("page")
+
+        if "search" in patch:
+            search = normalize_search(patch.get("search"))
+            if search != view.get("search", ""):
+                view["search"] = search
+                changed.add("search")
 
         incoming_filters = patch.get("filters")
         if isinstance(incoming_filters, dict):
@@ -1987,15 +625,22 @@ class ActivityFeedViewManager:
                 view["filters"] = filters
                 changed.add("filters")
 
+        if changed:
+            self._view = view
         return changed
 
     def _sync_state(self) -> None:
-        """Copy the canonical view onto the fields the rest of the feed reads."""
-        activity_feed_state.filter_state.clear()
-        activity_feed_state.filter_state.update(self._view["filters"])
-        activity_feed_state.condense_list = bool(self._view["condensed"])
-        activity_feed_state.current_tab = self._view["tab"]
-        activity_feed_state.current_page = int(self._view["page"])
+        """Copy the canonical view onto the fields the rest of the feed reads.
+
+        Fresh objects are swapped in (never mutated in place) so a reader on another
+        thread never sees a half-updated filter dict.
+        """
+        view = self._view
+        activity_feed_state.filter_state = dict(view["filters"])
+        activity_feed_state.condense_list = bool(view["condensed"])
+        activity_feed_state.current_tab = view["tab"]
+        activity_feed_state.current_page = int(view["page"])
+        activity_feed_state.search_text = str(view.get("search") or "")
 
 
 view_manager = ActivityFeedViewManager()
@@ -2014,9 +659,11 @@ def broadcast_activity_feed_view(
         "condensed": bool(snapshot.get("condensed", False)),
         "tab": snapshot.get("tab", "current"),
         "page": int(snapshot.get("page", 1) or 1),
+        "search": str(snapshot.get("search") or ""),
     }
+    payload["mode"] = view_mode(payload)
     if include_live_alerts:
-        payload["live_alerts"] = serialize_live_alerts(activity_feed_state.live_alerts)
+        payload["live_alerts"] = serialize_live_alerts(live_alerts_snapshot())
     return _emit_overlay_event("activity_feed_view", payload, to=to)
 
 
@@ -2034,67 +681,6 @@ def _emit_overlay_event(event: str, payload: Dict[str, Any], *, to: Optional[str
         return False
 
 
-_pause_breath_timer = None
-
-
-def sync_pause_breath(playing: bool) -> None:
-    """Run the pause-button pulse only while an alert is playing."""
-    from ..ui_timer import run_on_ui_loop
-
-    run_on_ui_loop(lambda: _sync_pause_breath_ui(bool(playing)))
-
-
-def _sync_pause_breath_ui(playing: bool) -> None:
-    global _pause_breath_timer
-    btn = activity_feed_state.pause_btn
-    if not playing:
-        if _pause_breath_timer is not None:
-            try:
-                _pause_breath_timer.active = False
-            except Exception:
-                pass
-        if _element_alive(btn):
-            try:
-                btn.style("box-shadow: none")
-            except Exception:
-                pass
-        return
-    if not _element_alive(btn):
-        return
-    if _pause_breath_timer is None:
-        _pause_breath_timer = app_schedule(
-            0.5, _animate_pause_button_border, active=True
-        )
-    else:
-        try:
-            _pause_breath_timer.active = True
-        except Exception:
-            _pause_breath_timer = app_schedule(
-                0.5, _animate_pause_button_border, active=True
-            )
-
-
-def _animate_pause_button_border() -> None:
-    """Drive the playing-state border breathe via inline inset ring (CSS animation blocked by Quasar)."""
-    btn = activity_feed_state.pause_btn
-    if not _element_alive(btn):
-        return
-    try:
-        from modules import web_engine
-
-        if getattr(web_engine, "ALERTS_PAUSED", False):
-            btn.style("box-shadow: none")
-            return
-        activity_feed_state.pause_breath_phase = (
-            activity_feed_state.pause_breath_phase + 0.25
-        ) % 3.0
-        phase = activity_feed_state.pause_breath_phase / 3.0
-        alpha = 0.2 + 0.8 * (0.5 - 0.5 * math.cos(phase * math.pi * 2))
-        btn.style(f"box-shadow: inset 0 0 0 1px rgba(34, 197, 94, {alpha:.3f})")
-    except Exception as exc:
-        logger.debug("activity_feed: pause button breath update failed: %s", exc)
-
-
 def _notify_view_not_saved() -> None:
     """Filter / page changes still apply now but won't survive a restart."""
     notify(
@@ -2109,76 +695,169 @@ def _notify_view_not_saved() -> None:
     )
 
 
+# --------------------------------------------------------------------------- feed settings
+
+_legacy_hours_cache: Optional[int] = None
+
+
+def _legacy_person_hours() -> Optional[int]:
+    """The old dock setting (activity_feed.json condense_historical_hours), read once."""
+    global _legacy_hours_cache
+    if _legacy_hours_cache is None:
+        try:
+            _legacy_hours_cache = _load_condensed_historical_hours()
+        except Exception:
+            _legacy_hours_cache = 12
+    return _legacy_hours_cache
+
+
+def current_feed_settings(app_settings: Any = None) -> Dict[str, Any]:
+    """The feed look/behaviour settings (App Settings → Activity Feed), validated."""
+    if app_settings is None:
+        try:
+            from modules import dataobjects
+
+            sm = dataobjects.state_manager
+            # Never start a settings load (and a database connection) just to paint the feed.
+            app_settings = sm.get_app_settings() if getattr(sm, "_initialized", False) else None
+        except Exception as exc:
+            logger.debug("activity_feed: settings unavailable, using defaults: %s", exc)
+            app_settings = None
+    raw_hours = getattr(app_settings, "activity_feed_person_hours", 0) if app_settings is not None else 0
+    legacy = _legacy_person_hours() if not raw_hours else None
+    settings = normalize_feed_settings(app_settings, legacy_person_hours=legacy)
+    try:
+        settings["page_limit"] = max(1, int(getattr(app_settings, "activity_feed_limit", 20) or 20))
+        settings["max_pages"] = max(1, int(getattr(app_settings, "activity_feed_max_pages", 5) or 5))
+    except (TypeError, ValueError):
+        settings["page_limit"], settings["max_pages"] = 20, 5
+    return settings
+
+
+def broadcast_feed_settings(*, to: Optional[str] = None) -> Dict[str, Any]:
+    """Send the feed settings to the docks (all, or one sid)."""
+    settings = current_feed_settings()
+    _emit_overlay_event("activity_feed_settings", {"settings": settings}, to=to)
+    return settings
+
+
+def apply_feed_settings_changed(changed_keys: Optional[set] = None) -> None:
+    """A feed setting changed: repaint the tab and the docks straight away."""
+    settings = broadcast_feed_settings()
+    _push_slot("settings", settings)
+    if changed_keys and "person_hours" in changed_keys:
+        schedule_condensed_view_update("person_hours")
+
+
+def set_feed_setting(key: str, value: Any) -> bool:
+    """Store one feed setting in App Settings (saved now) and apply it live."""
+    if key not in FEED_SETTINGS:
+        raise ValueError(f"unknown feed setting {key!r}")
+    field = FEED_SETTINGS[key][0]
+    stored = feed_setting_value(key, value)
+    try:
+        from modules import dataobjects
+
+        sm = dataobjects.state_manager
+        if not sm.update_app_setting(field, stored):
+            return False
+        saved = bool(sm.save_changes())
+    except Exception as exc:
+        logger.error("activity_feed: could not save %s: %s", field, exc, exc_info=True)
+        return False
+    apply_feed_settings_changed({key})
+    return saved
+
+
+# --------------------------------------------------------------------------- UI loop glue
+
+
+def _run_on_ui_loop(fn: Callable[[], Any]) -> None:
+    """Marshal UI mutations onto NiceGUI's loop and into a live client slot."""
+
+    def _invoke() -> None:
+        client = None
+        host = _host
+        if host is not None and _element_alive(host.host):
+            try:
+                client = host.host.client
+            except Exception:
+                client = None
+        if client is None:
+            try:
+                from nicegui import Client
+
+                for inst in list(Client.instances.values()):
+                    if getattr(inst, "is_deleted", False):
+                        continue
+                    if getattr(inst, "has_socket_connection", False):
+                        client = inst
+                        break
+            except Exception:
+                client = None
+        try:
+            if client is not None:
+                with client:
+                    fn()
+            else:
+                fn()
+        except Exception as exc:
+            if _is_stale_client_error(exc):
+                logger.debug("activity_feed UI callback on a deleted client: %s", exc)
+                return
+            logger.error("activity_feed UI callback failed: %s", exc, exc_info=True)
+
+    run_on_ui_loop(_invoke)
+
+
 def _alert_kind(alert_data) -> str:
     kind = str((alert_data or {}).get("type") or "").replace("_", " ").strip()
     return kind or "alert"
 
 
+_REPLAY_REFUSALS = {
+    "missing_id": (
+        "It was saved without the details needed to play it again.",
+        "Replay works for alerts that were stored with their settings. Newer alerts can be replayed.",
+    ),
+    "not_found": (
+        "Its saved details were cleaned up or couldn't be read from the database.",
+        "Older alerts are trimmed by the Activity Feed history settings. Check Settings → Database if this happens for recent alerts.",
+    ),
+    "no_config": (
+        "There's no alert set up for this kind of event any more.",
+        "Set one up in the Alerts tab, then replay it again.",
+    ),
+}
+
+
 def replay_alert(alert_data):
-    """Replay a specific alert by fetching stored data directly from database"""
+    """Replay a played alert: original content, today's alert media (alertutils.replay_alert)."""
     try:
-        logger.debug(f"Replaying alert: {alert_data}")
+        from modules import alertutils
 
-        from modules import alert_processor, alertutils
-
-        # Get the alert ID from the alert data
-        alert_id = alert_data.get("alert_id")
-        if not alert_id:
-            logger.error("No alert_id found in alert data, cannot replay")
+        alert_id = (alert_data or {}).get("alert_id")
+        result = alertutils.replay_alert(alert_id)
+        if not result.get("ok"):
+            reason = result.get("reason") or "error"
+            body, hint = _REPLAY_REFUSALS.get(
+                reason,
+                ("", "Try again. If it keeps failing, copy the details and check the log."),
+            )
             notify(
-                "It was saved without the details needed to play it again.",
-                type="warning",
+                body,
+                type="warning" if reason in _REPLAY_REFUSALS else "error",
                 source="activity_feed",
-                title="This alert can't be replayed",
-                hint="Replay works for alerts that were stored with their settings. Newer alerts can be replayed.",
+                title="This alert can't be replayed" if reason in _REPLAY_REFUSALS else "Couldn't replay this alert",
+                hint=hint,
+                details=f"alert_id={alert_id} reason={reason}",
+                actions=nav_actions_settings("Database") if reason == "not_found" else None,
             )
-            return
+            return result
 
-        # First try to get stored alert data from the alert data itself (for current alerts)
-        stored_alert_data = alert_data.get("stored_alert_data")
-
-        # If not available in the alert data, fetch from database (for previous alerts)
-        if not stored_alert_data:
-            alertutils.alert_state_manager.initialize()
-            stored_alert_data = alertutils.alert_state_manager.get_stored_alert_by_id(
-                alert_id
-            )
-
-        if not stored_alert_data:
-            logger.error(f"No stored alert data found for alert_id: {alert_id}")
-            notify(
-                "Its saved details were cleaned up or couldn't be read from the database.",
-                type="warning",
-                source="activity_feed",
-                title="This alert can't be replayed",
-                hint="Older alerts are trimmed by the Activity Feed history settings. Check Settings → Database if this happens for recent alerts.",
-                details=f"alert_id={alert_id}",
-                actions=nav_actions_settings("Database"),
-            )
-            return
-
-        logger.debug(
-            f"Fetched stored alert data for replay: {list(stored_alert_data.keys())}"
-        )
-
-        replay_alert_obj = alertutils.build_replay_alert(stored_alert_data)
-
-        logger.debug(
-            f"Created replay AlertObj - type: {replay_alert_obj.alert_type}, "
-            f"gif_dir: {replay_alert_obj.gif_dir}, gif_name: {replay_alert_obj.gif_name}, "
-            f"audio_dir: {replay_alert_obj.single_audio_dir}, audio_name: {replay_alert_obj.single_audio_name}"
-        )
-
-        # Append the created AlertObj to the ALERT_QUEUE for processing
-        alert_processor.enqueue_alert(replay_alert_obj)
-        logger.debug(
-            f"Added replay alert to ALERT_QUEUE: {replay_alert_obj.alert_type} (ID: {replay_alert_obj.alert_id})"
-        )
-
-        # Show user feedback
         from modules import web_engine
 
-        if getattr(web_engine, "ALERTS_PAUSED", False):
+        if result.get("reason") == "queued" and getattr(web_engine, "ALERTS_PAUSED", False):
             notify(
                 f"The {_alert_kind(alert_data)} replay will play when you resume alerts.",
                 type="warning",
@@ -2190,6 +869,7 @@ def replay_alert(alert_data):
         elif getattr(web_engine, "web_engine_instance", None) is not None:
             # (If the overlay server is down, the alert queue reports the skipped alert.)
             notify("", type="info", source="activity_feed", title=f"Replaying the {_alert_kind(alert_data)} alert")
+        return result
 
     except Exception as e:
         logger.error(f"Error replaying alert: {str(e)}", exc_info=True)
@@ -2201,6 +881,7 @@ def replay_alert(alert_data):
             hint="Try again. If it keeps failing, copy the details and check the log.",
             details=f"{type(e).__name__}: {e}",
         )
+        return {"ok": False, "reason": "error", "new_alert_id": None}
 
 
 def extract_username_from_message(message):
@@ -2226,51 +907,33 @@ def extract_username_from_message(message):
 
 
 def skip_alert(alert_data):
-    """Skip a specific alert"""
+    """Skip the playing alert ({"type": "current"} / no id) or the alert with alert_id
+    (playing: stopped now; queued: removed). Uses web_engine.skip_current_alert."""
     try:
-        logger.debug(f"Skipping alert: {alert_data}")
-
-        # Method 1: Use web engine to skip current alert if it's playing
         from modules import web_engine
 
-        if not getattr(web_engine, "web_engine_instance", None):
+        alert_data = alert_data or {}
+        alert_id = alert_data.get("alert_id")
+        if alert_data.get("type") == "current":
+            alert_id = None
+        result = web_engine.skip_current_alert(alert_id, source="app")
+        if result.get("ok"):
+            kind = _alert_kind(alert_data)
+            if result.get("reason") == "removed_from_queue":
+                title = f"Removed the {kind} alert from the queue"
+            elif kind == "current":
+                title = "Skipped the current alert"
+            else:
+                title = f"Skipped the {kind} alert"
+            notify("", type="info", source="activity_feed", title=title)
+        elif result.get("reason") == "not_playing":
             notify(
                 "Nothing was skipped.",
-                type="warning",
+                type="info",
                 source="activity_feed",
-                title="The overlay server isn't running",
-                hint="Check the overlay server in the footer.",
+                title="That alert isn't playing",
             )
-            return
-        if (
-            hasattr(web_engine, "web_engine_instance")
-            and web_engine.web_engine_instance
-        ):
-            # Clean the alert data by removing non-serializable UI elements
-            clean_alert_data = {
-                key: value
-                for key, value in alert_data.items()
-                if key not in ["element", "new_badge", "timestamp_label"]
-                and not hasattr(value, "_classes")
-            }
-
-            # Overlay listens for alerts_skip_alert (connector skip uses the same event)
-            web_engine.web_engine_instance.safe_emit(
-                "alerts_skip_alert", clean_alert_data
-            )
-            web_engine.abort_alert_playback("skip")
-            logger.debug(
-                f"Sent skip request via websocket for alert: {clean_alert_data.get('type', 'Unknown')}"
-            )
-
-        # Method 2: If this is a queued alert, we could try to find and remove it from the queue
-        # However, since this is called from the activity feed (already processed alerts),
-        # we mainly just provide user feedback
-
-        # Show user feedback
-        kind = _alert_kind(alert_data)
-        title = "Skipped the current alert" if kind == "current" else f"Skipped the {kind} alert"
-        notify("", type="info", source="activity_feed", title=title)
+        return result
 
     except Exception as e:
         logger.error(f"Error skipping alert: {str(e)}", exc_info=True)
@@ -2282,6 +945,7 @@ def skip_alert(alert_data):
             hint="Try again. If the alert is stuck, pause and resume alerts.",
             details=f"{type(e).__name__}: {e}",
         )
+        return {"ok": False, "skipped_alert_id": None, "reason": "error"}
 
 
 def format_watch_streak_message(
@@ -2335,6 +999,27 @@ def _raid_category_suffix(game_name: Optional[str]) -> str:
     return "!"
 
 
+# Extra fields add_alert_to_feed callers may pass (YouTube, donations, raids ...).
+_PAYLOAD_EXTRA_FIELDS = frozenset(
+    {
+        "raider_count",
+        "game_name",
+        "source",
+        "donation_amount",
+        "currency",
+        "display_amount",
+        "donation_text",
+        "donation_source",
+        "member_level",
+        "is_supersticker",
+        "resub_month",
+        "months",
+        "amt_cheered",
+        "alert_name",
+    }
+)
+
+
 def build_activity_feed_alert_payload(
     alert_type,
     message,
@@ -2349,11 +1034,16 @@ def build_activity_feed_alert_payload(
     gift_qty=None,
     recipient=None,
     streak_count=None,
+    raider_count=None,
+    game_name=None,
+    username=None,
+    **extra,
 ):
     """
     Build the same dict that is sent over ``activity_feed_alert`` WebSocket events.
 
     Shared by ``add_alert_to_feed`` and browser-source preview so payloads stay identical.
+    The dict carries a precomputed ``row`` (see activity_feed_model.feed_row_model).
     """
     now = time.time()
     ts = (
@@ -2370,75 +1060,55 @@ def build_activity_feed_alert_payload(
         "tier": tier,
         "user_message": user_message,
     }
+    if username:
+        alert_data["username"] = str(username)
+    for key, value in extra.items():
+        if key in _PAYLOAD_EXTRA_FIELDS and value is not None and isinstance(value, (str, int, float, bool)):
+            alert_data[key] = value
 
-    if point_cost is not None:
-        try:
-            alert_data["point_cost"] = int(point_cost)
-        except (TypeError, ValueError):
-            pass
-
-    if level is not None:
-        try:
-            alert_data["level"] = int(level)
-        except (TypeError, ValueError):
-            pass
+    for key, value in (
+        ("point_cost", point_cost),
+        ("level", level),
+        ("gift_qty", gift_qty),
+        ("streak_count", streak_count),
+        ("raider_count", raider_count),
+    ):
+        if value is not None:
+            try:
+                alert_data[key] = int(str(value).replace(",", ""))
+            except (TypeError, ValueError):
+                pass
 
     if hype_train_type:
         alert_data["hype_train_type"] = str(hype_train_type).strip().lower()
-
-    if gift_qty is not None:
-        try:
-            alert_data["gift_qty"] = int(gift_qty)
-        except (TypeError, ValueError):
-            pass
-
+    if game_name:
+        alert_data["game_name"] = str(game_name)
     if recipient is not None:
         recip = str(recipient).strip()
         if recip:
             alert_data["recipient"] = recip
 
-    if streak_count is not None:
-        try:
-            alert_data["streak_count"] = int(streak_count)
-        except (TypeError, ValueError):
-            pass
-
     if alert_id:
+        alert_data["alert_id"] = alert_id
         try:
             alertutils.alert_state_manager.initialize()
             stored_alert_data = alertutils.alert_state_manager.get_stored_alert_by_id(
                 alert_id
             )
-
             if stored_alert_data:
-                logger.debug(
-                    f"Found stored alert data for live alert {alert_id}: {list(stored_alert_data.keys())}"
-                )
                 alert_data["stored_alert_data"] = stored_alert_data
-                alert_data["alert_id"] = alert_id
-
                 if isinstance(stored_alert_data, dict):
-                    if (
-                        "username" in stored_alert_data
-                        and stored_alert_data["username"]
-                    ):
+                    if stored_alert_data.get("username") and not alert_data.get("username"):
                         alert_data["username"] = stored_alert_data["username"]
-                    streak_count = stored_alert_data.get("streak_count")
-                    if streak_count is not None:
-                        try:
-                            alert_data["streak_count"] = int(streak_count)
-                        except (TypeError, ValueError):
-                            pass
-                    game_name = stored_alert_data.get("game_name")
-                    if game_name:
-                        alert_data["game_name"] = game_name
-                    point_cost = stored_alert_data.get("point_cost")
-                    if point_cost is not None and "point_cost" not in alert_data:
-                        try:
-                            alert_data["point_cost"] = int(point_cost)
-                        except (TypeError, ValueError):
-                            pass
+                    for field in ("streak_count", "point_cost", "raider_count"):
+                        value = stored_alert_data.get(field)
+                        if value is not None and field not in alert_data:
+                            try:
+                                alert_data[field] = int(str(value).replace(",", ""))
+                            except (TypeError, ValueError):
+                                pass
                     for field in (
+                        "game_name",
                         "resub_month",
                         "gift_qty",
                         "amt_cheered",
@@ -2450,21 +1120,21 @@ def build_activity_feed_alert_payload(
                         "original_currency",
                         "donation_text",
                         "donation_source",
+                        "alert_name",
+                        "source",
+                        "member_level",
+                        "display_amount",
+                        "is_supersticker",
+                        "emotes",
+                        "fragments",
                     ):
                         value = stored_alert_data.get(field)
-                        if value is not None and field not in alert_data:
-                            alert_data[field] = value
-                    for field in ("emotes", "fragments"):
-                        value = stored_alert_data.get(field)
-                        if value is not None and field not in alert_data:
+                        if value is not None and alert_data.get(field) is None:
                             alert_data[field] = value
             else:
-                logger.debug(f"No stored alert data found for alert_id {alert_id}")
-
+                logger.debug("No stored alert data found for alert_id %s", alert_id)
         except Exception as e:
-            logger.warning(
-                f"Error retrieving stored alert data for {alert_id}: {str(e)}"
-            )
+            logger.warning("Error retrieving stored alert data for %s: %s", alert_id, e)
 
     if not alert_data.get("username"):
         parsed = extract_username_from_message(message)
@@ -2477,6 +1147,7 @@ def build_activity_feed_alert_payload(
     if chat_media:
         alert_data["chat_media"] = chat_media
 
+    alert_data["row"] = feed_row_model(alert_data)
     return alert_data
 
 
@@ -2507,10 +1178,7 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
 
     if at == "follow":
         payload = build_activity_feed_alert_payload(
-            "Follow",
-            f"{username} just followed!",
-            "follow",
-            timestamp=ts,
+            "Follow", f"{username} just followed!", "follow", timestamp=ts
         )
     elif at == "sub":
         tier = random.choice((1, 2, 3))
@@ -2535,6 +1203,7 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
             timestamp=ts,
             tier=tier,
             user_message=f"{months} months strong!",
+            resub_month=months,
         )
     elif at in ("bit", "bits"):
         amount = random.choice((100, 500, 1000, 5000))
@@ -2545,6 +1214,7 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
             "bits",
             timestamp=ts,
             user_message="Loving the stream!",
+            amt_cheered=amount,
         )
     elif at == "giftsub":
         tier = random.choice((1, 2, 3))
@@ -2583,6 +1253,8 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
             format_raid_activity_message(username, count, game),
             "raid",
             timestamp=ts,
+            raider_count=count,
+            game_name=game,
         )
     elif at == "donation":
         amount = round(random.uniform(5.0, 50.0), 2)
@@ -2593,6 +1265,8 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
             "donation",
             timestamp=ts,
             user_message="Keep up the great work!",
+            donation_amount=amount,
+            currency="USD",
         )
     elif at in ("point", "points"):
         reward = random.choice(
@@ -2615,6 +1289,7 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
             format_watch_streak_message(username, count),
             "streak",
             timestamp=ts,
+            streak_count=count,
         )
     elif at in ("hype_train", "hypetrain"):
         hype_level = random.randint(1, 5)
@@ -2631,10 +1306,7 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
         )
     else:
         payload = build_activity_feed_alert_payload(
-            "Follow",
-            f"{username} just followed!",
-            "follow",
-            timestamp=ts,
+            "Follow", f"{username} just followed!", "follow", timestamp=ts
         )
 
     payload["username"] = username
@@ -2648,17 +1320,15 @@ def build_typed_activity_feed_preview_payload(alert_type: str) -> dict:
         payload["chat_media"] = chat_media
         stored_alert_data.update(chat_media)
         payload["stored_alert_data"] = stored_alert_data
-
+    payload["row"] = feed_row_model(payload)
     return payload
 
 
 def iter_activity_feed_preview_payloads():
     """Sample alerts matching production-style messages (Custom Sources iframe only).
 
-    Produces a varied stream of alerts whose ``type`` and ``badge_type`` values
-    match what the live ``add_alert_to_feed`` callers in ``modules/twitch.py``
-    emit, so the previewer card styling (badge color, tier ring, etc.) matches
-    the real Activity Feed exactly.
+    Produces a varied stream of alerts whose ``type`` and ``badge_type`` values match what
+    the live ``add_alert_to_feed`` callers emit, so the preview matches the real feed.
     """
     import random
 
@@ -2675,10 +1345,7 @@ def iter_activity_feed_preview_payloads():
 
     follow_user = pick()
     yield build_activity_feed_alert_payload(
-        "Follow",
-        f"{follow_user} just followed!",
-        "follow",
-        timestamp=ts,
+        "Follow", f"{follow_user} just followed!", "follow", timestamp=ts
     )
 
     sub_user = pick()
@@ -2702,6 +1369,7 @@ def iter_activity_feed_preview_payloads():
         timestamp=ts,
         tier=resub_tier,
         user_message=f"{resub_months} months strong!",
+        resub_month=resub_months,
     )
 
     bits_user = pick()
@@ -2712,23 +1380,21 @@ def iter_activity_feed_preview_payloads():
         "bits",
         timestamp=ts,
         user_message="Loving the stream!",
+        amt_cheered=bits_amount,
     )
 
     raid_user = pick()
-    raid_count = random.randint(5, 250)
-    raid_games = (
-        "Just Chatting",
-        "Final Fantasy VII",
-        "Hollow Knight: Silksong",
-        "League of Legends",
+    raid_count = random.randint(5, 2500)
+    raid_game = random.choice(
+        ("Just Chatting", "Final Fantasy VII", "Hollow Knight: Silksong", "League of Legends")
     )
     yield build_activity_feed_alert_payload(
         "Raid",
-        format_raid_activity_message(
-            raid_user, raid_count, random.choice(raid_games)
-        ),
+        format_raid_activity_message(raid_user, raid_count, raid_game),
         "raid",
         timestamp=ts,
+        raider_count=raid_count,
+        game_name=raid_game,
     )
 
     gift_user = pick()
@@ -2737,9 +1403,7 @@ def iter_activity_feed_preview_payloads():
     gift_recipient = None
     if gift_qty == 1:
         gift_recipient = pick()
-        gift_msg = (
-            f"{gift_user} gifted a Tier {gift_tier} sub to {gift_recipient}!"
-        )
+        gift_msg = f"{gift_user} gifted a Tier {gift_tier} sub to {gift_recipient}!"
     else:
         gift_msg = f"{gift_user} gifted {gift_qty} Tier {gift_tier} subs!"
     yield build_activity_feed_alert_payload(
@@ -2759,7 +1423,7 @@ def iter_activity_feed_preview_payloads():
         "Pick the next song",
         "Take a 5min break",
     ))
-    points_payload = build_activity_feed_alert_payload(
+    yield build_activity_feed_alert_payload(
         "Points",
         f"{points_user} redeemed '{point_reward}'!",
         "points",
@@ -2767,7 +1431,6 @@ def iter_activity_feed_preview_payloads():
         user_message=None,
         point_cost=random.choice((100, 250, 500, 1100, 2500, 5000)),
     )
-    yield points_payload
 
     streak_user = pick()
     streak_count = random.randint(2, 50)
@@ -2776,7 +1439,7 @@ def iter_activity_feed_preview_payloads():
         format_watch_streak_message(streak_user, streak_count),
         "streak",
         timestamp=ts,
-        user_message=f"{streak_count} streams in a row!",
+        streak_count=streak_count,
     )
 
     hype_user = pick()
@@ -2818,21 +1481,23 @@ def add_alert_to_feed(
     recipient=None,
     always_broadcast_html=False,
     streak_count=None,
+    username=None,
+    **kwargs,
 ):
-    """Add a new alert card to the activity feed container.
+    """Add a new event to the Activity Feed (tab and OBS dock).
 
     Args:
-        alert_type (str): The type of alert (e.g., "Follow", "Channel Points", "Bits")
+        alert_type (str): Display type ("Follow", "Bits", "Super Chat" ...)
         message (str): The alert message text
-        badge_type (str): The type of badge to show (affects styling)
-        timestamp (str or float): When the alert occurred, can be "now" or a Unix timestamp
-        tier (int, optional): The tier level for subscriptions (1, 2, or 3)
-        user_message (str, optional): User's message for resubs, bits, points, or donations
-        alert_id (str, optional): The alert ID to look up stored alert data
-        gift_qty (int, optional): Number of gift subs (giftsub alerts)
-        recipient (str, optional): Gift recipient username (single gifts)
-        always_broadcast_html (bool): Kept for callers. The overlay always receives
-            the alert so both feeds stay on the same list.
+        badge_type (str): Event key used for the icon / colour ("follow", "superchat" ...)
+        timestamp (str or float): "now" or a Unix timestamp
+        tier (int, optional): Subscription tier (1-3)
+        user_message (str, optional): The viewer's message
+        alert_id (str, optional): Stored alert id (replay, queue matching)
+        username (str, optional): Who triggered it (YouTube passes this; otherwise parsed)
+        always_broadcast_html (bool): Kept for callers; the dock always gets the alert.
+        **kwargs: Extra known fields (raider_count, game_name, donation_amount, currency,
+            source ...). Unknown keys are ignored so callers can't break the feed.
     """
     alert_data = build_activity_feed_alert_payload(
         alert_type,
@@ -2848,1474 +1513,143 @@ def add_alert_to_feed(
         gift_qty=gift_qty,
         recipient=recipient,
         streak_count=streak_count,
+        username=username,
+        **kwargs,
     )
+    seq = _next_seq()
+    alert_data["seq"] = seq
+    if isinstance(alert_data.get("row"), dict):
+        alert_data["row"]["seq"] = seq
 
-    # Process the alert immediately using the event-based system
+    # Into the shared list first, then tell the dock: a resync in between can't drop it.
     alert_event_handler.process_alert_immediately(alert_data)
 
-    # Both surfaces share the live list, including while Previous Alerts is selected.
     try:
         from modules import web_engine
 
-        if (
-            hasattr(web_engine, "web_engine_instance")
-            and web_engine.web_engine_instance
-        ):
-            web_engine.web_engine_instance.activity_feed_alert(alert_data)
-            logger.debug(
-                f"Sent alert to activity feed HTML template via websocket: {alert_type}"
-            )
+        engine = getattr(web_engine, "web_engine_instance", None)
+        if engine:
+            engine.activity_feed_alert(serialize_live_alert(alert_data))
     except Exception as e:
-        logger.error(
-            f"Error sending alert to activity feed HTML template: {str(e)}",
-            exc_info=True,
-        )
-
-
-# Legacy functions removed - replaced by event-based system
-# The following functions are no longer needed with the event-based approach:
-# - update_recent_status() -> replaced by AlertEventHandler._update_timestamps_and_recent_status()
-# - start_status_updater() -> replaced by AlertEventHandler._trigger_timestamp_update()
-# - stop_status_updater() -> replaced by AlertEventHandler.shutdown()
-# - process_alert_queue() -> replaced by AlertEventHandler.process_alert_immediately()
-# - start_alert_processor() -> no longer needed (events are processed immediately)
-# - stop_alert_processor() -> replaced by AlertEventHandler.shutdown()
+        logger.error("Error sending alert to the activity feed dock: %s", e, exc_info=True)
 
 
 def start_alert_processor():
-    """Start the event-based alert processor (replaces old queue-based system)"""
-    logger.debug("Event-based alert processor is always ready - no startup needed")
+    """Kept for callers: new alerts are handled as they arrive."""
+    logger.debug("Activity feed is event driven - nothing to start")
 
 
 def stop_alert_processor():
-    """Stop the event-based alert processor"""
+    """Stop accepting feed updates (shutdown)."""
     alert_event_handler.shutdown()
-    logger.debug("Stopped event-based alert processor")
-
-
-def rebuild_alert_feed():
-    """Rebuild the entire alert feed to ensure proper ordering and styling"""
-    try:
-        container = activity_feed_state.activity_feed_container
-        if not _element_alive(container):
-            _handle_stale_client("rebuild_alert_feed: container dead")
-            return
-
-        for alert_data in activity_feed_state.alert_elements:
-            alert_data["element"] = None
-            alert_data["new_badge"] = None
-            alert_data["timestamp_label"] = None
-
-        container.clear()
-
-        for alert_data in activity_feed_state.alert_elements:
-            if not create_alert_element(alert_data):
-                return
-
-        if _element_alive(container):
-            container.update()
-
-    except Exception as e:
-        if _is_stale_client_error(e):
-            _handle_stale_client(f"rebuild_alert_feed: {e}")
-        else:
-            logger.error(f"Error rebuilding alert feed: {str(e)}", exc_info=True)
-
-
-def rebuild_current_alerts_feed():
-    """Rebuild the current alerts feed, showing only live alerts"""
-    try:
-        container = activity_feed_state.current_alerts_container
-        if not _element_alive(container):
-            _handle_stale_client("rebuild_current_alerts_feed: container dead")
-            return
-
-        _null_live_alert_element_refs()
-        container.clear()
-
-        for alert_data in activity_feed_state.live_alerts:
-            if not create_alert_element(alert_data):
-                return
-
-        if _element_alive(container):
-            container.update()
-
-        logger.debug(
-            f"Rebuilt current alerts feed with {len(activity_feed_state.live_alerts)} live alerts"
-        )
-        schedule_feed_integrity_check("rebuild_current_alerts_feed")
-
-    except Exception as e:
-        if _is_stale_client_error(e):
-            _handle_stale_client(f"rebuild_current_alerts_feed: {e}")
-        else:
-            logger.error(f"Error rebuilding current alerts feed: {str(e)}", exc_info=True)
-
-
-def create_alert_element(alert_data) -> bool:
-    """Create a single alert element in the feed.
-
-    Returns:
-        False if the client is stale (caller should abort the rebuild).
-        True if the card was created or skipped due to a payload/render error.
-    """
-    try:
-        is_restored = alert_data.get("is_restored", False)
-
-        if is_restored:
-            target_container = activity_feed_state.previous_alerts_container
-        else:
-            target_container = activity_feed_state.current_alerts_container
-
-        if not _element_alive(target_container):
-            _handle_stale_client("create_alert_element: container dead")
-            return False
-
-        # Recalculate if the alert is recent (within last 5 minutes) based on current time
-        current_time = time.time()
-        created_time = alertutils.safe_alert_timestamp(
-            alert_data.get("created_at"), default=current_time
-        )
-        is_recent = (
-            current_time - created_time
-        ) < 300 and not is_restored  # 5 minutes, but never for restored alerts
-
-        # Update the alert data with the current recent status
-        alert_data["is_recent"] = is_recent
-
-        # Build class list
-        classes = ["alert-card", "w-full", "hover-parent"]
-        if is_restored:
-            classes.append("restored")
-        if is_recent:
-            classes.append("recent")
-
-        # Create the alert element
-        with target_container:
-            alert_element = ui.element("div").classes(" ".join(classes))
-
-        # Store element reference
-        alert_data["element"] = alert_element
-
-        # Build the alert content
-        with alert_element:
-            # Add "new" badge for recent alerts (but not for restored alerts)
-            new_badge = ui.label("NEW").classes("new-badge")
-            if not is_recent or is_restored:
-                new_badge.classes(add="hidden")
-            alert_data["new_badge"] = new_badge
-
-            # Container for both main alert and user message
-            with ui.element("div").classes("w-full relative"):
-                # Main alert row
-                with ui.row().classes("w-full h-[40px] items-center px-2"):
-                    # Left side with badge and message
-                    with ui.row().classes("h-full items-center gap-2"):
-                        # Apply tier-specific classes for subscriptions and resubscriptions
-                        badge_classes = f"badge {alert_data.get('badge_type', 'follow')} h-[24px] flex items-center"
-                        if alert_data.get("tier") in [2, 3] and alert_data.get(
-                            "badge_type"
-                        ) in ["sub", "resub"]:
-                            badge_classes += f" tier{alert_data['tier']}"
-
-                        ui.label(str(alert_data.get("type") or "Alert")).classes(
-                            badge_classes
-                        )
-
-                        # Combine main message and user message if present
-                        display_message = html.escape(
-                            str(alert_data.get("message") or "")
-                        )
-                        user_message = alert_data.get("user_message")
-                        if user_message:
-                            # Wrap user message in span with gray color and keep italics
-                            display_message += (
-                                " - <span class='secondary-text'>*"
-                                f"{html.escape(str(user_message))}*</span>"
-                            )
-
-                        ui.markdown(display_message).classes(
-                            "text-sm"
-                        )  # Use markdown for italics
-
-                # Timestamp (positioned at far right edge)
-                with ui.row().classes("timestamp-container"):
-                    timestamp_label = ui.label(
-                        format_timestamp(alert_data.get("timestamp", "now"))
-                    ).classes("timestamp")
-                    alert_data["timestamp_label"] = timestamp_label
-
-                # Action buttons (absolutely positioned)
-                with ui.row().classes("action-buttons hover-child opacity-0"):
-                    # Replay button
-                    ui.button(
-                        icon="replay", on_click=lambda a=alert_data: replay_alert(a)
-                    ).classes(
-                        "replay-button h-[24px] w-[24px] min-w-[24px] flex items-center justify-center"
-                    ).tooltip("Replay Alert")
-
-                    # Skip button
-                    ui.button(
-                        icon="skip_next",
-                        on_click=lambda e, a=alert_data: skip_alert(
-                            {"type": a["type"], "message": a["message"]}
-                        ),
-                    ).classes(
-                        "replay-button h-[24px] w-[24px] min-w-[24px] flex items-center justify-center"
-                    ).tooltip("Skip Alert")
-
-        return True
-
-    except Exception as e:
-        if _is_stale_client_error(e):
-            _handle_stale_client(f"create_alert_element: {e}")
-            return False
-        alert_id = None
-        alert_type = None
-        if isinstance(alert_data, dict):
-            alert_id = alert_data.get("alert_id")
-            alert_type = alert_data.get("type") or alert_data.get("alert_type")
-        logger.error(
-            "Error creating alert element (alert_id=%s type=%s): %s",
-            alert_id,
-            alert_type,
-            e,
-            exc_info=True,
-        )
-        # Skip this card so a cleared rebuild is not left blank.
-        return True
-
-
-def _alert_search_query() -> str:
-    """Lowercased username/message query for the activity feed. Empty shows all."""
-    return (getattr(activity_feed_state, "search_text", "") or "").strip().lower()
-
-
-def _alert_matches_type_filter(
-    alert_data: Dict[str, Any], filter_state: Optional[Dict[str, Any]] = None
-) -> bool:
-    """True when the event type is included by the feed filter checkboxes."""
-    if filter_state is None:
-        filter_state = activity_feed_state.filter_state
-    display_type = alert_data.get("type", "")
-    filter_key = activity_feed_state.alert_type_to_filter.get(display_type)
-    return bool(
-        filter_state.get("all", True)
-        or (filter_key and filter_state.get(filter_key, True))
-    )
-
-
-def _alert_matches_search(alert_data: Dict[str, Any], query: Optional[str] = None) -> bool:
-    """True when username, message, or the user's note contains the query."""
-    if query is None:
-        query = _alert_search_query()
-    if not query:
-        return True
-    haystack = " ".join(
-        str(alert_data.get(key) or "")
-        for key in ("username", "message", "user_message")
-    ).lower()
-    return query in haystack
-
-
-def _card_should_show(alert_data: Dict[str, Any]) -> bool:
-    return _alert_matches_type_filter(alert_data) and _alert_matches_search(alert_data)
-
-
-def update_alert_visibility():
-    """Show cards that match the event filters and the username/message search."""
-    # Store the current dropdown visibility state
-    dropdown_was_visible = activity_feed_state.dropdown_visible
-
-    # Update visibility for both live alerts and historical alerts
-    alerts_to_process = []
-
-    # Add live alerts if we're on current tab or need to update them
-    if activity_feed_state.current_tab == "current":
-        alerts_to_process.extend(activity_feed_state.live_alerts)
-
-    # Add historical alerts if we're on previous tab or need to update them
-    if activity_feed_state.current_tab == "previous":
-        alerts_to_process.extend(activity_feed_state.alert_elements)
-
-    # Batch process alerts for better performance
-    updates_needed = 0
-
-    for alert_data in alerts_to_process:
-        element = alert_data.get("element")
-        if not _element_alive(element):
-            continue
-
-        should_show = _card_should_show(alert_data)
-        current_hidden = "hidden" in getattr(element, "_classes", [])
-        if should_show and not current_hidden:
-            continue
-        if not should_show and current_hidden:
-            continue
-
-        if should_show:
-            element.classes(remove="hidden")
-            element.classes(add="visible")
-            element.style("display: block")
-        else:
-            element.classes(remove="visible")
-            element.classes(add="hidden")
-            element.style("display: none")
-        updates_needed += 1
-
-    # Only update UI if we actually made changes
-    if updates_needed > 0:
-        container = (
-            activity_feed_state.current_alerts_container
-            if activity_feed_state.current_tab == "current"
-            else activity_feed_state.previous_alerts_container
-        )
-        if _element_alive(container):
-            container.update()
-        logger.debug(
-            f"Updated visibility for {updates_needed} alerts on {activity_feed_state.current_tab} tab"
-        )
-
-    # Restore the dropdown visibility state if it was visible before
-    if dropdown_was_visible:
-        activity_feed_state.dropdown_visible = True
-        # Find the filter dropdown element and restore its visibility
-        if activity_feed_state.filter_dropdown:
-            activity_feed_state.filter_dropdown.visible = True
-
-
-def close_filter_dropdown():
-    """Close the filter dropdown (called from backdrop click handler)"""
-    try:
-        activity_feed_state.dropdown_visible = False
-        if activity_feed_state.filter_dropdown:
-            activity_feed_state.filter_dropdown.visible = False
-        if activity_feed_state.backdrop:
-            activity_feed_state.backdrop.style("display: none;")
-
-        logger.debug("Closed filter dropdown via backdrop click")
-    except Exception as e:
-        logger.error(f"Error closing filter dropdown: {str(e)}", exc_info=True)
-
-
-def _condensed_filters_visible() -> bool:
-    """Event filters and search stay available on both card and condensed feeds."""
-    return activity_feed_state.current_tab in ("current", "previous")
-
-
-def _sync_filter_controls() -> None:
-    """Keep the filter and search controls on screen for the active feed."""
-    host = getattr(activity_feed_state, "filter_host", None)
-    search = getattr(activity_feed_state, "search_input", None)
-    visible = _condensed_filters_visible()
-    for element in (host, search):
-        if not _element_alive(element):
-            continue
-        if visible:
-            element.classes(remove="hidden")
-        else:
-            element.classes(add="hidden")
-    if not visible:
-        close_filter_dropdown()
-
-
-def _on_feed_search_change(event) -> None:
-    """Filter cards and the condensed list by username or message."""
-    if _ignore_view_apply:
-        return
-    activity_feed_state.search_text = (getattr(event, "value", None) or "").strip()
-    update_alert_visibility()
-    if (
-        activity_feed_state.condense_list
-        and activity_feed_state.current_tab == "current"
-    ):
-        schedule_condensed_view_update("search")
-
-
-def on_checkbox_change(key, value):
-    """Handle checkbox state changes"""
-    if _ignore_view_apply:
-        return
-    logger.debug(f"Checkbox changed: {key} = {value}")
-    view_manager.update({"filters": {key: bool(value)}})
-
-
-def create_activity_feed_tab():
-    """Create the activity feed tab UI"""
-    logger.debug("Creating activity feed tab...")
-
-    # The shared view survives client reloads and is what both feeds open on.
-    view_manager.load()
-    activity_feed_state.dropdown_visible = False
-
-    # Add the hover CSS once at the top level
-    ui.add_head_html(
-        """
-        <style>
-        .hover-child {
-            transition: opacity 0.2s ease-in-out;
-            opacity: 0;
-            z-index: 10;
-            pointer-events: auto;
-        }
-        .hover-parent:hover .hover-child {
-            opacity: 1 !important;
-        }
-        .hover-parent {
-            position: relative;
-        }
-        .replay-button {
-            padding: 4px !important;
-            height: 24px !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            background-color: var(--color-hover-overlay) !important;
-            border: 1px solid var(--color-border-default) !important;
-            color: var(--color-text-primary) !important;
-            border-radius: 4px !important;
-            cursor: pointer !important;
-            transition: all 0.2s ease !important;
-            line-height: 1 !important;
-        }
-        .replay-button:hover {
-            background-color: var(--color-active-overlay) !important;
-            border-color: var(--color-border-default) !important;
-            transform: scale(1.05) !important;
-        }
-        .alert-card {
-            position: relative;
-            border-radius: 8px;
-            padding: 8px;
-            margin-bottom: 8px;
-            background-color: var(--color-bg-surface);
-            border: 1px solid var(--color-border-subtle);
-            transition: background-color 0.2s ease;
-        }
-        .alert-card:hover {
-            background-color: var(--color-hover-overlay);
-        }
-        /* Badge styling for different alert types */
-        .badge {
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            border: 1px solid;
-            transition: all 0.3s ease;
-        }
-        
-        /* Follow alerts */
-        .badge.follow {
-            background: var(--color-primary);
-            color: white;
-            border-color: var(--color-primary);
-        }
-        
-        /* Subscription alerts */
-        .badge.sub, .badge.resub {
-            background: var(--color-info);
-            color: white;
-            border-color: var(--color-info);
-        }
-        .badge.sub.tier2, .badge.resub.tier2 {
-            background: var(--color-error);
-            border-color: var(--color-error);
-        }
-        .badge.sub.tier3, .badge.resub.tier3 {
-            background: var(--color-warning);
-            border-color: var(--color-warning);
-        }
-        
-        /* Badge animations - only on hover and when visible */
-        .alert-card:hover .badge:not(.not-visible) {
-            animation: badgePulse 3s infinite;
-        }
-        
-        .alert-card:hover .badge.sub.tier2:not(.not-visible), 
-        .alert-card:hover .badge.resub.tier2:not(.not-visible) {
-            animation: badgePulse 3s infinite, tier2Glow 2s infinite;
-        }
-        
-        .alert-card:hover .badge.sub.tier3:not(.not-visible), 
-        .alert-card:hover .badge.resub.tier3:not(.not-visible) {
-            animation: badgePulse 3s infinite, tier3Glow 2s infinite;
-        }
-        
-        @keyframes badgePulse {
-            0% {
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 3px rgba(255, 255, 255, 0.1);
-            }
-            50% {
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 6px rgba(255, 255, 255, 0.2);
-            }
-            100% {
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 3px rgba(255, 255, 255, 0.1);
-            }
-        }
-        
-        @keyframes tier2Glow {
-            0% {
-                border-color: rgba(255, 255, 255, 0.3);
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 5px rgba(255, 255, 255, 0.2);
-            }
-            50% {
-                border-color: rgba(0, 188, 212, 0.5);
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 8px rgba(0, 188, 212, 0.4);
-            }
-            100% {
-                border-color: rgba(255, 255, 255, 0.3);
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 5px rgba(255, 255, 255, 0.2);
-            }
-        }
-        
-        @keyframes tier3Glow {
-            0% {
-                border-color: rgba(255, 255, 255, 0.3);
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 5px rgba(255, 255, 255, 0.2);
-            }
-            50% {
-                border-color: rgba(255, 215, 0, 0.6);
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 12px rgba(255, 215, 0, 0.6);
-            }
-            100% {
-                border-color: rgba(255, 255, 255, 0.3);
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 5px rgba(255, 255, 255, 0.2);
-            }
-        }
-        
-        /* Gift subscription alerts */
-        .badge.giftsub {
-            background: var(--color-success);
-            color: white;
-            border-color: var(--color-success);
-        }
-        
-        /* Watch streak alerts */
-        .badge.streak {
-            background-color: rgba(217, 119, 6, 0.2) !important;
-            color: #fbbf24 !important;
-            border: 1px solid rgba(245, 158, 11, 0.35) !important;
-        }
-
-        /* Modiversary alerts */
-        .badge.modiversary {
-            background-color: rgba(14, 165, 233, 0.2) !important;
-            color: #7dd3fc !important;
-            border: 1px solid rgba(14, 165, 233, 0.35) !important;
-        }
-        
-        /* Bits alerts */
-        .badge.bits {
-            background: var(--color-warning);
-            color: white;
-            border-color: var(--color-warning);
-        }
-        
-        /* Channel points alerts */
-        .badge.points {
-            background: var(--color-error);
-            color: white;
-            border-color: var(--color-error);
-        }
-        
-        /* Donation alerts */
-        .badge.donation {
-            background: var(--color-success);
-            color: white;
-            border-color: var(--color-success);
-        }
-        
-        /* Raid alerts */
-        .badge.raid {
-            background: var(--color-error);
-            color: white;
-            border-color: var(--color-error);
-        }
-        
-        /* Hype train alerts */
-        .badge.hype_train {
-            background: var(--color-primary);
-            color: white;
-            border-color: var(--color-primary);
-        }
-
-        /* YouTube-native badges */
-        .badge.membership {
-            background: var(--color-info);
-            color: white;
-            border-color: var(--color-info);
-        }
-        .badge.member_milestone {
-            background: var(--color-info);
-            color: white;
-            border-color: var(--color-info);
-        }
-        .badge.gift_membership {
-            background: #e91e63;
-            color: white;
-            border-color: #e91e63;
-        }
-        .badge.superchat {
-            background: var(--color-success);
-            color: white;
-            border-color: var(--color-success);
-        }
-        .badge.supersticker {
-            background: #ff9800;
-            color: white;
-            border-color: #ff9800;
-        }
-        
-        /* NEW badge styling */
-        .new-badge {
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            background: var(--color-primary);
-            color: white;
-            font-size: 0.625rem;
-            font-weight: 600;
-            padding: 2px 6px;
-            border-radius: 3px;
-            border: 1px solid rgba(115, 0, 255, 0.6);
-            z-index: 5;
-            text-transform: uppercase;
-            letter-spacing: 0.025em;
-            display: inline-block;
-            width: auto;
-            height: auto;
-            max-width: fit-content;
-            backdrop-filter: blur(4px);
-        }
-        
-        /* Restored alert styling - muted appearance with animations disabled */
-        .alert-card.restored {
-            opacity: 0.7;
-            background-color: rgba(255, 255, 255, 0.02);
-            /* Disable all animations and transitions for performance */
-            transition: none !important;
-            animation: none !important;
-            transform: none !important;
-        }
-        .alert-card.restored .badge {
-            background: linear-gradient(to bottom, rgba(128, 128, 128, 0.1), rgba(96, 96, 96, 0.2)) !important;
-            color: rgba(255, 255, 255, 0.6) !important;
-            border: 1px solid rgba(128, 128, 128, 0.3) !important;
-            /* Disable badge animations */
-            transition: none !important;
-            animation: none !important;
-            transform: none !important;
-        }
-        .alert-card.restored:hover {
-            background-color: rgba(255, 255, 255, 0.05);
-            /* Disable hover animations */
-            transition: none !important;
-            transform: none !important;
-        }
-        
-        /* Disable all animations and transitions for restored alert children */
-        .alert-card.restored *,
-        .alert-card.restored *:before,
-        .alert-card.restored *:after {
-            transition: none !important;
-            animation: none !important;
-            transform: none !important;
-        }
-        
-        /* Specifically disable hover effects on restored alert buttons */
-        .alert-card.restored .replay-button {
-            transition: none !important;
-            animation: none !important;
-        }
-        .alert-card.restored .replay-button:hover {
-            transition: none !important;
-            transform: none !important;
-            background-color: rgba(255, 255, 255, 0.25) !important;
-        }
-        
-        /* Disable hover child animations for restored alerts */
-        .alert-card.restored .hover-child {
-            transition: none !important;
-            animation: none !important;
-        }
-
-        /* Ensure action buttons are properly centered in restored alerts */
-        .alert-card.restored .action-buttons {
-            position: absolute !important;
-            right: 120px !important;
-            top: 50% !important;
-            transform: translateY(-50%) !important;
-            display: flex !important;
-            align-items: center !important;
-            gap: 4px !important;
-            z-index: 10 !important;
-        }
-
-        /* Ensure replay buttons are properly sized and centered in restored alerts */
-        .alert-card.restored .replay-button {
-            height: 24px !important;
-            width: 24px !important;
-            min-width: 24px !important;
-            padding: 4px !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            line-height: 1 !important;
-        }
-        .alert-card.restored:hover .hover-child {
-            transition: none !important;
-            animation: none !important;
-        }
-        
-        /* Condense toggle styling */
-        .condense-toggle {
-            margin-left: 16px;
-        }
-        .condense-toggle .q-field__label {
-            color: rgba(255, 255, 255, 0.9) !important;
-            font-size: 13px !important;
-            font-weight: 500 !important;
-        }
-        .condense-toggle .q-toggle__inner {
-            color: var(--color-primary) !important;
-        }
-        .condense-toggle .q-toggle__inner--truthy {
-            color: var(--color-primary) !important;
-        }
-        
-        /* Condensed view styling */
-        .condensed-view {
-            padding: 8px;
-            background: rgba(255, 255, 255, 0.02);
-            border-radius: 6px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        .condensed-view .user-group {
-            margin-bottom: 16px;
-            padding: 8px;
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 4px;
-            border-left: 3px solid var(--color-primary);
-        }
-        .condensed-view .username {
-            font-weight: 600;
-            color: white;
-            margin-bottom: 4px;
-        }
-        .condensed-view .alert-item {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 14px;
-            margin-left: 16px;
-            margin-bottom: 2px;
-        }
-        .condensed-view .alert-item::before {
-            content: "•";
-            color: rgba(115, 0, 255, 0.8);
-            margin-right: 8px;
-        }
-        /* One visibility switch: default and unknown states keep the regular
-           feed. Visibility only, no height or flex sizing — the condensed list
-           flows and scrolls in .scroll-content exactly like the regular feed,
-           which avoids depending on percentage heights resolving against an
-           indefinite flex parent. */
-        .activity-feed-surfaces[data-view="condensed"] .activity-feed-current {
-            display: none !important;
-        }
-        .activity-feed-surfaces:not([data-view="condensed"]) .activity-feed-condensed {
-            display: none !important;
-        }
-        .activity-feed-surfaces[data-view="condensed"] .activity-feed-condensed {
-            display: block !important;
-            position: relative;
-            z-index: 6;
-        }
-        .mycelian-main-tab-shell:has(.activity-feed-surfaces[data-view="condensed"]) {
-            flex-direction: column !important;
-            flex-wrap: nowrap !important;
-        }
-        .mycelian-main-tab-shell:has(.activity-feed-surfaces[data-view="condensed"]) > .main-content {
-            left: auto !important;
-            margin-left: 0 !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            min-width: 0 !important;
-        }
-        .q-tab-panel:has(.activity-feed-surfaces[data-view="condensed"]),
-        .q-panel:has(.activity-feed-surfaces[data-view="condensed"]) {
-            transform: none !important;
-            translate: none !important;
-            animation: none !important;
-            transition: none !important;
-            z-index: 4 !important;
-        }
-        .activity-feed-condensed-notice {
-            display: none !important;
-        }
-        .activity-feed-condensed-notice.is-visible {
-            display: block !important;
-        }
-        .activity-feed-surfaces[data-view="condensed"] .activity-feed-condensed-notice {
-            display: none !important;
-        }
-        /* Ensure action buttons container is positioned correctly */
-        .action-buttons {
-            position: absolute;
-            right: 120px;
-            top: 50%;
-            transform: translateY(-50%);
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            z-index: 10;
-        }
-        /* Timestamp positioning */
-        .timestamp-container {
-            position: absolute;
-            right: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-            text-align: right;
-        }
-        .timestamp {
-            font-size: 0.875rem;
-            color: rgba(255, 255, 255, 0.6);
-        }
-        .hidden {
-            display: none !important;
-        }
-        .visible {
-            display: block !important;
-        }
-        </style>
-    """,
-        shared=True,
-    )
-
-    with ui.element("div").classes("tab-surface w-full h-full relative flex flex-col p-4"):
-        # Control row: keep overflow scroll only on left buttons so the filter
-        # dropdown is not clipped into a scrollable top bar (CSS overflow-x:auto
-        # forces overflow-y:auto and swallows absolute menus).
-        with ui.row().classes("w-full items-center gap-2 mb-4 flex-nowrap activity-feed-controls"):
-            from modules.mainuiwindow import toggle_alerts
-
-            with ui.row().classes(
-                "items-center gap-2 flex-nowrap overflow-x-auto min-w-0 shrink"
-            ):
-                def on_pause_button_click():
-                    toggle_alerts()
-                    _apply_pause_button_state()
-
-                pause_btn = ui.button(
-                    icon="pause", text="PAUSE ALERTS", on_click=on_pause_button_click
-                ).classes("control-button pause-alerts-btn alerts-playing").props(
-                    f"{_DOCK_BTN_PROPS} id=pause-alerts-btn"
-                )
-                activity_feed_state.pause_btn = pause_btn
-                _sync_pause_breath_ui(False)
-
-                try:
-                    _apply_pause_button_state()
-                except Exception as e:
-                    logger.error(
-                        f"Error initializing pause button state: {str(e)}",
-                        exc_info=True,
-                    )
-
-                def on_mute_button_click():
-                    from modules.mainuiwindow import toggle_mute
-
-                    toggle_mute()
-                    _apply_mute_button_state()
-
-                mute_btn = ui.button(
-                    icon="notifications_off",
-                    text="MUTE ALERTS",
-                    on_click=on_mute_button_click,
-                ).classes("control-button mute-alerts-btn").props(
-                    f"{_DOCK_BTN_PROPS} id=mute-alerts-btn"
-                )
-                activity_feed_state.mute_btn = mute_btn
-
-                try:
-                    _apply_mute_button_state()
-                except Exception as e:
-                    logger.error(
-                        f"Error initializing mute button state: {str(e)}",
-                        exc_info=True,
-                    )
-                skip_btn = ui.button(
-                    icon="skip_next",
-                    text="SKIP ALERT",
-                    on_click=lambda: skip_alert({"type": "current"}),
-                ).classes("control-button")
-                skip_btn.props(_DOCK_BTN_PROPS)
-
-                def open_feed_storage() -> None:
-                    from modules.help_system.contextual_help import (
-                        navigate_to_settings_subtab,
-                    )
-
-                    navigate_to_settings_subtab("App Settings", main_tab="Settings")
-
-                storage_btn = ui.button(
-                    icon="inventory_2",
-                    text="FEED STORAGE",
-                    on_click=open_feed_storage,
-                ).classes("control-button")
-                storage_btn.props(_DOCK_BTN_PROPS)
-                storage_btn.tooltip(
-                    "Open Settings → App Settings → Storage for history and auto-trim"
-                )
-
-            ui.element("div").classes("grow")
-
-            search_input = (
-                ui.input(placeholder="User or message")
-                .props("dense outlined clearable")
-                .classes("w-44 shrink-0")
-            )
-            search_input.tooltip("Show alerts whose username or message matches")
-            activity_feed_state.search_input = search_input
-            search_input.on_value_change(_on_feed_search_change)
-
-            # Condense List toggle (only visible on Current Alerts tab)
-            def toggle_condense_list(e):
-                global _ignore_condense_toggle_event
-                if _ignore_condense_toggle_event or _ignore_view_apply:
-                    return
-                logger.debug(f"Condense list toggle changed: {e.value}")
-                view_manager.update({"condensed": bool(e.value)})
-
-            activity_feed_state.condense_toggle = ui.switch(
-                text="Condense List",
-                value=activity_feed_state.condense_list,
-                on_change=toggle_condense_list,
-            ).classes("condense-toggle shrink-0")
-            logger.debug(
-                "Condense List toggle created (id=%s)",
-                getattr(activity_feed_state.condense_toggle, "id", None),
-            )
-
-            # Filter dropdown lives outside the overflow-x cluster so it can float.
-            # Type filters apply to card lists and the condensed feed.
-            filter_host_classes = "relative shrink-0 z-50"
-            if not _condensed_filters_visible():
-                filter_host_classes += " hidden"
-            filter_host = ui.element("div").classes(filter_host_classes)
-            activity_feed_state.filter_host = filter_host
-            with filter_host:
-                def toggle_filter_dropdown(e):
-                    logger.debug(
-                        f"Filter button clicked. Current state: {activity_feed_state.dropdown_visible}"
-                    )
-
-                    # Toggle the dropdown visibility using the activity_feed_state
-                    activity_feed_state.dropdown_visible = (
-                        not activity_feed_state.dropdown_visible
-                    )
-
-                    # Use the stored reference for reliable access
-                    if activity_feed_state.dropdown_visible:
-                        # Show the dropdown and backdrop
-                        activity_feed_state.filter_dropdown.visible = True
-                        activity_feed_state.backdrop.style("display: block;")
-                        logger.debug("Showing dropdown with backdrop")
-                    else:
-                        # Hide the dropdown and backdrop
-                        activity_feed_state.filter_dropdown.visible = False
-                        activity_feed_state.backdrop.style("display: none;")
-                        logger.debug("Hiding dropdown and backdrop")
-
-                filter_button = ui.button(
-                    icon="filter_list",
-                    text="FILTERS",
-                    on_click=toggle_filter_dropdown,
-                ).classes("control-button")
-                filter_button.props(_DOCK_BTN_PROPS)
-
-                # Register click before style so NiceGUI 3.x does not treat it as a late listener.
-                backdrop = ui.element("div").on(
-                    "click", lambda e: close_filter_dropdown()
-                )
-                backdrop.classes("fixed inset-0 z-40")
-                backdrop.style("background: transparent; display: none;")
-
-                # Create a custom dropdown container (start visible: false, initially hidden)
-                filter_dropdown = ui.element("div").classes(
-                    "absolute top-full right-0 z-[60] mt-1 bg-theme-base rounded-md shadow-lg w-56"
-                )
-                filter_dropdown.visible = (
-                    False  # Use NiceGUI's built-in visibility instead of CSS classes
-                )
-
-                # Add simple CSS for pagination controls only (remove complex JavaScript)
-                ui.add_head_html(
-                    """
-                    <style>
-                    .filter-dropdown-content {
-                        background-color: var(--color-bg-elevated);
-                        border-radius: 0.375rem;
-                        box-shadow: 0 4px 6px -1px var(--color-bg-overlay);
-                        width: 14rem;
-                        z-index: 50;
-                    }
-                    /* Ensure checkboxes and labels don't trigger dropdown closing */
-                    .filter-checkbox, .filter-checkbox label {
-                        pointer-events: auto;
-                    }
-                    
-                    /* Pagination controls styling */
-                    .pagination-btn {
-                        background-color: var(--color-bg-surface) !important;
-                        color: var(--color-text-primary) !important;
-                        border: 1px solid var(--color-border-default) !important;
-                        padding: 6px 12px !important;
-                        border-radius: 6px !important;
-                        min-width: 40px !important;
-                        height: 32px !important;
-                        transition: all 0.2s ease !important;
-                    }
-                    
-                    .pagination-btn:hover:not(:disabled) {
-                        background-color: var(--color-hover-overlay) !important;
-                        transform: translateY(-1px) !important;
-                    }
-                    
-                    .pagination-btn:disabled {
-                        background-color: var(--color-bg-surface) !important;
-                        color: var(--color-text-muted) !important;
-                        cursor: not-allowed !important;
-                        opacity: 0.5 !important;
-                    }
-                    </style>
-                """,
-                    shared=True,
-                )
-
-                # Store the dropdown and backdrop references in the activity_feed_state
-                activity_feed_state.filter_dropdown = filter_dropdown
-                activity_feed_state.backdrop = backdrop
-
-                # Create a container for the checkboxes with the filter-dropdown-content class
-                with filter_dropdown:
-                    with ui.element("div").classes("filter-dropdown-content"):
-                        # Create a scrollable container for checkboxes
-                        with ui.element("div").classes("max-h-60 overflow-y-auto p-2"):
-                            # Create checkboxes for each event type
-                            def create_checkbox(key: str, label: str):
-                                def on_change(e):
-                                    logger.debug(f"Checkbox {key} changed to {e.value}")
-                                    on_checkbox_change(key, e.value)
-
-                                    # Only manage dropdown visibility if it's currently visible
-                                    if activity_feed_state.dropdown_visible:
-                                        # Ensure the dropdown stays visible during checkbox interactions
-                                        if activity_feed_state.filter_dropdown:
-                                            activity_feed_state.filter_dropdown.visible = True
-                                        logger.debug(
-                                            "Maintained dropdown visibility after checkbox change"
-                                        )
-
-                                checkbox = ui.checkbox(
-                                    text=label,
-                                    value=activity_feed_state.filter_state.get(
-                                        key, True
-                                    ),
-                                    on_change=on_change,
-                                ).classes(
-                                    "text-sm mb-1 w-full whitespace-nowrap filter-checkbox"
-                                )
-                                activity_feed_state.filter_checkboxes[key] = checkbox
-
-                            # Create each checkbox with its own handler
-                            create_checkbox("all", "All Events")
-                            create_checkbox("follows", "Follows")
-                            create_checkbox("subs", "Subscriptions")
-                            create_checkbox("resubs", "Resubscriptions")
-                            create_checkbox("giftsubs", "Gift Subs")
-                            create_checkbox("bits", "Bits")
-                            create_checkbox("points", "Channel Points")
-                            create_checkbox("donations", "Donations")
-                            create_checkbox("raids", "Raids")
-                            create_checkbox("streaks", "Watch streaks")
-                            create_checkbox("modiversaries", "Modiversaries")
-                            create_checkbox("hype_train", "Hype Train")
-
-        with ui.row().classes("tab-row activity-feed-tab-row"):
-
-            def on_current_tab():
-                switch_to_tab("current")
-                current_tab_btn.classes(add="active")
-                previous_tab_btn.classes(remove="active")
-
-            def on_previous_tab():
-                switch_to_tab("previous")
-                previous_tab_btn.classes(add="active")
-                current_tab_btn.classes(remove="active")
-
-            current_active = (
-                "tab-button active"
-                if activity_feed_state.current_tab == "current"
-                else "tab-button"
-            )
-            previous_active = (
-                "tab-button active"
-                if activity_feed_state.current_tab == "previous"
-                else "tab-button"
-            )
-            current_tab_btn = ui.button(
-                text="CURRENT ALERTS", on_click=on_current_tab
-            ).classes(current_active)
-            current_tab_btn.props(_DOCK_BTN_PROPS)
-            activity_feed_state.current_tab_btn = current_tab_btn
-
-            previous_tab_btn = ui.button(
-                text="PREVIOUS ALERTS", on_click=on_previous_tab
-            ).classes(previous_active)
-            previous_tab_btn.props(_DOCK_BTN_PROPS)
-            activity_feed_state.previous_tab_btn = previous_tab_btn
-
-        # Create a scrollable container for alert cards
-        with ui.element("div").classes("scroll-content grow min-h-0"):
-            # Add pagination controls container above the feed (only visible for previous alerts tab)
-            activity_feed_state.pagination_container = ui.element("div").classes(
-                "w-full mb-2"
-            )
-
-            # Add tab container to store content based on active tab
-            activity_feed_state.tab_container = ui.element("div").classes("w-full")
-
-            # Surfaces wrapper: condensed mode is a data-view attribute applied
-            # via JavaScript only after the condensed root is verified painted.
-            with ui.element("div").classes("activity-feed-surfaces w-full min-h-0") as surfaces:
-                activity_feed_state.feed_surfaces = surfaces
-                activity_feed_state.condensed_notice = ui.label(
-                    "Condensed view unavailable - showing full feed"
-                ).classes(
-                    "activity-feed-condensed-notice text-xs muted-text italic mb-2"
-                )
-                activity_feed_state.current_alerts_container = ui.element("div").classes(
-                    "w-full activity-feed-current"
-                )
-                activity_feed_state.previous_alerts_container = ui.element("div").classes(
-                    "w-full hidden activity-feed-previous"
-                )
-                with ui.element("div").classes(
-                    "w-full condensed-view activity-feed-condensed overflow-y-auto"
-                ) as condensed_container:
-                    activity_feed_state.condensed_root = ui.element("div").classes(
-                        "activity-feed-condensed-root w-full"
-                    )
-                activity_feed_state.condensed_container = condensed_container
-                activity_feed_state.condensed_body = activity_feed_state.condensed_root
-
-            # Set the main container reference (for backward compatibility)
-            activity_feed_state.activity_feed_container = (
-                activity_feed_state.current_alerts_container
-            )
-            activity_feed_state.is_initialized = True
-            logger.debug("Activity feed container initialized")
-
-            # Start the alert processor thread
-            start_alert_processor()
-            logger.debug("Alert processor started")
-
-            # Event-based system doesn't need separate status updater thread
-            logger.debug("Event-based system ready - status updates on-demand")
-
-            # Open on the saved display. Previous loads its page; Current defers
-            # condensed setup so the first paint is not blocked by storage I/O.
-            if activity_feed_state.current_tab == "previous":
-                _render_active_tab()
-            else:
-                activity_feed_state.pagination_container.classes(add="hidden")
-                app_schedule(0, update_condensed_view, once=True)
-
-            # Periodic DOM/integrity watchdog catches silent NiceGUI remount blanks.
-            _start_feed_watchdog()
-
-            # Start on current alerts tab - no need to load restored alerts initially
-
-            # Add sample alerts to demonstrate the functionality
-            current_time = time.time()
-            logger.debug(f"Creating sample alerts at time: {current_time}")
-
-            # Add alerts with different timestamps, using created_at for proper timing
-            # alerts = [
-            #     ("Points", "Test just redeemed Highlight Message!", "points", current_time, None, "This is a test message for channel points redemption!"),
-            #     ("Follow", "User1 just followed!", "follow", current_time - 120, None, "Thanks for the follow!"),
-            #     ("Bits", "User2 cheered 100 bits!", "bits", current_time - 300, None, "Thanks for the bits!"),
-            #     ("Sub", "User3 subscribed!", "sub", current_time - 600, None, "Welcome to the channel!"),
-            #     ("Sub", "User4 subscribed!", "sub", current_time - 900, 2, "Thanks for the tier 2 sub!"),
-            #     ("Sub", "User5 subscribed!", "sub", current_time - 1200, 3, "Thanks for the tier 3 sub!"),
-            #     ("Resub", "User6 resubscribed for 6 months!", "resub", current_time - 1800, None, "Keep up the amazing work!"),
-            #     ("Resub", "User7 resubscribed for 12 months!", "resub", current_time - 2400, 2, "Your streams are the highlight of my week!"),
-            #     ("Resub", "User8 resubscribed for 24 months!", "resub", current_time - 3000, 3, "Been here since day one, and you're only getting better!"),
-            #     ("Donation", "User9 donated $10!", "donation", current_time - 3600, None, "Supporting your channel because you deserve it!")
-            # ]
-
-            # for alert_type, message, badge_type, timestamp, tier, user_message in alerts:
-            #     # Add the alert to the queue
-            #     alert = {
-            #         "type": alert_type,
-            #         "message": message,
-            #         "badge_type": badge_type,
-            #         "timestamp": timestamp,  # When the alert occurred
-            #         "created_at": timestamp,  # Use the same timestamp for created_at
-            #         "tier": tier,
-            #         "user_message": user_message
-            #     }
-            #     alert_queue.put(alert)
-            #     logger.debug(f"Added alert to queue: {alert_type} at {timestamp} (created_at: {timestamp})")
-
-            # logger.debug("Sample alerts created")
-
-
-def _apply_pause_button_state() -> None:
-    """Apply ALERTS_PAUSED to the live NiceGUI pause button (must have a live client)."""
-    btn = activity_feed_state.pause_btn
-    if not _element_alive(btn):
-        return
-    try:
-        from modules import web_engine
-
-        paused = bool(getattr(web_engine, "ALERTS_PAUSED", False))
-        if paused:
-            btn.props(f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=play_arrow")
-            btn.text = "RESUME ALERTS"
-            btn.classes(remove="alerts-playing")
-            btn.classes(add="paused")
-            btn.style("box-shadow: none")
-        else:
-            btn.props(f"{_DOCK_BTN_PROPS} id=pause-alerts-btn icon=pause")
-            btn.text = "PAUSE ALERTS"
-            btn.classes(remove="paused")
-            btn.classes(add="alerts-playing")
-    except Exception as e:
-        logger.error("Error updating pause button state: %s", e, exc_info=True)
-
-
-def sync_pause_button_state():
-    """Sync the pause button with ALERTS_PAUSED. Safe from any thread."""
-    _run_on_ui_loop(_apply_pause_button_state)
-
-
-def _apply_mute_button_state() -> None:
-    """Apply ALERTS_MUTED to the live NiceGUI mute button (must have a live client)."""
-    btn = activity_feed_state.mute_btn
-    if not _element_alive(btn):
-        logger.debug("Mute button not initialized or stale, skipping sync")
-        return
-    try:
-        from modules import web_engine
-
-        muted = bool(getattr(web_engine, "ALERTS_MUTED", False))
-        activity_feed_state.alerts_muted = muted
-        if muted:
-            btn.classes(add="muted")
-        else:
-            btn.classes(remove="muted")
-    except Exception as e:
-        logger.debug("Error syncing mute button state: %s", e)
-
-
-def sync_mute_button_state():
-    """Sync the mute button with ALERTS_MUTED. Safe from any thread."""
-    _run_on_ui_loop(_apply_mute_button_state)
-
-
-def add_alert_direct(
-    alert_type: str,
-    message: str,
-    badge_type: str = "follow",
-    timestamp: str = "now",
-    tier: Optional[int] = None,
-    user_message: Optional[str] = None,
-    alert_id: Optional[str] = None,
-    **kwargs,
-) -> None:
-    """
-    Public function for external modules to add alerts directly to the UI using the event system.
-
-    This is the new recommended way for modules (e.g. twitch) to add alerts.
-    Replaces the old queue-based system with immediate event processing.
-
-    Args:
-        alert_type (str): The type of alert (e.g., "Follow", "Channel Points", "Bits")
-        message (str): The alert message text
-        badge_type (str): The type of badge to show (affects styling)
-        timestamp (str or float): When the alert occurred, can be "now" or a Unix timestamp
-        tier (int, optional): The tier level for subscriptions (1, 2, or 3)
-        user_message (str, optional): User's message for resubs, bits, points, or donations
-        alert_id (str, optional): The alert ID to look up stored alert data
-        **kwargs: Additional alert data (username, stored_alert_data, etc.)
-    """
-    try:
-        # Create alert data with all provided information
-        alert_data = {
-            "type": alert_type,
-            "message": message,
-            "badge_type": badge_type,
-            "timestamp": timestamp if timestamp != "now" else time.time(),
-            "created_at": time.time(),
-            "tier": tier,
-            "user_message": user_message,
-            "alert_id": alert_id,
-        }
-
-        # Add any additional data from kwargs
-        alert_data.update(kwargs)
-
-        # Process immediately using the event system
-        alert_event_handler.process_alert_immediately(alert_data)
-
-        logger.debug(f"Alert added via event system: {alert_type} from external module")
-
-    except Exception as e:
-        logger.error(f"Error adding alert via event system: {e}", exc_info=True)
+    _stop_timers()
+    logger.debug("Stopped the activity feed")
 
 
 def force_ui_refresh():
-    """Force a UI refresh and timestamp update - useful after bulk operations"""
-    try:
-        alert_event_handler.force_timestamp_update()
-        ui.update()
-        logger.debug("Forced UI refresh completed")
-    except Exception as e:
-        logger.error(f"Error during forced UI refresh: {e}", exc_info=True)
+    """Repaint the feed from state (kept for callers)."""
+    push_all_slots()
 
 
-def refresh_condensed_view():
-    """Force a refresh of the condensed view - useful when configuration changes"""
-    try:
-        if (
-            activity_feed_state.current_tab == "current"
-            and activity_feed_state.condense_list
-        ):
-            update_condensed_view()
-            logger.debug("Forced condensed view refresh completed")
-    except Exception as e:
-        logger.error(f"Error during forced condensed view refresh: {e}", exc_info=True)
+# --------------------------------------------------------------------------- stored alerts
+
+_STORED_TYPE_DISPLAY = {
+    "bit": "Bits",
+    "sub": "Sub",
+    "resub": "Resub",
+    "giftsub": "Giftsub",
+    "follow": "Follow",
+    "point": "Points",
+    "raid": "Raid",
+    "donation": "Donation",
+    "modiversary": "Modiversary",
+    "streak": "Streak",
+    "hype_train_start": "Hype Train",
+    "hype_train_progress": "Hype Train",
+    "hype_train_end": "Hype Train",
+}
+# Stored alert_type -> the badge key live alerts use.
+_STORED_TYPE_BADGE = {
+    "bit": "bits",
+    "point": "points",
+    "hype_train_start": "hype_train",
+    "hype_train_progress": "hype_train",
+    "hype_train_end": "hype_train",
+}
 
 
 def convert_stored_alert_to_feed_format(stored_alert_data):
-    """Convert stored alert data to the format expected by the activity feed
+    """Convert one stored alert (AlertStorage) to the activity feed format.
 
-    Args:
-        stored_alert_data (dict): Stored alert data from AlertStateManager
-
-    Returns:
-        dict: Alert data in activity feed format
+    Uses the same type keys as live alerts, so history rows get the same icons, filters
+    and wording as the live feed.
     """
     try:
-        # Debug logging to see what data we actually have
-        logger.debug(
-            f"Converting stored alert to feed format. Available keys: {list(stored_alert_data.keys())}"
-        )
+        if not isinstance(stored_alert_data, dict):
+            return None
+        original_type = str(stored_alert_data.get("alert_type") or "unknown")
+        display_type = _STORED_TYPE_DISPLAY.get(original_type, original_type.replace("_", " ").title())
+        badge = _STORED_TYPE_BADGE.get(original_type, original_type)
+        source = str(stored_alert_data.get("source") or "").lower()
 
-        # Map alert_type to display type
-        alert_type_mapping = {
-            "bit": "Bits",
-            "sub": "Sub",
-            "resub": "Resub",
-            "giftsub": "Giftsub",
-            "follow": "Follow",
-            "point": "Points",
-            "raid": "Raid",
-            "donation": "Donation",
-            "modiversary": "Modiversary",
-            "hype_train_start": "Hype Train",
-            "hype_train_progress": "Hype Train",
-            "hype_train_end": "Hype Train",
-        }
-
-        original_type = stored_alert_data.get("alert_type", "unknown")
-        display_type = alert_type_mapping.get(original_type, original_type.title())
-        source = (stored_alert_data.get("source") or "").lower()
-        youtube_badge = None
-
-        # Restore YouTube-native labels when stored with source=youtube
         if source == "youtube":
-            if original_type == "sub":
-                display_type = "Membership"
-                youtube_badge = "membership"
-            elif original_type == "resub":
-                display_type = "Member Milestone"
-                youtube_badge = "member_milestone"
-            elif original_type == "giftsub":
-                display_type = "Gift Membership"
-                youtube_badge = "gift_membership"
+            youtube = {
+                "sub": ("Membership", "membership"),
+                "resub": ("Member Milestone", "member_milestone"),
+                "giftsub": ("Gift Membership", "gift_membership"),
+            }
+            if original_type in youtube:
+                display_type, badge = youtube[original_type]
             elif original_type == "donation":
-                # Prefer supersticker if flagged; otherwise Super Chat
-                if stored_alert_data.get("is_supersticker") or stored_alert_data.get(
-                    "supersticker"
-                ):
-                    display_type = "Super Sticker"
-                    youtube_badge = "supersticker"
+                if stored_alert_data.get("is_supersticker") or stored_alert_data.get("supersticker"):
+                    display_type, badge = "Super Sticker", "supersticker"
                 else:
-                    display_type = "Super Chat"
-                    youtube_badge = "superchat"
+                    display_type, badge = "Super Chat", "superchat"
 
-        # Get username with fallback and debugging
-        username = stored_alert_data.get("username", None)
-        if username is None or username == "":
-            log_fn = (
-                logger.debug
-                if str(original_type).startswith("hype_train")
-                else logger.warning
-            )
-            log_fn(
-                f"Alert {stored_alert_data.get('alert_id', 'unknown')} missing username. Available data: {stored_alert_data}"
-            )
+        username = stored_alert_data.get("username") or ""
+        if not username:
+            log_fn = logger.debug if original_type.startswith("hype_train") else logger.warning
+            log_fn("Alert %s missing username", stored_alert_data.get("alert_id", "unknown"))
             username = "Unknown User"
 
-        # Generate appropriate message based on alert type
-        message = ""
+        def _int(value, default=0):
+            try:
+                return int(str(value).replace(",", ""))
+            except (TypeError, ValueError):
+                return default
 
+        message = ""
         if original_type == "bit":
-            amt_cheered = stored_alert_data.get("amt_cheered", 0)
-            message = f"{username} cheered {amt_cheered} bits!"
+            message = f"{username} cheered {_int(stored_alert_data.get('amt_cheered')):,} bits!"
         elif original_type == "sub":
             tier = stored_alert_data.get("tier", 1)
-            resub_month = stored_alert_data.get("resub_month", 0)
+            resub_month = _int(stored_alert_data.get("resub_month"))
             if source == "youtube":
                 level = stored_alert_data.get("member_level") or ""
-                message = (
-                    f"{username} became a channel member"
-                    + (f" ({level})!" if level else "!")
-                )
+                message = f"{username} became a channel member" + (f" ({level})!" if level else "!")
             elif resub_month > 1:
-                display_type = "Resub"
+                display_type, badge = "Resub", "resub"
                 message = f"{username} has resubscribed for {resub_month} months!"
             else:
                 message = f"{username} subscribed (Tier {tier})!"
         elif original_type == "resub":
-            tier = stored_alert_data.get("tier", 1)
-            # Check multiple possible field names for the month count
             resub_month = (
-                stored_alert_data.get("resub_month", 0)
-                or stored_alert_data.get("months", 0)
-                or stored_alert_data.get("total_months", 0)
+                _int(stored_alert_data.get("resub_month"))
+                or _int(stored_alert_data.get("months"))
+                or _int(stored_alert_data.get("total_months"))
                 or 1
             )
             if source == "youtube":
                 level = stored_alert_data.get("member_level") or ""
                 message = (
-                    f"{username} reached a member milestone"
-                    f" ({resub_month} months"
+                    f"{username} reached a member milestone ({resub_month} months"
                     + (f", {level}" if level else "")
                     + ")!"
                 )
             else:
                 message = f"{username} has resubscribed for {resub_month} months!"
         elif original_type == "giftsub":
-            gift_qty = stored_alert_data.get("gift_qty", 1)
-            try:
-                gift_qty = int(gift_qty) if gift_qty is not None else 1
-            except (TypeError, ValueError):
-                gift_qty = 1
+            gift_qty = _int(stored_alert_data.get("gift_qty"), 1) or 1
             tier = stored_alert_data.get("tier", 1)
             recipient = str(stored_alert_data.get("recipient") or "").strip()
             if source == "youtube":
@@ -4332,59 +1666,54 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
             alert_name = stored_alert_data.get("alert_name", "Unknown Reward")
             message = f"{username} redeemed '{alert_name}'!"
         elif original_type == "raid":
-            raider_count = stored_alert_data.get("raider_count", 0)
             message = format_raid_activity_message(
                 username,
-                raider_count,
+                _int(stored_alert_data.get("raider_count")),
                 stored_alert_data.get("game_name"),
             )
         elif original_type == "donation":
-            donation_amount = stored_alert_data.get("donation_amount", 0)
+            from .activity_feed_model import format_money
+
+            amount = stored_alert_data.get("donation_amount", 0)
             if source == "youtube":
                 display_amount = stored_alert_data.get("display_amount")
-                currency = stored_alert_data.get("currency") or ""
-                if display_amount:
-                    amount_str = str(display_amount)
-                else:
-                    amount_str = f"{donation_amount} {currency}".strip()
-                label = (
-                    "Super Sticker"
-                    if youtube_badge == "supersticker"
-                    else "Super Chat"
+                amount_str = str(display_amount) if display_amount else format_money(
+                    amount, stored_alert_data.get("currency")
                 )
+                label = "Super Sticker" if badge == "supersticker" else "Super Chat"
                 message = f"{username} sent a {label} ({amount_str})!"
             else:
-                message = f"{username} donated ${donation_amount}!"
+                text = stored_alert_data.get("donation_text") or format_money(
+                    amount, stored_alert_data.get("currency")
+                )
+                message = f"{username} donated {text}!"
+        elif original_type == "streak":
+            message = format_watch_streak_message(username, stored_alert_data.get("streak_count", 0))
+        elif original_type == "modiversary":
+            message = format_modiversary_message(username, stored_alert_data.get("months", 0))
         elif original_type.startswith("hype_train"):
-            hype_train_level = stored_alert_data.get("hype_train_level", 1)
-            # For hype train, username might not be relevant
-            if username == "Unknown User":
-                message = f"Hype Train Level {hype_train_level}!"
+            level = stored_alert_data.get("hype_train_level") or stored_alert_data.get("level") or 1
+            if original_type == "hype_train_end":
+                message = f"Hype Train ended at Level {level}!"
             else:
-                message = f"Hype Train Level {hype_train_level}!"
+                message = f"Hype Train Level {level}!"
         else:
             message = f"{username} triggered {display_type}!"
 
-        # Create result with all available data, preserving the original stored data
+        ts = alertutils.safe_alert_timestamp(stored_alert_data.get("timestamp"), default=time.time())
         result = {
             "type": display_type,
             "message": message,
-            "badge_type": youtube_badge or original_type,
-            "timestamp": alertutils.safe_alert_timestamp(
-                stored_alert_data.get("timestamp"), default=time.time()
-            ),
-            "created_at": alertutils.safe_alert_timestamp(
-                stored_alert_data.get("timestamp"), default=time.time()
-            ),
+            "badge_type": badge,
+            "timestamp": ts,
+            "created_at": ts,
             "tier": stored_alert_data.get("tier"),
             "user_message": stored_alert_data.get("message"),
-            "is_restored": True,  # Mark as restored alert
-            "alert_id": stored_alert_data.get(
-                "alert_id"
-            ),  # Include original alert ID for debugging
-            "username": username,  # Include the resolved username
+            "is_restored": True,
+            "alert_id": stored_alert_data.get("alert_id"),
+            "username": username,
             "source": source or stored_alert_data.get("source"),
-            # Preserve the full original stored alert data for replay functionality
+            # The full stored alert, used by replay and the condensed grouping.
             "stored_alert_data": stored_alert_data,
         }
         if original_type == "giftsub":
@@ -4394,124 +1723,121 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
             recipient = str(stored_alert_data.get("recipient") or "").strip()
             if recipient:
                 result["recipient"] = recipient
-
-        logger.debug(
-            f"Converted alert {stored_alert_data.get('alert_id', 'unknown')} - type: {display_type}, username: '{username}', message: '{message}'"
-        )
-
+        if original_type == "raid":
+            result["raider_count"] = _int(stored_alert_data.get("raider_count"))
+            if stored_alert_data.get("game_name"):
+                result["game_name"] = stored_alert_data.get("game_name")
+        result["row"] = feed_row_model(result)
         return result
 
     except Exception as e:
-        logger.error(
-            f"Error converting stored alert to feed format: {str(e)}", exc_info=True
-        )
-        logger.error(f"Stored alert data that failed conversion: {stored_alert_data}")
+        logger.error("Error converting stored alert to feed format: %s", e, exc_info=True)
         return None
 
 
 def load_restored_alerts(page=1):
-    """Load restored alerts from storage with pagination
+    """Load one page of stored alerts (newest first), clamped to pages that exist.
 
-    Args:
-        page (int): Page number to load (1-based)
+    Returns (feed alerts, pagination info). Each alert carries a ``row`` whose ``seq`` is
+    its position in the stored history (oldest = #1).
     """
     try:
-        # Get the app settings to determine pagination limit and max pages
         from modules import dataobjects
 
         app_settings = dataobjects.state_manager.get_app_settings()
-        limit = app_settings.activity_feed_limit
-        max_pages = app_settings.activity_feed_max_pages
-
-        # Calculate maximum total alerts to fetch (max_pages * items_per_page)
+        limit = max(1, int(app_settings.activity_feed_limit or 20))
+        max_pages = max(1, int(app_settings.activity_feed_max_pages or 1))
         max_total_alerts = max_pages * limit
-
-        # Update pagination limit if it changed
         activity_feed_state.pagination_limit = limit
-
-        # Get paginated stored alerts using the limited method to reduce bandwidth
-        from modules import alertutils
+        try:
+            page = int(page)
+        except (TypeError, ValueError):
+            page = 1
+        page = min(max(page, 1), max_pages)
 
         alertutils.alert_state_manager.initialize()
         result = alertutils.alert_state_manager.get_limited_stored_alerts_paginated(
             page=page, limit=limit, max_total_alerts=max_total_alerts
         )
+        total_pages = max(1, min(int(result.get("total_pages") or 1), max_pages))
+        if page > total_pages:
+            # History shrank (trim, fewer pages allowed): show the last page that exists.
+            page = total_pages
+            result = alertutils.alert_state_manager.get_limited_stored_alerts_paginated(
+                page=page, limit=limit, max_total_alerts=max_total_alerts
+            )
+        total_count = int(result.get("total_count") or 0)
+        activity_feed_state.current_page = page
+        activity_feed_state.total_pages = total_pages
 
-        # Update pagination state
-        activity_feed_state.current_page = result["page"]
-        activity_feed_state.total_pages = min(
-            result["total_pages"], max_pages
-        )  # Enforce max pages limit
-
-        # Convert stored alerts to feed format and add them
         restored_alerts = []
-        for stored_alert in result["alerts"]:
+        for index, stored_alert in enumerate(result.get("alerts") or []):
             feed_alert = convert_stored_alert_to_feed_format(stored_alert)
             if feed_alert:
+                seq = total_count - (page - 1) * limit - index
+                feed_alert["row"] = feed_row_model(feed_alert, seq=seq if seq > 0 else None)
                 restored_alerts.append(feed_alert)
 
-        logger.debug(
-            f"Loaded {len(restored_alerts)} restored alerts for page {page} (limited to {max_total_alerts} total alerts)"
-        )
-        return restored_alerts, result
+        info = {
+            "page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+            "limit": limit,
+        }
+        return restored_alerts, info
 
     except Exception as e:
-        logger.error(f"Error loading restored alerts: {str(e)}", exc_info=True)
+        logger.error("Error loading restored alerts: %s", e, exc_info=True)
         notify(
-            "The Previous tab may look empty even though your history is still saved.",
+            "The History view may look empty even though your history is still saved.",
             type="warning",
             source="activity_feed",
             title="Couldn't load earlier alerts",
-            hint="Check your database connection in Settings → Database, then open the Previous tab again.",
+            hint="Check your database connection in Settings → Database, then open History again.",
             details=f"page={page}: {type(e).__name__}: {e}",
             actions=nav_actions_settings("Database"),
             dedupe_key="activity_feed:history_failed",
             dedupe_cooldown_sec=60.0,
         )
         return [], {
+            "page": 1,
             "total_count": 0,
             "total_pages": 1,
             "has_next": False,
             "has_prev": False,
+            "error": str(e),
         }
 
 
+# Stored alerts considered for "By person" before the time window is applied. Far more
+# than any feed page; the window (hours) is what actually limits the list.
+_PERSON_SCAN_LIMIT = 20000
+
+
 def load_restored_alerts_for_time_window(cutoff_time: float):
-    """Load stored alerts newer than cutoff_time using one AlertStorage fetch."""
+    """Load stored alerts newer than cutoff_time (across all of storage, not N pages)."""
     try:
-        from modules import alertutils, dataobjects
-
-        app_settings = dataobjects.state_manager.get_app_settings()
-        max_total_alerts = (
-            app_settings.activity_feed_max_pages * app_settings.activity_feed_limit
-        )
-
-        alertutils.alert_state_manager.initialize()
-        limited = alertutils.alert_state_manager.get_limited_stored_alerts_from_firebase(
-            max_total_alerts
-        )
-
+        manager = alertutils.alert_state_manager
+        manager.initialize()
+        since = getattr(manager, "get_stored_alerts_since", None)
+        if callable(since):
+            rows = since(cutoff_time, limit=_PERSON_SCAN_LIMIT) or []
+        else:
+            stored = manager.get_limited_stored_alerts_from_firebase(_PERSON_SCAN_LIMIT) or {}
+            rows = [dict(data, alert_id=alert_id) for alert_id, data in stored.items() if isinstance(data, dict)]
         restored_alerts = []
-        for alert_id, alert_data in limited.items():
-            if _alert_timestamp_for_cutoff(alert_data) < cutoff_time:
+        for row in rows:
+            if not isinstance(row, dict) or _alert_timestamp_for_cutoff(row) < cutoff_time:
                 continue
-            row = dict(alert_data)
-            row["alert_id"] = alert_id
-            feed_alert = convert_stored_alert_to_feed_format(row)
+            feed_alert = convert_stored_alert_to_feed_format(dict(row))
             if feed_alert:
                 restored_alerts.append(feed_alert)
-
         restored_alerts.sort(key=_alert_timestamp_for_cutoff, reverse=True)
-        logger.debug(
-            "Loaded %d restored alerts for condensed view (cutoff=%s)",
-            len(restored_alerts),
-            cutoff_time,
-        )
         return restored_alerts, len(restored_alerts)
     except Exception as e:
-        logger.error(
-            f"Error loading restored alerts for time window: {str(e)}", exc_info=True
-        )
+        logger.error("Error loading restored alerts for time window: %s", e, exc_info=True)
         return [], 0
 
 
@@ -4568,7 +1894,7 @@ def collect_alerts_for_condensed_view(cutoff_time: float):
             no_id_alerts.append(normalized)
 
     live_in_window = 0
-    for live_alert in activity_feed_state.live_alerts:
+    for live_alert in live_alerts_snapshot():
         if _alert_timestamp_for_cutoff(live_alert) < cutoff_time:
             continue
         live_in_window += 1
@@ -4580,343 +1906,33 @@ def collect_alerts_for_condensed_view(cutoff_time: float):
             no_id_alerts.append(normalized)
 
     alerts_to_process = list(by_id.values()) + no_id_alerts
-    alerts_to_process.sort(
-        key=_alert_timestamp_for_cutoff,
-        reverse=True,
-    )
-
-    logger.debug(
-        "Collected %d alerts for condensed view (stored=%d, live_in_window=%d)",
-        len(alerts_to_process),
-        historical_count,
-        live_in_window,
-    )
+    alerts_to_process.sort(key=_alert_timestamp_for_cutoff, reverse=True)
     return alerts_to_process, historical_count, live_in_window
 
 
-def clear_restored_alerts():
-    """Clear all restored alerts from the previous alerts container"""
-    try:
-        container = activity_feed_state.previous_alerts_container
-        if not _element_alive(container):
-            return
-
-        container.clear()
-
-        # Clear all historical alerts (alert_elements is only for historical alerts now)
-        activity_feed_state.alert_elements = []
-
-        logger.debug("Cleared restored alerts from activity feed")
-
-    except Exception as e:
-        logger.error(f"Error clearing restored alerts: {str(e)}", exc_info=True)
-
-
-def add_restored_alert_to_feed(alert_data):
-    """Add a restored alert to the activity feed (Previous Alerts tab only)
-
-    Args:
-        alert_data (dict): Alert data in feed format with is_restored=True
-    """
-    try:
-        if not activity_feed_state.activity_feed_container:
-            return
-
-        # Only add if we're on the previous alerts tab
-        if activity_feed_state.current_tab != "previous":
-            return
-
-        # Ensure the alert data has the restored flag
-        alert_data["is_restored"] = True
-        alert_data["is_recent"] = False  # Restored alerts are never recent
-
-        # Add to the main alert elements list (for historical alerts only)
-        activity_feed_state.alert_elements.append(alert_data)
-
-        # Create the alert element using the unified approach
-        create_alert_element(alert_data)
-
-    except Exception as e:
-        logger.error(f"Error adding restored alert to feed: {str(e)}", exc_info=True)
-
-
-def refresh_restored_alerts():
-    """Refresh the restored alerts display"""
-    try:
-        if activity_feed_state.current_tab != "previous":
-            return
-
-        # Clear existing restored alerts
-        clear_restored_alerts()
-
-        # Load and display restored alerts for current page
-        restored_alerts, pagination_info = load_restored_alerts(
-            activity_feed_state.current_page
-        )
-        loaded_page = pagination_info.get("page")
-        try:
-            loaded_page = int(loaded_page)
-        except (TypeError, ValueError):
-            loaded_page = None
-        if loaded_page and loaded_page >= 1 and loaded_page != view_manager._view.get("page"):
-            view_manager._view["page"] = loaded_page
-            activity_feed_state.current_page = loaded_page
-            view_manager.save()
-
-        # Add restored alerts to feed
-        for alert_data in restored_alerts:
-            add_restored_alert_to_feed(alert_data)
-
-        # Apply filters to the newly loaded alerts
-        update_alert_visibility()
-
-        # Update pagination UI if it exists
-        update_pagination_ui(pagination_info)
-
-        activity_feed_state.restored_alerts_loaded = True
-        _emit_stored_alerts_payload(restored_alerts, pagination_info)
-        logger.debug(
-            f"Refreshed restored alerts - page {activity_feed_state.current_page} of {activity_feed_state.total_pages}"
-        )
-
-    except Exception as e:
-        logger.error(f"Error refreshing restored alerts: {str(e)}", exc_info=True)
-
-
-def update_pagination_ui(pagination_info):
-    """Update the pagination controls
-
-    Args:
-        pagination_info (dict): Pagination information from get_stored_alerts_paginated
-    """
-    try:
-        container = activity_feed_state.pagination_container
-        if not _element_alive(container):
-            return
-
-        container.clear()
-
-        with container:
-            if pagination_info["total_count"] > 0:
-                with ui.row().classes("items-center gap-2 justify-center w-full"):
-                    # Previous button
-                    prev_btn = ui.button(
-                        icon="chevron_left",
-                        on_click=lambda: go_to_page(
-                            activity_feed_state.current_page - 1
-                        ),
-                    ).classes("pagination-btn")
-                    prev_btn.set_enabled(pagination_info["has_prev"])
-
-                    # Page info
-                    ui.label(
-                        f"Page {pagination_info['page']} of {pagination_info['total_pages']}"
-                    ).classes("text-sm secondary-text px-2")
-                    ui.label(
-                        f"({pagination_info['total_count']} total alerts)"
-                    ).classes("text-xs secondary-text px-2")
-
-                    # Next button
-                    next_btn = ui.button(
-                        icon="chevron_right",
-                        on_click=lambda: go_to_page(
-                            activity_feed_state.current_page + 1
-                        ),
-                    ).classes("pagination-btn")
-                    next_btn.set_enabled(pagination_info["has_next"])
-            else:
-                ui.label("No stored alerts found").classes(
-                    "text-sm secondary-text text-center w-full"
-                )
-
-    except Exception as e:
-        logger.error(f"Error updating pagination UI: {str(e)}", exc_info=True)
-
-
-def go_to_page(page):
-    """Navigate to a specific page of restored alerts
-
-    Args:
-        page (int): Page number to navigate to
-    """
-    if _ignore_view_apply:
-        return
-    try:
-        page = int(page)
-        # Get max pages setting to enforce limit
-        from modules import dataobjects
-
-        app_settings = dataobjects.state_manager.get_app_settings()
-        max_pages = app_settings.activity_feed_max_pages
-
-        # Enforce both total pages and max pages limits
-        max_allowed_page = min(activity_feed_state.total_pages, max_pages)
-
-        if page < 1 or page > max_allowed_page:
-            return
-
-        view_manager.update({"page": page})
-
-    except Exception as e:
-        logger.error(f"Error navigating to page {page}: {str(e)}", exc_info=True)
-
-
-def _emit_stored_alerts_payload(
-    alerts: List[Dict[str, Any]],
-    pagination_info: Dict[str, Any],
-    *,
-    to: Optional[str] = None,
-) -> bool:
-    """Send one previous-alerts page to the overlay. Desktop already rendered it."""
-    response = {
-        "success": True,
-        "alerts": serialize_live_alerts(alerts),
-        "page": pagination_info.get("page", activity_feed_state.current_page),
-        "total_pages": pagination_info.get("total_pages", activity_feed_state.total_pages),
-        "total_count": pagination_info.get("total_count", 0),
-        "has_prev": bool(pagination_info.get("has_prev", False)),
-        "has_next": bool(pagination_info.get("has_next", False)),
-    }
-    return _emit_overlay_event("stored_alerts_paginated", response, to=to)
-
-
-def emit_stored_alerts_page(page: int, *, to: Optional[str] = None) -> None:
-    """Load one stored page and send that payload without repainting the desktop."""
-    try:
-        alerts, info = load_restored_alerts(page)
-        _emit_stored_alerts_payload(alerts, info, to=to)
-    except Exception as exc:
-        logger.error("activity_feed: could not emit stored page %s: %s", page, exc)
-
-
-def _sync_filter_checkboxes() -> None:
-    """Set desktop filter boxes from the shared view without echoing the change."""
-    boxes = getattr(activity_feed_state, "filter_checkboxes", None) or {}
-    for key, value in activity_feed_state.filter_state.items():
-        box = boxes.get(key)
-        if not _element_alive(box):
-            continue
-        if bool(getattr(box, "value", None)) == bool(value):
-            continue
-        try:
-            box.value = bool(value)
-        except Exception as exc:
-            logger.debug("activity_feed: could not sync filter %s: %s", key, exc)
-
-
-def _sync_tab_buttons(tab_name: str) -> None:
-    """Mark the active desktop tab button."""
-    current = activity_feed_state.current_tab_btn
-    previous = activity_feed_state.previous_tab_btn
-    if _element_alive(current):
-        if tab_name == "current":
-            current.classes(add="active")
-        else:
-            current.classes(remove="active")
-    if _element_alive(previous):
-        if tab_name == "previous":
-            previous.classes(add="active")
-        else:
-            previous.classes(remove="active")
-
-
-def _render_active_tab() -> None:
-    """Paint the tab already stored on the shared view."""
-    tab_name = activity_feed_state.current_tab
-    _sync_tab_buttons(tab_name)
-    if tab_name == "previous":
-        clear_restored_alerts()
-        activity_feed_state.restored_alerts_loaded = False
-        if activity_feed_state.pagination_container:
-            activity_feed_state.pagination_container.classes(remove="hidden")
-        if activity_feed_state.current_alerts_container:
-            activity_feed_state.current_alerts_container.classes(add="hidden")
-        if activity_feed_state.previous_alerts_container:
-            activity_feed_state.previous_alerts_container.classes(remove="hidden")
-        _hide_condensed_view()
-        _set_condensed_unavailable_notice(False)
-        if _element_alive(activity_feed_state.condense_toggle):
-            activity_feed_state.condense_toggle.classes(add="hidden")
-        _sync_filter_controls()
-        refresh_restored_alerts()
-        return
-
-    if activity_feed_state.pagination_container:
-        activity_feed_state.pagination_container.classes(add="hidden")
-    if activity_feed_state.current_alerts_container:
-        activity_feed_state.current_alerts_container.classes(remove="hidden")
-    if activity_feed_state.previous_alerts_container:
-        activity_feed_state.previous_alerts_container.classes(add="hidden")
-    clear_restored_alerts()
-    activity_feed_state.restored_alerts_loaded = False
-    if _element_alive(activity_feed_state.condense_toggle):
-        activity_feed_state.condense_toggle.classes(remove="hidden")
-    rebuild_current_alerts_feed()
-    update_alert_visibility()
-    update_condensed_view()
-    schedule_feed_integrity_check("switch_to_tab_current")
-
-
-def _apply_view_to_desktop(changed: set) -> None:
-    """Move desktop widgets to the shared view. Widget events must not echo."""
-    global _ignore_view_apply
-    _ignore_view_apply = True
-    try:
-        if "tab" in changed:
-            _render_active_tab()
-        elif "page" in changed and activity_feed_state.current_tab == "previous":
-            refresh_restored_alerts()
-
-        if "condensed" in changed and "tab" not in changed:
-            toggle = activity_feed_state.condense_toggle
-            if _element_alive(toggle):
-                try:
-                    toggle.value = bool(activity_feed_state.condense_list)
-                except Exception as exc:
-                    logger.debug("activity_feed: could not sync condense toggle: %s", exc)
-            update_condensed_view()
-
-        if "filters" in changed:
-            _sync_filter_checkboxes()
-            update_alert_visibility()
-            if (
-                activity_feed_state.condense_list
-                and activity_feed_state.current_tab == "current"
-            ):
-                schedule_condensed_view_update("filter_change")
-    except Exception as exc:
-        logger.error("activity_feed: applying shared view failed: %s", exc, exc_info=True)
-    finally:
-        _ignore_view_apply = False
-
-
 def _load_condensed_historical_hours() -> int:
-    """Load condense_historical_hours from template config (may perform I/O)."""
+    """The old dock setting condense_historical_hours (activity_feed.json), for migration."""
     condense_historical_hours = 12
     try:
         from modules.template_config_parser import TemplateConfigParser
 
-        config_parser = TemplateConfigParser()
-        config_data = config_parser.load_config("activity_feed")
-
+        config_data = TemplateConfigParser().load_config("activity_feed")
         if config_data and "elements" in config_data:
             for element in config_data["elements"]:
                 if element.get("type") == "section":
                     continue
                 if element.get("id") == "condense_historical_hours":
-                    element_value = element.get("value")
                     condense_historical_hours = parse_condensed_historical_hours(
-                        element_value
+                        element.get("value")
                     )
                     break
-            logger.debug(
-                "Loaded condensed view config: hours=%s", condense_historical_hours
-            )
-        else:
-            logger.debug("No activity_feed config elements found, using defaults")
     except Exception as exc:
         logger.debug("Could not load template config for condensed view: %s", exc)
     return condense_historical_hours
+
+
+def _person_hours() -> int:
+    return parse_condensed_historical_hours(current_feed_settings().get("person_hours", 12))
 
 
 def _accumulate_condensed_alert(
@@ -4959,6 +1975,9 @@ def _accumulate_condensed_alert(
 
     if username not in user_alerts:
         user_alerts[username] = {}
+
+    def _num(text: str) -> int:
+        return int(str(text).replace(",", ""))
 
     grouping_key = alert_type
     reward_name = None
@@ -5010,23 +2029,19 @@ def _accumulate_condensed_alert(
             "supersticker",
         ):
             grouping_key = badge_type
-        elif alert_type == "membership":
-            grouping_key = "membership"
-        elif alert_type == "member milestone":
-            grouping_key = "member_milestone"
-        elif alert_type == "gift membership":
-            grouping_key = "gift_membership"
-        elif alert_type == "super chat":
-            grouping_key = "superchat"
-        elif alert_type == "super sticker":
-            grouping_key = "supersticker"
+        else:
+            grouping_key = {
+                "membership": "membership",
+                "member milestone": "member_milestone",
+                "gift membership": "gift_membership",
+                "super chat": "superchat",
+                "super sticker": "supersticker",
+            }[alert_type]
     elif alert_type in ("point", "points") or badge_type in ("point", "points"):
         reward_name = stored_data.get("alert_name")
         if not reward_name:
             message = alert_data.get("message", "")
-            reward_match = re.search(
-                r"redeemed\s+'(.+?)'!", message, re.IGNORECASE
-            )
+            reward_match = re.search(r"redeemed\s+'(.+?)'!", message, re.IGNORECASE)
             if reward_match:
                 reward_name = reward_match.group(1)
         if not reward_name:
@@ -5040,50 +2055,45 @@ def _accumulate_condensed_alert(
             "tier": alert_data.get("tier", 1),
             "months": 0,
             "original_type": alert_type,
+            "last_ts": 0.0,
         }
         if reward_name is not None:
             user_alerts[username][grouping_key]["reward_name"] = reward_name
 
-    user_alerts[username][grouping_key]["count"] += 1
+    group = user_alerts[username][grouping_key]
+    group["count"] += 1
+    group["last_ts"] = max(float(group.get("last_ts") or 0), _alert_timestamp_for_cutoff(alert_data))
 
     message = alert_data.get("message", "")
 
     if alert_type in ("bit", "bits"):
         amt_cheered = stored_data.get("amt_cheered") if stored_data else None
         if amt_cheered:
-            user_alerts[username][grouping_key]["total_amount"] += int(amt_cheered)
+            group["total_amount"] += _num(amt_cheered)
         else:
-            bit_match = re.search(r"(\d+)\s*bits?", message, re.IGNORECASE)
+            bit_match = re.search(r"([\d,]+)\s*bits?", message, re.IGNORECASE)
             if bit_match:
-                user_alerts[username][grouping_key]["total_amount"] += int(
-                    bit_match.group(1)
-                )
-    elif alert_type == "donation":
-        donation_amount = (
-            stored_data.get("donation_amount") if stored_data else None
-        )
+                group["total_amount"] += _num(bit_match.group(1))
+    elif alert_type in ("donation", "super chat", "super sticker"):
+        donation_amount = stored_data.get("donation_amount") if stored_data else None
+        if donation_amount is None:
+            donation_amount = alert_data.get("donation_amount")
         if donation_amount:
-            user_alerts[username][grouping_key]["total_amount"] += float(
-                donation_amount
-            )
+            group["total_amount"] += float(donation_amount)
         else:
-            donation_match = re.search(
-                r"donated\s+\$?(\d+(?:\.\d{2})?)", message, re.IGNORECASE
-            )
+            donation_match = re.search(r"donated\s+\$?([\d,]+(?:\.\d{2})?)", message, re.IGNORECASE)
             if donation_match:
-                user_alerts[username][grouping_key]["total_amount"] += float(
-                    donation_match.group(1)
-                )
-    elif alert_type == "giftsub":
+                group["total_amount"] += float(donation_match.group(1).replace(",", ""))
+    elif alert_type in ("giftsub", "gift membership"):
         gift_qty = stored_data.get("gift_qty") if stored_data else None
+        if gift_qty is None:
+            gift_qty = alert_data.get("gift_qty")
         if gift_qty:
-            user_alerts[username][grouping_key]["total_amount"] += int(gift_qty)
+            group["total_amount"] += _num(gift_qty)
         else:
-            gift_match = re.search(r"gifted\s+(\d+)", message, re.IGNORECASE)
+            gift_match = re.search(r"gifted\s+([\d,]+)", message, re.IGNORECASE)
             if gift_match:
-                user_alerts[username][grouping_key]["total_amount"] += int(
-                    gift_match.group(1)
-                )
+                group["total_amount"] += _num(gift_match.group(1))
     elif alert_type == "resub":
         resub_month = None
         if stored_data:
@@ -5097,22 +2107,24 @@ def _accumulate_condensed_alert(
         else:
             month_match = re.search(r"(\d+)\s*months?", message, re.IGNORECASE)
             months = int(month_match.group(1)) if month_match else 1
-        if months > user_alerts[username][grouping_key]["months"]:
-            user_alerts[username][grouping_key]["months"] = months
+        if months > group["months"]:
+            group["months"] = months
     elif alert_type == "raid":
-        raider_count = stored_data.get("raider_count") if stored_data else None
-        if raider_count:
-            viewers = int(raider_count)
+        raider_count = alert_data.get("raider_count")
+        if raider_count is None and stored_data:
+            raider_count = stored_data.get("raider_count")
+        if raider_count is not None:
+            viewers = _num(raider_count)
         else:
-            raid_match = re.search(r"(\d+)\s*viewers?", message, re.IGNORECASE)
-            viewers = int(raid_match.group(1)) if raid_match else 0
+            raid_match = re.search(r"([\d,]+)\s*viewers?", message, re.IGNORECASE)
+            viewers = _num(raid_match.group(1)) if raid_match else 0
         raid_game = alert_data.get("game_name")
         if not raid_game and stored_data:
             raid_game = stored_data.get("game_name")
-        if viewers > user_alerts[username][grouping_key]["total_amount"]:
-            user_alerts[username][grouping_key]["total_amount"] = viewers
+        if viewers > group["total_amount"]:
+            group["total_amount"] = viewers
             if raid_game:
-                user_alerts[username][grouping_key]["game_name"] = raid_game
+                group["game_name"] = raid_game
     elif alert_type == "streak":
         streak_count_val = alert_data.get("streak_count")
         if streak_count_val is None and stored_data:
@@ -5120,14 +2132,30 @@ def _accumulate_condensed_alert(
         if streak_count_val is not None:
             sc = int(streak_count_val)
         else:
-            streak_match = re.search(
-                r"(\d+)\s*consecutive streams", message, re.IGNORECASE
-            )
+            streak_match = re.search(r"(\d+)\s*consecutive streams", message, re.IGNORECASE)
             sc = int(streak_match.group(1)) if streak_match else 0
-        if sc > user_alerts[username][grouping_key]["total_amount"]:
-            user_alerts[username][grouping_key]["total_amount"] = sc
+        if sc > group["total_amount"]:
+            group["total_amount"] = sc
 
     return "ok"
+
+
+def _alert_search_query() -> str:
+    """Lowercased shared search text. Empty shows all."""
+    return (getattr(activity_feed_state, "search_text", "") or "").strip().lower()
+
+
+def _alert_matches_search(alert_data: Dict[str, Any], query: Optional[str] = None) -> bool:
+    """True when username, message, or the user's note contains the query."""
+    if query is None:
+        query = _alert_search_query()
+    if not query:
+        return True
+    haystack = " ".join(
+        str(alert_data.get(key) or "")
+        for key in ("username", "message", "user_message")
+    ).lower()
+    return query in haystack
 
 
 def _group_alerts_for_condensed(
@@ -5140,7 +2168,7 @@ def _group_alerts_for_condensed(
     excluded_count = 0
     unknown_username_count = 0
     if filter_state is None:
-        filter_state = activity_feed_state.filter_state
+        filter_state = dict(activity_feed_state.filter_state)
     type_to_filter = activity_feed_state.alert_type_to_filter
 
     for alert_data in alerts_to_process:
@@ -5164,45 +2192,152 @@ def _group_alerts_for_condensed(
         elif result == "unknown":
             unknown_username_count += 1
 
-    logger.debug(
-        "Condensed grouping: processed=%d excluded=%d unknown_user=%d users=%d",
-        len(alerts_to_process),
-        excluded_count,
-        unknown_username_count,
-        len(user_alerts),
-    )
     return user_alerts, excluded_count, unknown_username_count
+
+
+def _person_kind(grouping_key: str, data: Dict[str, Any]) -> str:
+    original = str(data.get("original_type") or "")
+    if grouping_key.startswith("points:") or original in ("point", "points"):
+        return "points"
+    for prefix, kind in (
+        ("sub_tier", "sub"),
+        ("resub_tier", "resub"),
+        ("giftsub_tier", "giftsub"),
+        ("member_milestone", "milestone"),
+        ("gift_membership", "giftmember"),
+        ("membership", "member"),
+        ("superchat", "superchat"),
+        ("supersticker", "supersticker"),
+    ):
+        if grouping_key.startswith(prefix):
+            return kind
+    return {
+        "follow": "follow",
+        "bits": "bits",
+        "bit": "bits",
+        "donation": "donation",
+        "raid": "raid",
+        "streak": "streak",
+        "modiversary": "modiversary",
+    }.get(grouping_key, "alert")
+
+
+def person_line(grouping_key: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """One "By person" line: kind, readable text without the count, and the count."""
+    from .activity_feed_model import KIND_META, format_money
+
+    kind = _person_kind(grouping_key, data)
+    count = int(data.get("count") or 1)
+    total = data.get("total_amount") or 0
+    tier = data.get("tier") or 1
+    months = int(data.get("months") or 0)
+    amount = 0.0
+    biggest = 0
+    if kind == "sub":
+        text = f"Subscribed (Tier {tier})"
+    elif kind == "resub":
+        text = f"Resubscribed for {months} months (Tier {tier})" if months > 1 else f"Resubscribed (Tier {tier})"
+        biggest = months
+    elif kind == "giftsub":
+        text = f"Gifted {int(total or count):,} Tier {tier} subs"
+        amount = float(total or count)
+        count = 1 if total else count
+    elif kind == "follow":
+        text = "Followed"
+    elif kind == "bits":
+        text = f"Cheered {int(total):,} bits"
+        amount = float(total)
+    elif kind == "donation":
+        text = f"Tipped {format_money(total)}"
+        amount = float(total)
+    elif kind in ("superchat", "supersticker"):
+        label = "Super Sticker" if kind == "supersticker" else "Super Chat"
+        text = f"Sent a {label} ({format_money(total)})" if total else f"Sent a {label}"
+        amount = float(total)
+    elif kind == "member":
+        text = "Became a member"
+    elif kind == "milestone":
+        text = "Reached a member milestone"
+    elif kind == "giftmember":
+        text = f"Gifted {int(total or count):,} memberships"
+        amount = float(total or count)
+        count = 1 if total else count
+    elif kind == "raid":
+        game = data.get("game_name")
+        text = f"Raided with {int(total):,} viewers" + (f" · {game}" if game else "")
+        biggest = int(total)
+    elif kind == "streak":
+        text = f"Watched {int(total)} streams in a row" if total else "Watch streak"
+        biggest = int(total)
+    elif kind == "points":
+        reward = data.get("reward_name") or grouping_key.split(":", 1)[-1] or "a reward"
+        text = f"Redeemed “{reward}”"
+    else:
+        text = grouping_key.replace("_", " ").title()
+    icon, color = KIND_META.get(kind, KIND_META["alert"])[:2]
+    return {
+        "kind": kind,
+        "icon": icon,
+        "color": color,
+        "text": text,
+        "count": count,
+        "amount": amount,
+        "max": biggest,
+        "tier": tier if kind == "sub" else None,
+    }
 
 
 def serialize_condensed_groups(
     user_alerts: Dict[str, Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Turn grouped alert dicts into a slim [{username, lines}] payload."""
+    """Grouped alert dicts -> [{username, lines, items, totals, events, last_ts}].
+
+    ``lines`` keeps the original wording for older docks; ``items`` / ``totals`` drive the
+    per-person cards.
+    """
     groups: List[Dict[str, Any]] = []
     for username, alert_types in user_alerts.items():
         if not alert_types:
             continue
         lines: List[str] = []
+        items: List[Dict[str, Any]] = []
+        events = 0
+        last_ts = 0.0
         for grouping_key, data in alert_types.items():
             try:
                 text = create_aggregated_alert_text(grouping_key, data)
+                item = person_line(grouping_key, data)
             except Exception:
                 continue
             if text:
                 lines.append(text)
+            items.append(item)
+            events += int(data.get("count") or 0)
+            last_ts = max(last_ts, float(data.get("last_ts") or 0))
         if lines:
-            groups.append({"username": str(username), "lines": lines})
+            groups.append(
+                {
+                    "username": str(username),
+                    "lines": lines,
+                    "items": items,
+                    "totals": person_totals(items),
+                    "events": events,
+                    "last_ts": last_ts or None,
+                }
+            )
             if len(groups) >= MAX_CONDENSED_GROUPS:
                 break
     return groups
 
 
-def _condensed_view_model(build_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Pure description of condensed UI: header, empty state, truncation, groups.
+def _condensed_truncation(user_total: int) -> Optional[str]:
+    if user_total > MAX_CONDENSED_GROUPS:
+        return f"Showing first {MAX_CONDENSED_GROUPS} of {user_total} people"
+    return None
 
-    The renderer paints this model with NiceGUI labels. Tests pin the wording
-    and grouping without depending on DOM/HTML.
-    """
+
+def _condensed_view_model(build_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Pure description of the condensed view: header, empty state, truncation, groups."""
     hours = build_data.get("condense_historical_hours", 12)
     groups = build_data.get("groups")
     if groups is None:
@@ -5225,40 +2360,35 @@ def _condensed_view_model(build_data: Dict[str, Any]) -> Dict[str, Any]:
     header = None
     if historical_count > 0 or live_in_window > 0:
         header = f"Showing {alert_count} alerts from past {hours} hours"
-    truncation = None
-    if len(groups) > MAX_CONDENSED_GROUPS:
-        truncation = f"Showing first {MAX_CONDENSED_GROUPS} of {len(groups)} users"
+    user_total = int(build_data.get("user_total") or len(groups))
     return {
         "empty": None,
         "header": header,
-        "truncation": truncation,
+        "truncation": _condensed_truncation(user_total),
         "groups": groups[:MAX_CONDENSED_GROUPS],
     }
 
 
 def build_condensed_overlay_payload(
-    hours: Any = 12,
+    hours: Any = None,
     filter_state: Optional[Dict[str, Any]] = None,
     search: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Collect, group, and serialize condensed view data for the overlay."""
-    parsed_hours = parse_condensed_historical_hours(hours)
+    """Collect, group, and serialize condensed view data for the overlay.
+
+    Filters and search default to the shared view (the dock and the tab always match).
+    """
+    parsed_hours = parse_condensed_historical_hours(hours if hours is not None else _person_hours())
+    if filter_state is None:
+        filter_state = dict(activity_feed_state.filter_state)
+    if search is None:
+        search = activity_feed_state.search_text or ""
     cutoff_time = time.time() - (parsed_hours * 3600)
     try:
-        (
-            alerts_to_process,
-            historical_count,
-            live_in_window,
-        ) = collect_alerts_for_condensed_view(cutoff_time)
+        alerts_to_process, historical_count, live_in_window = collect_alerts_for_condensed_view(cutoff_time)
     except Exception as exc:
-        logger.error(
-            "Error loading alerts for condensed overlay payload: %s",
-            exc,
-            exc_info=True,
-        )
-        alerts_to_process = []
-        historical_count = 0
-        live_in_window = 0
+        logger.error("Error loading alerts for condensed overlay payload: %s", exc, exc_info=True)
+        alerts_to_process, historical_count, live_in_window = [], 0, 0
 
     user_alerts, excluded_count, unknown_username_count = _group_alerts_for_condensed(
         alerts_to_process, filter_state=filter_state, search=search
@@ -5271,16 +2401,18 @@ def build_condensed_overlay_payload(
         "live_in_window": live_in_window,
         "alert_count": len(alerts_to_process),
         "hours": parsed_hours,
-        "user_count": len(groups),
+        "user_count": len(user_alerts),
+        "truncation": _condensed_truncation(len(user_alerts)),
         "excluded_count": excluded_count,
         "unknown_username_count": unknown_username_count,
-        "search": None if search is None else str(search),
+        "search": str(search),
     }
 
 
 def condensed_payload_from_build(build_data: Dict[str, Any]) -> Dict[str, Any]:
     """Match the overlay's condensed_view_alerts shape from a desktop rebuild."""
     groups = list(build_data.get("groups") or [])
+    user_total = int(build_data.get("user_total") or len(groups))
     return {
         "success": True,
         "groups": groups,
@@ -5288,60 +2420,33 @@ def condensed_payload_from_build(build_data: Dict[str, Any]) -> Dict[str, Any]:
         "live_in_window": int(build_data.get("live_in_window") or 0),
         "alert_count": int(build_data.get("alert_count") or 0),
         "hours": build_data.get("condense_historical_hours", 12),
-        "user_count": len(groups),
+        "user_count": user_total,
+        "truncation": _condensed_truncation(user_total),
         "excluded_count": int(build_data.get("excluded_count") or 0),
         "unknown_username_count": int(build_data.get("unknown_username_count") or 0),
+        "search": str(build_data.get("search") or ""),
     }
 
 
 def _broadcast_condensed_groups(build_data: Dict[str, Any], *, to: Optional[str] = None) -> bool:
-    """Send the groups the desktop just built so the overlay paints the same rows."""
+    """Send the groups just built so the dock paints the same people as the tab."""
     return _emit_overlay_event(
         "condensed_view_alerts", condensed_payload_from_build(build_data), to=to
     )
 
 
-def publish_activity_feed_view(*, to: Optional[str] = None) -> Dict[str, Any]:
-    """Send the saved view, the live alert list, and the active page or groups."""
-    snapshot = view_manager.load()
-    broadcast_activity_feed_view(snapshot, to=to, include_live_alerts=True)
-    if snapshot["tab"] == "previous":
-        emit_stored_alerts_page(int(snapshot["page"]), to=to)
-    elif snapshot["condensed"]:
-        payload = build_condensed_overlay_payload(
-            hours=_load_condensed_historical_hours(),
-            filter_state=snapshot["filters"],
-        )
-        _emit_overlay_event("condensed_view_alerts", payload, to=to)
-    return snapshot
-
-
 def _collect_condensed_build_data() -> Dict[str, Any]:
     """Collect all data needed to render the condensed view (blocking I/O)."""
     started = time.monotonic()
-    condense_historical_hours = _load_condensed_historical_hours()
-    cutoff_time = time.time() - (condense_historical_hours * 3600)
+    hours = _person_hours()
+    search = activity_feed_state.search_text or ""
+    filters = dict(activity_feed_state.filter_state)
+    cutoff_time = time.time() - (hours * 3600)
     historical_count = 0
     live_in_window = 0
     alerts_to_process: List[Dict[str, Any]] = []
-
-    logger.debug(
-        "Loading alerts for condensed view from past %s hours...",
-        condense_historical_hours,
-    )
-
     try:
-        (
-            alerts_to_process,
-            historical_count,
-            live_in_window,
-        ) = collect_alerts_for_condensed_view(cutoff_time)
-        logger.debug(
-            "Condensed view loaded %d stored and %d live alerts (past %d hours)",
-            historical_count,
-            live_in_window,
-            condense_historical_hours,
-        )
+        alerts_to_process, historical_count, live_in_window = collect_alerts_for_condensed_view(cutoff_time)
     except Exception as exc:
         logger.error("Error loading alerts for condensed view: %s", exc, exc_info=True)
 
@@ -5355,393 +2460,21 @@ def _collect_condensed_build_data() -> Dict[str, Any]:
         )
 
     user_alerts, excluded_count, unknown_username_count = _group_alerts_for_condensed(
-        alerts_to_process
+        alerts_to_process, filter_state=filters, search=search
     )
     groups = serialize_condensed_groups(user_alerts)
-
     return {
-        "condense_historical_hours": condense_historical_hours,
+        "condense_historical_hours": hours,
         "alert_count": len(alerts_to_process),
         "historical_count": historical_count,
         "live_in_window": live_in_window,
         "user_alerts": user_alerts,
+        "user_total": len(user_alerts),
         "groups": groups,
         "excluded_count": excluded_count,
         "unknown_username_count": unknown_username_count,
+        "search": search,
     }
-
-
-def _delete_replaced_condensed_children(container, keep) -> None:
-    """Remove previous condensed children without touching foreign slots."""
-    slot = getattr(container, "default_slot", None)
-    if slot is None:
-        return
-    try:
-        parent = slot.parent
-    except Exception:
-        return
-    if parent is not container:
-        logger.error(
-            "activity_feed: condensed slot parent is not the condensed container "
-            "(%s) — refusing child delete so toolbar/tab buttons stay intact",
-            type(parent).__name__,
-        )
-        return
-    for child in list(slot.children):
-        if child is keep:
-            continue
-        try:
-            child.delete()
-        except Exception:
-            pass
-
-
-def _render_condensed_view_ui(build_data: Dict[str, Any]) -> bool:
-    """Render condensed groups into an in-tree staging child, then swap it in."""
-    container = activity_feed_state.condensed_container
-    if not _element_alive(container):
-        return False
-
-    model = _condensed_view_model(build_data)
-    try:
-        with container:
-            staging = ui.element("div").classes("activity-feed-condensed-root w-full")
-        with staging:
-            if model["empty"]:
-                ui.label(model["empty"]).classes("no-alerts text-sm muted-text italic")
-            else:
-                if model["header"]:
-                    ui.label(model["header"]).classes("text-xs muted-text mb-2 italic")
-                if model["truncation"]:
-                    ui.label(model["truncation"]).classes(
-                        "text-xs muted-text mb-2 italic"
-                    )
-                for group in model["groups"]:
-                    username = str(group.get("username") or "")
-                    with ui.element("div").classes("user-group mb-4"):
-                        ui.label(f"{username}:").classes("username font-semibold mb-1")
-                        with ui.element("div").classes("ml-4"):
-                            for line in group.get("lines") or []:
-                                ui.label(str(line)).classes(
-                                    "alert-item secondary-text text-sm mb-1"
-                                )
-        _delete_replaced_condensed_children(container, staging)
-        activity_feed_state.condensed_root = staging
-        activity_feed_state.condensed_body = staging
-        return True
-    except Exception as exc:
-        logger.error(
-            "activity_feed: condensed in-tree render failed: %s", exc, exc_info=True
-        )
-        return False
-
-
-async def _await_on_ui(fn: Callable[[], Any]) -> Any:
-    """Run ``fn`` on the NiceGUI loop inside a live client, then return its result."""
-    loop = asyncio.get_running_loop()
-    fut: asyncio.Future = loop.create_future()
-
-    def _do() -> None:
-        try:
-            value = fn()
-        except Exception as exc:
-            if not fut.done():
-                loop.call_soon_threadsafe(fut.set_exception, exc)
-            return
-        if not fut.done():
-            loop.call_soon_threadsafe(fut.set_result, value)
-
-    _run_on_ui_loop(_do)
-    return await asyncio.wait_for(fut, timeout=8.0)
-
-
-async def _run_condensed_js(js: str) -> Dict[str, Any]:
-    """Run condensed visibility JS. None / non-dict results are failures."""
-    client = _get_feed_client() or _get_connected_client()
-    if client is None:
-        return {"ok": False, "reason": "no_client", "children": 0}
-    try:
-        result = await client.run_javascript(js, timeout=5.0)
-    except Exception as exc:
-        logger.warning("activity_feed: condensed JS failed: %s", exc)
-        return {"ok": False, "reason": "js_failed", "children": 0}
-    if not isinstance(result, dict):
-        logger.warning(
-            "activity_feed: condensed JS unexpected result: %s",
-            repr(result)[:300],
-        )
-        return {"ok": False, "reason": "js_no_return", "children": 0}
-    return result
-
-
-async def _commit_condensed_view_async() -> Dict[str, Any]:
-    """Verify the condensed root is painted, then keep data-view=condensed."""
-    if not _feed_ui_is_on_screen():
-        # Nothing can be verified in the tray or on another main tab, and
-        # guessing would either blank the panel or disable the user's toggle.
-        return {"ok": False, "reason": "deferred_offscreen", "children": 0}
-    return await _run_condensed_js(_CONDENSED_COMMIT_JS)
-
-
-async def _commit_and_handle_async(reason: str) -> str:
-    result = await _commit_condensed_view_async()
-    return _handle_condensed_commit_result(reason, result)
-
-
-async def _hide_condensed_view_async() -> Dict[str, Any]:
-    """Clear data-view so the regular feed is the visible surface."""
-    return await _run_condensed_js(_CONDENSED_HIDE_JS)
-
-
-def _hide_condensed_view() -> None:
-    """Schedule a JS hide; regular feed stays visible until/unless commit succeeds."""
-    try:
-        background_tasks.create(
-            _hide_condensed_view_async(),
-            name="activity_feed_condensed_hide",
-        )
-    except Exception as exc:
-        logger.debug("activity_feed: condensed hide schedule failed: %s", exc)
-
-
-def _log_condensed_ancestry(reason: str, result: Dict[str, Any]) -> None:
-    """Log the ancestor chain that made the condensed surface unmeasurable."""
-    if not isinstance(result, dict):
-        return
-    metrics = result.get("metrics")
-    if isinstance(metrics, dict):
-        logger.warning(
-            "activity_feed: condensed metrics (%s) viewport=%sx%s root=%s clip=%s "
-            "child0=%s kids=%s candidate_points=%s",
-            reason,
-            metrics.get("vw"),
-            metrics.get("vh"),
-            metrics.get("root"),
-            metrics.get("clip"),
-            metrics.get("child0"),
-            metrics.get("kids"),
-            metrics.get("points"),
-        )
-    chain = result.get("chain")
-    if not isinstance(chain, list) or not chain:
-        return
-    for depth, node in enumerate(chain):
-        if not isinstance(node, dict):
-            continue
-        logger.warning(
-            "activity_feed: condensed ancestry (%s) [%d] %s.%s "
-            "size=%sx%s top=%s display=%s visibility=%s position=%s "
-            "overflow=%s opacity=%s",
-            reason,
-            depth,
-            node.get("tag"),
-            node.get("cls"),
-            node.get("w"),
-            node.get("h"),
-            node.get("top"),
-            node.get("disp"),
-            node.get("vis"),
-            node.get("pos"),
-            node.get("ovf"),
-            node.get("op"),
-        )
-
-
-def _handle_condensed_commit_result(reason: str, result: Dict[str, Any]) -> str:
-    """Apply a condensed commit verdict. Returns ok or abandon."""
-    global _condensed_integrity_failures, _dom_desync_failures
-
-    if isinstance(result, dict) and result.get("ok"):
-        _set_condensed_unavailable_notice(False)
-        _condensed_integrity_failures = 0
-        _dom_desync_failures = 0
-        schedule_feed_integrity_check(f"condensed_show:{reason}")
-        logger.debug(
-            "activity_feed: condensed commit ok (%s) children=%s",
-            reason,
-            result.get("children"),
-        )
-        return "ok"
-
-    probe_reason = str(result.get("reason") or "unknown") if isinstance(result, dict) else "unknown"
-
-    if probe_reason == "deferred_offscreen":
-        # Regular feed stays the visible surface; the watchdog re-commits once
-        # the panel is back on screen.
-        logger.debug("activity_feed: condensed commit deferred (%s)", reason)
-        return "defer"
-
-    logger.warning(
-        "activity_feed: condensed commit failed (%s) %s",
-        reason,
-        result,
-    )
-    _log_condensed_ancestry(reason, result)
-    _abandon_condensed_view(f"condensed_commit_failed:{reason}")
-    return "abandon"
-
-
-def _schedule_condensed_rebuild(reason: str) -> None:
-    """Start (or coalesce) an async condensed-view rebuild."""
-    global _condensed_rebuild_running, _condensed_rebuild_rerun
-
-    if _condensed_rebuild_running:
-        _condensed_rebuild_rerun = True
-        logger.debug(
-            "activity_feed: condensed rebuild coalesced (%s)", reason
-        )
-        return
-
-    logger.warning("activity_feed: condensed rebuild scheduled (%s)", reason)
-    background_tasks.create(
-        _update_condensed_view_async(reason),
-        name="activity_feed_condensed_rebuild",
-    )
-
-
-async def _update_condensed_view_async(reason: str) -> None:
-    """Fetch condensed data off the UI loop, render in-tree, then verify paint."""
-    global _condensed_rebuild_running, _condensed_rebuild_rerun
-
-    _condensed_rebuild_running = True
-    try:
-        while True:
-            _condensed_rebuild_rerun = False
-
-            if not (
-                activity_feed_state.current_tab == "current"
-                and activity_feed_state.condense_list
-            ):
-                _ensure_regular_feed_populated(f"condensed_aborted:{reason}")
-                _hide_condensed_view()
-                return
-
-            build_data = await run.io_bound(_collect_condensed_build_data)
-
-            if not (
-                activity_feed_state.current_tab == "current"
-                and activity_feed_state.condense_list
-            ):
-                _ensure_regular_feed_populated(f"condensed_aborted_after_io:{reason}")
-                _hide_condensed_view()
-                return
-
-            if not _element_alive(activity_feed_state.condensed_root):
-                # Overlay still needs the same groups when the desktop tab is closed.
-                _broadcast_condensed_groups(build_data)
-            else:
-                try:
-                    built = await _await_on_ui(
-                        lambda: _render_condensed_view_ui(build_data)
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "activity_feed: condensed UI render failed (%s): %s",
-                        reason,
-                        exc,
-                        exc_info=True,
-                    )
-                    built = False
-
-                if not built:
-                    _abandon_condensed_view(f"condensed_build_failed:{reason}")
-                else:
-                    _broadcast_condensed_groups(build_data)
-                    result = await _commit_condensed_view_async()
-                    _handle_condensed_commit_result(reason, result)
-
-            if not _condensed_rebuild_rerun:
-                break
-    except Exception as exc:
-        logger.error(
-            "activity_feed: async condensed rebuild failed (%s): %s",
-            reason,
-            exc,
-            exc_info=True,
-        )
-        _abandon_condensed_view(f"condensed_async_failed:{reason}")
-    finally:
-        _condensed_rebuild_running = False
-        if _condensed_rebuild_rerun:
-            _schedule_condensed_rebuild("coalesced_rerun")
-
-
-def update_condensed_view() -> bool:
-    """Update the condensed view based on the toggle state.
-
-    Returns:
-        True when the toggle/tab UI was updated successfully. Scheduling a
-        condensed rebuild is not treated as a confirmed healthy surface —
-        callers must use integrity checks for that.
-    """
-    try:
-        logger.debug(
-            f"update_condensed_view called - current tab: {activity_feed_state.current_tab}, condense_list: {activity_feed_state.condense_list}"
-        )
-
-        # Show/hide condense toggle based on current tab. A missing toggle means
-        # the desktop tab is not built yet; the overlay still needs the rebuild.
-        _sync_filter_controls()
-        if activity_feed_state.current_tab == "current":
-            if _element_alive(activity_feed_state.condense_toggle):
-                activity_feed_state.condense_toggle.classes(remove="hidden")
-            logger.debug("Condense List toggle shown (Current Alerts tab)")
-        else:
-            if _element_alive(activity_feed_state.condense_toggle):
-                activity_feed_state.condense_toggle.classes(add="hidden")
-            logger.debug(
-                "Condense List toggle hidden (tab=%s; only visible on Current Alerts)",
-                activity_feed_state.current_tab,
-            )
-
-        # Only create condensed view if we're on current tab and toggle is on
-        if (
-            activity_feed_state.current_tab == "current"
-            and activity_feed_state.condense_list
-        ):
-            # Data collection can hit the database/network, so it must not run on
-            # the UI event loop (a long fetch stalls the websocket and the client
-            # eventually gets deleted). Schedule an async rebuild instead; the
-            # regular feed stays visible until the condensed view is verified.
-            logger.debug("Scheduling condensed view rebuild...")
-            _schedule_condensed_rebuild("update_condensed_view")
-            return True
-
-        logger.debug("Showing regular alerts view...")
-        _set_condensed_unavailable_notice(False)
-        _ensure_regular_feed_populated("update_condensed_view_regular")
-        _hide_condensed_view()
-        schedule_feed_integrity_check("update_condensed_view_regular")
-        return True
-
-    except Exception as e:
-        logger.error(f"Error updating condensed view: {str(e)}", exc_info=True)
-        _abandon_condensed_view("update_condensed_view_exception")
-        return False
-
-
-def create_condensed_view() -> bool:
-    """Create the condensed view of alerts grouped by user (sync fallback).
-
-    Returns:
-        True if the condensed container was rebuilt successfully, False otherwise.
-    """
-    try:
-        build_data = _collect_condensed_build_data()
-        if not _render_condensed_view_ui(build_data):
-            return False
-        try:
-            background_tasks.create(
-                _commit_and_handle_async("create_condensed_view"),
-                name="activity_feed_condensed_commit",
-            )
-        except Exception as exc:
-            logger.debug("activity_feed: condensed commit schedule failed: %s", exc)
-            return False
-        return True
-    except Exception as e:
-        logger.error(f"Error creating condensed view: {str(e)}", exc_info=True)
-        return False
 
 
 def create_aggregated_alert_text(grouping_key, data):
@@ -5753,55 +2486,41 @@ def create_aggregated_alert_text(grouping_key, data):
         months = data["months"]
         original_type = data.get("original_type", grouping_key.split("_")[0])
 
-        # Handle tier and duration-specific keys for subs, resubs, and giftsubs
         if grouping_key.startswith("sub_tier"):
-            tier_num = tier
             if count > 1:
-                return f"Subscribed {count} times (Tier {tier_num})!"
-            else:
-                return f"Subscribed (Tier {tier_num})!"
+                return f"Subscribed {count} times (Tier {tier})!"
+            return f"Subscribed (Tier {tier})!"
         elif grouping_key.startswith("resub_tier") and "_1month" in grouping_key:
-            tier_num = tier
             if count > 1:
-                return f"Resubscribed {count} times for 1 month (Tier {tier_num})!"
-            else:
-                return f"Resubscribed for 1 month (Tier {tier_num})!"
+                return f"Resubscribed {count} times for 1 month (Tier {tier})!"
+            return f"Resubscribed for 1 month (Tier {tier})!"
         elif grouping_key.startswith("resub_tier") and "_multi_month" in grouping_key:
-            tier_num = tier
             if count > 1:
-                return (
-                    f"Resubscribed {count} times for {months} months (Tier {tier_num})!"
-                )
-            else:
-                return f"Resubscribed for {months} months (Tier {tier_num})!"
+                return f"Resubscribed {count} times for {months} months (Tier {tier})!"
+            return f"Resubscribed for {months} months (Tier {tier})!"
         elif grouping_key.startswith("giftsub_tier") and "_1month" in grouping_key:
-            tier_num = tier
             try:
                 formatted_amount = f"{int(total_amount):,}"
             except (ValueError, TypeError):
                 formatted_amount = str(total_amount)
-            return f"Gifted {formatted_amount} Tier {tier_num} subs (1 month)!"
+            return f"Gifted {formatted_amount} Tier {tier} subs (1 month)!"
         elif grouping_key.startswith("giftsub_tier") and "_multi_month" in grouping_key:
-            tier_num = tier
             try:
                 formatted_amount = f"{int(total_amount):,}"
             except (ValueError, TypeError):
                 formatted_amount = str(total_amount)
-            return f"Gifted {formatted_amount} Tier {tier_num} subs ({months} months)!"
+            return f"Gifted {formatted_amount} Tier {tier} subs ({months} months)!"
         elif grouping_key == "follow":
             if count > 1:
                 return f"Followed {count} times!"
-            else:
-                return "Followed!"
+            return "Followed!"
         elif grouping_key == "bits":
-            # Format with commas for readability
             try:
                 formatted_amount = f"{int(total_amount):,}"
             except (ValueError, TypeError):
                 formatted_amount = str(total_amount)
             return f"Gave {formatted_amount} bits!"
         elif grouping_key == "donation":
-            # Format donation amount
             if total_amount == int(total_amount):
                 formatted_amount = f"${int(total_amount)}"
             else:
@@ -5834,18 +2553,13 @@ def create_aggregated_alert_text(grouping_key, data):
                 formatted_amount = f"{total_amount:.2f}"
             return f"Sent Super Sticker ({formatted_amount})!"
         elif grouping_key == "raid":
-            # For raids, show the largest raid
             try:
                 formatted_viewers = f"{int(total_amount):,}"
             except (ValueError, TypeError):
                 formatted_viewers = str(total_amount)
-            game_name = data.get("game_name")
-            suffix = _raid_category_suffix(game_name)
+            suffix = _raid_category_suffix(data.get("game_name"))
             if count > 1:
-                return (
-                    f"Raided {count} times (largest: {formatted_viewers} viewers)"
-                    f"{suffix}"
-                )
+                return f"Raided {count} times (largest: {formatted_viewers} viewers){suffix}"
             return f"Raided with {formatted_viewers} viewers{suffix}"
         elif grouping_key == "streak":
             sc = int(total_amount) if total_amount else 0
@@ -5862,129 +2576,904 @@ def create_aggregated_alert_text(grouping_key, data):
                 return f"Redeemed '{reward_name}' {count} times!"
             return f"Redeemed '{reward_name}'!"
         else:
-            # Fallback for any other alert types
             display_name = grouping_key.replace("_", " ").title()
             if count > 1:
                 return f"{display_name} {count} times!"
-            else:
-                return f"{display_name}!"
+            return f"{display_name}!"
 
     except Exception as e:
-        logger.error(f"Error creating aggregated alert text: {str(e)}", exc_info=True)
+        logger.error("Error creating aggregated alert text: %s", e, exc_info=True)
         return f"{grouping_key.title()}!"
 
 
-def create_condensed_alert_text(alert_data):
-    """Create condensed text for an alert (legacy function for compatibility)"""
+# --------------------------------------------------------------------------- history / person flows
+
+_history_payload: Dict[str, Any] = {"rows": [], "page": 1, "total_pages": 1, "total_count": 0, "loading": True}
+_person_payload: Dict[str, Any] = {"groups": [], "loading": True}
+_history_task_running = False
+_history_rerun = False
+_condensed_update_scheduled = False
+_condensed_rebuild_running = False
+_condensed_rebuild_rerun = False
+
+
+def _emit_stored_alerts_payload(
+    alerts: List[Dict[str, Any]],
+    pagination_info: Dict[str, Any],
+    *,
+    to: Optional[str] = None,
+) -> bool:
+    """Send one history page to the dock."""
+    response = {
+        "success": not pagination_info.get("error"),
+        "alerts": serialize_live_alerts(alerts),
+        "page": pagination_info.get("page", activity_feed_state.current_page),
+        "total_pages": pagination_info.get("total_pages", activity_feed_state.total_pages),
+        "total_count": pagination_info.get("total_count", 0),
+        "has_prev": bool(pagination_info.get("has_prev", False)),
+        "has_next": bool(pagination_info.get("has_next", False)),
+    }
+    if pagination_info.get("error"):
+        response["error"] = str(pagination_info["error"])
+    return _emit_overlay_event("stored_alerts_paginated", response, to=to)
+
+
+def emit_stored_alerts_page(page: int, *, to: Optional[str] = None) -> None:
+    """Load one stored page and send that payload to one dock (or all)."""
     try:
-        alert_type = alert_data.get("type", "").lower()
-        user_message = alert_data.get("user_message")
+        alerts, info = load_restored_alerts(page)
+        _emit_stored_alerts_payload(alerts, info, to=to)
+    except Exception as exc:
+        logger.error("activity_feed: could not emit stored page %s: %s", page, exc)
 
-        if alert_type == "follow":
-            return "Followed!"
-        elif alert_type == "sub":
-            tier = alert_data.get("tier", 1)
-            return f"Subscribed (Tier {tier})!"
-        elif alert_type == "resub":
-            # Extract months from message
-            message = alert_data.get("message", "")
-            import re
 
-            month_match = re.search(r"(\d+)\s*months?", message, re.IGNORECASE)
-            months = month_match.group(1) if month_match else "?"
-            return f"Resubscribed for {months} months!"
-        elif alert_type == "giftsub":
-            # Extract gift quantity from message
-            message = alert_data.get("message", "")
-            import re
+def _apply_history_page(alerts: List[Dict[str, Any]], info: Dict[str, Any]) -> None:
+    global _history_payload
+    _history_payload = {
+        "rows": [_row_for(a) for a in alerts],
+        "page": info.get("page", 1),
+        "total_pages": info.get("total_pages", 1),
+        "total_count": info.get("total_count", 0),
+        "has_prev": bool(info.get("has_prev")),
+        "has_next": bool(info.get("has_next")),
+        "loading": False,
+        "error": info.get("error") or "",
+    }
+    _push_slot("history", _history_payload)
+    _emit_stored_alerts_payload(alerts, info)
+    loaded_page = info.get("page")
+    if isinstance(loaded_page, int) and loaded_page >= 1 and loaded_page != view_manager.snapshot()["page"]:
+        # The saved page no longer exists (history shrank): show and keep the real one.
+        if view_manager.set_page_quietly(loaded_page):
+            snapshot = view_manager.snapshot()
+            broadcast_activity_feed_view(snapshot)
+            _push_slot("view", snapshot)
 
-            gift_match = re.search(r"gifted\s+(\d+)", message, re.IGNORECASE)
-            qty = gift_match.group(1) if gift_match else "1"
-            return f"Gifted {qty} subs!"
-        elif alert_type == "bits":
-            # Extract bit amount from message
-            message = alert_data.get("message", "")
-            import re
 
-            bit_match = re.search(r"(\d+)\s*bits?", message, re.IGNORECASE)
-            amount = bit_match.group(1) if bit_match else "?"
-            # Format with commas for readability
-            try:
-                amount_int = int(amount)
-                amount = f"{amount_int:,}"
-            except (ValueError, TypeError):
-                pass
-            return f"Gave {amount} bits!"
-        elif alert_type == "donation":
-            # Extract donation amount from message
-            message = alert_data.get("message", "")
-            import re
+async def _refresh_history_async() -> None:
+    global _history_task_running, _history_rerun
+    _history_task_running = True
+    try:
+        while True:
+            _history_rerun = False
+            page = view_manager.snapshot()["page"]
+            alerts, info = await run.io_bound(load_restored_alerts, page)
+            if view_mode(view_manager.snapshot()) == "history":
+                _apply_history_page(alerts, info)
+            if not _history_rerun:
+                break
+    except Exception as exc:
+        logger.error("activity_feed: history load failed: %s", exc, exc_info=True)
+    finally:
+        _history_task_running = False
 
-            donation_match = re.search(
-                r"donated\s+\$?(\d+(?:\.\d{2})?)", message, re.IGNORECASE
-            )
-            amount = donation_match.group(1) if donation_match else "?"
-            return f"Donated ${amount}!"
-        elif alert_type in ("membership", "member"):
-            return "Became a channel member!"
-        elif alert_type in ("member_milestone", "member milestone"):
-            return "Reached a member milestone!"
-        elif alert_type in ("gift_membership", "gift membership"):
-            return "Gifted memberships!"
-        elif alert_type in ("superchat", "super chat"):
-            return "Sent a Super Chat!"
-        elif alert_type in ("supersticker", "super sticker"):
-            return "Sent a Super Sticker!"
-        elif alert_type == "raid":
-            stored_data = alert_data.get("stored_alert_data") or {}
-            raider_count = alert_data.get("raider_count") or stored_data.get(
-                "raider_count"
-            )
-            game_name = alert_data.get("game_name") or stored_data.get("game_name")
-            if raider_count is not None:
-                try:
-                    viewers_int = int(raider_count)
-                    viewers = f"{viewers_int:,}"
-                except (ValueError, TypeError):
-                    viewers = str(raider_count)
-            else:
-                message = alert_data.get("message", "")
-                import re
 
-                raid_match = re.search(r"(\d+)\s*viewers?", message, re.IGNORECASE)
-                viewers = raid_match.group(1) if raid_match else "?"
-                try:
-                    viewers_int = int(viewers)
-                    viewers = f"{viewers_int:,}"
-                except (ValueError, TypeError):
-                    pass
-            return f"Raided with {viewers} viewers{_raid_category_suffix(game_name)}"
-        else:
-            return f"{alert_type.title()}!"
+def refresh_restored_alerts() -> None:
+    """Load the shared history page off the UI loop, then repaint the tab and the docks."""
+    global _history_rerun
+    if _history_task_running:
+        _history_rerun = True
+        return
+    try:
+        background_tasks.create(_refresh_history_async(), name="activity_feed_history")
+    except Exception:
+        # No NiceGUI loop (early startup / tests): load inline.
+        alerts, info = load_restored_alerts(view_manager.snapshot()["page"])
+        _apply_history_page(alerts, info)
 
-    except Exception as e:
-        logger.error(f"Error creating condensed alert text: {str(e)}", exc_info=True)
-        return f"{alert_data.get('type', 'Alert')}!"
+
+def schedule_condensed_view_update(reason: str) -> None:
+    """Debounced By person rebuild (bursts of alerts / typing coalesce)."""
+    global _condensed_update_scheduled
+
+    if view_mode(view_manager.snapshot()) != "person":
+        return
+    if _condensed_update_scheduled:
+        return
+    _condensed_update_scheduled = True
+
+    def _deferred() -> None:
+        global _condensed_update_scheduled
+        _condensed_update_scheduled = False
+        _schedule_condensed_rebuild(reason)
+
+    try:
+        app_schedule(0.3, _deferred, once=True)
+    except Exception:
+        _condensed_update_scheduled = False
+
+
+def _schedule_condensed_rebuild(reason: str) -> None:
+    """Start (or coalesce) an async By person rebuild."""
+    global _condensed_rebuild_rerun
+    if _condensed_rebuild_running:
+        _condensed_rebuild_rerun = True
+        return
+    logger.debug("activity_feed: by-person rebuild (%s)", reason)
+    try:
+        background_tasks.create(
+            _update_condensed_view_async(reason), name="activity_feed_condensed_rebuild"
+        )
+    except Exception as exc:
+        logger.debug("activity_feed: by-person rebuild not scheduled: %s", exc)
+
+
+def _apply_person_build(build_data: Dict[str, Any]) -> None:
+    global _person_payload
+    payload = condensed_payload_from_build(build_data)
+    _person_payload = payload
+    _push_slot("person", payload)
+    _broadcast_condensed_groups(build_data)
+
+
+async def _update_condensed_view_async(reason: str) -> None:
+    """Group off the UI loop, then paint the tab and the docks."""
+    global _condensed_rebuild_running, _condensed_rebuild_rerun
+
+    _condensed_rebuild_running = True
+    try:
+        while True:
+            _condensed_rebuild_rerun = False
+            if view_mode(view_manager.snapshot()) != "person":
+                return
+            build_data = await run.io_bound(_collect_condensed_build_data)
+            if view_mode(view_manager.snapshot()) == "person":
+                _apply_person_build(build_data)
+            if not _condensed_rebuild_rerun:
+                break
+    except Exception as exc:
+        logger.error("activity_feed: by-person rebuild failed (%s): %s", reason, exc, exc_info=True)
+        _push_slot("person", {"success": False, "error": str(exc), "groups": []})
+    finally:
+        _condensed_rebuild_running = False
+
+
+def update_condensed_view() -> bool:
+    """Rebuild By person when it is the open view (kept for callers)."""
+    if view_mode(view_manager.snapshot()) == "person":
+        _schedule_condensed_rebuild("update_condensed_view")
+    return True
+
+
+def refresh_condensed_view() -> None:
+    update_condensed_view()
+
+
+def publish_activity_feed_view(*, to: Optional[str] = None) -> Dict[str, Any]:
+    """Send one dock everything it needs: settings, view + live list, page or groups."""
+    snapshot = view_manager.load()
+    broadcast_feed_settings(to=to)
+    broadcast_activity_feed_view(snapshot, to=to, include_live_alerts=True)
+    mode = view_mode(snapshot)
+    if mode == "history":
+        emit_stored_alerts_page(int(snapshot["page"]), to=to)
+    elif mode == "person":
+        payload = build_condensed_overlay_payload(
+            filter_state=snapshot["filters"], search=snapshot.get("search") or ""
+        )
+        _emit_overlay_event("condensed_view_alerts", payload, to=to)
+    return snapshot
+
+
+def _apply_view_to_desktop(changed: set) -> None:
+    """The shared view changed: repaint the tab and load what the new view needs."""
+    snapshot = view_manager.snapshot()
+    _push_slot("view", snapshot)
+    mode = view_mode(snapshot)
+    if mode == "history" and ("tab" in changed or "page" in changed or "condensed" in changed):
+        _push_slot("history", dict(_history_payload, loading=True))
+        refresh_restored_alerts()
+    if mode == "person" and changed & {"tab", "condensed", "filters", "search"}:
+        if changed & {"tab", "condensed"}:
+            _push_slot("person", dict(_person_payload, loading=True))
+        schedule_condensed_view_update("view_change")
+
+
+def on_checkbox_change(key, value):
+    """A filter checkbox changed (kept for callers)."""
+    view_manager.update({"filters": {key: bool(value)}})
 
 
 def switch_to_tab(tab_name):
-    """Switch to a specific tab (current or previous)"""
-    if _ignore_view_apply:
+    """Switch to the current (Live / By person) or previous (History) tab."""
+    if tab_name not in ("current", "previous"):
+        return
+    patch: Dict[str, Any] = {"tab": tab_name}
+    if tab_name == "previous":
+        patch["page"] = 1
+    view_manager.update(patch)
+
+
+def go_to_page(page):
+    """Open one history page (clamped to the pages that exist)."""
+    try:
+        page = int(page)
+    except (TypeError, ValueError):
+        return
+    max_allowed = max(1, min(activity_feed_state.total_pages or 1, _max_history_pages()))
+    page = min(max(page, 1), max_allowed)
+    view_manager.update({"page": page})
+
+
+# --------------------------------------------------------------------------- the tab host
+
+
+class _FeedHost:
+    def __init__(self, host, slots: Dict[str, Any], fallback) -> None:
+        self.host = host
+        self.slots = slots
+        self.fallback = fallback
+        self.fallback_on = False
+
+
+_host: Optional[_FeedHost] = None
+_slot_cache: Dict[str, str] = {}
+_slot_rev = 0
+_live_push_scheduled = False
+_queue_poll_timer = None
+_watchdog_timer = None
+_last_queue_sig: Optional[str] = None
+_last_meta: Dict[str, Any] = {}
+_meta_tick = 0
+_health_failures = 0
+_registered_event_clients: set = set()
+_assets_shared = False
+
+
+def _tab_alive() -> bool:
+    return _host is not None and _element_alive(_host.host)
+
+
+def _slot_value(name: str) -> Any:
+    if name == "settings":
+        return current_feed_settings()
+    if name == "view":
+        return view_manager.snapshot()
+    if name == "live":
+        return [_row_for(a) for a in live_alerts_snapshot()]
+    if name == "history":
+        return _history_payload
+    if name == "person":
+        return _person_payload
+    if name == "queue":
+        return current_queue_state()
+    if name == "meta":
+        return _meta_state()
+    return None
+
+
+def _apply_slot(name: str, payload: str) -> None:
+    global _slot_rev
+    host = _host
+    if host is None or not _element_alive(host.host):
+        return
+    if _slot_cache.get(name) == payload:
+        return
+    el = host.slots.get(name)
+    if el is None or not _element_alive(el):
+        return
+    _slot_cache[name] = payload
+    _slot_rev += 1
+    el._props.update({"data-json": payload, "data-rev": str(_slot_rev)})
+    el.update()
+
+
+def _push_slot(name: str, value: Any) -> None:
+    """Write one state slot of the tab (no-op while the tab isn't built)."""
+    if not _tab_alive():
         return
     try:
-        if tab_name not in ("current", "previous"):
-            return
-        # Don't switch if we're already on this tab
-        if activity_feed_state.current_tab == tab_name:
-            logger.debug(f"Already on {tab_name} tab, skipping switch")
-            _sync_tab_buttons(tab_name)
-            return
+        payload = json.dumps(_json_ready(value), separators=(",", ":"), default=str)
+    except Exception as exc:
+        logger.debug("activity_feed: slot %s not serialisable: %s", name, exc)
+        return
+    _run_on_ui_loop(lambda: _apply_slot(name, payload))
 
-        patch: Dict[str, Any] = {"tab": tab_name}
-        if tab_name == "previous":
-            patch["page"] = 1
-        view_manager.update(patch)
-        logger.debug("Switched activity feed tab to %s", tab_name)
 
-    except Exception as e:
-        logger.error(f"Error switching to {tab_name} tab: {str(e)}", exc_info=True)
+def push_all_slots() -> None:
+    for name in _SLOT_NAMES:
+        _push_slot(name, _slot_value(name))
+
+
+def _schedule_live_push() -> None:
+    """Coalesce bursts of alerts into one repaint."""
+    global _live_push_scheduled
+    if not _tab_alive() or _live_push_scheduled:
+        return
+    _live_push_scheduled = True
+
+    def _go() -> None:
+        global _live_push_scheduled
+        _live_push_scheduled = False
+        _push_slot("live", _slot_value("live"))
+
+    def _arm() -> None:
+        try:
+            app_schedule(_LIVE_PUSH_DEBOUNCE_SEC, _go, once=True)
+        except Exception:
+            _go()
+
+    run_on_ui_loop(_arm)
+
+
+# ---- queue state
+
+
+def _fallback_queue_state(web_engine: Any) -> Dict[str, Any]:
+    """Before the queue-state API existed: flags plus the raw queue."""
+    queue: List[Dict[str, Any]] = []
+    try:
+        from modules import alert_processor
+
+        for alert in alert_processor.snapshot_alert_queue():
+            queue.append(
+                {
+                    "alert_id": getattr(alert, "alert_id", None),
+                    "type": getattr(alert, "alert_type", ""),
+                    "username": getattr(alert, "username", ""),
+                }
+            )
+    except Exception:
+        pass
+    playing = {"alert_id": None, "type": "", "username": ""} if getattr(web_engine, "ALERT_PLAYING", False) else None
+    return {"paused": bool(getattr(web_engine, "ALERTS_PAUSED", False)),
+            "muted": bool(getattr(web_engine, "ALERTS_MUTED", False)), "playing": playing, "queue": queue}
+
+
+def current_queue_state() -> Dict[str, Any]:
+    """Normalised alert queue state (web_engine.get_alert_queue_state, else flags)."""
+    try:
+        from modules import web_engine
+    except Exception:
+        return normalize_queue_state(None)
+    getter = getattr(web_engine, "get_alert_queue_state", None)
+    raw = None
+    if callable(getter):
+        try:
+            raw = getter()
+        except Exception as exc:
+            logger.debug("activity_feed: queue state unavailable: %s", exc)
+    contract = isinstance(raw, dict)
+    if not contract:
+        raw = _fallback_queue_state(web_engine)
+    state = normalize_queue_state(
+        raw,
+        paused=bool(getattr(web_engine, "ALERTS_PAUSED", False)),
+        muted=bool(getattr(web_engine, "ALERTS_MUTED", False)),
+    )
+    state["contract"] = contract
+    return state
+
+
+def _queue_sig(state: Dict[str, Any]) -> str:
+    body = {k: v for k, v in state.items() if k != "server_now_ms"}
+    return json.dumps(body, sort_keys=True, default=str)
+
+
+def _meta_state() -> Dict[str, Any]:
+    dock_open = None
+    try:
+        from modules import web_engine
+
+        engine = getattr(web_engine, "web_engine_instance", None)
+        if engine is not None and hasattr(engine, "_overlay_connected_routes"):
+            dock_open = "activity_feed" in engine._overlay_connected_routes()
+    except Exception:
+        dock_open = None
+    return {"app": True, "dock_open": dock_open}
+
+
+def _poll_queue(force: bool = False) -> None:
+    """Push the queue state to the tab when it changed (cheap; runs twice a second)."""
+    global _last_queue_sig, _meta_tick, _last_meta
+    if not _tab_alive():
+        return
+    state = current_queue_state()
+    sig = _queue_sig(state)
+    if force or sig != _last_queue_sig:
+        _last_queue_sig = sig
+        _push_slot("queue", state)
+    _meta_tick += 1
+    if force or _meta_tick % 10 == 0:
+        meta = _meta_state()
+        if force or meta != _last_meta:
+            _last_meta = meta
+            _push_slot("meta", meta)
+
+
+def sync_pause_breath(playing: bool) -> None:
+    """The playing flag changed (web_engine.set_alert_playing): repaint the queue state."""
+    run_on_ui_loop(lambda: _poll_queue(force=True))
+
+
+def sync_pause_button_state():
+    """Pause changed. Safe from any thread."""
+    run_on_ui_loop(lambda: _poll_queue(force=True))
+
+
+def sync_mute_button_state():
+    """Mute changed. Safe from any thread."""
+    run_on_ui_loop(lambda: _poll_queue(force=True))
+
+
+def _start_timers() -> None:
+    global _queue_poll_timer, _watchdog_timer
+    if _queue_poll_timer is None:
+        _queue_poll_timer = app_schedule(_QUEUE_POLL_SEC, _poll_queue, active=True)
+    if _watchdog_timer is None:
+        _watchdog_timer = app_schedule(_FEED_WATCHDOG_INTERVAL_SEC, _run_feed_watchdog, active=True)
+
+
+def _stop_timers() -> None:
+    global _queue_poll_timer, _watchdog_timer
+    for timer in (_queue_poll_timer, _watchdog_timer):
+        if timer is not None:
+            try:
+                timer.active = False
+            except Exception:
+                pass
+    _queue_poll_timer = None
+    _watchdog_timer = None
+
+
+# ---- assets
+
+
+def _read_asset(name: str) -> str:
+    from ..path_utils import get_assets_path
+
+    try:
+        with open(get_assets_path(f"default_assets/{name}"), "r", encoding="utf-8") as fh:
+            return fh.read()
+    except Exception as exc:
+        logger.error("Activity Feed asset %s missing: %s", name, exc)
+        return ""
+
+
+_APP_EXTRA_CSS = """
+.afx-host { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; width: 100%; }
+.afx-mount { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.afx-slot { display: none !important; }
+.afx { font-family: inherit; }
+"""
+
+
+def feed_app_stylesheet() -> str:
+    """activity_feed.css scoped to the tab (and colours promoted over the light-mode rule)."""
+    from ..help_system.help_render import promote_color_importance, scope_selectors
+
+    css = _read_asset("activity_feed.css") + "\n" + _APP_EXTRA_CSS
+    return promote_color_importance(scope_selectors(css, ".afx-host"))
+
+
+def _inject_assets() -> None:
+    """Stylesheet + renderer, on this page and every page loaded later."""
+    global _assets_shared
+    from ..help_system.help_render import inject_page_stylesheet
+
+    inject_page_stylesheet(_STYLE_ID, feed_app_stylesheet())
+    js = _read_asset("activity_feed.js")
+    if not js:
+        return
+    if not _assets_shared:
+        ui.add_head_html(f"<script>{js}</script>", shared=True)
+        _assets_shared = True
+    _reinject_renderer(js)
+
+
+def _reinject_renderer(js: Optional[str] = None) -> None:
+    js = js if js is not None else _read_asset("activity_feed.js")
+    client = _feed_client()
+    if client is None or not js or not getattr(client, "has_socket_connection", False):
+        return  # pages loaded later get it from the shared head
+    try:
+        client.run_javascript(js)
+    except Exception as exc:
+        logger.debug("activity_feed: renderer inject failed: %s", exc)
+
+
+def _feed_client() -> Any:
+    host = _host
+    if host is not None and _element_alive(host.host):
+        try:
+            return host.host.client
+        except Exception:
+            return None
+    try:
+        from nicegui import context
+
+        return context.client
+    except Exception:
+        return None
+
+
+# ---- actions from the renderer
+
+
+def _open_settings_section(anchor: str = "aps-activity-feed") -> None:
+    try:
+        from modules.help_system.contextual_help import navigate_to_settings_subtab
+
+        navigate_to_settings_subtab("App Settings", main_tab="Settings")
+    except Exception as exc:
+        logger.debug("activity_feed: settings navigation failed: %s", exc)
+        return
+    client = _feed_client()
+    if client is None:
+        return
+    js = (
+        "(function(){var n=0;(function go(){var el=document.getElementById(%s);"
+        "if(el){el.scrollIntoView({behavior:'smooth',block:'start'});return;}"
+        "if(n++<40){setTimeout(go,100);}})();})();" % json.dumps(anchor)
+    )
+    try:
+        client.run_javascript(js)
+    except Exception:
+        pass
+
+
+def open_feed_settings() -> None:
+    """Show Settings → App Settings → Activity Feed (tab tune button, dock "Open in Mycelian")."""
+    _run_on_ui_loop(lambda: _open_settings_section("aps-activity-feed"))
+
+
+def _open_help() -> None:
+    try:
+        from modules.help_system.contextual_help import _open_help_target, get_help_target_for_tab
+
+        _open_help_target(get_help_target_for_tab("Activity Feed") or "alert_testing")
+    except Exception as exc:
+        logger.debug("activity_feed: help failed: %s", exc)
+
+
+def dock_url() -> str:
+    host, port = "127.0.0.1", 5000
+    try:
+        from modules import web_engine
+
+        engine = web_engine.web_engine_instance
+        if engine is not None:
+            port = int(getattr(engine, "port", port) or port)
+            host = engine._local_connect_host()
+    except Exception:
+        pass
+    return f"http://{host}:{port}/activity_feed"
+
+
+def _copy_dock_link() -> None:
+    url = dock_url()
+    copied = False
+    try:
+        from ..notification_engine import copy_text_to_clipboard
+
+        copied = bool(copy_text_to_clipboard(url))
+    except Exception:
+        copied = False
+    if not copied:
+        try:
+            ui.clipboard.write(url)
+            copied = True
+        except Exception:
+            copied = False
+    notify(
+        url,
+        type="success" if copied else "warning",
+        source="activity_feed",
+        title="Activity Feed dock link copied" if copied else "Couldn't copy the dock link",
+        hint="In OBS open Docks → Custom Browser Docks, paste it as the URL and click Apply.",
+        actions=None if copied else [{"kind": "copy", "text": url, "label": "Copy link"}],
+    )
+
+
+def handle_feed_action(action: str, data: Optional[Dict[str, Any]] = None) -> Any:
+    """One user action from the renderer in the tab (same actions as the dock)."""
+    data = data if isinstance(data, dict) else {}
+    try:
+        if action == "pause":
+            from modules import web_engine
+            from modules.mainuiwindow import toggle_alerts
+
+            want = data.get("paused")
+            if want is None or bool(want) != bool(getattr(web_engine, "ALERTS_PAUSED", False)):
+                toggle_alerts()
+            _poll_queue(force=True)
+        elif action == "mute":
+            from modules import web_engine
+            from modules.mainuiwindow import toggle_mute
+
+            want = data.get("muted")
+            if want is None or bool(want) != bool(getattr(web_engine, "ALERTS_MUTED", False)):
+                toggle_mute()
+            _poll_queue(force=True)
+        elif action == "skip":
+            alert_id = data.get("alert_id") or None
+            result = skip_alert({"alert_id": alert_id} if alert_id else {"type": "current"})
+            _poll_queue(force=True)
+            return result
+        elif action == "replay":
+            alert_id = data.get("alert_id")
+            label = str(data.get("label") or "")
+            return replay_alert({"alert_id": alert_id, "type": label, "username": data.get("user")})
+        elif action == "mode":
+            mode = data.get("mode")
+            if mode in ("live", "history", "person"):
+                view_manager.update(mode_patch(mode))
+        elif action == "filter":
+            key = data.get("key")
+            if key in FILTER_KEYS:
+                view_manager.update({"filters": {key: bool(data.get("value"))}})
+        elif action == "search":
+            view_manager.update({"search": data.get("text", "")})
+        elif action == "page":
+            go_to_page(data.get("page"))
+        elif action == "settings":
+            _open_settings_section("aps-activity-feed")
+        elif action == "storage":
+            _open_settings_section("aps-storage")
+        elif action == "help":
+            _open_help()
+        elif action == "copy-dock":
+            _copy_dock_link()
+        else:
+            logger.debug("activity_feed: unknown action %r", action)
+    except Exception as exc:
+        logger.error("activity_feed: action %s failed: %s", action, exc, exc_info=True)
+    return None
+
+
+def _on_feed_event(event: Any) -> None:
+    args = getattr(event, "args", None)
+    if not isinstance(args, dict):
+        return
+    handle_feed_action(str(args.get("action") or ""), args)
+
+
+# ---- fail-open watchdog
+
+_HEALTH_JS = (
+    "(window.MycelianFeed && window.MycelianFeed.health) ? window.MycelianFeed.health()"
+    " : {ok: false, reason: 'no_renderer', hosts: document.querySelectorAll('.afx-host[data-afx-app]').length,"
+    " visible: document.querySelectorAll('.afx-host[data-afx-app]').length}"
+)
+
+
+def _feed_health_action(result: Any, failures: int) -> tuple:
+    """Decide what to do with a renderer health report -> (action, failures).
+
+    ok: healthy (leave fallback). skip: nothing to judge (tab not in the DOM / hidden).
+    reinject: load the renderer again. fallback: show the server-rendered list.
+    """
+    if not isinstance(result, dict):
+        return "skip", failures
+    if result.get("ok"):
+        return "ok", 0
+    hosts = int(result.get("hosts") or 0)
+    visible = int(result.get("visible") or 0)
+    if hosts == 0 or visible == 0:
+        return "skip", failures
+    failures += 1
+    if failures >= 2:
+        return "fallback", failures
+    return "reinject", failures
+
+
+def render_fallback_html(rows: List[Dict[str, Any]], *, limit: int = 150) -> str:
+    """Plain list used only if the renderer can't run (every value escaped)."""
+    parts = [
+        '<div class="afx-fb-note">The live feed view couldn\'t start, so this is a simple list. '
+        "It updates as events arrive; reopening the tab usually brings the full view back.</div>"
+    ]
+    for row in rows[:limit]:
+        user = html.escape(str(row.get("user") or ""))
+        what = html.escape(str(row.get("what") or ""))
+        amount = html.escape(str(row.get("amount") or ""))
+        when = html.escape(format_timestamp(row.get("ts") or time.time()))
+        msg = html.escape(str(row.get("msg") or ""))
+        parts.append(
+            f'<div class="afx-fb-row"><b>{user}</b> {what}'
+            + (f" · {amount}" if amount else "")
+            + (f" — <i>{msg}</i>" if msg else "")
+            + f"<small>{when}</small></div>"
+        )
+    if len(parts) == 1:
+        parts.append('<div class="afx-fb-row">No events yet this session.</div>')
+    return "".join(parts)
+
+
+def _set_fallback(on: bool) -> None:
+    host = _host
+    if host is None or not _element_alive(host.host):
+        return
+    if on:
+        rows = [_row_for(a) for a in live_alerts_snapshot()]
+        try:
+            host.fallback.set_content(render_fallback_html(rows))
+        except Exception:
+            pass
+        if not host.fallback_on:
+            logger.warning("activity_feed: renderer unhealthy — showing the plain fallback list")
+        host.host.classes(add="is-fallback")
+    elif host.fallback_on:
+        logger.info("activity_feed: renderer healthy again — leaving the fallback list")
+        host.host.classes(remove="is-fallback")
+    host.fallback_on = on
+
+
+def _feed_ui_is_on_screen() -> bool:
+    """False when the feed cannot be visible (tray, other main tab, no socket)."""
+    try:
+        from ..tray_controller import is_minimized
+
+        if is_minimized():
+            return False
+    except Exception:
+        pass
+    try:
+        from ..help_system.contextual_help import get_current_tab_context
+
+        main_tab, _ = get_current_tab_context()
+        if (
+            main_tab
+            and main_tab not in ("Activity Feed", "unknown")
+            and "activity feed" not in str(main_tab).lower()
+        ):
+            return False
+    except Exception:
+        pass
+    return _get_feed_client() is not None
+
+
+def _get_feed_client() -> Any:
+    client = _feed_client() if _tab_alive() else None
+    if client is not None and getattr(client, "has_socket_connection", False):
+        return client
+    try:
+        from nicegui import Client
+
+        for inst in Client.instances.values():
+            if getattr(inst, "has_socket_connection", False):
+                return inst
+    except Exception:
+        pass
+    return None
+
+
+async def _probe_feed_health() -> None:
+    global _health_failures
+    client = _feed_client()
+    if client is None:
+        return
+    try:
+        result = await client.run_javascript(_HEALTH_JS, timeout=5.0)
+    except Exception as exc:
+        logger.debug("activity_feed: health probe failed: %s", exc)
+        return
+    action, _health_failures = _feed_health_action(result, _health_failures)
+    if action == "ok":
+        _set_fallback(False)
+    elif action == "reinject":
+        logger.info("activity_feed: renderer not painting (%s) — reloading it", result)
+        _reinject_renderer()
+        push_all_slots()
+    elif action == "fallback":
+        _set_fallback(True)
+        _reinject_renderer()
+
+
+def _run_feed_watchdog() -> None:
+    try:
+        from modules.shutdown import is_shutdown_in_progress
+
+        if is_shutdown_in_progress():
+            return
+    except Exception:
+        pass
+    if not _tab_alive() or not _feed_ui_is_on_screen():
+        return
+    if _host is not None and _host.fallback_on:
+        _set_fallback(True)  # keep the plain list current while it is shown
+    try:
+        background_tasks.create(_probe_feed_health(), name="activity_feed_health")
+    except Exception:
+        pass
+
+
+# ---- client lifecycle
+
+_hooks_registered_client_ids: set = set()
+
+
+def recover_after_client_reconnect() -> None:
+    """Re-send every slot (the renderer repaints from them)."""
+    _slot_cache.clear()
+    push_all_slots()
+
+
+def register_client_lifecycle_hooks() -> None:
+    """Repaint after a socket reconnect (NiceGUI re-sends elements; slots refresh)."""
+    try:
+        from nicegui import context
+
+        client = context.client
+    except Exception as exc:
+        logger.debug("activity_feed: could not register lifecycle hooks: %s", exc)
+        return
+    if client.id in _hooks_registered_client_ids:
+        return
+    _hooks_registered_client_ids.add(client.id)
+    client_id = client.id
+
+    def _on_connect(_client=None) -> None:
+        app_schedule(0.5, recover_after_client_reconnect, once=True)
+
+    def _on_delete(_client=None) -> None:
+        _hooks_registered_client_ids.discard(client_id)
+        _registered_event_clients.discard(client_id)
+
+    client.on_connect(_on_connect)
+    client.on_delete(_on_delete)
+
+
+def create_activity_feed_tab():
+    """Build the Activity Feed tab: one host the shared renderer paints."""
+    global _host, _health_failures, _last_queue_sig, _last_meta
+    view_manager.load()
+    _inject_assets()
+    try:
+        from nicegui import context
+
+        client = context.client
+        if client.id not in _registered_event_clients:
+            _registered_event_clients.add(client.id)
+            client.layout.on(_FEED_EVENT, _on_feed_event)
+    except Exception as exc:
+        logger.error("activity_feed: could not listen for feed actions: %s", exc)
+
+    with ui.element("div").classes("tab-surface w-full h-full relative flex flex-col p-4 afx-tab"):
+        host = ui.element("div").classes("afx-host afx-app-host").props('data-afx-app="1"')
+        slots: Dict[str, Any] = {}
+        with host:
+            for name in _SLOT_NAMES:
+                slots[name] = ui.element("div").classes("afx-slot").props(f'data-slot="{name}"')
+            ui.element("div").classes("afx-mount")
+            fallback = ui.html("", sanitize=False).classes("afx-fallback")
+    _host = _FeedHost(host, slots, fallback)
+    _slot_cache.clear()
+    _health_failures = 0
+    _last_queue_sig = None
+    _last_meta = {}
+    for name in _SLOT_NAMES:
+        try:
+            payload = json.dumps(_json_ready(_slot_value(name)), separators=(",", ":"), default=str)
+        except Exception as exc:
+            logger.error("activity_feed: initial %s slot failed: %s", name, exc)
+            continue
+        _apply_slot(name, payload)
+    activity_feed_state.is_initialized = True
+    mode = view_mode(view_manager.snapshot())
+    if mode == "history":
+        refresh_restored_alerts()
+    elif mode == "person":
+        _schedule_condensed_rebuild("tab_open")
+    _start_timers()
+    logger.debug("Activity feed tab built")
