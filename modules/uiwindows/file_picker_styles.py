@@ -129,6 +129,11 @@ body:not(.body--dark) .fpk :is(p, span, div, label):not([class]) { color: inheri
 .fpk-pv-list .fpk-pv-more { color: var(--color-text-muted); padding-left: 20px; }
 .fpk-pv-hint { font-size: .76rem; color: var(--color-text-muted); line-height: 1.45; }
 .fpk-pv audio { width: 100%; height: 36px; }
+.fpk-vol { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0; }
+.fpk-vol-icon .fpk-icon { font-size: 18px; color: var(--color-text-secondary); }
+.fpk-vol-slider { flex: 1 1 auto; min-width: 0; }
+.fpk-vol-pct { flex: 0 0 auto; min-width: 42px; text-align: right; font-size: .74rem; font-weight: 600; color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums; }
 
 /* Footer */
 .fpk-foot { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--color-border-subtle); flex: 0 0 auto; min-width: 0; }

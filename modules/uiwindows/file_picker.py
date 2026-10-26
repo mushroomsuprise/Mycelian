@@ -452,6 +452,11 @@ class _PickerConfig:
     confirm_label: str = ""
     within: Optional[Path] = None  # results must be inside this folder (e.g. assets/alerts)
     within_hint: str = ""
+    volume: Optional[int] = None  # preview volume to start at (0-100), e.g. the alert's own volume
+
+
+# Preview volume the picker last used, kept for the session when a caller doesn't pass one.
+_last_preview_volume = 100
 
 
 def _icon(name: str, cls: str = "") -> str:
@@ -487,12 +492,17 @@ class _FilePicker:
         self.only_usable = not self.folder_mode
         self.view = "grid" if config.kind == "image" else "list"
         self._upload_batch = _new_upload_batch()
+        self.volume = int(config.volume) if config.volume is not None else _last_preview_volume
+        self.volume = max(0, min(100, self.volume))
 
     # ----- building -----
     def open(self) -> None:
         from ..help_system.help_render import inject_page_stylesheet, promote_color_importance, scope_selectors
 
+        from .media_preview import ensure_preview_script
+
         inject_page_stylesheet("mycelian-file-picker", promote_color_importance(scope_selectors(FILE_PICKER_CSS, ".fpk")))
+        ensure_preview_script()
         with ui.dialog().props("content-class=mycelian-wide-file-dialog") as self.dialog, ui.card().classes("fpk gap-0"):
             self._build_head()
             with ui.element("div").classes("fpk-main"):
@@ -824,7 +834,9 @@ class _FilePicker:
             if url and kind == "image":
                 ui.html(f'<div class="fpk-pv-media has-img"><img src="{safe}" alt=""></div>', sanitize=False).classes("contents")
             elif url and kind == "video":
-                ui.html(f'<div class="fpk-pv-media"><video src="{safe}" muted loop autoplay playsinline></video></div>',
+                # Starts muted (so it can autoplay); the volume slider below turns the sound on.
+                ui.html(f'<div class="fpk-pv-media"><video src="{safe}" muted loop autoplay playsinline data-pv-media '
+                        f'data-vol="{self.volume}" onloadedmetadata="this.volume=(this.dataset.vol||100)/100"></video></div>',
                         sanitize=False).classes("contents")
             else:
                 cls = "is-ok" if entry.usable else ""
@@ -832,17 +844,42 @@ class _FilePicker:
                         sanitize=False).classes("contents")
             ui.label(entry.name).classes("fpk-pv-name")
             if url and kind == "audio":
-                audio = ui.audio(url, controls=True, autoplay=autoplay)
-                audio.props("preload=metadata")
+                ui.html(f'<audio src="{safe}" controls preload="metadata"{" autoplay" if autoplay else ""} data-pv-media '
+                        f'data-vol="{self.volume}" onloadedmetadata="this.volume=(this.dataset.vol||100)/100"></audio>',
+                        sanitize=False).classes("contents")
+            if url and kind in ("audio", "video"):
+                self._volume_row(muted=kind == "video")
             rows = [("Type", type_name(entry.ext)), ("Size", format_size(entry.size))]
             if kind == "image":
                 dims = image_dimensions(entry.path)
                 if dims:
                     rows.append(("Dimensions", dims))
+                from .media_preview import animation_timing, describe_animation, format_seconds
+
+                timing = animation_timing(entry.path)
+                if timing:
+                    rows.append(("Length", f"{format_seconds(timing.seconds)} · {describe_animation(timing, frames=False)}"))
             rows.append(("Modified", format_time(entry.mtime)))
             if not entry.usable:
                 rows.append(("Usable here", "No"))
             self._rows(rows)
+
+    def _volume_row(self, *, muted: bool) -> None:
+        """Preview volume (0-100). A video starts muted until the slider is moved."""
+        with ui.element("div").classes("fpk-vol"):
+            ui.html(_icon("volume_off" if muted else "volume_up"), sanitize=False).classes("fpk-vol-icon")
+            slider = ui.slider(min=0, max=100, step=1, value=self.volume).props("dense").classes("fpk-vol-slider")
+            pct = ui.label("Muted" if muted else f"{self.volume}%").classes("fpk-vol-pct")
+            slider.tooltip("Preview volume (the alert's own Volume is set on the Alerts tab)")
+
+        def changed(e) -> None:
+            global _last_preview_volume
+            value = max(0, min(100, int(e.value or 0)))
+            self.volume = _last_preview_volume = value
+            pct.set_text(f"{value}%")
+            ui.run_javascript(f"window.MycelianPreview && window.MycelianPreview.setPickerVolume({value})")
+
+        slider.on_value_change(changed)
 
     def _preview_folder(self, entry: Entry) -> None:
         ui.html(f'<div class="fpk-pv-media is-folder">{_icon("folder")}</div>', sanitize=False).classes("contents")
@@ -1050,6 +1087,7 @@ def open_file_picker(
     confirm_label: str = "",
     within: Optional[Path] = None,
     within_hint: str = "",
+    volume: Optional[int] = None,
 ) -> None:
     """Open the picker.
 
@@ -1057,6 +1095,7 @@ def open_file_picker(
     current field value: an ``/assets/...`` path in the assets scope, a file system path
     otherwise. ``places`` adds (icon, label, path) shortcuts in the assets scope.
     ``within`` limits what can be chosen to one folder (``within_hint`` says why).
+    ``volume`` (0-100) is where the audio / video preview volume starts.
     """
     config = _PickerConfig(
         title=title,
@@ -1071,5 +1110,6 @@ def open_file_picker(
         confirm_label=confirm_label,
         within=within,
         within_hint=within_hint,
+        volume=volume,
     )
     _FilePicker(config, start).open()

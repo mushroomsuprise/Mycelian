@@ -31,7 +31,7 @@ import time
 from contextlib import contextmanager
 from types import SimpleNamespace
 
-from nicegui import ui
+from nicegui import background_tasks, context, ui
 from ..notification_engine import nav_actions_main_tab, nav_actions_settings, nav_alerts, notify, notify_progress
 from ..ui_buttons import destructive_button, outline_button, primary_button
 from ..ui_form_controls import form_input, form_number, form_select
@@ -41,6 +41,7 @@ from ..help_system.contextual_help import set_alerts_ui_references
 
 from .. import alert_processor, alertutils
 from .alerts_styles import ALERTS_CSS, ALERTS_TAB_CSS
+from . import media_preview
 
 logger = logging.getLogger(__name__)
 
@@ -597,8 +598,33 @@ TTS_SOURCE_OPTIONS = {
 
 
 def update_tts_custom_message_visibility(alert_type: str):
-    """Custom TTS field is always visible; kept for compatibility."""
-    return
+    """Custom TTS field is always visible; refreshes what the TTS preview button says."""
+    _refresh_tts_preview(alert_type)
+
+
+def _refresh_tts_preview(alert_type: str) -> None:
+    """Point the TTS ▶ button at the custom message or sample viewer messages, with the overlay's voice settings."""
+    button = _view(alert_type).get("tts_preview")
+    if button is None:
+        return
+    elements = _el(alert_type)
+    source = str(getattr(elements.get("tts_source_select"), "value", "") or "alert_message")
+    custom = str(getattr(elements.get("tts_custom_message_input"), "value", "") or "")
+    texts = media_preview.tts_preview_texts(alert_type, source, custom)
+    voice = media_preview.tts_voice_settings()
+    media_preview.set_button_data(button, texts=texts, rate=voice["rate"], pitch=voice["pitch"], tts_vol=voice["volume"])
+    button.set_enabled(bool(texts))
+
+
+def _sync_preview_volume(alert_type: str) -> None:
+    """Sound ▶ buttons play at the alert's Volume slider."""
+    slider = _el(alert_type).get("volume_input")
+    try:
+        volume = int(slider.value) if slider is not None and slider.value is not None else 100
+    except (TypeError, ValueError):
+        volume = 100
+    for button in _view(alert_type).get("preview_buttons", ()):
+        media_preview.set_button_data(button, vol=volume)
 
 
 # ---------------------------------------------------------------------------
@@ -739,19 +765,33 @@ def _overlay_media_url(directory: str, filename: str) -> str:
 
 
 def _media_card(alert_type: str, *, icon: str, browse: str, dir_key: str, file_key: str | None,
-                empty: str, browse_tip: str, dir_tip: str, file_tip: str = "", dir_label: str = "Folder"):
+                empty: str, browse_tip: str, dir_tip: str, file_tip: str = "", dir_label: str = "Folder",
+                preview: str = ""):
     """File card: name + folder, Browse, and ✎ to type the folder/file by hand.
 
     The real inputs (``dir_key`` / ``file_key``) live in the collapsible edit area,
     so loading, saving, dirty tracking and Browse keep using them unchanged.
+
+    ``preview``: "sound" (play button + length), "random" (play a random file from the
+    folder + sound count) or "image" (animation length for GIF / WebP / APNG).
     """
     card = ui.element("div").classes("alr-media")
+    play_btn = None
     with card:
         with ui.element("div").classes("alr-media-main"):
             thumb = ui.html(_icon_html(icon), sanitize=False).classes("alr-thumb")
             with ui.element("div").classes("alr-media-text"):
-                name_label = ui.label(empty).classes("alr-media-name is-empty")
+                with ui.element("div").classes("alr-media-title"):
+                    name_label = ui.label(empty).classes("alr-media-name is-empty")
+                    meta_label = ui.label("").classes("alr-media-meta")
+                    meta_label.visible = False
                 path_label = ui.label("Not set").classes("alr-media-path")
+            if preview in ("sound", "random"):
+                tip = "Play a random sound from this folder" if preview == "random" else "Play this sound"
+                play_btn = media_preview.preview_button(f"{tip} at the alert's volume", pv=preview, vol=100,
+                                                        on_pick=lambda name: on_pick(name))
+                play_btn.classes("alr-play")
+                _view(alert_type).setdefault("preview_buttons", []).append(play_btn)
             edit_btn = ui.button(icon="edit").props("flat round dense size=sm")
             edit_btn.tooltip("Type the path")
             outline_button("Browse", lambda at=alert_type, b=browse: handle_browse(b, at), icon="folder_open").props(
@@ -766,6 +806,50 @@ def _media_card(alert_type: str, *, icon: str, browse: str, dir_key: str, file_k
             if file_key:
                 file_input = form_input(tooltip=file_tip, label="File", classes="w-full", on_change=_tracker(alert_type, file_key))
                 _el(alert_type)[file_key] = file_input
+
+    state = {"token": 0}
+
+    def set_meta(text: str, tip: str = "") -> None:
+        meta_label.set_text(text)
+        meta_label.visible = bool(text)
+        if meta_label._props.get("title", "") != tip:
+            meta_label._props["title"] = tip
+            meta_label.update()
+
+    async def fill_duration(url: str, token: int, client) -> None:
+        seconds = await media_preview.audio_duration(url, client)
+        if token == state["token"]:
+            set_meta(media_preview.format_seconds(seconds), "Length of this sound" if seconds else "")
+
+    def refresh_preview(directory: str, filename: str) -> None:
+        state["token"] += 1
+        set_meta("")
+        if preview == "image":
+            timing = media_preview.animation_timing(media_preview.asset_file(directory, filename)) if filename else None
+            if timing:
+                set_meta(media_preview.format_seconds(timing.seconds),
+                         f"One play of the animation · {media_preview.describe_animation(timing)}")
+        elif preview == "sound" and play_btn is not None:
+            url = media_preview.media_url(media_preview.asset_file(directory, filename)) if filename else ""
+            media_preview.set_button_data(play_btn, src=url)
+            play_btn.set_enabled(bool(url))
+            if url:
+                try:
+                    background_tasks.create(fill_duration(url, state["token"], context.client), name="alert-sound-length")
+                except Exception:
+                    logger.debug("Could not read the sound length", exc_info=True)
+        elif preview == "random" and play_btn is not None:
+            folder = media_preview.asset_file(directory)
+            files = media_preview.random_sound_files(folder)
+            media_preview.set_button_data(play_btn, base=media_preview.folder_base_url(folder), files=files)
+            play_btn.set_enabled(bool(files))
+            if folder is not None:
+                set_meta(f"{len(files)} sound" + ("" if len(files) == 1 else "s"),
+                         "Sound files the overlay can pick from")
+
+    def on_pick(name: str) -> None:
+        # The file a random ▶ picked leads the path line until the folder changes.
+        path_label.set_text(f"▶ {name} · {dir_input.value or ''}")
 
     def refresh(_=None) -> None:
         directory = str(dir_input.value or "")
@@ -787,6 +871,8 @@ def _media_card(alert_type: str, *, icon: str, browse: str, dir_key: str, file_k
         thumb.set_content(
             f'<img src="{html_lib.escape(url, quote=True)}" alt="">' if url else _icon_html(icon)
         )
+        if preview:
+            refresh_preview(directory, filename)
 
     def toggle_edit() -> None:
         edit.visible = not edit.visible
@@ -868,7 +954,7 @@ def create_visual_settings_section(alert_type: str):
         _media_card(
             alert_type, icon="gif_box", browse="gif", dir_key="gif_dir_input", file_key="gif_file_input",
             empty="No GIF or image", browse_tip="Browse for GIF/image file",
-            dir_tip="Directory containing the GIF file", file_tip="Name of the GIF file",
+            dir_tip="Directory containing the GIF file", file_tip="Name of the GIF file", preview="image",
         )
 
 
@@ -879,6 +965,7 @@ def create_audio_settings_section(alert_type: str):
             alert_type, icon="music_note", browse="primary", dir_key="primary_dir_input", file_key="primary_file_input",
             empty="No sound", browse_tip="Browse for the primary sound file",
             dir_tip="Directory containing the primary sound file", file_tip="Name of the primary sound file",
+            preview="sound",
         )
         with _row("Volume", "Volume level for the alert sound (0-100%)", grow=True):
             slider = ui.slider(min=0, max=100, value=100).classes("alr-slider")
@@ -892,6 +979,7 @@ def create_audio_settings_section(alert_type: str):
                 _el(at)["volume_value_label"].set_text(f"{value}%")
 
             slider.on("change", handle_volume_change)
+            slider.on_value_change(lambda _e, at=alert_type: _sync_preview_volume(at))
         with ui.element("div").classes("alr-row is-pair"):
             _label_with_help("Fade in", "Time in milliseconds for the audio to fade in")
             with ui.element("div").classes("alr-ctrl"):
@@ -922,6 +1010,10 @@ def create_tts_settings_section(alert_type: str):
                 classes="w-40",
                 on_change=handle_tts_source_change,
             )
+            _view(alert_type)["tts_preview"] = media_preview.preview_button(
+                "Hear it with the overlay's voice settings (Alert Message speaks a sample viewer message)",
+                pv="tts",
+            ).classes("alr-play")
         _dim_on(alert_type, "tts_source", source_row)
         with _stack("Custom message", "Static message to speak when Custom Message is selected") as custom_stack:
             _el(alert_type)["tts_custom_message_input"] = form_input(
@@ -930,7 +1022,9 @@ def create_tts_settings_section(alert_type: str):
                 placeholder="Thanks for the support!",
                 on_change=_tracker(alert_type, "tts_custom_message_input"),
             )
+            _el(alert_type)["tts_custom_message_input"].on_value_change(lambda _e, at=alert_type: _refresh_tts_preview(at))
         _dim_on(alert_type, "tts_custom", custom_stack)
+        _refresh_tts_preview(alert_type)
     _watch_dims(alert_type, "tts_enabled_switch", "tts_source_select")
 
 
@@ -947,7 +1041,7 @@ def create_randomizer_settings_section(alert_type: str):
         card = _media_card(
             alert_type, icon="folder", browse="random", dir_key="random_dir_input", file_key=None,
             empty="No folder", browse_tip="Browse for directory containing random sound files",
-            dir_tip="Directory containing random sound files", dir_label="Directory",
+            dir_tip="Directory containing random sound files", dir_label="Directory", preview="random",
         )
         _dim_on(alert_type, "random", card)
         ui.element("div").classes("alr-div")
@@ -963,8 +1057,9 @@ def create_randomizer_settings_section(alert_type: str):
         card = _media_card(
             alert_type, icon="folder", browse="extra", dir_key="extra_dir_input", file_key=None,
             empty="No folder", browse_tip="Browse for directory containing extra sound files",
-            dir_tip="Directory containing extra random sound files", dir_label="Directory",
+            dir_tip="Directory containing extra random sound files", dir_label="Directory", preview="random",
         )
+        _sync_preview_volume(alert_type)
         _dim_on(alert_type, "extra", card)
     _watch_dims(alert_type, "randomized_switch", "randomized_extra_switch")
     _el(alert_type)["randomized_switch"].on_value_change(lambda e, at=alert_type: _random_switch_changed(at, e.value))
@@ -2453,6 +2548,14 @@ def handle_browse(folder_type: str, alert_type: str = None):
 
         # The overlay looks random-sound folders up under assets/alerts/ only.
         within = root / "alerts" if mode == "folder" else None
+        # Sound previews in the picker start at this alert's volume.
+        volume = None
+        if kind == "audio":
+            slider = elements.get("volume_input")
+            try:
+                volume = int(slider.value) if slider is not None and slider.value is not None else None
+            except (TypeError, ValueError):
+                volume = None
         open_file_picker(
             title=title,
             subtitle=subtitle,
@@ -2464,6 +2567,7 @@ def handle_browse(folder_type: str, alert_type: str = None):
             places=places,
             within=within,
             within_hint="Random sound folders must be inside assets/alerts so the overlay can find them.",
+            volume=volume,
         )
 
     except Exception as e:

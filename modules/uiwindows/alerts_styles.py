@@ -131,6 +131,16 @@ body:not(.body--dark) .alr :is(p, span, div, label):not([class]) { color: inheri
 .alr-media-main > .q-btn.q-btn--round { color: var(--color-text-secondary); }
 .alr-edit { display: flex; flex-direction: column; gap: 6px; padding: 0 8px 8px; }
 .alr-edit .q-field { width: 100%; }
+/* Length / sound count beside the file name, and the ▶ preview buttons */
+.alr-media-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.alr-media-title .alr-media-name { flex: 0 1 auto; min-width: 0; }
+.alr-media-meta { flex: 0 0 auto; font-size: .66rem; font-weight: 700; line-height: 1; padding: 3px 6px; border-radius: 5px; white-space: nowrap;
+    color: var(--color-text-secondary); background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle);
+    font-variant-numeric: tabular-nums; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+.alr .q-btn.alr-play { color: var(--color-primary); }
+.alr .q-btn.alr-play.is-playing { color: #fff; background: var(--color-primary); }
+.alr-media-main > .q-btn.q-btn--round.alr-play { color: var(--color-primary); }
+.alr-media-main > .q-btn.q-btn--round.alr-play.is-playing { color: #fff; background: var(--color-primary); }
 """
 
 # Alert-type tabs sit outside ``.alr``; this part stays unscoped.

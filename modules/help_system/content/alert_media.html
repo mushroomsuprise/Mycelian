@@ -79,11 +79,15 @@
   <li data-n="4"><strong>Add files…</strong> copies files from anywhere on your computer into the folder you are viewing, then selects the newest one. A file with the same name is never overwritten; the copy gets a number, like <code>cheer (2).mp3</code>.</li>
 </ol>
 
+<p>For a sound or video, the preview on the right has a volume slider. When you are picking an alert's sound it starts at that alert's <strong>Volume</strong>; it only changes the preview, not the alert. A video starts muted and turns its sound on once you move the slider. For an animated GIF, WebP or APNG the preview also shows its <strong>Length</strong>: one play, the frame rate, and whether it loops.</p>
+
 <p>The grid and list buttons next to <strong>Filter</strong> switch between thumbnails and a compact list. The picker only shows what is inside <code>assets</code>, because overlays can't load files from anywhere else.</p>
 
 <h2>Volume and fades</h2>
 
 <p>These are in the <strong>Sound</strong> section. <strong>Volume</strong> (0-100%) applies to whichever sound plays, primary or random. <strong>Fade in</strong> and <strong>Fade out</strong> are in milliseconds; <code>0</code> means no fade.</p>
+
+<p>To hear a sound without sending a test alert, click play ({{icon:play_arrow}}) on its card. It plays in the app at the current <strong>Volume</strong>, so you can set the level by ear (fades only happen in the overlay). The tag beside the file name shows how long the sound is.</p>
 
 <p>On the <strong>Channel Points</strong> tab, <strong>Audio only</strong> in <strong>Playback</strong> plays the sound with no image or text, which suits sound-effect rewards.</p>
 
@@ -97,6 +101,8 @@
 <li>Otherwise play the primary sound (the file card in <strong>Sound</strong>).</li>
 <li>If no primary sound is set, always play a random file from the random folder.</li>
 </ol>
+
+<p>Each folder card shows how many sounds the overlay can pick from (MP3, WAV, OGG, M4A, AAC or FLAC files directly in that folder). Its play button ({{icon:play_arrow}}) picks one at random, the same way the overlay does, and plays it at the alert's <strong>Volume</strong>; the path line shows which file it picked.</p>
 
 <p>Pick a scenario to see the odds:</p>
 
@@ -144,6 +150,8 @@ Random sounds            off
 <h2>Text-to-speech</h2>
 
 <p>The <strong>Text-to-speech</strong> section reads the alert aloud through the browser source. It starts together with the sound. While speech is on, the sound plays at a quarter of its <strong>Volume</strong> so the voice is clear, and the next alert waits for both to finish. <strong>Mute</strong> on the Activity Feed silences speech too. Voice speed, pitch and loudness are set on the alerts template in <span class="hx-path"><span>Source Settings</span><span>alerts</span></span>.</p>
+
+<p>Click play ({{icon:play_arrow}}) next to <strong>Speak</strong> to hear it with those settings. With <strong>Custom Message</strong> it reads your message exactly as the overlay will. With <strong>Alert Message</strong> the real text comes from the viewer, so the preview reads a sample message instead (<em>Love the stream, keep it up!</em>). The app uses your computer's speech voice; the browser source in OBS may pick a different one.</p>
 
 <div class="hx-cards">
   <a class="hx-card" href="help:alert_testing">{{icon:play_circle}}<span><strong>Testing Your Alerts</strong><span class="hx-card-text">Hear the result before going live</span></span></a>
