@@ -57,7 +57,10 @@
     supersticker: 'supersticker'
   };
   var TW = '<svg class="plat" viewBox="0 0 24 24" aria-label="Twitch"><path fill="#9146FF" d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/></svg>';
+  var SL = '<svg class="plat" viewBox="0 0 24 24" aria-label="Streamlabs"><path fill="#80F5D2" d="M8.6878 1.3459a1.365 1.365 0 0 0-.2734.0058c-.528.066-1.0133.1616-1.4843.3086A10.0568 10.0568 0 0 0 .3208 8.2697c-.147.471-.2445.9583-.3105 1.4863-.091.734.431 1.4041 1.166 1.4961.734.091 1.404-.43 1.496-1.164.05-.406.119-.7316.209-1.0196A7.3736 7.3736 0 0 1 7.727 4.221c.288-.09.6145-.157 1.0195-.207.735-.092 1.255-.7631 1.164-1.4981a1.3394 1.3394 0 0 0-1.2226-1.17Zm4.0488 5.2226c-2.629 0-3.9432.0007-4.9472.5117A4.684 4.684 0 0 0 5.7406 9.131c-.512 1.004-.5117 2.3183-.5117 4.9473v4.289c0 1.502-.001 2.2542.291 2.8282.257.505.6679.9149 1.1719 1.1719.574.292 1.326.291 2.828.291h6.9706c2.628 0 3.9442.0012 4.9472-.5098a4.6883 4.6883 0 0 0 2.0507-2.0508c.512-1.004.5117-2.3182.5117-4.9472v-1.0723c0-2.629.0003-3.9433-.5117-4.9473a4.6883 4.6883 0 0 0-2.0507-2.0508c-1.003-.511-2.3193-.5117-4.9472-.5117zm.537 6.7051c.741 0 1.3399.5998 1.3399 1.3398v2.6836c0 .74-.5988 1.3399-1.3398 1.3399-.74 0-1.3418-.5999-1.3418-1.3399v-2.6836c0-.74.6018-1.3398 1.3418-1.3398zm5.3632 0c.74 0 1.3399.5998 1.3399 1.3398v2.6836c0 .74-.5999 1.3399-1.3399 1.3399-.741 0-1.3398-.5999-1.3398-1.3399v-2.6836c0-.74.5989-1.3398 1.3398-1.3398z"/></svg>';
+  var SE = '<svg class="plat" viewBox="0 0 24 24" aria-label="StreamElements"><path fill="#2700FF" d="M12 0a.18.18 0 0 0-.157.088L9.825 3.713a.75.75 0 0 0-.089.486l.682 4.437-1.276 2.503a.6.6 0 0 0-.058.383l.467 2.611c.014.085.15.085.164 0l.252-1.424c.081-.463.308-.892.648-1.235l.524 1.333a.08.08 0 0 0 .076.052h.123l.333 1.237c-.378 1.61-1.166 3.898-2.9 3.898-1.364 0-3.204-2.088-3.471-3.057-.099.606-.231 1.422-.835 1.422-1.482 0-2.687-3.001-2.745-3.723-.318.434-.313 2.19.159 3.315 1.232 2.941 3.918 5.214 7.237 6.061.76.21 1.565.318 2.389.348h.002q.107.005.214.006l.063.002q.105.003.21.004.102-.001.202-.004l.1-.002.177-.005c.85-.03 1.682-.144 2.463-.365 3.29-.86 5.95-3.122 7.175-6.045.47-1.12.476-2.862.163-3.308-.064.732-1.266 3.716-2.744 3.716-.601 0-.736-.816-.835-1.422-.267.967-2.107 3.057-3.471 3.057-1.731 0-2.52-2.28-2.9-3.89l.336-1.245h.117c.034 0 .065-.02.077-.052l.527-1.338c.342.344.57.775.652 1.24l.252 1.426c.017.085.15.085.164 0l.467-2.613a.6.6 0 0 0-.058-.383l-1.281-2.515.68-4.425a.75.75 0 0 0-.09-.486l.008.002L12.156.088A.17.17 0 0 0 12.001 0m10.274 12.643.001-.007h-.005zM15.041 2.138l.652 1.174c4.32 1.435 7.29 5.298 7.29 9.576 0 5.61-4.927 10.172-10.985 10.172S1.015 18.497 1.015 12.888c0-4.28 2.969-8.141 7.29-9.576l.652-1.172C3.724 3.408 0 7.821 0 12.888 0 19.014 5.384 24 12 24s12-4.986 12-11.112c0-5.067-3.724-9.482-8.959-10.75"/></svg>';
   var YT = '<svg class="plat" viewBox="0 0 24 24" aria-label="YouTube"><path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>';
+  var PLAT_MARKS = { twitch: TW, youtube: YT, streamlabs: SL, streamelements: SE };
   var EQ = '<span class="afx-eq"><i></i><i></i><i></i><i></i></span>';
   var LIVE_CAP = 500;
 
@@ -133,6 +136,10 @@
     var hay = [row.user, row.what, row.msg, row.amount, row.label].join(' ').toLowerCase();
     return hay.indexOf(q) !== -1;
   }
+  function tipPlatform(a) {
+    var s = String(a.donation_source || a.source || (a.stored_alert_data || {}).donation_source || '').toLowerCase();
+    return s === 'streamlabs' || s === 'streamelements' ? s : '';
+  }
   /* Fallback for payloads without a precomputed row (older senders). */
   function rowFromAlert(a) {
     if (a && a.row && a.row.kind) { return a.row; }
@@ -151,7 +158,7 @@
     return {
       id: id || ('row-' + Math.round(ts * 1000)), alert_id: id, kind: kind, icon: m[0], color: m[1], label: m[2],
       filter: m[3], user: user, what: what, amount: '', tier: null, duration: dur, msg: a.user_message || '', ts: ts,
-      platform: kind === 'donation' ? '' : 'twitch', restored: !!a.is_restored, seq: a.seq != null ? a.seq : null
+      platform: kind === 'donation' ? tipPlatform(a) : 'twitch', restored: !!a.is_restored, seq: a.seq != null ? a.seq : null
     };
   }
   function queueRow(e, pos) {
@@ -551,7 +558,7 @@
     var seq = st.order_numbers && a.seq != null ? '<span class="seq">#' + esc(a.seq) + '</span>' : '';
     var state = queued ? '<span class="waittag">' + (q.paused ? 'Waiting' : 'Up next') + ' · ' + ordinal(tag.pos) + '</span>'
       : (playing ? '<span class="playtag">' + EQ + 'Playing</span>' : '');
-    var plat = !st.platform ? '' : (a.platform === 'youtube' ? YT : (a.platform === 'twitch' ? TW : ''));
+    var plat = !st.platform ? '' : (PLAT_MARKS[a.platform] || '');
     var amt = a.amount ? '<span class="amt">' + esc(a.amount) + '</span>' : '';
     var tierName = tierTxt ? '<span class="tier">' + tierTxt + '</span>' : '';
     // Multi-month sub or gift ("3-month gift"), right after the tier; hidden by the Show multi-month subs setting.

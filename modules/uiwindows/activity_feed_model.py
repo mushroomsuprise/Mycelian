@@ -251,6 +251,7 @@ _KIND_ALIASES = {
 }
 
 _YOUTUBE_KINDS = frozenset({"member", "milestone", "giftmember", "superchat", "supersticker"})
+_TIP_PLATFORMS = frozenset({"streamlabs", "streamelements"})
 
 
 def feed_kind(alert: Mapping[str, Any]) -> str:
@@ -536,8 +537,10 @@ def feed_row_model(alert: Mapping[str, Any], *, seq: Optional[int] = None) -> Di
     source = str(alert.get("source") or _stored(alert).get("source") or "").lower()
     if kind in _YOUTUBE_KINDS or source == "youtube":
         platform = "youtube"
-    elif kind == "donation" or source in ("streamlabs", "streamelements"):
-        platform = ""
+    elif kind == "donation" or source in _TIP_PLATFORMS:
+        # Tips show the service they came through (Streamlabs / StreamElements), else no mark.
+        tip_source = str(_pick(alert, "donation_source") or source).lower()
+        platform = tip_source if tip_source in _TIP_PLATFORMS else ""
 
     alert_id = alert.get("alert_id")
     alert_id = str(alert_id) if alert_id and not str(alert_id).startswith("generated_") else None

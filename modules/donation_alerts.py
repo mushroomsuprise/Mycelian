@@ -291,6 +291,7 @@ def _send_feed(alert, phrase: str) -> None:
             timestamp=str(int(alert.timestamp)),
             user_message=alert.message or None,
             alert_id=alert.alert_id,
+            donation_source=getattr(alert, "donation_source", "") or None,
         )
         if getattr(alert, "is_supersticker", False):
             params = inspect.signature(add_alert_to_feed).parameters

@@ -581,7 +581,7 @@ class AppSettingsTab:
                         self._feed_switch("icons")
                     with self._row("Tier badge", "Where T1 / T2 / T3 appears."):
                         self._feed_select("tier", {"icon": "On the icon corner", "name": "After the name", "hidden": "Hidden"}, "Where the sub tier shows", "w-52")
-                    with self._row("Show platform marks", "Twitch / YouTube logo on each row."):
+                    with self._row("Show platform marks", "Twitch / YouTube logo on each row; tips get a Streamlabs or StreamElements logo."):
                         self._feed_switch("platform")
                     with self._row("Show viewer messages", "The message a viewer sent with a cheer, sub or tip."):
                         self._feed_switch("messages")
