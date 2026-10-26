@@ -13,11 +13,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from nicegui import ui
+from nicegui import run, ui
 
+from .. import twitch_polls
 from ..notification_engine import notify
 from ..poll_manager import (
     DEFAULT_BANNER_MESSAGE,
+    ONE_TWITCH_POLL_MESSAGE,
     format_banner_message,
     get_poll_manager,
     list_poll_template_names,
@@ -33,6 +35,7 @@ from .tab_visibility import chatbot_subtab_hidden, on_chatbot_subtab_shown
 logger = logging.getLogger(__name__)
 
 _UNITS = {1: "seconds", 60: "minutes", 3600: "hours"}
+_TWITCH_UNITS = {1: "seconds", 60: "minutes"}  # Twitch polls run 15 seconds to 30 minutes
 DEFAULT_TIMER = 180
 
 # Remembered across rebuilds so the tab reopens on the overlay the user last picked.
@@ -215,18 +218,18 @@ class PollsPanel:
             if error:
                 raw_html(f'<div class="gp-alert">{icon("warning")}<span>{esc(error)}</span></div>', "")
             with ui.element("div").classes("gp-cols"):
+                # The Overlay card always sits under Options / Live results, so it doesn't jump columns on start.
                 with ui.element("div").classes("gp-col"):
                     if live:
                         self._live_card(snapshot, style["style"])
-                        self._overlay_card(snapshot, style)
                     else:
                         self._options_card(config, snapshot)
+                    self._overlay_card(snapshot, style)
                 with ui.element("div").classes("gp-col"):
+                    self._twitch_card(config, live)
                     self._timing_card(config, live)
                     self._chat_card(config)
                     self._ends_card(config, snapshot)
-                    if not live:
-                        self._overlay_card(snapshot, style)
 
     def _render_empty(self) -> None:
         with self.root:
@@ -286,7 +289,8 @@ class PollsPanel:
                 duration = max(1, int(snapshot.get("duration_seconds") or 1))
                 head = f"{clock(remaining)} left · {plural(total, 'vote')}"
                 bar = f'<div class="gp-timerbar"><i style="width:{min(100, remaining / duration * 100):.1f}%"></i></div>'
-            text = f'<div class="gp-kicker"><span class="gp-dot"></span>Poll open</div><div class="gp-head">{esc(head)}</div>{bar}'
+            where = " · on Twitch" if snapshot.get("twitch_poll") else ""
+            text = f'<div class="gp-kicker"><span class="gp-dot"></span>Poll open{where}</div><div class="gp-head">{esc(head)}</div>{bar}'
             stats = (f'<div class="gp-stat"><b>{total:,}</b><span>Votes</span></div>'
                      f'<div class="gp-stat"><b title="{esc(leader_text(snapshot))}">{esc(leader_text(snapshot))}</b><span>Leading</span></div>')
         else:
@@ -299,8 +303,10 @@ class PollsPanel:
             seconds = int(config.get("duration_seconds") or 0)
             runs = f"runs for {duration_text(seconds)}" if seconds else "runs until you end it"
             example = next((o.get("keyword") for o in options if o.get("keyword")), "#option")
+            how = ("Viewers vote in the Twitch poll; chat keywords don't count." if config.get("twitch_poll")
+                   else f"Viewers vote by typing an option's keyword, like <b>{esc(example)}</b>.")
             text = (f'<div class="gp-kicker">{esc(kicker)}</div><div class="gp-head">{plural(len(options), "option")} · {esc(runs)}</div>'
-                    f'<div class="gp-sub">Viewers vote by typing an option\'s keyword, like <b>{esc(example)}</b>. Votes reset when you start.</div>')
+                    f'<div class="gp-sub">{how} Votes reset when you start.</div>')
             stats = ""
         self._set_html(self.hero_text, "hero_text", text)
         self._set_html(self.hero_stats, "hero_stats", stats)
@@ -351,10 +357,12 @@ class PollsPanel:
         with body:
             self.live_bars = ui.html("", sanitize=False)
             self._set_html(self.live_bars, "bars", bars_html(snapshot, style, live=True))
-            raw_html(f'<div class="gp-hint">{icon("info")}Sorted like the overlay. Options can be changed again once the poll ends.</div>', "")
+            source = "Votes come from the Twitch poll. " if snapshot.get("twitch_poll") else ""
+            raw_html(f'<div class="gp-hint">{icon("info")}{source}Sorted like the overlay. Options can be changed again once the poll ends.</div>', "")
 
     def _options_card(self, config: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
         categories = config.get("categories") or []
+        on_twitch = bool(config.get("twitch_poll"))
         votes = {row.get("id"): int(row.get("votes") or 0) for row in snapshot.get("options") or []}
         _head, body = card("Options", "list", plural(len(categories), "option"))
         with body:
@@ -362,22 +370,34 @@ class PollsPanel:
                 raw_html('<div class="gp-opt is-head"><span></span><span>Option</span><span>Keyword</span><span>Votes</span>'
                          '<span></span><span></span><span></span></div>', "")
             for index, cat in enumerate(categories):
-                self._option_row(index, cat, votes.get(cat["id"], int(cat.get("votes") or 0)), len(categories))
-            add = ui.element("div").classes("gp-add")
+                self._option_row(index, cat, votes.get(cat["id"], int(cat.get("votes") or 0)), len(categories), on_twitch)
+            full = on_twitch and len(categories) >= twitch_polls.CHOICES_MAX
+            add = ui.element("div").classes("gp-add" + (" is-disabled" if full else ""))
             with add:
                 raw_html(f"{icon('add')}<span>Add option</span>")
-            add.on("click", self._add_option)
+            if full:
+                add.tooltip(f"Twitch polls have at most {twitch_polls.CHOICES_MAX} options")
+            else:
+                add.on("click", self._add_option)
             if len(categories) < 2:
                 raw_html(f'<div class="gp-hint">{icon("info")}A poll needs at least two options.</div>', "")
+            if on_twitch:
+                raw_html(f'<div class="gp-hint">{icon("info")}Twitch poll: {twitch_polls.CHOICES_MIN} to {twitch_polls.CHOICES_MAX} '
+                         f'options, names up to {twitch_polls.CHOICE_TITLE_MAX} characters. Keywords aren\'t used while it runs on Twitch.</div>', "")
             raw_html(f'<div class="gp-hint">{icon("info")}The keyword follows the name until you change it. Viewers can type it anywhere in a message. '
                      'Votes can be corrected by hand between polls.</div>', "")
 
-    def _option_row(self, index: int, cat: Dict[str, Any], count: int, total: int) -> None:
+    def _option_row(self, index: int, cat: Dict[str, Any], count: int, total: int, on_twitch: bool = False) -> None:
         cid = cat["id"]
         follow = {"on": (cat.get("keyword") or "") == normalize_keyword(cat.get("name") or ""), "syncing": False}
         with ui.element("div").classes("gp-opt"):
             ui.label(str(index + 1)).classes("gp-opt-n")
             name = ui.input(value=cat.get("name") or "").props("outlined dense")
+            if on_twitch:
+                # Twitch option names are at most 25 characters; longer ones are flagged (and block Start).
+                name.props(f"maxlength={twitch_polls.CHOICE_TITLE_MAX}")
+                if len(cat.get("name") or "") > twitch_polls.CHOICE_TITLE_MAX:
+                    name.props('error error-message="Too long for Twitch"')
             keyword = ui.input(value=cat.get("keyword") or "").props("outlined dense").classes("gp-mono")
             with keyword.add_slot("append"):
                 auto = ui.label("AUTO").classes("gp-auto").tooltip("Follows the option name")
@@ -455,25 +475,99 @@ class PollsPanel:
 
     def _timing_card(self, config: Dict[str, Any], live: bool) -> None:
         seconds = int(config.get("duration_seconds") or 0)
+        on_twitch = bool(config.get("twitch_poll"))
         _head, body = card("Timing & voting", "timer")
         with body:
             with ui.element("div").classes("gp-row"):
                 ui.label("Runs for").classes("gp-lbl gp-grow")
-                seg({"timer": "Timer", "open": "Until I stop it"}, "timer" if seconds else "open", self._set_mode)
+                if on_twitch:
+                    seg({"timer": "Timer"}, "timer", self._set_mode)
+                else:
+                    seg({"timer": "Timer", "open": "Until I stop it"}, "timer" if seconds else "open", self._set_mode)
             amount, unit = split_duration(seconds or self._last_timer)
+            units = _TWITCH_UNITS if on_twitch else _UNITS
+            if unit not in units:
+                amount, unit = amount * unit // 60, 60
             self.timer_row = ui.element("div").classes("gp-row")
             with self.timer_row:
                 self.amount = ui.number(value=amount, min=1, step=1, format="%d").props("outlined dense debounce=400").style("width: 90px")
-                self.unit = ui.select(_UNITS, value=unit).props("outlined dense options-dense").style("width: 120px")
+                self.unit = ui.select(units, value=unit).props("outlined dense options-dense").style("width: 120px")
             self.timer_row.set_visibility(bool(seconds))
             self.amount.on_value_change(lambda _e: self._save_duration())
             self.unit.on_value_change(lambda _e: self._save_duration())
+            if on_twitch:
+                raw_html(f'<div class="gp-hint">{icon("info")}Twitch polls run 15 seconds to 30 minutes.</div>', "")
             if live:
                 raw_html(f'<div class="gp-hint">{icon("info")}Timing changes apply the next time you start.</div>', "")
-            toggle("One vote per viewer", "Their first keyword counts", bool(config.get("one_entry_per_user", True)),
-                   lambda v: (self._save(one_entry_per_user=v), self._render()))
-            toggle("Viewers can change their vote", "A later keyword moves their vote", bool(config.get("allow_vote_switch")),
-                   lambda v: self._save(allow_vote_switch=v), enabled=bool(config.get("one_entry_per_user", True)))
+            vote_hint = "Twitch counts the votes while the poll runs on Twitch"
+            toggle("One vote per viewer", vote_hint if on_twitch else "Their first keyword counts",
+                   bool(config.get("one_entry_per_user", True)),
+                   lambda v: (self._save(one_entry_per_user=v), self._render()), enabled=not on_twitch)
+            toggle("Viewers can change their vote", "" if on_twitch else "A later keyword moves their vote",
+                   bool(config.get("allow_vote_switch")), lambda v: self._save(allow_vote_switch=v),
+                   enabled=bool(config.get("one_entry_per_user", True)) and not on_twitch)
+
+    def _twitch_card(self, config: Dict[str, Any], live: bool) -> None:
+        enabled = bool(config.get("twitch_poll"))
+        status = twitch_polls.scope_status()
+        _head, body = card("Twitch poll", "how_to_vote", "On" if enabled else "")
+        with body:
+            if status == "missing":
+                raw_html(f'<div class="gp-alert">{icon("lock")}<span>Twitch polls can\'t be used until you sign in to Twitch again: '
+                         'Mycelian needs permission to manage polls. Open Settings → Twitch and click Connect.</span></div>', "")
+                ui.button("Open Twitch settings", icon="settings", on_click=self._open_twitch_settings).props(
+                    "outline no-caps color=primary dense").classes("self-start")
+            elif enabled and status == "offline":
+                raw_html(f'<div class="gp-hint">{icon("info")}Twitch isn\'t connected, so the Twitch poll can\'t be created right now.</div>', "")
+            toggle("Also run it on Twitch", "Starting creates a Twitch poll. Viewers vote there, and chat keywords don't count, "
+                   "so Mycelian and Twitch show the same numbers.", enabled, self._set_twitch,
+                   enabled=not live and (status != "missing" or enabled))
+            if not enabled:
+                return
+            with ui.element("div").classes("gp-row"):
+                ui.label("Question").classes("gp-lbl gp-grow")
+            title = ui.input(value=config.get("twitch_title") or "", placeholder="What should we play next?").props(
+                f"outlined dense maxlength={twitch_polls.TITLE_MAX} counter").classes("w-full")
+            title.set_enabled(not live)
+
+            def save_title(_=None) -> None:
+                value = (title.value or "").strip()
+                if value != get_poll_manager().get_config(self.template).get("twitch_title"):
+                    self._save(twitch_title=value)
+
+            title.on("blur", save_title)
+            title.on("keydown.enter", save_title)
+            toggle("Channel Points voting", "Viewers can spend points for extra votes", bool(config.get("twitch_points_enabled")),
+                   lambda v: (self._save(twitch_points_enabled=v), self._render()), enabled=not live)
+            if config.get("twitch_points_enabled"):
+                with ui.element("div").classes("gp-row"):
+                    ui.label("Points per extra vote").classes("gp-lbl gp-grow")
+                    points = ui.number(value=int(config.get("twitch_points_per_vote") or 100), min=twitch_polls.POINTS_MIN,
+                                       max=twitch_polls.POINTS_MAX, step=1, format="%d").props("outlined dense debounce=400").style("width: 120px")
+                points.set_enabled(not live)
+                points.on_value_change(lambda e: self._save(twitch_points_per_vote=twitch_polls.clamp_points(e.value)))
+            problems = [] if live else twitch_polls.config_problems(config)
+            for problem in problems:
+                raw_html(f'<div class="gp-alert">{icon("warning")}<span>{esc(problem)}</span></div>', "")
+            raw_html(f'<div class="gp-hint">{icon("info")}Only partners and affiliates can run Twitch polls, and only one at a time. '
+                     'Ending the poll early here ends it on Twitch too.</div>', "")
+
+    def _set_twitch(self, value: bool) -> None:
+        if value:
+            other = get_poll_manager().twitch_poll_running(exclude=self.template)
+            if other:
+                notify(ONE_TWITCH_POLL_MESSAGE.format(template=other), type="info", source="chatbot",
+                       title="Only one Twitch poll at a time", hint="You can still set this one up; start it once the other ends.")
+        self._save(twitch_poll=value)
+        self._render()
+
+    def _open_twitch_settings(self) -> None:
+        try:
+            from ..help_system.contextual_help import navigate_to_settings_subtab
+
+            navigate_to_settings_subtab("Twitch", main_tab="Settings")
+        except Exception:
+            logger.debug("Could not open Settings → Twitch", exc_info=True)
 
     def _set_mode(self, mode: str) -> None:
         if mode == "open":
@@ -494,6 +588,15 @@ class PollsPanel:
         except (TypeError, ValueError):
             amount = 1
         seconds = min(86400 * 7, amount * int(self.unit.value or 60))
+        if get_poll_manager().get_config(self.template).get("twitch_poll"):
+            clamped = twitch_polls.clamp_duration(seconds)
+            if clamped != seconds:
+                # Show what Twitch allows (15 s to 30 min) instead of keeping the typed value.
+                seconds = clamped
+                new_amount, new_unit = split_duration(seconds)
+                if new_unit not in _TWITCH_UNITS:
+                    new_amount, new_unit = seconds, 1
+                self.amount.value, self.unit.value = new_amount, new_unit
         self._last_timer = seconds
         self._save(duration_seconds=seconds)
 
@@ -579,13 +682,23 @@ class PollsPanel:
 
     # -- actions ---------------------------------------------------------------------
 
-    def _start(self) -> None:
-        ok, msg = get_poll_manager().start_poll(self.template)
+    async def _start(self, event=None) -> None:
+        button = getattr(event, "sender", None)
+        if button is not None:
+            button.props("loading")
+        template = self.template
+        # Creating a Twitch poll waits on Twitch, so start off the UI loop.
+        ok, msg = await run.io_bound(get_poll_manager().start_poll, template)
         if ok:
             notify(msg, type="success", source="chatbot")
+        elif msg.startswith(ONE_TWITCH_POLL_MESSAGE.split("“", 1)[0]):
+            notify(msg, type="warning", source="chatbot", title="Only one Twitch poll at a time",
+                   hint="End the other Twitch poll first, or start this one without Twitch.")
         else:
             notify(msg, type="warning", source="chatbot", title="Can't start the poll yet",
                    hint="Fix the poll options, then click Start.")
+        if button is not None and not button.is_deleted:
+            button.props(remove="loading")
         self._render()
 
     def _stop(self) -> None:

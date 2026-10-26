@@ -93,6 +93,7 @@ from .twitch_token_auth import (
     is_definitive_refresh_failure,
     legacy_expiry_needs_migration,
     refresh_user_token,
+    token_scopes,
     twitch_has_user_auth,
     validate_access_token,
 )
@@ -4772,6 +4773,49 @@ class Twitch_API:
             },
         )
 
+    async def _subscribe_poll_events(self, eventsub) -> None:
+        from . import twitch_polls
+
+        granted = token_scopes(self.auth_token)
+        if granted is None:
+            return
+        if twitch_polls.POLL_SCOPE not in granted:
+            logger.info("Twitch sign-in lacks %s; Twitch polls are off until the user signs in again",
+                        twitch_polls.POLL_SCOPE)
+            twitch_polls.notify_scope_missing()
+            return
+        try:
+            await eventsub.listen_channel_poll_begin(self.user.id, self.on_poll_begin)
+            await eventsub.listen_channel_poll_progress(self.user.id, self.on_poll_progress)
+            await eventsub.listen_channel_poll_end(self.user.id, self.on_poll_end)
+        except Exception as e:
+            logger.error(
+                "Failed to subscribe to poll events (other EventSub topics will continue): %s",
+                e,
+                exc_info=True,
+            )
+
+    async def on_poll_begin(self, data):
+        """channel.poll.begin — line the local timer up with Twitch's end time."""
+        self._note_event_received()
+        from . import twitch_polls
+
+        await asyncio.to_thread(twitch_polls.handle_begin, data.event)
+
+    async def on_poll_progress(self, data):
+        """channel.poll.progress — live vote counts for a Twitch poll."""
+        self._note_event_received()
+        from . import twitch_polls
+
+        await asyncio.to_thread(twitch_polls.handle_progress, data.event)
+
+    async def on_poll_end(self, data):
+        """channel.poll.end — Twitch's final counts; ends the matching chatbot poll."""
+        self._note_event_received()
+        from . import twitch_polls
+
+        await asyncio.to_thread(twitch_polls.handle_end, data.event)
+
     async def on_stream_online(self, data: StreamOnlineEvent):
         """Twitch EventSub stream.online — Discord go-live + connector hook."""
         self._note_event_received()
@@ -5565,6 +5609,10 @@ class Twitch_API:
                         e,
                         exc_info=True,
                     )
+                # Twitch polls (chatbot polls run on Twitch) need channel:manage:polls, which an
+                # older sign-in may not have. Without it everything else still connects; the user
+                # is asked to sign in again and Twitch polls stay off.
+                await self._subscribe_poll_events(eventsub)
                 await eventsub.listen_stream_online(
                     self.user.id, self.on_stream_online
                 )

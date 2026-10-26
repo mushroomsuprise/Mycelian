@@ -8,7 +8,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Awaitable, Callable, List, Optional
+from typing import Awaitable, Callable, Dict, FrozenSet, List, Optional
 
 import aiohttp
 from twitchAPI.twitch import Twitch
@@ -25,6 +25,27 @@ LEGACY_EXPIRY_MIGRATION_THRESHOLD = timedelta(hours=24)
 
 TWITCH_VALIDATE_URL = "https://id.twitch.tv/oauth2/validate"
 
+# Scopes a token may lack and still connect: only the features that need them are switched off
+# (the app asks the user to sign in again for them). Every other requested scope stays required.
+OPTIONAL_SCOPES: FrozenSet[AuthScope] = frozenset({AuthScope.CHANNEL_MANAGE_POLLS})
+
+# Scopes Twitch reported for each validated token (latest few tokens only).
+_token_scopes: Dict[str, FrozenSet[str]] = {}
+
+
+def remember_token_scopes(token: str, scopes) -> None:
+    token = (token or "").strip()
+    if not token or scopes is None:
+        return
+    if len(_token_scopes) > 8:
+        _token_scopes.clear()
+    _token_scopes[token] = frozenset(str(s) for s in scopes)
+
+
+def token_scopes(token: str) -> Optional[FrozenSet[str]]:
+    """Scopes Twitch granted ``token`` (None until it has been validated)."""
+    return _token_scopes.get((token or "").strip())
+
 
 @dataclass
 class ValidateResult:
@@ -34,6 +55,7 @@ class ValidateResult:
     expires_in: Optional[int] = None
     http_status: Optional[int] = None
     message: Optional[str] = None
+    scopes: Optional[List[str]] = None
 
 
 @dataclass
@@ -64,6 +86,8 @@ async def validate_access_token(
                 if resp.status == 200:
                     payload = await resp.json()
                     token_client_id = str(payload.get("client_id", "") or "")
+                    scopes = [str(s) for s in (payload.get("scopes") or [])]
+                    remember_token_scopes(token, scopes)
                     if expected_client_id and token_client_id != expected_client_id:
                         return ValidateResult(
                             ok=False,
@@ -82,6 +106,7 @@ async def validate_access_token(
                         client_id=token_client_id,
                         expires_in=int(payload.get("expires_in", 0) or 0) or None,
                         http_status=200,
+                        scopes=scopes,
                     )
                 if resp.status == 401:
                     return ValidateResult(
@@ -217,8 +242,20 @@ async def apply_user_authentication(
     refresh_token: str,
     scopes: List[AuthScope],
 ) -> None:
-    """Set user auth on a Twitch client."""
-    await twitch.set_user_authentication(auth_token, scopes, refresh_token)
+    """Set user auth on a Twitch client.
+
+    Optional scopes (``OPTIONAL_SCOPES``) the token doesn't have are left out, so an older
+    sign-in still connects; the features that need them check ``token_scopes`` first.
+    """
+    usable = list(scopes)
+    if any(scope in OPTIONAL_SCOPES for scope in usable):
+        granted = token_scopes(auth_token)
+        if granted is None:
+            await validate_access_token(auth_token)
+            granted = token_scopes(auth_token)
+        if granted is not None:
+            usable = [s for s in usable if s not in OPTIONAL_SCOPES or s.value in granted]
+    await twitch.set_user_authentication(auth_token, usable, refresh_token)
 
 
 async def refresh_user_token(

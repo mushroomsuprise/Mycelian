@@ -150,6 +150,8 @@ GP_CSS = """
     color: var(--color-primary); border: 1px dashed var(--color-border-accent); }
 .gp-add:hover { background: var(--color-primary-light); }
 .gp-add .cx-icon { font-size: 18px; }
+.gp-add.is-disabled { opacity: .45; cursor: not-allowed; }
+.gp-add.is-disabled:hover { background: none; }
 .gp-bars { display: flex; flex-direction: column; gap: 10px; }
 .gp-bar-top { display: flex; align-items: baseline; gap: 8px; font-size: .9rem; font-weight: 650; color: var(--color-text-primary); margin-bottom: 4px; }
 .gp-bar-top code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .72rem; color: var(--color-text-muted); }

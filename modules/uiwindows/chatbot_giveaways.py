@@ -136,13 +136,14 @@ class GiveawaysPanel:
             self.hero = ui.element("div").classes("gp-hero")
             self.alert = ui.element("div").classes("w-full")
             with ui.element("div").classes("gp-cols"):
+                # The Overlay card sits under Entrants, like Polls, so the side column holds the settings.
                 with ui.element("div").classes("gp-col"):
                     self._entrants_card()
+                    self._overlay_card()
                 with ui.element("div").classes("gp-col"):
                     self.last_draw = ui.element("div").classes("gp-col")
                     self._setup_card(cfg)
                     self._rules_card(cfg)
-                    self._overlay_card()
         self._signature = None
         self._entrant_signature = None
         self._render_live(force=True)

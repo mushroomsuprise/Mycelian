@@ -34,7 +34,18 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "banner_message": DEFAULT_BANNER_MESSAGE,
     "banner_duration": 10,
     "last_winners": [],
+    # Also run it as a Twitch poll (votes then come from Twitch, not chat keywords).
+    "twitch_poll": False,
+    "twitch_title": "",
+    "twitch_points_enabled": False,
+    "twitch_points_per_vote": 100,
 }
+
+# A Twitch poll ends on Twitch's clock; the local timer is only a fallback if its end event never arrives.
+_TWITCH_END_GRACE_SECONDS = 15.0
+# Twitch runs one poll per channel, so only one overlay's poll can run on Twitch at a time.
+ONE_TWITCH_POLL_MESSAGE = ("Only one Twitch poll can run at a time, and “{template}” is running one now. "
+                           "End it first, or turn off “Also run it on Twitch” for this poll.")
 
 
 def normalize_keyword(raw: Any, fallback_name: str = "") -> str:
@@ -176,6 +187,8 @@ def _idle_runtime() -> Dict[str, Any]:
         "votes": {},
         "voters": {},
         "winners": [],
+        "twitch_poll_id": None,
+        "twitch_choices": {},
     }
 
 
@@ -484,6 +497,15 @@ class PollManager:
             banner_duration = 10
         cfg["banner_duration"] = max(0.0, min(86400.0, banner_duration))
         cfg["last_winners"] = _normalize_last_winners(cfg.get("last_winners"))
+        from . import twitch_polls
+
+        cfg["twitch_poll"] = bool(cfg.get("twitch_poll", False))
+        cfg["twitch_title"] = str(cfg.get("twitch_title") or "").strip()[: twitch_polls.TITLE_MAX]
+        cfg["twitch_points_enabled"] = bool(cfg.get("twitch_points_enabled", False))
+        cfg["twitch_points_per_vote"] = twitch_polls.clamp_points(cfg.get("twitch_points_per_vote", 100))
+        if cfg["twitch_poll"]:
+            # Twitch polls always run on a timer of 15 seconds to 30 minutes.
+            cfg["duration_seconds"] = twitch_polls.clamp_duration(cfg["duration_seconds"])
         categories: List[Dict[str, Any]] = []
         seen_ids = set()
         for item in cfg.get("categories") or []:
@@ -547,6 +569,10 @@ class PollManager:
         runtime["voters"] = voters
         winners_raw = raw.get("winners") if isinstance(raw.get("winners"), list) else []
         runtime["winners"] = [str(item) for item in winners_raw if str(item) in valid]
+        poll_id = str(raw.get("twitch_poll_id") or "").strip()
+        runtime["twitch_poll_id"] = poll_id or None
+        choices_raw = raw.get("twitch_choices") if isinstance(raw.get("twitch_choices"), dict) else {}
+        runtime["twitch_choices"] = {str(k): str(v) for k, v in choices_raw.items() if str(v) in valid} if poll_id else {}
         return runtime
 
     def _persist(self) -> None:
@@ -575,6 +601,8 @@ class PollManager:
                     "votes": dict(runtime.get("votes") or {}),
                     "voters": dict(runtime.get("voters") or {}),
                     "winners": [],
+                    "twitch_poll_id": runtime.get("twitch_poll_id"),
+                    "twitch_choices": dict(runtime.get("twitch_choices") or {}),
                 }
             payload["templates"][name] = stored
         self._payload_seq += 1
@@ -666,7 +694,8 @@ class PollManager:
         timer.start()
 
     def _timer_fired(self, template: str, generation: int) -> None:
-        self.stop_poll(template, generation=generation)
+        # A Twitch poll already ended on Twitch's own timer; this only closes it here.
+        self.stop_poll(template, generation=generation, end_on_twitch=False)
 
     def shutdown(self) -> None:
         with self._lock:
@@ -848,22 +877,70 @@ class PollManager:
             self._emit("poll_state", snapshot)
         return True, ""
 
+    def _start_problem_locked(self, template: str, config: Dict[str, Any]) -> str:
+        categories = config.get("categories") or []
+        if len(categories) < 2:
+            return "Add at least two options before starting."
+        seen = set()
+        for cat in categories:
+            if not cat.get("keyword"):
+                return f"{cat.get('name') or 'An option'} needs a keyword."
+            folded = cat["keyword"].casefold()
+            if folded in seen:
+                return f"{cat['keyword']} is used more than once."
+            seen.add(folded)
+        if config.get("twitch_poll"):
+            from . import twitch_polls
+
+            other = self._twitch_poll_template_locked(exclude=template)
+            if other:
+                return ONE_TWITCH_POLL_MESSAGE.format(template=other)
+            problems = twitch_polls.config_problems(config)
+            if problems:
+                return problems[0]
+        return ""
+
+    def _twitch_poll_template_locked(self, exclude: str = "") -> str:
+        """The overlay whose poll is running on Twitch right now ("" when none)."""
+        for name, entry in self._templates.items():
+            runtime = entry.get("runtime") or {}
+            if name != exclude and runtime.get("status") == "open" and runtime.get("twitch_poll_id"):
+                return name
+        return ""
+
+    def twitch_poll_running(self, exclude: str = "") -> str:
+        with self._lock:
+            return self._twitch_poll_template_locked(exclude)
+
     def start_poll(self, template: str) -> Tuple[bool, str]:
+        """Start the poll. With "Also run it on Twitch", the Twitch poll is created first (this waits for Twitch)."""
         template = str(template or "").strip()
         with self._lock:
             self.ensure_template(template)
+            problem = self._start_problem_locked(template, self._templates[template]["config"])
+            if problem:
+                return False, problem
+            wanted = copy.deepcopy(self._templates[template]["config"])
+        twitch_poll: Optional[Dict[str, Any]] = None
+        if wanted.get("twitch_poll"):
+            from . import twitch_polls
+
+            status = twitch_polls.scope_status()
+            if status != "ok":
+                return False, twitch_polls.readiness_message(status)
+            ok, result = twitch_polls.create_poll(
+                wanted["twitch_title"],
+                [cat["name"] for cat in wanted["categories"]],
+                int(wanted["duration_seconds"]),
+                points_enabled=bool(wanted.get("twitch_points_enabled")),
+                points_per_vote=int(wanted.get("twitch_points_per_vote") or 0),
+            )
+            if not ok:
+                return False, str(result)
+            twitch_poll = result
+        with self._lock:
             config = self._templates[template]["config"]
             categories = config.get("categories") or []
-            if len(categories) < 2:
-                return False, "Add at least two options before starting."
-            seen = set()
-            for cat in categories:
-                if not cat.get("keyword"):
-                    return False, f"{cat.get('name') or 'An option'} needs a keyword."
-                folded = cat["keyword"].casefold()
-                if folded in seen:
-                    return False, f"{cat['keyword']} is used more than once."
-                seen.add(folded)
             self._cancel_timer(template)
             self._generations[template] = int(self._generations.get(template) or 0) + 1
             now = self._now()
@@ -875,17 +952,27 @@ class PollManager:
             runtime["votes"] = {cat["id"]: 0 for cat in categories}
             for cat in categories:
                 cat["votes"] = 0
+            if twitch_poll:
+                # Twitch returns the choices in the order they were sent.
+                runtime["twitch_poll_id"] = str(twitch_poll.get("id"))
+                runtime["twitch_choices"] = {
+                    str(choice.get("id")): cat["id"]
+                    for choice, cat in zip(twitch_poll.get("choices") or [], categories)
+                    if isinstance(choice, dict) and choice.get("id")
+                }
             self._templates[template]["runtime"] = runtime
             self._last_error[template] = ""
             if duration > 0:
-                self._schedule_locked(template, float(duration))
+                self._schedule_locked(template, float(duration) + (_TWITCH_END_GRACE_SECONDS if twitch_poll else 0.0))
             snapshot = self._snapshot_locked(template, now)
             self._persist()
         self._emit("poll_state", snapshot)
-        return True, "Poll started."
+        return True, "Poll started on Twitch too." if twitch_poll else "Poll started."
 
-    def stop_poll(self, template: str, *, generation: Optional[int] = None) -> Tuple[bool, str]:
+    def stop_poll(self, template: str, *, generation: Optional[int] = None, end_on_twitch: bool = True) -> Tuple[bool, str]:
+        """End the poll. ``end_on_twitch`` also ends its Twitch poll (when you end it early)."""
         template = str(template or "").strip()
+        twitch_id = None
         with self._lock:
             if generation is not None and int(self._generations.get(template) or 0) != int(generation):
                 return False, "Poll is not running."
@@ -906,6 +993,11 @@ class PollManager:
                 cat["votes"] = int((runtime.get("votes") or {}).get(cat["id"]) or 0)
             snapshot = self._snapshot_locked(template, now)
             self._persist()
+            twitch_id = runtime.get("twitch_poll_id")
+        if twitch_id and end_on_twitch:
+            from . import twitch_polls
+
+            twitch_polls.end_poll(twitch_id)
         self._emit("poll_state", snapshot)
         self._emit("poll_ended", snapshot)
         self._announce(template, snapshot)
@@ -954,7 +1046,8 @@ class PollManager:
         with self._lock:
             for template, entry in self._templates.items():
                 runtime = entry.get("runtime") or {}
-                if runtime.get("status") != "open":
+                if runtime.get("status") != "open" or runtime.get("twitch_poll_id"):
+                    # Twitch polls count Twitch votes only, so both show the same numbers.
                     continue
                 config = entry.get("config") or {}
                 chosen = earliest_category(message, config.get("categories") or [])
@@ -991,9 +1084,96 @@ class PollManager:
                 targets.append(template)
         started = False
         for template in targets:
-            ok, _message = self.start_poll(template)
-            started = started or ok
+            if self.get_config(template).get("twitch_poll"):
+                # Creating the Twitch poll waits on Twitch; don't hold up chat for it.
+                threading.Thread(target=self._start_from_chat, args=(template,), name="PollChatStart", daemon=True).start()
+                started = True
+                continue
+            started = self._start_from_chat(template) or started
         return started
+
+    def _start_from_chat(self, template: str) -> bool:
+        ok, message = self.start_poll(template)
+        if not ok:
+            _notify_poll_problem("Couldn't start the poll from chat", message, "Fix it on Chatbot → Polls, then try again.",
+                                 f"{template}: {message}", f"poll:chat_start:{template}")
+        return ok
+
+    # -- Twitch poll updates (EventSub) -------------------------------------------
+
+    def _template_for_twitch_poll_locked(self, poll_id: str) -> str:
+        for name, entry in self._templates.items():
+            if poll_id and (entry.get("runtime") or {}).get("twitch_poll_id") == poll_id:
+                return name
+        return ""
+
+    def _set_twitch_votes_locked(self, runtime: Dict[str, Any], votes: Dict[str, int]) -> bool:
+        mapping = runtime.get("twitch_choices") or {}
+        changed = False
+        counts = runtime.setdefault("votes", {})
+        for choice_id, count in (votes or {}).items():
+            cat_id = mapping.get(str(choice_id))
+            if cat_id and int(counts.get(cat_id) or 0) != int(count):
+                counts[cat_id] = int(count)
+                changed = True
+        return changed
+
+    def twitch_poll_began(self, poll_id: str, ends_at: Optional[float]) -> bool:
+        """Twitch started the poll (channel.poll.begin): use its end time for the countdown."""
+        snapshot = None
+        with self._lock:
+            template = self._template_for_twitch_poll_locked(poll_id)
+            runtime = (self._templates.get(template) or {}).get("runtime") or {}
+            if not template or runtime.get("status") != "open" or not ends_at:
+                return False
+            runtime["ends_at"] = float(ends_at)
+            self._schedule_locked(template, float(ends_at) - self._now() + _TWITCH_END_GRACE_SECONDS)
+            snapshot = self._snapshot_locked(template, self._now())
+            self._persist()
+        self._emit("poll_state", snapshot)
+        return True
+
+    def apply_twitch_votes(self, poll_id: str, votes: Dict[str, int]) -> bool:
+        """Live counts from Twitch (channel.poll.progress) for the poll it belongs to."""
+        snapshot = None
+        with self._lock:
+            template = self._template_for_twitch_poll_locked(poll_id)
+            runtime = (self._templates.get(template) or {}).get("runtime") or {}
+            if not template or runtime.get("status") != "open":
+                return False
+            if self._set_twitch_votes_locked(runtime, votes):
+                snapshot = self._snapshot_locked(template, self._now())
+                self._schedule_vote_persist_locked()
+        if snapshot:
+            self._emit("poll_state", snapshot)
+        return snapshot is not None
+
+    def twitch_poll_ended(self, poll_id: str, votes: Dict[str, int], status: str = "") -> bool:
+        """Twitch ended the poll (channel.poll.end): close it here with Twitch's final counts."""
+        snapshot = None
+        with self._lock:
+            template = self._template_for_twitch_poll_locked(poll_id)
+            if not template:
+                return False
+            entry = self._templates[template]
+            runtime = entry.get("runtime") or {}
+            self._set_twitch_votes_locked(runtime, votes)
+            if runtime.get("status") == "ended":
+                # Ended here first (End poll now); keep Twitch's final numbers.
+                config = entry["config"]
+                winners = self._pick_winners(config, runtime)
+                runtime["winners"] = [item["id"] for item in winners]
+                self._remember_winners(config, winners)
+                for cat in config.get("categories") or []:
+                    cat["votes"] = int((runtime.get("votes") or {}).get(cat["id"]) or 0)
+                snapshot = self._snapshot_locked(template, self._now())
+                self._persist()
+        if snapshot is not None:
+            self._emit("poll_state", snapshot)
+            return True
+        logger.info("Twitch poll %s ended (%s)", poll_id, status or "completed")
+        ok, _message = self.stop_poll(template, end_on_twitch=False)
+        return ok
 
     def _apply_vote_locked(
         self,
@@ -1045,6 +1225,7 @@ class PollManager:
             "options": [],
             "total_votes": 0,
             "winners": [],
+            "twitch_poll": False,
         }
 
     def _snapshot_locked(self, template: str, now: Optional[float] = None) -> Dict[str, Any]:
@@ -1108,6 +1289,7 @@ class PollManager:
             "options": options,
             "total_votes": total,
             "winners": winners,
+            "twitch_poll": bool(runtime.get("twitch_poll_id")) and runtime.get("status") in ("open", "ended"),
         }
 
     def _announce(self, template: str, snapshot: Dict[str, Any]) -> None:

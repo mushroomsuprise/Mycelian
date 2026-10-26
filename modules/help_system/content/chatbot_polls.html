@@ -46,8 +46,28 @@
                 <div class="hm-cb-gp-hint"><span class="hx-mi">info</span>The keyword follows the name until you change it. Viewers can type it anywhere in a message. Votes can be corrected by hand between polls.</div>
               </div>
             </div>
+            <div class="hm-cb-gp-card">
+              <div class="hm-cb-gp-card-h"><span class="hx-mi">cast</span>Overlay<span class="hm-cb-gp-badge">Spore Studio</span><span class="hm-marker" data-n="7"></span></div>
+              <div class="hm-cb-gp-card-b">
+                <div class="hm-cb-gp-widget">
+                  <div class="hm-cb-gp-widget-title">Vote now!</div>
+                  <div><div><span>Tacos<span class="hm-cb-gp-widget-kw">#Tacos</span></span><span>6 · 66.7%</span></div><div class="hm-cb-gp-track"><i style="width: 100%"></i></div></div>
+                  <div><div><span>Pizza Time<span class="hm-cb-gp-widget-kw">#PizzaTime</span></span><span>3 · 33.3%</span></div><div class="hm-cb-gp-track"><i style="width: 50%"></i></div></div>
+                  <div><div><span>Ramen<span class="hm-cb-gp-widget-kw">#Ramen</span></span><span>0 · 0%</span></div><div class="hm-cb-gp-track"><i style="width: 0%"></i></div></div>
+                </div>
+                <div class="hm-cb-gp-row"><span>Poll widget <b>poll1</b> in the <b>poll</b> template. Colours and layout are set in Spore Studio.</span></div>
+                <div class="hm-cb-gp-url"><span>http://127.0.0.1:5000/poll</span><span class="hx-mi">content_copy</span></div>
+                <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">auto_awesome</span>Edit in Spore Studio</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">open_in_new</span>Preview</span></div>
+              </div>
+            </div>
           </div>
           <div class="hm-cb-gp-col">
+            <div class="hm-cb-gp-card">
+              <div class="hm-cb-gp-card-h"><span class="hx-mi">how_to_vote</span>Twitch poll<span class="hm-marker" data-n="8"></span></div>
+              <div class="hm-cb-gp-card-b">
+                <div class="hm-cb-gp-toggle"><span class="hm-switch"><i></i></span><div>Also run it on Twitch<small>Starting creates a Twitch poll. Viewers vote there, and chat keywords don't count, so Mycelian and Twitch show the same numbers.</small></div></div>
+              </div>
+            </div>
             <div class="hm-cb-gp-card">
               <div class="hm-cb-gp-card-h"><span class="hx-mi">timer</span>Timing &amp; voting<span class="hm-marker" data-n="4"></span></div>
               <div class="hm-cb-gp-card-b">
@@ -74,20 +94,6 @@
                 <div class="hm-cxe-preview"><span class="hx-mi">visibility</span><span>Poll winner: Tacos (6)</span></div>
                 <div class="hm-cb-gp-row"><span class="hm-cb-gp-lbl hm-grow">Banner stays up</span><span class="hm-cxe-in" style="width: 3.5rem">10</span><span class="hm-cb-gp-hint">sec</span></div>
                 <span class="hm-cb-gp-hint">0 keeps the banner up until another one replaces it. Ties fill {option} with every winner.</span>
-              </div>
-            </div>
-            <div class="hm-cb-gp-card">
-              <div class="hm-cb-gp-card-h"><span class="hx-mi">cast</span>Overlay<span class="hm-cb-gp-badge">Spore Studio</span><span class="hm-marker" data-n="7"></span></div>
-              <div class="hm-cb-gp-card-b">
-                <div class="hm-cb-gp-widget">
-                  <div class="hm-cb-gp-widget-title">Vote now!</div>
-                  <div><div><span>Tacos<span class="hm-cb-gp-widget-kw">#Tacos</span></span><span>6 · 66.7%</span></div><div class="hm-cb-gp-track"><i style="width: 100%"></i></div></div>
-                  <div><div><span>Pizza Time<span class="hm-cb-gp-widget-kw">#PizzaTime</span></span><span>3 · 33.3%</span></div><div class="hm-cb-gp-track"><i style="width: 50%"></i></div></div>
-                  <div><div><span>Ramen<span class="hm-cb-gp-widget-kw">#Ramen</span></span><span>0 · 0%</span></div><div class="hm-cb-gp-track"><i style="width: 0%"></i></div></div>
-                </div>
-                <div class="hm-cb-gp-row"><span>Poll widget <b>poll1</b> in the <b>poll</b> template. Colours and layout are set in Spore Studio.</span></div>
-                <div class="hm-cb-gp-url"><span>http://127.0.0.1:5000/poll</span><span class="hx-mi">content_copy</span></div>
-                <div class="hm-row"><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">auto_awesome</span>Edit in Spore Studio</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">open_in_new</span>Preview</span></div>
               </div>
             </div>
           </div>
@@ -159,7 +165,8 @@
   <li data-n="4">How long the poll runs and how votes count.</li>
   <li data-n="5">Let a chat command start this poll.</li>
   <li data-n="6">What happens when the poll ends.</li>
-  <li data-n="7">A small preview in the widget's own colours, with its title, keyword chips and bar gradient, and the overlay address for OBS.</li>
+  <li data-n="7">A small preview in the widget's own colours, with its title, keyword chips and bar gradient, and the overlay address for OBS. It stays under the options (or the live results), whether or not a poll is running.</li>
+  <li data-n="8">Also run the poll on Twitch. See <a href="#hx-run-it-on-twitch">Run it on Twitch</a>.</li>
 </ol>
 
 <p>If no overlay has a Poll widget yet, the tab says <em>No overlay has a Poll widget yet</em> with <strong>Open Spore Studio</strong> and <strong>Check again</strong>.</p>
@@ -211,6 +218,8 @@
 
 <p>Twitch and YouTube chat both count. If polls on more than one overlay are open, one message can vote in each of them when the keywords match.</p>
 
+<p>A poll that runs on Twitch is the exception: only votes in the Twitch poll count, and chat keywords are ignored, so Mycelian and Twitch always show the same numbers.</p>
+
 <h2>Timing and voting</h2>
 
 <div class="hx-table-wrap"><table>
@@ -221,6 +230,30 @@
     <tr><td><strong>Viewers can change their vote</strong></td><td>Off</td><td>A later keyword moves that viewer's vote. Only available while <strong>One vote per viewer</strong> is on.</td></tr>
   </tbody>
 </table></div>
+
+<h2>Run it on Twitch</h2>
+
+<p>Turn on <strong>Also run it on Twitch</strong> in the <strong>Twitch poll</strong> card and type the <strong>Question</strong> viewers see. When you start, Mycelian creates a Twitch poll with your options, and viewers vote in Twitch's poll in chat. The vote counts come from Twitch while it runs and show in <strong>Live results</strong>, the overlay and the status line (<em>Poll open · on Twitch</em>).</p>
+
+<div class="hx-table-wrap"><table>
+  <thead><tr><th>Twitch's limit</th><th>What Mycelian does</th></tr></thead>
+  <tbody>
+    <tr><td>Question up to 60 characters</td><td>The box stops at 60.</td></tr>
+    <tr><td>2 to 5 options, names up to 25 characters</td><td><strong>Add option</strong> stops at 5, and a name that is too long is marked and blocks <strong>Start poll</strong>.</td></tr>
+    <tr><td>Runs 15 seconds to 30 minutes</td><td><strong>Runs for</strong> is always <strong>Timer</strong>, and the time is kept in that range.</td></tr>
+    <tr><td>One poll per channel at a time</td><td>Only one overlay's poll can run on Twitch at a time. Starting a second one shows <em>Only one Twitch poll at a time</em>; a chat-only poll can still run beside it.</td></tr>
+    <tr><td>Partners and affiliates only</td><td>Twitch refuses the poll otherwise, and the message says so.</td></tr>
+  </tbody>
+</table></div>
+
+<ul>
+  <li><strong>Channel Points voting</strong> lets viewers spend points for extra votes; <strong>Points per extra vote</strong> sets the price.</li>
+  <li><strong>One vote per viewer</strong> and <strong>Viewers can change their vote</strong> don't apply: Twitch counts the votes.</li>
+  <li>The poll ends when Twitch's timer runs out, with Twitch's final numbers. <strong>End poll now</strong> ends it on Twitch too (Twitch shows the results in chat). Winners, the banner and the chat message work the same as for any poll.</li>
+  <li>Starting from a chat command works too. If the Twitch poll can't be created, a notification says why.</li>
+</ul>
+
+<p>Twitch polls need Mycelian to have permission to manage polls on your channel. If your Twitch sign-in doesn't include it, Twitch still connects and everything else works, but you get a notification asking you to sign in again, and the <strong>Twitch poll</strong> card says Twitch polls can't be used yet. Open <span class="hx-path"><span>Settings</span><span>Twitch</span></span>, click <strong>Connect</strong> and approve Mycelian in your browser.</p>
 
 <h2>Ending and restarts</h2>
 
@@ -268,7 +301,7 @@
 
 <h2>Overlay</h2>
 
-<p>The <strong>Overlay</strong> card shows a small preview of the results in the Poll widget's own colours, with its title, keyword chips and bar gradient, and names the widget and its template. Click the address to copy it for an OBS Browser Source. <strong>Edit in Spore Studio</strong> opens the template, and <strong>Preview</strong> opens the overlay in your browser.</p>
+<p>The <strong>Overlay</strong> card sits under the options (and under <strong>Live results</strong> while a poll runs). It shows a small preview of the results in the Poll widget's own colours, with its title, keyword chips and bar gradient, and names the widget and its template. Click the address to copy it for an OBS Browser Source. <strong>Edit in Spore Studio</strong> opens the template, and <strong>Preview</strong> opens the overlay in your browser.</p>
 
 <p>The Poll widget draws the live results: a style (bars, labels inside thick bars, or side-by-side cards), a title, keyword chips, rank numbers, a countdown chip and timer bar, a footer with the vote total, colors and a bar gradient, a leader highlight, a winner effect or winner-only list, autohide, and a rotator for extra options. Options are always ordered by votes, highest first. With the rotator off, only the top items are shown. With it on, the widget pages through that same order. The stock <code>poll</code> template is a Spore Studio template, so you can rearrange it like any other.</p>
 
