@@ -464,6 +464,9 @@ class PagingEquivalenceTests(unittest.TestCase):
             item["alert_id"] = alert_id
             alerts.append(item)
         alerts.sort(key=lambda i: alertutils.safe_alert_timestamp(i.get("timestamp", 0)), reverse=True)
+        # Pages past the end clamp to the last page.
+        total_pages = max(1, (len(alerts) + limit - 1) // limit)
+        page = min(max(1, page), total_pages)
         start = (page - 1) * limit
         return alerts[start : start + limit], len(alerts)
 
@@ -486,12 +489,10 @@ class PagingEquivalenceTests(unittest.TestCase):
                         want, total = self._old_page(storage, page, limit)
                         self.assertEqual(got["alerts"], want)
                         self.assertEqual(got["total_count"], total)
-                        with patch.object(
-                            mgr,
-                            "get_limited_stored_alerts_from_firebase",
-                            return_value=limited,
-                        ):
-                            lim = mgr.get_limited_stored_alerts_paginated(page, limit, 60)
+                        mgr._initialized = True
+                        mgr._alert_storage = dict(storage)
+                        mgr._alert_storage_loaded = True
+                        lim = mgr.get_limited_stored_alerts_paginated(page, limit, 60)
                         want2, total2 = self._old_page(limited, page, limit)
                         self.assertEqual(lim["alerts"], want2)
                         self.assertEqual(lim["total_count"], total2)

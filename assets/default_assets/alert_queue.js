@@ -64,7 +64,7 @@
         }
         var origEmit = socket.emit.bind(socket);
         socket.emit = function (event) {
-            if (event === 'alert_playing' || event === 'alert_progress' || event === 'alert_complete') {
+            if (event === 'alert_playing' || event === 'alert_progress' || event === 'alert_complete' || event === 'alert_started') {
                 var payload = arguments.length > 1 ? arguments[1] : {};
                 var merged = {};
                 var key;
@@ -89,6 +89,19 @@
             return origEmit.apply(socket, arguments);
         };
         return socket;
+    }
+
+    /**
+     * Does an alerts_skip_alert payload target the alert with queue_seq `seq`?
+     * Skips carry the queue_seq of the alert being skipped; a skip without one
+     * (older senders) means "whatever is playing".
+     */
+    function skipMatches(skipData, seq) {
+        var target = parseSeq(skipData && skipData.queue_seq);
+        if (target == null) {
+            return true;
+        }
+        return target === parseSeq(seq);
     }
 
     function attach(socket) {
@@ -163,7 +176,18 @@
             clearRetry();
         }
 
+        /** Report the alert's real run time so the Activity Feed timer matches. */
+        function started(seq, durationMs) {
+            var n = parseSeq(seq);
+            var ms = Math.round(Number(durationMs));
+            if (n == null || !socket || !isFinite(ms) || ms <= 0) {
+                return;
+            }
+            socket.emit('alert_started', { queue_seq: n, duration_ms: ms, route: currentRoute() });
+        }
+
         return {
+            started: started,
             playing: playing,
             progress: progress,
             complete: complete,
@@ -185,6 +209,7 @@
         currentRoute: currentRoute,
         isAllowedHolder: isAllowedHolder,
         parseSeq: parseSeq,
+        skipMatches: skipMatches,
         guardHandshakeEmits: guardHandshakeEmits
     };
 })(typeof window !== 'undefined' ? window : this);

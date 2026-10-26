@@ -1862,8 +1862,8 @@ class YouTubeClient:
 
         stored = dict(alert.__dict__)
         stored["source"] = "youtube"
-        alert_processor.enqueue_alert(alert)
         alertutils.alert_state_manager.store_completed_alert(alert.alert_id, stored)
+        alert_processor.enqueue_alert(alert)
 
     def send_live_chat_message(self, text: str) -> bool:
         message = (text or "").strip()
@@ -2024,7 +2024,7 @@ class YouTubeClient:
         alert.alert_type = "sub"
         alert.tier = 1
         alert.message = message
-        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_timestamp
         try:
             alert.member_level = level
@@ -2118,7 +2118,7 @@ class YouTubeClient:
         alert.tier = 1
         alert.message = message
         alert.resub_month = months
-        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_timestamp
         try:
             alert.member_level = level
@@ -2203,7 +2203,7 @@ class YouTubeClient:
         alert.tier = 1
         alert.gift_qty = qty
         alert.message = message
-        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_timestamp
         try:
             alert.member_level = level
@@ -2311,6 +2311,7 @@ class YouTubeClient:
             source="youtube",
             event_id=event_id,
             enqueue=self._alerts_enabled(),
+            is_supersticker=is_sticker,
         )
 
     def _send_instant_alert(self, alert_data: Dict[str, Any]) -> None:

@@ -873,6 +873,7 @@ def set_alert_playing(value: bool) -> None:
         sync_pause_breath(ALERT_PLAYING)
     except Exception:
         pass
+    broadcast_alert_queue_state()
 
 
 def set_alerts_paused(value: bool) -> None:
@@ -881,6 +882,7 @@ def set_alerts_paused(value: bool) -> None:
     ALERTS_PAUSED = bool(value)
     _notify_alert_processor()
     _sync_pause_button_state()
+    broadcast_alert_queue_state()
 
 
 def _sync_pause_button_state() -> None:
@@ -964,6 +966,224 @@ def _apply_playback_session_finished(newly_finished: bool) -> None:
     global EXPECTED_ALERT_COMPLETE_SEQ
     EXPECTED_ALERT_COMPLETE_SEQ = None
     set_alert_playing(False)
+
+
+# ---------------------------------------------------------------------------
+# Alert queue state (Activity Feed strip / timers / Up next) and skip.
+# ---------------------------------------------------------------------------
+
+ALERT_QUEUE_STATE_EVENT = "alert_queue_state"
+_queue_state_lock = threading.Lock()
+_queue_state_revision = 0
+_queue_state_last_sig: Any = None
+
+# An id-less skip this soon after a skip is a double press (or a second open
+# copy of a Spore skip control), not a request to skip the next alert too.
+SKIP_DOUBLE_PRESS_GUARD_SEC = 0.35
+_skip_lock = threading.Lock()
+_last_skip_at = 0.0
+
+
+def _queue_entry(alert: Any) -> Dict[str, Any]:
+    entry = {
+        "alert_id": str(getattr(alert, "alert_id", "") or ""),
+        "type": str(getattr(alert, "alert_type", "") or ""),
+        "username": str(getattr(alert, "username", "") or ""),
+    }
+    if getattr(alert, "is_replay", False):
+        entry["is_replay"] = True
+    return entry
+
+
+def _playing_entry() -> Optional[Dict[str, Any]]:
+    """The playing alert, or None once its handshake finished (skip / complete)."""
+    if not ALERT_PLAYING:
+        return None
+    try:
+        from .alert_processor import current_alert_info
+        from .alert_playback_session import get_session
+    except Exception:
+        return None
+    info = current_alert_info()
+    if not info:
+        return None
+    session = get_session()
+    if session is None or session.seq != info.get("queue_seq") or session.finished:
+        return None
+    entry = {
+        "alert_id": info.get("alert_id") or "",
+        "type": info.get("type") or "",
+        "username": info.get("username") or "",
+        "started_at_ms": info.get("started_at_ms"),
+        "duration_ms": info.get("duration_ms"),
+        "queue_seq": info.get("queue_seq"),
+    }
+    if info.get("is_replay"):
+        entry["is_replay"] = True
+    return entry
+
+
+def _alert_queue_state_body() -> Dict[str, Any]:
+    try:
+        from .alert_processor import play_order_snapshot
+
+        queued = [_queue_entry(a) for a in play_order_snapshot()]
+    except Exception:
+        queued = []
+    return {
+        "paused": bool(ALERTS_PAUSED),
+        "muted": bool(ALERTS_MUTED),
+        "playing": _playing_entry(),
+        "queue": queued,
+    }
+
+
+def get_alert_queue_state() -> Dict[str, Any]:
+    """Snapshot of the alert queue for the Activity Feed (app tab and dock).
+
+    {"paused", "muted", "playing": None | {"alert_id", "type", "username",
+    "started_at_ms", "duration_ms" (None if unknown), "queue_seq"[, "is_replay"]},
+    "queue": [{"alert_id", "type", "username"[, "is_replay"]}, ...] (play order),
+    "server_now_ms", "revision"}
+    """
+    body = _alert_queue_state_body()
+    with _queue_state_lock:
+        revision = _queue_state_revision
+    body["server_now_ms"] = int(time.time() * 1000)
+    body["revision"] = revision
+    return body
+
+
+def broadcast_alert_queue_state(force: bool = False) -> Optional[Dict[str, Any]]:
+    """Emit "alert_queue_state" when the state changed (or always with force).
+
+    Safe from any thread. Returns the payload that was sent, else None.
+    """
+    global _queue_state_revision, _queue_state_last_sig
+    try:
+        body = _alert_queue_state_body()
+        sig = repr(body)
+        with _queue_state_lock:
+            if not force and sig == _queue_state_last_sig:
+                return None
+            if sig != _queue_state_last_sig:
+                _queue_state_revision += 1
+            _queue_state_last_sig = sig
+            body["revision"] = _queue_state_revision
+        body["server_now_ms"] = int(time.time() * 1000)
+        engine = web_engine_instance
+        if engine is not None:
+            engine.safe_emit(ALERT_QUEUE_STATE_EVENT, body)
+        return body
+    except Exception as exc:
+        logger.debug("alert_queue_state broadcast failed: %s", exc)
+        return None
+
+
+def emit_alert_skip(queue_seq: Optional[int], alert_id: Any = None, source: str = "") -> bool:
+    """Tell overlays to stop the alert with this queue_seq right now."""
+    engine = web_engine_instance
+    if engine is None:
+        return False
+    payload: Dict[str, Any] = {"source": str(source or "")}
+    if queue_seq is not None:
+        payload["queue_seq"] = int(queue_seq)
+    if alert_id:
+        payload["alert_id"] = str(alert_id)
+    try:
+        return bool(engine.safe_emit("alerts_skip_alert", payload))
+    except Exception as exc:
+        logger.debug("alerts_skip_alert emit failed: %s", exc)
+        return False
+
+
+def skip_current_alert(alert_id: Optional[str] = None, source: str = "") -> Dict[str, Any]:
+    """Skip the playing alert, or drop a queued one. Every skip entry point uses this.
+
+    alert_id None / "" / "current": the playing alert. An id that is queued is
+    removed (never plays). Any other id is stale: no-op ``not_playing``, so a late
+    or repeated press never ends the next alert.
+
+    Returns {"ok": bool, "skipped_alert_id": str | None, "reason": str}; reason is
+    "skipped" | "removed_from_queue" | "not_playing" | "double_press".
+    """
+    global _last_skip_at
+    from .alert_playback_session import get_session
+    from . import alert_processor
+
+    aid = str(alert_id or "").strip()
+    if aid.lower() in ("current", "none", "null"):
+        aid = ""
+    with _skip_lock:
+        info = alert_processor.current_alert_info()
+        session = get_session()
+        live = (
+            info is not None
+            and session is not None
+            and session.seq == info.get("queue_seq")
+            and not session.finished
+        )
+        if aid and (not live or info.get("alert_id") != aid):
+            removed = alert_processor.remove_queued_alert_by_id(aid)
+            if removed is not None:
+                logger.info("Skip (%s): removed queued alert %s", source or "?", aid)
+                return {"ok": True, "skipped_alert_id": aid, "reason": "removed_from_queue"}
+            return {"ok": False, "skipped_alert_id": None, "reason": "not_playing"}
+        if not live:
+            return {"ok": False, "skipped_alert_id": None, "reason": "not_playing"}
+        now = time.monotonic()
+        if not aid and now - _last_skip_at < SKIP_DOUBLE_PRESS_GUARD_SEC:
+            return {"ok": False, "skipped_alert_id": None, "reason": "double_press"}
+        seq = info.get("queue_seq")
+        skipped_id = info.get("alert_id") or None
+        if not session.force_finish("skip"):
+            return {"ok": False, "skipped_alert_id": None, "reason": "not_playing"}
+        _last_skip_at = now
+    logger.info("Skip (%s): alert %s seq=%s", source or "?", skipped_id, seq)
+    emit_alert_skip(seq, skipped_id, source)
+    _apply_playback_session_finished(True)
+    return {"ok": True, "skipped_alert_id": skipped_id, "reason": "skipped"}
+
+
+def skip_alert_from_payload(data: Any, source: str = "") -> Dict[str, Any]:
+    """skip_current_alert for a socket/HTTP payload ({alert_id} | {queue_seq} | {})."""
+    alert_id = None
+    if isinstance(data, dict):
+        alert_id = data.get("alert_id") or None
+        if data.get("type") == "current":
+            alert_id = None
+        seq = data.get("queue_seq")
+        if alert_id is None and seq not in (None, ""):
+            try:
+                from .alert_processor import current_alert_info
+
+                info = current_alert_info()
+                if not info or info.get("queue_seq") != int(seq):
+                    return {"ok": False, "skipped_alert_id": None, "reason": "not_playing"}
+                alert_id = info.get("alert_id") or None
+            except (TypeError, ValueError):
+                return {"ok": False, "skipped_alert_id": None, "reason": "not_playing"}
+    result = skip_current_alert(alert_id, source=source)
+    result = dict(result)
+    result["success"] = bool(result.get("ok"))
+    return result
+
+
+_ALERT_SKIP_ACTION_NAMES = frozenset({"skip_alert", "skip", "skip alert"})
+
+
+def is_alert_skip_template_action(
+    template_name: Any, action_name: Any = "", event_name: Any = ""
+) -> bool:
+    """True for Stream Deck / connector actions that mean "skip the alert"."""
+    tn = str(template_name or "").strip().strip("/").lower()
+    an = str(action_name or "").strip().lower()
+    ev = str(event_name or "").strip().lower()
+    if ev in ("alerts_skip_alert", "skip_alert") or an == "skip_alert":
+        # "skip_alert" is the global skip control (alerts template, Spore skip
+        # controls); it always means the playing alert.
+        return True
+    return tn == "alerts" and an in _ALERT_SKIP_ACTION_NAMES
 
 
 # Global flag to track Web Engine status
@@ -6685,6 +6905,11 @@ class WebEngine:
                         {"muted": ALERTS_MUTED},
                         to=connect_sid,
                     )
+                    self.socketio.emit(
+                        ALERT_QUEUE_STATE_EVENT,
+                        get_alert_queue_state(),
+                        to=connect_sid,
+                    )
                     theme_mgr = get_theme_manager()
                     theme = theme_mgr.get_theme()
                     if theme:
@@ -7631,6 +7856,8 @@ class WebEngine:
             """
             global ALERTS_PAUSED
             logger.debug("set_pause_status called")
+            if _reject_non_localhost_socket():
+                return {"success": False, "error": "forbidden"}
             try:
                 if not isinstance(data, dict) or "paused" not in data:
                     logger.error(
@@ -7677,6 +7904,8 @@ class WebEngine:
         def handle_set_mute_status(data):
             """Allow clients to set the alert audio mute status."""
             global ALERTS_MUTED
+            if _reject_non_localhost_socket():
+                return {"success": False, "error": "forbidden"}
             try:
                 if not isinstance(data, dict) or "muted" not in data:
                     logger.error(
@@ -7696,6 +7925,7 @@ class WebEngine:
 
                 self.socketio.emit("mute_status_update", {"muted": new_status})
                 _sync_mute_button_state()
+                broadcast_alert_queue_state()
                 return {"success": True, "muted": new_status}
             except Exception as e:
                 logger.error(f"Error setting mute status: {str(e)}", exc_info=True)
@@ -7966,63 +8196,26 @@ class WebEngine:
                         "error": "Invalid data format: dictionary required",
                     }
 
-                page = data.get("page", 1)
-                limit = data.get("limit", 25)
-
-                from . import dataobjects
-
-                if alertutils.alert_state_manager is None:
-                    logger.warning(
-                        "get_stored_alerts_paginated: alert_state_manager not initialized"
-                    )
-                    result = {
-                        "alerts": [],
-                        "total_count": 0,
-                        "page": page,
-                        "limit": limit,
-                        "total_pages": 1,
-                        "has_next": False,
-                        "has_prev": False,
-                    }
-                else:
-                    app_settings = dataobjects.state_manager.get_app_settings()
-                    max_total_alerts = (
-                        app_settings.activity_feed_max_pages
-                        * app_settings.activity_feed_limit
-                    )
-                    result = alertutils.alert_state_manager.get_limited_stored_alerts_paginated(
-                        page=page,
-                        limit=limit,
-                        max_total_alerts=max_total_alerts,
-                    )
-
-                # Convert stored alerts to activity feed format
-                converted_alerts = []
-                for stored_alert in result["alerts"]:
-                    # Import the conversion function from activity_feed
-                    from .uiwindows.activity_feed import (
-                        convert_stored_alert_to_feed_format,
-                    )
-
-                    feed_alert = convert_stored_alert_to_feed_format(stored_alert)
-                    if feed_alert:
-                        converted_alerts.append(feed_alert)
-
-                # Prepare response
-                response = {
-                    "alerts": converted_alerts,
-                    "page": result["page"],
-                    "total_pages": result["total_pages"],
-                    "total_count": result["total_count"],
-                    "has_prev": result["has_prev"],
-                    "has_next": result["has_next"],
-                }
-
-                self.socketio.emit("stored_alerts_paginated", response, to=request.sid)
-                logger.debug(
-                    f"Sent {len(converted_alerts)} stored alerts for page {page} to {request.sid}"
+                from .uiwindows.activity_feed import (
+                    _emit_stored_alerts_payload,
+                    load_restored_alerts,
                 )
-                return response
+
+                # The page size comes from App Settings (the client's limit is ignored);
+                # the page is clamped to pages that exist.
+                try:
+                    page = int(data.get("page", 1))
+                except (TypeError, ValueError):
+                    page = 1
+                page = max(1, page)
+                alerts, info = load_restored_alerts(page)
+                _emit_stored_alerts_payload(alerts, info, to=request.sid)
+                return {
+                    "success": not info.get("error"),
+                    "page": info.get("page", 1),
+                    "total_pages": info.get("total_pages", 1),
+                    "total_count": info.get("total_count", 0),
+                }
             except Exception as e:
                 logger.error(
                     f"Error handling get_stored_alerts_paginated: {str(e)}",
@@ -8078,7 +8271,9 @@ class WebEngine:
                     view_manager,
                 )
 
-                hours = parse_condensed_historical_hours(data.get("hours", 12))
+                raw_hours = data.get("hours")
+                # No hours from the dock: App Settings → Activity Feed → "By person" window.
+                hours = parse_condensed_historical_hours(raw_hours) if raw_hours not in (None, "") else None
                 raw_filters = data.get("filters")
                 if isinstance(raw_filters, dict):
                     filters = normalize_filter_state(raw_filters)
@@ -8095,6 +8290,7 @@ class WebEngine:
                 response = build_condensed_overlay_payload(
                     hours=hours, filter_state=filters, search=search
                 )
+                hours = response.get("hours", hours)
 
                 self.socketio.emit("condensed_view_alerts", response, to=request.sid)
                 logger.debug(
@@ -8145,6 +8341,8 @@ class WebEngine:
         def handle_set_activity_feed_view(data):
             """Apply a display change from the overlay to both feeds."""
             logger.debug("Received set_activity_feed_view from %s", request.sid)
+            if _reject_non_localhost_socket():
+                return {"success": False, "error": "forbidden"}
             try:
                 if not isinstance(data, dict):
                     return {
@@ -8161,129 +8359,104 @@ class WebEngine:
                 )
                 return {"success": False, "error": str(exc)}
 
+        @self.socketio.on("get_activity_feed_settings")
+        def handle_get_activity_feed_settings(data=None):
+            """Feed look settings (App Settings → Activity Feed) for a dock that connected."""
+            try:
+                from modules.uiwindows.activity_feed import broadcast_feed_settings
+
+                return {"success": True, "settings": broadcast_feed_settings(to=request.sid)}
+            except Exception as exc:
+                logger.error("Error handling get_activity_feed_settings: %s", exc, exc_info=True)
+                return {"success": False, "error": str(exc)}
+
+        @self.socketio.on("activity_feed_open_settings")
+        def handle_activity_feed_open_settings(data=None):
+            """Dock "Open in Mycelian": show Settings → App Settings → Activity Feed."""
+            if _reject_non_localhost_socket():
+                return {"success": False, "error": "forbidden"}
+            try:
+                from modules.uiwindows.activity_feed import open_feed_settings
+
+                open_feed_settings()
+                return {"success": True}
+            except Exception as exc:
+                logger.error("Error handling activity_feed_open_settings: %s", exc, exc_info=True)
+                return {"success": False, "error": str(exc)}
+
         @self.socketio.on("activity_feed_replay_alert")
         @self._hub_alert_state_serialized
         def handle_activity_feed_replay_alert(data):
-            """
-            Handle activity_feed_replay_alert websocket event.
-            Replays a specific alert from the activity feed by fetching stored data directly from database.
-
-            Args:
-                data (dict): Alert data containing alert_id for replay
-            """
-            logger.debug(
-                f"Received activity_feed_replay_alert request from {request.sid}"
-            )
+            """Replay a stored alert (dock row click). Returns alertutils.replay_alert's
+            {ok, reason, new_alert_id} plus legacy "success"/"error"."""
+            if _reject_non_localhost_socket():
+                return {"ok": False, "success": False, "reason": "forbidden", "error": "forbidden"}
+            alert_id = data.get("alert_id") if isinstance(data, dict) else None
             try:
-                if not isinstance(data, dict):
-                    logger.error(
-                        "Invalid data format received in activity_feed_replay_alert event"
-                    )
-                    return {
-                        "success": False,
-                        "error": "Invalid data format: dictionary required",
-                    }
+                from modules import alertutils
 
-                # Get the alert ID from the request data
-                alert_id = data.get("alert_id")
-                if not alert_id:
-                    logger.error("No alert_id found in activity_feed_replay_alert data")
-                    return {
-                        "success": False,
-                        "error": "No alert_id provided for replay",
-                    }
-
-                # Log the replay action
-                logger.info(f"Replaying alert from activity feed: {alert_id}")
-
-                # Import alertutils and alert_processor for AlertObj creation and queue processing
-                from modules import alert_processor, alertutils
-
-                # Fetch stored alert data directly from the database, bypassing any cache systems
-                alertutils.alert_state_manager.initialize()
-                stored_alert_data = (
-                    alertutils.alert_state_manager.get_stored_alert_by_id(alert_id)
-                )
-
-                if not stored_alert_data:
-                    logger.error(f"No stored alert data found for alert_id: {alert_id}")
-                    return {
-                        "success": False,
-                        "error": f"No stored alert data found for alert_id: {alert_id}",
-                    }
-
-                logger.debug(
-                    f"Fetched stored alert data for replay: {list(stored_alert_data.keys())}"
-                )
-
-                replay_alert_obj = alertutils.build_replay_alert(stored_alert_data)
-
-                logger.debug(
-                    f"Created replay AlertObj - type: {replay_alert_obj.alert_type}, "
-                    f"gif_dir: {replay_alert_obj.gif_dir}, gif_name: {replay_alert_obj.gif_name}, "
-                    f"audio_dir: {replay_alert_obj.single_audio_dir}, audio_name: {replay_alert_obj.single_audio_name}"
-                )
-
-                # Append the created AlertObj to the ALERT_QUEUE for processing
-                alert_processor.enqueue_alert(replay_alert_obj)
-                logger.debug(
-                    f"Added replay alert to ALERT_QUEUE: {replay_alert_obj.alert_type} (ID: {replay_alert_obj.alert_id})"
-                )
-
-                return {"success": True}
+                result = dict(alertutils.replay_alert(alert_id))
             except Exception as e:
                 logger.error(
-                    f"Error handling activity_feed_replay_alert: {str(e)}",
-                    exc_info=True,
+                    "Error handling activity_feed_replay_alert: %s", e, exc_info=True
                 )
-                return {"success": False, "error": str(e)}
+                result = {"ok": False, "reason": "error", "new_alert_id": None}
+            result["success"] = bool(result.get("ok"))
+            if not result["success"]:
+                result["error"] = result.get("reason") or "error"
+            logger.info(
+                "Activity feed replay %s: %s", alert_id, result.get("reason")
+            )
+            return result
 
         @self.socketio.on("skip_alert")
         def handle_skip_alert(data=None):
-            """Forward legacy skip_alert emits to the overlay skip event."""
+            """Skip control from overlays / Spore Studio (skip_alert action)."""
+            if _reject_non_localhost_socket():
+                return {"ok": False, "success": False, "reason": "forbidden"}
             try:
-                payload = data if isinstance(data, dict) else {}
-                self.safe_emit("alerts_skip_alert", payload)
-                abort_alert_playback("skip")
+                return skip_alert_from_payload(data, source="skip_alert")
             except Exception as e:
                 logger.error("Error handling skip_alert: %s", e, exc_info=True)
+                return {"ok": False, "success": False, "reason": "error"}
 
         @self.socketio.on("activity_feed_skip_alert")
-        def handle_activity_feed_skip_alert(data):
-            """
-            Handle activity_feed_skip_alert websocket event.
-            Skips/dismisses a specific alert from the activity feed.
-
-            Args:
-                data (dict): Alert data to skip
-            """
-            logger.debug(
-                f"Received activity_feed_skip_alert request from {request.sid}"
-            )
+        def handle_activity_feed_skip_alert(data=None):
+            """Dock Skip: {alert_id} skips that alert (playing or queued); no id / type
+            "current" skips the playing one. Returns skip_current_alert's result."""
+            if _reject_non_localhost_socket():
+                return {"ok": False, "success": False, "reason": "forbidden"}
             try:
-                if not isinstance(data, dict):
-                    logger.error(
-                        "Invalid data format received in activity_feed_skip_alert event"
-                    )
-                    return {
-                        "success": False,
-                        "error": "Invalid data format: dictionary required",
-                    }
-
-                # Log the skip action
-                logger.info(
-                    f"Skipping alert from activity feed: {data.get('type', 'Unknown')} - {data.get('message', 'No message')}"
-                )
-
-                # You can add specific skip logic here if needed
-                # For now, we'll just acknowledge the action
-
-                return {"success": True}
+                return skip_alert_from_payload(data, source="activity_feed")
             except Exception as e:
                 logger.error(
-                    f"Error handling activity_feed_skip_alert: {str(e)}", exc_info=True
+                    "Error handling activity_feed_skip_alert: %s", e, exc_info=True
                 )
-                return {"success": False, "error": str(e)}
+                return {"ok": False, "success": False, "reason": "error"}
+
+        @self.socketio.on("get_alert_queue_state")
+        def handle_get_alert_queue_state(data=None):
+            state = get_alert_queue_state()
+            try:
+                self.socketio.emit(ALERT_QUEUE_STATE_EVENT, state, to=request.sid)
+            except Exception as e:
+                logger.debug("get_alert_queue_state emit failed: %s", e)
+            return state
+
+        @self.socketio.on("alert_started")
+        def handle_alert_started(data=None):
+            """Overlay-reported run time of the playing alert ({queue_seq, duration_ms})."""
+            if not isinstance(data, dict):
+                return
+            try:
+                seq = int(data.get("queue_seq"))
+            except (TypeError, ValueError):
+                return
+            if seq < 0 or self._preview_iframe_has_sid(request.sid):
+                return
+            from .alert_processor import note_current_alert_duration
+
+            note_current_alert_duration(seq, data.get("duration_ms"))
 
         @self.socketio.on("get_route_info")
         def handle_get_route_info(data=None):
@@ -8959,6 +9132,26 @@ class WebEngine:
                         )
                     return
 
+                if is_alert_skip_template_action(template_name, action_name):
+                    result = skip_current_alert(None, source="streamdeck")
+                    response = {
+                        "success": True,
+                        "templateName": template_name,
+                        "actionName": action_name,
+                        "skip": result,
+                        "message": f"Executed {template_name}.{action_name}",
+                    }
+                    self.socketio.emit(
+                        "streamdeck_action_response", response, to=client_sid
+                    )
+                    if data.get("requestId") is not None:
+                        self.socketio.emit(
+                            "response",
+                            {**response, "requestId": data["requestId"]},
+                            to=client_sid,
+                        )
+                    return
+
                 event_name_req = (
                     data.get("eventName", action_name)
                     if isinstance(data, dict)
@@ -9215,6 +9408,16 @@ class WebEngine:
             template_config=cfg if cfg else None,
             use_client_event_name=use_client_event_name,
         )
+        if is_alert_skip_template_action(template_name, compat_key, resolved_event):
+            # Skip goes through the queue (abort once, overlays get the seq).
+            result = skip_current_alert(None, source="streamdeck")
+            logger.info(
+                "Stream Deck: %s.%s -> skip (%s)",
+                template_name,
+                compat_key,
+                result.get("reason"),
+            )
+            return compat_key, resolved_event
         self._emit_streamdeck_template_events(
             template_name, compat_key, resolved_event, merged_ad
         )
@@ -9244,6 +9447,9 @@ class WebEngine:
         try:
             event_name = action_config.get("event", f"{template_name}_{action_name}")
             event_data = _merged_streamdeck_options_payload(action_config, action_data)
+            if is_alert_skip_template_action(template_name, action_name, event_name):
+                skip_current_alert(None, source="streamdeck")
+                return
 
             # Emit the event to all clients
             self.safe_emit(event_name, event_data)
@@ -10708,6 +10914,7 @@ class WebEngine:
             logger.info(f"Broadcasting mute status update: muted={ALERTS_MUTED}")
             self.safe_emit("mute_status_update", {"muted": ALERTS_MUTED})
             _sync_mute_button_state()
+            broadcast_alert_queue_state()
             logger.info(
                 f"Successfully broadcasted mute status update: muted={ALERTS_MUTED}"
             )

@@ -62,6 +62,27 @@
             scaleOut: { in: 'spore-anim-scalein', out: 'spore-anim-scaleout' },
             none: { in: '', out: '' }
         };
+        /* Elements this alert revealed; a skip hides them again at once. */
+        var sporeShownIds = {};
+        function sporeHideShownNow() {
+            var id;
+            for (id in sporeShownIds) {
+                if (!Object.prototype.hasOwnProperty.call(sporeShownIds, id)) { continue; }
+                var el = document.getElementById(id);
+                if (!el) { continue; }
+                el._sporeVisToken = (el._sporeVisToken || 0) + 1;
+                var k;
+                for (k in SPORE_ANIM_CLASS_MAP) {
+                    if (!Object.prototype.hasOwnProperty.call(SPORE_ANIM_CLASS_MAP, k)) { continue; }
+                    if (SPORE_ANIM_CLASS_MAP[k].in) { el.classList.remove(SPORE_ANIM_CLASS_MAP[k].in); }
+                    if (SPORE_ANIM_CLASS_MAP[k].out) { el.classList.remove(SPORE_ANIM_CLASS_MAP[k].out); }
+                }
+                el.style.animationDuration = '';
+                el.style.animationTimingFunction = '';
+                el.setAttribute('data-spore-hidden', 'true');
+            }
+            sporeShownIds = {};
+        }
         function sporeAnimClassFor(type, dir) {
             var m = SPORE_ANIM_CLASS_MAP[type] || SPORE_ANIM_CLASS_MAP.none;
             return dir === 'in' ? (m.in || '') : (m.out || '');
@@ -132,6 +153,7 @@
         function sporeShow(id, override) {
             var el = document.getElementById(id);
             if (!el) { return; }
+            if (el.getAttribute('data-spore-hidden') === 'true') { sporeShownIds[id] = true; }
             /* A show cancels a hide whose fade-out is still running. */
             el._sporeVisToken = (el._sporeVisToken || 0) + 1;
             el.removeAttribute('data-spore-hidden');
@@ -314,13 +336,38 @@
             });
         });
 
+        var sporeLastInstantAlertId = null;
         socket.on('instant_alert', function (data) {
             try {
                 console.log('[__TEMPLATE_NAME__] instant_alert (debug)', data);
+                sporeLastInstantAlertId = (data && data.alert_id) || null;
+                sporeShownIds = {};
                 sporeApplyBindings('instant_alert', data || {});
             } catch (err) {
                 console.error('[__TEMPLATE_NAME__] binding error', err);
             }
+        });
+        /* Activity Feed replays: play the visuals again (counters ignore is_replay). */
+        socket.on('instant_alert_replay', function (data) {
+            try {
+                sporeLastInstantAlertId = (data && data.alert_id) || null;
+                sporeShownIds = {};
+                sporeApplyBindings('instant_alert', data || {});
+            } catch (err) {
+                console.error('[__TEMPLATE_NAME__] binding error', err);
+            }
+        });
+        /* Skip of the alert this template is showing: stop its media and visuals now. */
+        socket.on('alerts_skip_alert', function (data) {
+            var target = data && data.alert_id;
+            if (!target || !sporeLastInstantAlertId || target !== sporeLastInstantAlertId) { return; }
+            var root = document.getElementById('sporeRoot');
+            var nodes = root ? root.querySelectorAll('audio, video') : [];
+            for (var i = 0; i < nodes.length; i++) {
+                try { nodes[i].pause(); nodes[i].currentTime = 0; } catch (eStop) {}
+            }
+            sporeHideShownNow();
+            sporeLastInstantAlertId = null;
         });
 
         socket.on('template_config_updated', function (data) {

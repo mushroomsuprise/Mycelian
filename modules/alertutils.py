@@ -42,6 +42,33 @@ from . import database_manager
 logger = logging.getLogger(__name__)
 
 
+_ALERT_ID_LOCK = threading.Lock()
+_ALERT_ID_LAST_MS = 0
+_ALERT_ID_COUNTER = 0
+
+
+def new_alert_id(prefix: str = "Alert") -> str:
+    """Return a unique alert id: prefix + millisecond timestamp + 3-digit counter.
+
+    Two events in the same second (or millisecond) never share an id, so their
+    stored records (Alerts/AlertStorage/<id>), feed rows and queued alerts stay
+    distinct. Ids stay increasing within one process.
+    """
+    global _ALERT_ID_LAST_MS, _ALERT_ID_COUNTER
+    with _ALERT_ID_LOCK:
+        now_ms = int(time.time() * 1000)
+        if now_ms <= _ALERT_ID_LAST_MS:
+            now_ms = _ALERT_ID_LAST_MS
+            _ALERT_ID_COUNTER += 1
+            if _ALERT_ID_COUNTER > 999:
+                now_ms += 1
+                _ALERT_ID_COUNTER = 0
+        else:
+            _ALERT_ID_COUNTER = 0
+        _ALERT_ID_LAST_MS = now_ms
+        return f"{prefix}{now_ms}{_ALERT_ID_COUNTER:03d}"
+
+
 def safe_alert_timestamp(value: Any, default: float = 0.0) -> float:
     """Coerce an alert timestamp to unix seconds. Never raises."""
     if value is None or value == "":
@@ -193,6 +220,10 @@ class AlertStateManager:
         # Add alert storage for completed alerts
         self._alert_storage = {}
         self._alert_storage_loaded = False
+        # Newest-first id index over _alert_storage, rebuilt only after it changes.
+        self._storage_version = 0
+        self._sorted_ids_cache: Optional[List[str]] = None
+        self._sorted_ids_key: Any = None
 
         self._alert_paths = {
             "bits": "Alerts/BitAlerts",
@@ -1570,6 +1601,7 @@ class AlertStateManager:
             try:
                 complete_alert_data = self._normalize_alert_data_for_storage(alert_data)
                 self._alert_storage[alert_id] = copy.deepcopy(complete_alert_data)
+                self._note_storage_changed()
             except Exception as e:
                 logger.error(
                     f"Error storing completed alert {alert_id}: {str(e)}", exc_info=True
@@ -1822,7 +1854,8 @@ class AlertStateManager:
         if mode in ("time", "both"):
             cutoff = time.time() - (keep_days * 86400)
             for alert_id, timestamp in rows:
-                if timestamp < cutoff:
+                # 0 = unknown time (old records): never age it out.
+                if 0 < timestamp < cutoff:
                     to_delete.add(alert_id)
         if mode in ("quantity", "both"):
             for alert_id, _timestamp in rows[keep_count:]:
@@ -1886,6 +1919,7 @@ class AlertStateManager:
         with self._lock:
             for alert_id in deleted_ids:
                 self._alert_storage.pop(alert_id, None)
+            self._note_storage_changed()
 
         if deleted and not self._trim_cancel.is_set():
             logger.info(
@@ -1942,6 +1976,11 @@ class AlertStateManager:
                     logger.debug(
                         f"Normalized field '{field}' from None to '{default_value}' for alert storage"
                     )
+
+            # A missing / zero timestamp would read as 1970 ("20000d ago") and be
+            # trimmed at once in time mode: treat it as "now".
+            if safe_alert_timestamp(normalized_data.get("timestamp"), 0.0) <= 0:
+                normalized_data["timestamp"] = time.time()
 
             # Ensure numeric fields are properly typed
             numeric_fields = {
@@ -2001,6 +2040,102 @@ class AlertStateManager:
             # Return original data if normalization fails
             return copy.deepcopy(alert_data)
 
+    def _note_storage_changed(self) -> None:
+        """Invalidate the newest-first index (call with self._lock held)."""
+        self._storage_version = getattr(self, "_storage_version", 0) + 1
+        self._sorted_ids_cache = None
+
+    def _ordered_storage_ids_locked(self) -> List[str]:
+        """Stored alert ids newest first (call with self._lock held).
+
+        Cached until _alert_storage changes (insert/trim/reload), so long streams
+        with the full history in memory don't re-sort it for every feed rebuild.
+        """
+        storage = self._alert_storage
+        key = (id(storage), len(storage), getattr(self, "_storage_version", 0))
+        cached = getattr(self, "_sorted_ids_cache", None)
+        if cached is not None and getattr(self, "_sorted_ids_key", None) == key:
+            return cached
+
+        def _ts(alert_id):
+            data = storage.get(alert_id)
+            return safe_alert_timestamp(
+                data.get("timestamp", 0) if isinstance(data, dict) else 0
+            )
+
+        ordered = sorted(storage, key=_ts, reverse=True)
+        self._sorted_ids_cache = ordered
+        self._sorted_ids_key = key
+        return ordered
+
+    @staticmethod
+    def _coerce_page_args(page: Any, limit: Any) -> Tuple[int, int]:
+        """Integer page (>= 1) and limit (1..1000); bad values fall back to 1 / 25."""
+        try:
+            page_i = int(page)
+        except (TypeError, ValueError):
+            page_i = 1
+        try:
+            limit_i = int(limit)
+        except (TypeError, ValueError):
+            limit_i = 25
+        return max(1, page_i), min(1000, max(1, limit_i))
+
+    @staticmethod
+    def _clamp_page(page: int, total_count: int, limit: int) -> int:
+        total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
+        return min(max(1, page), total_pages)
+
+    def _page_from_ordered_ids_locked(
+        self, ordered_ids: List[str], page: int, limit: int
+    ) -> dict:
+        page = self._clamp_page(page, len(ordered_ids), limit)
+        start_index = (page - 1) * limit
+        page_alerts = []
+        for alert_id in ordered_ids[start_index : start_index + limit]:
+            data = self._alert_storage.get(alert_id)
+            alert_copy = copy.deepcopy(data) if isinstance(data, dict) else {}
+            alert_copy["alert_id"] = alert_id
+            page_alerts.append(alert_copy)
+        return self._stored_alerts_page_result(
+            page_alerts, len(ordered_ids), page, limit
+        )
+
+    def get_stored_alerts_since(
+        self, cutoff_ts: float, limit: Optional[int] = None
+    ) -> List[dict]:
+        """Stored alerts with timestamp >= cutoff_ts, newest first, across all storage.
+
+        Each item is a copy with "alert_id" set. ``limit`` caps the count (None = all).
+        For time-window views (condensed feed) that must not stop at N pages.
+        """
+        if not self._initialized:
+            with self._lock:
+                if not self._initialized:
+                    self.initialize()
+        try:
+            cutoff = float(cutoff_ts)
+        except (TypeError, ValueError):
+            cutoff = 0.0
+        with self._lock:
+            loaded = self._alert_storage_loaded
+        if not loaded:
+            self._ensure_alert_storage_loaded()
+        out: List[dict] = []
+        with self._lock:
+            for alert_id in self._ordered_storage_ids_locked():
+                data = self._alert_storage.get(alert_id)
+                if not isinstance(data, dict):
+                    continue
+                if safe_alert_timestamp(data.get("timestamp", 0)) < cutoff:
+                    break
+                alert_copy = copy.deepcopy(data)
+                alert_copy["alert_id"] = alert_id
+                out.append(alert_copy)
+                if limit is not None and len(out) >= int(limit):
+                    break
+        return out
+
     def _stored_alerts_page_result(
         self, alerts: list, total_count: int, page: int, limit: int
     ) -> dict:
@@ -2016,6 +2151,8 @@ class AlertStateManager:
         }
 
     def _page_stored_alerts_memory(self, storage: dict, page: int, limit: int) -> dict:
+        page, limit = self._coerce_page_args(page, limit)
+        page = self._clamp_page(page, len(storage), limit)
         start_index = (page - 1) * limit
         end_index = start_index + limit
         if all(isinstance(alert_data, dict) for alert_data in storage.values()):
@@ -2088,19 +2225,18 @@ class AlertStateManager:
             with self._lock:
                 if not self._initialized:
                     self.initialize()
-        page = max(1, int(page or 1))
-        limit = max(1, int(limit or 1))
+        page, limit = self._coerce_page_args(page, limit)
 
         try:
             with self._lock:
                 use_memory = self._alert_storage_loaded
-                memory_items = dict(self._alert_storage) if use_memory else None
             if not use_memory:
                 # One shared full load, so every page comes from the same data.
                 self._ensure_alert_storage_loaded()
-                with self._lock:
-                    memory_items = dict(self._alert_storage)
-            return self._page_stored_alerts_memory(memory_items or {}, page, limit)
+            with self._lock:
+                return self._page_from_ordered_ids_locked(
+                    self._ordered_storage_ids_locked(), page, limit
+                )
 
         except Exception as e:
             logger.error(
@@ -2254,42 +2390,22 @@ class AlertStateManager:
                 - has_next: Whether there's a next page
                 - has_prev: Whether there's a previous page
         """
+        page, limit = self._coerce_page_args(page, limit)
         try:
-            limited_stored_alerts = self.get_limited_stored_alerts_from_firebase(
-                max_total_alerts
-            )
-
-            # Same stable sort as before, but only the requested page is copied.
-            ordered_ids = sorted(
-                limited_stored_alerts,
-                key=lambda alert_id: safe_alert_timestamp(
-                    limited_stored_alerts[alert_id].get("timestamp", 0)
-                ),
-                reverse=True,
-            )
-
-            total_count = len(ordered_ids)
-            total_pages = (
-                (total_count + limit - 1) // limit if total_count > 0 else 1
-            )
-
-            start_index = (page - 1) * limit
-            end_index = start_index + limit
-            page_alerts = []
-            for alert_id in ordered_ids[start_index:end_index]:
-                alert_copy = copy.deepcopy(limited_stored_alerts[alert_id])
-                alert_copy["alert_id"] = alert_id
-                page_alerts.append(alert_copy)
-
-            return {
-                "alerts": page_alerts,
-                "total_count": total_count,
-                "page": page,
-                "limit": limit,
-                "total_pages": total_pages,
-                "has_next": page < total_pages,
-                "has_prev": page > 1,
-            }
+            max_total = max(0, int(max_total_alerts))
+        except (TypeError, ValueError):
+            max_total = 250
+        try:
+            if not self._initialized:
+                self.initialize()
+            with self._lock:
+                loaded = self._alert_storage_loaded
+            if not loaded:
+                # One shared full load, so every caller sees the same stored alerts.
+                self._ensure_alert_storage_loaded()
+            with self._lock:
+                ordered_ids = self._ordered_storage_ids_locked()[:max_total]
+                return self._page_from_ordered_ids_locked(ordered_ids, page, limit)
 
         except Exception as e:
             logger.error(
@@ -3177,15 +3293,78 @@ def fetch_alert_config_for_stored(stored: dict) -> Optional[AlertObj]:
     return None
 
 
-def build_replay_alert(stored: dict) -> AlertObj:
+_MISSING = object()
+
+# Alert types that never enter the queue live (instant_alert only), so their
+# replay is the instant mirror alone.
+_REPLAY_INSTANT_ONLY_TYPES = frozenset(
+    {"hype_train_start", "hype_train_progress", "hype_train_end", "hype_train"}
+)
+
+# Live instant_alert "type" names that differ from the stored alert_type.
+_REPLAY_INSTANT_TYPE_NAMES = {
+    "bit": "cheer",
+    "bits": "cheer",
+    "point": "points",
+}
+
+# Extra stored keys copied into the replay instant payload (live payloads carry them).
+_REPLAY_INSTANT_EXTRA_FIELDS = (
+    "alert_name",
+    "source",
+    "power_up_type",
+    "conductor_name",
+    "level",
+    "total_contributions",
+    "top_contributions",
+    "member_level",
+    "is_supersticker",
+)
+
+
+def _is_point_type(alert_type: Any) -> bool:
+    return str(alert_type or "").strip().lower() in ("point", "points")
+
+
+def _apply_point_dedicated_hold(replay: AlertObj) -> None:
+    """Same dedicated-template queue hold the live point handler applies."""
+    try:
+        from .template_config_parser import match_point_reward_dedicated_template
+
+        dedicated = match_point_reward_dedicated_template(replay.alert_name or "")
+    except Exception as exc:
+        logger.debug("Replay dedicated template lookup failed: %s", exc)
+        return
+    if not dedicated or not dedicated.get("queued"):
+        return
+    gif_ok = (
+        replay.gif_dir
+        and str(replay.gif_dir).strip()
+        and replay.gif_name
+        and str(replay.gif_name).strip()
+    )
+    audio_ok = replay.single_audio_dir and replay.single_audio_name
+    if not gif_ok and not audio_ok and not replay.randomized:
+        replay.hold_queue_only = True
+        try:
+            replay.duration = float(dedicated["duration_seconds"])
+        except (KeyError, TypeError, ValueError):
+            pass
+
+
+def build_replay_alert(stored: dict, config: Any = _MISSING) -> AlertObj:
     """Build a replay AlertObj: current config presentation + stored event identity.
 
-    If the matching alert config no longer exists, falls back to the stored snapshot.
+    The event content (username, message, amounts, reward title...) comes from the
+    stored record; media, duration, TTS and other presentation come from the alert
+    config as it is configured today. If no config matches, falls back to the stored
+    snapshot (``replay_alert`` refuses that case with ``no_config`` instead).
     """
     if not isinstance(stored, dict):
         stored = {}
 
-    config = fetch_alert_config_for_stored(stored)
+    if config is _MISSING:
+        config = fetch_alert_config_for_stored(stored)
     if config is not None:
         replay = copy.deepcopy(config)
     else:
@@ -3198,7 +3377,15 @@ def build_replay_alert(stored: dict) -> AlertObj:
     if stored.get("alert_type"):
         replay.alert_type = stored["alert_type"]
 
-    replay.alert_id = f"Replay{round(time.time())}"
+    if _is_point_type(replay.alert_type):
+        # The live handler names point alerts after the reward title.
+        if stored.get("alert_name"):
+            replay.alert_name = stored["alert_name"]
+        replay.hold_queue_only = False
+        if config is not None:
+            _apply_point_dedicated_hold(replay)
+
+    replay.alert_id = new_alert_id("Replay")
     replay.timestamp = time.time()
     replay.played = False
     replay.deleted = False
@@ -3207,6 +3394,174 @@ def build_replay_alert(stored: dict) -> AlertObj:
     replay.is_test = False
     replay.stackable = True
     return replay
+
+
+def _replay_point_hold(stored: dict) -> Optional[AlertObj]:
+    """Queue hold for an unconfigured point reward with a queued dedicated template."""
+    title = str(stored.get("alert_name") or "")
+    if not title:
+        return None
+    try:
+        from .template_config_parser import match_point_reward_dedicated_template
+
+        dedicated = match_point_reward_dedicated_template(title)
+    except Exception as exc:
+        logger.debug("Replay dedicated template lookup failed: %s", exc)
+        return None
+    if not dedicated or not dedicated.get("queued"):
+        return None
+    hold = AlertObj()
+    for field_name in _REPLAY_EVENT_FIELDS:
+        if field_name in stored and stored[field_name] is not None:
+            setattr(hold, field_name, stored[field_name])
+    hold.alert_type = "point"
+    hold.alert_name = title
+    try:
+        hold.duration = float(dedicated["duration_seconds"])
+    except (KeyError, TypeError, ValueError):
+        hold.duration = 0.0
+    hold.hold_queue_only = True
+    hold.enable_alert = False
+    hold.alert_id = new_alert_id("Replay")
+    hold.timestamp = time.time()
+    hold.is_replay = True
+    hold.stackable = True
+    return hold
+
+
+def build_replay_instant_payload(
+    stored: dict, alert_id: str, replay: Optional[AlertObj] = None
+) -> Dict[str, Any]:
+    """instant_alert-shaped payload for a replay (original content, is_replay=True)."""
+    stored = stored if isinstance(stored, dict) else {}
+    alert_type = str(stored.get("alert_type") or "").strip()
+    payload: Dict[str, Any] = {
+        "type": _REPLAY_INSTANT_TYPE_NAMES.get(alert_type.lower(), alert_type),
+        "alert_type": alert_type,
+    }
+    for field_name in _REPLAY_EVENT_FIELDS + _REPLAY_INSTANT_EXTRA_FIELDS:
+        value = stored.get(field_name)
+        if value is not None:
+            payload[field_name] = value
+    if alert_type.lower().startswith("hype_train"):
+        payload.setdefault("level", stored.get("hype_train_level"))
+        if stored.get("username"):
+            payload.setdefault("conductor_name", stored.get("username"))
+    if replay is not None:
+        for key in ("alert_name", "duration", "gif_dir", "gif_name", "single_audio_dir", "single_audio_name"):
+            value = getattr(replay, key, None)
+            if value not in (None, ""):
+                payload.setdefault(key, value)
+    payload["alert_id"] = alert_id
+    payload["original_alert_id"] = str(stored.get("alert_id") or "")
+    payload["timestamp"] = time.time()
+    payload["is_replay"] = True
+    payload["is_test"] = False
+    return payload
+
+
+# Socket event for the replay instant mirror. Separate from "instant_alert" so
+# goal bars, counters, giveaways and other instant consumers never count a
+# replay (old compiled templates ignore it; new Spore boilerplates play it
+# through their visual bindings only).
+REPLAY_INSTANT_EVENT = "instant_alert_replay"
+
+
+def _emit_replay_instant(payload: Dict[str, Any]) -> bool:
+    try:
+        from . import web_engine
+
+        engine = getattr(web_engine, "web_engine_instance", None)
+        if engine is None:
+            return False
+        return bool(engine.safe_emit(REPLAY_INSTANT_EVENT, payload))
+    except Exception as exc:
+        logger.debug("Replay instant mirror failed: %s", exc)
+        return False
+
+
+def replay_alert(alert_id: Any) -> Dict[str, Any]:
+    """Replay a stored alert by id.
+
+    Keeps the original event content, re-fetches today's alert config/media for
+    that event, and routes it like the live alert did (queue and/or instant
+    mirror) with ``is_replay=True``. Never stores a record, adds a feed row,
+    updates statistics/counters or fires connectors.
+
+    Returns ``{"ok": bool, "reason": str, "new_alert_id": str | None}``.
+    reason: "queued" | "instant_only" | "missing_id" | "not_found" | "no_config" |
+    "error".
+    """
+    result: Dict[str, Any] = {"ok": False, "reason": "", "new_alert_id": None}
+    aid = str(alert_id or "").strip()
+    if not aid:
+        result["reason"] = "missing_id"
+        return result
+    try:
+        manager = alert_state_manager
+        manager.initialize()
+        stored = manager.get_stored_alert_by_id(aid)
+    except Exception as exc:
+        logger.error("Replay lookup failed for %s: %s", aid, exc, exc_info=True)
+        result["reason"] = "error"
+        return result
+    if not isinstance(stored, dict) or not stored:
+        result["reason"] = "not_found"
+        return result
+    stored = copy.deepcopy(stored)
+    stored.setdefault("alert_id", aid)
+    alert_type = str(stored.get("alert_type") or "").strip().lower()
+
+    from . import alert_processor
+
+    if alert_type in _REPLAY_INSTANT_ONLY_TYPES:
+        new_id = new_alert_id("Replay")
+        _emit_replay_instant(build_replay_instant_payload(stored, new_id))
+        result.update(ok=True, reason="instant_only", new_alert_id=new_id)
+        return result
+
+    try:
+        config = fetch_alert_config_for_stored(stored)
+    except Exception as exc:
+        logger.error("Replay config lookup failed for %s: %s", aid, exc, exc_info=True)
+        result["reason"] = "error"
+        return result
+
+    if _is_point_type(alert_type):
+        if config is None:
+            # Live: unconfigured rewards hold the queue for a queued dedicated
+            # template, otherwise they only send instant_alert.
+            hold = _replay_point_hold(stored)
+            if hold is not None:
+                alert_processor.enqueue_alert(hold)
+                result.update(ok=True, reason="queued", new_alert_id=hold.alert_id)
+                return result
+            new_id = new_alert_id("Replay")
+            _emit_replay_instant(build_replay_instant_payload(stored, new_id))
+            result.update(ok=True, reason="instant_only", new_alert_id=new_id)
+            return result
+        replay = build_replay_alert(stored, config)
+        queued = bool(replay.enable_alert)
+        if queued:
+            alert_processor.enqueue_alert(replay)
+        _emit_replay_instant(
+            build_replay_instant_payload(stored, replay.alert_id, replay)
+        )
+        result.update(
+            ok=True,
+            reason="queued" if queued else "instant_only",
+            new_alert_id=replay.alert_id,
+        )
+        return result
+
+    if config is None:
+        result["reason"] = "no_config"
+        return result
+    replay = build_replay_alert(stored, config)
+    alert_processor.enqueue_alert(replay)
+    _emit_replay_instant(build_replay_instant_payload(stored, replay.alert_id, replay))
+    result.update(ok=True, reason="queued", new_alert_id=replay.alert_id)
+    return result
 
 
 _CHAT_ACTIVITY_ONLY_ALERT_TYPES = frozenset(

@@ -100,11 +100,25 @@ def notify_alert_playing(playing: bool) -> None:
     _ALERT_WAKE.set()
 
 
+# The alert process_alert is handling right now (None between alerts). Read by
+# the queue-state broadcast and skip_current_alert.
+_CURRENT_ALERT_LOCK = threading.Lock()
+_current_alert: dict | None = None
+
+
+def _broadcast_queue_state() -> None:
+    try:
+        web_engine.broadcast_alert_queue_state()
+    except Exception as exc:
+        logger.debug("Alert queue state broadcast failed: %s", exc)
+
+
 def enqueue_alert(obj: AlertObj) -> None:
     """Append an alert under the queue lock (safe from any thread)."""
     with _ALERT_QUEUE_LOCK:
         ALERT_QUEUE.append(obj)
     wake_alert_queue()
+    _broadcast_queue_state()
 
 
 def snapshot_alert_queue() -> list[AlertObj]:
@@ -113,14 +127,86 @@ def snapshot_alert_queue() -> list[AlertObj]:
         return list(ALERT_QUEUE)
 
 
+def play_order_snapshot() -> list[AlertObj]:
+    """Queued alerts in the order alert_queue() will play them (stackable first)."""
+    queued = [a for a in snapshot_alert_queue() if not getattr(a, "skip_alert", False)]
+    stackable = [a for a in queued if getattr(a, "stackable", False)]
+    rest = [a for a in queued if not getattr(a, "stackable", False)]
+    return stackable + rest
+
+
 def remove_queued_alert(obj: AlertObj) -> bool:
     """Remove one queued alert. Returns False if it was already gone."""
     with _ALERT_QUEUE_LOCK:
         try:
             ALERT_QUEUE.remove(obj)
-            return True
+            removed = True
         except ValueError:
+            removed = False
+    if removed:
+        _broadcast_queue_state()
+    return removed
+
+
+def remove_queued_alert_by_id(alert_id: str) -> AlertObj | None:
+    """Remove the queued (not yet playing) alert with this id. None if not queued."""
+    aid = str(alert_id or "").strip()
+    if not aid:
+        return None
+    found = None
+    with _ALERT_QUEUE_LOCK:
+        for obj in ALERT_QUEUE:
+            if str(getattr(obj, "alert_id", "") or "") == aid:
+                found = obj
+                break
+        if found is not None:
+            ALERT_QUEUE.remove(found)
+    if found is not None:
+        _broadcast_queue_state()
+    return found
+
+
+def current_alert_info() -> dict | None:
+    """Copy of the alert process_alert is handling, or None."""
+    with _CURRENT_ALERT_LOCK:
+        return dict(_current_alert) if _current_alert else None
+
+
+def _set_current_alert(info: dict | None) -> None:
+    global _current_alert
+    with _CURRENT_ALERT_LOCK:
+        _current_alert = dict(info) if info else None
+
+
+def note_current_alert_duration(queue_seq: int, duration_ms: float) -> bool:
+    """Overlay-reported run time for the playing alert (keeps the longest report)."""
+    try:
+        ms = int(round(float(duration_ms)))
+    except (TypeError, ValueError):
+        return False
+    if ms <= 0 or ms > 3_600_000:
+        return False
+    global _current_alert
+    with _CURRENT_ALERT_LOCK:
+        cur = _current_alert
+        if not cur or cur.get("queue_seq") != queue_seq:
             return False
+        if cur.get("overlay_duration_ms") and cur["overlay_duration_ms"] >= ms:
+            return False
+        cur["overlay_duration_ms"] = ms
+        cur["duration_ms"] = ms
+    _broadcast_queue_state()
+    return True
+
+
+def _alert_duration_ms(alert) -> int | None:
+    try:
+        seconds = float(getattr(alert, "duration", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    if seconds <= 0:
+        return None
+    return int(round(seconds * 1000))
 
 
 def _overlay_engine():
@@ -158,6 +244,14 @@ def process_alert(alert: AlertObj):
         alert (AlertObj): The alert object to process
     """
     try:
+        _process_alert(alert)
+    finally:
+        _set_current_alert(None)
+        _broadcast_queue_state()
+
+
+def _process_alert(alert: AlertObj):
+    try:
         if getattr(alert, "alert_type", "") == "point" and not alert.hold_queue_only:
             gif_ok = (
                 alert.gif_dir
@@ -188,8 +282,8 @@ def process_alert(alert: AlertObj):
                         dur_exc,
                     )
 
-        # Convert AlertObj to dictionary for JSON serialization
-        alert_data = vars(alert)
+        # Copy for JSON serialization; the AlertObj itself stays unchanged.
+        alert_data = dict(vars(alert))
         queue_seq = web_engine.assign_next_alert_queue_seq()
         alert_data["queue_seq"] = queue_seq
 
@@ -208,6 +302,17 @@ def process_alert(alert: AlertObj):
         web_engine.begin_alert_playback_session(
             queue_seq, holders, alert_duration, delay_between
         )
+        _set_current_alert(
+            {
+                "alert_id": str(getattr(alert, "alert_id", "") or ""),
+                "type": str(getattr(alert, "alert_type", "") or ""),
+                "username": str(getattr(alert, "username", "") or ""),
+                "started_at_ms": int(time.time() * 1000),
+                "duration_ms": _alert_duration_ms(alert),
+                "queue_seq": queue_seq,
+                "is_replay": bool(getattr(alert, "is_replay", False)),
+            }
+        )
 
         # Emit the alert data over the websocket
         engine = _overlay_engine()
@@ -225,6 +330,10 @@ def process_alert(alert: AlertObj):
         session = get_session()
         if session is None or session.seq != queue_seq or session.finished:
             web_engine.set_alert_playing(False)
+            if session is not None and session.seq == queue_seq and session.finish_reason == "skip":
+                # Skipped between begin_session and the emit: the overlays got
+                # next_alert after the skip, so tell them again.
+                web_engine.emit_alert_skip(queue_seq, alert_data.get("alert_id"), "late")
             return
 
         # Wait until holders complete (or watchdog/fallback/skip)

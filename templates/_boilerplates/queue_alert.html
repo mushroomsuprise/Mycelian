@@ -62,10 +62,12 @@
         var sporeProgressTimer = null;
         var sporeMediaPollTimer = null;
         var alertQueueClient = null;
+        var sporeCurrentAlert = null;
 
         function sporeResetLocalQueue() {
             alertQueue = [];
             alertActive = false;
+            sporeCurrentAlert = null;
             sporeHandshakeSeq = null;
             sporeHandshakeGen += 1;
             sporeStopLocalMedia();
@@ -186,6 +188,27 @@
             scaleOut: { in: 'spore-anim-scalein', out: 'spore-anim-scaleout' },
             none: { in: '', out: '' }
         };
+        /* Elements this alert revealed; a skip hides them again at once. */
+        var sporeShownIds = {};
+        function sporeHideShownNow() {
+            var id;
+            for (id in sporeShownIds) {
+                if (!Object.prototype.hasOwnProperty.call(sporeShownIds, id)) { continue; }
+                var el = document.getElementById(id);
+                if (!el) { continue; }
+                el._sporeVisToken = (el._sporeVisToken || 0) + 1;
+                var k;
+                for (k in SPORE_ANIM_CLASS_MAP) {
+                    if (!Object.prototype.hasOwnProperty.call(SPORE_ANIM_CLASS_MAP, k)) { continue; }
+                    if (SPORE_ANIM_CLASS_MAP[k].in) { el.classList.remove(SPORE_ANIM_CLASS_MAP[k].in); }
+                    if (SPORE_ANIM_CLASS_MAP[k].out) { el.classList.remove(SPORE_ANIM_CLASS_MAP[k].out); }
+                }
+                el.style.animationDuration = '';
+                el.style.animationTimingFunction = '';
+                el.setAttribute('data-spore-hidden', 'true');
+            }
+            sporeShownIds = {};
+        }
         function sporeAnimClassFor(type, dir) {
             var m = SPORE_ANIM_CLASS_MAP[type] || SPORE_ANIM_CLASS_MAP.none;
             return dir === 'in' ? (m.in || '') : (m.out || '');
@@ -256,6 +279,7 @@
         function sporeShow(id, override) {
             var el = document.getElementById(id);
             if (!el) { return; }
+            if (el.getAttribute('data-spore-hidden') === 'true') { sporeShownIds[id] = true; }
             /* A show cancels a hide whose fade-out is still running. */
             el._sporeVisToken = (el._sporeVisToken || 0) + 1;
             el.removeAttribute('data-spore-hidden');
@@ -451,14 +475,27 @@
             if (!alertActive) { sporeProcessNext(); }
         });
 
-        socket.on('alerts_skip_alert', function () {
+        socket.on('alerts_skip_alert', function (data) {
+            var aq = MycelianOverlay.alertQueue;
+            var targetSeq = aq.parseSeq(data && data.queue_seq);
+            var currentSeq = sporeCurrentAlert ? aq.parseSeq(sporeCurrentAlert.queue_seq) : null;
+            if (targetSeq != null && (!alertActive || targetSeq !== currentSeq)) {
+                /* Not the alert on screen: drop it if it is still waiting here. */
+                alertQueue = alertQueue.filter(function (a) {
+                    return aq.parseSeq(a && a.queue_seq) !== targetSeq;
+                });
+                return;
+            }
+            if (!alertActive) { return; }
             sporeHandshakeGen += 1;
             sporeStopHandshakeTimers();
             sporeStopLocalMedia();
+            sporeHideShownNow();
             if (sporeHandshakeSeq != null) {
                 alertQueueClient.complete(sporeHandshakeSeq);
                 sporeHandshakeSeq = null;
             }
+            sporeCurrentAlert = null;
             alertActive = false;
             sporeProcessNext();
         });
@@ -468,6 +505,8 @@
             if (alertQueue.length === 0) { return; }
             alertActive = true;
             var data = alertQueue.shift();
+            sporeCurrentAlert = data;
+            sporeShownIds = {};
             var gen = ++sporeHandshakeGen;
             try {
                 console.log('[__TEMPLATE_NAME__] next_alert dequeue (debug)', data);
@@ -486,6 +525,9 @@
             sporeHandshakeSeq = isHolder ? seq : null;
             if (isHolder && seq != null) {
                 alertQueueClient.playing(seq);
+                if (typeof alertQueueClient.started === 'function') {
+                    alertQueueClient.started(seq, hold * 1000);
+                }
                 sporeStartProgress(seq, gen);
             }
 

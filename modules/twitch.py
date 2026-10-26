@@ -142,13 +142,19 @@ def _twitch_alerts_enabled() -> bool:
         return True
 
 
-def _queue_twitch_alert(alert, stored=None) -> bool:
-    """Append to ALERT_QUEUE and store when Twitch alerts are enabled."""
+def _queue_twitch_alert(alert, stored=None, *, play=True) -> bool:
+    """Store the event and (when play) append it to ALERT_QUEUE.
+
+    Only when Twitch alerts are enabled. The record is stored before queueing so
+    replay/history always see the event as it arrived. play=False stores events
+    that have no alert configured, so they can be replayed once one is.
+    """
     if not _twitch_alerts_enabled():
         return False
-    alert_processor.enqueue_alert(alert)
-    payload = stored if stored is not None else alert.__dict__
+    payload = stored if stored is not None else dict(alert.__dict__)
     alertutils.alert_state_manager.store_completed_alert(alert.alert_id, payload)
+    if play:
+        alert_processor.enqueue_alert(alert)
     return True
 
 
@@ -170,6 +176,15 @@ def _add_twitch_alert_to_feed(*args, **kwargs) -> None:
         return
     from .uiwindows.activity_feed import add_alert_to_feed
 
+    try:
+        import inspect
+
+        params = inspect.signature(add_alert_to_feed).parameters
+        if not any(p.kind is p.VAR_KEYWORD for p in params.values()):
+            # Extra event fields (raider_count, game_name...) only once the feed takes them.
+            kwargs = {k: v for k, v in kwargs.items() if k in params}
+    except (TypeError, ValueError):
+        pass
     add_alert_to_feed(*args, **kwargs)
 
 
@@ -492,7 +507,7 @@ def _overlay_alert_or_placeholder(alert, *, username, alert_type, timestamp):
     placeholder.alert_type = alert_type
     placeholder.username = username or ""
     placeholder.timestamp = timestamp
-    placeholder.alert_id = f"Alert{round(timestamp)}"
+    placeholder.alert_id = alertutils.new_alert_id()
     return placeholder, False
 
 
@@ -2624,7 +2639,7 @@ class Twitch_API:
         )
 
         current_timestamp = time.time()
-        alert_id = f"Alert{round(current_timestamp)}"
+        alert_id = alertutils.new_alert_id()
 
         alert = alertutils.fetch_streak_alert(streak_count)
         alert_name_for_stats = ""
@@ -2920,11 +2935,10 @@ class Twitch_API:
         )
         alert.username = data.event.user_name
         alert.alert_type = "follow"
-        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_timestamp
+        _queue_twitch_alert(alert, play=emit_overlay)
         if emit_overlay:
-            _queue_twitch_alert(alert)
-
             # Send instant alert
             try:
                 if (
@@ -3054,7 +3068,7 @@ class Twitch_API:
         alert.username = username
         alert.alert_type = "sub"
         alert.tier = tier
-        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_timestamp
         alert.message = user_msg or ""  # Use empty string if None
         alert.emotes = _subscription_message_emotes(
@@ -3064,8 +3078,7 @@ class Twitch_API:
         if user_msg:
             register_alert_user_message(str(data.event.user_id), user_msg)
 
-        if emit_overlay:
-            _queue_twitch_alert(alert)
+        _queue_twitch_alert(alert, play=emit_overlay)
 
         # Track new subscription statistics
         try:
@@ -3194,14 +3207,13 @@ class Twitch_API:
         )
         alert.months_prepaid = data.event.duration_months
         alert.resub_month = cumulative_months
-        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_timestamp
 
         if user_msg:
             register_alert_user_message(str(data.event.user_id), user_msg)
 
-        if emit_overlay:
-            _queue_twitch_alert(alert)
+        _queue_twitch_alert(alert, play=emit_overlay)
 
         # Track resubscription statistics
         try:
@@ -3431,7 +3443,7 @@ class Twitch_API:
         alert.username = username
         alert.alert_type = "sub"
         alert.tier = tier
-        alert.alert_id = f"Alert{round(current_timestamp)}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_timestamp
         alert.message = user_msg or ""
         alert.emotes = emotes
@@ -3561,7 +3573,7 @@ class Twitch_API:
         alert.tier = int(str(data.event.tier)[:-3])
         alert.gift_qty = int(str(data.event.total))
         alert.recipient = ""
-        alert.alert_id = f"Alert{round(time.time())}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = time.time()
 
         # Process through chatbot system
@@ -3681,7 +3693,7 @@ class Twitch_API:
         alert.anonymous = is_anonymous
         alert.alert_type = "bit"
         alert.amt_cheered = bits_amount
-        alert.alert_id = f"Alert{round(time.time())}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = time.time()
         if hasattr(data.event, "message") and data.event.message:
             _apply_bits_message_to_alert(alert, data.event.message)
@@ -3693,8 +3705,7 @@ class Twitch_API:
             and data.event.power_up
             and hasattr(data.event.power_up, "type")
         ):
-            if emit_overlay:
-                _queue_twitch_alert(alert)
+            _queue_twitch_alert(alert, play=emit_overlay)
             # Determine activity feed message based on power_up field
             power_up_type = str(data.event.power_up.type).replace("_", " ").title()
             activity_message = f"{alert.username} has redeemed {power_up_type} for {alert.amt_cheered} bits!"
@@ -3825,10 +3836,9 @@ class Twitch_API:
             alert.emotes = None
         if alert.message:
             register_alert_user_message(cache_user_id, alert.message)
-        alert.alert_id = f"Alert{round(time.time())}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = time.time()
-        if emit_overlay:
-            _queue_twitch_alert(alert)
+        _queue_twitch_alert(alert, play=emit_overlay)
 
         # Send instant alert
         if emit_overlay:
@@ -3930,7 +3940,7 @@ class Twitch_API:
         alert.username = data.event.from_broadcaster_user_name
         alert.alert_type = "raid"
         alert.raider_count = int(str(data.event.viewers))
-        alert.alert_id = f"Alert{round(time.time())}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = time.time()
 
         game_name = None
@@ -3946,8 +3956,7 @@ class Twitch_API:
                 f"Could not fetch channel info for raider {alert.username}: {e}"
             )
 
-        if emit_overlay:
-            _queue_twitch_alert(alert)
+        _queue_twitch_alert(alert, play=emit_overlay)
 
         # Send instant alert
         if emit_overlay:
@@ -4049,6 +4058,8 @@ class Twitch_API:
             badge_type="raid",
             timestamp=str(int(alert.timestamp)),
             alert_id=alert.alert_id,
+            raider_count=alert.raider_count,
+            game_name=game_name,
         )
 
     async def no_point_reward_setup(self, data):
@@ -4059,7 +4070,7 @@ class Twitch_API:
         alert.twitch_reward_id = data.event.reward.id
         alert.message = data.event.user_input
         alert.username = data.event.user_name
-        alert.alert_id = f"Alert{round(time.time())}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = time.time()
         alert.point_cost = int(data.event.reward.cost or 0)
         if _twitch_alerts_enabled():
@@ -4146,7 +4157,7 @@ class Twitch_API:
         alert.alert_type = "point"
         alert.message = data.event.user_input
         alert.twitch_reward_id = data.event.reward.id
-        alert.alert_id = f"Alert{round(time.time())}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = time.time()
         alert.point_cost = data.event.reward.cost
         if alert.enable_alert:
@@ -4163,6 +4174,9 @@ class Twitch_API:
                     alert.hold_queue_only = True
                     alert.duration = float(dedicated["duration_seconds"])
             _queue_twitch_alert(alert)
+        else:
+            # Alert turned off: keep the record so history and replay still work.
+            _queue_twitch_alert(alert, play=False)
 
         # Send instant alert
         try:
@@ -4232,6 +4246,22 @@ class Twitch_API:
 
         current_ts = time.time()
 
+        # Stored like other events so the feed row has an id to replay.
+        start_alert = alertutils.AlertObj()
+        start_alert.alert_type = "hype_train_start"
+        start_alert.username = conductor_name
+        try:
+            start_alert.hype_train_level = int(level or 0)
+        except (TypeError, ValueError):
+            start_alert.hype_train_level = 0
+        start_alert.hype_train_in_progress = True
+        start_alert.alert_id = alertutils.new_alert_id()
+        start_alert.timestamp = current_ts
+        if _twitch_alerts_enabled():
+            alertutils.alert_state_manager.store_completed_alert(
+                start_alert.alert_id, dict(start_alert.__dict__)
+            )
+
         # Send instant alert
         try:
             if (
@@ -4242,6 +4272,7 @@ class Twitch_API:
                     "type": "hype_train_start",
                     "conductor_name": conductor_name,
                     "level": level,
+                    "alert_id": start_alert.alert_id,
                     "timestamp": current_ts,
                 }
                 _send_twitch_instant_alert(alert_data)
@@ -4254,12 +4285,12 @@ class Twitch_API:
                 exc_info=True,
             )
 
-        # For activity feed - Note: hype train start doesn't create an AlertObj, so no alert_id available
         _add_twitch_alert_to_feed(
             alert_type="Hype Train",
             message=f"Hype Train started by {conductor_name}! Level {level}.",
             badge_type="hype_train",
             timestamp=str(int(current_ts)),
+            alert_id=start_alert.alert_id,
             level=level,
             hype_train_type=_hype_train_type_from_event(data.event),
         )
@@ -4364,7 +4395,7 @@ class Twitch_API:
         alert.hype_train_level = int(
             str(data.event.level)
         )  # data.event.level is already int
-        alert.alert_id = f"Alert{round(current_ts)}"
+        alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = current_ts  # Set the timestamp for the AlertObj
         # Store completed alert using AlertStateManager
         if _twitch_alerts_enabled():

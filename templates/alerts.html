@@ -758,6 +758,18 @@
             return MycelianOverlay.alertQueue.isAllowedHolder(alertData);
         }
 
+        /** Tell the server how long this alert really runs (Activity Feed timer). */
+        function reportAlertStarted(alertData, durationMs) {
+            if (!alertData || !holderShouldHandshake(alertData)) {
+                return;
+            }
+            var seq = MycelianOverlay.alertQueue.parseSeq(alertData.queue_seq);
+            if (seq == null || typeof alertQueueClient.started !== 'function') {
+                return;
+            }
+            alertQueueClient.started(seq, durationMs);
+        }
+
         function emitQueueAlertPlaying(alertData) {
             if (!holderShouldHandshake(alertData)) {
                 return;
@@ -1578,8 +1590,17 @@
         });
 
         socket.on('alerts_skip_alert', function (data) {
-            console.log('Connector action: skip alert', data);
+            console.log('Skip alert', data);
             if (!currentAlert && pendingQueueCompletionSeq == null) {
+                return;
+            }
+            // A skip names the queue_seq it targets; ignore one meant for another alert
+            // (a late or repeated press must never end the next alert).
+            var activeSeq = pendingQueueCompletionSeq != null
+                ? pendingQueueCompletionSeq
+                : (currentAlert ? currentAlert.queue_seq : null);
+            if (!MycelianOverlay.alertQueue.skipMatches(data, activeSeq)) {
+                console.log('Skip ignored: it targets queue_seq', data && data.queue_seq, 'not', activeSeq);
                 return;
             }
             clearPendingCompletionTimer();
@@ -1590,9 +1611,8 @@
                 silentPointHoldId++;
                 silentPointHoldStale = true;
             }
-            hideAlert();
-            isRandomizedAlert = false;
-            console.log('Alert skipped via connector action, sending immediate completion');
+            hideAlertImmediately();
+            console.log('Alert skipped, sending immediate completion');
             emitQueueAlertComplete(pendingQueueCompletionSeq);
             pendingQueueCompletionSeq = null;
             currentAlert = null;
@@ -1602,6 +1622,36 @@
             isSilentEmptyPoint = false;
             isHoldQueueOnly = false;
         });
+
+        /** Skip: remove the alert from screen now, without exit animations. */
+        function hideAlertImmediately() {
+            if (videoFreezeTimeout) {
+                clearTimeout(videoFreezeTimeout);
+                videoFreezeTimeout = null;
+            }
+            if (alertTimeout) {
+                clearTimeout(alertTimeout);
+                alertTimeout = null;
+            }
+            animationTimeouts.forEach(function (t) { clearTimeout(t); });
+            animationTimeouts = [];
+            const alertDisplay = document.getElementById('alertDisplay');
+            const alertBackground = document.getElementById('alertBackground');
+            const alertBackgroundVideo = document.getElementById('alertBackgroundVideo');
+            const alertGif = document.getElementById('alertGif');
+            const alertHeader = document.getElementById('alertHeader');
+            const alertMessage = document.getElementById('alertMessage');
+            resetAlertLayerAnimationState(alertDisplay, alertBackground, alertBackgroundVideo, alertGif, alertHeader, alertMessage);
+            alertDisplay.style.display = 'none';
+            alertBackground.style.opacity = '0';
+            alertGif.style.opacity = '0';
+            alertHeader.style.opacity = '0';
+            alertMessage.style.opacity = '0';
+            if (alertBackgroundVideo) {
+                try { alertBackgroundVideo.pause(); } catch (eVid) {}
+                alertBackgroundVideo.style.opacity = '0';
+            }
+        }
 
         async function showAlert(alertData) {
             alertShowGeneration += 1;
@@ -1631,6 +1681,7 @@
                 alertStartTime = Date.now();
                 exitAnimationDuration = 0;
                 alertDuration = (alertData.duration || 5) * 1000;
+                reportAlertStarted(alertData, alertDuration);
                 startAlertProgressHeartbeats(pendingQueueCompletionSeq, showGen);
                 console.log(
                     'hold_queue_only — dedicated template timing hold for',
@@ -1666,6 +1717,7 @@
                     alertStartTime = Date.now();
                     exitAnimationDuration = 0;
                     alertDuration = getSilentPointDurationMs(alertData);
+                    reportAlertStarted(alertData, alertDuration);
                     startAlertProgressHeartbeats(pendingQueueCompletionSeq, showGen);
                     console.log('Silent empty point alert — no A/V, holding queue for', alertDuration, 'ms (or until next next_alert overrides)');
                     const selfAlert = alertData;
@@ -1694,6 +1746,7 @@
             // Initialize alert timing
             alertStartTime = Date.now();
             alertDuration = (alertData.duration || 5) * 1000; // Convert to milliseconds
+            reportAlertStarted(alertData, alertDuration);
 
             // Determine if this is a randomized alert (has randomization enabled)
             isRandomizedAlert = alertData.randomized ||
@@ -2164,6 +2217,14 @@
                             console.warn('Alert audio error: unknown');
                         }
                     };
+                    audioElement.addEventListener('loadedmetadata', function onAlertAudioMeta() {
+                        audioElement.removeEventListener('loadedmetadata', onAlertAudioMeta);
+                        // The alert lasts until its audio ends: report the longer run time.
+                        var audioMs = (audioElement.duration || 0) * 1000;
+                        if (currentAlert === alertData && isFinite(audioMs) && audioMs > alertDuration) {
+                            reportAlertStarted(alertData, audioMs);
+                        }
+                    });
                     audioElement.load();
 
                     audioPlayPending = true;

@@ -8,6 +8,7 @@ import logging
 import re
 import threading
 import time
+from collections import OrderedDict
 from typing import Optional
 
 from .donation_currency import (
@@ -21,7 +22,8 @@ from .donation_settings import get_settings
 logger = logging.getLogger(__name__)
 
 _seen_lock = threading.Lock()
-_seen_ids: set[str] = set()
+# Insertion-ordered, so eviction drops the oldest ids.
+_seen_ids: "OrderedDict[str, None]" = OrderedDict()
 _SEEN_LIMIT = 500
 
 
@@ -33,10 +35,9 @@ def _remember_event(event_id: str) -> bool:
     with _seen_lock:
         if key in _seen_ids:
             return True
-        _seen_ids.add(key)
-        if len(_seen_ids) > _SEEN_LIMIT:
-            for old in list(_seen_ids)[:100]:
-                _seen_ids.discard(old)
+        _seen_ids[key] = None
+        while len(_seen_ids) > _SEEN_LIMIT:
+            _seen_ids.popitem(last=False)
         return False
 
 
@@ -49,6 +50,7 @@ def emit_donation_alert(
     source: str,
     event_id: str = "",
     enqueue: bool = True,
+    is_supersticker: bool = False,
 ) -> Optional[object]:
     """Match a donation alert in the user's currency and show it.
 
@@ -83,9 +85,13 @@ def emit_donation_alert(
     quantity = donation_match_quantity(match_amount)
     now = time.time()
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "", event_id or "")[:80]
-    alert_id = f"Donation{source}{safe_id or str(int(now * 1000))}"
-
     from . import alert_processor, alertutils
+
+    alert_id = (
+        f"Donation{source}{safe_id}"
+        if safe_id
+        else alertutils.new_alert_id(f"Donation{source}")
+    )
 
     alert = alertutils.fetch_donation_alert(quantity)
     if alert is None:
@@ -101,6 +107,10 @@ def emit_donation_alert(
     alert.message = note
     alert.alert_id = alert_id
     alert.timestamp = now
+    if is_supersticker:
+        # Not an AlertObj field: rides along on the object, the stored record,
+        # instant_alert and the feed row so every surface labels it a Super Sticker.
+        alert.is_supersticker = True
 
     _fire_chatbot(
         donor,
@@ -130,8 +140,9 @@ def emit_donation_alert(
     stored = dict(alert.__dict__)
     stored["source"] = source
     try:
-        alert_processor.enqueue_alert(alert)
+        # Store first: the queue thread may start playing it right away.
         alertutils.alert_state_manager.store_completed_alert(alert.alert_id, stored)
+        alert_processor.enqueue_alert(alert)
     except Exception as exc:
         logger.error("Failed to enqueue donation alert", exc_info=True)
         try:
@@ -260,6 +271,7 @@ def _send_instant(alert, source: str, phrase: str) -> None:
                     "alert_id": alert.alert_id,
                     "timestamp": alert.timestamp,
                     "source": source,
+                    "is_supersticker": bool(getattr(alert, "is_supersticker", False)),
                 }
             )
     except Exception:
@@ -268,9 +280,11 @@ def _send_instant(alert, source: str, phrase: str) -> None:
 
 def _send_feed(alert, phrase: str) -> None:
     try:
+        import inspect
+
         from .uiwindows.activity_feed import add_alert_to_feed
 
-        add_alert_to_feed(
+        kwargs = dict(
             alert_type="Donation",
             message=f"{alert.username} donated {phrase}!",
             badge_type="donation",
@@ -278,5 +292,12 @@ def _send_feed(alert, phrase: str) -> None:
             user_message=alert.message or None,
             alert_id=alert.alert_id,
         )
+        if getattr(alert, "is_supersticker", False):
+            params = inspect.signature(add_alert_to_feed).parameters
+            if "is_supersticker" in params or any(
+                p.kind is p.VAR_KEYWORD for p in params.values()
+            ):
+                kwargs["is_supersticker"] = True
+        add_alert_to_feed(**kwargs)
     except Exception:
         logger.error("Donation activity feed update failed", exc_info=True)

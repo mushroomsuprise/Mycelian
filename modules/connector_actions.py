@@ -169,6 +169,13 @@ class TemplateControlAction(BaseAction):
 
             # Emit WebSocket event (thread-safe: connectors run off the gevent hub)
             event_name = f"{self.template_name}_{self.control_action}"
+            if web_engine.is_alert_skip_template_action(
+                self.template_name, self.control_action, event_name
+            ):
+                # Skip goes through the queue: aborts once, overlays get the seq.
+                result = web_engine.skip_current_alert(None, source="connector")
+                logger.info("Template control skip: %s", result.get("reason"))
+                return True
             web_engine.web_engine_instance.safe_emit(event_name, control_data)
 
             logger.info(
@@ -232,6 +239,13 @@ class WebSocketEmitAction(BaseAction):
                     "triggered_at": trigger_data.get("triggered_at"),
                 }
             )
+
+            if web_engine.is_alert_skip_template_action("", "", self.event_name):
+                result = web_engine.skip_alert_from_payload(
+                    websocket_data, source="connector"
+                )
+                logger.info("WebSocket emit skip: %s", result.get("reason"))
+                return True
 
             # Emit event (thread-safe: connectors run off the gevent hub)
             web_engine.web_engine_instance.safe_emit(self.event_name, websocket_data)
@@ -397,7 +411,7 @@ class TriggerAlertAction(BaseAction):
         try:
             import time as _time
 
-            from . import alert_processor
+            from . import alert_processor, alertutils
 
             alert_type = normalize_trigger_alert_type(self.alert_type)
             if not alert_type:
@@ -458,8 +472,8 @@ class TriggerAlertAction(BaseAction):
             alert.message = message
             alert.is_test = False
             alert.timestamp = now
-            alert.alert_id = self.alert_id or (
-                f"connector_{trigger_data.get('trigger_id')}_{int(now * 1000)}"
+            alert.alert_id = self.alert_id or alertutils.new_alert_id(
+                f"connector_{trigger_data.get('trigger_id')}_"
             )
             if alert_type == "bit":
                 alert.amt_cheered = count

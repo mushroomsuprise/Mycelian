@@ -784,9 +784,15 @@
         });
     }
 
+    /* Replayed alerts play again but never count (counters, goals, lists, feeds). */
+    function sporeIsReplay(payload) {
+        return !!(payload && typeof payload === 'object' && payload.is_replay);
+    }
+
     function sporeCounterAdjust(counterId, operation, deltaSpec, payload) {
         var meta = window.__sporeCounterMeta[counterId];
         if (!meta) { return; }
+        if (sporeIsReplay(payload)) { return; }
         window.__sporeLastPayload.event = payload || {};
         var val = sporeCoerceNumber(window.__sporeCounters[counterId], meta.initial_value || 0);
         var before = val;
@@ -2128,6 +2134,7 @@
             if (typeof socket === 'undefined' || !socket || !socket.on) { return; }
             socket.on(evName, function (data) {
                 data = data || {};
+                if (sporeIsReplay(data)) { return; }
                 if (source === 'alerts') {
                     var want = String(sporeAttr(el, 'data-spore-list-alert-type', 'any')).toLowerCase();
                     if (want && want !== 'any' && sporeAlertType(data) !== want) { return; }
@@ -3452,6 +3459,7 @@
             (src.events || []).forEach(function (evName) {
                 socket.on(evName, function (data) {
                     data = (data && typeof data === 'object') ? data : { value: data };
+                    if (sporeIsReplay(data)) { return; }
                     window.__sporeLastPayload.event = data;
                     sporeFeedFire(feed, data, false);
                 });
@@ -3669,6 +3677,7 @@
             (src.events || []).forEach(function (evName) {
                 socket.on(evName, function (data) {
                     data = (data && typeof data === 'object') ? data : { value: data };
+                    if (sporeIsReplay(data)) { return; }
                     var num = sporeFirstNumber(data, rule.value_field);
                     if (num != null) { rule._lastNumber = num; }
                     window.__sporeLastPayload.event = data;
