@@ -60,11 +60,19 @@
                 if (rect.width >= viewW - 1 && rect.height >= viewH - 1) {
                     continue;
                 }
+                // Only what is on screen counts (an alert parked off screen doesn't).
+                var left = Math.max(0, rect.left);
+                var top = Math.max(0, rect.top);
+                var right = Math.min(viewW, rect.right);
+                var bottom = Math.min(viewH, rect.bottom);
+                if (right - left < 1 || bottom - top < 1) {
+                    continue;
+                }
                 found = true;
-                if (rect.left < minX) minX = rect.left;
-                if (rect.top < minY) minY = rect.top;
-                if (rect.right > maxX) maxX = rect.right;
-                if (rect.bottom > maxY) maxY = rect.bottom;
+                if (left < minX) minX = left;
+                if (top < minY) minY = top;
+                if (right > maxX) maxX = right;
+                if (bottom > maxY) maxY = bottom;
             }
             if (!found) {
                 return null;
@@ -144,8 +152,9 @@
         frame.style.width = slot.iframe.w + "px";
         frame.style.height = slot.iframe.h + "px";
         if (slot.role === "locked") {
-            frame.style.left = (-origin.x) + "px";
-            frame.style.top = (-origin.y) + "px";
+            // Only the linked axis is trimmed to the content.
+            frame.style.left = (slot.axis === "horizontal" ? -origin.x : 0) + "px";
+            frame.style.top = (slot.axis === "vertical" ? -origin.y : 0) + "px";
         } else {
             frame.style.left = "0px";
             frame.style.top = "0px";
@@ -166,10 +175,14 @@
     }
 
     function schedule() {
+        // Throttle, not debounce: constant animation must not hold the relayout back forever.
         if (timer) {
-            clearTimeout(timer);
+            return;
         }
-        timer = setTimeout(relayout, 120);
+        timer = setTimeout(function () {
+            timer = null;
+            relayout();
+        }, 120);
     }
 
     function watchFrame(iframe) {

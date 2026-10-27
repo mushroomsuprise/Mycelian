@@ -237,6 +237,18 @@ def _validate_legacy_name(name: Any) -> str:
     return cleaned
 
 
+def _compile(model: Dict[str, Any], existing_html: Optional[str]) -> Tuple[str, Dict[str, Any]]:
+    """Compile, turning a malformed value into a readable error (nothing is written yet)."""
+    try:
+        return template_codegen.compile_model(model, existing_html=existing_html)
+    except (TypeError, ValueError, AttributeError, KeyError, OverflowError) as exc:
+        logger.warning("Spore Studio couldn't compile %s", model.get("template_name"), exc_info=True)
+        raise SporeStudioError(
+            f"Spore Studio couldn't build the overlay from these settings ({type(exc).__name__}: {exc}). "
+            "Check the values you changed last."
+        ) from exc
+
+
 def _is_handwritten_template(template_name: str) -> bool:
     """An existing overlay Spore Studio didn't write (saving a Spore model would replace it)."""
     html_path = get_template_path(f"{template_name}.html")
@@ -287,10 +299,7 @@ def compile_preview_draft(model: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
     template_name = _validate_name(model.get("template_name") or "")
     _check_element_ids(model)
     existing = _load_existing_html(template_name)
-    html_text, json_config = template_codegen.compile_model(
-        model, existing_html=existing
-    )
-    return html_text, json_config
+    return _compile(model, existing)
 
 
 def ensure_template_assets_folder(template_name: str) -> str:
@@ -629,10 +638,8 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     model["template_name"] = template_name
     model["alert_system"] = alert_system
 
-    if not model.get("legacy"):
-        from .timing import effective_duration_seconds
-
-        model["duration_seconds"] = effective_duration_seconds(model)
+    # duration_seconds stays what the user chose; the overlay config gets
+    # max(choice, minimum from layout), so removing a long binding lets it drop again.
 
     if model.get("legacy"):
         return _save_legacy_template(model, template_name)
@@ -648,9 +655,7 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     migrate_counter_rules(model)
 
     existing_html = _load_existing_html(template_name)
-    html_text, json_config = template_codegen.compile_model(
-        model, existing_html=existing_html
-    )
+    html_text, json_config = _compile(model, existing_html)
 
     parser = TemplateConfigParser()
     json_path = parser.get_config_path(template_name)

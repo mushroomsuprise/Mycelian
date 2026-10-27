@@ -641,20 +641,18 @@ def _distribute_flexible(
         if not active:
             break
         shares = _split_int(budget, [(slot_id, weights[slot_id]) for slot_id in active])
-        frozen: List[str] = []
-        still: List[str] = []
-        for slot_id in active:
-            share = shares[slot_id]
-            lo = mins[slot_id]
-            hi = maxes[slot_id]
-            if share < lo:
-                assigned[slot_id] = lo
-                frozen.append(slot_id)
-            elif hi is not None and share > hi:
-                assigned[slot_id] = hi
-                frozen.append(slot_id)
-            else:
-                still.append(slot_id)
+        # Freeze slots under their minimum first; only when none are, freeze the ones over
+        # their maximum. Freezing both in one pass can overspend the space (flexbox order).
+        under = [s for s in active if shares[s] < mins[s]]
+        if under:
+            frozen = under
+            for slot_id in under:
+                assigned[slot_id] = mins[slot_id]
+        else:
+            frozen = [s for s in active if maxes[s] is not None and shares[s] > maxes[s]]
+            for slot_id in frozen:
+                assigned[slot_id] = maxes[slot_id]
+        still = [s for s in active if s not in frozen]
         if not frozen:
             assigned.update(shares)
             break
@@ -954,8 +952,9 @@ def render_shell(container: Dict[str, Any]) -> str:
             style += "pointer-events:none;"
         missing = not template_html_exists(slot["template"])
         if missing:
-            label = html.escape(slot["template"])
-            inner = f'<div class="mc-missing">Missing template: {label}</div>'
+            # This page is on stream: a deleted template leaves an empty spot, not a label.
+            logger.warning("Container /%s uses missing template %s", model.get("route"), slot["template"])
+            inner = ""
         else:
             src = html.escape(embed_src(slot["template"], slot["audio"]), quote=True)
             clip = slot["content"]

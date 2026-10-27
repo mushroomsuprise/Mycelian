@@ -357,6 +357,7 @@
         startTab = (active && active.dataset.tab) || "properties";
         index = 0;
         running = true;
+        document.body.classList.add("ss-tour-running");
         blocker.style.display = "block";
         card.style.display = "block";
         document.addEventListener("keydown", onKey, true);
@@ -367,6 +368,7 @@
     function endTour() {
         if (!running) { return; }
         running = false;
+        document.body.classList.remove("ss-tour-running");
         document.removeEventListener("keydown", onKey, true);
         window.removeEventListener("resize", onReflow);
         /* Inline display must be cleared explicitly; the `hidden` attribute loses to it. */

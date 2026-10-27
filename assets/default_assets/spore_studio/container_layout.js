@@ -178,21 +178,25 @@
             var shares = splitInt(budget, active.map(function (id) {
                 return [id, weights[id]];
             }));
-            var frozen = [];
-            var still = [];
-            active.forEach(function (id) {
-                var share = shares[id];
-                var lo = mins[id];
-                var hi = maxes[id];
-                if (share < lo) {
-                    assigned[id] = lo;
-                    frozen.push(id);
-                } else if (hi !== null && share > hi) {
-                    assigned[id] = hi;
-                    frozen.push(id);
-                } else {
-                    still.push(id);
-                }
+            // Freeze slots under their minimum first; only when none are, freeze the ones
+            // over their maximum (same order as containers.py).
+            var frozen = active.filter(function (id) {
+                return shares[id] < mins[id];
+            });
+            if (frozen.length) {
+                frozen.forEach(function (id) {
+                    assigned[id] = mins[id];
+                });
+            } else {
+                frozen = active.filter(function (id) {
+                    return maxes[id] !== null && shares[id] > maxes[id];
+                });
+                frozen.forEach(function (id) {
+                    assigned[id] = maxes[id];
+                });
+            }
+            var still = active.filter(function (id) {
+                return frozen.indexOf(id) < 0;
             });
             if (!frozen.length) {
                 still.forEach(function (id) {

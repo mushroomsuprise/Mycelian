@@ -268,6 +268,21 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(_rect(layout, "b")["h"], 200)
         self.assertTrue(any(item["code"] == "min_overflow" for item in layout["warnings"]))
 
+    def test_minimums_are_settled_before_maximums(self) -> None:
+        # Freezing X at its minimum and Y at its maximum in one pass overflowed the canvas.
+        raw = _container(
+            [
+                _slot("x", w=400, h=10, link=_link(role="flexible", min_px=900)),
+                _slot("y", w=400, y=10, h=1000, link=_link(role="flexible", max_px=500)),
+            ],
+            width=400,
+            height=1080,
+        )
+        layout = solve_layout(raw, {})
+        self.assertEqual(_rect(layout, "x")["h"], 900)
+        self.assertEqual(_rect(layout, "y")["h"], 180)
+        self.assertFalse(any(item["code"] == "min_overflow" for item in layout["warnings"]))
+
     def test_locked_iframe_stays_at_designated_content_size(self) -> None:
         raw = _container(
             [
@@ -439,6 +454,17 @@ class JsSolverParityTests(unittest.TestCase):
                     height=200,
                 ),
                 {"a": {"w": 100}},
+            ),
+            (
+                _container(
+                    [
+                        _slot("x", w=400, h=10, link=_link(role="flexible", min_px=900)),
+                        _slot("y", w=400, y=10, h=1000, link=_link(role="flexible", max_px=500)),
+                    ],
+                    width=400,
+                    height=1080,
+                ),
+                {},
             ),
         ]
         for raw, used in specs:

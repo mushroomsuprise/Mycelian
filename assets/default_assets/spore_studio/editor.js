@@ -1239,13 +1239,23 @@
 
     function undo() {
         if (!state.model) { return; }
+        // Edits still waiting for the debounced snapshot sit on top of the last entry;
+        // otherwise the last entry is the current state. (Comparing JSON missed this when
+        // timers or the server adjusted the model after the snapshot.)
+        var pending = historyTimer !== null;
         clearHistoryDebounce();
-        if (state.history.length <= 1) { return; }
         var current = JSON.stringify(state.model);
         var top = state.history[state.history.length - 1];
-        if (current === top) {
-            state.history.pop();
+        if (pending && top && current !== top) {
+            state.future.push(current);
+            state.model = JSON.parse(top);
+            renderAll();
+            setDirty(true);
+            schedulePreviewDraft();
+            return;
         }
+        if (state.history.length <= 1) { return; }
+        state.history.pop();
         state.future.push(current);
         var prev = state.history[state.history.length - 1];
         state.model = JSON.parse(prev);
@@ -1282,6 +1292,7 @@
         clearTimeout(previewMocksTimer);
         previewMocksTimer = setTimeout(function () {
             previewMocksTimer = null;
+            var forTemplate = state.model && state.model.template_name;
             fetch("/api/spore-studio/preview/mocks", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1290,6 +1301,8 @@
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
                     if (!state.model || !data || !data.preview_mocks) { return; }
+                    // Another template was opened while this was on its way.
+                    if (state.model.template_name !== forTemplate) { return; }
                     state.model.preview_mocks = data.preview_mocks;
                     renderPreviewMockToolbar();
                 })
@@ -1977,6 +1990,8 @@
         }
     }
 
+    var customTimerFormat = {};
+
     function timerFormatPresetValue(fmt) {
         var i;
         for (i = 0; i < TIMER_FORMAT_PRESETS.length; i++) {
@@ -2359,7 +2374,7 @@
             ));
         }
 
-        var preset = timerFormatPresetValue(p.format);
+        var preset = customTimerFormat[el.id] ? "custom" : timerFormatPresetValue(p.format);
         var presetSel = document.createElement("select");
         TIMER_FORMAT_PRESETS.forEach(function (opt) {
             var op = document.createElement("option");
@@ -2376,6 +2391,10 @@
         presetSel.addEventListener("change", function () {
             if (presetSel.value !== "custom") {
                 p.format = presetSel.value;
+                delete customTimerFormat[el.id];
+            } else {
+                // The format may still match a preset; keep the custom box open anyway.
+                customTimerFormat[el.id] = true;
             }
             pushHistory();
             renderProperties();
@@ -3822,8 +3841,14 @@
         if (el.type === "counter") {
             var c = el.counter;
             host.appendChild(formRow("Counter id", inputEl("text", c.counter_id, function (v) {
+                var oldCid = c.counter_id;
                 c.counter_id = slugifyCounterId(v);
                 c.database_key = c.counter_id;
+                // Progress bars, images, feeds and controls that read this counter follow it.
+                rewriteModelRefs(
+                    { counter_id: 1, max_counter_id: 1, source_id: 1, target_counter_id: 1 },
+                    oldCid, c.counter_id, c
+                );
                 pushHistoryDebounced();
                 modelTouch();
             }), "Id other elements use when they read or change this counter"));
@@ -3947,6 +3972,14 @@
         }
     }
 
+    function nextControlId(controls) {
+        var used = {};
+        (controls || []).forEach(function (c) { if (c && c.id) { used[c.id] = true; } });
+        var n = (controls || []).length + 1;
+        while (used["control_" + n]) { n += 1; }
+        return "control_" + n;
+    }
+
     function renderSourceControlsPanel() {
         var host = $("#ss-sourcecontrols-host");
         if (!host) { return; }
@@ -3965,7 +3998,7 @@
         addBtn.addEventListener("click", function () {
             dc.elements.push({
                 type: "button",
-                id: "control_" + (dc.elements.length + 1),
+                id: nextControlId(dc.elements),
                 label: "New control",
                 action: "custom_template_action",
                 button_text: "Run"
@@ -4191,17 +4224,21 @@
         return isNaN(ms) ? 300 : Math.max(0, ms);
     }
 
-    function _bindingStepMs(action, args) {
+    /* Mirrors timing.py: types from the binding, lengths and delay from the element. */
+    function _bindingStepMs(action, args, el) {
         args = args || {};
         if (action === "show_for") {
             var seconds = parseFloat(args.seconds);
-            if (isNaN(seconds)) { seconds = 5; }
+            if (!isFinite(seconds)) { seconds = 5; }
             seconds = Math.max(0, seconds);
             var animIn = String(args.anim_in || "fade");
             var animOut = String(args.anim_out || "fade");
-            return Math.round(seconds * 1000)
-                + _animMsForType(animIn, 300)
-                + _animMsForType(animOut, 300);
+            var anims = (el && el.animations) || {};
+            var delay = parseInt(String(anims.anim_delay_ms), 10);
+            if (isNaN(delay)) { delay = 0; }
+            var inMs = _animMsForType(animIn, anims.anim_in_ms == null ? 300 : anims.anim_in_ms);
+            var outMs = _animMsForType(animOut, anims.anim_out_ms == null ? 300 : anims.anim_out_ms);
+            return Math.max(Math.round(seconds * 1000), Math.max(0, delay) + inMs) + outMs;
         }
         if (action === "flash_class") {
             var d = parseInt(String(args.duration_ms), 10);
@@ -4210,21 +4247,23 @@
         return 0;
     }
 
-    function _bindingChainMs(binding) {
+    /* Chain rows start delay_ms after the previous step starts; steps can overlap. */
+    function _bindingChainMs(binding, el) {
         if (!binding || typeof binding !== "object") { return 0; }
-        var total = 0;
+        var end = 0;
+        var start = 0;
         if (binding.action) {
-            total += _bindingStepMs(binding.action, binding.args || {});
+            end = _bindingStepMs(binding.action, binding.args || {}, el);
         }
         (binding.chain || []).forEach(function (row) {
             if (!row || typeof row !== "object") { return; }
             var delay = parseFloat(row.delay_ms);
-            if (!isNaN(delay)) { total += Math.max(0, delay); }
+            if (isFinite(delay)) { start += Math.max(0, delay); }
             if (row.action) {
-                total += _bindingStepMs(row.action, row.args || {});
+                end = Math.max(end, start + _bindingStepMs(row.action, row.args || {}, el));
             }
         });
-        return total;
+        return end;
     }
 
     function elementTimelineMs(el) {
@@ -4237,7 +4276,7 @@
         var outMs = _animMsForType(anims.anim_out, anims.anim_out_ms);
         best = Math.max(best, Math.max(0, delay) + inMs + outMs);
         (el.bindings || []).forEach(function (b) {
-            best = Math.max(best, _bindingChainMs(b));
+            best = Math.max(best, _bindingChainMs(b, el));
         });
         var props = el.props || {};
         if (el.type === "audio") {
@@ -4268,14 +4307,16 @@
         return Math.max(0.1, Math.ceil(seconds * 10) / 10);
     }
 
+    /*
+     * duration_seconds keeps the user's choice; the overlay uses max(choice, minimum).
+     * (Raising the stored value made it stick after a long binding was removed.)
+     */
     function syncDurationWithLayout(model) {
         if (!model || model.legacy) { return; }
         var minSec = computeMinDurationSeconds(model);
         var cur = parseFloat(model.duration_seconds);
         if (isNaN(cur) || model.duration_seconds === undefined || model.duration_seconds === null) {
             model.duration_seconds = Math.max(minSec, 5);
-        } else if (cur < minSec) {
-            model.duration_seconds = minSec;
         }
         return minSec;
     }
@@ -7132,6 +7173,7 @@
             ev.stopPropagation();
             state.selectedId = modelEl.id;
             renderInspector();
+            renderOutline();
             focusCanvas();
             $$(".ss-element", $("#ss-stage")).forEach(function (n) {
                 n.classList.toggle("selected", n.dataset.sporeId === modelEl.id);
@@ -7145,9 +7187,12 @@
                 origY: (modelEl.position || {}).y || 0,
                 prevParentNorm: pidNorm(modelEl.parent_id)
             };
+            // Only while dragging: listeners added on every render used to pile up on document.
+            document.addEventListener("mousemove", onDragMove);
+            document.addEventListener("mouseup", onDragUp);
             ev.preventDefault();
         });
-        document.addEventListener("mousemove", function (ev) {
+        function onDragMove(ev) {
             if (!dragData) { return; }
             if (!dragData.didMove && (
                 Math.abs(ev.clientX - dragData.refX) >= 5 ||
@@ -7180,8 +7225,10 @@
                     ev.clientX, ev.clientY, modelEl.id, prefRoot
                 );
             }
-        });
-        document.addEventListener("mouseup", function (muEv) {
+        }
+        function onDragUp(muEv) {
+            document.removeEventListener("mousemove", onDragMove);
+            document.removeEventListener("mouseup", onDragUp);
             var dd = dragData;
             if (!dd) {
                 return;
@@ -7234,10 +7281,15 @@
             }
             if (dd.didMove) {
                 pushHistoryDebounced();
+                modelTouch();
+            } else {
+                // A click that didn't move anything is just a selection.
+                modelEl.position = { x: dd.origX, y: dd.origY };
+                node.style.left = dd.origX + "px";
+                node.style.top = dd.origY + "px";
             }
-            modelTouch();
             dragData = null;
-        });
+        }
 
         var resizeData = null;
         handle.addEventListener("mousedown", function (ev) {
@@ -7248,9 +7300,11 @@
                 origW: (modelEl.size || {}).w || 100,
                 origH: (modelEl.size || {}).h || 30
             };
+            document.addEventListener("mousemove", onResizeMove);
+            document.addEventListener("mouseup", onResizeUp);
             ev.preventDefault();
         });
-        document.addEventListener("mousemove", function (ev) {
+        function onResizeMove(ev) {
             if (!resizeData) { return; }
             var resizeParent = node.offsetParent || $("#ss-stage");
             var resizeStart = clientPointInNode(resizeParent, resizeData.startX, resizeData.startY);
@@ -7261,8 +7315,10 @@
             };
             node.style.width = modelEl.size.w + "px";
             node.style.height = modelEl.size.h + "px";
-        });
-        document.addEventListener("mouseup", function () {
+        }
+        function onResizeUp() {
+            document.removeEventListener("mousemove", onResizeMove);
+            document.removeEventListener("mouseup", onResizeUp);
             if (resizeData) {
                 var sz = modelEl.size || {};
                 var sizeChanged =
@@ -7278,16 +7334,19 @@
                 renderInspector();
                 if (sizeChanged) {
                     pushHistoryDebounced();
+                    modelTouch();
                 }
-                modelTouch();
             }
             resizeData = null;
-        });
+        }
     }
 
     function pushHistoryDebounced() {
         clearTimeout(historyTimer);
-        historyTimer = setTimeout(pushHistory, 250);
+        historyTimer = setTimeout(function () {
+            historyTimer = null;
+            pushHistory();
+        }, 250);
     }
 
     /* ------------------------------------------------------------------
@@ -7751,6 +7810,10 @@
                 el.props[entry.key] = ctrl.value;
             }
             propChange(function () {});
+            if (el.type === "clock" && entry.key === "timezone") {
+                // The offset field only exists while timezone is "offset".
+                renderProperties();
+            }
         });
         host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, ctrl, tip));
         if (entry.key === "fade_in_ms" || entry.key === "fade_out_ms"
@@ -9679,11 +9742,26 @@
         });
     }
 
+    /* Replace values equal to oldValue under the given keys, anywhere in the model. */
+    function rewriteModelRefs(keys, oldValue, newValue, skip) {
+        if (!state.model || !oldValue || oldValue === newValue) { return; }
+        (function walk(node) {
+            if (!node || typeof node !== "object" || node === skip) { return; }
+            if (Array.isArray(node)) { node.forEach(walk); return; }
+            Object.keys(node).forEach(function (key) {
+                var value = node[key];
+                if (keys[key] && value === oldValue) {
+                    node[key] = newValue;
+                } else if (value && typeof value === "object") {
+                    walk(value);
+                }
+            });
+        })(state.model);
+    }
+
+    /* Timer controls and actions that name another element follow its new ID. */
     function updateBindingsForRename(oldId, newId) {
-        // Bindings live on the element itself; renaming the element id
-        // doesn't break any cross-element references in our model. Kept
-        // as a hook in case a future binding action references other ids.
-        return [oldId, newId];
+        rewriteModelRefs({ target_timer_id: 1, element_id: 1, target_element_id: 1 }, oldId, newId);
     }
 
     /* ------------------------------------------------------------------
@@ -9757,7 +9835,9 @@
             grid.appendChild(card);
         });
         var selEl = selectedElement();
-        if (selEl && selEl.type === "image" && state.selectedId) {
+        var typing = document.activeElement && $("#ss-properties-host") &&
+            $("#ss-properties-host").contains(document.activeElement) && typingTarget(document.activeElement);
+        if (selEl && selEl.type === "image" && state.selectedId && !typing) {
             renderProperties();
         }
     }
@@ -9775,6 +9855,7 @@
         var name = state.model.template_name;
         fetchJson("/api/spore-studio/assets/" + encodeURIComponent(name))
             .then(function (res) {
+                if (!state.model || state.model.template_name !== name) { return; }
                 if (!res.ok) { throw requestError(res, "GET /api/spore-studio/assets/" + name); }
                 renderAssets(res.data);
             })
@@ -9847,8 +9928,11 @@
         // No toast here: opening a template is routine (tab build, deep links,
         // after create/delete). The toolbar shows the state instead.
         setLoadState("Loading " + name + "…");
+        var loadSeq = state.loadSeq = (state.loadSeq || 0) + 1;
         return fetchJson("/api/spore-studio/model/" + encodeURIComponent(name))
             .then(function (res) {
+                // A newer template was picked while this one loaded.
+                if (loadSeq !== state.loadSeq) { return; }
                 var model = res.data;
                 // A 404/500 body is {error: ...}; never open it as a blank
                 // "untitled" model that a later Save would write to disk.
@@ -9886,6 +9970,7 @@
                 );
             })
             .catch(function (err) {
+                if (loadSeq !== state.loadSeq) { return; }
                 console.error("Load failed", err);
                 // Keep whatever was open before; point the picker back at it.
                 var sel = $("#ss-template-select");
@@ -10923,7 +11008,8 @@
             var minSec = computeMinDurationSeconds(state.model);
             var v = parseFloat(ev.target.value);
             if (isNaN(v)) { v = minSec; }
-            state.model.duration_seconds = Math.max(minSec, v);
+            // Stored as typed; below the minimum the overlay still runs for the minimum.
+            state.model.duration_seconds = Math.max(0.1, v);
             refreshDurationCanvasUi();
             pushHistory();
             modelTouch();
@@ -11104,14 +11190,27 @@
     function deleteCurrentTemplate() {
         if (!state.model || state.model.legacy) { return; }
         var name = state.model.template_name;
-        UI.confirm({
-            danger: true,
-            title: "Delete “" + name + "”?",
-            message: "This removes its HTML, JSON config, editor sidecar and assets folder. It can't be undone.",
-            ok: "Delete template"
-        }).then(function (ok) {
-            if (ok) { deleteTemplateNow(name); }
-        });
+        fetchJson("/api/spore-studio/containers")
+            .then(function (res) {
+                var list = (res.ok && res.data && res.data.containers) || [];
+                return list.filter(function (c) { return (c.templates || []).indexOf(name) >= 0; });
+            }, function () { return []; })
+            .then(function (users) {
+                return UI.confirm({
+                    danger: true,
+                    title: "Delete “" + name + "”?",
+                    message: "This removes its HTML, JSON config, editor sidecar and assets folder. It can't be undone.",
+                    detail: users.length
+                        ? "Used by " + (users.length === 1 ? "the container " : users.length + " containers: ") +
+                            users.map(function (c) { return "/" + c.route; }).join(", ") +
+                            ". Its spot there will be empty until you remove it."
+                        : "",
+                    ok: "Delete template"
+                });
+            })
+            .then(function (ok) {
+                if (ok) { deleteTemplateNow(name); }
+            });
     }
 
     function deleteTemplateNow(name) {
@@ -11337,6 +11436,24 @@
         copy.position = copy.position || { x: 0, y: 0 };
         copy.position.x = (parseInt(copy.position.x, 10) || 0) + 16;
         copy.position.y = (parseInt(copy.position.y, 10) || 0) + 16;
+        if (copy.placement) {
+            // Nested copies are placed from the anchor offset, so shift that as well.
+            copy.placement.offset_x = (parseInt(copy.placement.offset_x, 10) || 0) + 16;
+            copy.placement.offset_y = (parseInt(copy.placement.offset_y, 10) || 0) + 16;
+        }
+        if (copy.counter && copy.counter.counter_id) {
+            // A copy counts on its own; sharing the id would merge the two counters.
+            var taken = {};
+            (state.model.elements || []).forEach(function (e) {
+                if (e.counter && e.counter.counter_id) { taken[e.counter.counter_id] = true; }
+            });
+            var base = slugifyCounterId(copy.id);
+            var cid = base;
+            var n = 2;
+            while (taken[cid]) { cid = base + "_" + n; n += 1; }
+            copy.counter.counter_id = cid;
+            copy.counter.database_key = cid;
+        }
         state.model.elements = state.model.elements || [];
         state.model.elements.push(copy);
         if (copy.type === "timer") { ensureTimerDynamicControl(copy); }
@@ -11368,6 +11485,8 @@
                 return;
             }
             if (UI.modalOpen()) { return; }
+            // The tour owns the keyboard while it runs (arrows step through it).
+            if (document.body.classList.contains("ss-tour-running")) { return; }
             var meta = ev.ctrlKey || ev.metaKey;
             var undoKey = meta && (ev.key === "z" || ev.key === "Z" || ev.key === "y");
             if (undoKey && typingTarget(ev.target)) { return; }
@@ -11449,6 +11568,7 @@
             state.selectedId = null;
             $$(".ss-element").forEach(function (n) { n.classList.remove("selected"); });
             renderInspector();
+            renderOutline();
         });
     }
 
@@ -11505,12 +11625,23 @@
             ev.returnValue = "";
         });
 
+        // A registry that fails to load falls back to empty lists, and says so once.
+        var registryFailures = [];
+        function registry(url) {
+            return fetchJson(url).then(function (res) {
+                if (!res.ok || (res.data && res.data.error)) {
+                    registryFailures.push(url);
+                    return null;
+                }
+                return res.data;
+            });
+        }
         Promise.all([
-            fetch("/api/spore-studio/events").then(function (r) { return r.json(); }),
-            fetch("/api/spore-studio/data-sources").then(function (r) { return r.json(); }),
-            fetch("/api/spore-studio/control-actions").then(function (r) { return r.json(); }),
-            fetch("/api/spore-studio/fonts").then(function (r) { return r.json(); }),
-            fetch("/api/spore-studio/data-catalog").then(function (r) { return r.json(); })
+            registry("/api/spore-studio/events"),
+            registry("/api/spore-studio/data-sources"),
+            registry("/api/spore-studio/control-actions"),
+            registry("/api/spore-studio/fonts"),
+            registry("/api/spore-studio/data-catalog")
         ])
             .then(function (results) {
                 var evData = results[0] || {};
@@ -11521,6 +11652,16 @@
                 state.defaultFonts = (results[3] && results[3].fonts) || [];
                 state.catalog = results[4] || {};
                 renderPreviewMockToolbar();
+                if (registryFailures.length) {
+                    notify({
+                        type: "warning",
+                        title: "Some Spore Studio lists didn't load",
+                        message: "Event, data source or font pickers may be empty.",
+                        hint: "Click Reload editor. If it keeps happening, restart Mycelian.",
+                        details: registryFailures.join("\n"),
+                        dedupe: "registry_failed"
+                    });
+                }
             })
             .then(refreshTemplateList)
             .then(function () {

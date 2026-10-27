@@ -375,6 +375,15 @@ def _is_localhost_remote_addr(addr: Optional[str]) -> bool:
 _EDITOR_WRITE_PREFIXES = ("/api/spore-studio/", "/api/template-preview-settings/")
 
 
+def _int_or(value: Any, default: int) -> int:
+    """A whole number from request input, or the default when it isn't one."""
+    try:
+        number = int(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return number if number > 0 else default
+
+
 def _is_cross_site_request(origin: Optional[str], fetch_site: Optional[str], host: Optional[str]) -> bool:
     """True when a browser request comes from another site than this server.
 
@@ -2879,8 +2888,8 @@ class WebEngine:
                         name=str(payload.get("name") or ""),
                         alert_system=str(payload.get("alert_system") or "queue"),
                         copy_from=payload.get("copy_from") or None,
-                        design_width=int(payload.get("design_width") or 800),
-                        design_height=int(payload.get("design_height") or 200),
+                        design_width=_int_or(payload.get("design_width"), 800),
+                        design_height=_int_or(payload.get("design_height"), 200),
                     )
                 except _sp.SporeStudioError as ex:
                     return (
@@ -5998,6 +6007,10 @@ class WebEngine:
             def handler(container_route=route):
                 response = self._container_shell_response(container_route)
                 if response is None:
+                    # The container was deleted or renamed; a template may use the name now.
+                    fallback = getattr(self, "_template_fallback", None)
+                    if fallback is not None:
+                        return fallback(container_route)
                     return ("Not found", 404)
                 return response
 
@@ -6099,6 +6112,13 @@ class WebEngine:
 
                 def route_handler():
                     logger.debug(f"Serving template {template}")
+                    if not os.path.isfile(
+                        os.path.join(engine_self.template_dir, f"{template}.html")
+                    ):
+                        # Deleted since startup; a container may use the name now.
+                        fallback = getattr(engine_self, "_template_fallback", None)
+                        if fallback is not None:
+                            return fallback(template)
                     try:
                         preview_token = request.args.get("__preview_token")
                         mycelian_preview_mode = False
@@ -6384,6 +6404,8 @@ class WebEngine:
                 )
                 return (f"Error loading template {template_name}: {e}", 500)
 
+        # Explicit routes registered at startup hand off here when their file is gone.
+        self._template_fallback = template_fallback
         try:
             self.app.add_url_rule(
                 "/<spore_template_name>",

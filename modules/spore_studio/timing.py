@@ -35,7 +35,7 @@ def _coerce_int(value: Any, default: int = 0) -> int:
         return default
     try:
         return int(float(value))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
@@ -58,45 +58,59 @@ def _element_animations_timeline_ms(element: Dict[str, Any]) -> int:
     return max(0, delay) + in_ms + out_ms
 
 
-def _binding_step_ms(action: str, args: Dict[str, Any]) -> int:
+def _binding_step_ms(action: str, args: Dict[str, Any], element: Optional[Dict[str, Any]] = None) -> int:
+    """How long one action keeps the element busy, as the overlay runs it."""
     args = args or {}
     if action == "show_for":
-        try:
-            seconds = float(args.get("seconds", 5))
-        except (TypeError, ValueError):
+        seconds = max(0.0, _coerce_float(args.get("seconds", 5), 5.0))
+        if not math.isfinite(seconds):
             seconds = 5.0
-        seconds = max(0.0, seconds)
         anim_in = str(args.get("anim_in", "fade") or "none")
         anim_out = str(args.get("anim_out", "fade") or "none")
-        out_ms = _anim_ms_for_type(anim_out, _DEFAULT_ANIM_MS)
-        in_ms = _anim_ms_for_type(anim_in, _DEFAULT_ANIM_MS)
-        return int(seconds * 1000) + in_ms + out_ms
+        anims = (element or {}).get("animations")
+        anims = anims if isinstance(anims, dict) else {}
+        # sporeShow / sporeHide take the types from the binding and the lengths
+        # (and entrance delay) from the element's own animation settings.
+        delay = max(0, _coerce_int(anims.get("anim_delay_ms"), 0))
+        in_ms = _anim_ms_for_type(anim_in, anims.get("anim_in_ms", _DEFAULT_ANIM_MS))
+        out_ms = _anim_ms_for_type(anim_out, anims.get("anim_out_ms", _DEFAULT_ANIM_MS))
+        # The hide starts after `seconds` (the entrance runs inside that window),
+        # then the exit animation plays.
+        return max(int(seconds * 1000), delay + in_ms) + out_ms
     if action == "flash_class":
         return _coerce_int(args.get("duration_ms"), 500)
     return 0
 
 
-def _binding_chain_timeline_ms(binding: Dict[str, Any]) -> int:
+def _binding_chain_timeline_ms(binding: Dict[str, Any], element: Optional[Dict[str, Any]] = None) -> int:
+    """When the last step of a binding finishes.
+
+    Each chain row starts ``delay_ms`` after the previous step starts (the runtime
+    does not wait for a ``show_for`` to finish), so steps can overlap.
+    """
     if not isinstance(binding, dict):
         return 0
-    total = 0
+    end = 0
+    start = 0
     action = binding.get("action")
     if action and isinstance(action, str):
         args = binding.get("args")
         args_d: Dict[str, Any] = dict(args) if isinstance(args, dict) else {}
-        total += _binding_step_ms(action, args_d)
+        end = _binding_step_ms(action, args_d, element)
     for row in binding.get("chain") or []:
         if not isinstance(row, dict):
             continue
         delay = _coerce_float(row.get("delay_ms"), 0.0)
-        total += max(0, int(delay))
+        if not math.isfinite(delay):
+            delay = 0.0
+        start += max(0, int(delay))
         act = row.get("action")
         if not act or not isinstance(act, str):
             continue
         ra = row.get("args")
         args_k: Dict[str, Any] = dict(ra) if isinstance(ra, dict) else {}
-        total += _binding_step_ms(act, args_k)
-    return total
+        end = max(end, start + _binding_step_ms(act, args_k, element))
+    return end
 
 
 def _element_bindings_timeline_ms(element: Dict[str, Any]) -> int:
@@ -104,7 +118,7 @@ def _element_bindings_timeline_ms(element: Dict[str, Any]) -> int:
     for binding in element.get("bindings") or []:
         if not isinstance(binding, dict):
             continue
-        best = max(best, _binding_chain_timeline_ms(binding))
+        best = max(best, _binding_chain_timeline_ms(binding, element))
     return best
 
 

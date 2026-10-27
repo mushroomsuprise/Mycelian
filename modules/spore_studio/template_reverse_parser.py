@@ -240,7 +240,19 @@ def _resolve_decl(
         if name not in vars_map or vars_map[name] in (None, ""):
             return None, var_id
         resolved = resolved.replace(m.group(0), str(vars_map[name]))
-    return resolved.strip(), var_id
+    resolved = resolved.strip()
+    # Only a declaration that is exactly one field (optionally "px") can be written
+    # back on save. Compound values like a gradient containing {{ ShimmerColor }}, or a
+    # fractional size that the editor would round, stay read-only.
+    exact = len(matches) == 1 and re.fullmatch(
+        re.escape(matches[0].group(0)) + r"\s*(px)?", raw_value.strip()
+    )
+    if not exact:
+        return resolved, None
+    number = re.fullmatch(r"(-?\d+(?:\.\d+)?)\s*(px)?", resolved)
+    if number and float(number.group(1)) != int(float(number.group(1))):
+        return resolved, None
+    return resolved, var_id
 
 
 def _select_rules_for(

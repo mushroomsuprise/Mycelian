@@ -19,7 +19,8 @@
         used: {},
         origins: {},
         dragging: false,
-        known: {}
+        known: {},
+        splitPadding: {}
     };
 
     function $(id) { return document.getElementById(id); }
@@ -226,11 +227,15 @@
                 var rect = node.getBoundingClientRect();
                 if (rect.width < 1 || rect.height < 1) { continue; }
                 if (rect.width >= viewW - 1 && rect.height >= viewH - 1) { continue; }
+                // Parked off screen (an alert waiting to slide in) doesn't count.
+                var left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+                var right = Math.min(viewW, rect.right), bottom = Math.min(viewH, rect.bottom);
+                if (right - left < 1 || bottom - top < 1) { continue; }
                 found = true;
-                minX = Math.min(minX, rect.left);
-                minY = Math.min(minY, rect.top);
-                maxX = Math.max(maxX, rect.right);
-                maxY = Math.max(maxY, rect.bottom);
+                minX = Math.min(minX, left);
+                minY = Math.min(minY, top);
+                maxX = Math.max(maxX, right);
+                maxY = Math.max(maxY, bottom);
             }
             if (!found) { return null; }
             return {
@@ -247,8 +252,13 @@
     var measureTimer = null;
     function scheduleMeasure() {
         if (state.placeholders || state.dragging) { return; }
-        clearTimeout(measureTimer);
-        measureTimer = setTimeout(runMeasure, 150);
+        // Throttle, not debounce: a template that animates every frame would otherwise
+        // push the measurement back forever.
+        if (measureTimer) { return; }
+        measureTimer = setTimeout(function () {
+            measureTimer = null;
+            runMeasure();
+        }, 150);
     }
 
     function runMeasure() {
@@ -316,6 +326,11 @@
         host.textContent = messages.join(" ");
     }
 
+    /*
+     * Redraw the canvas. Slot boxes and their iframes stay in the page and are only
+     * restyled: an iframe that is taken out and put back loads its page again, which
+     * restarted every template's sounds and animations on each drag step.
+     */
     function renderCanvas() {
         var canvas = $("mc-canvas");
         if (!canvas || !state.model) { return; }
@@ -323,12 +338,17 @@
         if (!layout) { return; }
         fitCanvas();
         renderWarnings(layout);
-        var kept = {};
-        canvas.querySelectorAll("iframe[data-slot]").forEach(function (frame) {
-            kept[frame.getAttribute("data-slot")] = frame;
+        var existing = {};
+        Array.prototype.slice.call(canvas.children).forEach(function (child) {
+            if (child.classList.contains("mc-slot") && child.dataset.slot) {
+                existing[child.dataset.slot] = child;
+            } else {
+                child.remove();
+            }
         });
-        canvas.textContent = "";
+        var live = {};
         layout.slots.forEach(function (slot) {
+            live[slot.id] = true;
             if (slot.role === "locked") {
                 var shorter = slot.axis === "vertical" ? slot.h < slot.designated_h : slot.w < slot.designated_w;
                 if (shorter) {
@@ -341,65 +361,92 @@
                     canvas.appendChild(ghost);
                 }
             }
-            var el = document.createElement("div");
-            el.className = "mc-slot" + (slot.id === state.selectedId ? " is-selected" : "");
-            el.setAttribute("role", "button");
+            var el = existing[slot.id];
+            if (!el) {
+                el = document.createElement("div");
+                el.dataset.slot = slot.id;
+                el.setAttribute("role", "button");
+                el.addEventListener("mousedown", onSlotMouseDown);
+                var label = document.createElement("div");
+                label.className = "mc-slot__label";
+                el.appendChild(label);
+                canvas.appendChild(el);
+            }
+            el.className = "mc-slot" + (slot.id === state.selectedId ? " is-selected" : "") +
+                (state.known[slot.template] ? "" : " is-missing");
             el.setAttribute("aria-label", slot.template);
-            if (!state.known[slot.template]) { el.classList.add("is-missing"); }
-            el.dataset.slot = slot.id;
             el.style.left = slot.x + "px";
             el.style.top = slot.y + "px";
             el.style.width = slot.w + "px";
             el.style.height = slot.h + "px";
             el.style.zIndex = String(slot.z || 1);
             el.style.opacity = String((slot.opacity == null ? 100 : slot.opacity) / 100);
-            if (!slot.visible) { el.style.outline = "1px dashed var(--ss-text-muted)"; }
-            var label = document.createElement("div");
-            label.className = "mc-slot__label";
-            label.textContent = slot.template + (state.known[slot.template] ? "" : " (missing)");
-            el.appendChild(label);
-            if (state.placeholders || !slot.visible) {
-                var holder = document.createElement("div");
-                holder.className = "mc-placeholder";
-                holder.textContent = slot.template;
-                el.appendChild(holder);
-            } else if (state.known[slot.template]) {
-                var clip = document.createElement("div");
-                clip.className = "mc-clip";
+            el.style.outline = slot.visible ? "" : "1px dashed var(--ss-text-muted)";
+            el.querySelector(".mc-slot__label").textContent =
+                slot.template + (state.known[slot.template] ? "" : " (missing)");
+            Array.prototype.slice.call(el.querySelectorAll(".mc-handle")).forEach(function (h) { h.remove(); });
+
+            var holder = el.querySelector(".mc-placeholder");
+            var clip = el.querySelector(".mc-clip");
+            if (state.placeholders || !slot.visible || !state.known[slot.template]) {
+                if (clip) { clip.remove(); }
+                if (state.placeholders || !slot.visible) {
+                    if (!holder) {
+                        holder = document.createElement("div");
+                        holder.className = "mc-placeholder";
+                        el.appendChild(holder);
+                    }
+                    holder.textContent = slot.template;
+                } else if (holder) {
+                    holder.remove();
+                }
+            } else {
+                if (holder) { holder.remove(); }
+                if (!clip) {
+                    clip = document.createElement("div");
+                    clip.className = "mc-clip";
+                    el.appendChild(clip);
+                }
                 clip.style.left = slot.content.x + "px";
                 clip.style.top = slot.content.y + "px";
                 clip.style.width = slot.content.w + "px";
                 clip.style.height = slot.content.h + "px";
                 var src = embedSrc(slot);
-                var frame = kept[slot.id];
+                var frame = clip.querySelector("iframe[data-slot]");
                 if (!frame || frame.getAttribute("data-src") !== src) {
-                    frame = document.createElement("iframe");
-                    frame.dataset.slot = slot.id;
-                    frame.dataset.src = src;
-                    frame.src = src;
-                    frame.setAttribute("allow", "autoplay");
-                    frame.addEventListener("load", function () {
-                        scheduleMeasure();
-                        try {
-                            var doc = frame.contentDocument;
-                            if (doc && doc.documentElement && window.MutationObserver) {
-                                var obs = new MutationObserver(scheduleMeasure);
-                                obs.observe(doc.documentElement, { childList: true, subtree: true, attributes: true });
-                            }
-                        } catch (err) { /* ignore */ }
-                    });
+                    if (frame) { frame.remove(); }
+                    frame = createSlotFrame(slot.id, src);
+                    clip.appendChild(frame);
                 }
                 applyFrame(frame, slot);
-                clip.appendChild(frame);
-                el.appendChild(clip);
             }
             if (slot.id === state.selectedId) {
                 addHandles(el, slot);
             }
-            el.addEventListener("mousedown", onSlotMouseDown);
-            canvas.appendChild(el);
+        });
+        Object.keys(existing).forEach(function (id) {
+            if (!live[id]) { existing[id].remove(); }
         });
         addGutters(canvas, layout);
+    }
+
+    function createSlotFrame(slotId, src) {
+        var frame = document.createElement("iframe");
+        frame.dataset.slot = slotId;
+        frame.dataset.src = src;
+        frame.src = src;
+        frame.setAttribute("allow", "autoplay");
+        frame.addEventListener("load", function () {
+            scheduleMeasure();
+            try {
+                var doc = frame.contentDocument;
+                if (doc && doc.documentElement && window.MutationObserver) {
+                    var obs = new MutationObserver(scheduleMeasure);
+                    obs.observe(doc.documentElement, { childList: true, subtree: true, attributes: true });
+                }
+            } catch (err) { /* ignore */ }
+        });
+        return frame;
     }
 
     function applyFrame(frame, slot) {
@@ -423,8 +470,9 @@
         frame.style.width = slot.iframe.w + "px";
         frame.style.height = slot.iframe.h + "px";
         if (slot.role === "locked") {
-            frame.style.left = (-origin.x) + "px";
-            frame.style.top = (-origin.y) + "px";
+            // Only the linked axis is trimmed to the content; the other keeps its layout.
+            frame.style.left = (slot.axis === "horizontal" ? -origin.x : 0) + "px";
+            frame.style.top = (slot.axis === "vertical" ? -origin.y : 0) + "px";
         } else {
             frame.style.left = "0px";
             frame.style.top = "0px";
@@ -917,14 +965,19 @@
         addCheck(host, "Click-through", !slot.pointer_events, function (checked) { slot.pointer_events = !checked; });
 
         var uniform = slot.padding.t === slot.padding.r && slot.padding.r === slot.padding.b && slot.padding.b === slot.padding.l;
-        addCheck(host, "Padding same on all sides", uniform, function (checked) {
+        // Unticking keeps the four boxes open even while the values still match.
+        var splitPadding = !uniform || !!state.splitPadding[slot.id];
+        addCheck(host, "Padding same on all sides", !splitPadding, function (checked) {
             if (checked) {
                 var n = slot.padding.t;
                 slot.padding = { t: n, r: n, b: n, l: n };
+                delete state.splitPadding[slot.id];
+            } else {
+                state.splitPadding[slot.id] = true;
             }
             renderInspector();
         });
-        if (slot.padding.t === slot.padding.r && slot.padding.r === slot.padding.b && slot.padding.b === slot.padding.l) {
+        if (!splitPadding) {
             addNumber(host, "Padding", slot.padding.t, function (value) {
                 var n = clamp(Math.round(value || 0), 0, 400);
                 slot.padding = { t: n, r: n, b: n, l: n };

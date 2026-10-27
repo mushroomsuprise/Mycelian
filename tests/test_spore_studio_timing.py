@@ -68,7 +68,8 @@ def test_effective_duration_clamps_below_minimum():
             }
         ],
     }
-    assert effective_duration_seconds(model) == 8.0
+    # 8 s on screen, then the default 300 ms fade-out.
+    assert effective_duration_seconds(model) == 8.3
 
 
 def test_effective_duration_keeps_user_override_above_minimum():
