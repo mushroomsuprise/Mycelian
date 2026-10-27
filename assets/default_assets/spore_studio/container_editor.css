@@ -1,23 +1,33 @@
 .ss-mode {
     display: inline-flex;
+    gap: 2px;
+    padding: 3px;
     border: 1px solid var(--ss-border);
-    border-radius: var(--ss-radius);
-    overflow: hidden;
+    border-radius: 10px;
+    background: var(--ss-soft);
     flex-shrink: 0;
 }
 
 .ss-mode__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: transparent;
-    color: var(--ss-text-muted);
+    color: var(--ss-text-2);
     border: 0;
-    padding: 5px 10px;
+    border-radius: 7px;
+    padding: 5px 11px;
     cursor: pointer;
-    font-size: 12px;
+    font: 600 12px inherit;
+    font-family: inherit;
 }
+
+.ss-mode__btn:hover { color: var(--ss-text); }
 
 .ss-mode__btn.is-active {
     background: var(--ss-accent);
     color: var(--color-text-inverse, #fff);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--ss-accent) 40%, transparent);
 }
 
 .ss-container-only { display: none; }
@@ -47,6 +57,8 @@
     overflow: auto;
 }
 
+.ss-panel-container-inspector { padding-bottom: 16px; }
+
 .ss-panel-container-canvas {
     flex-direction: column;
     min-height: 0;
@@ -58,35 +70,46 @@
     margin: 0 0 8px;
 }
 
-#mc-template-search {
-    width: 100%;
-    box-sizing: border-box;
-    margin-bottom: 8px;
-    background: var(--ss-bg-input);
-    color: var(--ss-text);
-    border: 1px solid var(--ss-border);
-    border-radius: var(--ss-radius);
-    padding: 4px 8px;
-}
-
-.mc-group { margin-bottom: 10px; }
+.mc-group { margin-bottom: 8px; }
 
 .mc-group h4 {
-    margin: 0 0 4px;
-    font-size: 11px;
+    margin: 8px 2px 4px;
+    font-size: 10px;
+    font-weight: 750;
     color: var(--ss-text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
 }
 
 .mc-template {
-    padding: 6px 8px;
-    margin-bottom: 4px;
-    border: 1px solid var(--ss-border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+    padding: 0 8px;
+    border: 1px solid transparent;
     border-radius: var(--ss-radius);
     cursor: grab;
-    background: var(--ss-bg-input);
+    font-size: 12.5px;
+    font-weight: 550;
 }
+
+.mc-template:hover { background: var(--ss-soft); border-color: var(--ss-border); }
+.mc-template__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex: none;
+    border-radius: 6px;
+    background: var(--ss-soft-2);
+    color: var(--ss-text-2);
+}
+.mc-template__icon .ss-ic { width: 13px; height: 13px; }
+.mc-template__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-template__drag { width: 14px; height: 14px; color: var(--ss-text-muted); opacity: 0; }
+.mc-template:hover .mc-template__drag { opacity: 1; }
 
 .mc-template:active { cursor: grabbing; }
 
@@ -122,6 +145,7 @@
 .mc-slot.is-selected {
     outline: 2px solid var(--ss-accent);
     outline-offset: 0;
+    box-shadow: 0 0 0 5px var(--ss-accent-soft);
 }
 
 .mc-slot.is-missing { border-color: var(--ss-error); }
@@ -140,11 +164,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11px;
-    padding: 2px 4px;
-    border-radius: 3px;
-    background: rgba(0, 0, 0, 0.6);
+    font-size: 10.5px;
+    font-weight: 650;
+    padding: 2px 7px;
+    border-radius: 6px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.65);
     pointer-events: none;
+}
+
+.mc-slot.is-selected .mc-slot__label {
+    background: var(--ss-accent);
+    color: var(--color-text-inverse, #fff);
 }
 
 .mc-placeholder {
@@ -201,11 +232,12 @@
 .mc-handle--n { top: -4px; left: 50%; margin-left: -4px; cursor: ns-resize; }
 
 .mc-warnings {
-    margin: 8px 12px 0;
-    padding: 6px 8px;
-    border: 1px solid color-mix(in srgb, var(--ss-warn) 50%, transparent);
-    border-radius: var(--ss-radius);
-    color: var(--ss-warn);
+    margin: 10px 12px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--ss-warn) 40%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--ss-warn) 12%, transparent);
+    color: var(--ss-text);
     font-size: 12px;
 }
 
@@ -214,15 +246,84 @@
     gap: 8px;
 }
 
-.mc-inline .ss-form-row { flex: 1; }
+.mc-inline .ss-form-row { flex: 1 1 0; min-width: 0; }
 
+.mc-inline > .ss-btn { flex: 1 1 0; }
+
+/* Settings toggles look like the editor's switches. */
 .mc-check {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     margin-bottom: 8px;
-    font-size: 12px;
+    font-size: 12.5px;
+    font-weight: 550;
+    cursor: pointer;
 }
+
+.mc-check input {
+    -webkit-appearance: none;
+    appearance: none;
+    position: relative;
+    width: 34px;
+    height: 20px;
+    flex: none;
+    margin: 0;
+    border-radius: 999px;
+    background: var(--ss-soft-2);
+    border: 1px solid var(--ss-border-strong);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.mc-check input::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--ss-text-muted);
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.mc-check input:checked { background: var(--ss-accent); border-color: var(--ss-accent); }
+.mc-check input:checked::after { transform: translateX(14px); background: #fff; }
+.mc-check input:focus-visible { outline: 2px solid var(--ss-accent); outline-offset: 2px; }
+
+.mc-sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 14px 0 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--ss-border);
+    font-size: 10.5px;
+    font-weight: 750;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ss-text-muted);
+}
+
+.mc-sub .ss-ic { width: 13px; height: 13px; }
+
+.mc-url {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: -2px 0 10px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--ss-soft);
+    border: 1px solid var(--ss-border);
+    font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--ss-text-2);
+    overflow: hidden;
+}
+
+.mc-url .ss-ic { width: 13px; height: 13px; color: var(--ss-accent); }
+.mc-url span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .mc-pct {
     color: var(--ss-text-muted);
@@ -230,6 +331,7 @@
 }
 
 #mc-btn-placeholders.is-on {
-    border-color: var(--ss-accent);
-    color: var(--ss-accent);
+    border-color: var(--ss-accent-line);
+    background: var(--ss-accent-soft);
+    color: var(--ss-text);
 }

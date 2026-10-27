@@ -17,68 +17,78 @@
         <div class="ss-toolbar">
             <div class="ss-mode" role="tablist" aria-label="Editor mode">
                 <button type="button" class="ss-mode__btn is-active" id="ss-mode-templates"
-                        role="tab" aria-selected="true">Templates</button>
+                        role="tab" aria-selected="true" data-ss-icon="layers"><span>Templates</span></button>
                 <button type="button" class="ss-mode__btn" id="ss-mode-containers"
-                        role="tab" aria-selected="false">Containers</button>
+                        role="tab" aria-selected="false" data-ss-icon="grid"><span>Containers</span></button>
             </div>
+            <span class="ss-tsep" aria-hidden="true"></span>
             <select id="ss-template-select" class="ss-toolbar__name ss-template-only"
                     title="Active template"></select>
-            <button class="ss-btn ss-template-only" id="ss-btn-create">+ New</button>
-            <button class="ss-btn ss-btn--danger ss-template-only" id="ss-btn-delete"
-                    disabled title="Open a Spore template to delete">Delete</button>
-            <button class="ss-btn ss-btn--ghost ss-template-only" id="ss-btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo">
-                <svg class="ss-toolbar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path d="M3 10h10a5 5 0 0 1 5 5 0 0 1-5 5H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 6 3 10l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </button>
-            <button class="ss-btn ss-btn--ghost ss-template-only" id="ss-btn-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
-                <svg class="ss-toolbar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path d="M21 10H11a5 5 0 0 0-5 5 0 0 0 5 5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="m17 6 4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </button>
+            <button class="ss-btn ss-template-only" id="ss-btn-create" data-ss-icon="plus"
+                    title="Create a new template"><span>New</span></button>
+            <button class="ss-btn ss-btn--icon ss-btn--danger ss-template-only" id="ss-btn-delete"
+                    disabled title="Open a Spore template to delete" aria-label="Delete template" data-ss-icon="trash"></button>
+            <span class="ss-tsep ss-template-only" aria-hidden="true"></span>
+            <span class="ss-btn-pair ss-template-only">
+                <button class="ss-btn ss-btn--icon" id="ss-btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo" data-ss-icon="undo"></button>
+                <button class="ss-btn ss-btn--icon" id="ss-btn-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" data-ss-icon="redo"></button>
+            </span>
             <select id="mc-container-select" class="ss-toolbar__name ss-container-only"
                     title="Active container"></select>
-            <button type="button" class="ss-btn ss-container-only" id="mc-btn-create">+ New</button>
-            <button type="button" class="ss-btn ss-container-only" id="mc-btn-duplicate"
-                    title="Duplicate this container">Duplicate</button>
-            <button type="button" class="ss-btn ss-btn--danger ss-container-only" id="mc-btn-delete">Delete</button>
-            <button type="button" class="ss-btn ss-btn--ghost ss-container-only" id="mc-btn-undo" title="Undo" aria-label="Undo container">Undo</button>
-            <button type="button" class="ss-btn ss-btn--ghost ss-container-only" id="mc-btn-redo" title="Redo" aria-label="Redo container">Redo</button>
+            <button type="button" class="ss-btn ss-container-only" id="mc-btn-create" data-ss-icon="plus"
+                    title="Create a new container"><span>New</span></button>
+            <button type="button" class="ss-btn ss-btn--icon ss-container-only" id="mc-btn-duplicate"
+                    title="Duplicate this container" aria-label="Duplicate container" data-ss-icon="layers"></button>
+            <button type="button" class="ss-btn ss-btn--icon ss-btn--danger ss-container-only" id="mc-btn-delete"
+                    title="Delete this container" aria-label="Delete container" data-ss-icon="trash"></button>
+            <span class="ss-tsep ss-container-only" aria-hidden="true"></span>
+            <span class="ss-btn-pair ss-container-only">
+                <button type="button" class="ss-btn ss-btn--icon" id="mc-btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo container" data-ss-icon="undo"></button>
+                <button type="button" class="ss-btn ss-btn--icon" id="mc-btn-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo container" data-ss-icon="redo"></button>
+            </span>
             <span class="ss-spacer"></span>
             <span id="ss-dirty-indicator" class="ss-dirty-indicator ss-template-only"></span>
             <span id="mc-dirty" class="ss-dirty-indicator ss-container-only"></span>
-            <button class="ss-btn ss-btn--ghost" id="ss-btn-tour"
-                    title="Walk through the editor">Tour</button>
-            <button class="ss-btn ss-btn--ghost" id="ss-btn-reload"
-                    title="Reload the editor">Reload editor</button>
-            <button class="ss-btn ss-btn--ghost" id="ss-btn-open-external"
-                    title="Open the editor in your default browser">Open externally</button>
-            <button class="ss-btn ss-template-only" id="ss-btn-preview"
-                    title="Open live preview window">Preview</button>
-            <button class="ss-btn ss-btn--primary ss-template-only" id="ss-btn-save">Save</button>
-            <button type="button" class="ss-btn ss-container-only" id="mc-btn-placeholders"
-                    title="Show template names instead of live previews">Placeholders</button>
-            <button type="button" class="ss-btn ss-container-only" id="mc-btn-preview"
-                    title="Open the container route">Preview</button>
-            <button type="button" class="ss-btn ss-btn--primary ss-container-only" id="mc-btn-save">Save</button>
+            <span class="ss-tsep" aria-hidden="true"></span>
+            <button class="ss-btn ss-btn--icon ss-btn--ghost" id="ss-btn-tour"
+                    title="Tour: walk through the editor" aria-label="Tour" data-ss-icon="compass"></button>
+            <button class="ss-btn ss-btn--icon ss-btn--ghost" id="ss-btn-reload"
+                    title="Reload editor" aria-label="Reload editor" data-ss-icon="refresh"></button>
+            <button class="ss-btn ss-btn--icon ss-btn--ghost" id="ss-btn-open-external"
+                    title="Open externally: open the editor in your default browser" aria-label="Open externally" data-ss-icon="external"></button>
+            <span class="ss-tsep" aria-hidden="true"></span>
+            <button class="ss-btn ss-template-only" id="ss-btn-preview" data-ss-icon="play"
+                    title="Open live preview window"><span>Preview</span></button>
+            <button class="ss-btn ss-btn--primary ss-template-only" id="ss-btn-save" data-ss-icon="check"
+                    title="Save (Ctrl+S)"><span>Save</span><kbd class="ss-kbd">Ctrl S</kbd></button>
+            <button type="button" class="ss-btn ss-container-only" id="mc-btn-placeholders" data-ss-icon="box"
+                    title="Show template names instead of live previews"><span>Placeholders</span></button>
+            <button type="button" class="ss-btn ss-container-only" id="mc-btn-preview" data-ss-icon="play"
+                    title="Open the container route"><span>Preview</span></button>
+            <button type="button" class="ss-btn ss-btn--primary ss-container-only" id="mc-btn-save" data-ss-icon="check"
+                    title="Save (Ctrl+S)"><span>Save</span><kbd class="ss-kbd">Ctrl S</kbd></button>
         </div>
 
         <div class="ss-panel-blocks ss-template-only">
-            <div class="ss-section">
-                <h3>Blocks</h3>
+            <div class="ss-section ss-rail-card">
+                <h3 class="ss-rail-head" data-ss-icon="blocks"><span>Blocks</span><span class="ss-count" id="ss-count-blocks"></span></h3>
+                <label class="ss-search">
+                    <span class="ss-search__icon" data-ss-icon="search"></span>
+                    <input type="search" id="ss-block-search" placeholder="Search blocks" aria-label="Search blocks" autocomplete="off">
+                </label>
                 <div id="ss-blocks-list"></div>
             </div>
-            <div class="ss-section">
-                <h3>Outline</h3>
+            <div class="ss-section ss-rail-card">
+                <h3 class="ss-rail-head" data-ss-icon="tree"><span>Outline</span><span class="ss-count" id="ss-count-outline"></span></h3>
                 <div id="ss-outline-list"></div>
             </div>
-            <div class="ss-section">
-                <h3>Assets</h3>
-                <div class="ss-asset-tools" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
-                    <button type="button" class="ss-btn ss-btn--ghost" id="ss-asset-upload">Upload</button>
-                    <button type="button" class="ss-btn ss-btn--ghost" id="ss-asset-reveal">Reveal folder</button>
+            <div class="ss-section ss-rail-card">
+                <h3 class="ss-rail-head" data-ss-icon="folder"><span>Assets</span><span class="ss-count" id="ss-count-assets"></span></h3>
+                <div class="ss-asset-tools">
+                    <button type="button" class="ss-btn ss-btn--sm" id="ss-asset-upload" data-ss-icon="upload"
+                            title="Add files to this template's assets folder"><span>Upload</span></button>
+                    <button type="button" class="ss-btn ss-btn--sm" id="ss-asset-reveal" data-ss-icon="folder"
+                            title="Open this template's assets folder"><span>Reveal folder</span></button>
                     <input type="file" id="ss-asset-file" multiple hidden>
                 </div>
                 <div id="ss-asset-grid" class="ss-asset-grid"></div>
@@ -107,12 +117,12 @@
                     </svg>
                 </button>
                 <div class="ss-tabs" id="ss-tabs-scroll">
-                    <div class="ss-tab active" data-tab="properties" title="Element properties">Properties</div>
-                    <div class="ss-tab" data-tab="bindings" title="Event bindings">Bindings</div>
-                    <div class="ss-tab" data-tab="streamdeck" title="Stream Deck actions">Stream Deck</div>
-                    <div class="ss-tab" data-tab="sourcecontrols" title="Dynamic Source Controls">Source Controls</div>
-                    <div class="ss-tab" data-tab="advanced" title="Custom JavaScript">Advanced JS</div>
-                    <div class="ss-tab" data-tab="canvas" title="Canvas and template settings">Canvas</div>
+                    <div class="ss-tab active" data-tab="properties" title="Properties" data-ss-icon="sliders" role="tab"><span>Properties</span></div>
+                    <div class="ss-tab" data-tab="bindings" title="Bindings" data-ss-icon="zap" role="tab"><span>Bindings</span></div>
+                    <div class="ss-tab" data-tab="streamdeck" title="Stream Deck" data-ss-icon="keypad" role="tab"><span>Stream Deck</span></div>
+                    <div class="ss-tab" data-tab="sourcecontrols" title="Source Controls" data-ss-icon="toggle" role="tab"><span>Source Controls</span></div>
+                    <div class="ss-tab" data-tab="advanced" title="Advanced JS" data-ss-icon="code" role="tab"><span>Advanced JS</span></div>
+                    <div class="ss-tab" data-tab="canvas" title="Canvas" data-ss-icon="frame" role="tab"><span>Canvas</span></div>
                 </div>
                 <button type="button" class="ss-tabs-scroll ss-tabs-scroll--right"
                         id="ss-tabs-scroll-right" aria-label="Scroll tabs right"
@@ -144,26 +154,23 @@
                 </div>
             </div>
             <div class="ss-tab-pane" id="ss-pane-advanced">
-                <div class="ss-section">
-                    <h3>Advanced JS</h3>
-                    <p style="color:var(--ss-text-muted);font-size:11px;margin:0 0 8px;">
+                <div class="ss-section ss-pane-card">
+                    <h3 class="ss-pane-head"><span class="ss-sic" data-ss-icon="code"></span><span>Advanced JS</span></h3>
+                    <p class="ss-callout"><span class="ss-callout__icon" data-ss-icon="info"></span><span>
                         Hand-written JavaScript inserted between the
                         <code>SPORE_STUDIO:user-begin</code> /
                         <code>SPORE_STUDIO:user-end</code> markers in the saved
-                        HTML. Persists across saves.
+                        HTML. Persists across saves.</span>
                     </p>
-                    <div class="ss-row" style="justify-content:flex-end;margin:0 0 8px;">
-                        <button type="button" class="ss-btn ss-btn--ghost" id="ss-btn-js-expand"
-                                title="Open a larger editor for this script">Expand editor</button>
-                    </div>
-                    <textarea id="ss-advanced-js" rows="20"
-                              style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--ss-bg-input);color:var(--ss-text);border:1px solid var(--ss-border);border-radius:var(--ss-radius);padding:8px;"
-                              placeholder="// Place advanced custom JavaScript here.\n// You can call sporeShow(id), sporeHide(id), sporeSetText(id, value),\n// sporePlayMediaAudio(id, { volume?, fade_in_ms? }),\n// or attach additional socket.on(...) handlers."></textarea>
+                    <button type="button" class="ss-btn ss-btn--block" id="ss-btn-js-expand" data-ss-icon="external"
+                            title="Open a larger editor for this script"><span>Expand editor</span></button>
+                    <textarea id="ss-advanced-js" class="ss-code-area" rows="20" spellcheck="false"
+                              placeholder="// Place advanced custom JavaScript here.&#10;// You can call sporeShow(id), sporeHide(id), sporeSetText(id, value),&#10;// sporePlayMediaAudio(id, { volume?, fade_in_ms? }),&#10;// or attach additional socket.on(...) handlers."></textarea>
                 </div>
             </div>
             <div class="ss-tab-pane" id="ss-pane-canvas">
-                <div class="ss-section">
-                    <h3>Canvas</h3>
+                <div class="ss-section ss-pane-card">
+                    <h3 class="ss-pane-head"><span class="ss-sic" data-ss-icon="frame"></span><span>Canvas</span></h3>
                     <div class="ss-row">
                         <div class="ss-form-row">
                             <label>Width (px)</label>
@@ -174,9 +181,9 @@
                             <input type="number" id="ss-canvas-h" min="50" max="4320">
                         </div>
                     </div>
-                    <button type="button" class="ss-btn ss-btn--ghost" id="ss-canvas-match-root"
+                    <button type="button" class="ss-btn ss-btn--block" id="ss-canvas-match-root" data-ss-icon="box"
                             title="Set canvas size to the sole top-level container's width and height">
-                        Match canvas to root container
+                        <span>Match canvas to root container</span>
                     </button>
                     <div class="ss-form-row">
                         <label>Alert system</label>
@@ -193,13 +200,15 @@
                         <label>Duration (seconds)</label>
                         <input type="number" id="ss-duration-seconds" min="0.1" max="600" step="0.1">
                     </div>
-                    <p id="ss-duration-min-label" class="ss-duration-min-hint">
-                        Minimum from layout: 5.0s
-                    </p>
-                    <button type="button" class="ss-btn ss-btn--ghost ss-duration-reset"
-                            id="ss-duration-reset" title="Set duration to the computed minimum">
-                        Reset to minimum
-                    </button>
+                    <div class="ss-duration-min">
+                        <p id="ss-duration-min-label" class="ss-duration-min-hint">
+                            Minimum from layout: 5.0s
+                        </p>
+                        <button type="button" class="ss-btn ss-btn--sm ss-duration-reset"
+                                id="ss-duration-reset" title="Set duration to the computed minimum">
+                            Reset to minimum
+                        </button>
+                    </div>
                     <div class="ss-form-row ss-form-row--inline">
                         <label class="ss-toggle" title="Hold the main alert queue when a point reward title matches this template name">
                             <input type="checkbox" class="ss-toggle__input" id="ss-queued">
@@ -208,16 +217,19 @@
                         <label for="ss-queued">Queued</label>
                     </div>
                 </div>
-                <div class="ss-section" id="ss-canvas-transforms"></div>
+                <div class="ss-section ss-pane-card" id="ss-canvas-transforms"></div>
             </div>
         </div>
 
         <div class="ss-panel-blocks ss-panel-container-blocks ss-container-only" id="mc-library">
-            <div class="ss-section">
-                <h3>Templates</h3>
+            <div class="ss-section ss-rail-card">
+                <h3 class="ss-rail-head" data-ss-icon="layers"><span>Templates</span></h3>
                 <p class="mc-hint">Drag a template onto the canvas. Any template can be placed, including ones not made in Spore Studio.</p>
-                <input type="search" id="mc-template-search" placeholder="Search templates"
-                       aria-label="Search templates">
+                <label class="ss-search">
+                    <span class="ss-search__icon" data-ss-icon="search"></span>
+                    <input type="search" id="mc-template-search" placeholder="Search templates"
+                           aria-label="Search templates" autocomplete="off">
+                </label>
                 <div id="mc-template-list"></div>
             </div>
         </div>
@@ -228,7 +240,7 @@
             </div>
         </div>
         <div class="ss-panel-inspector ss-panel-container-inspector ss-container-only">
-            <div class="ss-section" id="mc-inspector-host">
+            <div class="ss-section ss-pane-card" id="mc-inspector-host">
                 <div class="ss-empty">Create a container to combine templates on one route.</div>
             </div>
         </div>
@@ -239,11 +251,11 @@
     <div id="ss-js-dialog" class="ss-js-dialog" hidden>
         <div class="ss-js-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="ss-js-dialog-title">
             <div class="ss-js-dialog__bar">
-                <span id="ss-js-dialog-title" class="ss-js-dialog__title">Advanced JS</span>
-                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-find-toggle">Find</button>
-                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-ref-toggle">Reference</button>
+                <span id="ss-js-dialog-title" class="ss-js-dialog__title" data-ss-icon="code">Advanced JS</span>
+                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-find-toggle" data-ss-icon="search"><span>Find</span></button>
+                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-ref-toggle" data-ss-icon="list"><span>Reference</span></button>
                 <span class="ss-spacer"></span>
-                <button type="button" class="ss-btn ss-btn--primary" id="ss-js-done">Done</button>
+                <button type="button" class="ss-btn ss-btn--primary" id="ss-js-done" data-ss-icon="check"><span>Done</span></button>
             </div>
             <div id="ss-js-findbar" class="ss-js-findbar" hidden>
                 <input type="text" id="ss-js-find" placeholder="Find" aria-label="Find" spellcheck="false">
@@ -279,12 +291,12 @@
 
     <div id="ss-preview-dialog" class="ss-preview-dialog" hidden>
         <div class="ss-preview-dialog__head" data-drag-handle>
-            <span class="ss-preview-dialog__title">Live preview</span>
+            <span class="ss-preview-dialog__title"><span class="ss-live-dot" aria-hidden="true"></span>Live preview</span>
             <span class="ss-spacer" style="flex:1"></span>
-            <button class="ss-btn ss-btn--ghost" id="ss-preview-reload"
-                    title="Reload the preview iframe">Reload</button>
-            <button class="ss-btn ss-btn--ghost" id="ss-preview-close"
-                    title="Close the preview window">Close</button>
+            <button class="ss-btn ss-btn--icon ss-btn--ghost" id="ss-preview-reload"
+                    title="Reload the preview" aria-label="Reload the preview" data-ss-icon="refresh"></button>
+            <button class="ss-btn ss-btn--icon ss-btn--ghost" id="ss-preview-close"
+                    title="Close the preview window" aria-label="Close the preview window" data-ss-icon="x"></button>
         </div>
         <div class="ss-preview-dialog__mocktools" id="ss-preview-mocks"
              title="Click to emit one mock socket event into the preview">
@@ -320,25 +332,32 @@
 
     <template id="ss-category-template">
         <div class="ss-create-overlay">
-            <div class="ss-create-overlay__card">
-                <h2>Element category</h2>
-                <p style="color:var(--ss-text-muted);font-size:11px;margin:0 0 10px;">
-                    Pick an existing category or create a new one. Categories
-                    group elements in the saved JSON config.
-                </p>
-                <div class="ss-form-row" data-cat="select-row">
-                    <label>Existing category</label>
-                    <select data-cat="select"></select>
+            <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="ss-cat-title">
+                <div class="ss-modal__head">
+                    <div class="ss-modal__icon" data-ss-icon="tag"></div>
+                    <div class="ss-modal__titles">
+                        <h2 class="ss-modal__title" id="ss-cat-title">Which category is it in?</h2>
+                        <div class="ss-modal__sub">Categories group related elements in the Outline and in the saved JSON config.</div>
+                    </div>
+                    <button type="button" class="ss-modal__x" data-modal-close title="Close" aria-label="Close" data-ss-icon="x"></button>
                 </div>
-                <div class="ss-form-row" data-cat="new-row">
-                    <label>New category name</label>
-                    <input type="text" data-cat="new" autocomplete="off"
-                           placeholder="e.g. Headline">
+                <div class="ss-modal__body">
+                    <div class="ss-field" data-cat="select-row">
+                        <label>Existing categories</label>
+                        <div class="ss-chip-pick" data-cat="chips"></div>
+                        <select data-cat="select" hidden></select>
+                    </div>
+                    <div class="ss-or" data-cat="or">or</div>
+                    <div class="ss-field" data-cat="new-row">
+                        <label for="ss-cat-new">New category</label>
+                        <input type="text" id="ss-cat-new" data-cat="new" autocomplete="off"
+                               placeholder="New category name, e.g. Headline">
+                    </div>
                 </div>
-                <div class="ss-row" style="justify-content:flex-end;margin-top:8px;">
-                    <button class="ss-btn" data-cat-action="cancel">Cancel</button>
-                    <button class="ss-btn ss-btn--primary"
-                            data-cat-action="ok">Use category</button>
+                <div class="ss-modal__foot">
+                    <button type="button" class="ss-btn" data-cat-action="cancel">Cancel</button>
+                    <button type="button" class="ss-btn ss-btn--primary" data-cat-action="ok"
+                            data-ss-icon="check"><span>Add element</span></button>
                 </div>
             </div>
         </div>
@@ -346,40 +365,65 @@
 
     <template id="ss-create-template">
         <div class="ss-create-overlay">
-            <div class="ss-create-overlay__card">
-                <h2>New template</h2>
-                <div class="ss-form-row">
-                    <label>Name</label>
-                    <input type="text" data-create="name" autocomplete="off"
-                           placeholder="my_alert">
-                </div>
-                <div class="ss-form-row">
-                    <label>Alert system</label>
-                    <select data-create="alert_system">
-                        <option value="queue">Queue (next_alert; emit alert_complete in Advanced JS if you use the alert queue)</option>
-                        <option value="instant">Instant (instant_alert)</option>
-                    </select>
-                </div>
-                <div class="ss-form-row">
-                    <label>Copy from existing</label>
-                    <select data-create="copy_from">
-                        <option value="">(none)</option>
-                    </select>
-                </div>
-                <div class="ss-row">
-                    <div class="ss-form-row">
-                        <label>Width (px)</label>
-                        <input type="number" data-create="design_width" value="800">
+            <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="ss-create-title">
+                <div class="ss-modal__head">
+                    <div class="ss-modal__icon" data-ss-icon="file"></div>
+                    <div class="ss-modal__titles">
+                        <h2 class="ss-modal__title" id="ss-create-title">New template</h2>
+                        <div class="ss-modal__sub">Start a blank overlay, or copy one you already have.</div>
                     </div>
-                    <div class="ss-form-row">
-                        <label>Height (px)</label>
-                        <input type="number" data-create="design_height" value="200">
-                    </div>
+                    <button type="button" class="ss-modal__x" data-modal-close title="Close" aria-label="Close" data-ss-icon="x"></button>
                 </div>
-                <div class="ss-row" style="justify-content:flex-end;margin-top:8px;">
-                    <button class="ss-btn" data-create-action="cancel">Cancel</button>
-                    <button class="ss-btn ss-btn--primary"
-                            data-create-action="create">Create</button>
+                <div class="ss-modal__body">
+                    <div class="ss-field">
+                        <label for="ss-create-name">Name</label>
+                        <input type="text" id="ss-create-name" data-create="name" autocomplete="off" placeholder="my_alert">
+                        <div class="ss-help" data-create="name-help">Letters, numbers, _ and -. It becomes the overlay's address, like <b>/my_alert</b>.</div>
+                    </div>
+                    <div class="ss-field">
+                        <label>Alert system</label>
+                        <div class="ss-radio-cards" data-create="alert-cards">
+                            <button type="button" class="ss-radio-card is-on" data-value="queue">
+                                <b data-ss-icon="queue">Queued</b>
+                                <small>Waits its turn behind other alerts (next_alert). Emit alert_complete in Advanced JS if you use the queue.</small>
+                            </button>
+                            <button type="button" class="ss-radio-card" data-value="instant">
+                                <b data-ss-icon="zap">Instant</b>
+                                <small>Plays the moment the event arrives (instant_alert).</small>
+                            </button>
+                        </div>
+                        <select data-create="alert_system" hidden>
+                            <option value="queue">Queue</option>
+                            <option value="instant">Instant</option>
+                        </select>
+                    </div>
+                    <div class="ss-field">
+                        <label for="ss-create-copy">Start from</label>
+                        <select id="ss-create-copy" data-create="copy_from">
+                            <option value="">Blank template</option>
+                        </select>
+                    </div>
+                    <div class="ss-field">
+                        <label>Canvas size (px)</label>
+                        <div class="ss-wh">
+                            <input type="number" data-create="design_width" value="800" min="50" max="7680" aria-label="Width (px)">
+                            <span aria-hidden="true">×</span>
+                            <input type="number" data-create="design_height" value="200" min="50" max="4320" aria-label="Height (px)">
+                        </div>
+                        <div class="ss-presets" data-create="presets">
+                            <button type="button" data-w="800" data-h="200">Alert · 800×200</button>
+                            <button type="button" data-w="1280" data-h="200">Lower third · 1280×200</button>
+                            <button type="button" data-w="440" data-h="620">Widget · 440×620</button>
+                            <button type="button" data-w="1280" data-h="720">720p · 1280×720</button>
+                            <button type="button" data-w="1920" data-h="1080">1080p · 1920×1080</button>
+                        </div>
+                    </div>
+                    <div class="ss-form-error" data-create="error" role="alert" hidden></div>
+                </div>
+                <div class="ss-modal__foot">
+                    <button type="button" class="ss-btn" data-create-action="cancel">Cancel</button>
+                    <button type="button" class="ss-btn ss-btn--primary"
+                            data-create-action="create" data-ss-icon="plus"><span>Create template</span></button>
                 </div>
             </div>
         </div>
@@ -389,6 +433,7 @@
     <script src="/assets/default_assets/spore_studio/container_layout.js"></script>
     <script src="/assets/default_assets/spore_studio/advanced_js_editor.js"></script>
     <script src="/assets/default_assets/mycelian_color_picker.js"></script>
+    <script src="/assets/default_assets/spore_studio/spore_ui.js"></script>
     <script src="/assets/default_assets/spore_studio/editor.js"></script>
     <script src="/assets/default_assets/spore_studio/container_editor.js"></script>
     <script src="/assets/default_assets/spore_studio/walkthrough.js"></script>

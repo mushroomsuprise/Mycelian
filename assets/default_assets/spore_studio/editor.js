@@ -22,6 +22,7 @@
     "use strict";
 
     var $ = function (sel, root) { return (root || document).querySelector(sel); };
+    var UI = window.SporeUI;
     var $$ = function (sel, root) {
         return Array.prototype.slice.call((root || document).querySelectorAll(sel));
     };
@@ -973,13 +974,13 @@
             if (!anchor || !anchor.parentNode) { return; }
             el = document.createElement("span");
             el.id = "ss-load-state";
-            el.className = "ss-dirty-indicator ss-template-only";
+            el.className = "ss-status-pill ss-template-only";
             el.setAttribute("role", "status");
             anchor.parentNode.insertBefore(el, anchor);
         }
         el.textContent = text || "";
-        el.style.color = tone === "error" ? "var(--ss-error)"
-            : (tone === "warn" ? "var(--ss-warn)" : "var(--ss-text-muted)");
+        el.classList.toggle("is-error", tone === "error");
+        el.classList.toggle("is-warn", tone === "warn");
         el.title = tone === "warn"
             ? "This template was not made in Spore Studio. You can change its settings, but not add or move blocks."
             : "";
@@ -1107,13 +1108,30 @@
         });
     }
 
-    function buildCollapsibleSection(title, tooltip, buildContent) {
+    var SECTION_ICONS = {
+        "Element": "tag", "Layout": "move", "Visibility": "eye", "Counter": "hash", "Data display": "braces",
+        "Timer": "timer", "Image source": "image", "Progress bar": "progress", "Wheel segments": "wheel",
+        "Result": "check", "List": "list", "Transformations": "rotate", "Data feed": "feed",
+        "Outputs": "output", "Appearance": "palette", "Animations": "sparkles", "Gradient": "blend"
+    };
+
+    /* summaryText: optional one-line state shown on the right while the section is closed. */
+    function buildCollapsibleSection(title, tooltip, buildContent, summaryText) {
         var details = document.createElement("details");
         details.className = "ss-collapse";
         var summary = document.createElement("summary");
         summary.className = "ss-collapse__summary";
         summary.dataset.section = title;
-        summary.textContent = title;
+        summary.innerHTML = '<span class="ss-collapse__icon">' + UI.icon(SECTION_ICONS[title] || "sliders") + "</span>";
+        var titleNode = document.createElement("span");
+        titleNode.className = "ss-collapse__title";
+        titleNode.textContent = title;
+        summary.appendChild(titleNode);
+        var sumNode = document.createElement("span");
+        sumNode.className = "ss-collapse__sum";
+        sumNode.textContent = summaryText || "";
+        summary.appendChild(sumNode);
+        summary.insertAdjacentHTML("beforeend", UI.icon("chevron", "ss-collapse__chev"));
         if (tooltip) { bindTip(summary, tooltip); }
         details.appendChild(summary);
         var body = document.createElement("div");
@@ -2432,33 +2450,7 @@
     }
 
     function blockPaletteIconHtml(type) {
-        if (type === "progress_bar") {
-            return '<svg class="ss-block__icon-svg" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
-                '<rect x="1" y="6" width="16" height="6" rx="3" stroke="currentColor" stroke-width="1.5"/>' +
-                '<rect x="1" y="6" width="10" height="6" rx="3" fill="currentColor"/></svg>';
-        }
-        var icons = {
-            text: "T",
-            image: "\uD83D\uDCF7",
-            video: "\uD83C\uDFAC",
-            audio: "\uD83D\uDD0A",
-            container: "\u25A1",
-            shape: "\u25AD",
-            divider: "\u2014",
-            gradient: "\u25D0",
-            marquee: "\u21C4",
-            clock: "\u23F0",
-            timer: "\u23F1",
-            list: "\u2630",
-            wheel: "\u25D4",
-            now_playing: "\u266B",
-            qr: "\u25A6",
-            embed: "\u25A3",
-            stat_card: "#",
-            poll: "\u2713",
-            confetti: "\u2728"
-        };
-        return '<span class="ss-block__icon">' + (icons[type] || "?") + "</span>";
+        return '<span class="ss-block__icon">' + UI.typeIcon(type) + "</span>";
     }
 
     function renderBlockPalette() {
@@ -2489,8 +2481,12 @@
             chev.setAttribute("aria-hidden", "true");
             var label = document.createElement("span");
             label.textContent = grp.group;
+            var count = document.createElement("span");
+            count.className = "ss-count";
+            count.textContent = String(types.filter(function (t) { return ELEMENT_PROP_SCHEMA[t]; }).length);
             gTitle.appendChild(chev);
             gTitle.appendChild(label);
+            gTitle.appendChild(count);
             gTitle.addEventListener("click", function () {
                 var now = gEl.classList.toggle("is-collapsed");
                 gTitle.setAttribute("aria-expanded", now ? "false" : "true");
@@ -2506,16 +2502,39 @@
                 block.className = "ss-block";
                 block.draggable = true;
                 block.dataset.blockType = type;
+                block.title = "Drag onto the canvas to add a " + (BLOCK_LABELS[type] || type) + " block";
                 block.innerHTML =
                     blockPaletteIconHtml(type) +
                     '<span class="ss-block__label">' +
-                    (BLOCK_LABELS[type] || type) +
+                    escapeHtml(BLOCK_LABELS[type] || type) +
                     "</span>";
                 gEl.appendChild(block);
             });
             host.appendChild(gEl);
         });
+        var total = $("#ss-count-blocks");
+        if (total) { total.textContent = String($$(".ss-block", host).length); }
+        filterBlockPalette();
         upgradeNativeTitles(host);
+    }
+
+    /* The search box above the palette: matching blocks show, groups with a match open. */
+    function filterBlockPalette() {
+        var input = $("#ss-block-search");
+        var query = input ? input.value.trim().toLowerCase() : "";
+        var host = $("#ss-blocks-list");
+        if (!host) { return; }
+        host.classList.toggle("is-searching", !!query);
+        $$(".ss-block-group", host).forEach(function (group) {
+            var hits = 0;
+            $$(".ss-block", group).forEach(function (block) {
+                var label = (block.textContent + " " + (block.dataset.blockType || "")).toLowerCase();
+                var match = !query || label.indexOf(query) >= 0;
+                block.classList.toggle("is-filtered", !match);
+                if (match) { hits++; }
+            });
+            group.classList.toggle("is-empty", !!query && hits === 0);
+        });
     }
 
     /* Missing keys stay collapsed. An explicit false means the user opened that group. */
@@ -3939,8 +3958,8 @@
         ensureDynamicControls(state.model);
         var dc = state.model.dynamic_controls;
         var addBtn = document.createElement("button");
-        addBtn.className = "ss-btn ss-btn--primary";
-        addBtn.textContent = "+ Add control";
+        addBtn.className = "ss-btn ss-btn--primary ss-btn--block";
+        addBtn.innerHTML = UI.icon("plus") + "<span>Add control</span>";
         addBtn.title = "Controls appear in the Source Controls overlay and emit template socket events.";
         addBtn.addEventListener("click", function () {
             dc.elements.push({
@@ -3954,13 +3973,18 @@
             renderSourceControlsPanel();
             modelTouch();
         });
+        if (!dc.elements.length) {
+            host.appendChild(UI.emptyCard(
+                "toggle", "No source controls yet",
+                "Source controls are buttons and sliders in Mycelian's Source Controls tab that change this overlay live, like Reset counter or Start timer."
+            ));
+        }
         host.appendChild(addBtn);
         var types = (state.controlActions && state.controlActions.control_types) || [];
         var actions = (state.controlActions && state.controlActions.actions) || [];
         dc.elements.forEach(function (ctrl, idx) {
             var card = document.createElement("div");
             card.className = "ss-binding-row";
-            card.style.marginTop = "10px";
             card.appendChild(formRow("Control id", inputEl("text", ctrl.id || "", function (v) {
                 ctrl.id = v.trim();
                 pushHistoryDebounced();
@@ -4312,10 +4336,10 @@
 
         var exLbl = document.createElement("label");
         exLbl.className = "ss-form-prop__expose";
-        exLbl.setAttribute("aria-label", "Expose in Source Settings");
+        exLbl.setAttribute("aria-label", "Show in Source Settings");
         bindTip(
             exLbl,
-            "Expose in Source Settings. When off, the value is written into the HTML only."
+            "Show in Source Settings. When off, the value is written into the HTML only."
         );
         var cb = document.createElement("input");
         cb.type = "checkbox";
@@ -7548,8 +7572,6 @@
 
         var grid = document.createElement("div");
         grid.className = "ss-placement-grid";
-        grid.style.cssText =
-            "display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin:8px 0;";
         var presets = [
             { ah: "left", av: "top", label: "↖" },
             { ah: "center", av: "top", label: "↑" },
@@ -7564,12 +7586,13 @@
         presets.forEach(function (preset) {
             var btn = document.createElement("button");
             btn.type = "button";
-            btn.className = "ss-btn ss-btn--sm";
+            btn.className = "ss-placement-grid__btn";
             btn.textContent = preset.label;
             btn.title = preset.ah + " / " + preset.av;
             if (el.placement.anchor_h === preset.ah &&
                     el.placement.anchor_v === preset.av) {
-                btn.style.outline = "2px solid var(--ss-accent,#7c3aed)";
+                btn.classList.add("is-active");
+                btn.setAttribute("aria-pressed", "true");
             }
             btn.addEventListener("click", function () {
                 el.placement.anchor_h = preset.ah;
@@ -7587,7 +7610,7 @@
         sect.appendChild(grid);
 
         var offRow = document.createElement("div");
-        offRow.className = "ss-row";
+        offRow.className = "ss-row ss-row--pair";
         offRow.appendChild(formRow("Offset X", numberEl(
             el.placement.offset_x || 0, function (v) {
                 el.placement.offset_x = parseInt(v, 10) || 0;
@@ -7774,6 +7797,91 @@
         }
     }
 
+    /* Top of the Properties tab: what is selected and where it sits. */
+    function elementHeaderCard(el) {
+        var card = document.createElement("div");
+        card.className = "ss-elhead";
+        var pnorm = pidNorm(el.parent_id);
+        card.innerHTML =
+            '<div class="ss-elhead__icon">' + UI.typeIcon(el.type) + "</div>" +
+            '<div class="ss-elhead__text"><div class="ss-elhead__id"></div><div class="ss-elhead__path"></div></div>' +
+            '<span class="ss-chip"></span>';
+        card.querySelector(".ss-elhead__id").textContent = el.id;
+        var path = card.querySelector(".ss-elhead__path");
+        if (pnorm) {
+            path.appendChild(document.createTextNode("in "));
+            var b = document.createElement("b");
+            b.textContent = pnorm;
+            path.appendChild(b);
+        } else {
+            path.textContent = "on the canvas";
+        }
+        card.querySelector(".ss-chip").textContent = BLOCK_LABELS[el.type] || el.type;
+        bindTip(card, "Block type: " + (BLOCK_LABELS[el.type] || el.type) + ". Create a new element to use a different type.");
+        return card;
+    }
+
+    function appearanceSummary(el) {
+        var p = el.props || {};
+        var parts = [];
+        if (p.font_family) { parts.push(String(p.font_family).replace(/\.(ttf|otf|woff2?)$/i, "")); }
+        if (p.font_size) { parts.push(p.font_size + "px"); }
+        return parts.join(" · ");
+    }
+
+    /* Bold, italic, underline and strikethrough share one row of B I U S buttons. */
+    var STYLE_CHIPS = {
+        font_weight: '<b>B</b>',
+        font_style: '<i class="ss-serif">I</i>',
+        text_underline: '<u>U</u>',
+        text_strikethrough: '<s>S</s>'
+    };
+
+    function buildStyleChipRow() {
+        var wrap = document.createElement("div");
+        wrap.className = "ss-form-prop ss-style-prop";
+        var label = document.createElement("div");
+        label.className = "ss-form-prop__label";
+        label.textContent = "Style";
+        var row = document.createElement("div");
+        row.className = "ss-style-row";
+        wrap.appendChild(label);
+        wrap.appendChild(row);
+        return { wrap: wrap, row: row };
+    }
+
+    function addStyleChip(styleRow, el, entry, textMode, imageSrcMode) {
+        var scratch = document.createElement("div");
+        appendSchemaProperty(scratch, el, entry, textMode, imageSrcMode);
+        var prop = scratch.querySelector(".ss-form-prop");
+        var toggle = prop && prop.querySelector(".ss-toggle");
+        if (!toggle) {
+            while (scratch.firstChild) { styleRow.wrap.parentNode.insertBefore(scratch.firstChild, styleRow.wrap.nextSibling); }
+            return;
+        }
+        var item = document.createElement("div");
+        item.className = "ss-style-item";
+        toggle.className = "ss-style-chip";
+        var track = toggle.querySelector(".ss-toggle__track");
+        if (track) { track.remove(); }
+        toggle.insertAdjacentHTML("beforeend", '<span class="ss-style-chip__glyph" aria-hidden="true">' + STYLE_CHIPS[entry.key] + "</span>");
+        var input = toggle.querySelector("input");
+        if (input) { input.setAttribute("aria-label", entry.label); }
+        bindTip(toggle, entry.tooltip || entry.label);
+        item.appendChild(toggle);
+        var expose = prop.querySelector(".ss-form-prop__expose");
+        if (expose) { item.appendChild(expose); }
+        styleRow.row.appendChild(item);
+    }
+
+    function exposeLegend() {
+        var legend = document.createElement("div");
+        legend.className = "ss-expose-legend";
+        legend.innerHTML = '<span class="ss-expose-legend__chip">' + UI.icon("sliders") + "</span>" +
+            "<span>Lit up means the setting also shows in Source Settings, so it can be changed without opening Spore Studio.</span>";
+        return legend;
+    }
+
     function renderProperties() {
         var host = $("#ss-properties-host");
         var snap = snapshotPropertiesPanel(host);
@@ -7799,6 +7907,8 @@
             upgradeNativeTitles(host);
             return;
         }
+
+        host.appendChild(elementHeaderCard(el));
 
         var idRow = formRow("ID", inputEl("text", el.id, function (v) {
             var newId = (v || "").trim();
@@ -7839,23 +7949,15 @@
                 pushHistoryDebounced();
                 modelTouch();
             }), "Groups elements in the saved JSON config"));
-            body.appendChild(formRow(
-                "Type", document.createTextNode(el.type),
-                "Block type. Create a new element to use a different type."
-            ));
 
             if (!isLegacyModel()) {
                 var pnorm = pidNorm(el.parent_id);
-                body.appendChild(formRow(
-                    "Parent",
-                    document.createTextNode(pnorm || "(canvas root)"),
-                    "Container this element is nested inside"
-                ));
                 if (pnorm) {
                     var detachBtn = document.createElement("button");
                     detachBtn.type = "button";
-                    detachBtn.className = "ss-btn";
-                    detachBtn.textContent = "Move to canvas";
+                    detachBtn.className = "ss-btn ss-btn--sm";
+                    detachBtn.innerHTML = UI.icon("move") + "<span>Move to canvas</span>";
+                    detachBtn.title = "Take it out of " + pnorm + " and place it on the canvas";
                     detachBtn.addEventListener("click", function () {
                         var st = $("#ss-stage");
                         var domEl = domNodeForCanvasElement(st, el.id);
@@ -7869,13 +7971,15 @@
                     body.appendChild(detachBtn);
                 }
             }
-        }));
+        }, el.category || ""));
 
         var parForPos = pidNorm(el.parent_id)
             ? elementByIdFromModel(el.parent_id) : null;
+        var layoutSummary = (el.position ? (el.position.x || 0) + ", " + (el.position.y || 0) : "0, 0") +
+            " · " + ((el.size && el.size.w) || 100) + "×" + ((el.size && el.size.h) || 30);
         host.appendChild(buildCollapsibleSection("Layout", "Position and size on the canvas", function (body) {
             var posRow = document.createElement("div");
-            posRow.className = "ss-row";
+            posRow.className = "ss-row ss-row--pair";
             posRow.appendChild(formRow("X", numberEl(el.position && el.position.x || 0, function (v) {
                 el.position = el.position || { x: 0, y: 0 };
                 el.position.x = Math.max(0, parseInt(v, 10) || 0);
@@ -7901,7 +8005,7 @@
             body.appendChild(posRow);
 
             var sizeRow = document.createElement("div");
-            sizeRow.className = "ss-row";
+            sizeRow.className = "ss-row ss-row--pair";
             sizeRow.appendChild(formRow("W", numberEl(el.size && el.size.w || 100, function (v) {
                 el.size = el.size || { w: 100, h: 30 };
                 el.size.w = Math.max(10, parseInt(v, 10) || 10);
@@ -7921,7 +8025,7 @@
             if (!isLegacyModel() && pidNorm(el.parent_id)) {
                 renderPlacementInContainerSection(body, el);
             }
-        }));
+        }, layoutSummary));
 
         host.appendChild(buildCollapsibleSection("Visibility", "Initial visibility on overlay load", function (body) {
             var hiddenTip = elementHasShowBinding(el) &&
@@ -7938,7 +8042,7 @@
                 },
                 hiddenTip
             ));
-        }));
+        }, resolvedStartHidden(el) ? "Starts hidden" : "Visible"));
 
         if (el.type === "counter" && !isLegacyModel()) {
             host.appendChild(buildCollapsibleSection("Counter", "Value, format, persistence, and rules", function (body) {
@@ -7997,7 +8101,8 @@
             host.appendChild(buildCollapsibleSection(
                 "Transformations",
                 "Grow, move, rotate, or skew this block from a live value. Canvas transforms stack underneath.",
-                function (body) { renderTransformRules(body, el.transforms, el); }
+                function (body) { renderTransformRules(body, el.transforms, el); },
+                el.transforms.length ? String(el.transforms.length) + " active" : "None"
             ));
         }
 
@@ -8005,7 +8110,8 @@
             var dataFeedSection = buildCollapsibleSection(
                 "Data feed",
                 "Drive this block from events, live values, or another template's output",
-                function (body) { renderDataFeedSection(body, el); }
+                function (body) { renderDataFeedSection(body, el); },
+                readFeeds(el).length ? (readFeeds(el).length === 1 ? "1 feed" : readFeeds(el).length + " feeds") : "No feed"
             );
             /* Open the first time so the setup is visible; later renders keep the user's choice. */
             dataFeedSection.open = !sameElement && readFeeds(el).length > 0;
@@ -8025,12 +8131,27 @@
         var imageSrcMode = el.src_mode || "static";
         if (schema.length > 0) {
             host.appendChild(buildCollapsibleSection("Appearance", "Visual style properties", function (body) {
+                body.appendChild(exposeLegend());
+                var styleRow = null;
                 schema.forEach(function (entry) {
+                    if (STYLE_CHIPS[entry.key]) {
+                        if (!styleRow) {
+                            styleRow = buildStyleChipRow();
+                            body.appendChild(styleRow.wrap);
+                        }
+                        addStyleChip(styleRow, el, entry, textMode, imageSrcMode);
+                        return;
+                    }
                     appendSchemaProperty(body, el, entry, textMode, imageSrcMode);
                 });
-            }));
+            }, appearanceSummary(el)));
         }
 
+        var animIn = el.animations && el.animations.anim_in;
+        var animOut = el.animations && el.animations.anim_out;
+        var animSummary = (animIn && animIn !== "none") || (animOut && animOut !== "none")
+            ? [animIn && animIn !== "none" ? animIn : "", animOut && animOut !== "none" ? animOut : ""].filter(Boolean).join(" / ")
+            : "None";
         host.appendChild(buildCollapsibleSection("Animations", "Entrance and exit animations", function (body) {
             ensureElementAnimations(el);
             ANIMATION_SCHEMA.forEach(function (entry) {
@@ -8066,7 +8187,7 @@
                 });
                 body.appendChild(formRow(entry.label, ctrl, entry.tooltip || ""));
             });
-        }));
+        }, animSummary));
 
         var deleteBtn = document.createElement("button");
         deleteBtn.className = "ss-btn";
@@ -8468,8 +8589,9 @@
         var sd = state.model.streamdeck_options;
 
         var intro = document.createElement("p");
-        intro.style.cssText = "color:var(--ss-text-muted);font-size:11px;margin:0 0 8px;";
-        intro.textContent = (
+        intro.className = "ss-callout";
+        intro.innerHTML = UI.icon("info");
+        intro.appendChild(document.createElement("span")).textContent = (
             "Defines streamdeck_options in the template JSON (action ids, socket event, default payload). " +
             "The Stream Deck plugin must send actionName equal to each action id below. " +
             "Overlays listen for the Socket event string. Bind elements on the Bindings tab using trigger Stream Deck."
@@ -8489,8 +8611,9 @@
         });
         if (dupEvents.length) {
             var dupWarn = document.createElement("p");
-            dupWarn.style.cssText = "color:var(--ss-warn);font-size:11px;margin:0 0 8px;";
-            dupWarn.textContent = (
+            dupWarn.className = "ss-callout ss-callout--warn";
+            dupWarn.innerHTML = UI.icon("alert");
+            dupWarn.appendChild(document.createElement("span")).textContent = (
                 "Multiple actions share socket event(s): " + dupEvents.join(", ") + ". " +
                 "Bindings on that event will all fire when any of those actions is pressed."
             );
@@ -8684,11 +8807,17 @@
         }
 
         renderActionCards();
+        if (!Object.keys(sd.actions || {}).length) {
+            listHost.appendChild(UI.emptyCard(
+                "keypad", "No Stream Deck actions yet",
+                "Add one to give this overlay a button on your Stream Deck. Each action sends a socket event that elements can react to."
+            ));
+        }
 
         var addBtn = document.createElement("button");
         addBtn.type = "button";
-        addBtn.className = "ss-btn sds-btn--primary".replace("sds", "ss");
-        addBtn.textContent = "+ Add Stream Deck action";
+        addBtn.className = "ss-btn ss-btn--primary ss-btn--block";
+        addBtn.innerHTML = UI.icon("plus") + "<span>Add Stream Deck action</span>";
         addBtn.title = "Create an action the Stream Deck plugin can trigger";
         addBtn.addEventListener("click", function () {
             var n = 1;
@@ -8801,9 +8930,9 @@
             ).length;
             if (sdActionCount > 0) {
                 var sdBindHint = document.createElement("p");
-                sdBindHint.className = "ss-binding-row__hint";
-                sdBindHint.style.cssText = "margin:0 0 10px;line-height:1.4;";
-                sdBindHint.textContent = (
+                sdBindHint.className = "ss-callout";
+                sdBindHint.innerHTML = UI.icon("info");
+                sdBindHint.appendChild(document.createElement("span")).textContent = (
                     "Stream Deck: assign one binding per hardware key — Trigger → " +
                     "Stream Deck action, then pick the matching action id. " +
                     "New bindings default to the first action not already used in this template."
@@ -8812,11 +8941,16 @@
             }
         }
 
+        if (!(el.bindings || []).length) {
+            host.appendChild(UI.emptyCard(
+                "zap", "No bindings yet",
+                "A binding makes this element react to something: show it on a follow, set its text from a sub, play a sound on a raid."
+            ));
+        }
         var addBtn = document.createElement("button");
-        addBtn.className = "ss-btn ss-btn--primary";
-        addBtn.textContent = "+ Add binding";
+        addBtn.className = "ss-btn ss-btn--primary ss-btn--block";
+        addBtn.innerHTML = UI.icon("plus") + "<span>Add binding</span>";
         addBtn.title = "Run an action when an event or Stream Deck key fires";
-        addBtn.style.marginBottom = "10px";
         addBtn.addEventListener("click", function () {
             el.bindings = el.bindings || [];
             el.bindings.push({
@@ -8857,6 +8991,8 @@
             });
             head.appendChild(rm);
             card.appendChild(head);
+            var outerCard = card;
+            card = bindingStep(outerCard, 1, "When");
 
             var trigSel = document.createElement("select");
             var optReg = document.createElement("option");
@@ -8965,64 +9101,19 @@
                 if (ev && ev.description) {
                     var evDesc = document.createElement("div");
                     evDesc.className = "ss-binding-row__hint";
-                    evDesc.textContent = ev.description;
+                    evDesc.innerHTML = UI.richHint(ev.description);
                     card.appendChild(evDesc);
+                    UI.clampHint(evDesc);
                 }
                 if (binding.event === "twitch-api-response") {
                     renderTwitchApiRequestFields(binding, card);
                     renderTwitchDynamicFilters(binding, card);
                 } else if (ev && ev.payload && ev.payload.length) {
-                    var filterHost = document.createElement("div");
-                    filterHost.className = "ss-section ss-binding-row__filters";
-                    filterHost.style.padding = "0";
-                    filterHost.style.borderBottom = "none";
-
-                    var filterHelp = document.createElement("div");
-                    filterHelp.className = "ss-binding-row__hint";
-                    filterHelp.textContent = (
-                        "Filters narrow when this binding fires. Leave a field " +
-                        "blank to match any value; type an exact value to only " +
-                        "fire when the payload field matches."
-                    );
-                    filterHost.appendChild(filterHelp);
-
-                    ev.payload.forEach(function (field) {
-                        var input = document.createElement("input");
-                        input.type = "text";
-                        var current = (binding.filter || {})[field.key];
-                        input.value = current == null ? "" : String(current);
-                        var examples = field.examples || [];
-                        if (examples.length > 0) {
-                            input.placeholder = "(any) — e.g. " +
-                                examples.slice(0, 3).join(", ");
-                        } else if (field.type) {
-                            input.placeholder = "(any " + field.type + ")";
-                        } else {
-                            input.placeholder = "(any)";
-                        }
-                        input.addEventListener("change", function () {
-                            binding.filter = binding.filter || {};
-                            if (input.value === "") {
-                                delete binding.filter[field.key];
-                            } else {
-                                binding.filter[field.key] = input.value;
-                            }
-                            pushHistoryDebounced();
-                            modelTouch();
-                        });
-                        filterHost.appendChild(formRow(
-                            "Filter: " + (field.label || field.key),
-                            input,
-                            field.description || (
-                                "Only fire when " + (field.label || field.key) +
-                                " matches. Leave blank to match any value."
-                            )
-                        ));
-                    });
-                    card.appendChild(filterHost);
+                    card.appendChild(buildBindingFilters(binding, ev));
                 }
             }
 
+            card = bindingStep(outerCard, 2, "Do this");
             var actionSelect = document.createElement("select");
             (state.registry.actions || []).forEach(function (act) {
                 var op = document.createElement("option");
@@ -9054,8 +9145,7 @@
             if (!Array.isArray(binding.chain)) { binding.chain = []; }
 
             var chainTitle = document.createElement("div");
-            chainTitle.className = "ss-binding-row__hint";
-            chainTitle.style.marginTop = "10px";
+            chainTitle.className = "ss-binding-row__section-title";
             chainTitle.textContent = "Chained actions";
             card.appendChild(chainTitle);
 
@@ -9077,18 +9167,12 @@
 
                 var stepWrap = document.createElement("div");
                 stepWrap.className = "ss-binding-row__chain-step";
-                stepWrap.style.marginTop = "8px";
-                stepWrap.style.paddingTop = "8px";
-                stepWrap.style.borderTop = "1px solid rgba(255,255,255,0.08)";
 
                 var stepHead = document.createElement("div");
-                stepHead.style.display = "flex";
-                stepHead.style.alignItems = "center";
-                stepHead.style.justifyContent = "space-between";
-                stepHead.style.marginBottom = "6px";
+                stepHead.className = "ss-chain-step__head";
                 var stepLabel = document.createElement("span");
-                stepLabel.className = "ss-binding-row__hint";
-                stepLabel.textContent = "Chain step " + (cidx + 1);
+                stepLabel.className = "ss-chain-step__title";
+                stepLabel.textContent = "Then, step " + (cidx + 1);
                 stepHead.appendChild(stepLabel);
                 var rmStep = document.createElement("button");
                 rmStep.type = "button";
@@ -9151,9 +9235,8 @@
 
             var addChainBtn = document.createElement("button");
             addChainBtn.type = "button";
-            addChainBtn.className = "ss-btn ss-btn--primary";
-            addChainBtn.style.marginTop = "8px";
-            addChainBtn.textContent = "+ Add chained step";
+            addChainBtn.className = "ss-btn ss-btn--sm ss-btn--dashed";
+            addChainBtn.innerHTML = UI.icon("plus") + "<span>Add chained step</span>";
             addChainBtn.title = "Run another action after this one, with an optional delay";
             addChainBtn.disabled = binding.chain.length >= CHAIN_MAX_STEPS;
             addChainBtn.addEventListener("click", function () {
@@ -9168,9 +9251,143 @@
             });
             card.appendChild(addChainBtn);
 
-            host.appendChild(card);
+            host.appendChild(outerCard);
         });
         upgradeNativeTitles(host);
+    }
+
+    /* One numbered step of a binding card ("When" / "Do this"); returns its body. */
+    function bindingStep(card, number, title) {
+        var step = document.createElement("div");
+        step.className = "ss-flow-step";
+        var head = document.createElement("div");
+        head.className = "ss-flow-step__head";
+        head.innerHTML = '<span class="ss-flow-step__badge">' + number + "</span>";
+        var label = document.createElement("span");
+        label.className = "ss-flow-step__title";
+        label.textContent = title;
+        head.appendChild(label);
+        step.appendChild(head);
+        card.appendChild(step);
+        return step;
+    }
+
+    /*
+     * Payload filters: the ones in use show as rows, the rest wait in "Add a filter".
+     * A filter added but still blank stays visible until it is removed (kept per binding).
+     */
+    var bindingFiltersShown = typeof WeakMap === "function" ? new WeakMap() : null;
+
+    function buildBindingFilters(binding, ev) {
+        var wrap = document.createElement("div");
+        wrap.className = "ss-filters";
+        binding.filter = binding.filter || {};
+        var shown = (bindingFiltersShown && bindingFiltersShown.get(binding)) || {};
+        var active = ev.payload.filter(function (field) {
+            var v = binding.filter[field.key];
+            return (v != null && v !== "") || shown[field.key];
+        });
+        var head = document.createElement("div");
+        head.className = "ss-filters__head";
+        head.innerHTML = UI.icon("sliders") + "<span>Only when…</span>";
+        var count = document.createElement("span");
+        count.className = "ss-count";
+        count.textContent = active.length
+            ? active.length + (active.length === 1 ? " filter" : " filters")
+            : "any event";
+        head.appendChild(count);
+        bindTip(head, "Filters narrow when this binding fires. Leave a field blank to match any value; type an exact value to only fire when the payload field matches.");
+        wrap.appendChild(head);
+
+        if (!active.length) {
+            var none = document.createElement("div");
+            none.className = "ss-binding-row__hint";
+            none.textContent = "Fires for every event. Add a filter to narrow it, like only Tier 3 subs or raids over 10 viewers.";
+            wrap.appendChild(none);
+        }
+
+        function forget(key) {
+            if (!bindingFiltersShown) { return; }
+            var map = bindingFiltersShown.get(binding) || {};
+            delete map[key];
+            bindingFiltersShown.set(binding, map);
+        }
+
+        active.forEach(function (field) {
+            var row = document.createElement("div");
+            row.className = "ss-filter-row";
+            var name = document.createElement("span");
+            name.className = "ss-filter-row__name";
+            name.textContent = field.label || field.key;
+            bindTip(name, field.description || ("Only fire when " + (field.label || field.key) + " matches."));
+            var input = document.createElement("input");
+            input.type = "text";
+            var current = binding.filter[field.key];
+            input.value = current == null ? "" : String(current);
+            var examples = field.examples || [];
+            input.placeholder = examples.length
+                ? "e.g. " + examples.slice(0, 3).join(", ")
+                : (field.type ? "any " + field.type : "any value");
+            input.setAttribute("aria-label", "Filter: " + (field.label || field.key));
+            input.setAttribute("data-filter-key", field.key);
+            input.addEventListener("change", function () {
+                if (input.value === "") {
+                    delete binding.filter[field.key];
+                } else {
+                    binding.filter[field.key] = input.value;
+                }
+                pushHistoryDebounced();
+                modelTouch();
+            });
+            var remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "ss-icon-btn";
+            remove.innerHTML = UI.icon("x");
+            remove.title = "Remove this filter";
+            remove.setAttribute("aria-label", "Remove filter " + (field.label || field.key));
+            remove.addEventListener("click", function () {
+                delete binding.filter[field.key];
+                forget(field.key);
+                pushHistory();
+                renderBindings();
+                modelTouch();
+            });
+            row.appendChild(name);
+            row.appendChild(input);
+            row.appendChild(remove);
+            wrap.appendChild(row);
+        });
+
+        var unused = ev.payload.filter(function (field) { return active.indexOf(field) < 0; });
+        if (unused.length) {
+            var add = document.createElement("select");
+            add.className = "ss-add-filter";
+            add.setAttribute("aria-label", "Add a filter");
+            var first = document.createElement("option");
+            first.value = "";
+            first.textContent = "+ Add a filter…";
+            add.appendChild(first);
+            unused.forEach(function (field) {
+                var op = document.createElement("option");
+                op.value = field.key;
+                op.textContent = field.label || field.key;
+                add.appendChild(op);
+            });
+            add.addEventListener("change", function () {
+                var key = add.value;
+                if (!key) { return; }
+                if (bindingFiltersShown) {
+                    var map = bindingFiltersShown.get(binding) || {};
+                    map[key] = true;
+                    bindingFiltersShown.set(binding, map);
+                }
+                renderBindings();
+                var fresh = document.querySelector('#ss-bindings-host input[data-filter-key="' + key + '"]');
+                if (fresh) { fresh.focus(); }
+            });
+            wrap.appendChild(add);
+        }
+        return wrap;
     }
 
     function registryEvent(name) {
@@ -9368,16 +9585,26 @@
             var node = tpl.content.firstElementChild.cloneNode(true);
             document.body.appendChild(node);
 
+            UI.hydrate(node);
             var sel = node.querySelector("[data-cat='select']");
-            var newRow = node.querySelector("[data-cat='new-row']");
             var newInput = node.querySelector("[data-cat='new']");
             var selectRow = node.querySelector("[data-cat='select-row']");
+            var orRow = node.querySelector("[data-cat='or']");
+            var chips = node.querySelector("[data-cat='chips']");
 
             var categories = existingCategories();
             var NEW_VALUE = "__ss_new__";
 
+            function pickChip(value) {
+                sel.value = value;
+                $$("button", chips).forEach(function (b) {
+                    b.classList.toggle("is-on", b.dataset.value === value);
+                });
+            }
+
             if (categories.length === 0) {
-                selectRow.style.display = "none";
+                selectRow.hidden = true;
+                orRow.hidden = true;
                 newInput.value = "Elements";
             } else {
                 categories.forEach(function (c) {
@@ -9385,25 +9612,33 @@
                     op.value = c;
                     op.textContent = c;
                     sel.appendChild(op);
+                    var chip = document.createElement("button");
+                    chip.type = "button";
+                    chip.dataset.value = c;
+                    chip.textContent = c;
+                    chip.addEventListener("click", function () {
+                        pickChip(c);
+                        newInput.value = "";
+                    });
+                    chips.appendChild(chip);
                 });
                 var newOp = document.createElement("option");
                 newOp.value = NEW_VALUE;
                 newOp.textContent = "+ New category…";
                 sel.appendChild(newOp);
-                sel.value = categories[categories.length - 1];
-                newRow.style.display = "none";
-                sel.addEventListener("change", function () {
-                    if (sel.value === NEW_VALUE) {
-                        newRow.style.display = "";
-                        newInput.value = "";
-                        newInput.focus();
-                    } else {
-                        newRow.style.display = "none";
-                    }
+                pickChip(categories[categories.length - 1]);
+                newInput.addEventListener("input", function () {
+                    pickChip(newInput.value.trim() ? NEW_VALUE : categories[categories.length - 1]);
                 });
             }
 
-            function close(value) { node.remove(); resolve(value); }
+            var release;
+            function close(value) {
+                if (release) { release(); }
+                node.remove();
+                resolve(value);
+            }
+            release = UI.wireModal(node, function () { close(null); });
 
             node.querySelector("[data-cat-action='cancel']")
                 .addEventListener("click", function () { close(null); });
@@ -9441,26 +9676,37 @@
         state.assetSnapshot = snapshot || null;
         var grid = $("#ss-asset-grid");
         grid.innerHTML = "";
+        var assetCount = $("#ss-count-assets");
+        if (assetCount) {
+            assetCount.textContent = snapshot && snapshot.files ? String(snapshot.files.length) : "";
+        }
         if (!snapshot || !snapshot.files || snapshot.files.length === 0) {
-            grid.innerHTML = '<div class="ss-empty" style="grid-column:span 2;">' +
-                'Upload files or drop them into assets/' +
-                (state.model ? state.model.template_name : "") +
-                '.</div>';
+            grid.innerHTML = '<div class="ss-dropzone">' + UI.icon("upload") +
+                "<span>Drop images, sounds or videos here, or click Upload.</span>" +
+                "<small>They're saved to <b>assets/" +
+                escapeHtml(state.model ? state.model.template_name : "") +
+                "</b></small></div>";
             return;
         }
         snapshot.files.forEach(function (file) {
             var card = document.createElement("div");
             card.className = "ss-asset";
             card.setAttribute("draggable", "true");
-            card.title = file.url;
+            card.title = file.name + " · drag onto the canvas, or double-click to use it in the selected element";
+            var kind = String(file.kind || "").toLowerCase();
+            var thumb = kind === "image"
+                ? '<img src="' + escapeHtml(file.url) + '" alt="" loading="lazy" draggable="false">'
+                : UI.icon(kind === "audio" ? "volume" : (kind === "video" ? "film" : (kind === "font" ? "type" : "file")));
             card.innerHTML =
-                '<div>' + escapeHtml(file.name) + '</div>' +
-                '<div class="ss-asset__kind">' + (file.kind || "?") + '</div>';
+                '<div class="ss-asset__thumb">' + thumb + "</div>" +
+                '<div class="ss-asset__meta"><div class="ss-asset__name">' + escapeHtml(file.name) + "</div>" +
+                '<div class="ss-asset__kind">' + escapeHtml(file.kind || "?") + "</div></div>";
             var remove = document.createElement("button");
             remove.type = "button";
-            remove.className = "ss-btn ss-btn--ghost";
-            remove.textContent = "Delete";
+            remove.className = "ss-asset__delete";
+            remove.innerHTML = UI.icon("trash");
             remove.title = "Delete " + file.name;
+            remove.setAttribute("aria-label", "Delete " + file.name);
             remove.addEventListener("click", function (clickEv) {
                 clickEv.stopPropagation();
                 clickEv.preventDefault();
@@ -10296,7 +10542,37 @@
     function openCreateDialog() {
         var tpl = $("#ss-create-template");
         var node = tpl.content.firstElementChild.cloneNode(true);
+        UI.hydrate(node);
         document.body.appendChild(node);
+
+        var alertSel = node.querySelector("[data-create='alert_system']");
+        $$("[data-create='alert-cards'] .ss-radio-card", node).forEach(function (cardBtn) {
+            cardBtn.addEventListener("click", function () {
+                alertSel.value = cardBtn.dataset.value;
+                $$("[data-create='alert-cards'] .ss-radio-card", node).forEach(function (b) {
+                    b.classList.toggle("is-on", b === cardBtn);
+                    b.setAttribute("aria-pressed", b === cardBtn ? "true" : "false");
+                });
+            });
+        });
+        var widthIn = node.querySelector("[data-create='design_width']");
+        var heightIn = node.querySelector("[data-create='design_height']");
+        var presets = $$("[data-create='presets'] button", node);
+        function markPreset() {
+            presets.forEach(function (b) {
+                b.classList.toggle("is-on", b.dataset.w === widthIn.value && b.dataset.h === heightIn.value);
+            });
+        }
+        presets.forEach(function (b) {
+            b.addEventListener("click", function () {
+                widthIn.value = b.dataset.w;
+                heightIn.value = b.dataset.h;
+                markPreset();
+            });
+        });
+        widthIn.addEventListener("input", markPreset);
+        heightIn.addEventListener("input", markPreset);
+        markPreset();
 
         var copySel = node.querySelector("[data-create='copy_from']");
         state.templates.spore.forEach(function (name) {
@@ -10306,17 +10582,24 @@
             copySel.appendChild(op);
         });
 
-        function close() { node.remove(); }
-        // Problems with the form show inside the dialog, next to the buttons.
-        var formError = document.createElement("div");
-        formError.setAttribute("role", "alert");
-        formError.style.cssText = "color:var(--ss-error);font-size:12px;margin-top:8px;display:none;";
-        var actionsRow = node.querySelector("[data-create-action='create']").parentNode;
-        actionsRow.parentNode.insertBefore(formError, actionsRow);
+        var release;
+        function close() {
+            if (release) { release(); }
+            node.remove();
+        }
+        release = UI.wireModal(node, close);
+        // Problems with the form show inside the dialog, above the buttons.
+        var formError = node.querySelector("[data-create='error']");
         function showFormError(text) {
             formError.textContent = text || "";
-            formError.style.display = text ? "block" : "none";
+            formError.hidden = !text;
         }
+        node.querySelector("[data-create='name']").addEventListener("keydown", function (ev) {
+            if (ev.key === "Enter") {
+                ev.preventDefault();
+                node.querySelector("[data-create-action='create']").click();
+            }
+        });
         node.querySelector("[data-create-action='cancel']").addEventListener("click", close);
         node.querySelector("[data-create-action='create']").addEventListener("click", function () {
             var name = node.querySelector("[data-create='name']").value.trim();
@@ -10414,6 +10697,10 @@
         var host = $("#ss-outline-list");
         if (!host) { return; }
         host.innerHTML = "";
+        var outlineCount = $("#ss-count-outline");
+        if (outlineCount) {
+            outlineCount.textContent = state.model ? String((state.model.elements || []).length) : "";
+        }
         if (!state.model) { return; }
         var elements = state.model.elements || [];
         if (elements.length === 0) {
@@ -10443,8 +10730,16 @@
                 if (outlineEffectiveCategory(byId, el) !== cat) { return; }
                 var row = document.createElement("div");
                 row.className = "ss-outline-row";
-                row.style.paddingLeft = (8 + outlineNestDepth(byId, el) * 14) + "px";
+                var depth = outlineNestDepth(byId, el);
+                if (depth) {
+                    row.classList.add("is-nested");
+                    row.style.marginLeft = (depth * 16) + "px";
+                }
                 if (el.id === state.selectedId) { row.classList.add("selected"); }
+                var typeIcon = document.createElement("span");
+                typeIcon.className = "ss-outline-row__icon";
+                typeIcon.innerHTML = UI.typeIcon(el.type);
+                row.appendChild(typeIcon);
                 var label = document.createElement("span");
                 label.className = "ss-outline-row__id";
                 label.textContent = el.id;
@@ -10488,7 +10783,8 @@
                 state.model.canvas_transforms = [];
             }
             var heading = document.createElement("h3");
-            heading.textContent = "Transformations";
+            heading.className = "ss-pane-head";
+            heading.innerHTML = '<span class="ss-sic">' + UI.icon("rotate") + "</span><span>Transformations</span>";
             tfHost.appendChild(heading);
             var hint = document.createElement("p");
             hint.className = "ss-binding-row__hint";
@@ -10759,12 +11055,17 @@
     function deleteCurrentTemplate() {
         if (!state.model || state.model.legacy) { return; }
         var name = state.model.template_name;
-        if (!window.confirm(
-            'Delete template "' + name +
-            '"? This removes its HTML, JSON config, editor sidecar, and assets folder.'
-        )) {
-            return;
-        }
+        UI.confirm({
+            danger: true,
+            title: "Delete “" + name + "”?",
+            message: "This removes its HTML, JSON config, editor sidecar and assets folder. It can't be undone.",
+            ok: "Delete template"
+        }).then(function (ok) {
+            if (ok) { deleteTemplateNow(name); }
+        });
+    }
+
+    function deleteTemplateNow(name) {
         var deleted = false;
         fetchJson("/api/spore-studio/delete", {
             method: "POST",
@@ -10816,7 +11117,18 @@
 
     function deleteAsset(file) {
         if (!state.model || !file) { return; }
-        if (!confirm("Delete " + file.name + " from this template's assets?")) { return; }
+        UI.confirm({
+            danger: true,
+            title: "Delete " + file.name + "?",
+            message: "It's removed from this template's assets folder.",
+            ok: "Delete file"
+        }).then(function (ok) {
+            if (ok) { deleteAssetNow(file); }
+        });
+    }
+
+    function deleteAssetNow(file) {
+        if (!state.model) { return; }
         var tplName = state.model.template_name;
         fetchJson("/api/spore-studio/assets/" + encodeURIComponent(tplName) + "/delete", {
             method: "POST",
@@ -11006,6 +11318,7 @@
             if (root && root.classList.contains("ss-root--containers")) {
                 return;
             }
+            if (UI.modalOpen()) { return; }
             var meta = ev.ctrlKey || ev.metaKey;
             if (meta && ev.key === "z" && !ev.shiftKey) { ev.preventDefault(); undo(); }
             else if (meta && (ev.key === "Z" || (ev.key === "z" && ev.shiftKey))) { ev.preventDefault(); redo(); }
@@ -11036,14 +11349,31 @@
         }, true);
     }
 
+    /* Asked before unsaved template edits are thrown away. */
+    function confirmDiscard(name) {
+        return UI.confirm({
+            icon: "alert",
+            danger: true,
+            title: "Discard unsaved changes?",
+            message: name ? "Your changes to “" + name + "” haven't been saved." : "Your changes haven't been saved.",
+            ok: "Discard changes",
+            cancel: "Keep editing"
+        });
+    }
+
     function setupToolbar() {
         $("#ss-template-select").addEventListener("change", function (ev) {
-            if (state.dirty && !confirm("Discard unsaved changes?")) {
-                ev.target.value = state.model ? state.model.template_name : "";
-                return;
+            var select = ev.target;
+            var wanted = select.value;
+            var current = state.model ? state.model.template_name : "";
+            function open() {
+                select.value = wanted;
+                try { localStorage.setItem("mycelian-spore-last-template", wanted); } catch (err) {}
+                loadTemplate(wanted);
             }
-            try { localStorage.setItem("mycelian-spore-last-template", ev.target.value); } catch (err) {}
-            loadTemplate(ev.target.value);
+            if (!state.dirty) { open(); return; }
+            select.value = current;
+            confirmDiscard(current).then(function (ok) { if (ok) { open(); } });
         });
         $("#ss-btn-create").addEventListener("click", openCreateDialog);
         $("#ss-btn-delete").addEventListener("click", deleteCurrentTemplate);
@@ -11092,6 +11422,10 @@
     }
 
     function init() {
+        UI.hydrate(document);
+        if (/Mac|iPhone|iPad/.test(navigator.platform || "")) {
+            $$(".ss-kbd").forEach(function (k) { k.textContent = "\u2318S"; });
+        }
         restoreInspectorWidth();
         setupTabs();
         setupCanvasTips();
@@ -11100,6 +11434,8 @@
         setupInspectorResize();
         setupCanvasPanel();
         renderBlockPalette();
+        var blockSearch = $("#ss-block-search");
+        if (blockSearch) { blockSearch.addEventListener("input", filterBlockPalette); }
         setupBlockPaletteDnD();
         setupPreviewDialog();
         setupKeyboard();

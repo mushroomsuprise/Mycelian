@@ -4,6 +4,7 @@
  */
 (function () {
     var Layout = window.MycelianContainerLayout;
+    var UI = window.SporeUI;
     var state = {
         mode: "templates",
         list: [],
@@ -602,6 +603,34 @@
         document.addEventListener("mouseup", up);
     }
 
+    function inspectorHeading(host, iconName, text) {
+        var title = document.createElement("h3");
+        title.className = "ss-pane-head";
+        title.innerHTML = '<span class="ss-sic">' + UI.icon(iconName) + "</span>";
+        var label = document.createElement("span");
+        label.textContent = text;
+        title.appendChild(label);
+        host.appendChild(title);
+    }
+
+    function callout(host, text) {
+        var box = document.createElement("p");
+        box.className = "ss-callout";
+        box.textContent = text;
+        host.appendChild(box);
+    }
+
+    /* Small uppercase divider that groups the slot settings. */
+    function groupLabel(host, iconName, text) {
+        var label = document.createElement("div");
+        label.className = "mc-sub";
+        label.innerHTML = UI.icon(iconName);
+        var span = document.createElement("span");
+        span.textContent = text;
+        label.appendChild(span);
+        host.appendChild(label);
+    }
+
     function fieldRow(parent, labelText) {
         var row = document.createElement("div");
         row.className = "ss-form-row";
@@ -714,13 +743,8 @@
     }
 
     function renderContainerInspector(host) {
-        var title = document.createElement("h3");
-        title.textContent = "Container";
-        host.appendChild(title);
-        var blurb = document.createElement("p");
-        blurb.className = "mc-hint";
-        blurb.textContent = "Locked templates keep the size you set and give unused space to flexible templates in the same link. Drag the bar between linked templates to space them out.";
-        host.appendChild(blurb);
+        inspectorHeading(host, "grid", "Container settings");
+        callout(host, "Locked templates keep the size you set and give unused space to flexible templates in the same link. Drag the bar between linked templates to space them out.");
 
         var name = document.createElement("input");
         name.type = "text";
@@ -738,9 +762,13 @@
         });
         fieldRow(host, "Route path").appendChild(route);
 
-        var url = document.createElement("p");
-        url.className = "mc-hint";
-        url.textContent = location.origin + "/" + state.model.route;
+        var url = document.createElement("div");
+        url.className = "mc-url";
+        url.title = "The address to use as an OBS browser source";
+        url.innerHTML = UI.icon("link");
+        var urlText = document.createElement("span");
+        urlText.textContent = location.origin + "/" + state.model.route;
+        url.appendChild(urlText);
         host.appendChild(url);
 
         var preset = document.createElement("select");
@@ -830,9 +858,7 @@
     }
 
     function renderSlotInspector(host, slot) {
-        var title = document.createElement("h3");
-        title.textContent = slot.template;
-        host.appendChild(title);
+        inspectorHeading(host, "file", slot.template);
 
         var picker = document.createElement("select");
         allTemplateNames().forEach(function (name) {
@@ -854,6 +880,7 @@
         });
         fieldRow(host, "Template").appendChild(picker);
 
+        groupLabel(host, "move", "Position and size");
         var dims = document.createElement("div");
         dims.className = "mc-inline";
         host.appendChild(dims);
@@ -880,6 +907,7 @@
         addNumber(host, "Opacity %", slot.opacity, function (value) {
             slot.opacity = clamp(Math.round(value || 0), 0, 100);
         }, { min: 0, max: 100 });
+        groupLabel(host, "eye", "Behaviour");
         addCheck(host, "Visible", slot.visible, function (checked) { slot.visible = checked; });
         addCheck(host, "Lock position", slot.locked_position, function (checked) { slot.locked_position = checked; });
         addCheck(host, "Click-through", !slot.pointer_events, function (checked) { slot.pointer_events = !checked; });
@@ -933,6 +961,7 @@
             }, { min: 1, max: 4320 });
         }
 
+        groupLabel(host, "volume", "Audio");
         addCheck(host, "Mute audio", slot.audio.muted, function (checked) { slot.audio.muted = checked; });
         addNumber(host, "Volume", slot.audio.volume, function (value) {
             slot.audio.volume = clamp(Math.round(value || 0), 0, 100);
@@ -969,6 +998,7 @@
             });
             renderInspector();
         });
+        groupLabel(host, "link", "Size link");
         fieldRow(host, "Size link").appendChild(axis);
 
         if (slot.link) {
@@ -1027,6 +1057,7 @@
             order.appendChild(actionButton("Move down in stack", function () { nudgeOrder(1); }));
         }
 
+        groupLabel(host, "layers", "Stacking");
         var layer = document.createElement("div");
         layer.className = "mc-inline";
         host.appendChild(layer);
@@ -1037,7 +1068,7 @@
             state.selectedId = null;
             renderInspector();
         });
-        remove.classList.add("ss-btn--danger");
+        remove.classList.add("ss-btn--danger", "ss-btn--block");
         host.appendChild(remove);
     }
 
@@ -1097,7 +1128,13 @@
                 var item = document.createElement("div");
                 item.className = "mc-template";
                 item.draggable = true;
-                item.textContent = name;
+                item.title = "Drag onto the canvas, or double-click to add it";
+                item.innerHTML = '<span class="mc-template__icon">' + UI.icon("file") + "</span>";
+                var itemName = document.createElement("span");
+                itemName.className = "mc-template__name";
+                itemName.textContent = name;
+                item.appendChild(itemName);
+                item.insertAdjacentHTML("beforeend", UI.icon("drag", "mc-template__drag"));
                 item.addEventListener("dragstart", function (ev) {
                     ev.dataTransfer.setData("text/plain", name);
                     ev.dataTransfer.effectAllowed = "copy";
@@ -1222,17 +1259,14 @@
         });
     }
 
-    function openForm(title, fields, onOk) {
-        var overlay = document.createElement("div");
-        overlay.className = "ss-create-overlay";
-        var card = document.createElement("div");
-        card.className = "ss-create-overlay__card";
-        var heading = document.createElement("h2");
-        heading.textContent = title;
-        card.appendChild(heading);
+    function openForm(title, fields, onOk, opts) {
+        opts = opts || {};
+        var frame = UI.modalFrame({ icon: opts.icon || "grid", title: title, sub: opts.sub || "" });
+        var overlay = frame.overlay;
         var inputs = {};
         fields.forEach(function (spec) {
-            var row = fieldRow(card, spec.label);
+            var row = fieldRow(frame.body, spec.label);
+            row.classList.add("ss-field");
             var input = document.createElement(spec.kind === "select" ? "select" : "input");
             if (spec.kind !== "select") {
                 input.type = spec.kind || "text";
@@ -1249,43 +1283,57 @@
             inputs[spec.id] = input;
             if (spec.onInput) { input.addEventListener("input", function () { spec.onInput(input, inputs); }); }
             row.appendChild(input);
+            if (spec.help) {
+                var help = document.createElement("div");
+                help.className = "ss-help";
+                help.textContent = spec.help;
+                row.appendChild(help);
+            }
         });
         // Problems with the form (taken route, bad name) show here, not as pop-ups.
         var formError = document.createElement("div");
+        formError.className = "ss-form-error";
         formError.setAttribute("role", "alert");
-        formError.style.cssText = "color:var(--ss-error);font-size:12px;margin-top:8px;display:none;";
-        card.appendChild(formError);
+        formError.hidden = true;
+        frame.body.appendChild(formError);
         function setError(text) {
             formError.textContent = text || "";
-            formError.style.display = text ? "block" : "none";
+            formError.hidden = !text;
         }
-        var actions = document.createElement("div");
-        actions.className = "ss-row";
-        actions.style.justifyContent = "flex-end";
+        var release;
+        function close() {
+            if (release) { release(); }
+            overlay.remove();
+        }
         var cancel = document.createElement("button");
         cancel.className = "ss-btn";
         cancel.type = "button";
         cancel.textContent = "Cancel";
-        cancel.addEventListener("click", function () { overlay.remove(); });
+        cancel.addEventListener("click", close);
         var ok = document.createElement("button");
         ok.className = "ss-btn ss-btn--primary";
         ok.type = "button";
-        ok.textContent = "Create";
+        ok.innerHTML = UI.icon(opts.okIcon || "plus") + "<span></span>";
+        ok.lastChild.textContent = opts.ok || "Create";
         ok.addEventListener("click", function () {
             var values = {};
             Object.keys(inputs).forEach(function (key) { values[key] = inputs[key].value; });
             setError("");
-            Promise.resolve(onOk(values, setError)).then(function (close) {
-                if (close !== false) { overlay.remove(); }
+            Promise.resolve(onOk(values, setError)).then(function (done) {
+                if (done !== false) { close(); }
             });
         });
-        actions.appendChild(cancel);
-        actions.appendChild(ok);
-        card.appendChild(actions);
-        overlay.appendChild(card);
+        frame.foot.appendChild(cancel);
+        frame.foot.appendChild(ok);
         document.body.appendChild(overlay);
-        var first = card.querySelector("input, select");
-        if (first) { first.focus(); }
+        release = UI.wireModal(overlay, close);
+        Object.keys(inputs).forEach(function (key) {
+            if (inputs[key].tagName === "INPUT") {
+                inputs[key].addEventListener("keydown", function (ev) {
+                    if (ev.key === "Enter") { ev.preventDefault(); ok.click(); }
+                });
+            }
+        });
     }
 
     function suggestRoute(name) {
@@ -1297,7 +1345,8 @@
     function createContainer() {
         openForm("New container", [
             { id: "name", label: "Name", value: "" },
-            { id: "route", label: "Route path", value: "" },
+            { id: "route", label: "Route path", value: "",
+              help: "The address OBS loads, like /stream_layout. It follows the name until you edit it." },
             {
                 id: "preset",
                 label: "Resolution",
@@ -1335,7 +1384,7 @@
                 }
                 return formFailure(err, setError, "Couldn't create the container", "creating the container");
             });
-        });
+        }, { icon: "grid", sub: "A container puts several templates on one OBS browser source." });
         var nameInput = document.querySelector(".ss-create-overlay input");
         var routeInput = document.querySelectorAll(".ss-create-overlay input")[1];
         if (nameInput && routeInput) {
@@ -1403,12 +1452,23 @@
                 }
                 return formFailure(err, setError, "Couldn't duplicate the container", "duplicating the container");
             });
-        });
+        }, { icon: "layers", ok: "Duplicate", okIcon: "layers", sub: "Copies the saved version of this container to a new route." });
     }
 
     function deleteContainer() {
         if (!state.model) { return; }
-        if (!confirm("Delete container /" + state.model.route + "?")) { return; }
+        UI.confirm({
+            danger: true,
+            title: "Delete container /" + state.model.route + "?",
+            message: "The route stops working in OBS. The templates inside it are not deleted.",
+            ok: "Delete container"
+        }).then(function (ok) {
+            if (ok) { deleteContainerNow(); }
+        });
+    }
+
+    function deleteContainerNow() {
+        if (!state.model) { return; }
         var route = state.savedRoute || state.model.route;
         var deleted = false;
         api("/api/spore-studio/containers/delete", {
@@ -1467,13 +1527,32 @@
         }
     }
 
+    function confirmDiscardContainer() {
+        return UI.confirm({
+            icon: "alert",
+            danger: true,
+            title: "Discard unsaved container changes?",
+            message: state.model ? "Your changes to /" + state.model.route + " haven't been saved." : "Your changes haven't been saved.",
+            ok: "Discard changes",
+            cancel: "Keep editing"
+        });
+    }
+
     function setMode(mode) {
         if (mode === state.mode) { return; }
         if (state.mode === "containers" && state.dirty && mode !== "containers") {
-            if (!confirm("Discard unsaved container changes?")) { return; }
-            state.dirty = false;
-            updateDirty();
+            confirmDiscardContainer().then(function (ok) {
+                if (!ok) { return; }
+                state.dirty = false;
+                updateDirty();
+                applyMode(mode);
+            });
+            return;
         }
+        applyMode(mode);
+    }
+
+    function applyMode(mode) {
         state.mode = mode;
         var root = $("ss-root");
         root.classList.toggle("ss-root--containers", mode === "containers");
@@ -1537,23 +1616,32 @@
             });
         });
         $("mc-container-select").addEventListener("change", function (ev) {
-            var route = ev.target.value;
-            if (state.dirty && !confirm("Discard unsaved container changes?")) {
-                ev.target.value = state.savedRoute || "";
+            var select = ev.target;
+            var route = select.value;
+            if (state.dirty) {
+                select.value = state.savedRoute || "";
+                confirmDiscardContainer().then(function (ok) {
+                    if (!ok) { return; }
+                    select.value = route;
+                    openRoute();
+                });
                 return;
             }
-            loadContainer(route).catch(function (err) {
-                ev.target.value = state.savedRoute || "";
-                notify({
-                    type: "error",
-                    title: "Couldn't open container “/" + route + "”",
-                    message: failReason(err, "opening the container") +
-                        " It may have been deleted, or its file may be damaged.",
-                    hint: failHint(err),
-                    details: errorDetails(err),
-                    dedupe: "container_open:" + route
+            openRoute();
+            function openRoute() {
+                loadContainer(route).catch(function (err) {
+                    select.value = state.savedRoute || "";
+                    notify({
+                        type: "error",
+                        title: "Couldn't open container “/" + route + "”",
+                        message: failReason(err, "opening the container") +
+                            " It may have been deleted, or its file may be damaged.",
+                        hint: failHint(err),
+                        details: errorDetails(err),
+                        dedupe: "container_open:" + route
+                    });
                 });
-            });
+            }
         });
         $("mc-template-search").addEventListener("input", renderPalette);
         var canvas = $("mc-canvas");
