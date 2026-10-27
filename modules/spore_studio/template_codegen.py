@@ -302,7 +302,7 @@ def _emit_result_font_face(
     if _expose_field(el, "result_font_family"):
         fam = f"spore-el-{eid}-result"
         jvar = f"{eid}_result_font_family"
-        jinja_src = "{{ " + jvar + "|default(" + json.dumps(filename) + ") }}"
+        jinja_src = "{{ " + jvar + "|default(" + json.dumps(filename, ensure_ascii=False) + ") }}"
         lines.append(
             f'@font-face {{ font-family: "{fam}"; '
             f'src: url("/assets/default_assets/fonts/{jinja_src}"); }}'
@@ -347,7 +347,7 @@ def _compile_spore_font_css(
                 continue
             fam = exposed_element_font_family(eid)
             jvar = f"{eid}_font_family"
-            jinja_src = "{{ " + jvar + "|default(" + json.dumps(default_fn) + ") }}"
+            jinja_src = "{{ " + jvar + "|default(" + json.dumps(default_fn, ensure_ascii=False) + ") }}"
             lines.append(
                 f'@font-face {{ font-family: "{fam}"; '
                 f'src: url("/assets/default_assets/fonts/{jinja_src}"); }}'
@@ -1182,7 +1182,7 @@ def _render_element(
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f"{anim_attrs} "
             f'data-spore-type="{html.escape(etype, quote=True)}"{mode_attr}>'
-            f"{{{{ {jinja_var}|default({json.dumps(text_default)})|safe }}}}"
+            f"{{{{ {jinja_var}|default({json.dumps(text_default, ensure_ascii=False)})|safe }}}}"
             f"</div>"
         )
 
@@ -1211,7 +1211,7 @@ def _render_element(
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f"{anim_attrs} "
             f'data-spore-type="image"{counter_attrs} '
-            f'src="{{{{ {jinja_src_var}|default({json.dumps(src_default)}) }}}}" '
+            f'src="{{{{ {jinja_src_var}|default({json.dumps(src_default, ensure_ascii=False)}) }}}}" '
             f'alt="" />'
         )
 
@@ -1235,7 +1235,7 @@ def _render_element(
         if visual_kind == "image":
             inner = (
                 f'<img class="spore-video-visual" '
-                f'src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}" '
+                f'src="{{{{ {src_var}|default({json.dumps(src_default, ensure_ascii=False)}) }}}}" '
                 f'alt="" />'
             )
         else:
@@ -1243,13 +1243,13 @@ def _render_element(
                 f'<video class="spore-video-visual" '
                 f'data-spore-type="video" '
                 f"{autoplay}{loop}{muted}playsinline>"
-                f'<source src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}">'
+                f'<source src="{{{{ {src_var}|default({json.dumps(src_default, ensure_ascii=False)}) }}}}">'
                 f"</video>"
             )
         nested_audio = (
             f'<audio id="{html.escape(eid)}_sporeAudio" '
             f'class="spore-element-nested-audio" preload="auto" {audio_attrs}>'
-            f'<source src="{{{{ {audio_src_var}|default({json.dumps(audio_src_default)}) }}}}">'
+            f'<source src="{{{{ {audio_src_var}|default({json.dumps(audio_src_default, ensure_ascii=False)}) }}}}">'
             f"</audio>"
         )
         return (
@@ -1274,7 +1274,7 @@ def _render_element(
             f'<audio id="{html.escape(eid)}" class="{classes}"{hidden_attr} '
             f"{anim_attrs} "
             f'data-spore-type="audio" preload="auto" {audio_attrs}>'
-            f'<source src="{{{{ {src_var}|default({json.dumps(src_default)}) }}}}">'
+            f'<source src="{{{{ {src_var}|default({json.dumps(src_default, ensure_ascii=False)}) }}}}">'
             f"</audio>"
         )
 
@@ -1314,16 +1314,16 @@ def _render_element(
             + "px solid {{ "
             + eid
             + "_border_color|default("
-            + json.dumps(bc_default)
+            + json.dumps(bc_default, ensure_ascii=False)
             + ") }};"
             if bw > 0
             else ""
         )
         track_bg = (
-            "{{ " + eid + "_track_color|default(" + json.dumps(track_default) + ") }}"
+            "{{ " + eid + "_track_color|default(" + json.dumps(track_default, ensure_ascii=False) + ") }}"
         )
         fill_bg = (
-            "{{ " + eid + "_fill_color|default(" + json.dumps(fill_default) + ") }}"
+            "{{ " + eid + "_fill_color|default(" + json.dumps(fill_default, ensure_ascii=False) + ") }}"
         )
         fill_dur = (
             "{{ " + eid + "_fill_animation_duration_ms|default(" + str(fad) + ") }}"
@@ -1332,7 +1332,7 @@ def _render_element(
             "{{ "
             + eid
             + "_fill_animation_easing|default("
-            + json.dumps(fe_default)
+            + json.dumps(fe_default, ensure_ascii=False)
             + ") }}"
         )
         return (
@@ -1429,8 +1429,8 @@ def _render_element(
             gap = 48
         inner = (
             f'<div class="spore-marquee-inner" style="--spore-marquee-gap:{gap}px;">'
-            f'<span class="spore-marquee-text">{{{{ {jinja_var}|default({json.dumps(text_default)})|safe }}}}</span>'
-            f'<span class="spore-marquee-text">{{{{ {jinja_var}|default({json.dumps(text_default)})|safe }}}}</span>'
+            f'<span class="spore-marquee-text">{{{{ {jinja_var}|default({json.dumps(text_default, ensure_ascii=False)})|safe }}}}</span>'
+            f'<span class="spore-marquee-text">{{{{ {jinja_var}|default({json.dumps(text_default, ensure_ascii=False)})|safe }}}}</span>'
             f"</div>"
         )
         return (
@@ -1459,7 +1459,7 @@ def _render_element(
             f'style="{html.escape(style, quote=True)}"{hidden_attr} '
             f"{anim_attrs} "
             f'data-spore-type="clock" '
-            f'data-spore-clock-format="{{{{ {fmt_var}|default({json.dumps(fmt_default)}) }}}}" '
+            f'data-spore-clock-format="{{{{ {fmt_var}|default({json.dumps(fmt_default, ensure_ascii=False)}) }}}}" '
             f'data-spore-clock-tz="{html.escape(tz, quote=True)}" '
             f'data-spore-clock-offset="{off}">'
             f"00:00:00</div>"

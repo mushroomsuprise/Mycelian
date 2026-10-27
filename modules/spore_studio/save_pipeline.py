@@ -13,8 +13,9 @@ import copy
 import json
 import logging
 import os
+import re
 import shutil
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import template_codegen, template_parser_back
 from ..path_utils import (
@@ -54,8 +55,14 @@ _RESERVED_TEMPLATE_NAMES = {
     "assets",
     "api",
     "debug",
+    "default_assets",
     "_spore_studio_editor",
 }
+
+_TEMPLATE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+# Element ids become HTML ids, JSON config ids and Jinja / JavaScript names.
+_ELEMENT_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _clone(value: Any) -> Any:
@@ -155,7 +162,7 @@ def _validate_name(name: str) -> str:
     cleaned = name.strip()
     if not cleaned:
         raise SporeStudioError("Template name cannot be empty.")
-    if not all(c.isalnum() or c in "_-" for c in cleaned):
+    if not _TEMPLATE_NAME_RE.match(cleaned):
         raise SporeStudioError(
             "Template name may only contain letters, numbers, '_' and '-'."
         )
@@ -198,6 +205,74 @@ def _load_existing_html(template_name: str) -> Optional[str]:
         return None
 
 
+def _rewrite_copied_strings(obj: Any, copy_from: str, new_name: str) -> Any:
+    """Point a copied model's asset URLs and counter paths at the new template.
+
+    Only a whole ``<copy_from>/counters`` path segment moves (``bitsubs/counters`` stays).
+    """
+    old_asset = f"/assets/{copy_from}/"
+    new_asset = f"/assets/{new_name}/"
+    counters_re = re.compile(r"(?<![A-Za-z0-9_-])" + re.escape(f"{copy_from}/counters") + r"(?=/|$)")
+    new_counters = f"{new_name}/counters"
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: walk(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        if isinstance(value, str):
+            return counters_re.sub(new_counters, value.replace(old_asset, new_asset))
+        return value
+
+    return walk(obj)
+
+
+def _validate_legacy_name(name: Any) -> str:
+    """Legacy templates keep their file names (spaces and all); only refuse paths."""
+    cleaned = str(name or "").strip()
+    if not cleaned or cleaned.startswith("_") or any(part in cleaned for part in ("/", "\\", "..")):
+        raise SporeStudioError("That legacy template name isn't valid.")
+    if not os.path.isfile(get_template_path(f"{cleaned}.html")):
+        raise SporeStudioError(f"There is no template named '{cleaned}' to save.")
+    return cleaned
+
+
+def _is_handwritten_template(template_name: str) -> bool:
+    """An existing overlay Spore Studio didn't write (saving a Spore model would replace it)."""
+    html_path = get_template_path(f"{template_name}.html")
+    if not os.path.isfile(html_path):
+        return False
+    if template_parser_back.load_sidecar(template_name) is not None:
+        return False
+    try:
+        with open(html_path, "r", encoding="utf-8") as fh:
+            return "SPORE_STUDIO:dom-begin" not in fh.read()
+    except OSError:
+        return False
+
+
+def _check_element_ids(model: Dict[str, Any]) -> None:
+    """Refuse ids the overlay can't use, before anything is written."""
+    bad: List[str] = []
+    seen: Dict[str, int] = {}
+    for el in model.get("elements") or []:
+        if not isinstance(el, dict):
+            continue
+        el_id = str(el.get("id") or "")
+        if not _ELEMENT_ID_RE.match(el_id):
+            bad.append(el_id or "(empty)")
+        seen[el_id] = seen.get(el_id, 0) + 1
+    if bad:
+        shown = ", ".join(f"'{b}'" for b in bad[:5]) + (" and more" if len(bad) > 5 else "")
+        raise SporeStudioError(
+            f"Element IDs can only use letters, numbers and _, and can't start with a number: {shown}. "
+            "Rename them in Properties → Element."
+        )
+    dupes = [k for k, n in seen.items() if n > 1]
+    if dupes:
+        raise SporeStudioError(f"Two elements share the ID '{dupes[0]}'. Each element needs its own ID.")
+
+
 def compile_preview_draft(model: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
     """
     Compile an in-memory editor model to (html, json_config) for live preview.
@@ -210,6 +285,7 @@ def compile_preview_draft(model: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
     if model.get("legacy"):
         raise SporeStudioError("Live draft preview is only for Spore templates.")
     template_name = _validate_name(model.get("template_name") or "")
+    _check_element_ids(model)
     existing = _load_existing_html(template_name)
     html_text, json_config = template_codegen.compile_model(
         model, existing_html=existing
@@ -311,6 +387,13 @@ def create_template(
     html_path = get_template_path(f"{template_name}.html")
     if os.path.exists(html_path):
         raise SporeStudioError(f"Template '{template_name}' already exists.")
+    existing_assets = os.path.join(get_assets_path(), template_name)
+    if os.path.isdir(existing_assets) and os.listdir(existing_assets):
+        # A folder left from something else; deleting the template later would remove it.
+        raise SporeStudioError(
+            f"assets/{template_name} already exists and isn't empty. Pick another name, "
+            "or move that folder first."
+        )
 
     if copy_from:
         copy_from = _validate_name(copy_from)
@@ -325,30 +408,9 @@ def create_template(
 
         src_assets = os.path.join(get_assets_path(), copy_from)
         dst_assets = os.path.join(get_assets_path(), template_name)
-        if os.path.isdir(src_assets):
-            if os.path.isdir(dst_assets) and os.path.abspath(src_assets) != os.path.abspath(
-                dst_assets
-            ):
-                shutil.rmtree(dst_assets)
-            if not os.path.isdir(dst_assets):
-                shutil.copytree(src_assets, dst_assets)
-        old_asset = f"/assets/{copy_from}/"
-        new_asset = f"/assets/{template_name}/"
-        old_counters = f"{copy_from}/counters"
-        new_counters = f"{template_name}/counters"
-
-        def _rewrite_clone_strings(obj: Any) -> Any:
-            if isinstance(obj, dict):
-                return {k: _rewrite_clone_strings(v) for k, v in obj.items()}
-            if isinstance(obj, list):
-                return [_rewrite_clone_strings(v) for v in obj]
-            if isinstance(obj, str):
-                return obj.replace(old_asset, new_asset).replace(
-                    old_counters, new_counters
-                )
-            return obj
-
-        model = _rewrite_clone_strings(model)
+        if os.path.isdir(src_assets) and not os.path.isdir(dst_assets):
+            shutil.copytree(src_assets, dst_assets)
+        model = _rewrite_copied_strings(model, copy_from, template_name)
         model["template_name"] = template_name
     else:
         model = {
@@ -548,7 +610,17 @@ def save_template(model: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(model, dict):
         raise SporeStudioError("Editor model must be a JSON object.")
 
-    template_name = _validate_name(model.get("template_name") or "")
+    if model.get("legacy"):
+        template_name = _validate_legacy_name(model.get("template_name"))
+    else:
+        template_name = _validate_name(model.get("template_name") or "")
+        if template_name.lower() in SPORE_STUDIO_PROTECTED_TEMPLATES:
+            raise SporeStudioError(f"'{template_name}' is a built-in overlay and can't be saved from Spore Studio.")
+        if _is_handwritten_template(template_name):
+            raise SporeStudioError(
+                f"'{template_name}' wasn't made in Spore Studio. Reopen it, or create a new template."
+            )
+        _check_element_ids(model)
     alert_system = model.get("alert_system") or "queue"
     if alert_system not in ("queue", "instant"):
         alert_system = "queue"

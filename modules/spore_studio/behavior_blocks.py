@@ -309,15 +309,30 @@ def _coerce_float_opt(value: Any) -> Optional[float]:
         return None
 
 
+_JSON_STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+
+
+def _inert_strings(js: str) -> str:
+    """Escape ``{`` and ``<`` inside string literals.
+
+    The overlay HTML is a Jinja template, so ``{{ ... }}`` or ``{#`` in user text would be
+    read as template code, and ``</script>`` would end the script. ``\\u007b`` / ``\\u003c``
+    are the same characters to JavaScript.
+    """
+    return _JSON_STRING_RE.sub(
+        lambda m: m.group(0).replace("{", "\\u007b").replace("<", "\\u003c"), js
+    )
+
+
 def _js_string(value: Any) -> str:
     """Safely encode a Python value as a JavaScript string literal."""
-    return json.dumps("" if value is None else str(value))
+    return _inert_strings(json.dumps("" if value is None else str(value)))
 
 
 def _js_value(value: Any) -> str:
     """Safely encode any JSON-serializable value as JavaScript."""
     try:
-        return json.dumps(value)
+        return _inert_strings(json.dumps(value))
     except (TypeError, ValueError):
         return _js_string(value)
 

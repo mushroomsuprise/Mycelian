@@ -7798,6 +7798,13 @@
         }
     }
 
+    /* Element ids become HTML ids and Jinja / JavaScript names: letters, digits and _ only. */
+    function safeElementId(text) {
+        var id = String(text || "").trim().replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+        if (/^[0-9]/.test(id)) { id = "el_" + id; }
+        return id;
+    }
+
     /* Top of the Properties tab: what is selected and where it sits. */
     function elementHeaderCard(el) {
         var card = document.createElement("div");
@@ -7912,8 +7919,17 @@
         host.appendChild(elementHeaderCard(el));
 
         var idRow = formRow("ID", inputEl("text", el.id, function (v) {
-            var newId = (v || "").trim();
+            var typed = (v || "").trim();
+            var newId = safeElementId(typed);
             if (!newId) { return; }
+            if (newId !== typed) {
+                notify({
+                    type: "info",
+                    title: "ID changed to “" + newId + "”",
+                    message: "IDs can only use letters, numbers and _, and can't start with a number.",
+                    dedupe: "id_cleaned"
+                });
+            }
             var conflict = state.model.elements.some(function (e) {
                 return e.id === newId && e !== el;
             });
