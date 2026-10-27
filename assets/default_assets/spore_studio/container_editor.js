@@ -24,6 +24,10 @@
 
     function $(id) { return document.getElementById(id); }
 
+    window.MycelianContainerEditor = {
+        isDirty: function () { return !!state.dirty; }
+    };
+
     /** In-page toast; only used if editor.js's notifier is missing. */
     function localToast(text, kind) {
         var el = $("ss-toast");
@@ -1215,6 +1219,7 @@
         if (!state.model) { return Promise.resolve(); }
         var route = state.model.route || state.savedRoute || "";
         var saved = false;
+        var sent = JSON.stringify(state.model);
         return api("/api/spore-studio/containers/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1223,13 +1228,21 @@
                 previous_route: state.savedRoute
             })
         }).then(function (body) {
-            state.model = body.container;
             state.savedRoute = body.container.route;
             state.savedSnap = JSON.stringify(body.container);
-            state.dirty = false;
-            state.history = [];
-            state.future = [];
-            updateDirty();
+            if (JSON.stringify(state.model) === sent) {
+                state.model = body.container;
+                state.dirty = false;
+                state.history = [];
+                state.future = [];
+                updateDirty();
+            } else {
+                // Edits made while saving stay in the editor, still marked unsaved.
+                state.model.route = body.container.route;
+                markDirty();
+            }
+            // The inspector held the old slot objects; redraw so later edits reach the model.
+            renderAll();
             saved = true;
             notify({ type: "success", title: "Saved container “/" + body.container.route + "”" });
             return refreshLists();
@@ -1343,6 +1356,14 @@
     }
 
     function createContainer() {
+        if (state.dirty) {
+            confirmDiscardContainer().then(function (ok) {
+                if (!ok) { return; }
+                discardContainerEdits();
+                createContainer();
+            });
+            return;
+        }
         openForm("New container", [
             { id: "name", label: "Name", value: "" },
             { id: "route", label: "Route path", value: "",
@@ -1527,6 +1548,17 @@
         }
     }
 
+    /* Go back to the saved copy, so discarded edits don't come back later. */
+    function discardContainerEdits() {
+        state.model = state.savedSnap ? JSON.parse(state.savedSnap) : null;
+        state.history = [];
+        state.future = [];
+        if (state.selectedId && !selectedSlot()) { state.selectedId = null; }
+        state.dirty = false;
+        updateDirty();
+        renderAll();
+    }
+
     function confirmDiscardContainer() {
         return UI.confirm({
             icon: "alert",
@@ -1543,8 +1575,7 @@
         if (state.mode === "containers" && state.dirty && mode !== "containers") {
             confirmDiscardContainer().then(function (ok) {
                 if (!ok) { return; }
-                state.dirty = false;
-                updateDirty();
+                discardContainerEdits();
                 applyMode(mode);
             });
             return;

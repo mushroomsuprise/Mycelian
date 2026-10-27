@@ -986,6 +986,7 @@
             : "";
     }
     function setDirty(isDirty) {
+        if (isDirty) { state.revision = (state.revision || 0) + 1; }
         state.dirty = !!isDirty;
         var el = $("#ss-dirty-indicator");
         if (el) {
@@ -10000,10 +10001,26 @@
         return model;
     }
 
+    /* A field being typed in only writes to the model on change; blur it so Save includes it. */
+    function commitFocusedField() {
+        var active = document.activeElement;
+        if (active && active !== document.body && typingTarget(active) && typeof active.blur === "function") {
+            active.blur();
+        }
+    }
+
     function saveCurrent() {
         if (!state.model) { return; }
+        commitFocusedField();
         flushStreamdeckPanelInputs();
+        if (state.saving) {
+            // One save at a time; run again when this one finishes so nothing is skipped.
+            state.saveQueued = true;
+            return;
+        }
         var name = state.model.template_name;
+        var sentRevision = state.revision || 0;
+        state.saving = true;
         fetchJson("/api/spore-studio/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -10013,9 +10030,17 @@
                 if (!res.ok || (res.data && res.data.ok === false)) {
                     throw requestError(res, "POST /api/spore-studio/save (" + name + ")");
                 }
-                setDirty(false);
+                // Edits made while the save was running are not in it: keep them marked unsaved.
+                if ((state.revision || 0) === sentRevision &&
+                        state.model && state.model.template_name === name) {
+                    setDirty(false);
+                }
                 notify({ type: "success", title: "Saved “" + name + "”" });
                 refreshPreview(true);
+            })
+            .then(finishSave, function (err) {
+                finishSave();
+                return Promise.reject(err);
             })
             .catch(function (err) {
                 console.error("Save failed", err);
@@ -10034,6 +10059,14 @@
                     template: name
                 });
             });
+    }
+
+    function finishSave() {
+        state.saving = false;
+        if (state.saveQueued) {
+            state.saveQueued = false;
+            if (state.dirty) { saveCurrent(); }
+        }
     }
 
     /* ------------------------------------------------------------------
@@ -11320,6 +11353,8 @@
             }
             if (UI.modalOpen()) { return; }
             var meta = ev.ctrlKey || ev.metaKey;
+            var undoKey = meta && (ev.key === "z" || ev.key === "Z" || ev.key === "y");
+            if (undoKey && typingTarget(ev.target)) { return; }
             if (meta && ev.key === "z" && !ev.shiftKey) { ev.preventDefault(); undo(); }
             else if (meta && (ev.key === "Z" || (ev.key === "z" && ev.shiftKey))) { ev.preventDefault(); redo(); }
             else if (meta && ev.key === "y") { ev.preventDefault(); redo(); }
@@ -11375,7 +11410,12 @@
             select.value = current;
             confirmDiscard(current).then(function (ok) { if (ok) { open(); } });
         });
-        $("#ss-btn-create").addEventListener("click", openCreateDialog);
+        $("#ss-btn-create").addEventListener("click", function () {
+            if (!state.dirty) { openCreateDialog(); return; }
+            confirmDiscard(state.model ? state.model.template_name : "").then(function (ok) {
+                if (ok) { openCreateDialog(); }
+            });
+        });
         $("#ss-btn-delete").addEventListener("click", deleteCurrentTemplate);
         $("#ss-btn-undo").addEventListener("click", undo);
         $("#ss-btn-redo").addEventListener("click", redo);
@@ -11442,7 +11482,9 @@
         setupAssetTools();
         setupSocket();
         window.addEventListener("beforeunload", function (ev) {
-            if (!state.dirty) { return; }
+            var containers = window.MycelianContainerEditor;
+            var containerDirty = !!(containers && containers.isDirty());
+            if (!state.dirty && !containerDirty) { return; }
             ev.preventDefault();
             ev.returnValue = "";
         });

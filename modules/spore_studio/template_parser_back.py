@@ -89,6 +89,25 @@ def _hydrate_dynamic_controls_from_public_config(
         sidecar["dynamic_controls"] = dc
 
 
+def _hydrate_advanced_js_from_html(template_name: str, sidecar: Dict[str, Any]) -> None:
+    """Show the Advanced JS the overlay actually runs.
+
+    The user block in the saved HTML can differ from the sidecar (hand edits, or an older
+    sidecar without the code). The editor saves its value over the block, so load what runs.
+    """
+    html_path = get_template_path(f"{template_name}.html")
+    if not os.path.isfile(html_path):
+        return
+    try:
+        with open(html_path, "r", encoding="utf-8") as fh:
+            running = extract_user_js(fh.read())
+    except OSError as e:
+        logger.warning("Could not read %s for its Advanced JS: %s", html_path, e)
+        return
+    if running and running != str(sidecar.get("advanced_js") or "").strip():
+        sidecar["advanced_js"] = running
+
+
 def _hydrate_canvas_timing_from_public_config(
     template_name: str, sidecar: Dict[str, Any]
 ) -> None:
@@ -383,6 +402,7 @@ def parse_existing(template_name: str) -> Dict[str, Any]:
         sidecar.setdefault("design", {"width": 800, "height": 200})
         sidecar.setdefault("elements", [])
         sidecar.setdefault("advanced_js", "")
+        _hydrate_advanced_js_from_html(template_name, sidecar)
         sidecar.setdefault("streamdeck_options", {"description": "", "actions": {}})
         sidecar["streamdeck_options"] = _sanitize_streamdeck_options(
             sidecar.get("streamdeck_options")

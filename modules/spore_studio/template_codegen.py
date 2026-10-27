@@ -2617,9 +2617,10 @@ def compile_model(
     Args:
         model: The editor sidecar dict (see ``modules/spore_studio/__init__.py``).
         existing_html: Current contents of ``templates/{name}.html`` if any.
-            When provided the user-block (everything between
-            ``SPORE_STUDIO:user-begin`` / ``-end``) is preserved verbatim,
-            and any structural deltas the user made outside the auto/dom
+            The user block (everything between ``SPORE_STUDIO:user-begin`` /
+            ``-end``) becomes ``model["advanced_js"]`` (even when empty); it is
+            only kept from this HTML when the model has no ``advanced_js`` key.
+            Structural deltas the user made outside the auto/dom
             blocks are kept. When None we start from the boilerplate matching
             ``model["alert_system"]``.
 
@@ -2649,7 +2650,9 @@ def compile_model(
     dom_html = _render_dom_tree(elements, font_map=font_map)
 
     bindings = compile_bindings(elements)
-    advanced_js = str(model.get("advanced_js") or "").rstrip()
+    # The editor always sends advanced_js, so it is the source of truth (even when cleared).
+    has_user_js = "advanced_js" in model
+    advanced_js = _neutralize_user_markers(str(model.get("advanced_js") or "").rstrip())
 
     base_html = inject_data_runtime_block(base_html)
     base_html = inject_overlay_recovery(base_html)
@@ -2663,11 +2666,11 @@ def compile_model(
     auto_replacement = "\n\n".join(auto_parts)
     out_html = _replace_block(out_html, _AUTO_BEGIN, _AUTO_END, auto_replacement)
 
-    if existing_html:
+    if existing_html and not has_user_js:
         existing_user = _extract_block(existing_html, _USER_BEGIN, _USER_END).strip()
-        if existing_user and not advanced_js:
+        if existing_user:
             advanced_js = existing_user
-    if advanced_js:
+    if has_user_js or advanced_js:
         out_html = _replace_block(out_html, _USER_BEGIN, _USER_END, advanced_js)
 
     style_parts: List[str] = []
@@ -2700,6 +2703,13 @@ def compile_model(
     out_html = inject_overlay_recovery(out_html)
     out_html = ensure_spore_template_logger(out_html, str(template_name))
     return out_html, json_config
+
+
+def _neutralize_user_markers(js: str) -> str:
+    """Advanced JS can't contain the block markers, or the next save would cut the block short."""
+    return js.replace(_USER_BEGIN, "// (SPORE_STUDIO user-begin marker)").replace(
+        _USER_END, "// (SPORE_STUDIO user-end marker)"
+    )
 
 
 def extract_user_js(html_text: str) -> str:

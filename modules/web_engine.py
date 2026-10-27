@@ -370,6 +370,33 @@ def _is_localhost_remote_addr(addr: Optional[str]) -> bool:
     return (addr or "").strip().lower() in _LOCALHOST_REMOTE_ADDRS
 
 
+# Write endpoints that only Spore Studio's own page may call. Browsers send cross-site
+# form/fetch POSTs even when CORS blocks the reply, so these check where the request came from.
+_EDITOR_WRITE_PREFIXES = ("/api/spore-studio/", "/api/template-preview-settings/")
+
+
+def _is_cross_site_request(origin: Optional[str], fetch_site: Optional[str], host: Optional[str]) -> bool:
+    """True when a browser request comes from another site than this server.
+
+    Requests without Origin / Sec-Fetch-Site (Python callers, tools) are not cross-site.
+    """
+    site = (fetch_site or "").strip().lower()
+    if site and site not in ("same-origin", "none"):
+        return True
+    origin = (origin or "").strip()
+    if not origin:
+        return False
+    if origin.lower() == "null":
+        return True
+    try:
+        from urllib.parse import urlsplit
+
+        origin_host = (urlsplit(origin).netloc or "").lower()
+    except ValueError:
+        return True
+    return origin_host != (host or "").strip().lower()
+
+
 # TCP peers allowed to load overlay routes. Public internet addresses are not
 # in this list. 100.64.0.0/10 is shared address space (Tailscale, CGNAT), not
 # a globally routable range.
@@ -1621,6 +1648,29 @@ class WebEngine:
             if path.startswith("/assets/"):
                 return None
             g._bottleneck_req_start = time.perf_counter()
+
+        @self.app.before_request
+        def _editor_writes_same_origin_only():
+            if request.method in ("GET", "HEAD", "OPTIONS"):
+                return None
+            path = request.path or ""
+            if not path.startswith(_EDITOR_WRITE_PREFIXES):
+                return None
+            if _is_cross_site_request(
+                request.headers.get("Origin"),
+                request.headers.get("Sec-Fetch-Site"),
+                request.host,
+            ):
+                logger.warning(
+                    "Blocked a cross-site %s %s (Origin %s)",
+                    request.method, path, request.headers.get("Origin") or "-",
+                )
+                return (
+                    {"error": "Only Spore Studio itself can change templates."},
+                    403,
+                    {"Content-Type": "application/json"},
+                )
+            return None
 
         @self.app.after_request
         def add_cors_headers(response):
