@@ -204,8 +204,9 @@ def test_twitch_ids_survive_a_restart(twitch):
 def test_event_votes_and_timestamps():
     event = SimpleNamespace(id="p", choices=[SimpleNamespace(id="a", votes=3), {"id": "b", "votes": "7"}, {"id": "", "votes": 1}])
     assert twitch_polls.event_choice_votes(event) == {"a": 3, "b": 7}
-    assert twitch_polls._timestamp("2026-01-01T00:00:00Z") == pytest.approx(1767225600.0)
-    assert twitch_polls._timestamp(None) is None and twitch_polls._timestamp("nope") is None
+    assert twitch_polls.parse_timestamp("2026-01-01T00:00:00Z") == pytest.approx(1767225600.0)
+    assert twitch_polls.parse_timestamp(None) is None and twitch_polls.parse_timestamp("nope") is None
+    assert twitch_polls.parse_timestamp("2021-03-19T06:08:33.871278372Z") == pytest.approx(1616134113.871278)
 
 
 def test_create_poll_body_and_errors(monkeypatch):
@@ -278,3 +279,51 @@ def test_overlay_cards_stay_in_the_main_column():
     giveaways = (ROOT / "modules" / "uiwindows" / "chatbot_giveaways.py").read_text(encoding="utf-8")
     block = giveaways[giveaways.index("    def _render_all"):giveaways.index("    def _tick")]
     assert block.index("self._entrants_card()") < block.index("self._overlay_card()") < block.index("self._setup_card(cfg)")
+
+
+# Twitch's own Create Poll example (request + response), from the API reference.
+_EXAMPLE_RESPONSE = {
+    "data": [{
+        "id": "ed961efd-8a3f-4cf5-a9d0-e616c590cd2a", "broadcaster_id": "141981764", "broadcaster_name": "TwitchDev",
+        "broadcaster_login": "twitchdev", "title": "Heads or Tails?",
+        "choices": [
+            {"id": "4c123012-1351-4f33-84b7-43856e7a0f47", "title": "Heads", "votes": 0, "channel_points_votes": 0, "bits_votes": 0},
+            {"id": "279087e3-54a7-467e-bcd0-c1393fcea4f0", "title": "Tails", "votes": 0, "channel_points_votes": 0, "bits_votes": 0},
+        ],
+        "bits_voting_enabled": False, "bits_per_vote": 0, "channel_points_voting_enabled": True, "channel_points_per_vote": 100,
+        "status": "ACTIVE", "duration": 1800, "started_at": "2021-03-19T06:08:33.871278372Z",
+    }]
+}
+
+
+def test_twitch_create_poll_example(monkeypatch):
+    sent = {}
+
+    class Api:
+        async def generic_api_call(self, url, method, json_data=None, **kw):
+            sent.update(body=json_data)
+            return _EXAMPLE_RESPONSE
+
+    monkeypatch.setattr(twitch_polls, "_broadcaster_and_api", lambda: (Api(), "141981764"))
+    ok, poll = twitch_polls.create_poll("Heads or Tails?", ["Heads", "Tails"], 1800, points_enabled=True, points_per_vote=100)
+    assert ok
+    assert sent["body"] == {"broadcaster_id": "141981764", "title": "Heads or Tails?", "choices": [{"title": "Heads"}, {"title": "Tails"}],
+                            "channel_points_voting_enabled": True, "channel_points_per_vote": 100, "duration": 1800}
+    categories = [{"id": "tails-id", "name": "Tails"}, {"id": "heads-id", "name": "Heads"}]
+    # Matched by title, whatever the order.
+    assert twitch_polls.choice_map(poll, categories) == {
+        "4c123012-1351-4f33-84b7-43856e7a0f47": "heads-id", "279087e3-54a7-467e-bcd0-c1393fcea4f0": "tails-id"}
+
+
+def test_start_uses_twitchs_start_time(monkeypatch):
+    started = time.time() - 4
+    poll = {"id": "p9", "started_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(started)) + ".5Z",
+            "choices": [{"id": "a", "title": "Yes"}, {"id": "b", "title": "No"}]}
+    monkeypatch.setattr(twitch_polls, "scope_status", lambda: "ok")
+    monkeypatch.setattr(twitch_polls, "create_poll", lambda *a, **k: (True, poll))
+    manager = _manager()
+    assert manager.start_poll("poll")[0]
+    runtime = manager._templates["poll"]["runtime"]
+    assert abs(runtime["ends_at"] - (int(started) + 0.5 + 60)) < 0.01
+    assert manager.apply_twitch_votes("p9", {"a": 3, "b": 1}) and _votes(manager) == {"Yes": 3, "No": 1}
+    manager.shutdown()

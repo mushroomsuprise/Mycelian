@@ -953,13 +953,15 @@ class PollManager:
             for cat in categories:
                 cat["votes"] = 0
             if twitch_poll:
-                # Twitch returns the choices in the order they were sent.
+                from . import twitch_polls
+
                 runtime["twitch_poll_id"] = str(twitch_poll.get("id"))
-                runtime["twitch_choices"] = {
-                    str(choice.get("id")): cat["id"]
-                    for choice, cat in zip(twitch_poll.get("choices") or [], categories)
-                    if isinstance(choice, dict) and choice.get("id")
-                }
+                runtime["twitch_choices"] = twitch_polls.choice_map(twitch_poll, categories)
+                # Time the countdown from when Twitch started it (its clock decides when it ends).
+                started = twitch_polls.parse_timestamp(twitch_poll.get("started_at"))
+                if started and abs(started - now) < 300:
+                    runtime["started_at"] = started
+                    runtime["ends_at"] = started + duration if duration > 0 else None
             self._templates[template]["runtime"] = runtime
             self._last_error[template] = ""
             if duration > 0:

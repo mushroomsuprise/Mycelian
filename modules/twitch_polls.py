@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -201,6 +202,22 @@ def create_poll(title: str, choices: List[str], duration: int, *, points_enabled
     return True, poll
 
 
+def choice_map(poll: Dict[str, Any], categories: List[Dict[str, Any]]) -> Dict[str, str]:
+    """{Twitch choice id: option id}. Matches by title (as sent), then by position for any left over."""
+    choices = [c for c in (poll.get("choices") or []) if isinstance(c, dict) and c.get("id")]
+    mapping: Dict[str, str] = {}
+    unused = list(categories)
+    for choice in choices:
+        title = str(choice.get("title") or "")
+        match = next((cat for cat in unused if str(cat.get("name") or "")[:CHOICE_TITLE_MAX] == title), None)
+        if match is not None:
+            mapping[str(choice["id"])] = match["id"]
+            unused.remove(match)
+    for choice, cat in zip([c for c in choices if str(c["id"]) not in mapping], unused):
+        mapping[str(choice["id"])] = cat["id"]
+    return mapping
+
+
 def end_poll(poll_id: str, *, show_results: bool = True) -> None:
     """End a Twitch poll in the background (TERMINATED shows the results in chat, ARCHIVED hides it)."""
     poll_id = str(poll_id or "").strip()
@@ -251,7 +268,8 @@ def event_choice_votes(event: Any) -> Dict[str, int]:
     return votes
 
 
-def _timestamp(value: Any) -> Optional[float]:
+def parse_timestamp(value: Any) -> Optional[float]:
+    """Unix time from a Twitch timestamp ("2021-03-19T06:08:33.871278372Z" or a datetime)."""
     if value in (None, ""):
         return None
     if hasattr(value, "timestamp"):
@@ -262,7 +280,10 @@ def _timestamp(value: Any) -> Optional[float]:
     try:
         from datetime import datetime
 
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+        text = str(value).strip().replace("Z", "+00:00")
+        # Twitch sends nanoseconds; Python reads up to microseconds.
+        text = re.sub(r"(\.\d{6})\d+", r"\1", text)
+        return datetime.fromisoformat(text).timestamp()
     except ValueError:
         return None
 
@@ -270,7 +291,7 @@ def _timestamp(value: Any) -> Optional[float]:
 def handle_begin(event: Any) -> None:
     from .poll_manager import get_poll_manager
 
-    get_poll_manager().twitch_poll_began(str(_value(event, "id", "") or ""), _timestamp(_value(event, "ends_at", None)))
+    get_poll_manager().twitch_poll_began(str(_value(event, "id", "") or ""), parse_timestamp(_value(event, "ends_at", None)))
 
 
 def handle_progress(event: Any) -> None:
