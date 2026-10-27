@@ -1,4 +1,4 @@
-<p class="hx-lead">A binding makes an element react to something: a Mycelian <a href="help:template_websocket">websocket event</a> such as an alert, or a Stream Deck key. Each binding has a trigger, optional filters, one action, and up to 15 chained steps.</p>
+<p class="hx-lead">A binding makes an element react to something: a Mycelian <a href="help:template_websocket">websocket event</a> such as an alert, or a Stream Deck key. Each binding card has two steps: <strong>1 When</strong> (a trigger and optional filters) and <strong>2 Do this</strong> (one action and up to 15 chained steps).</p>
 
 <div class="hx-meta">
   <span>{{icon:place}} <span class="hx-path"><span>Spore Studio</span><span>Bindings</span></span></span>
@@ -11,19 +11,19 @@
 <section class="hx-guide" data-guide="spore_studio_bindings_add" data-title="Add a binding">
   <div class="hx-step">
     <h3>Select the element</h3>
-    <p>Click the element on the canvas or in the <strong>Outline</strong>, then open the <strong>Bindings</strong> tab. With nothing selected the tab says <em>Select an element to attach event bindings.</em></p>
+    <p>Click the element on the canvas or in the <strong>Outline</strong>, then open the {{icon:bolt}} <strong>Bindings</strong> tab. With nothing selected the tab says <em>Select an element to attach event bindings.</em> An element without bindings shows <em>No bindings yet</em>.</p>
   </div>
   <div class="hx-step">
-    <h3>Click + Add binding and pick a trigger</h3>
-    <p><strong>Trigger</strong> is <strong>Registry event</strong> (listens to Mycelian) or <strong>Stream Deck action</strong> (listens to a hardware key). Then pick the <strong>Event</strong>, or the Stream Deck action.</p>
+    <h3>Click Add binding and pick a trigger</h3>
+    <p>Click {{icon:add}} <strong>Add binding</strong>. Under <strong>1 When</strong>, <strong>Trigger</strong> is <strong>Registry event</strong> (listens to Mycelian) or <strong>Stream Deck action</strong> (listens to a hardware key). Then pick the <strong>Event</strong>, or the Stream Deck action.</p>
   </div>
   <div class="hx-step">
     <h3>Narrow it with filters (optional)</h3>
-    <p>Each field the event carries gets a <strong>Filter:</strong> row. Leave a row blank to match anything. Type a value to fire only when that field equals it.</p>
+    <p>Under <strong>Only when…</strong>, a new binding says <em>any event</em>. Pick a field in <strong>+ Add a filter…</strong> to add a filter row, then type a value: the binding fires only when that field equals it. A row left blank matches anything. Click × on a row to remove that filter.</p>
   </div>
   <div class="hx-step">
     <h3>Choose the action</h3>
-    <p>Pick the <strong>Action</strong> and fill in its fields. Add <strong>Chained actions</strong> if more should happen after it.</p>
+    <p>Under <strong>2 Do this</strong>, pick the <strong>Action</strong> and fill in its fields. Add <strong>Chained actions</strong> if more should happen after it.</p>
   </div>
   <div class="hx-step">
     <h3>Test in Preview</h3>
@@ -40,17 +40,23 @@
   <div class="hm hm-ss">
     <div class="hm-ss-body hm-ss-inspector-only">
       <div class="hm-ss-right">
-        <div class="hm-ss-tabs"><span class="hm-ss-tab">Properties</span><span class="hm-ss-tab is-active">Bindings</span><span class="hm-ss-tab">Stream Deck</span></div>
-        <div class="hm-ss-section">
-          <div class="hm-ss-card">
-            <div class="hm-ss-card-head">Binding #1<span class="hm-ss-x">×</span></div>
+        <div class="hm-ss-tabs"><span class="hm-ss-tab"><span class="hx-mi">tune</span><b>Properties</b></span><span class="hm-ss-tab is-active"><span class="hx-mi">bolt</span><b>Bindings</b></span><span class="hm-ss-tab"><span class="hx-mi">grid_on</span><b>Stream Deck</b></span><span class="hm-ss-tab"><span class="hx-mi">toggle_on</span><b>Source Controls</b></span><span class="hm-ss-tab"><span class="hx-mi">code</span><b>Advanced JS</b></span><span class="hm-ss-tab"><span class="hx-mi">grid_3x3</span><b>Canvas</b></span></div>
+        <span class="hm-ss-btn hm-ss-primary hm-ss-wide"><span class="hx-mi">add</span>Add binding</span>
+        <div class="hm-ss-card">
+          <div class="hm-ss-card-head">Binding #1<span class="hm-ss-x">×</span></div>
+          <div class="hm-ss-flow">
+            <div class="hm-ss-flow-head"><span class="hm-ss-badge">1</span>When</div>
             <div class="hm-ss-row"><span class="hm-ss-label">Trigger <span class="hm-marker" data-n="1"></span></span><span class="hm-ss-input hm-ss-sel">Registry event</span></div>
             <div class="hm-ss-row"><span class="hm-ss-label">Event</span><span class="hm-ss-input hm-ss-sel">Alert (instant)</span></div>
             <span class="hm-ss-hint">Fired by the alert processor for non-blocking alerts that do not participate in the queue handshake.</span>
-            <span class="hm-ss-hint">Filters narrow when this binding fires. Leave a field blank to match any value; type an exact value to only fire when the payload field matches.</span>
-            <div class="hm-ss-row"><span class="hm-ss-label">Filter: Alert type <span class="hm-marker" data-n="2"></span></span><span class="hm-ss-input">follow</span></div>
-            <div class="hm-ss-row"><span class="hm-ss-label">Filter: Username</span><span class="hm-ss-input is-placeholder">(any string)</span></div>
-            <div class="hm-ss-row"><span class="hm-ss-label">Filter: Sub tier</span><span class="hm-ss-input is-placeholder">(any) — e.g. 1000, 2000, 3000</span></div>
+            <div class="hm-ss-filters">
+              <div class="hm-ss-filters-head"><span class="hx-mi">tune</span>Only when… <span class="hm-marker" data-n="2"></span><span class="hm-ss-count">1 filter</span></div>
+              <div class="hm-ss-filter"><b>Alert type</b><span class="hm-ss-input">follow</span><span class="hm-ss-x">×</span></div>
+              <span class="hm-ss-addfilter">+ Add a filter…</span>
+            </div>
+          </div>
+          <div class="hm-ss-flow">
+            <div class="hm-ss-flow-head"><span class="hm-ss-badge">2</span>Do this</div>
             <div class="hm-ss-row"><span class="hm-ss-label">Action <span class="hm-marker" data-n="3"></span></span><span class="hm-ss-input hm-ss-sel">Show for N seconds</span></div>
             <div class="hm-ss-pair">
               <div class="hm-ss-row"><span class="hm-ss-label">Seconds</span><span class="hm-ss-input">5</span></div>
@@ -60,7 +66,7 @@
             <div class="hm-ss-sub">Chained actions <span class="hm-marker" data-n="4"></span></div>
             <span class="hm-ss-hint">Each step waits delay (ms) after the previous step returns, then runs. show_for still uses its own internal timers.</span>
             <div class="hm-ss-step">
-              <div class="hm-ss-card-head">Chain step 1<span class="hm-ss-x">×</span></div>
+              <div class="hm-ss-card-head">Then, step 1<span class="hm-ss-x">×</span></div>
               <div class="hm-ss-row"><span class="hm-ss-label">Delay before this step (ms)</span><span class="hm-ss-input">200</span></div>
               <div class="hm-ss-row"><span class="hm-ss-label">Action</span><span class="hm-ss-input hm-ss-sel">Play CSS class animation</span></div>
               <div class="hm-ss-pair">
@@ -68,9 +74,8 @@
                 <div class="hm-ss-row"><span class="hm-ss-label">Hold (ms)</span><span class="hm-ss-input">420</span></div>
               </div>
             </div>
-            <span class="hm-ss-btn hm-ss-sm" style="align-self:flex-start">+ Add chained step</span>
+            <span class="hm-ss-btn hm-ss-sm hm-ss-dashed"><span class="hx-mi">add</span>Add chained step</span>
           </div>
-          <span class="hm-ss-btn hm-ss-primary hm-ss-sm">+ Add binding</span>
         </div>
       </div>
     </div>
@@ -81,10 +86,10 @@
   <div>
 
 <ol class="hx-annotations">
-  <li data-n="1"><strong>Trigger</strong> and <strong>Event</strong>. The event's description appears under the dropdown.</li>
-  <li data-n="2">One <strong>Filter:</strong> row per payload field. The placeholder shows example values when the event has them.</li>
-  <li data-n="3"><strong>Action</strong> and its fields. The action's description appears under it.</li>
-  <li data-n="4"><strong>Chained actions</strong> run after the main action, in order, each after its own delay.</li>
+  <li data-n="1">Step <strong>1 When</strong>: <strong>Trigger</strong> and <strong>Event</strong>. The event's description appears under the dropdown; a long one is cut short with a <strong>Show more</strong> link.</li>
+  <li data-n="2"><strong>Only when…</strong> lists the filters in use (here <em>1 filter</em>; with none it says <em>any event</em>). Each row has the field name, a value box and × to remove it. <strong>+ Add a filter…</strong> lists the other fields the event carries. The value box shows example values when the event has them.</li>
+  <li data-n="3">Step <strong>2 Do this</strong>: <strong>Action</strong> and its fields. The action's description appears under it.</li>
+  <li data-n="4"><strong>Chained actions</strong> run after the main action, in order, each after its own delay. Each one is titled <em>Then, step 1</em>, <em>Then, step 2</em>…</li>
 </ol>
   </div>
 </div>
@@ -103,10 +108,10 @@
 
 <h2>Filters</h2>
 
-<p>A filter row compares the payload field with what you typed, exactly. Leave it blank to match anything.</p>
+<p>Add a filter with <strong>+ Add a filter…</strong> under <strong>Only when…</strong>. A filter row compares the payload field with what you typed, exactly. Leave it blank to match anything, or click × to remove it. With no filters the binding fires for every event of that kind (<em>any event</em>).</p>
 
 <div class="hx-table-wrap"><table>
-<thead><tr><th>Event</th><th>Filter</th><th>Fires for</th></tr></thead>
+<thead><tr><th>Event</th><th>Filter (field = value)</th><th>Fires for</th></tr></thead>
 <tbody>
 <tr><td>Alert (queue) / Alert (instant)</td><td>Alert type = <code>follow</code></td><td>Follows only. Other types: <code>sub</code>, <code>resub</code>, <code>giftsub</code>, <code>bit</code>, <code>donation</code>, <code>raid</code>, <code>hype_train</code>, <code>point</code>, <code>streak</code>.</td></tr>
 <tr><td>Alert (queue) / Alert (instant)</td><td>Sub tier = <code>3000</code></td><td>Tier 3 subs</td></tr>
@@ -208,7 +213,7 @@
 
 <details class="hx-details">
   <summary>Show a follow alert for 5 seconds with a fade</summary>
-  <p>Event <strong>Alert (queue)</strong>, Filter: Alert type <code>follow</code>. Action <strong>Show for N seconds</strong>: Seconds <code>5</code>, Entrance <code>fade</code>, Exit <code>fade</code>. Turn on <strong>Start hidden until shown</strong> on the element so it does not flash on load.</p>
+  <p>Event <strong>Alert (queue)</strong>, <strong>Only when…</strong> → <strong>Add a filter</strong> → Alert type = <code>follow</code>. Action <strong>Show for N seconds</strong>: Seconds <code>5</code>, Entrance <code>fade</code>, Exit <code>fade</code>. Turn on <strong>Start hidden until shown</strong> on the element so it does not flash on load.</p>
 </details>
 
 <details class="hx-details">
@@ -223,24 +228,24 @@
 
 <details class="hx-details">
   <summary>Add bits to a counter</summary>
-  <p>Event <strong>Alert (instant)</strong>, Filter: Alert type <code>bit</code>. Action <strong>Adjust counter</strong>: Counter id <code>bit_count</code>, Operation <code>increment</code>, Delta kind <code>data_source</code>, Data source id <code>alert.amt_cheered</code>.</p>
+  <p>Event <strong>Alert (instant)</strong>, <strong>Only when…</strong> → <strong>Add a filter</strong> → Alert type = <code>bit</code>. Action <strong>Adjust counter</strong>: Counter id <code>bit_count</code>, Operation <code>increment</code>, Delta kind <code>data_source</code>, Data source id <code>alert.amt_cheered</code>.</p>
   <p>For "add this field on this alert", a Counter block's <a href="help:spore_studio_counters">Data feed</a> is usually simpler. Use <strong>Adjust counter</strong> when the change is part of a chain or comes from another trigger, such as a Stream Deck key.</p>
 </details>
 
 <details class="hx-details">
   <summary>Show, shake, then hide</summary>
-  <p>Action <strong>Show element</strong>. Chain step 1: delay <code>200</code>, <strong>Play CSS class animation</strong> <code>sporeShake</code>. Chain step 2: delay <code>3000</code>, <strong>Hide element</strong>.</p>
+  <p>Action <strong>Show element</strong>. <em>Then, step 1</em>: delay <code>200</code>, <strong>Play CSS class animation</strong> <code>sporeShake</code>. <em>Then, step 2</em>: delay <code>3000</code>, <strong>Hide element</strong>.</p>
 </details>
 
 <h2>Chained actions</h2>
 
-<p>Click <strong>+ Add chained step</strong> to run more actions after the main one, up to 15 steps. Each step has <strong>Delay before this step (ms)</strong> and its own <strong>Action</strong>.</p>
+<p>Click {{icon:add}} <strong>Add chained step</strong> at the bottom of <strong>2 Do this</strong> to run more actions after the main one, up to 15 steps. Each step is titled <em>Then, step N</em> and has <strong>Delay before this step (ms)</strong> and its own <strong>Action</strong>.</p>
 
 <div class="hx-callout hx-note"><p>The delay counts from when the previous step starts, not from when its animation ends. A <strong>Show for N seconds</strong> step runs its own hide timer, separate from the chain delays.</p></div>
 
 <h2>Twitch API bindings</h2>
 
-<p>Pick <strong>Twitch API call (response)</strong> as the event to have the overlay call the Twitch Helix API once after it connects, then run the action when the answer matches.</p>
+<p>Pick <strong>Twitch API call (response)</strong> as the event in <strong>1 When</strong> to have the overlay call the Twitch Helix API once after it connects, then run the action when the answer matches.</p>
 
 <figure class="hx-figure hx-static">
   <div class="hm hm-ss hm-ss-narrow">
@@ -248,6 +253,8 @@
       <div class="hm-ss-right">
         <div class="hm-ss-section">
           <div class="hm-ss-card">
+            <div class="hm-ss-flow">
+            <div class="hm-ss-flow-head"><span class="hm-ss-badge">1</span>When</div>
             <div class="hm-ss-row"><span class="hm-ss-label">Event</span><span class="hm-ss-input hm-ss-sel">Twitch API call (response)</span></div>
             <div class="hm-ss-sub">Twitch API request</div>
             <span class="hm-ss-hint">Emitted once after the socket connects (same pattern as standalone templates). URL must start with https://api.twitch.tv/. requestId is fixed for this binding and applied to response filters automatically.</span>
@@ -258,6 +265,7 @@
             <div class="hm-ss-sub">Response filters</div>
             <div class="hm-ss-pair"><span class="hm-ss-input">success</span><span class="hm-ss-input">true</span></div>
             <span class="hm-ss-btn hm-ss-sm" style="align-self:flex-start">+ Add filter</span>
+            </div>
           </div>
         </div>
       </div>

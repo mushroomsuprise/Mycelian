@@ -2,9 +2,9 @@
 
 <h2>Place a block</h2>
 
-<p>Drag a block from the <strong>Blocks</strong> panel onto the canvas. The palette is grouped as Data, Layout, Media, Text and Widgets. Every block and its settings is listed in the <a href="help:spore_studio_widgets">Widget reference</a>.</p>
+<p>Drag a block from the <strong>Blocks</strong> panel onto the canvas. The palette is grouped as Data, Layout, Media, Text and Widgets; type in <em>Search blocks</em> to find one by name. Every block and its settings is listed in the <a href="help:spore_studio_widgets">Widget reference</a>.</p>
 
-<p>When you drop a block, the <strong>Element category</strong> dialog opens:</p>
+<p>When you drop a block, the <strong>Which category is it in?</strong> dialog opens:</p>
 
 <div class="hx-split">
   <div>
@@ -12,22 +12,28 @@
       <div class="hm hm-ss">
         <div class="hm-ss-scrim">
           <div class="hm-ss-dialog">
-            <div class="hm-ss-dialog-title">Element category</div>
-            <span class="hm-ss-hint">Pick an existing category or create a new one. Categories group elements in the saved JSON config.</span>
-            <div class="hm-ss-row"><span class="hm-ss-label">Existing category</span><span class="hm-ss-input hm-ss-sel">alert_box</span></div>
-            <div class="hm-ss-row"><span class="hm-ss-label">New category name</span><span class="hm-ss-input is-placeholder">e.g. Headline</span></div>
-            <div class="hm-ss-dialog-actions"><span class="hm-ss-btn">Cancel</span><span class="hm-ss-btn hm-ss-primary">Use category</span></div>
+            <div class="hm-ss-dlg-head">
+              <span class="hm-ss-dlg-icon"><span class="hx-mi">sell</span></span>
+              <div class="hm-ss-dlg-titles"><div class="hm-ss-dialog-title">Which category is it in?</div><div class="hm-ss-dlg-sub">Categories group related elements in the Outline and in the saved JSON config.</div></div>
+              <span class="hm-ss-dlg-x"><span class="hx-mi">close</span></span>
+            </div>
+            <div class="hm-ss-dlg-body">
+              <div class="hm-ss-row"><span class="hm-ss-label">Existing categories</span><div class="hm-ss-chips"><span>alert_box</span><span class="is-on">username_label</span><span>sound</span></div></div>
+              <div class="hm-ss-or">or</div>
+              <div class="hm-ss-row"><span class="hm-ss-label">New category</span><span class="hm-ss-input is-placeholder">New category name, e.g. Headline</span></div>
+            </div>
+            <div class="hm-ss-dialog-actions"><span class="hm-ss-btn">Cancel</span><span class="hm-ss-btn hm-ss-primary"><span class="hx-mi">check</span>Add element</span></div>
           </div>
         </div>
       </div>
-      <figcaption>The Element category dialog.</figcaption>
+      <figcaption>The Which category is it in? dialog.</figcaption>
     </figure>
   </div>
   <div>
     <ul>
-      <li><strong>Existing category</strong> lists categories already used in this template. Its last entry, <strong>+ New category…</strong>, moves you to the name field.</li>
-      <li><strong>New category name</strong> creates a new group.</li>
-      <li><strong>Use category</strong> places the element. <strong>Cancel</strong> places nothing.</li>
+      <li><strong>Existing categories</strong> shows the categories already used in this template as chips. The last one used is picked for you; click another to use it.</li>
+      <li><strong>New category</strong> creates a new group. Typing a name here replaces the chip choice. In a template with no categories yet, only this box shows, filled with <code>Elements</code>.</li>
+      <li><strong>Add element</strong> places the element. <strong>Cancel</strong>, {{icon:close}}, <kbd>Esc</kbd> or a click outside places nothing.</li>
     </ul>
     <p>Categories group elements in the <strong>Outline</strong> and in the saved <a href="help:template_configuration">JSON config</a>, which is what Source Settings shows.</p>
   </div>
@@ -42,13 +48,13 @@
     <div class="hm-ss-body hm-ss-no-right">
       <div class="hm-ss-left">
         <div class="hm-ss-section">
-          <div class="hm-ss-h">Outline</div>
+          <div class="hm-ss-h"><span class="hx-mi">account_tree</span>Outline<span class="hm-ss-count">4</span></div>
           <div class="hm-ss-outline-head">alert_box</div>
-          <div class="hm-ss-outline-row"><span class="hm-ss-oid">box</span><span class="hm-ss-otype">container</span></div>
-          <div class="hm-ss-outline-row hm-ss-nest"><span class="hm-ss-oid">art</span><span class="hm-ss-otype">image</span></div>
-          <div class="hm-ss-outline-row hm-ss-nest is-selected"><span class="hm-ss-oid">who</span><span class="hm-ss-otype">text</span></div>
+          <div class="hm-ss-outline-row"><span class="hm-ss-oicon"><span class="hx-mi">check_box_outline_blank</span></span><span class="hm-ss-oid">box</span><span class="hm-ss-otype">container</span></div>
+          <div class="hm-ss-outline-row hm-ss-nest"><span class="hm-ss-oicon"><span class="hx-mi">image</span></span><span class="hm-ss-oid">art</span><span class="hm-ss-otype">image</span></div>
+          <div class="hm-ss-outline-row hm-ss-nest is-selected"><span class="hm-ss-oicon"><span class="hx-mi">title</span></span><span class="hm-ss-oid">who</span><span class="hm-ss-otype">text</span></div>
           <div class="hm-ss-outline-head">sound</div>
-          <div class="hm-ss-outline-row"><span class="hm-ss-oid">sfx</span><span class="hm-ss-otype">audio</span></div>
+          <div class="hm-ss-outline-row"><span class="hm-ss-oicon"><span class="hx-mi">volume_up</span></span><span class="hm-ss-oid">sfx</span><span class="hm-ss-otype">audio</span></div>
         </div>
       </div>
       <div class="hm-ss-canvas">
@@ -91,13 +97,13 @@
 
 <h3>Outline</h3>
 
-<p>The <strong>Outline</strong> lists every element under its category heading, indented under its container. Each row shows the element id and type. Click a row to select the element on the canvas and in the inspector. With nothing on the canvas it says <em>No elements yet — drag a block onto the canvas, or open an existing template to populate this list.</em></p>
+<p>The <strong>Outline</strong> lists every element under its category heading. Elements inside a container are indented under it, with a dotted guide line. Each row shows a type icon, the element id and the type. The count next to <strong>Outline</strong> is the number of elements. Click a row to select the element on the canvas and in the inspector. With nothing on the canvas it says <em>No elements yet — drag a block onto the canvas, or open an existing template to populate this list.</em></p>
 
 <h3>Nesting</h3>
 
 <ul>
 <li>Only <strong>Container</strong> blocks accept children. A container clips its children, and child positions are relative to its top-left corner.</li>
-<li>The <strong>Parent</strong> row in Properties shows the container, or <code>(canvas root)</code>. <strong>Move to canvas</strong> un-nests the element.</li>
+<li>The header card at the top of Properties shows <em>in &lt;container&gt;</em> for a nested element, or <em>on the canvas</em>. <strong>Move to canvas</strong> in the Element section un-nests it.</li>
 <li>A nested element gets a <strong>Placement in container</strong> section: a 3 × 3 grid of anchors (↖ ↑ ↗ ← ◎ → ↙ ↓ ↘) and <strong>Offset X/Y</strong> for fine tuning. Picking an anchor resets the offset. Dragging changes the offset and keeps the anchor.</li>
 </ul>
 
@@ -108,16 +114,16 @@
 <div class="hx-table-wrap"><table>
 <thead><tr><th>Do this</th><th>Result</th></tr></thead>
 <tbody>
-<tr><td><strong>Upload</strong></td><td>Copies files you pick into the template's folder</td></tr>
-<tr><td><strong>Reveal folder</strong></td><td>Opens the folder on your computer</td></tr>
+<tr><td>{{icon:upload}} <strong>Upload</strong></td><td>Copies files you pick into the template's folder</td></tr>
+<tr><td>{{icon:folder}} <strong>Reveal folder</strong></td><td>Opens the folder on your computer</td></tr>
 <tr><td>Drag a file onto the canvas</td><td>Creates an image, video or audio element where you drop it</td></tr>
 <tr><td>Double-click a file</td><td>Sets <strong>Source URL</strong> on the selected image, video or audio element. With nothing suitable selected you see <em>Select an image / video / audio element first.</em></td></tr>
-<tr><td><strong>Delete</strong> on a file</td><td>Removes the file from the folder</td></tr>
+<tr><td>{{icon:delete}} on a file (shows when you hover it)</td><td>Asks <em>Delete {file}?</em>; <strong>Delete file</strong> removes it from the folder</td></tr>
 <tr><td>Copy files into the folder yourself</td><td>The list updates on its own while the editor is open</td></tr>
 </tbody>
 </table></div>
 
-<p>An empty folder shows <em>Upload files or drop them into assets/{name}.</em> Saved overlays load assets from the overlay server:</p>
+<p>Each file shows as a card with a thumbnail (or an icon for sound, video and fonts), its name and its kind. The count next to <strong>Assets</strong> is the number of files. An empty folder shows a drop zone: <em>Drop images, sounds or videos here, or click Upload. They're saved to assets/{name}</em>. Saved overlays load assets from the overlay server:</p>
 
 <pre><code>/assets/my_alert/alert.gif
 /assets/my_alert/sfx.mp3
@@ -125,7 +131,7 @@
 
 <h2>Properties sections</h2>
 
-<p>Select an element to fill the <strong>Properties</strong> tab. Sections are collapsible. Click the section headers in this picture to open and close them.</p>
+<p>Select an element to fill the <strong>Properties</strong> tab. A header card at the top shows the element's ID, where it sits (<em>in box</em> for a nested element, <em>on the canvas</em> otherwise) and its block type. Below it, each section is a card with an icon. A closed card shows a one-line summary on the right, such as <em>20, 200 · 400×60</em> for Layout or <em>Starts hidden</em> for Visibility. Click the section headers in this picture to open and close them.</p>
 
 <div class="hx-split">
   <div>
@@ -133,47 +139,50 @@
       <div class="hm hm-ss">
         <div class="hm-ss-body hm-ss-inspector-only">
           <div class="hm-ss-right">
-            <div class="hm-ss-tabs"><span class="hm-ss-tab is-active">Properties</span><span class="hm-ss-tab">Bindings</span><span class="hm-ss-tab">Canvas</span></div>
+            <div class="hm-ss-tabs"><span class="hm-ss-tab is-active"><span class="hx-mi">tune</span><b>Properties</b></span><span class="hm-ss-tab"><span class="hx-mi">bolt</span><b>Bindings</b></span><span class="hm-ss-tab"><span class="hx-mi">grid_on</span><b>Stream Deck</b></span><span class="hm-ss-tab"><span class="hx-mi">toggle_on</span><b>Source Controls</b></span><span class="hm-ss-tab"><span class="hx-mi">code</span><b>Advanced JS</b></span><span class="hm-ss-tab"><span class="hx-mi">grid_3x3</span><b>Canvas</b></span></div>
+            <div class="hm-ss-elhead"><span class="hm-ss-elhead-icon"><span class="hx-mi">title</span></span><span class="hm-ss-elhead-text"><b>who</b><span>in <b>box</b></span></span><span class="hm-ss-chip">Text</span></div>
             <div class="hm-expansion hm-ss-collapse">
-              <div class="hm-expansion-head">Element</div>
+              <div class="hm-expansion-head"><span class="hx-mi">sell</span>Element<span class="hm-ss-sum">alert_box</span></div>
               <div class="hm-expansion-body">
                 <div class="hm-ss-row"><span class="hm-ss-label">ID</span><span class="hm-ss-input">who</span></div>
                 <div class="hm-ss-row"><span class="hm-ss-label">Category</span><span class="hm-ss-input">alert_box</span></div>
-                <div class="hm-ss-row"><span class="hm-ss-label">Type</span><span>text</span></div>
-                <div class="hm-ss-row"><span class="hm-ss-label">Parent</span><span>box</span></div>
+                <span class="hm-ss-btn hm-ss-sm" style="align-self:flex-start"><span class="hx-mi">open_with</span>Move to canvas</span>
               </div>
             </div>
-            <div class="hm-expansion hm-ss-collapse is-open">
-              <div class="hm-expansion-head">Layout</div>
+            <div class="hm-expansion hm-ss-collapse">
+              <div class="hm-expansion-head"><span class="hx-mi">open_with</span>Layout<span class="hm-ss-sum">160, 68 · 300×60</span></div>
               <div class="hm-expansion-body">
                 <div class="hm-ss-pair"><div class="hm-ss-row"><span class="hm-ss-label">X</span><span class="hm-ss-input">160</span></div><div class="hm-ss-row"><span class="hm-ss-label">Y</span><span class="hm-ss-input">68</span></div></div>
                 <div class="hm-ss-pair"><div class="hm-ss-row"><span class="hm-ss-label">W</span><span class="hm-ss-input">300</span></div><div class="hm-ss-row"><span class="hm-ss-label">H</span><span class="hm-ss-input">60</span></div></div>
-                <div class="hm-ss-sub">Placement in container</div>
-                <div class="hm-ss-anchor"><i></i><i></i><i></i><i class="is-on"></i><i></i><i></i><i></i><i></i><i></i></div>
+                <div class="hm-ss-label">Placement in container</div>
+                <div class="hm-ss-anchor"><i>↖</i><i>↑</i><i>↗</i><i class="is-on">←</i><i>◎</i><i>→</i><i>↙</i><i>↓</i><i>↘</i></div>
+                <div class="hm-ss-pair"><div class="hm-ss-row"><span class="hm-ss-label">Offset X</span><span class="hm-ss-input">10</span></div><div class="hm-ss-row"><span class="hm-ss-label">Offset Y</span><span class="hm-ss-input">0</span></div></div>
               </div>
             </div>
             <div class="hm-expansion hm-ss-collapse">
-              <div class="hm-expansion-head">Visibility</div>
+              <div class="hm-expansion-head"><span class="hx-mi">visibility</span>Visibility<span class="hm-ss-sum">Starts hidden</span></div>
               <div class="hm-expansion-body"><span class="hm-check is-on"><i></i>Start hidden until shown</span></div>
             </div>
             <div class="hm-expansion hm-ss-collapse">
-              <div class="hm-expansion-head">Transformations</div>
+              <div class="hm-expansion-head"><span class="hx-mi">rotate_right</span>Transformations<span class="hm-ss-sum">None</span></div>
               <div class="hm-expansion-body"><span class="hm-ss-empty">No transform yet. Map a live value onto this block's size, position, rotation, or skew.</span><span class="hm-ss-btn hm-ss-primary hm-ss-sm" style="align-self:flex-start">+ Add transform</span></div>
             </div>
             <div class="hm-expansion hm-ss-collapse">
-              <div class="hm-expansion-head">Data feed</div>
+              <div class="hm-expansion-head"><span class="hx-mi">rss_feed</span>Data feed<span class="hm-ss-sum">No feed</span></div>
               <div class="hm-expansion-body"><span class="hm-ss-btn hm-ss-sm" style="align-self:flex-start">+ Add feed</span></div>
             </div>
-            <div class="hm-expansion hm-ss-collapse">
-              <div class="hm-expansion-head">Appearance</div>
+            <div class="hm-expansion hm-ss-collapse is-open">
+              <div class="hm-expansion-head"><span class="hx-mi">palette</span>Appearance<span class="hm-ss-sum">Arial · 32px</span></div>
               <div class="hm-expansion-body">
-                <div class="hm-ss-row"><span class="hm-ss-label"><span class="hm-ss-expose is-on"></span>Text</span><span class="hm-ss-input hm-ss-area">Hello</span></div>
-                <div class="hm-ss-row"><span class="hm-ss-label"><span class="hm-ss-expose is-on"></span>Size</span><span class="hm-ss-input">32</span></div>
-                <div class="hm-ss-row"><span class="hm-ss-label"><span class="hm-ss-expose"></span>Color</span><span class="hm-ss-input"><span class="hm-ss-swatch hm-ss-sw-light"></span>#ffffff</span></div>
+                <div class="hm-ss-legend"><span class="hm-ss-expose is-on"></span><span>Lit up means the setting also shows in Source Settings, so it can be changed without opening Spore Studio.</span></div>
+                <div class="hm-ss-row"><span class="hm-ss-label">Text<span class="hm-ss-expose is-on"></span></span><span class="hm-ss-input hm-ss-area">Hello</span></div>
+                <div class="hm-ss-row"><span class="hm-ss-label">Size<span class="hm-ss-expose is-on"></span></span><span class="hm-ss-input">32</span></div>
+                <div class="hm-ss-row"><span class="hm-ss-label">Color<span class="hm-ss-expose"></span></span><span class="hm-ss-input"><span class="hm-ss-swatch hm-ss-sw-light"></span>#ffffff</span></div>
+                <div class="hm-ss-row"><span class="hm-ss-label">Style</span><div class="hm-ss-style"><span class="hm-ss-stylechip is-on"><b>B</b><span class="hm-ss-expose is-on"></span></span><span class="hm-ss-stylechip"><i>I</i><span class="hm-ss-expose is-on"></span></span><span class="hm-ss-stylechip"><u>U</u><span class="hm-ss-expose is-on"></span></span><span class="hm-ss-stylechip"><s>S</s><span class="hm-ss-expose is-on"></span></span></div></div>
               </div>
             </div>
             <div class="hm-expansion hm-ss-collapse">
-              <div class="hm-expansion-head">Animations</div>
+              <div class="hm-expansion-head"><span class="hx-mi">auto_awesome</span>Animations<span class="hm-ss-sum">fade / fade</span></div>
               <div class="hm-expansion-body">
                 <div class="hm-ss-pair"><div class="hm-ss-row"><span class="hm-ss-label">Entrance</span><span class="hm-ss-input hm-ss-sel">fade</span></div><div class="hm-ss-row"><span class="hm-ss-label">Exit</span><span class="hm-ss-input hm-ss-sel">fade</span></div></div>
                 <div class="hm-ss-row"><span class="hm-ss-label">Easing</span><span class="hm-ss-input hm-ss-sel">ease-out</span></div>
@@ -190,15 +199,16 @@
     <div class="hx-table-wrap"><table>
     <thead><tr><th>Section</th><th>Holds</th></tr></thead>
     <tbody>
-    <tr><td><strong>Element</strong></td><td><strong>ID</strong> (renaming updates bindings), <strong>Category</strong>, <strong>Type</strong> (read-only), <strong>Parent</strong>, <strong>Move to canvas</strong></td></tr>
-    <tr><td><strong>Layout</strong></td><td><strong>X</strong>, <strong>Y</strong>, <strong>W</strong>, <strong>H</strong>, and Placement in container when nested</td></tr>
-    <tr><td><strong>Visibility</strong></td><td><strong>Start hidden until shown</strong></td></tr>
+    <tr><td>Header card</td><td>ID, <em>in &lt;container&gt;</em> or <em>on the canvas</em>, and the block type (read-only; create a new element to use a different type)</td></tr>
+    <tr><td><strong>Element</strong></td><td><strong>ID</strong>: letters, numbers and <code>_</code>, not starting with a number (anything else is changed as you type, and saving refuses IDs that repeat). Renaming updates timer controls and actions that point at it. <strong>Category</strong>, <strong>Move to canvas</strong> when nested. Summary: the category.</td></tr>
+    <tr><td><strong>Layout</strong></td><td><strong>X</strong>, <strong>Y</strong>, <strong>W</strong>, <strong>H</strong>, and Placement in container when nested. Summary: position and size.</td></tr>
+    <tr><td><strong>Visibility</strong></td><td><strong>Start hidden until shown</strong>. Summary: <em>Visible</em> or <em>Starts hidden</em>.</td></tr>
     <tr><td>Block section</td><td>Only some blocks: Counter, Data display, Timer, Image source, Progress bar, Wheel segments, Result, List, Color stops</td></tr>
-    <tr><td><strong>Transformations</strong></td><td>Map a live value to size, position, rotation or skew</td></tr>
-    <tr><td><strong>Data feed</strong></td><td>Drive the block from events or live values. See <a href="help:spore_studio_data_feed">Data feeds</a>.</td></tr>
+    <tr><td><strong>Transformations</strong></td><td>Map a live value to size, position, rotation or skew. Summary: <em>None</em> or <em>N active</em>.</td></tr>
+    <tr><td><strong>Data feed</strong></td><td>Drive the block from events or live values. See <a href="help:spore_studio_data_feed">Data feeds</a>. Summary: <em>No feed</em>, <em>1 feed</em>, <em>2 feeds</em>…</td></tr>
     <tr><td><strong>Outputs</strong></td><td>Results the block announces to other templates (wheel, poll, timer, counter, progress bar, list)</td></tr>
-    <tr><td><strong>Appearance</strong></td><td>The block's style properties</td></tr>
-    <tr><td><strong>Animations</strong></td><td>Entrance and exit</td></tr>
+    <tr><td><strong>Appearance</strong></td><td>The block's style properties. <strong>Bold</strong>, <strong>Italic</strong>, <strong>Underline</strong> and <strong>Strikethrough</strong> are one <strong>Style</strong> row of <strong>B</strong> <em>I</em> <u>U</u> <s>S</s> buttons. Summary: font and size.</td></tr>
+    <tr><td><strong>Animations</strong></td><td>Entrance and exit. Summary: their names, or <em>None</em>.</td></tr>
     </tbody>
     </table></div>
   </div>
@@ -273,19 +283,19 @@
 
 <p>A color row has a swatch and a text box. Click the swatch to open the <a href="help:color_picker">color picker</a>, titled with the property's name; the canvas follows while you pick, <strong>Done</strong> or a click outside keeps the color, and <strong>Cancel</strong> or <kbd>Esc</kbd> puts the old one back. The opacity bar and chips make a color see-through, down to {{icon:block}} <strong>Fully transparent</strong>. Fills (<strong>Background</strong>, <strong>Fill</strong>, <strong>Highlight background</strong> and a few block colors such as a progress bar's <strong>Fill color</strong>) also get a <strong>Gradient</strong> tab for linear and radial gradients. You can type any value into the text box too, including a CSS gradient on a fill.</p>
 
-<h2>Expose in Source Settings</h2>
+<h2>Show in Source Settings</h2>
 
-<p>Most rows in <strong>Appearance</strong> and the block sections have a small checkbox before the label. Its tooltip reads <em>Expose in Source Settings. When off, the value is written into the HTML only.</em> New elements start with it on.</p>
+<p>Most rows in <strong>Appearance</strong> and the block sections have a small {{icon:tune}} sliders chip at the right end of the label. Click it to turn it on or off: lit up in the accent color means on. Its tooltip reads <em>Show in Source Settings. When off, the value is written into the HTML only.</em> A one-line legend at the top of Appearance explains the chip. New elements start with it on. On the <strong>Style</strong> row each of B, I, U and S has its own chip.</p>
 
 <div class="hx-table-wrap"><table>
-<thead><tr><th>Checked</th><th>Unchecked</th></tr></thead>
+<thead><tr><th>Lit (on)</th><th>Not lit (off)</th></tr></thead>
 <tbody>
 <tr><td>Value stored in <code>template_configs/{name}.json</code></td><td>Value written into the generated HTML only</td></tr>
 <tr><td>Editable later in <a href="help:template_configuration">Source Settings</a> and <a href="help:source_controls">Source Controls</a></td><td>Fixed until you change it in Spore Studio and save</td></tr>
 </tbody>
 </table></div>
 
-<div class="hx-callout hx-tip"><p>Expose the colors, text and URLs you change often on stream. Leave sizes unexposed if you do not need to change them live.</p></div>
+<div class="hx-callout hx-tip"><p>Light the chip on the colors, text and URLs you change often on stream. Leave it off for sizes you do not need to change live.</p></div>
 
 <h2>Text, Counter and Data display</h2>
 
@@ -306,23 +316,22 @@
       <div class="hm hm-ss">
         <div class="hm-ss-body hm-ss-inspector-only">
           <div class="hm-ss-right">
-            <div class="hm-ss-tabs"><span class="hm-ss-tab">Properties</span><span class="hm-ss-tab">Bindings</span><span class="hm-ss-tab">Advanced JS</span><span class="hm-ss-tab is-active">Canvas</span></div>
-            <div class="hm-ss-section hm-col" style="gap:6px">
-              <div class="hm-ss-h">Canvas</div>
+            <div class="hm-ss-tabs"><span class="hm-ss-tab"><span class="hx-mi">tune</span><b>Properties</b></span><span class="hm-ss-tab"><span class="hx-mi">bolt</span><b>Bindings</b></span><span class="hm-ss-tab"><span class="hx-mi">grid_on</span><b>Stream Deck</b></span><span class="hm-ss-tab"><span class="hx-mi">toggle_on</span><b>Source Controls</b></span><span class="hm-ss-tab"><span class="hx-mi">code</span><b>Advanced JS</b></span><span class="hm-ss-tab is-active"><span class="hx-mi">grid_3x3</span><b>Canvas</b></span></div>
+            <div class="hm-ss-panecard">
+              <div class="hm-ss-ph"><span class="hx-mi">grid_3x3</span>Canvas</div>
               <div class="hm-ss-pair"><div class="hm-ss-row"><span class="hm-ss-label">Width (px)</span><span class="hm-ss-input">800</span></div><div class="hm-ss-row"><span class="hm-ss-label">Height (px)</span><span class="hm-ss-input">200</span></div></div>
-              <span class="hm-ss-btn hm-ss-ghost hm-ss-sm" style="align-self:flex-start">Match canvas to root container</span>
+              <span class="hm-ss-btn hm-ss-wide"><span class="hx-mi">check_box_outline_blank</span>Match canvas to root container</span>
               <div class="hm-ss-row"><span class="hm-ss-label">Alert system</span><span class="hm-ss-input hm-ss-sel">Queue (next_alert; emit alert_complete in Advanced JS if you use the alert queue)</span></div>
               <div class="hm-ss-row"><span class="hm-ss-label">Title</span><span class="hm-ss-input">Follow alert</span></div>
               <div class="hm-ss-row"><span class="hm-ss-label">Duration (seconds)</span><span class="hm-ss-input">6</span></div>
-              <span class="hm-ss-hint">Minimum from layout: 5.6s</span>
-              <span class="hm-ss-btn hm-ss-ghost hm-ss-sm" style="align-self:flex-start">Reset to minimum</span>
+              <div class="hm-row hm-between hm-nowrap"><span class="hm-ss-hint">Minimum from layout: 5.6s</span><span class="hm-ss-btn hm-ss-sm">Reset to minimum</span></div>
               <span class="hm-switch"><i></i>Queued</span>
             </div>
-            <div class="hm-ss-section">
-              <div class="hm-ss-h">Transformations</div>
+            <div class="hm-ss-panecard">
+              <div class="hm-ss-ph"><span class="hx-mi">rotate_right</span>Transformations</div>
               <span class="hm-ss-hint">These apply to the whole canvas. A block can add its own transform on top.</span>
               <div class="hm-ss-empty">No canvas transform yet. One here moves, sizes, rotates, or skews the whole template.</div>
-              <span class="hm-ss-btn hm-ss-primary hm-ss-sm">+ Add transform</span>
+              <span class="hm-ss-btn hm-ss-primary hm-ss-sm" style="align-self:flex-start">+ Add transform</span>
             </div>
           </div>
         </div>
@@ -339,7 +348,7 @@
     <tr><td><strong>Alert system</strong></td><td>Queue or Instant (below)</td></tr>
     <tr><td><strong>Title</strong></td><td>The name shown in Source Settings</td></tr>
     <tr><td><strong>Duration (seconds)</strong></td><td>0.1–600. Saved to the config as <code>Duration</code>. Used when this template holds the alert queue for a point reward.</td></tr>
-    <tr><td><strong>Minimum from layout</strong></td><td>The shortest time your animations, bindings and fades need. Duration rises to it on its own; you can set it higher.</td></tr>
+    <tr><td><strong>Minimum from layout</strong></td><td>The shortest time your animations, bindings and fades need, counting each element's own exit animation. The overlay always runs at least this long. Duration keeps the number you typed, so if you remove a long binding it drops back to your number.</td></tr>
     <tr><td><strong>Reset to minimum</strong></td><td>Sets Duration to that minimum</td></tr>
     <tr><td><strong>Queued</strong></td><td>When on, a channel point reward whose title matches this template's name holds the main alert queue for <strong>Duration</strong></td></tr>
     </tbody>
@@ -350,14 +359,14 @@
 <h3>Queue vs Instant</h3>
 
 <div class="hx-table-wrap"><table>
-<thead><tr><th>Value</th><th>Label in the dropdown</th><th>Use it for</th></tr></thead>
+<thead><tr><th>Value</th><th>Card in the New template dialog</th><th>Label in the Canvas tab dropdown</th><th>Use it for</th></tr></thead>
 <tbody>
-<tr><td><code>queue</code></td><td>Queue (next_alert; emit alert_complete in Advanced JS if you use the alert queue)</td><td>Full-screen alerts that take turns in the alert queue</td></tr>
-<tr><td><code>instant</code></td><td>Instant (instant_alert)</td><td>Sub bars, counters and HUD pieces that must not hold up the queue</td></tr>
+<tr><td><code>queue</code></td><td><strong>Queued</strong></td><td>Queue (next_alert; emit alert_complete in Advanced JS if you use the alert queue)</td><td>Full-screen alerts that take turns in the alert queue</td></tr>
+<tr><td><code>instant</code></td><td><strong>Instant</strong></td><td>Instant (instant_alert)</td><td>Sub bars, counters and HUD pieces that must not hold up the queue</td></tr>
 </tbody>
 </table></div>
 
-<div class="hx-callout hx-note"><p>A Queue template handles the alert queue for you. For each <code>next_alert</code> it runs your bindings, holds for <strong>Duration</strong> (or the alert's own <code>duration</code>) and while its media is still playing, then tells the queue it is done. It only does this when it is one of the alert's <code>queue_holders</code>, normally <code>alerts</code> plus a matching Queued point-reward template. You do not need to send <code>alert_complete</code> yourself, despite what the dropdown label says. See <a href="help:spore_studio_advanced_js">Advanced JS</a>.</p></div>
+<div class="hx-callout hx-note"><p>A Queue template handles the alert queue for you. For each <code>next_alert</code> it runs your bindings, holds for <strong>Duration</strong> (or the alert's own <code>duration</code>) and while its media is still playing, then tells the queue it is done. It only does this when it is one of the alert's <code>queue_holders</code>, normally <code>alerts</code> plus a matching Queued point-reward template. You do not need to send <code>alert_complete</code> yourself, despite what the dropdown label and the <strong>Queued</strong> card in the New template dialog say. See <a href="help:spore_studio_advanced_js">Advanced JS</a>.</p></div>
 
 <h2>Other inspector tabs</h2>
 

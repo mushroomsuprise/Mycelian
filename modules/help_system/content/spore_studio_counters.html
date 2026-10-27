@@ -37,28 +37,28 @@
           <div class="hm hm-ssb">
             <div class="hm-ssb-insp">
               <div class="hm-ssb-tabs">
-                <span class="is-active">Properties</span><span>Bindings</span><span>Stream Deck</span><span>Source Controls</span><span>Advanced JS</span><span>Canvas</span>
+                <span class="is-active" title="Properties"><span class="hx-mi">tune</span><b>Properties</b></span><span title="Bindings"><span class="hx-mi">bolt</span><b>Bindings</b></span><span title="Stream Deck"><span class="hx-mi">grid_on</span><b>Stream Deck</b></span><span title="Source Controls"><span class="hx-mi">toggle_on</span><b>Source Controls</b></span><span title="Advanced JS"><span class="hx-mi">code</span><b>Advanced JS</b></span><span title="Canvas"><span class="hx-mi">grid_3x3</span><b>Canvas</b></span>
               </div>
               <div class="hm-ssb-body">
                 <div class="hm-expansion hm-ssb-sec is-open">
-                  <div class="hm-expansion-head">Counter</div>
+                  <div class="hm-expansion-head"><span class="hx-mi">tag</span>Counter</div>
                   <div class="hm-expansion-body">
                     <div class="hm-ssb-fr"><label>Counter id <span class="hm-marker" data-n="1"></span></label><span class="hm-ssb-in">bit_count</span></div>
                     <div class="hm-ssb-fr"><label>Initial value</label><span class="hm-ssb-in">0</span></div>
                     <div class="hm-ssb-fr"><label>Min</label><span class="hm-ssb-in is-ph"></span></div>
                     <span class="hm-check"><i></i>Progressive goals <span class="hm-marker" data-n="2"></span></span>
                     <div class="hm-ssb-fr"><label>Max</label><span class="hm-ssb-in">1000</span></div>
-                    <div class="hm-ssb-fr"><label>Format ({value}, {min}, {max}) <span class="hm-marker" data-n="3"></span></label><span class="hm-ssb-in">Bits: {value} / {max}</span></div>
+                    <div class="hm-ssb-fr"><label>Format ({value}, {min}, {max}) <span class="hm-marker" data-n="3"></span><span class="hm-ss-expose is-on"></span></label><span class="hm-ssb-in">Bits: {value} / {max}</span></div>
                     <span class="hm-check"><i></i>Persist (database) <span class="hm-marker" data-n="4"></span></span>
                     <span class="hm-ssb-hint">Choose when this counter changes under Data feed. Add to this counter, subtract, set, or reset, and pick the amount there.</span>
                   </div>
                 </div>
                 <div class="hm-expansion hm-ssb-sec">
-                  <div class="hm-expansion-head">Data feed</div>
+                  <div class="hm-expansion-head"><span class="hx-mi">rss_feed</span>Data feed<small>No feed</small></div>
                   <div class="hm-expansion-body"><span class="hm-ssb-hint">See the next step.</span></div>
                 </div>
                 <div class="hm-expansion hm-ssb-sec">
-                  <div class="hm-expansion-head">Outputs</div>
+                  <div class="hm-expansion-head"><span class="hx-mi">call_made</span>Outputs</div>
                   <div class="hm-expansion-body"><span class="hm-ssb-hint">counter changed (counter_changed), goal reached (goal_reached)</span></div>
                 </div>
               </div>
@@ -71,7 +71,7 @@
         <ol class="hx-annotations">
           <li data-n="1"><strong>Counter id</strong> is what images, progress bars, bindings and Source Controls use to find this counter. Spaces and symbols become <code>_</code>.</li>
           <li data-n="2">With <strong>Progressive goals</strong> off you get a single <strong>Max</strong>. Leave <strong>Min</strong> or <strong>Max</strong> empty for no limit. Goals are explained below.</li>
-          <li data-n="3"><strong>Format</strong> is the text shown. <code>{value}</code>, <code>{min}</code> and <code>{max}</code> are replaced. The checkbox next to it exposes the format in Source Settings.</li>
+          <li data-n="3"><strong>Format</strong> is the text shown. <code>{value}</code>, <code>{min}</code> and <code>{max}</code> are replaced. The {{icon:tune}} chip at the end of its label shows the format in Source Settings when lit.</li>
           <li data-n="4"><strong>Persist (database)</strong> keeps the value between reloads. See Persist below.</li>
         </ol>
         <p>The <strong>Appearance</strong> section adds <strong>Scroll</strong>, <strong>Scroll speed (s)</strong>, <strong>Scroll direction</strong> and <strong>Scroll gap (px)</strong> if the number should move across the block like a marquee, plus the usual text styles.</p>

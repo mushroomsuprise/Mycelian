@@ -2,12 +2,12 @@
 
 <h2>Live preview</h2>
 
-<p>Click <strong>Preview</strong> in the toolbar (<em>Open live preview window</em>). The <strong>Live preview</strong> window opens over the editor and shows your template with its <strong>unsaved</strong> changes, so you can test without saving. Drag it by its title bar and resize it from the bottom-right corner.</p>
+<p>Click {{icon:play_arrow}} <strong>Preview</strong> in the toolbar (<em>Open live preview window</em>). The <strong>Live preview</strong> window, marked with a green dot, opens over the editor and shows your template with its <strong>unsaved</strong> changes, so you can test without saving. Drag it by its title bar and resize it from the bottom-right corner.</p>
 
 <figure class="hx-figure hx-static">
   <div class="hm hm-ss">
     <div class="hm-ss-preview">
-      <div class="hm-ss-preview-head">Live preview<span class="hm-ss-spacer"></span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Reload</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Close</span></div>
+      <div class="hm-ss-preview-head"><span class="hm-ss-live"></span>Live preview<span class="hm-ss-spacer"></span><span class="hm-ss-btn hm-ss-ghost hm-ss-icon" title="Reload the preview"><span class="hx-mi">refresh</span></span><span class="hm-ss-btn hm-ss-ghost hm-ss-icon" title="Close the preview window"><span class="hx-mi">close</span></span></div>
       <div class="hm-ss-preview-bar">
         <b>Alerts:</b><span class="hm-marker" data-n="1"></span>
         <span class="hm-ss-btn hm-ss-sm">Random queue alert</span>
@@ -45,7 +45,7 @@
   <li data-n="4"><strong>Size</strong> sets the preview's width and height (320–7680 by 240–4320). When OBS WebSocket is connected and a browser source uses this template's URL, Mycelian fills the size from OBS and shows <em>From OBS</em>. Otherwise it uses your last preview size or the design canvas. <strong>Reset</strong> clears the saved size and detects it again. <strong>Zoom</strong> scales the view from 25% to 200%.</li>
 </ol>
 
-<p>Each mock button sends one socket event into the preview only, shaped like the real event (demo usernames, alert presets). <strong>Reload</strong> reloads the preview; <strong>Close</strong> closes the window.</p>
+<p>Each mock button sends one socket event into the preview only, shaped like the real event (demo usernames, alert presets). {{icon:refresh}} (<em>Reload the preview</em>) reloads the preview; {{icon:close}} (<em>Close the preview window</em>) closes the window.</p>
 
 <p>On <strong>Save</strong>, the same mock list is written to <code>template_configs/{name}.json</code> as <code>preview_mocks</code>, so the preview toolbar in Custom Sources offers the same buttons.</p>
 
@@ -53,7 +53,7 @@
 
 <h2>Advanced JS tab</h2>
 
-<p>Your own JavaScript is saved between the <code>SPORE_STUDIO:user-begin</code> and <code>SPORE_STUDIO:user-end</code> markers and kept across saves. The box on the tab fits a few lines. <strong>Expand editor</strong> opens a larger editor with line numbers, syntax coloring, find and replace, and a helper reference.</p>
+<p>Your own JavaScript is saved between the <code>SPORE_STUDIO:user-begin</code> and <code>SPORE_STUDIO:user-end</code> markers and kept across saves. The tab shows an info box, then {{icon:open_in_new}} <strong>Expand editor</strong>, then a box that fits a few lines. <strong>Expand editor</strong> opens a larger editor with line numbers, syntax coloring, find and replace, and a helper reference.</p>
 
 <p>Do not edit the generated block between <code>auto-begin</code> and <code>auto-end</code>; it is rebuilt on every save. The helper list, the queue handshake and examples are in <a href="help:spore_studio_advanced_js">Advanced JS reference</a>.</p>
 
@@ -82,7 +82,7 @@
   </div>
 </div>
 
-<p>You cannot drop new blocks into a legacy template. Trying shows <em>Legacy templates can't accept new blocks — create a new template via '+ New' to edit visually.</em> To get the full editor, create a template with <strong>+ New</strong> and rebuild it, or copy a similar Spore template.</p>
+<p>You cannot drop new blocks into a legacy template. Trying shows <em>Legacy templates can't accept new blocks — create a new template via '+ New' to edit visually.</em> To get the full editor, create a template with {{icon:add}} <strong>New</strong> and rebuild it, or pick a similar Spore template under <strong>Start from</strong>.</p>
 
 <h2>What Save does</h2>
 

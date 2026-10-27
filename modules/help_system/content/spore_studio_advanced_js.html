@@ -7,12 +7,12 @@
 
 <h2>The editor</h2>
 
-<p>Short scripts fit in the box on the tab. <strong>Expand editor</strong> opens a larger editor for the same script.</p>
+<p>Short scripts fit in the box on the tab. {{icon:open_in_new}} <strong>Expand editor</strong> opens a larger editor for the same script.</p>
 
 <figure class="hx-figure hx-static">
   <div class="hm hm-ss">
     <div class="hm-ss-preview">
-      <div class="hm-ss-preview-head">Advanced JS<span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Find</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm">Reference</span><span class="hm-marker" data-n="1"></span><span class="hm-ss-spacer"></span><span class="hm-ss-btn hm-ss-primary hm-ss-sm">Done</span></div>
+      <div class="hm-ss-preview-head"><span class="hx-mi hm-accent">code</span>Advanced JS<span class="hm-ss-btn hm-ss-ghost hm-ss-sm"><span class="hx-mi">search</span>Find</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm"><span class="hx-mi">format_list_bulleted</span>Reference</span><span class="hm-marker" data-n="1"></span><span class="hm-ss-spacer"></span><span class="hm-ss-btn hm-ss-primary hm-ss-sm"><span class="hx-mi">check</span>Done</span></div>
       <div class="hm-ss-preview-bar">
         <span class="hm-ss-input" style="min-width:110px">thank</span>
         <span class="hm-ss-input is-placeholder" style="min-width:110px">Replace</span>
@@ -137,7 +137,7 @@
   </div>
   <div class="hx-tab-panel" data-panel="queue">
     <p>A <strong>Queue</strong> template handles the alert queue for you. It lines up each <code>next_alert</code>, runs your bindings, holds for the template's <strong>Duration</strong> (or the alert's <code>duration</code>) and while its media plays, and then reports the alert done. It does this only when the template is one of the alert's <code>queue_holders</code>; otherwise it just watches.</p>
-    <div class="hx-callout hx-warning"><p>Do not send <code>alert_complete</code> yourself in a Queue template. The template already does, and an extra one ends the alert early. The dropdown label <em>emit alert_complete in Advanced JS</em> and the Reference snippet date from before this was automatic. Use <strong>Duration</strong> on the Canvas tab to control how long the alert holds.</p></div>
+    <div class="hx-callout hx-warning"><p>Do not send <code>alert_complete</code> yourself in a Queue template. The template already does, and an extra one ends the alert early. The Canvas tab dropdown label <em>emit alert_complete in Advanced JS</em>, the same hint on the <strong>Queued</strong> card in the New template dialog, and the Reference snippet date from before this was automatic. Use <strong>Duration</strong> on the Canvas tab to control how long the alert holds.</p></div>
     <p>A <code>socket.on('next_alert', …)</code> listener in your script runs as soon as the alert arrives, not when the template's own queue reaches it. For per-alert visuals, prefer bindings, which run in queue order.</p>
   </div>
   <div class="hx-tab-panel" data-panel="sc">

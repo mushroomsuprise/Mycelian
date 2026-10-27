@@ -43,7 +43,7 @@
 
   <div class="hx-step">
     <h3>Add the action on the Stream Deck tab</h3>
-    <p>Open your template in Spore Studio, choose the <strong>Stream Deck</strong> tab in the inspector, and click <strong>+ Add Stream Deck action</strong>. A new card appears with the id <code>action_1</code>, the name <code>New action</code>, and a socket event equal to the id. Rename them.</p>
+    <p>Open your template in Spore Studio, choose the {{icon:grid_on}} <strong>Stream Deck</strong> tab in the inspector, and click {{icon:add}} <strong>Add Stream Deck action</strong>. A template without actions shows <em>No Stream Deck actions yet</em> above that button. A new card appears with the id <code>action_1</code>, the name <code>New action</code>, and a socket event equal to the id. Rename them.</p>
 
     <div class="hx-split">
       <div>
@@ -51,10 +51,10 @@
       <div class="hm hm-ssb">
         <div class="hm-ssb-insp">
           <div class="hm-ssb-tabs">
-            <span>Properties</span><span>Bindings</span><span class="is-active">Stream Deck</span><span>Source Controls</span><span>Advanced JS</span><span>Canvas</span>
+            <span title="Properties"><span class="hx-mi">tune</span><b>Properties</b></span><span title="Bindings"><span class="hx-mi">bolt</span><b>Bindings</b></span><span class="is-active" title="Stream Deck"><span class="hx-mi">grid_on</span><b>Stream Deck</b></span><span title="Source Controls"><span class="hx-mi">toggle_on</span><b>Source Controls</b></span><span title="Advanced JS"><span class="hx-mi">code</span><b>Advanced JS</b></span><span title="Canvas"><span class="hx-mi">grid_3x3</span><b>Canvas</b></span>
           </div>
           <div class="hm-ssb-body">
-            <span class="hm-ssb-hint">Defines streamdeck_options in the template JSON (action ids, socket event, default payload). The Stream Deck plugin must send actionName equal to each action id below. Overlays listen for the Socket event string. Bind elements on the Bindings tab using trigger Stream Deck.</span>
+            <span class="hm-ss-callout">Defines streamdeck_options in the template JSON (action ids, socket event, default payload). The Stream Deck plugin must send actionName equal to each action id below. Overlays listen for the Socket event string. Bind elements on the Bindings tab using trigger Stream Deck.</span>
             <div class="hm-ssb-fr"><label>Template description</label><span class="hm-ssb-in hm-ssb-ta is-ph">Logo and scene toggles for my HUD</span></div>
             <div class="hm-ssb-card">
               <div class="hm-ssb-card-head"><span class="hm-ssb-title">Toggle logo</span><span class="hm-ssb-x">&times;</span></div>
@@ -64,7 +64,7 @@
               <div class="hm-ssb-fr"><label>Socket event <span class="hm-marker" data-n="3"></span></label><span class="hm-ssb-in">toggle_logo</span></div>
               <div class="hm-ssb-fr"><label>default_data (JSON) <span class="hm-marker" data-n="4"></span></label><span class="hm-ssb-in hm-ssb-ta hm-mono">{}</span></div>
             </div>
-            <span class="hm-ssb-btn is-primary">+ Add Stream Deck action</span>
+            <span class="hm-ssb-btn is-primary is-wide"><span class="hx-mi">add</span>Add Stream Deck action</span>
           </div>
         </div>
       </div>
@@ -81,26 +81,34 @@
       </div>
     </div>
 
-    <div class="hx-callout hx-warning"><p>If two actions share a socket event, the tab warns <em>"Multiple actions share socket event(s)…"</em>. Bindings on that event then fire for either key.</p></div>
+    <div class="hx-callout hx-warning"><p>If two actions share a socket event, a warning box on the tab says <em>"Multiple actions share socket event(s)…"</em>. Bindings on that event then fire for either key.</p></div>
   </div>
 
   <div class="hx-step">
     <h3>Bind elements to the action</h3>
-    <p>Select the element on the canvas, open <strong>Bindings</strong>, and click <strong>+ Add binding</strong>. Set <strong>Trigger</strong> to <strong>Stream Deck action</strong> and pick the action. New bindings default to the first action not already used in this template.</p>
+    <p>Select the element on the canvas, open {{icon:bolt}} <strong>Bindings</strong>, and click {{icon:add}} <strong>Add binding</strong>. Under <strong>1 When</strong>, set <strong>Trigger</strong> to <strong>Stream Deck action</strong> and pick the action. Under <strong>2 Do this</strong>, pick what the element does. New bindings default to the first action not already used in this template.</p>
 
     <figure class="hx-figure hx-static">
       <div class="hm hm-ssb">
         <div class="hm-ssb-insp">
           <div class="hm-ssb-tabs">
-            <span>Properties</span><span class="is-active">Bindings</span><span>Stream Deck</span><span>Source Controls</span><span>Advanced JS</span><span>Canvas</span>
+            <span title="Properties"><span class="hx-mi">tune</span><b>Properties</b></span><span class="is-active" title="Bindings"><span class="hx-mi">bolt</span><b>Bindings</b></span><span title="Stream Deck"><span class="hx-mi">grid_on</span><b>Stream Deck</b></span><span title="Source Controls"><span class="hx-mi">toggle_on</span><b>Source Controls</b></span><span title="Advanced JS"><span class="hx-mi">code</span><b>Advanced JS</b></span><span title="Canvas"><span class="hx-mi">grid_3x3</span><b>Canvas</b></span>
           </div>
           <div class="hm-ssb-body">
+            <span class="hm-ss-callout">Stream Deck: assign one binding per hardware key — Trigger → Stream Deck action, then pick the matching action id. New bindings default to the first action not already used in this template.</span>
+            <span class="hm-ssb-btn is-primary is-wide"><span class="hx-mi">add</span>Add binding</span>
             <div class="hm-ssb-card">
               <div class="hm-ssb-card-head"><span class="hm-ssb-title">Binding #1</span><span class="hm-ssb-x">&times;</span></div>
-              <div class="hm-ssb-fr"><label>Trigger</label><span class="hm-ssb-in hm-ssb-sel">Stream Deck action</span></div>
-              <div class="hm-ssb-fr"><label>Stream Deck action</label><span class="hm-ssb-in hm-ssb-sel">Toggle logo</span></div>
-              <span class="hm-ssb-hint">Socket event: toggle_logo</span>
-              <div class="hm-ssb-fr"><label>Action</label><span class="hm-ssb-in hm-ssb-sel">Toggle visibility</span></div>
+              <div class="hm-ss-flow">
+                <div class="hm-ss-flow-head"><span class="hm-ss-badge">1</span>When</div>
+                <div class="hm-ssb-fr"><label>Trigger</label><span class="hm-ssb-in hm-ssb-sel">Stream Deck action</span></div>
+                <div class="hm-ssb-fr"><label>Stream Deck action</label><span class="hm-ssb-in hm-ssb-sel">Toggle logo</span></div>
+                <span class="hm-ssb-hint">Socket event: toggle_logo</span>
+              </div>
+              <div class="hm-ss-flow">
+                <div class="hm-ss-flow-head"><span class="hm-ss-badge">2</span>Do this</div>
+                <div class="hm-ssb-fr"><label>Action</label><span class="hm-ssb-in hm-ssb-sel">Toggle visibility</span></div>
+              </div>
             </div>
           </div>
         </div>
@@ -209,7 +217,7 @@
     <p>A counter's <strong>Data feed</strong> only listens to registry events, so use a binding for keys.</p>
   </div>
   <div class="hx-tab-panel" data-panel="flash">
-    <p>Binding with primary action <strong>Show element</strong>, then <strong>+ Add chained step</strong> with <strong>Hide element</strong> and a delay in ms. Or use <strong>Show for N seconds</strong> as a single action.</p>
+    <p>Binding with primary action <strong>Show element</strong>, then <strong>Add chained step</strong> (<em>Then, step 1</em>) with <strong>Hide element</strong> and a delay in ms. Or use <strong>Show for N seconds</strong> as a single action.</p>
   </div>
 </div>
 

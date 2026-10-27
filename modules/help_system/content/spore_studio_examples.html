@@ -1,6 +1,6 @@
 <p class="hx-lead">Ten small overlays, each with what it looks like on stream and how it is built. Pick one from the tabs. Field details are in <a href="help:spore_studio_design">Designing Templates</a> and action arguments in <a href="help:spore_studio_bindings">Event Bindings &amp; Actions</a>.</p>
 
-<div class="hx-callout hx-note"><p>Every example starts with <strong>+ New</strong> in the Spore Studio toolbar. The <strong>New template</strong> dialog asks for <strong>Name</strong>, <strong>Alert system</strong>, <strong>Copy from existing</strong>, <strong>Width (px)</strong> and <strong>Height (px)</strong>. Add the finished overlay to OBS as a browser source at <span class="hx-copy" data-copy="http://127.0.0.1:5000/">http://127.0.0.1:5000/</span> followed by the template name.</p></div>
+<div class="hx-callout hx-note"><p>Every example starts with {{icon:add}} <strong>New</strong> in the Spore Studio toolbar. The <strong>New template</strong> dialog asks for <strong>Name</strong>, <strong>Alert system</strong> (the <strong>Queued</strong> or <strong>Instant</strong> card), <strong>Start from</strong> and <strong>Canvas size (px)</strong>. Add the finished overlay to OBS as a browser source at <span class="hx-copy" data-copy="http://127.0.0.1:5000/">http://127.0.0.1:5000/</span> followed by the template name.</p></div>
 
 <h2>Examples</h2>
 
@@ -37,20 +37,20 @@
     </figure>
     <p><strong>How it's built</strong></p>
     <ol>
-      <li><strong>+ New</strong> → Name <code>follow_alert</code>, Alert system <strong>Queue</strong>, 800 × 200.</li>
+      <li><strong>New</strong> → Name <code>follow_alert</code>, Alert system <strong>Queued</strong>, 800 × 200 (the <strong>Alert</strong> preset).</li>
       <li>Drag in a <strong>Container</strong>. Put the rest inside it.</li>
       <li><strong>Text</strong> (category <code>label</code>) with Text <code>New follower!</code>.</li>
       <li><strong>Text</strong> (category <code>username</code>), left empty. A binding fills it.</li>
       <li><strong>Image</strong> (category <code>avatar</code>) pointing at a picture in <code>assets/follow_alert/</code>.</li>
-      <li>Select the username text → <strong>Bindings</strong> → <strong>+ Add binding</strong>:
+      <li>Select the username text → <strong>Bindings</strong> → <strong>Add binding</strong>:
         <ul>
           <li>Trigger <strong>Registry event</strong>, Event <strong>Alert (queue)</strong></li>
-          <li><strong>Filter: Alert type</strong> = <code>follow</code></li>
+          <li><strong>Only when…</strong> → <strong>Add a filter</strong> → <strong>Alert type</strong> = <code>follow</code></li>
           <li>Action <strong>Set text content</strong>, Payload field <code>username</code></li>
         </ul></li>
       <li>Select the container → binding on the same event and filter → Action <strong>Show for N seconds</strong>: Seconds <code>5</code>, Entrance and Exit <code>fade</code>.</li>
       <li>The container starts hidden on its own because it has a Show binding (<strong>Visibility</strong> → <strong>Start hidden until shown</strong>).</li>
-      <li>Tick the <strong>Expose in Source Settings</strong> box next to any color or font you want to change later without the editor.</li>
+      <li>Light the {{icon:tune}} <strong>Show in Source Settings</strong> chip on any color or font you want to change later without the editor.</li>
       <li><strong>Save</strong> → <strong>Preview</strong> → click the follow mock.</li>
     </ol>
     <p>Queue templates play in step with Mycelian's alert queue. Whether this overlay should also report completion is explained under <code>alert_complete</code> in <a href="help:spore_studio_advanced_js">Advanced JS</a>.</p>
@@ -72,7 +72,7 @@
     </figure>
     <p><strong>How it's built</strong></p>
     <ol>
-      <li><strong>+ New</strong> → <code>sub_counter</code>, Alert system <strong>Instant</strong>, 600 × 80. Instant does not hold the alert queue.</li>
+      <li><strong>New</strong> → <code>sub_counter</code>, Alert system <strong>Instant</strong>, 600 × 80. Instant does not hold the alert queue.</li>
       <li>Drag in a <strong>Counter</strong> (Widgets group).</li>
       <li>In <strong>Counter</strong>: Counter id <code>sub_count</code>, Initial value <code>0</code>, Format <code>Subs: {value}</code>.</li>
       <li><strong>Data feed</strong> → <strong>+ Add feed</strong>:
@@ -105,8 +105,8 @@
       <li>New template. Either alert system works; chat does not use the alert queue.</li>
       <li>Add a <strong>Text</strong> block.</li>
       <li>Binding: Event <strong>Chat message (Twitch)</strong>, Action <strong>Set text content</strong>, Payload field <code>message</code>.</li>
-      <li><strong>+ Add chained step</strong>: delay <code>0</code>, Action <strong>Show for N seconds</strong>, Seconds <code>4</code>.</li>
-      <li>Optional: <strong>Filter: Message type</strong> = <code>text</code> to skip <code>/me</code> actions.</li>
+      <li><strong>Add chained step</strong>: delay <code>0</code>, Action <strong>Show for N seconds</strong>, Seconds <code>4</code>.</li>
+      <li>Optional: <strong>Only when…</strong> → <strong>Add a filter</strong> → <strong>Message type</strong> = <code>text</code> to skip <code>/me</code> actions.</li>
     </ol>
     <p>The same thing with feeds: one feed on <strong>Chat message (Twitch)</strong> with Main text field <code>message</code> and <strong>Replace this text</strong>, and a second feed on the same event with <strong>Show for a few seconds</strong>.</p>
   </div>
@@ -129,8 +129,8 @@
     <ol>
       <li>Add a <strong>Video</strong> block. Set <strong>Visual kind</strong> to <code>image</code> for a GIF, or <code>video</code> for a clip.</li>
       <li>Drop the GIF and sound into the template's asset folder (<strong>Assets</strong> → <strong>Upload</strong>). Put the sound in <strong>Optional audio URL</strong>.</li>
-      <li>Binding: Event <strong>Alert (queue)</strong>, <strong>Filter: Alert type</strong> = <code>bit</code> (or <code>donation</code>), Action <strong>Set visual source (GIF/video)</strong> with <strong>Literal URL</strong> <code>/assets/cheer_gif/cheer.gif</code>.</li>
-      <li><strong>+ Add chained step</strong>: delay <code>0</code>, Action <strong>Play audio element</strong>. It plays this block's audio.</li>
+      <li>Binding: Event <strong>Alert (queue)</strong>, <strong>Only when…</strong> → <strong>Add a filter</strong> → <strong>Alert type</strong> = <code>bit</code> (or <code>donation</code>), Action <strong>Set visual source (GIF/video)</strong> with <strong>Literal URL</strong> <code>/assets/cheer_gif/cheer.gif</code>.</li>
+      <li><strong>Add chained step</strong>: delay <code>0</code>, Action <strong>Play audio element</strong>. It plays this block's audio.</li>
     </ol>
   </div>
 
@@ -154,8 +154,8 @@
     <p><strong>How it's built</strong></p>
     <ol>
       <li>Group the alert art in a <strong>Container</strong>.</li>
-      <li>Binding on the container: Event <strong>Alert (queue)</strong>, <strong>Filter: Alert type</strong> = <code>follow</code>, Action <strong>Randomize position within bounds</strong>: X min <code>0</code>, X max <code>-1</code>, Y min <code>0</code>, Y max <code>-1</code>. <code>-1</code> means the canvas edge.</li>
-      <li><strong>+ Add chained step</strong> → <strong>Show for N seconds</strong>.</li>
+      <li>Binding on the container: Event <strong>Alert (queue)</strong>, <strong>Only when…</strong> → <strong>Add a filter</strong> → <strong>Alert type</strong> = <code>follow</code>, Action <strong>Randomize position within bounds</strong>: X min <code>0</code>, X max <code>-1</code>, Y min <code>0</code>, Y max <code>-1</code>. <code>-1</code> means the canvas edge.</li>
+      <li><strong>Add chained step</strong> → <strong>Show for N seconds</strong>.</li>
     </ol>
   </div>
 
@@ -181,7 +181,7 @@
     </figure>
     <p><strong>How it's built</strong></p>
     <ol>
-      <li><strong>Stream Deck</strong> tab → <strong>+ Add Stream Deck action</strong>: Action id <code>toggle_logo</code>, Display name <code>Toggle logo</code>, Socket event <code>toggle_logo</code>, default_data <code>{}</code>.</li>
+      <li>{{icon:grid_on}} <strong>Stream Deck</strong> tab → <strong>Add Stream Deck action</strong>: Action id <code>toggle_logo</code>, Display name <code>Toggle logo</code>, Socket event <code>toggle_logo</code>, default_data <code>{}</code>.</li>
       <li>Select the logo <strong>Image</strong> → binding: Trigger <strong>Stream Deck action</strong> → <code>Toggle logo</code>, Action <strong>Toggle visibility</strong>.</li>
       <li><strong>Preview</strong> → <strong>SD:</strong> <strong>Toggle logo</strong> to test.</li>
       <li><strong>Save</strong>, then in the Stream Deck app add a <strong>Template Action</strong> key and pick this template and <strong>Toggle logo</strong>.</li>
@@ -226,7 +226,7 @@
       <figcaption>One binding: pop in, shake, then hide.</figcaption>
     </figure>
     <p><strong>How it's built</strong></p>
-    <p>Binding on <strong>Alert (queue)</strong> (any type), primary Action <strong>Show element</strong>, then <strong>+ Add chained step</strong> three times:</p>
+    <p>Binding on <strong>Alert (queue)</strong> (any type), primary Action <strong>Show element</strong>, then <strong>Add chained step</strong> three times (<em>Then, step 1</em> to <em>Then, step 3</em>):</p>
     <div class="hx-table-wrap"><table>
     <thead><tr><th>Chain step</th><th>Delay before this step (ms)</th><th>Action</th><th>Args</th></tr></thead>
     <tbody>
@@ -254,7 +254,7 @@
     </figure>
     <p><strong>How it's built</strong></p>
     <ol>
-      <li><strong>+ New</strong> → <code>my_bits</code>, Alert system <strong>Instant</strong>, 300 × 55. Or set <strong>Copy from existing</strong> to <code>bitcounter</code>.</li>
+      <li><strong>New</strong> → <code>my_bits</code>, Alert system <strong>Instant</strong>, 300 × 55. Or set <strong>Start from</strong> to <code>bitcounter</code>.</li>
       <li><strong>Counter</strong> block: Counter id <code>bit_count</code>, Format <code>{value}</code>, Initial value <code>0</code>.</li>
       <li>Feed: <strong>Alert (instant)</strong>, Alert type <strong>Bits</strong>, <strong>Add to this counter</strong>, Delta kind <code>data_source</code> → <strong>Bits cheered</strong>.</li>
       <li><strong>Image</strong> block → <strong>Image source mode</strong> <strong>From counter (ranges)</strong> → Counter <code>bit_count</code>. Ranges 0–99 <code>cheer1.gif</code>, 100–999 <code>cheer100.gif</code>, 1000–4999 <code>cheer1000.gif</code>, and so on, from <code>/assets/my_bits/</code>.</li>
@@ -281,8 +281,8 @@
     <p><strong>How it's built</strong></p>
     <ol>
       <li>Open a game HUD template with a <strong>Counter</strong> whose id is <code>game_score</code>.</li>
-      <li><strong>Source Controls</strong> inspector tab → <strong>+ Add control</strong>: Type <strong>Button</strong>, Label <code>Pause alerts</code>, Action <strong>Toggle alerts pause</strong>, Button text <code>Pause alerts</code>.</li>
-      <li><strong>+ Add control</strong>: Type <strong>Counter control</strong>, Label <code>Score</code>, Counter <code>game_score</code>, Default step <code>1</code>.</li>
+      <li>{{icon:toggle_on}} <strong>Source Controls</strong> inspector tab → <strong>Add control</strong>: Type <strong>Button</strong>, Label <code>Pause alerts</code>, Action <strong>Toggle alerts pause</strong>, Button text <code>Pause alerts</code>.</li>
+      <li><strong>Add control</strong> again: Type <strong>Counter control</strong>, Label <code>Score</code>, Counter <code>game_score</code>, Default step <code>1</code>.</li>
       <li><strong>Save</strong>.</li>
       <li>During the stream: Mycelian → <strong>Source Controls</strong> tab → use the template's card.</li>
     </ol>
