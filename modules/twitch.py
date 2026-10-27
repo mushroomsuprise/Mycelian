@@ -4778,6 +4778,11 @@ class Twitch_API:
 
         granted = token_scopes(self.auth_token)
         if granted is None:
+            # Not read yet (e.g. a token from a path that skipped validation): ask Twitch now.
+            await validate_access_token(self.auth_token)
+            granted = token_scopes(self.auth_token)
+        if granted is None:
+            logger.warning("Couldn't read the Twitch sign-in's scopes; skipping Twitch poll events")
             return
         if twitch_polls.POLL_SCOPE not in granted:
             logger.info("Twitch sign-in lacks %s; Twitch polls are off until the user signs in again",

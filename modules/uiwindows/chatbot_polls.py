@@ -20,6 +20,7 @@ from ..notification_engine import notify
 from ..poll_manager import (
     DEFAULT_BANNER_MESSAGE,
     ONE_TWITCH_POLL_MESSAGE,
+    TWITCH_CHOICES_MAX,
     format_banner_message,
     get_poll_manager,
     list_poll_template_names,
@@ -151,6 +152,7 @@ class PollsPanel:
         self.preview: Optional[ui.label] = None
         self._timer = None
         self._status = ""
+        self._twitch_status: Optional[str] = None
         self._live_marks: Dict[str, bool] = {}
         self._seen: Dict[str, str] = {}
         self._last_timer = DEFAULT_TIMER
@@ -198,6 +200,7 @@ class PollsPanel:
         self.hero_text = self.hero_stats = self.live_bars = self.widget = self.preview = None
         self.picker = None
         self._seen = {}
+        self._twitch_status = None
         if not self.template:
             self._render_empty()
             return
@@ -340,6 +343,10 @@ class PollsPanel:
         if status != self._status:
             self._render()
             return
+        if self._twitch_status is not None and status != "open" and twitch_polls.readiness() != self._twitch_status:
+            # Signed in again, connected, or the scope check finished: update the Twitch poll card.
+            self._render()
+            return
         marks = self._live_statuses()
         if marks != self._live_marks and self.picker is not None and not self.picker.is_deleted:
             self._live_marks = marks
@@ -366,17 +373,21 @@ class PollsPanel:
         votes = {row.get("id"): int(row.get("votes") or 0) for row in snapshot.get("options") or []}
         _head, body = card("Options", "list", plural(len(categories), "option"))
         with body:
+            extra = len(categories) - TWITCH_CHOICES_MAX if on_twitch else 0
+            if extra > 0:
+                raw_html(f'<div class="gp-alert is-error">{icon("block")}<span>Twitch polls have at most {TWITCH_CHOICES_MAX} options. '
+                         f'Remove {plural(extra, "option")} (marked in red) to start this poll.</span></div>', "")
             if categories:
                 raw_html('<div class="gp-opt is-head"><span></span><span>Option</span><span>Keyword</span><span>Votes</span>'
                          '<span></span><span></span><span></span></div>', "")
             for index, cat in enumerate(categories):
                 self._option_row(index, cat, votes.get(cat["id"], int(cat.get("votes") or 0)), len(categories), on_twitch)
-            full = on_twitch and len(categories) >= twitch_polls.CHOICES_MAX
+            full = on_twitch and len(categories) >= TWITCH_CHOICES_MAX
             add = ui.element("div").classes("gp-add" + (" is-disabled" if full else ""))
             with add:
                 raw_html(f"{icon('add')}<span>Add option</span>")
             if full:
-                add.tooltip(f"Twitch polls have at most {twitch_polls.CHOICES_MAX} options")
+                add.tooltip(f"Twitch polls have at most {TWITCH_CHOICES_MAX} options")
             else:
                 add.on("click", self._add_option)
             if len(categories) < 2:
@@ -390,14 +401,15 @@ class PollsPanel:
     def _option_row(self, index: int, cat: Dict[str, Any], count: int, total: int, on_twitch: bool = False) -> None:
         cid = cat["id"]
         follow = {"on": (cat.get("keyword") or "") == normalize_keyword(cat.get("name") or ""), "syncing": False}
-        with ui.element("div").classes("gp-opt"):
-            ui.label(str(index + 1)).classes("gp-opt-n")
-            name = ui.input(value=cat.get("name") or "").props("outlined dense")
+        over = on_twitch and index >= TWITCH_CHOICES_MAX
+        with ui.element("div").classes("gp-opt" + (" is-over" if over else "")):
+            number = ui.label(str(index + 1)).classes("gp-opt-n")
+            if over:
+                number.tooltip(f"Twitch polls have at most {TWITCH_CHOICES_MAX} options")
+            name = ui.input(value=cat.get("name") or "").props("outlined dense").classes("gp-opt-name")
             if on_twitch:
-                # Twitch option names are at most 25 characters; longer ones are flagged (and block Start).
+                # Twitch option names are at most 25 characters (the manager trims saved names too).
                 name.props(f"maxlength={twitch_polls.CHOICE_TITLE_MAX}")
-                if len(cat.get("name") or "") > twitch_polls.CHOICE_TITLE_MAX:
-                    name.props('error error-message="Too long for Twitch"')
             keyword = ui.input(value=cat.get("keyword") or "").props("outlined dense").classes("gp-mono")
             with keyword.add_slot("append"):
                 auto = ui.label("AUTO").classes("gp-auto").tooltip("Follows the option name")
@@ -509,19 +521,28 @@ class PollsPanel:
 
     def _twitch_card(self, config: Dict[str, Any], live: bool) -> None:
         enabled = bool(config.get("twitch_poll"))
-        status = twitch_polls.scope_status()
+        status = twitch_polls.readiness()
+        self._twitch_status = status
         _head, body = card("Twitch poll", "how_to_vote", "On" if enabled else "")
         with body:
             if status == "missing":
-                raw_html(f'<div class="gp-alert">{icon("lock")}<span>Twitch polls can\'t be used until you sign in to Twitch again: '
+                raw_html(f'<div class="gp-alert is-error">{icon("lock")}<span>Twitch polls can\'t be used until you sign in to Twitch again: '
                          'Mycelian needs permission to manage polls. Open Settings → Twitch and click Connect.</span></div>', "")
                 ui.button("Open Twitch settings", icon="settings", on_click=self._open_twitch_settings).props(
                     "outline no-caps color=primary dense").classes("self-start")
+            elif status == "not_eligible":
+                raw_html(f'<div class="gp-alert is-error">{icon("block")}<span>{esc(twitch_polls.readiness_message(status))}</span></div>', "")
             elif enabled and status == "offline":
-                raw_html(f'<div class="gp-hint">{icon("info")}Twitch isn\'t connected, so the Twitch poll can\'t be created right now.</div>', "")
+                raw_html(f'<div class="gp-alert">{icon("link_off")}<span>Twitch isn\'t connected, so the Twitch poll can\'t be created '
+                         'right now. Connect Twitch in Settings → Twitch.</span></div>', "")
+            elif enabled and status == "unknown":
+                raw_html(f'<div class="gp-hint">{icon("hourglass_empty")}Checking your Twitch sign-in…</div>', "")
+            elif enabled and status == "ok" and not live:
+                raw_html(f'<div class="gp-ok">{icon("check_circle")}Your Twitch sign-in can create polls.</div>', "")
+            blocked = status in ("missing", "not_eligible")
             toggle("Also run it on Twitch", "Starting creates a Twitch poll. Viewers vote there, and chat keywords don't count, "
                    "so Mycelian and Twitch show the same numbers.", enabled, self._set_twitch,
-                   enabled=not live and (status != "missing" or enabled))
+                   enabled=not live and (not blocked or enabled))
             if not enabled:
                 return
             with ui.element("div").classes("gp-row"):
@@ -554,10 +575,26 @@ class PollsPanel:
 
     def _set_twitch(self, value: bool) -> None:
         if value:
+            status = twitch_polls.readiness()
+            if status == "missing":
+                notify(twitch_polls.readiness_message(status), type="warning", source="twitch",
+                       title="Sign in to Twitch again to use Twitch polls",
+                       hint="Open Settings → Twitch and click Connect, then approve Mycelian in your browser.",
+                       dedupe_key="twitch:poll_scope_toggle", dedupe_cooldown_sec=5.0)
+            elif status in ("offline", "not_eligible"):
+                notify(twitch_polls.readiness_message(status), type="warning", source="chatbot", title="Twitch poll can't run yet",
+                       dedupe_key=f"twitch:poll_{status}_toggle", dedupe_cooldown_sec=5.0)
             other = get_poll_manager().twitch_poll_running(exclude=self.template)
             if other:
                 notify(ONE_TWITCH_POLL_MESSAGE.format(template=other), type="info", source="chatbot",
                        title="Only one Twitch poll at a time", hint="You can still set this one up; start it once the other ends.")
+            categories = get_poll_manager().get_config(self.template).get("categories") or []
+            trimmed = [c["name"] for c in categories if len(c.get("name") or "") > twitch_polls.CHOICE_TITLE_MAX]
+            if trimmed:
+                notify(f"Twitch option names can be at most {twitch_polls.CHOICE_TITLE_MAX} characters, so "
+                       f"{plural(len(trimmed), 'name')} {'was' if len(trimmed) == 1 else 'were'} shortened.",
+                       type="info", source="chatbot", title="Option names shortened for Twitch",
+                       details="\n".join(trimmed))
         self._save(twitch_poll=value)
         self._render()
 

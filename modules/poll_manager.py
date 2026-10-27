@@ -14,6 +14,8 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
+from .twitch_polls import CHOICES_MAX as TWITCH_CHOICES_MAX
+
 logger = logging.getLogger(__name__)
 
 DATA_PATH = "BotData/Polls"
@@ -46,6 +48,7 @@ _TWITCH_END_GRACE_SECONDS = 15.0
 # Twitch runs one poll per channel, so only one overlay's poll can run on Twitch at a time.
 ONE_TWITCH_POLL_MESSAGE = ("Only one Twitch poll can run at a time, and “{template}” is running one now. "
                            "End it first, or turn off “Also run it on Twitch” for this poll.")
+TWITCH_OPTIONS_FULL_MESSAGE = f"Twitch polls have at most {TWITCH_CHOICES_MAX} options. Remove one to add another."
 
 
 def normalize_keyword(raw: Any, fallback_name: str = "") -> str:
@@ -514,6 +517,12 @@ class PollManager:
             name = str(item.get("name") or "").strip()
             if not name:
                 continue
+            keyword = item.get("keyword")
+            if cfg["twitch_poll"] and len(name) > twitch_polls.CHOICE_TITLE_MAX:
+                # Twitch option names are at most 25 characters; a keyword that followed the name follows the cut.
+                if normalize_keyword(keyword, name) == normalize_keyword("", name):
+                    keyword = ""
+                name = twitch_polls.clamp_choice_name(name)
             cat_id = str(item.get("id") or "").strip() or uuid.uuid4().hex[:12]
             if cat_id in seen_ids:
                 cat_id = uuid.uuid4().hex[:12]
@@ -526,7 +535,7 @@ class PollManager:
                 {
                     "id": cat_id,
                     "name": name,
-                    "keyword": normalize_keyword(item.get("keyword"), name),
+                    "keyword": normalize_keyword(keyword, name),
                     "votes": stored_votes,
                 }
             )
@@ -757,6 +766,8 @@ class PollManager:
             if not ok:
                 return False, msg
             config = self._templates[template]["config"]
+            if config.get("twitch_poll") and len(config["categories"]) >= TWITCH_CHOICES_MAX:
+                return False, TWITCH_OPTIONS_FULL_MESSAGE
             index = len(config["categories"]) + 1
             label = str(name or "").strip() or f"Option {index}"
             category = _new_category(label)
@@ -797,6 +808,10 @@ class PollManager:
             proposed_name = target["name"] if name is None else str(name or "").strip()
             if not proposed_name:
                 return False, "Option name cannot be empty."
+            if config.get("twitch_poll"):
+                from . import twitch_polls
+
+                proposed_name = twitch_polls.clamp_choice_name(proposed_name)
             keyword_source = target["keyword"] if keyword is None else keyword
             proposed_keyword = normalize_keyword(keyword_source, proposed_name)
             if not proposed_keyword:
@@ -925,7 +940,7 @@ class PollManager:
         if wanted.get("twitch_poll"):
             from . import twitch_polls
 
-            status = twitch_polls.scope_status()
+            status = twitch_polls.readiness()
             if status != "ok":
                 return False, twitch_polls.readiness_message(status)
             ok, result = twitch_polls.create_poll(

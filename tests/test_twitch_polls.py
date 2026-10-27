@@ -327,3 +327,67 @@ def test_start_uses_twitchs_start_time(monkeypatch):
     assert abs(runtime["ends_at"] - (int(started) + 0.5 + 60)) < 0.01
     assert manager.apply_twitch_votes("p9", {"a": 3, "b": 1}) and _votes(manager) == {"Yes": 3, "No": 1}
     manager.shutdown()
+
+
+# --------------------------------------------------------------------------- option limits + readiness
+
+
+def test_twitch_polls_cap_options_at_five():
+    manager = _manager(names=("A", "B", "C", "D", "E"))
+    ok, msg = manager.add_category("poll", "F")
+    assert not ok and msg == pm.TWITCH_OPTIONS_FULL_MESSAGE
+    assert len(manager.get_config("poll")["categories"]) == 5
+    manager.update_config("poll", {"twitch_poll": False})
+    assert manager.add_category("poll", "F")[0]
+    # Turning Twitch on with six keeps them all (nothing is deleted) but blocks the start.
+    manager.update_config("poll", {"twitch_poll": True})
+    assert len(manager.get_config("poll")["categories"]) == 6
+    assert any("2 to 5 options" in p for p in twitch_polls.config_problems(manager.get_config("poll")))
+
+
+def test_twitch_polls_clamp_option_names():
+    long_name = "Hollow Knight: Silksong Deluxe Edition"
+    manager = _manager(names=(long_name, "Celeste Farewell Edition Plus"), twitch_poll=False)
+    cats = manager.get_config("poll")["categories"]
+    manager.update_category("poll", cats[1]["id"], keyword="#celeste")
+    manager.update_config("poll", {"twitch_poll": True})
+    first, second = manager.get_config("poll")["categories"]
+    assert first["name"] == "Hollow Knight: Silksong D" and len(second["name"]) <= 25
+    # A keyword that followed the name follows the shortened name; a custom one stays.
+    assert first["keyword"] == pm.normalize_keyword("", first["name"]) and second["keyword"] == "#celeste"
+    manager.update_category("poll", first["id"], name="x" * 40)
+    assert manager.get_config("poll")["categories"][0]["name"] == "x" * 25
+    assert twitch_polls.clamp_choice_name("  abc  ") == "abc"
+
+
+def test_readiness_checks_scopes_and_channel_type(monkeypatch):
+    from modules import twitch
+
+    api = SimpleNamespace(is_connected=True, auth_token="tok-r", user=SimpleNamespace(broadcaster_type="affiliate"))
+    monkeypatch.setattr(twitch, "get_twitch_api", lambda: api)
+    twitch_token_auth._token_scopes.clear()
+    twitch_polls._checked_tokens.clear()
+    checked = []
+
+    async def fake_validate(token, expected_client_id=None):
+        checked.append(token)
+        twitch_token_auth.remember_token_scopes(token, ["channel:manage:polls"])
+
+    monkeypatch.setattr(twitch_token_auth, "validate_access_token", fake_validate)
+    # Unknown scopes start one background check; the next ask has the answer.
+    assert twitch_polls.readiness() == "unknown"
+    deadline = time.time() + 5
+    while twitch_polls.scope_status() == "unknown" and time.time() < deadline:
+        time.sleep(0.02)
+    assert twitch_polls.readiness() == "ok" and checked == ["tok-r"]
+    api.user.broadcaster_type = ""
+    assert twitch_polls.readiness() == "not_eligible"
+    assert "partners and affiliates" in twitch_polls.readiness_message("not_eligible")
+    twitch_token_auth.remember_token_scopes("tok-r", ["chat:read"])
+    assert twitch_polls.readiness() == "missing"
+
+
+def test_start_refused_for_channels_that_cant_run_polls(twitch, monkeypatch):
+    monkeypatch.setattr(twitch_polls, "readiness", lambda: "not_eligible")
+    ok, msg = _manager().start_poll("poll")
+    assert not ok and "partners and affiliates" in msg and not twitch["create"]

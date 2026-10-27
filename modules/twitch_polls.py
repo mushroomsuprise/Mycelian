@@ -61,13 +61,74 @@ def scope_missing() -> bool:
     return scope_status() == "missing"
 
 
+def readiness() -> str:
+    """scope_status(), plus "not_eligible" when the channel isn't a partner or affiliate.
+
+    An "unknown" scope starts a background check of the sign-in, so asking again shortly gives the answer.
+    """
+    status = scope_status()
+    if status == "unknown":
+        check_scopes_in_background()
+        return status
+    if status != "ok":
+        return status
+    try:
+        from . import twitch
+
+        user = getattr(twitch.get_twitch_api(), "user", None)
+        kind = getattr(user, "broadcaster_type", None)
+    except Exception:
+        kind = None
+    if kind is not None and str(getattr(kind, "value", kind) or "").strip() == "":
+        return "not_eligible"
+    return "ok"
+
+
+_checked_tokens: set = set()
+_check_lock = threading.Lock()
+
+
+def check_scopes_in_background() -> None:
+    """Read the current token's scopes from Twitch (once per token) when they aren't known yet."""
+    try:
+        from . import twitch
+
+        token = str(getattr(twitch.get_twitch_api(), "auth_token", "") or "").strip()
+    except Exception:
+        return
+    if not token:
+        return
+    with _check_lock:
+        if token in _checked_tokens:
+            return
+        _checked_tokens.add(token)
+
+    def worker() -> None:
+        try:
+            from .twitch_token_auth import validate_access_token
+
+            _run(validate_access_token(token), timeout=15)
+        except Exception:
+            logger.debug("Checking the Twitch sign-in's scopes failed", exc_info=True)
+            with _check_lock:
+                _checked_tokens.discard(token)
+
+    threading.Thread(target=worker, name="TwitchPollScopeCheck", daemon=True).start()
+
+
 def readiness_message(status: str) -> str:
     return {
         "missing": "Twitch polls need a permission your Twitch sign-in doesn't have yet. Sign in to Twitch again "
                    "(Settings → Twitch → Connect) to use them.",
         "offline": "Twitch isn't connected, so the Twitch poll can't be created.",
         "unknown": "Mycelian is still checking your Twitch sign-in. Try again in a moment.",
+        "not_eligible": "Twitch only lets partners and affiliates run polls, so this channel can't run one yet.",
     }.get(status, "")
+
+
+def clamp_choice_name(name: Any) -> str:
+    """An option name cut to Twitch's 25 characters."""
+    return str(name or "").strip()[:CHOICE_TITLE_MAX].rstrip()
 
 
 def notify_scope_missing() -> None:

@@ -239,10 +239,10 @@
   <thead><tr><th>Twitch's limit</th><th>What Mycelian does</th></tr></thead>
   <tbody>
     <tr><td>Question up to 60 characters</td><td>The box stops at 60.</td></tr>
-    <tr><td>2 to 5 options, names up to 25 characters</td><td><strong>Add option</strong> stops at 5, and a name that is too long is marked and blocks <strong>Start poll</strong>.</td></tr>
+    <tr><td>2 to 5 options, names up to 25 characters</td><td><strong>Add option</strong> stops at 5 and name boxes stop at 25 characters. Turning Twitch on shortens longer names to 25 (a notification lists them). If the poll already has more than 5 options, they're all kept, but the extra ones are marked in red and <strong>Start poll</strong> waits until you remove them.</td></tr>
     <tr><td>Runs 15 seconds to 30 minutes</td><td><strong>Runs for</strong> is always <strong>Timer</strong>, and the time is kept in that range.</td></tr>
     <tr><td>One poll per channel at a time</td><td>Only one overlay's poll can run on Twitch at a time. Starting a second one shows <em>Only one Twitch poll at a time</em>; a chat-only poll can still run beside it.</td></tr>
-    <tr><td>Partners and affiliates only</td><td>Twitch refuses the poll otherwise, and the message says so.</td></tr>
+    <tr><td>Partners and affiliates only</td><td>If your channel isn't a partner or affiliate, the <strong>Twitch poll</strong> card says so and the switch stays off.</td></tr>
   </tbody>
 </table></div>
 
@@ -254,6 +254,8 @@
 </ul>
 
 <p>Twitch polls need Mycelian to have permission to manage polls on your channel. If your Twitch sign-in doesn't include it, Twitch still connects and everything else works, but you get a notification asking you to sign in again, and the <strong>Twitch poll</strong> card says Twitch polls can't be used yet. Open <span class="hx-path"><span>Settings</span><span>Twitch</span></span>, click <strong>Connect</strong> and approve Mycelian in your browser.</p>
+
+<p>With the switch on, the card shows where things stand: <em>Your Twitch sign-in can create polls</em> when it's ready, or a warning when Twitch isn't connected. The card updates by itself once you connect or sign in again.</p>
 
 <h2>Ending and restarts</h2>
 
