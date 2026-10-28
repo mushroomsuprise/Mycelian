@@ -41,7 +41,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pyinstaller>=6.14.1",
+    "pytest>=9.0",
+    "pytest-timeout>=2.4",
+    "pytest-xdist>=3.8",
 ]
+
+[tool.pytest.ini_options]
+# Test files are keyed by their full path, so tests/test_x.py and tests/modules/test_x.py can coexist.
+addopts = "--import-mode=importlib"
 
 [build-system]
 requires = ["setuptools>=61", "wheel"]

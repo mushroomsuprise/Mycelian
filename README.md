@@ -151,6 +151,22 @@ uv run python build.py
 
 The built app lands in the `builds/` directory.
 
+`build.py` runs the whole test suite first. If any test fails it lists the failures and asks
+whether to build anyway. Use `--skip-tests` to skip the tests, or `--ignore-test-failures` to keep
+building without being asked (for unattended builds).
+
+### Running the tests
+
+```bash
+uv run python run_tests.py              # every test: Python, plus the JavaScript tests (needs Node.js)
+uv run python run_tests.py -k twitch    # extra arguments go to pytest
+```
+
+Each run writes a detailed log to `logs/tests/` (`latest.log` is the newest): full tracebacks
+with the log output of each failing test, known bugs (tests marked `xfail` with a `BUG:` reason),
+skipped tests and why, and the slowest tests. Tests never touch your real data: they use a
+throwaway data folder, and the run fails if any real data file changes while it runs.
+
 **Additional build notes:**
 
 - **npm** is required to build the Stream Deck plugin (`streamdeck-plugin/mycelian/`)

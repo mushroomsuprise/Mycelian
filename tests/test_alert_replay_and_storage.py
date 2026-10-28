@@ -108,6 +108,12 @@ class ReplayAlertTests(unittest.TestCase):
 
 class AlertStorageTrimTests(unittest.TestCase):
     def setUp(self) -> None:
+        # These tests drive the one-by-one delete path. If another test left the global
+        # database manager connected, trimming would batch-delete through it instead.
+        backend = alertutils.database_manager.database_manager
+        initialized = patch.object(backend, "_initialized", False)
+        initialized.start()
+        self.addCleanup(initialized.stop)
         self.manager = alertutils.AlertStateManager()
         now = time.time()
         self.manager._alert_storage = {

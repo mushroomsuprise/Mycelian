@@ -21,6 +21,11 @@ class SubscriberRegistryTests(unittest.TestCase):
         self.registry = SubscriberRegistry(db_path=self.db_path)
 
     def tearDown(self) -> None:
+        # The registry writes from a background thread; finish those writes before
+        # the folder goes away.
+        registry = getattr(self, "registry", None)
+        if registry is not None:
+            registry.flush()
         self._tmpdir.cleanup()
 
     def test_unknown_user_is_not_known(self) -> None:
@@ -180,6 +185,11 @@ class ChatBadgeHarvestTests(unittest.TestCase):
         self.registry = SubscriberRegistry(db_path=self.db_path)
 
     def tearDown(self) -> None:
+        # The registry writes from a background thread; finish those writes before
+        # the folder goes away.
+        registry = getattr(self, "registry", None)
+        if registry is not None:
+            registry.flush()
         self._tmpdir.cleanup()
 
     def test_records_multi_month_subscriber_badge(self) -> None:
@@ -259,6 +269,11 @@ class NewSubGateLogicTests(unittest.IsolatedAsyncioTestCase):
         self.registry = SubscriberRegistry(db_path=self.db_path)
 
     def tearDown(self) -> None:
+        # The registry writes from a background thread; finish those writes before
+        # the folder goes away.
+        registry = getattr(self, "registry", None)
+        if registry is not None:
+            registry.flush()
         self._tmpdir.cleanup()
 
     def _make_event(

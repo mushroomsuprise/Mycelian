@@ -18,12 +18,18 @@ from __future__ import annotations
 import os
 import shutil
 import socket
+import sys
 import tempfile
 
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import pytest
+
+# Shared helpers (ui_sim) are imported by name; importlib mode doesn't put tests/ on sys.path.
+TESTS_DIR = str(Path(__file__).resolve().parent)
+if TESTS_DIR not in sys.path:
+    sys.path.insert(0, TESTS_DIR)
 
 # Data files (statistics, notification history, prefs, registries) go to a throwaway
 # folder. Set before any app module is imported so module-level paths pick it up.
@@ -50,7 +56,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # any of these change while the tests run.
 _PROTECTED = (
     "mycelian.db", "mycelian.db-wal", "statistics.db", "config.json", "api_credentials.json",
-    "notification_center_history.json", "template_preview_settings.json", "data", "templates", "assets",
+    "notification_center_history.json", "template_preview_settings.json", ".encryption_key", "data",
+    "templates", "assets",
 )
 _PROTECTED_STATE: Dict[str, Tuple[int, int]] = {}
 

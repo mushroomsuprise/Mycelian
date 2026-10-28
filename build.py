@@ -2232,13 +2232,58 @@ def _parse_args(argv=None):
         action="store_true",
         help="Copy binaries into the project folder and skip the installer",
     )
+    parser.add_argument(
+        "--skip-tests",
+        action="store_true",
+        help="Don't run the test suite before building",
+    )
+    parser.add_argument(
+        "--ignore-test-failures",
+        action="store_true",
+        help="Keep building when tests fail, without asking",
+    )
     return parser.parse_args(argv)
+
+
+def run_test_gate(args, project_root: Path, ask=input) -> None:
+    """Run every test before compiling. On failures, list them and ask whether to build anyway.
+
+    The full report goes to logs/tests/ (see run_tests.py). Exits the build when the
+    user says no, or when tests fail in a non-interactive run without --ignore-test-failures.
+    """
+    if args.skip_tests:
+        progress.update("Tests skipped (--skip-tests)")
+        return
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    import run_tests
+
+    result = run_tests.run_all_tests(echo=print)
+    run_tests.print_report(result)
+    if result.ok:
+        progress.success()
+        return
+
+    if args.ignore_test_failures:
+        progress.update("Continuing despite test failures (--ignore-test-failures)")
+        return
+    if not sys.stdin or not sys.stdin.isatty():
+        progress.error("Tests failed. Re-run with --ignore-test-failures to build anyway.")
+        sys.exit(1)
+    try:
+        answer = ask("\nTests did not pass. Continue building anyway? (y/N): ").strip().lower()
+    except EOFError:
+        answer = ""
+    if answer not in ("y", "yes"):
+        progress.update("Build cancelled. Fix the failures listed above (details in the log).")
+        sys.exit(1)
+    progress.update("Continuing the build with failing tests")
 
 
 def main():
     """Main build function"""
     args = _parse_args()
-    progress.total_steps = 6 if args.skip_installer else 7
+    progress.total_steps = (6 if args.skip_installer else 7) + 1
 
     print(f"Mycelian Build Script v{VERSION} - {CURRENT_OS.upper()}")
     print("=" * 50)
@@ -2250,6 +2295,10 @@ def main():
         progress.error(f"main.py not found in {project_root}")
         progress.update("Please run this script from the project root directory")
         sys.exit(1)
+
+    # Step 1: every component is tested before anything is compiled
+    progress.next_step("Running the test suite")
+    run_test_gate(args, project_root)
 
     # macOS-specific requirements check
     if CURRENT_OS == "macos":
@@ -2274,29 +2323,29 @@ def main():
             sys.exit(1)
 
     try:
-        # Step 1: Ensure dependencies
+        # Step 2: Ensure dependencies
         progress.next_step("Checking dependencies")
         ensure_dependencies()
         progress.success()
 
-        # Step 2: Clean previous builds
+        # Step 3: Clean previous builds
         progress.next_step("Cleaning build artifacts")
         clean_build()
         progress.success()
 
-        # Step 3: Update version across files
+        # Step 4: Update version across files
         progress.next_step("Updating version information")
         update_version_across_files()
         progress.success()
 
-        # Step 4: Build Stream Deck plugin into sd_plugin for the installer
+        # Step 5: Build Stream Deck plugin into sd_plugin for the installer
         progress.next_step("Building Stream Deck plugin for installer")
         if not build_streamdeck_plugin(project_root):
             progress.error("Stream Deck plugin build failed")
             sys.exit(1)
         progress.success()
 
-        # Step 5: Build executable and the template config merge helper
+        # Step 6: Build executable and the template config merge helper
         progress.next_step("Building executable")
         success, dist_dir = build_executable()
         if not success:
@@ -2308,7 +2357,7 @@ def main():
             sys.exit(1)
         progress.success()
 
-        # Step 6: Copy binaries where the installers expect them
+        # Step 7: Copy binaries where the installers expect them
         progress.next_step("Copying binaries into the project folder")
         app_path, helper_path = copy_binaries_to_project_root(project_root, dist_dir)
         progress.update(f"App: {app_path}")
@@ -2318,7 +2367,7 @@ def main():
         post_build_tasks(dist_dir)
         progress.success()
 
-        # Step 7: OS installer
+        # Step 8: OS installer
         if args.skip_installer:
             progress.update("Installer skipped (--skip-installer)")
         else:
