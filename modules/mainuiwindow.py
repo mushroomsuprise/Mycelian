@@ -1585,9 +1585,9 @@ def create_ui_elements():
                     from .uiwindows.settings import settings_ui
 
                     try:
-                        for tab in settings_ui._tabs_by_name.values():
-                            if tab is not None and getattr(tab, "dirty", False):
-                                tab.save()
+                        for name in list(settings_ui._tabs_by_name):
+                            if settings_ui._tab_is_dirty(name):
+                                settings_ui.save_tab(name)
                     except Exception as exc:
                         logger.error(
                             "Error saving settings before leaving: %s",

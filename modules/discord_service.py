@@ -277,10 +277,16 @@ class DiscordService:
             connected = bool(self._client and self._ready.is_set() and not self._stop_requested)
             bot_name = ""
             bot_id = ""
+            bot_avatar = ""
             app_id = ""
             if self._client and self._client.user:
                 bot_name = str(self._client.user)
                 bot_id = str(self._client.user.id)
+                try:
+                    # display_avatar falls back to Discord's default avatar when none is set.
+                    bot_avatar = str(self._client.user.display_avatar.replace(size=128).url)
+                except Exception:
+                    bot_avatar = ""
             if self._client and getattr(self._client, "application_id", None):
                 app_id = str(self._client.application_id)
             return {
@@ -288,6 +294,7 @@ class DiscordService:
                 "is_connected": connected,
                 "bot_username": bot_name,
                 "bot_user_id": bot_id,
+                "bot_avatar_url": bot_avatar,
                 "application_id": app_id,
                 "invite_url": self.get_invite_url() if connected else "",
             }

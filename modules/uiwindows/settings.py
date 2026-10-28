@@ -1482,6 +1482,19 @@ class SettingsUI:
                 return False
         return False
 
+    def save_tab(self, tab_name: str) -> None:
+        """Save one settings tab and, when it saved cleanly, take its fields as the new baseline.
+
+        The unsaved check compares fields with the snapshot taken when the tab was opened, so
+        without this a successful save still looked unsaved and "Save and switch" stayed put.
+        """
+        tab = self._tabs_by_name.get(tab_name)
+        if tab is None:
+            return
+        tab.save()
+        if not getattr(tab, "dirty", False):
+            self._snapshot_tab_fields(tab)
+
     def _tab_is_dirty(self, tab_name: str) -> bool:
         tab = self._tabs_by_name.get(tab_name)
         if tab is None:
@@ -1628,7 +1641,7 @@ class SettingsUI:
                 current_tab = self._tabs_by_name.get(prev_name)
                 try:
                     if current_tab:
-                        current_tab.save()
+                        self.save_tab(prev_name)
                 except Exception as exc:
                     logger.error(
                         "Error saving settings tab %s: %s", prev_name, exc, exc_info=True

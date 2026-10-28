@@ -22,6 +22,7 @@ import html as html_lib
 import logging
 import os
 import re
+import shutil
 import stat
 import string
 import sys
@@ -972,34 +973,70 @@ class _FilePicker:
         self.dialog.close()
 
     # ----- add files -----
-    def _pick_uploads(self) -> None:
+    async def _pick_uploads(self) -> None:
+        # In the desktop app, ask the OS for files directly. The webview's own file chooser for
+        # <input type=file> can fail silently (pywebview reads the accept list through a private
+        # macOS API, and a chooser opened after a server round trip may lose the click).
+        window = _native_window()
+        if window is not None:
+            try:
+                paths = await window.create_file_dialog(
+                    allow_multiple=True, file_types=_dialog_file_types(self.cfg.extensions)
+                )
+            except Exception:
+                logger.warning("Native file dialog failed; using the browser picker", exc_info=True)
+            else:
+                for path in paths or ():
+                    await self._add_local_file(Path(path))
+                return
         if self.upload is not None:
             self.upload.run_method("pickFiles")
+
+    def _writable_target(self, name: str) -> Optional[Path]:
+        """Where an added file goes, or None (with a notice) when it can't be added here."""
+        ext = os.path.splitext(name)[1].lower()
+        if ext not in self.cfg.extensions:
+            self._note_upload("rejected", name)
+            return None
+        folder = self.folder
+        if self.root is None or not is_inside(folder, self.root) or is_temp_bundle(folder) or not os.access(folder, os.W_OK):
+            self._note_upload("blocked", name)
+            return None
+        return folder / safe_upload_name(name, _safe_listdir_all(folder))
+
+    def _added(self, target: Path) -> None:
+        self._upload_batch["folder"] = target.parent.name
+        self._note_upload("added", target.name)
+        self._load_folder(target.parent, select=target)
+
+    async def _add_local_file(self, source: Path) -> None:
+        target = self._writable_target(source.name)
+        if target is None:
+            return
+        try:
+            await asyncio.to_thread(shutil.copyfile, source, target)
+        except Exception as exc:
+            logger.error("Could not copy %s to %s", source, target.parent, exc_info=True)
+            self._note_upload("failed", f"{source.name}: {type(exc).__name__}: {exc}")
+            return
+        self._added(target)
 
     async def _on_upload(self, e) -> None:
         upload = getattr(e, "file", None)
         name = getattr(upload, "name", None) or getattr(e, "name", "")
-        ext = os.path.splitext(name)[1].lower()
-        if ext not in self.cfg.extensions:
-            self._note_upload("rejected", name)
+        target = self._writable_target(name)
+        if target is None:
             return
-        folder = self.folder
-        if self.root is None or not is_inside(folder, self.root) or is_temp_bundle(folder) or not os.access(folder, os.W_OK):
-            self._note_upload("blocked", name)
-            return
-        target = folder / safe_upload_name(name, _safe_listdir_all(folder))
         try:
             if upload is not None and hasattr(upload, "save"):
                 await upload.save(target)
             else:  # older NiceGUI event shape
                 target.write_bytes(e.content.read())
         except Exception as exc:
-            logger.error("Could not add %s to %s", name, folder, exc_info=True)
+            logger.error("Could not add %s to %s", name, target.parent, exc_info=True)
             self._note_upload("failed", f"{name}: {type(exc).__name__}: {exc}")
             return
-        self._upload_batch["folder"] = folder.name
-        self._note_upload("added", target.name)
-        self._load_folder(folder, select=target)
+        self._added(target)
         if self.upload is not None:
             self.upload.reset()
 
@@ -1054,6 +1091,22 @@ class _FilePicker:
 
 
 _UPLOAD_SUMMARY_DELAY_SEC = 0.8
+
+
+def _native_window():
+    """The desktop app's window (None when Mycelian runs in a normal browser tab)."""
+    try:
+        from nicegui import app as ng_app
+
+        return getattr(getattr(ng_app, "native", None), "main_window", None)
+    except Exception:
+        return None
+
+
+def _dialog_file_types(extensions: Sequence[str]) -> Tuple[str, ...]:
+    """pywebview file filters, e.g. ``("Usable files (*.gif;*.png)", "All files (*.*)")``."""
+    patterns = ";".join(f"*{ext}" for ext in extensions if ext)
+    return (f"Usable files ({patterns})", "All files (*.*)") if patterns else ()
 
 
 def _new_upload_batch() -> dict:

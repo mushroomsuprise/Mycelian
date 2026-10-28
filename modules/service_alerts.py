@@ -184,7 +184,9 @@ class ServiceAlertTracker:
         if cls != track.candidate:
             track.candidate, track.count = cls, 0
         track.count += 1
-        needed = STARTUP_POLLS if track.stable == "unknown" and cls == "problem" else STABLE_POLLS
+        # A service that was just started (or Mycelian itself) gets longer to come up: OBS,
+        # for one, is running for a while before its WebSocket server answers.
+        needed = STARTUP_POLLS if track.stable in ("unknown", "off") and cls == "problem" else STABLE_POLLS
         if track.stable == "unknown" and cls != "problem":
             needed = 1
         if track.count < needed:

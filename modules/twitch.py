@@ -6127,6 +6127,7 @@ class Twitch_API:
                 if self.last_health_check
                 else "Unknown",
                 "user_name": self.user.display_name if self.user else "Unknown",
+                "avatar_url": getattr(self.user, "profile_image_url", "") or "",
             }
         elif self.auth_token and self.refresh_token:
             status = {
@@ -6134,6 +6135,7 @@ class Twitch_API:
                 "is_valid": False,
                 "last_update": "Connection Lost",
                 "user_name": self.user.display_name if self.user else "Unknown",
+                "avatar_url": getattr(self.user, "profile_image_url", "") or "",
             }
         elif self.client_id and self.client_secret:
             status = {

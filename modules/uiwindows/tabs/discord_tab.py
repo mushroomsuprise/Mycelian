@@ -308,7 +308,11 @@ class DiscordTab:
                 self._page.set_status([("error" if kind == "off" else kind, pill)])
             if self._card is not None:
                 self._card.kicker = kicker
-                self._card.set(name, kind, line, initial=initial_of(name) if connected else None)
+                self._card.set(
+                    name, kind, line,
+                    initial=initial_of(name) if connected else None,
+                    photo_url=status.get("bot_avatar_url") if connected else None,
+                )
             if self._fold is not None:
                 self._fold.set_saved(self._token_saved)
             disconnect = self.ui_elements.get("disconnect_button")

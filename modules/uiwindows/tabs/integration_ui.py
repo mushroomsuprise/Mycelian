@@ -97,6 +97,8 @@ body:not(.body--dark) .itg :is(p, span, div, label):not([class]) { color: inheri
 .itg-ava { width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
   font-weight: 750; font-size: 1rem; color: #fff; background: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 55%, #000)); }
 .itg-ava.is-empty { color: var(--color-text-primary); background: var(--color-bg-surface); border: 1px dashed var(--color-border-default); }
+.itg-ava.has-photo { position: relative; overflow: hidden; box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 55%, transparent); }
+.itg-ava.has-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .itg-ava.is-empty svg { width: 18px; height: 18px; opacity: .55; }
 .itg-acct-kicker { font-size: .64rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-muted); }
 .itg-acct-name { font-size: .92rem; font-weight: 650; color: var(--color-text-primary); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -537,12 +539,29 @@ class AccountCard:
         self.set("", "off", "")
 
     def set(
-        self, name: str, state_kind: str, state_text: str, *, initial: Optional[str] = None, icon: Optional[str] = None
+        self,
+        name: str,
+        state_kind: str,
+        state_text: str,
+        *,
+        initial: Optional[str] = None,
+        icon: Optional[str] = None,
+        photo_url: Optional[str] = None,
     ) -> None:
         """``initial``: a letter for the avatar; ``icon``: a Material icon tile instead (pages
-        without a brand); neither shows the muted brand mark."""
+        without a brand); neither shows the muted brand mark. ``photo_url``: the account's
+        profile picture, drawn over the letter (which stays if the picture can't load)."""
+        photo = str(photo_url or "").strip()
+        if photo and not photo.startswith("https://"):
+            photo = ""
         if icon:
             ava = f'<span class="itg-tile itg-acct-tile">{icon_html(icon)}</span>'
+        elif photo:
+            ava = (
+                f'<div class="itg-ava has-photo">{esc((initial or name or "?")[:1].upper())}'
+                f'<img src="{esc(photo)}" alt="" referrerpolicy="no-referrer" loading="lazy" '
+                'onerror="this.remove()"></div>'
+            )
         elif initial:
             ava = f'<div class="itg-ava">{esc(initial[:1].upper())}</div>'
         else:

@@ -206,3 +206,35 @@ def test_multi_file_upload_gives_one_summary(root, monkeypatch):
     titles = [k["title"] for k in seen]
     assert titles == ["Added 3 files to sounds", "1 file wasn't added"]
     assert all(k["source"] == "files" for k in seen)
+
+
+def test_add_files_uses_the_desktop_file_dialog(root, monkeypatch, tmp_path):
+    picker, loaded = _picker(root, monkeypatch)
+    src = tmp_path / "picked"
+    src.mkdir()
+    (src / "boom.mp3").write_bytes(b"boom")
+    (src / "notes.txt").write_text("no")
+    asked = {}
+
+    class Window:
+        async def create_file_dialog(self, **kwargs):
+            asked.update(kwargs)
+            return (str(src / "boom.mp3"), str(src / "notes.txt"))
+
+    monkeypatch.setattr(fp, "_native_window", lambda: Window())
+    asyncio.run(picker._pick_uploads())
+    sounds = root / "default_assets" / "sounds"
+    assert (sounds / "boom.mp3").read_bytes() == b"boom"
+    assert not (sounds / "notes.txt").exists()
+    assert loaded[-1] == (sounds, sounds / "boom.mp3")
+    assert asked["allow_multiple"] is True
+    assert asked["file_types"] == ("Usable files (*.mp3)", "All files (*.*)")
+
+
+def test_add_files_falls_back_to_the_browser_picker(root, monkeypatch):
+    picker, _loaded = _picker(root, monkeypatch)
+    calls = []
+    picker.upload = SimpleNamespace(run_method=lambda name: calls.append(name))
+    monkeypatch.setattr(fp, "_native_window", lambda: None)
+    asyncio.run(picker._pick_uploads())
+    assert calls == ["pickFiles"]

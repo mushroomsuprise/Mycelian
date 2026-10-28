@@ -236,7 +236,11 @@ class TwitchTab:
             return
         kind, line, pill_kind, pill_text = self._describe(prefix, info)
         name, real = self._account_name(prefix, info)
-        card.set(name, kind, line, initial=initial_of(name) if real else None)
+        card.set(
+            name, kind, line,
+            initial=initial_of(name) if real else None,
+            photo_url=info.get("avatar_url") if real else None,
+        )
         self._update_token_timing_labels(prefix, info)
         self._valid[prefix] = bool(info.get("is_valid")) and not _is_fallback(prefix, info)
         self._connected[prefix] = real
