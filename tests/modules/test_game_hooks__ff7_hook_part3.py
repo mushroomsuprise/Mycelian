@@ -329,6 +329,7 @@ def test_battle_status_log_trims(hook):
 
 @pytest.fixture
 def blog(hook, mem, monkeypatch):
+    monkeypatch.setattr(ff7, "_BATTLE_LOG_NAME_ASSETS_LOADED", True)  # keep the tables empty
     monkeypatch.setattr(ff7, "_BATTLE_LOG_CMD_EN", {})
     monkeypatch.setattr(ff7, "_BATTLE_LOG_ATK128_EN", {})
     cmds = [""] * 32
@@ -972,25 +973,22 @@ def test_gear_swap_write_failures(hook, mem, loaded, monkeypatch, no_allowlist):
     rec = SM_ADDR + ff7._CHAR_BLOCK[0] + ff7.REC_OFF_WEAPON
     mem.fail_write.add(rec)
     assert hook._op_set_character_gear_with_inventory("0", "weapon", 1) == (False, "write gear failed")
+    assert hook._inv_read_item_slot(0) == (0x81, 3)  # swap undone: nothing lost or duplicated
+    assert hook._inv_find_item_slot(0x80) is None
     monkeypatch.setattr(hook, "_inv_remove_item", lambda iid, q: False)
     assert hook._op_set_character_gear_with_inventory("0", "weapon", 1) == (False, "remove from inventory failed")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: _op_set_character_gear_with_inventory ignores _inv_add_item's result; with a full "
-    "inventory the previously equipped gear is silently destroyed and the op still reports success",
-)
 def test_gear_swap_full_inventory_keeps_old_gear(hook, mem, loaded, no_allowlist):
     sm = bytearray(loaded)
     for i in range(ff7.INV_ITEM_SLOTS):
         inv_item(sm, i, 0x90 + (i % 0x40) if i else 0x81, 5)  # every slot used; Mythril Saber x5 in slot 0
     mem.put(SM_ADDR, sm)
-    ok, _ = hook._op_set_character_gear_with_inventory("Cloud", "weapon", 1)
-    # Either refuse the swap, or keep the Buster Sword somewhere: it must not vanish.
-    buster_in_inv = any((hook._inv_read_item_slot(i) or (None,))[0] == 0x80 for i in range(ff7.INV_ITEM_SLOTS))
-    equipped = mem.get(SM_ADDR + ff7._CHAR_BLOCK[0] + ff7.REC_OFF_WEAPON, 1)[0]
-    assert (not ok and equipped == 0) or buster_in_inv
+    ok, err = hook._op_set_character_gear_with_inventory("Cloud", "weapon", 1)
+    # The swap is refused: Buster Sword stays equipped and the Mythril Saber is put back.
+    assert not ok and "inventory full" in err
+    assert mem.get(SM_ADDR + ff7._CHAR_BLOCK[0] + ff7.REC_OFF_WEAPON, 1)[0] == 0
+    assert hook._inv_read_item_slot(0) == (0x81, 5)
 
 
 # --------------------------------------------------------------------------- start battle

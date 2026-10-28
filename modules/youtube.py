@@ -993,6 +993,9 @@ class YouTubeClient:
 
             # Determine overall status
             if successful_channels > 0:
+                # Keep the resolved channel IDs/titles/uploads playlists: update_video_data
+                # reloads from state, and @handles cost a search.list call to resolve again.
+                self.update_field("channels", self.youtube_data.channels)
                 self.is_connected = True
                 if failed_channels == 0:
                     self.update_field(
@@ -1660,8 +1663,8 @@ class YouTubeClient:
                     self._live_chat_id = None
                     self._live_page_token = None
                     self._live_bootstrap_done = False
+                    self.update_field("live_chat_status", "Offline")
                     if was_live:
-                        self.update_field("live_chat_status", "Offline")
                         try:
                             from . import discord_service
 
@@ -1733,7 +1736,8 @@ class YouTubeClient:
         """
         Poll liveChatMessages once.
 
-        Returns pollingIntervalMillis on success, or None if chat ended / fatal.
+        Returns pollingIntervalMillis on success, _LIVE_CHAT_ENDED when the chat ended,
+        or None on a fatal error.
         """
         if not self._live_chat_id:
             return None
@@ -1749,8 +1753,8 @@ class YouTubeClient:
         data = self._oauth_get("liveChat/messages", params)
         if data is None:
             return None
+        # The caller sets "Offline" (it checks the previous status for the offline hook).
         if data.get("__live_chat_ended__"):
-            self.update_field("live_chat_status", "Offline")
             return _LIVE_CHAT_ENDED
 
         next_token = data.get("nextPageToken")
@@ -1786,7 +1790,6 @@ class YouTubeClient:
         if any(
             (i.get("snippet") or {}).get("type") == "chatEndedEvent" for i in items
         ):
-            self.update_field("live_chat_status", "Offline")
             return _LIVE_CHAT_ENDED
 
         interval = data.get("pollingIntervalMillis")

@@ -145,8 +145,6 @@ def test_show_for_variants():
     assert _balanced(out)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: show_for with non-finite seconds writes `inf` into the overlay JS "
-                                       "(ReferenceError); timing.py already treats it as 5 s")
 def test_show_for_infinite_seconds_is_valid_js():
     out = "\n".join(bb._compile_action("e", "show_for", {"seconds": "inf"}))
     assert not re.search(r"\binf\b", out)
@@ -410,9 +408,6 @@ def test_anim_class_table():
 
 
 @pytest.mark.parametrize("cls", [".spore-progress-bar", ".spore-wheel"])
-@pytest.mark.xfail(strict=True, reason="BUG: widget CSS sets position: relative on .spore-progress-bar / "
-                                       ".spore-wheel, overriding .spore-element {position: absolute} (same "
-                                       "specificity, later rule), so these blocks leave absolute layout")
 def test_widget_css_keeps_blocks_absolutely_positioned(cls):
     css = bb.PROGRESS_BAR_CSS + "\n" + bb.WIDGET_CSS
     rule = re.search(re.escape(cls) + r"\s*\{([^}]*)\}", css)

@@ -137,24 +137,7 @@ def test_every_topic_renders(topic_id):
     assert plain.strip(), f"{topic_id}: no readable text"
 
 
-_BROKEN_ANCHORS = {"database"}
-
-
-@pytest.mark.parametrize(
-    "topic_id",
-    [
-        pytest.param(
-            t,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="BUG: database.html links to #database-explorer but the heading's id is hx-database-explorer",
-            ),
-        )
-        if t in _BROKEN_ANCHORS
-        else t
-        for t in sorted(HELP_TOPICS)
-    ],
-)
+@pytest.mark.parametrize("topic_id", sorted(HELP_TOPICS))
 def test_in_page_links_resolve(topic_id):
     html, _ = help_render.render_topic_html(topic_id)
     parser = _Links()

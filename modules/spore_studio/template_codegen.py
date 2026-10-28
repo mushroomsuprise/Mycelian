@@ -27,6 +27,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import math
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -2307,9 +2308,14 @@ def _derived_json_config(model: Dict[str, Any]) -> Dict[str, Any]:
                 if not _expose_field(element, key):
                     continue
                 try:
-                    value = int(props[key])
+                    value = float(props[key])
                 except (TypeError, ValueError):
                     continue
+                if not math.isfinite(value):
+                    continue
+                # Keep fractions (1.5px letter spacing); whole numbers stay ints.
+                if value.is_integer():
+                    value = int(value)
                 elements_out.append(
                     {
                         "type": "number",
@@ -2506,8 +2512,12 @@ def _append_widget_config_fields(
         return
     props = element.get("props") if isinstance(element.get("props"), dict) else {}
     label_base = str(element.get("id") or eid)
+    # Shared style props (color, font size, ...) may already be exported above.
+    taken = {row.get("id") for row in elements_out}
     for key, kind, *extra in fields:
         if not _expose_field(element, key):
+            continue
+        if f"{eid}_{key}" in taken:
             continue
         value = props.get(key)
         if kind == "checkbox":

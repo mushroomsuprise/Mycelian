@@ -47,6 +47,7 @@ by element id.
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -197,7 +198,6 @@ COUNTER_IMAGE_TRANSITION_CSS = """
 
 PROGRESS_BAR_CSS = """
 .spore-progress-bar {
-  position: relative;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -503,6 +503,10 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
             seconds = float(seconds)
         except (TypeError, ValueError):
             seconds = 5.0
+        # Same rule as timing._binding_step_ms: never write inf into the JS.
+        seconds = max(0.0, seconds)
+        if not math.isfinite(seconds):
+            seconds = 5.0
         anim_in = str(args.get("anim_in", "fade") or "none")
         anim_out = str(args.get("anim_out", "fade") or "none")
         ov: Dict[str, Any] = {}
@@ -515,7 +519,7 @@ def _compile_action(element_id: str, action: str, args: Dict[str, Any]) -> List[
             "(function () {",
             f"    sporeShow({eid}, {ov_js});",
             f"    setTimeout(function () {{ sporeHide({eid}, {ov_js}); }}, "
-            f"{max(0.0, seconds) * 1000});",
+            f"{seconds * 1000});",
             "})();",
         ]
 
@@ -965,7 +969,7 @@ WIDGET_CSS = """
 @keyframes sporeListSlide { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 .spore-confetti { pointer-events: none; overflow: hidden; }
 .spore-confetti-canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
-.spore-wheel { position: relative; overflow: visible; }
+.spore-wheel { overflow: visible; }
 .spore-wheel-rotor {
   position: relative; z-index: 1; width: 100%; height: 100%;
   border-radius: 50%; overflow: hidden;

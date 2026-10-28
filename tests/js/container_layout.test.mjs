@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeWindow, loadScript, plain, xfail } from "./helpers/env.mjs";
+import { makeWindow, loadScript, plain } from "./helpers/env.mjs";
 
 const FILE = "assets/default_assets/spore_studio/container_layout.js";
 
@@ -273,9 +273,8 @@ test("locked slots larger than the span leave negative room and warn", () => {
     assert.deepEqual(rects(res).f, [0, 2000, 640, 0], "flexible collapses to its minimum, like containers.py");
 });
 
-xfail(test, "percent limits round like containers.py (span * pct / 100)",
-    "BUG: container_layout.js:28 span * (pct / 100) = 764.5000000000001 for 55% of 1390, so JS rounds to 765 where containers.py gets 764",
-    () => {
-        const { I } = setup();
-        assert.equal(I.effMin({ min_pct: 55 }, 1390), 764);
-    });
+test("percent limits round like containers.py (span * pct / 100)", () => {
+    const { I } = setup();
+    assert.equal(I.effMin({ min_pct: 55 }, 1390), 764);
+    assert.equal(I.effMax({ max_pct: 55 }, 1390), 764);
+});

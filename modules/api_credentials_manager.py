@@ -47,6 +47,7 @@ from .encryption_utils import (
     ensure_decrypted,
 )
 from .notification_engine import notify_critical
+from .path_utils import get_data_path
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,11 @@ class APICredentialsManager:
     """Manages API credentials stored in encrypted configuration files"""
 
     def __init__(self, config_path: str = "api_credentials.json"):
-        self.config_path = Path(config_path)
+        # The default file lives with the other data files (next to the exe when frozen)
+        if config_path == "api_credentials.json":
+            self.config_path = Path(get_data_path(config_path))
+        else:
+            self.config_path = Path(config_path)
         self._credentials: Optional[APICredentials] = None
         self._initialized = False
         self._save_lock = threading.Lock()

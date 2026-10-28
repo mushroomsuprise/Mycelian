@@ -48,6 +48,7 @@ from .chatbot_core import (
 )
 from .statistics_manager import get_statistics_manager
 from .notification_engine import nav_chatbot, notify, notify_critical
+from .path_utils import get_data_path
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,22 @@ def _database_backend_token() -> tuple:
         )
     except Exception:
         return (object(),)
+
+
+def _setting_int(value: Any, default: int) -> int:
+    """A stored whole-number setting, or ``default`` when it isn't one ("abc", "inf")."""
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        logger.warning("Ignoring invalid chatbot setting value %r; using %s", value, default)
+        return default
+
+
+def _item_id(data: Any, key: str) -> str:
+    """Id of a stored item for log lines; a non-dict item has none."""
+    return str(data.get(key, "?")) if isinstance(data, dict) else "?"
 
 
 def _command_matches_name(command: ChatCommand, command_name: str) -> bool:
@@ -145,9 +162,9 @@ class GreetingFlagManager:
 
     def __init__(self, file_path: str = None):
         if file_path is None:
-            # Default path in the data directory
-            data_dir = Path(__file__).parent.parent / "data"
-            data_dir.mkdir(exist_ok=True)
+            # Default path in the data directory (follows MYCELIAN_DATA_DIR and frozen builds)
+            data_dir = Path(get_data_path("data"))
+            data_dir.mkdir(parents=True, exist_ok=True)
             file_path = data_dir / "greeting_flags.json"
 
         self.file_path = Path(file_path)
@@ -456,6 +473,9 @@ class ChatbotManager:
 
     def _load_data(self):
         """Load commands and events from database manager"""
+        # Paths not loaded yet. If loading stops early they're treated as unreadable,
+        # so a later save re-reads them instead of writing empty data over them.
+        not_loaded = ["BotData/Commands", "BotData/Events", "BotData/Quotes", "BotData/Settings", "BotData/Greetings"]
         try:
             # First, check if we need to migrate legacy data
             preloaded_commands = self._migrate_legacy_data()
@@ -472,10 +492,9 @@ class ChatbotManager:
                         command = ChatCommand.from_dict(cmd_data)
                         self.commands[command.command_id] = command
                     except Exception as e:
-                        logger.error(
-                            f"Error loading command {cmd_data.get('command_id', 'unknown')}: {e}"
-                        )
-                        skipped.append(f"command {cmd_data.get('command_id', '?') if isinstance(cmd_data, dict) else '?'}: {e}")
+                        logger.error(f"Error loading command {_item_id(cmd_data, 'command_id')}: {e}")
+                        skipped.append(f"command {_item_id(cmd_data, 'command_id')}: {e}")
+            not_loaded.remove("BotData/Commands")
 
             # Load events
             events_data = self._read_checked("BotData/Events")
@@ -485,10 +504,9 @@ class ChatbotManager:
                         event = ChatEvent.from_dict(event_data)
                         self.events[event.event_id] = event
                     except Exception as e:
-                        logger.error(
-                            f"Error loading event {event_data.get('event_id', 'unknown')}: {e}"
-                        )
-                        skipped.append(f"event {event_data.get('event_id', '?') if isinstance(event_data, dict) else '?'}: {e}")
+                        logger.error(f"Error loading event {_item_id(event_data, 'event_id')}: {e}")
+                        skipped.append(f"event {_item_id(event_data, 'event_id')}: {e}")
+            not_loaded.remove("BotData/Events")
 
             migrated = self._apply_load_migrations(commands_data, events_data)
 
@@ -500,10 +518,9 @@ class ChatbotManager:
                         quote = Quote.from_dict(quote_data)
                         self.quotes[quote.quote_id] = quote
                     except Exception as e:
-                        logger.error(
-                            f"Error loading quote {quote_data.get('quote_id', 'unknown')}: {e}"
-                        )
-                        skipped.append(f"quote {quote_data.get('quote_id', '?') if isinstance(quote_data, dict) else '?'}: {e}")
+                        logger.error(f"Error loading quote {_item_id(quote_data, 'quote_id')}: {e}")
+                        skipped.append(f"quote {_item_id(quote_data, 'quote_id')}: {e}")
+            not_loaded.remove("BotData/Quotes")
 
             # Load settings with defensive type validation
             settings_data = self._read_checked("BotData/Settings")
@@ -513,6 +530,7 @@ class ChatbotManager:
                 # Defaults are the baseline; later edits are applied over the
                 # stored copy once it can be read.
                 self._unreadable_paths["BotData/Settings"] = self._settings_payload()
+            not_loaded.remove("BotData/Settings")
 
             # Load greetings
             greetings_data = self._read_checked("BotData/Greetings")
@@ -523,10 +541,9 @@ class ChatbotManager:
                         self.greetings[greeting.greeting_id] = greeting
                         self.greetings_by_user_id[greeting.user_id] = greeting
                     except Exception as e:
-                        logger.error(
-                            f"Error loading greeting {greeting_data.get('greeting_id', 'unknown')}: {e}"
-                        )
-                        skipped.append(f"greeting {greeting_data.get('greeting_id', '?') if isinstance(greeting_data, dict) else '?'}: {e}")
+                        logger.error(f"Error loading greeting {_item_id(greeting_data, 'greeting_id')}: {e}")
+                        skipped.append(f"greeting {_item_id(greeting_data, 'greeting_id')}: {e}")
+            not_loaded.remove("BotData/Greetings")
 
             if skipped:
                 count = len(skipped)
@@ -561,6 +578,11 @@ class ChatbotManager:
 
         except Exception as e:
             logger.error(f"Error loading chatbot data: {e}")
+            for path in not_loaded:
+                if path not in self._unreadable_paths:
+                    self._unreadable_paths[path] = (
+                        self._settings_payload() if path == "BotData/Settings" else None
+                    )
             notify_critical(
                 "Commands, events, quotes and greetings may be missing until this is fixed.",
                 source="chatbot",
@@ -746,14 +768,11 @@ class ChatbotManager:
         greeting_text_val = settings_data.get("default_greeting_text", "@{username} welcome to the stream!")
         self.default_greeting_text = str(greeting_text_val) if greeting_text_val else "@{username} welcome to the stream!"
         
-        cooldown_val = settings_data.get("greeting_cooldown_hours", 24)
-        self.greeting_cooldown_hours = int(cooldown_val) if not isinstance(cooldown_val, int) else cooldown_val
+        self.greeting_cooldown_hours = _setting_int(settings_data.get("greeting_cooldown_hours", 24), 24)
         
-        reset_val = settings_data.get("greeting_reset_interval_hours", 24)
-        self.greeting_reset_interval_hours = int(reset_val) if not isinstance(reset_val, int) else reset_val
+        self.greeting_reset_interval_hours = _setting_int(settings_data.get("greeting_reset_interval_hours", 24), 24)
         
-        quote_cd_val = settings_data.get("quote_cooldown_seconds", 30)
-        self.quote_cooldown_seconds = int(quote_cd_val) if not isinstance(quote_cd_val, int) else quote_cd_val
+        self.quote_cooldown_seconds = _setting_int(settings_data.get("quote_cooldown_seconds", 30), 30)
         self.add_quote_permission = normalize_permission(settings_data.get("add_quote_permission", "moderator"))
         fmt = settings_data.get("quote_reply_format")
         self.quote_reply_format = str(fmt) if isinstance(fmt, str) and fmt.strip() else DEFAULT_QUOTE_REPLY_FORMAT

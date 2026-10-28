@@ -1791,7 +1791,7 @@ class AudioControlAction(BaseAction):
                 return False
 
             # Schedule restoration
-            task_id = f"{self.action_id}_{int(trigger_data.get('triggered_at', 0))}"
+            task_id = f"{self.action_id}_{int(asyncio.get_running_loop().time())}"
             restoration_task = asyncio.create_task(
                 self._restore_audio_values_with_cleanup(
                     original_values, target_app, target_device, device_name, task_id

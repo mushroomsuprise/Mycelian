@@ -178,6 +178,8 @@
             if (!au && el.getAttribute('data-spore-hidden') === 'true') { return; }
             var token = el._sporeVisToken = (el._sporeVisToken || 0) + 1;
             function applyHidden() {
+                /* A show since this hide (e.g. during an audio fade) cancels it. */
+                if (el._sporeVisToken !== token) { return; }
                 var cfg = sporeReadAnimConfig(el, override);
                 var cls = sporeAnimClassFor(cfg.animOut, 'out');
                 if (!cls || cfg.animOut === 'none') {

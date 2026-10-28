@@ -23,6 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import dataclasses
 import logging
 import threading
 import time
@@ -740,8 +741,6 @@ def _clear_game_data_if_needed():
 
 def _public_psn_payload(psn_data) -> dict:
     """Socket.IO payload for overlays — never include NPSSO / auth secrets."""
-    import dataclasses
-
     payload = dataclasses.asdict(psn_data)
     payload.pop("npsso_code", None)
     return payload

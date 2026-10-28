@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -1496,8 +1497,6 @@ def update_version_across_files():
                 content = f.read()
 
             # Update version line
-            import re
-
             content = re.sub(
                 r'^version = ".*"',
                 f'version = "{VERSION}"',
@@ -2335,7 +2334,9 @@ def main():
 
         # Step 4: Update version across files
         progress.next_step("Updating version information")
-        update_version_across_files()
+        if not update_version_across_files():
+            progress.error("Version update failed")
+            sys.exit(1)
         progress.success()
 
         # Step 5: Build Stream Deck plugin into sd_plugin for the installer

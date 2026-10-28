@@ -12,7 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
-import { ROOT, FakeClock, makeFetch, xfail } from "./helpers/env.mjs";
+import { ROOT, FakeClock, makeFetch } from "./helpers/env.mjs";
 
 const PLUGIN = path.join(ROOT, "streamdeck-plugin", "mycelian");
 const SRC = path.join(PLUGIN, "src");
@@ -98,12 +98,12 @@ test("parseServerConfig falls back to defaults on extra colons and warns", { ski
     assert.match(logs[0][1], /Invalid server URL format: http:\/\/host:5000/);
 });
 
-if (ts) xfail(test, "parseServerConfig keeps a non-numeric port as NaN",
-    "BUG: server-config.ts:15 parseInt of a bad port ('host:abc' or 'host:') gives NaN instead of the 5000 fallback, so every request goes to http://host:NaN",
-    () => {
-        const { exports: m } = load("lib/server-config");
-        assert.equal(m.parseServerConfig("localhost:abc").port, 5000);
-    });
+test("parseServerConfig falls back to port 5000 when the port is not a number", { skip }, () => {
+    const { exports: m } = load("lib/server-config");
+    assert.equal(m.parseServerConfig("localhost:abc").port, 5000);
+    assert.equal(m.parseServerConfig("localhost:").port, 5000);
+    assert.equal(m.parseServerConfig("localhost:0").port, 5000);
+});
 
 test("apiUrl joins host, port and path", { skip }, () => {
     const { exports: m } = load("lib/server-config");
@@ -336,15 +336,17 @@ test("toggle: polling error before any status sets ERROR and ignores setTitle fa
     assert.ok(logs.some(([k]) => k === "warn"));
 });
 
-if (ts) xfail(test, "toggle: repeated polling failures after ACTIVE never show ERROR",
-    "BUG: toggle-alerts.ts:79 the error branch only fires when no status is known yet; once ACTIVE/PAUSED, a stopped Mycelian keeps showing the stale status forever",
+test("toggle: repeated polling failures after ACTIVE show ERROR", { skip },
     async () => {
         let up = true;
         const { action, clock } = toggle([["get_pause_status", () => (up ? { paused: false } : new Error("down"))]]);
         const a = fakeAction();
         await action.onWillAppear(ev(a, {}));
         up = false;
-        for (let i = 0; i < 3; i++) { clock.tick(12000); await flush(); }
+        clock.tick(12000);
+        await flush();
+        assert.equal(a.titles.at(-1), "TGL ALERTS\nACTIVE", "one failed poll is not enough");
+        for (let i = 0; i < 2; i++) { clock.tick(12000); await flush(); }
         assert.equal(a.titles.at(-1), "TGL ALERTS\nERROR");
     });
 

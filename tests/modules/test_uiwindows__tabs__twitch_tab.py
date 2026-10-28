@@ -441,6 +441,17 @@ def test_save_persists_everything(env):
     assert tab.dirty is False and tab._saved_creds["client_secret"] == "new"
 
 
+def test_save_writes_only_changed_fields(env):
+    """Tokens the Twitch client refreshed after the tab loaded must not be overwritten by Save."""
+    tab = _tab_with_cards(env)
+    tab._set("alerts_enabled", False)
+    tab.save()
+    assert env.state.twitch_updates == {"alerts_enabled": False}
+    env.state.twitch_updates.clear()
+    tab.save()  # nothing changed since the last save
+    assert env.state.twitch_updates == {}
+
+
 def test_save_failure_keeps_dirty(env):
     env.state.save_ok = False
     tab = _tab_with_cards(env)

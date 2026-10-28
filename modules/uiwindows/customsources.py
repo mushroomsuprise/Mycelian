@@ -3303,10 +3303,19 @@ def _render_control(element, element_type, element_id, element_label, element_va
             return _render_color(element_id, element_value, list(element.get("options", [])) or None, commit)
         if element_value not in (None, "") and element_value not in options:
             options = [element_value] + options
+
+        def shown(value: Any) -> Any:
+            # An empty value that is not an option shows as no selection (ui.select rejects it)
+            return None if value in (None, "") and value not in options else value
+
         control = form_select(
-            tooltip="", options=options, value=element_value, classes="ssx-select", on_change=lambda e: commit(e.value)
+            tooltip="", options=options, value=shown(element_value), classes="ssx-select", on_change=lambda e: commit(e.value)
         )
-        return _value_setter(control)
+
+        def set_select_value(value: Any) -> None:
+            control.value = shown(value)
+
+        return set_select_value
 
     if element_type == "number":
         control = form_number(

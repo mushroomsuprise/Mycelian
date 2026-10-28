@@ -344,7 +344,6 @@ def test_backfill_does_nothing_when_already_stopped(mgr, monkeypatch):
 # --------------------------------------------------------------------------- legacy root DB migration
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: legacy root statistics.db import always fails: DETACH runs inside the implicit INSERT transaction ('database legacy is locked'), so it rolls back")
 def test_legacy_root_statistics_db_is_imported_once(env):
     make_legacy_db(env.root / "statistics.db", [("Alice", "bit", 100, "Cheer", 10.0), ("Bob", "follow", 0, "", 20.0)])
     m = env.make()

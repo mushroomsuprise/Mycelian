@@ -273,7 +273,7 @@ def _probe_database() -> bool:
     try:
         from . import database_manager
 
-        cfg = database_manager.get_config()
+        cfg = database_manager.database_manager.get_config()
         if cfg.database_type == "sql":
             return True
         if cfg.database_type == "firebase":

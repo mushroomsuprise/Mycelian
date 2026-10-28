@@ -788,14 +788,21 @@ class GatedState(FakeState):
         super().update_discord_field(name, value)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: connect_with_token returns True for a rejected token/crash: "
-                                       "is_connected() ignores the Auth Failed/Error status while _client is set")
 @pytest.mark.parametrize("script", ["login_fail", "crash"])
 def test_connect_failure_returns_false(fake_discord, monkeypatch, script):
     st = GatedState()
     monkeypatch.setattr(ds, "state_manager", st)
     s = ds.DiscordService()
     FakeClient.script = script
+    checked = s.is_connected
+
+    def is_connected_then_release():
+        # Let the bot thread finish only after the caller has read the failed state.
+        result = checked()
+        st.gate.set()
+        return result
+
+    monkeypatch.setattr(s, "is_connected", is_connected_then_release)
     try:
         assert s.connect_with_token("bad-token") is False
     finally:

@@ -543,8 +543,6 @@ def test_to_int():
     assert core._to_int(float("nan"), 2) == 2  # int(nan) raises ValueError
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: _to_int lets OverflowError escape for 'inf'/'1e999', so a stored "
-                                       "usage_limit/counter of inf crashes ChatCommand/ChatEvent loading")
 def test_to_int_infinite_values_fall_back_to_default():
     assert core._to_int("inf", 2) == 2
     assert ChatCommand(command_name="x", usage_limit="1e999").usage_limit == 0

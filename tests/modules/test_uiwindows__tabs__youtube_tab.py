@@ -496,6 +496,19 @@ def test_save(env):
     assert tab._page.statuses  # status refreshed
 
 
+def test_save_keeps_tokens_and_channels_updated_after_load(env):
+    """Save writes the tab's fields onto the live state, not the stale copy loaded at build time."""
+    tab = _wired(env)
+    env.state.data.access_token = "NEW_AT"
+    env.state.data.refresh_token = "NEW_RT"
+    env.state.data.channels = {"@chan": {"channel_id": "UC1"}}
+    tab._set("alerts_enabled", False)
+    tab.save()
+    saved = env.state.set_calls[-1]
+    assert saved["access_token"] == "NEW_AT" and saved["refresh_token"] == "NEW_RT"
+    assert saved["channels"] == {"@chan": {"channel_id": "UC1"}} and saved["alerts_enabled"] is False
+
+
 def test_save_failure_and_no_buffer(env):
     tabmod.YouTubeTab().save()
     assert env.state.set_calls == []

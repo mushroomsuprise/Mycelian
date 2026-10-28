@@ -379,6 +379,7 @@ def test_ensure_battle_log_names_detached_and_error(hook, mem, monkeypatch):
 
 @pytest.fixture
 def names_hook(hook, monkeypatch):
+    monkeypatch.setattr(ff7, "_BATTLE_LOG_NAME_ASSETS_LOADED", True)  # keep the tables empty
     monkeypatch.setattr(ff7, "_BATTLE_LOG_CMD_EN", {})
     monkeypatch.setattr(ff7, "_BATTLE_LOG_ATK128_EN", {})
     cmds = [""] * 32

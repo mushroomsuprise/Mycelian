@@ -396,6 +396,9 @@ class StatisticsManager:
         # matching digest means the row already holds exactly this payload.
         self._spilled_user_digests: Dict[Tuple[str, str], bytes] = {}
         self._user_spill_lock = threading.Lock()
+        # Set when stored lifetime totals could not be read in full. Saving then would
+        # write this session's partial copy (defaults for whatever didn't load) over them.
+        self._load_failed = False
 
         # Initialize the separate statistics database
         self._init_statistics_db()
@@ -831,12 +834,14 @@ class StatisticsManager:
                 FROM legacy.user_events
                 """
             )
-            conn.execute("DETACH DATABASE legacy")
             cursor.execute(
                 "INSERT INTO migrations (migration_name) VALUES (?)",
                 ("legacy_root_statistics_user_events",),
             )
+            # Commit before DETACH: SQLite refuses to detach a database the open
+            # transaction still reads from ("database legacy is locked").
             conn.commit()
+            conn.execute("DETACH DATABASE legacy")
             logger.info(
                 "Imported %s user_events rows from legacy statistics DB %s",
                 n_legacy,
@@ -1024,6 +1029,7 @@ class StatisticsManager:
             return {"data": data_dict, "version": "1.0"}
         except Exception as e:
             logger.error(f"Error loading from statistics database: {e}", exc_info=True)
+            self._load_failed = True
             return None
         finally:
             self._return_stats_db_connection(conn)
@@ -2670,6 +2676,16 @@ class StatisticsManager:
                 logger.info("No existing statistics found in database, starting fresh")
         except Exception as e:
             logger.error(f"Error loading statistics from database: {e}")
+            self._load_failed = True
+        if self._load_failed:
+            _notify_stats_problem(
+                "Couldn't load statistics",
+                "Stored stream stats couldn't be read, so this session's totals won't be saved over them.",
+                hint="Restart Mycelian. If this keeps happening, the statistics database may be damaged.",
+                details="Lifetime totals failed to load; saving is paused to protect them.",
+                key="stats:load_failed",
+                cooldown=1800,
+            )
 
     def _save_to_database(self):
         """Save current statistics to database.
@@ -2897,7 +2913,14 @@ class StatisticsManager:
             )
 
             # Save to the separate statistics database if available
-            if self._stats_db_initialized:
+            if self._load_failed:
+                # Stored totals never loaded: keep them rather than overwrite with partial data.
+                self.last_save_ok = False
+                if self._stats_db_initialized:
+                    # Per-user rows are read from SQLite before they change, so they're safe.
+                    self._persist_user_maps(data_dict.get("data") or {})
+                logger.error("Statistics totals not saved: stored totals failed to load this session")
+            elif self._stats_db_initialized:
                 self._persist_user_maps(data_dict.get("data") or {})
                 self._save_lifetime_totals_to_stats_db(data_dict["data"])
             else:
@@ -2923,8 +2946,9 @@ class StatisticsManager:
             )
 
     @_stats_data_locked
-    def _track_user_alert(self, username: str, alert_type: str):
-        """Helper method to track per-user alert statistics"""
+    def _track_user_alert(self, username: str, alert_type: str) -> UserAlertStatistics:
+        """Helper method to track per-user alert statistics; returns the viewer's row
+        (matched case-insensitively, so callers must not index ``user_stats`` by the raw name)."""
         user_stats = self._user_record(
             self.data.alerts.user_stats,
             username,
@@ -2944,6 +2968,7 @@ class StatisticsManager:
         # Set first_seen if this is the first time
         if user_stats.total_alerts == 1:
             user_stats.first_seen = current_time
+        return user_stats
 
     @_stats_data_locked
     def _track_alert_type(self, alert_type: str, alert_name: str = ""):
@@ -2981,8 +3006,8 @@ class StatisticsManager:
 
         # Track per-user statistics if username provided
         if username:
-            self._track_user_alert(username, "bit_alerts_played")
-            self.data.alerts.user_stats[username].total_bits += int(bit_amount or 0)
+            user_row = self._track_user_alert(username, "bit_alerts_played")
+            user_row.total_bits += int(bit_amount or 0)
             self._record_event(username, "bit", bit_amount, alert_name)
 
         # Track individual alert type
@@ -3035,10 +3060,8 @@ class StatisticsManager:
 
         # Track per-user statistics if username provided
         if username:
-            self._track_user_alert(username, "gift_subs_played")
-            self.data.alerts.user_stats[username].total_gift_subs += int(
-                gift_quantity or 0
-            )
+            user_row = self._track_user_alert(username, "gift_subs_played")
+            user_row.total_gift_subs += int(gift_quantity or 0)
             self._record_event(username, "giftsub", gift_quantity, alert_name)
 
         # Track individual alert type
@@ -3089,8 +3112,7 @@ class StatisticsManager:
         )
 
         if username:
-            self._track_user_alert(username, "watch_streak_alerts_played")
-            user_row = self.data.alerts.user_stats[username]
+            user_row = self._track_user_alert(username, "watch_streak_alerts_played")
             if sc > user_row.highest_watch_streak:
                 user_row.highest_watch_streak = sc
             self._record_event(username, "watch_streak", float(sc), alert_name)
@@ -4041,6 +4063,7 @@ class StatisticsManager:
         if category is None:
             # Reset all statistics
             self.data = StatisticsData()
+            self._load_failed = False  # everything is deliberately zeroed, so it may be saved
             logger.info("All statistics reset")
         elif category == "alerts":
             self.data.alerts = AlertStatistics()
@@ -4857,9 +4880,9 @@ class StatisticsManager:
                 repairs_made = True
 
         if repairs_made:
+            # Not saved here: this runs mid-load, and a save now would write defaults over
+            # every category not loaded yet. The next regular save stores the repair.
             logger.info("Data integrity repairs completed")
-            # Save the repaired data
-            self.save_statistics()
 
         return repairs_made
 

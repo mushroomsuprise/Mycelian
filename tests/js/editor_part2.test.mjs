@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fire, plain, settle, loadScript, xfail } from "./helpers/env.mjs";
+import { fire, plain, settle, loadScript } from "./helpers/env.mjs";
 import { bootEditor, blankModel, control, field, prop, buttonByText, setValue, sectionByTitle } from "./helpers/editor_env.mjs";
 
 async function blank(extra = {}, opts = {}) {
@@ -384,6 +384,11 @@ test("normalizeFeed fills every part; readFeeds normalises in place", async () =
     assert.deepEqual(plain(f.target), { options: {} });
     const g = E.normalizeFeed({ source: "x", target: "y" });
     assert.equal(g.source.value.kind, "data_source");
+    const parts = { filters: { cooldown_ms: 1 }, mapping: { prefix: "<" }, timing: { delay_ms: 9 } };
+    const h = E.normalizeFeed(Object.assign({}, parts));
+    assert.ok(h.filters === parts.filters && h.mapping === parts.mapping && h.timing === parts.timing,
+        "existing parts are filled in place so open feed cards keep editing the saved objects");
+    assert.deepEqual([h.mapping.prefix, h.mapping.suffix, h.timing.delay_ms], ["<", "", 9]);
     assert.deepEqual(plain(E.readFeeds({})), []);
     const el = { data_feed: [{}] };
     assert.equal(E.readFeeds(el)[0].enabled, true);
@@ -533,12 +538,17 @@ test("feed preview modifiers and rendering", async () => {
     assert.equal(E.feedPreviewRender("{v||int}", { v: 2.4 }), "2");
 });
 
-xfail(test, "the mapping preview applies the plural/join/count formats the catalog offers",
-    "BUG: editor.js:5655 feedPreviewMod lacks the plural, join and count modifiers that data_feed_registry lists and the overlay runtime applies, so '{pool_size|plural:entry,entries}' previews as '12' instead of '12 entries'",
-    async () => {
-        const { E } = await blank();
-        assert.equal(E.feedPreviewRender("{pool_size|plural:entry,entries}", { pool_size: 12 }), "12 entries");
-    });
+test("the mapping preview applies the plural/join/count formats the catalog offers", async () => {
+    const { E } = await blank();
+    assert.equal(E.feedPreviewRender("{pool_size|plural:entry,entries}", { pool_size: 12 }), "12 entries");
+    assert.equal(E.feedPreviewRender("{n|plural:win}", { n: 1 }), "1 win");
+    assert.equal(E.feedPreviewRender("{n|plural:win}", { n: 1500 }), "1,500 wins");
+    assert.equal(E.feedPreviewRender("{n|plural:win}", { n: "x" }), "x");
+    assert.equal(E.feedPreviewRender("{w|join: & } ({w|count})", { w: ["a", "b"] }), "a & b (2)");
+    assert.equal(E.feedPreviewRender("{w|join} {w}", { w: ["a", "b"] }), "a, b a, b");
+    assert.equal(E.feedPreviewRender("{w|upper} {o}", { w: ["a", "b"], o: [{ k: 1 }] }), 'A, B [{"k":1}]');
+    assert.equal(E.feedPreviewRender("{s|count} {e|count} {s|join}", { s: "a,b,c", e: "" }), "3 0 a,b,c");
+});
 
 test("feed preview text uses sample data, mapping fields, decimals, prefix/suffix and fallback", async () => {
     const { E } = await blank();
@@ -716,7 +726,6 @@ test("feed mapping editor: fields, template inserts, split rows and formatting",
 test("a list's row template follows its list_add feed template", async () => {
     const s = await blank();
     const list = await s.add("list");
-    s.select(list.id); // re-render the already selected block (see the stale-card xfail below)
     const mp = () => feedPartBody(feedCard(s), 2);
     setValue(s.win, mp().querySelector(".ss-feed__template input"), "{username}!", ["change"]);
     assert.equal(list.props.row_template, "{username}!");
@@ -726,32 +735,28 @@ test("a list's row template follows its list_add feed template", async () => {
     assert.equal(list.props.row_template, "{username}!");
 });
 
-xfail(test, "the first feed edit after selecting a block is kept",
-    "BUG: editor.js:8197 renderProperties calls readFeeds() after building the Data feed cards when a block is newly selected, and normalizeFeed (editor.js:5257) swaps feed.mapping/filters/timing for new objects, so the cards edit detached copies: the first change to a feed's mapping, filters or timing after selecting a block is silently dropped",
-    async () => {
-        const s = await blank();
-        const shape = await s.add("shape");
-        buttonByText(pane(s), "+ Add feed").click();
-        const other = await s.add("text");
-        s.select(shape.id);
-        setValue(s.win, control(feedPartBody(feedCard(s), 2), "Prefix"), "<", ["change"]);
-        assert.equal(shape.data_feed[0].mapping.prefix, "<");
-        void other;
-    });
+test("the first feed edit after selecting a block is kept", async () => {
+    const s = await blank();
+    const shape = await s.add("shape");
+    buttonByText(pane(s), "+ Add feed").click();
+    const other = await s.add("text");
+    s.select(shape.id);
+    setValue(s.win, control(feedPartBody(feedCard(s), 2), "Prefix"), "<", ["change"]);
+    assert.equal(shape.data_feed[0].mapping.prefix, "<");
+    void other;
+});
 
-xfail(test, "a second edit in a list's feed card is kept",
-    "BUG: editor.js:6053 syncListRowTemplate runs readFeeds() on every list feed commit, and normalizeFeed (editor.js:5257) replaces feed.mapping with a new object, so after one edit the open card writes to a detached copy and later edits (e.g. Suffix after Prefix) are lost",
-    async () => {
-        const s = await blank();
-        const list = await s.add("list");
-        s.select(list.id);
-        const mp = () => feedPartBody(feedCard(s), 2);
-        const prefix = control(mp(), "Prefix");
-        const suffix = control(mp(), "Suffix");
-        setValue(s.win, prefix, "<", ["change"]);
-        setValue(s.win, suffix, ">", ["change"]);
-        assert.equal(list.data_feed[0].mapping.suffix, ">");
-    });
+test("a second edit in a list's feed card is kept", async () => {
+    const s = await blank();
+    const list = await s.add("list");
+    s.select(list.id);
+    const mp = () => feedPartBody(feedCard(s), 2);
+    const prefix = control(mp(), "Prefix");
+    const suffix = control(mp(), "Suffix");
+    setValue(s.win, prefix, "<", ["change"]);
+    setValue(s.win, suffix, ">", ["change"]);
+    assert.deepEqual([list.data_feed[0].mapping.prefix, list.data_feed[0].mapping.suffix], ["<", ">"]);
+});
 
 test("feed target editor: options of every type and counter deltas", async () => {
     const s = await blank();

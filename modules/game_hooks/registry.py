@@ -55,6 +55,7 @@ def refresh_hook_enabled_cache() -> None:
 
 def set_hook_enabled_cached(hook_id: str, enabled: bool) -> None:
     """Update in-memory enabled flag after a settings save (no RTDB read)."""
+    global _enabled_cache_loaded
     with _enabled_cache_lock:
         _enabled_cache[hook_id] = bool(enabled)
         _enabled_cache_loaded = True

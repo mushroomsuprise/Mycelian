@@ -130,11 +130,11 @@ def test_load_invalid_name_returns_empty(parser):
 
 
 def test_load_corrupt_json_returns_empty(parser, caplog):
-    # JSONDecodeError is a ValueError, so it lands in the "invalid name" branch: {} (not a default
-    # config that a later save could write over the user's file).
+    # {} (not a default config that a later save could write over the user's file).
     _write(parser, "bad", "{nope")
     assert parser.load_config("bad") == {}
-    assert "Invalid config name 'bad'" in caplog.text
+    assert "Config file for 'bad' is not valid JSON" in caplog.text
+    assert "Invalid config name" not in caplog.text
 
 
 def test_load_other_error_returns_default(parser, monkeypatch, caplog):

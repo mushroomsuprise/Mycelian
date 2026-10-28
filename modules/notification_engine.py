@@ -474,9 +474,12 @@ def _queue_toast(payload: Dict[str, Any], opts: Dict[str, Any]) -> None:
         _pending_toasts.append((payload, dict(opts)))
         if len(_pending_toasts) > _MAX_PENDING_TOASTS:
             # Keep errors when trimming: they are usually the root cause.
+            # Drop the oldest non-errors first, then keep the queue in arrival order.
             errors = [t for t in _pending_toasts if isinstance(t[0], dict) and t[0].get("level") == "error"]
             rest = [t for t in _pending_toasts if t not in errors]
-            _pending_toasts[:] = (errors + rest)[-_MAX_PENDING_TOASTS:]
+            room = max(0, _MAX_PENDING_TOASTS - len(errors))
+            keep = {id(t) for t in errors[-_MAX_PENDING_TOASTS:] + (rest[-room:] if room else [])}
+            _pending_toasts[:] = [t for t in _pending_toasts if id(t) in keep]
     _ensure_toast_flush_timer()
 
 
@@ -991,7 +994,10 @@ def _set_footer_item_tooltip(container, refs: Dict[str, Any], text: str) -> None
         if tip is None:
             from nicegui.elements.tooltip import Tooltip
 
-            tip = Tooltip(text)
+            # Build inside the item: refreshes often run from app.timer callbacks, which
+            # have no UI slot of their own (and a UI handler's slot is the wrong parent).
+            with container:
+                tip = Tooltip(text)
             tip.props["target"] = f"#{container.html_id}"
             refs["tooltip"] = tip
         else:

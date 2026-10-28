@@ -279,49 +279,52 @@ def test_windows_devices_unexpected_error(monkeypatch):
 # --------------------------------------------------------------------------- macOS devices
 
 
-SYNTHETIC_PROFILER = """Audio:
+PROFILER_MIXED = """Audio:
 
-    Audio Devices:
+    Devices:
 
-        Device Name: Studio Headphones
+        Studio Headphones:
+
+          Manufacturer: Sony
+          Output Channels: 2
           Transport: USB
-        Device Name: MacBook Speakers
-          Transport: Built-in
-        Device Name: External Mic
+          Output Source:
+
+        Focusrite:
+
+          Default Input Device: Yes
+          Input Channels: 2
+          Output Channels: 2
           Transport: USB
-        Device Name: LG Display
+
+        LG Display:
+
+          Output Channels: 2
           Transport: DisplayPort
-        Device Name: Focusrite
-          Transport: USB
 
-    Output Devices:
-        Device Name: Loopback
+        Loopback:
+
+          Default Output Device: Yes
+          Output Channels: 2
           Transport: Virtual
 
-    Input Devices:
-        Device Name: Interface In
-          Transport: USB
+        Aggregate:
 
-        Default Output Device: Studio Headphones
-        Default Input Device: External Mic
-        Default Output Device: Yes
-        Default Input Device: Yes
+          Manufacturer: Apple Inc.
+          Transport: Aggregate
 """
 
 
-def test_macos_devices_parses_profiler_sections(run):
-    rec = run({"system_profiler": _done(0, SYNTHETIC_PROFILER)})
+def test_macos_devices_parses_profiler_blocks(run):
+    rec = run({"system_profiler": _done(0, PROFILER_MIXED)})
     devices = at.get_macos_audio_devices()
     assert devices == {
-        "devices:Studio Headphones": "[HEAD] Studio Headphones",
-        "devices:MacBook Speakers": "[SPK] MacBook Speakers",
-        "devices:External Mic": "[MIC] External Mic",
-        "devices:LG Display": "[DSP] LG Display",
-        "devices:Focusrite": "[MIC] Focusrite",  # generic, non-output section -> MIC icon
-        "output:Loopback": "[OUT] Loopback",
-        "input:Interface In": "[MIC] Interface In",
-        "default_output:Studio Headphones": "[OUT] Studio Headphones (Default)",
-        "default_input:External Mic": "[MIC] External Mic (Default)",
+        "output:Studio Headphones": "[HEAD] Studio Headphones",  # blank "Output Source:" stays a property
+        "output:Focusrite": "[OUT] Focusrite",
+        "input:Focusrite": "[MIC] Focusrite (Default)",  # in+out interface listed both ways
+        "output:LG Display": "[DSP] LG Display",
+        "output:Loopback": "[OUT] Loopback (Default)",
+        # "Aggregate" has no channels: skipped, like the "Audio:"/"Devices:" headers
     }
     argv, kwargs = rec.calls[0]
     assert argv == ["system_profiler", "SPAudioDataType"]
@@ -369,16 +372,13 @@ REAL_PROFILER = """Audio:
 """
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: macOS parser expects 'Device Name:'/'Audio Devices:' lines that system_profiler never prints, "
-           "so real devices are never listed",
-)
 def test_macos_devices_parses_real_system_profiler_format(run, monkeypatch):
     run({"system_profiler": _done(0, REAL_PROFILER)})
     monkeypatch.setattr(at, "get_macos_audio_devices_fallback", lambda: {"default": "Default Device"})
-    devices = at.get_macos_audio_devices()
-    assert any("MacBook Air Speakers" in label for label in devices.values())
+    assert at.get_macos_audio_devices() == {
+        "input:MacBook Air Microphone": "[MIC] MacBook Air Microphone (Default)",
+        "output:MacBook Air Speakers": "[SPK] MacBook Air Speakers (Default)",
+    }
 
 
 def test_macos_fallback_combines_both_tools(run):

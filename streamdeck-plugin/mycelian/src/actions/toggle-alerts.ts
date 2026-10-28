@@ -18,6 +18,7 @@ export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 	private pollingTimer: NodeJS.Timeout | null = null;
 	private readonly POLLING_INTERVAL = 12000; // Poll for external pause changes
 	private lastKnownStatus: 'ACTIVE' | 'PAUSED' | 'ERROR' | null = null;
+	private pollFailures = 0; // Consecutive polling errors
 
 	/**
 	 * Start polling the server for status updates
@@ -25,6 +26,7 @@ export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 	private startPolling(serverConfig: { host: string; port: number }, action: any): void {
 		// Clear any existing timer
 		this.stopPolling();
+		this.pollFailures = 0;
 
 		console.log(`Starting status polling for ${serverConfig.host}:${serverConfig.port}`);
 
@@ -58,6 +60,7 @@ export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 
 			const result = await response.json() as { paused: boolean; success: boolean; message: string };
 			const currentStatus = result.paused ? 'PAUSED' : 'ACTIVE';
+			this.pollFailures = 0;
 
 			// Only update if status has actually changed
 			if (this.lastKnownStatus !== currentStatus) {
@@ -75,7 +78,8 @@ export class ToggleAlerts extends SingletonAction<ToggleAlertsSettings> {
 			}
 
 			// If we get multiple polling errors, show error state
-			if (!this.lastKnownStatus || this.lastKnownStatus === 'ERROR') {
+			this.pollFailures++;
+			if (!this.lastKnownStatus || this.lastKnownStatus === 'ERROR' || this.pollFailures >= 2) {
 				this.lastKnownStatus = 'ERROR';
 				const title = "TGL ALERTS\nERROR";
 				try {

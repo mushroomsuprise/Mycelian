@@ -36,6 +36,11 @@ from .integration_ui import (
 
 logger = logging.getLogger(__name__)
 
+# YouTubeData fields this tab edits. Save writes only these (plus the OAuth client
+# credentials); tokens, resolved channels and status come from the live state because
+# the YouTube client may have updated them since the tab loaded its buffer.
+_TAB_FIELDS = ("api_key", "channel_urls", "playlist_filter", "live_chat_enabled", "alerts_enabled")
+
 
 def _restart_live_chat() -> None:
     """Restart YouTube live chat with the saved settings; say so if that fails."""
@@ -801,10 +806,13 @@ class YouTubeTab:
         if not self.buffer:
             return
         self._persist_credentials_to_state(flush=False)
+        current = state_manager.get_youtube_data()
         yt_dict = {
-            f.name: getattr(self.buffer, f.name)
+            f.name: getattr(current, f.name)
             for f in YouTubeData.__dataclass_fields__.values()
         }
+        for name in _TAB_FIELDS:
+            yt_dict[name] = copy.deepcopy(getattr(self.buffer, name))
         # Ensure oauth fields match persisted credentials
         yt_dict["oauth_client_id"] = self._creds.get("client_id", "")
         yt_dict["oauth_client_secret"] = self._creds.get("client_secret", "")

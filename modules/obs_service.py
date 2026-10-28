@@ -114,7 +114,8 @@ def _attr(data: Any, *names: str) -> Any:
                 return data[n]
         return None
     for n in names:
-        if hasattr(data, n):
+        # Callers pass None as a "no alternate name" placeholder.
+        if isinstance(n, str) and hasattr(data, n):
             return getattr(data, n)
     return None
 

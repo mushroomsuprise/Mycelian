@@ -768,9 +768,11 @@ def test_get_registered_template_routes(engine, dirs):
 
 def test_force_route_resync(engine, monkeypatch):
     calls = []
-    monkeypatch.setattr(engine, "_rebuild_url_map", lambda: calls.append(set(engine._registered_template_routes)))
+    monkeypatch.setattr(engine, "_rebuild_url_map", lambda: calls.append(set(engine._registered_template_routes)) or True)
     assert engine.force_route_resync() is True
     assert calls == [set()]
+    monkeypatch.setattr(engine, "_rebuild_url_map", lambda: False)
+    assert engine.force_route_resync() is False
     monkeypatch.setattr(engine, "_rebuild_url_map", _boom)
     assert engine.force_route_resync() is False
 
@@ -970,8 +972,6 @@ def test_streamdeck_get_template_actions_from_disk(engine, sio, dirs):
     assert {"go", "bare"} <= keys
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: streamdeck_get_template_actions loads configs without "
-                                       "dynamic_controls, so dynamic-control actions are never listed")
 def test_streamdeck_get_template_actions_lists_dynamic_controls_from_disk(engine, sio, dirs):
     _write_config(dirs, "dyn", SD_CONFIGS["dyn"])
     keys = {a["action_key"] for a in call(sio, "streamdeck_get_template_actions")["actions"]}

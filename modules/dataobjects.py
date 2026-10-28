@@ -228,6 +228,7 @@ class AppSettings:
     status_footer_full_style: str = "stacked"
     status_footer_minimal_style: str = "tiles"
     auto_update: bool = True
+    update_check_interval_minutes: int = 30  # 5-120; read by updater.UpdateManager
     activity_feed_limit: int = 20
     activity_feed_max_pages: int = 5
     # Activity Feed look (tab and OBS dock; see uiwindows/activity_feed_model.FEED_SETTINGS)
@@ -366,7 +367,7 @@ def _apply_database_connection_settings(temp_db_settings: "DatabaseSettings") ->
     """
     from . import database_manager
 
-    database_manager.update_config(
+    database_manager.database_manager.update_config(
         sql_database_path=temp_db_settings.sql_database_path,
         firebase_service_account_path=temp_db_settings.firebase_service_account_path,
         firebase_database_url=temp_db_settings.firebase_database_url,
@@ -591,6 +592,8 @@ class StateManager:
                 database_settings_data = all_data.get(
                     self._paths["database_settings"], {}
                 )
+                if not isinstance(database_settings_data, dict):
+                    database_settings_data = {}  # corrupt blob: use defaults
                 self._state["database_settings"] = database_settings_data
 
                 # If we have database settings, update the database manager configuration
@@ -778,6 +781,8 @@ class StateManager:
                 database_settings_data = self._read_blob_checked(
                     "database_settings", failed
                 )
+                if not isinstance(database_settings_data, dict):
+                    database_settings_data = {}  # corrupt blob: use defaults
                 self._state["database_settings"] = database_settings_data
 
                 # If we have database settings, update the database manager configuration
@@ -1429,13 +1434,24 @@ class StateManager:
         try:
             from . import database_manager
 
-            ok = database_manager.set_data(path, data)
+            database_manager.clear_last_write_problem()
+            ok = bool(database_manager.set_data(path, data))
+            if not ok:
+                # A newer write of the same blob (with these fields) replaced this one.
+                problem = database_manager.last_write_problem()
+                ok = bool(problem) and problem[0] == "superseded"
             if changed_prefix == "spotify_data":
                 self._spotify_write_failed = not ok
         except Exception as e:
             logger.error(
                 "Error writing %s to database: %s", changed_prefix, e, exc_info=True
             )
+            return False
+
+        if not ok:
+            # The database layer reported it; the changes stay pending for the next save.
+            with self._lock:
+                self._changes_pending = True
             return False
 
         with self._lock:
@@ -2340,6 +2356,18 @@ class StateManager:
                         (self._paths["youtube_data"], encrypted_youtube_data)
                     )
 
+                # Chatbot data with encryption
+                if _changed("chatbot_data"):
+                    encrypted_chatbot_data = self._state["chatbot_data"].copy()
+                    for _cb_secret in ("auth_token", "refresh_token"):
+                        if _cb_secret in encrypted_chatbot_data:
+                            encrypted_chatbot_data[_cb_secret] = ensure_encrypted(
+                                encrypted_chatbot_data[_cb_secret]
+                            )
+                    writes.append(
+                        (self._paths["chatbot_data"], encrypted_chatbot_data)
+                    )
+
                 # OBS WebSocket settings (encrypt password like YouTube API key)
                 if _changed("obs_data"):
                     encrypted_obs = self._state["obs_data"].copy()
@@ -2438,7 +2466,11 @@ class StateManager:
 
         if db_config_to_apply is not None and "database_settings" not in failed:
             try:
-                database_manager.update_config(**db_config_to_apply.__dict__)
+                # config.json, not this blob, picks the live backend (as in
+                # _apply_database_connection_settings), so only connection fields go.
+                config_fields = dict(db_config_to_apply.__dict__)
+                config_fields.pop("database_type", None)
+                database_manager.database_manager.update_config(**config_fields)
                 logger.debug(
                     "Updated database manager configuration after save: %s",
                     db_config_to_apply.database_type,

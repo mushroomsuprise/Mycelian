@@ -216,7 +216,6 @@ def test_main_verify_only_reports_and_does_not_write(fake_root, capsys):
     assert not (fake_root / "logs").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: --dry-run is parsed but ignored; main() still rewrites the files")
 def test_main_dry_run_does_not_write(fake_root):
     path = _write(fake_root / "a.py", f"print('hi {SMILE}')\n")
     rel.main(["--dry-run"])

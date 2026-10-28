@@ -263,6 +263,9 @@ def test_move_connector_to_folder():
                                      "g": {"name": "G", "connector_ids": ["e"]}})
     out = ls.move_connector_to_folder(two, "b", "g")
     assert out["folders"]["g"]["connector_ids"] == ["e", "b"] and out["folders"]["f"]["connector_ids"] == ["c"]
+    # already the folder's only member: no-op (the folder is not dropped)
+    solo = layout([F("g")], {"g": {"name": "G", "connector_ids": ["e"]}})
+    assert ls.move_connector_to_folder(solo, "e", "g") == solo
 
 
 def test_move_connector_to_root():

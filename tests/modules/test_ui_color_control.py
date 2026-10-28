@@ -161,7 +161,6 @@ def test_is_color_transparent(value, result):
     assert cc.is_color_transparent(value) is result
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: plain hsla() with alpha < 1 is reported opaque (only gradient stops check hsl alpha)")
 def test_is_color_transparent_plain_hsla():
     assert cc.is_color_transparent("hsla(0, 10%, 10%, 0.5)") is True
 

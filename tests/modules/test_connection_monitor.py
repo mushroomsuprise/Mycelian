@@ -333,15 +333,12 @@ def test_probe_service_url_uses_http_probe(cmenv):
 # --------------------------------------------------------------------------- database probe
 
 def _db_config(monkeypatch, **cfg):
-    """The probe calls ``database_manager.get_config()`` on the *module*, which has no such
-    function (see the xfail below); add one so the branches can be exercised."""
+    """Point the live DatabaseManager instance's config at ``cfg``."""
     from modules import database_manager
 
-    monkeypatch.setattr(database_manager, "get_config", lambda: SimpleNamespace(**cfg), raising=False)
+    monkeypatch.setattr(database_manager.database_manager, "get_config", lambda: SimpleNamespace(**cfg))
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: _probe_database calls database_manager.get_config() on the module "
-                                       "(no such function), so a remote database always probes unreachable")
 def test_probe_database_uses_the_real_manager_config(cmenv, monkeypatch):
     from modules import database_manager as dbm
 

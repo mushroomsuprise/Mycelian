@@ -22,7 +22,7 @@ from nicegui import ui  # noqa: E402
 from nicegui.client import Client  # noqa: E402
 from nicegui.testing.user_interaction import UserInteraction  # noqa: E402
 
-from modules import alertutils, autostart, dataobjects, tray_controller, web_engine  # noqa: E402
+from modules import alertutils, autostart, dataobjects, tray_controller, updater, web_engine  # noqa: E402
 from modules.help_system import help_render  # noqa: E402
 from modules.notification_engine import FOOTER_FULL_STYLES, FOOTER_MINIMAL_STYLES  # noqa: E402
 from modules.notify_settings import LEVELS, SOURCES, NotifyPrefs  # noqa: E402
@@ -92,6 +92,7 @@ def side(monkeypatch):
     monkeypatch.setattr(alertutils.alert_state_manager, "initialize", lambda: calls.append("alerts-init"))
     monkeypatch.setattr(alertutils, "schedule_auto_trim_stored_alerts", lambda: calls.append("trim"))
     monkeypatch.setattr(web_engine, "web_engine_instance", None)
+    monkeypatch.setattr(updater.update_manager, "reschedule_periodic_timer", lambda: calls.append("updates"))
     feed = []
     monkeypatch.setattr(activity_feed, "set_feed_setting", lambda key, value: feed.append((key, value)) or True)
     monkeypatch.setattr(activity_feed, "_legacy_person_hours", lambda: 12)
@@ -284,14 +285,27 @@ def test_window_and_storage_rows(state, plugin, side):
     build_tab(check)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: AppSettings has no update_check_interval_minutes field, so changing "
-                                       "'Check every' raises AttributeError in _set and the interval is never saved")
-def test_update_interval_can_be_changed_and_saved(state, plugin, side):
+def test_update_interval_can_be_changed_and_saved(state, notes, plugin, side):
     tab = ast.AppSettingsTab()
     tab._load_from_state()
     tab._set("update_check_interval_minutes", 45)
     tab.save()
     assert state.updates.get("update_check_interval_minutes") == 45
+    assert "updates" in side.calls  # the new interval applies without a restart
+
+
+def test_update_checks_not_rescheduled_when_unchanged(state, notes, plugin, side):
+    tab = ast.AppSettingsTab()
+    tab._load_from_state()
+    tab._set("activity_feed_limit", 25)
+    tab.save()
+    assert "updates" not in side.calls
+
+
+def test_reschedule_update_checks_error_swallowed(monkeypatch):
+    monkeypatch.setattr(updater.update_manager, "reschedule_periodic_timer",
+                        lambda: (_ for _ in ()).throw(RuntimeError("x")))
+    ast.AppSettingsTab._reschedule_update_checks()
 
 
 def test_autostart_unsupported(state, plugin, side, monkeypatch):

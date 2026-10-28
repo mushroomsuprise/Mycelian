@@ -57,5 +57,7 @@ def is_allowed_slash_message(message: str) -> bool:
     text = (message or "").lstrip()
     if not text.startswith("/"):
         return True
-    cmd = text[1:].split(None, 1)[0].lower()
-    return cmd not in TWITCH_SLASH_COMMANDS
+    parts = text[1:].split(None, 1)
+    if not parts:
+        return True
+    return parts[0].lower() not in TWITCH_SLASH_COMMANDS

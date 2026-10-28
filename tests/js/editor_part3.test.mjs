@@ -8,7 +8,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fire, plain, settle, xfail, makeIo } from "./helpers/env.mjs";
+import { fire, plain, settle, makeIo } from "./helpers/env.mjs";
 import { bootEditor, blankModel, API, control, field, prop, buttonByText, setValue, sectionByTitle } from "./helpers/editor_env.mjs";
 
 async function blank(extra = {}, opts = {}) {
@@ -308,29 +308,27 @@ test("Twitch API binding defaults migrate the old filter map", async () => {
     assert.equal(other.twitch_api, undefined);
 });
 
-xfail(test, "Stream Deck sample data refuses JSON arrays",
-    "BUG: editor.js:8859 the default_data check uses typeof === 'object', so a JSON array is accepted although the hint says it must be an object; streamdeck_template_dispatch.merged_streamdeck_options_payload then silently drops it",
-    async () => {
-        const s = await blank();
-        s.E.renderStreamdeckPanel();
-        s.$("#ss-streamdeck-host .ss-btn--primary.ss-btn--block").click();
-        const dd = control(s.$("#ss-streamdeck-host .ss-streamdeck-action"), "default_data (JSON)");
-        dd.value = "[1, 2]";
-        fire(s.win, dd, "blur", { bubbles: false });
-        assert.equal(Array.isArray(s.E.state.model.streamdeck_options.actions.action_1.default_data), false);
-    });
+test("Stream Deck sample data refuses JSON arrays", async () => {
+    const s = await blank();
+    s.E.renderStreamdeckPanel();
+    s.$("#ss-streamdeck-host .ss-btn--primary.ss-btn--block").click();
+    const dd = control(s.$("#ss-streamdeck-host .ss-streamdeck-action"), "default_data (JSON)");
+    dd.value = "[1, 2]";
+    fire(s.win, dd, "blur", { bubbles: false });
+    assert.equal(Array.isArray(s.E.state.model.streamdeck_options.actions.action_1.default_data), false);
+});
 
-xfail(test, "Stream Deck sample data that isn't an object keeps the last valid value",
-    "BUG: editor.js:8858 JSON.parse's result is stored in spec.default_data before the object check, so valid non-object JSON (e.g. 5 or \"x\") replaces the saved sample data even though the warning says the last valid value was kept",
-    async () => {
-        const s = await blank();
-        s.E.renderStreamdeckPanel();
-        s.$("#ss-streamdeck-host .ss-btn--primary.ss-btn--block").click();
-        const dd = control(s.$("#ss-streamdeck-host .ss-streamdeck-action"), "default_data (JSON)");
-        dd.value = "5";
-        fire(s.win, dd, "blur", { bubbles: false });
-        assert.deepEqual(plain(s.E.state.model.streamdeck_options.actions.action_1.default_data), {});
-    });
+test("Stream Deck sample data that isn't an object keeps the last valid value", async () => {
+    const s = await blank();
+    s.E.renderStreamdeckPanel();
+    s.$("#ss-streamdeck-host .ss-btn--primary.ss-btn--block").click();
+    const dd = () => control(s.$("#ss-streamdeck-host .ss-streamdeck-action"), "default_data (JSON)");
+    dd().value = '{"user": "ann"}';
+    fire(s.win, dd(), "blur", { bubbles: false });
+    dd().value = "5";
+    fire(s.win, dd(), "blur", { bubbles: false });
+    assert.deepEqual(plain(s.E.state.model.streamdeck_options.actions.action_1.default_data), { user: "ann" });
+});
 
 /* ------------------------------------------------------------------ bindings editor */
 

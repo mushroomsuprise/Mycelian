@@ -338,6 +338,9 @@ def move_connector_to_folder(
         for it in (layout.get("root_items") or [])
     ):
         return layout
+    if connector_id in (layout["folders"][folder_id].get("connector_ids") or []):
+        # Already there (removing it first would drop a folder left empty)
+        return layout
 
     remove_connector_from_layout(layout, connector_id)
 

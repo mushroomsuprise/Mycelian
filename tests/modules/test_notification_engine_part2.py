@@ -699,9 +699,6 @@ def test_create_service_status_footer_builds_and_clicks(ne_env, monkeypatch, nav
     run_ui(build, check)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: footer badge tooltips are created with Tooltip() from app.timer "
-                                       "callbacks (no UI slot), which raises and is swallowed, so status "
-                                       "badges never get their hover text")
 def test_footer_tooltip_set_when_refreshed_from_app_timer(ne_env, monkeypatch):
     import asyncio
 
@@ -723,7 +720,9 @@ def test_footer_tooltip_set_when_refreshed_from_app_timer(ne_env, monkeypatch):
         app.timer(0.01, ne.refresh_service_status_footer, once=True)
         await asyncio.sleep(0.2)
         assert ne._footer_item_refs["twitch"]["badge"].content == "Disconnected"  # the refresh ran
-        assert ne._footer_item_refs["twitch"].get("tooltip_text") == "Disconnected"
+        refs = ne._footer_item_refs["twitch"]
+        assert refs.get("tooltip_text") == "Disconnected"
+        assert refs["tooltip"].parent_slot.parent is refs["container"]  # hover target is the badge item
 
     run_ui(build, check)
 

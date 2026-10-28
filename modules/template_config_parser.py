@@ -393,6 +393,10 @@ class TemplateConfigParser:
             )
             logger.debug("Successfully loaded config for %s", config_name)
             return config
+        except json.JSONDecodeError as e:
+            # {} (not a default config that a later save could write over the user's file)
+            logger.error("Config file for %r is not valid JSON: %s", config_name, e)
+            return {}
         except ValueError:
             logger.warning("Invalid config name %r", config_name)
             return {}

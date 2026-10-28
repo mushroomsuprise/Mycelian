@@ -25,7 +25,8 @@
     }
 
     function effMin(link, span) {
-        var pct = pyRound(span * ((link.min_pct || 0) / 100));
+        /* span * pct / 100 in this order, like containers.py: 55% of 1390 is 764.5, not 764.5000000000001. */
+        var pct = pyRound(span * (link.min_pct || 0) / 100);
         return Math.max(link.min_px || 0, pct);
     }
 
@@ -35,7 +36,7 @@
             caps.push(link.max_px);
         }
         if (link.max_pct !== null && link.max_pct !== undefined) {
-            caps.push(pyRound(span * (link.max_pct / 100)));
+            caps.push(pyRound(span * link.max_pct / 100));
         }
         if (!caps.length) {
             return null;

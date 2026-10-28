@@ -341,34 +341,6 @@
         },
         {
             "type": "number",
-            "id": "poll1_font_size",
-            "label": "poll1 font size",
-            "value": 22.0,
-            "description": "Font Size for 'poll1'."
-        },
-        {
-            "type": "color",
-            "id": "poll1_color",
-            "label": "poll1 color",
-            "value": "#ffffff",
-            "description": "Color for 'poll1'."
-        },
-        {
-            "type": "text",
-            "id": "poll1_font_family",
-            "label": "poll1 font family",
-            "value": "Roboto-Regular.ttf",
-            "description": "Font Family for 'poll1'."
-        },
-        {
-            "type": "text",
-            "id": "poll1_font_weight",
-            "label": "poll1 font weight",
-            "value": "normal",
-            "description": "Font Weight for 'poll1'."
-        },
-        {
-            "type": "number",
             "id": "poll1_row_gap",
             "label": "poll1 row gap",
             "value": 8.0,
@@ -376,24 +348,10 @@
         },
         {
             "type": "color",
-            "id": "poll1_background_color",
-            "label": "poll1 background color",
-            "value": "rgba(15,23,42,0.85)",
-            "description": "Background Color for 'poll1'."
-        },
-        {
-            "type": "color",
             "id": "poll1_bar_color",
             "label": "poll1 bar color",
             "value": "#a855f7",
             "description": "Bar Color for 'poll1'."
-        },
-        {
-            "type": "color",
-            "id": "poll1_track_color",
-            "label": "poll1 track color",
-            "value": "rgba(255,255,255,0.12)",
-            "description": "Track Color for 'poll1'."
         },
         {
             "type": "color",

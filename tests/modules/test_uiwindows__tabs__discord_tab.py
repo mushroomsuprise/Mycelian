@@ -267,6 +267,8 @@ def test_save_settings_only_success(env):
     assert env.state.updates[0] == ("bot_token", "tok")
     names = [n for n, _ in env.state.updates]
     assert names.count("bot_token") == 1 and "go_live_enabled" in names and "go_live_channels" in names
+    # Status fields belong to the bot service; a stale buffer copy must not overwrite them.
+    assert not {"connection_status", "bot_user_id", "bot_username", "application_id"} & set(names)
     assert tab._token_saved is True
 
 

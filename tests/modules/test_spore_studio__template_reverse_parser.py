@@ -419,12 +419,6 @@ ALL_TYPES = [
 ]
 # Elements the overlay doesn't place on the canvas.
 _UNPLACED = {"audio"}
-_BUG_RELATIVE = {
-    "progress_bar": "BUG: .spore-progress-bar {position: relative} (behavior_blocks.py PROGRESS_BAR_CSS) "
-                    "comes after .spore-element {position: absolute}, so the bar is not absolutely placed",
-    "wheel": "BUG: .spore-wheel {position: relative} (behavior_blocks.py widget CSS) comes after "
-             ".spore-element {position: absolute}, so the wheel is not absolutely placed",
-}
 
 
 def _round_trip_model():
@@ -476,11 +470,7 @@ def _expected_geometry(model, eid):
     return el["position"], el["size"]
 
 
-@pytest.mark.parametrize(
-    "etype",
-    [pytest.param(t, marks=pytest.mark.xfail(strict=True, reason=_BUG_RELATIVE[t]))
-     if t in _BUG_RELATIVE else t for t in ALL_TYPES if t not in _UNPLACED],
-)
+@pytest.mark.parametrize("etype", [t for t in ALL_TYPES if t not in _UNPLACED])
 def test_round_trip_geometry_per_type(compiled_round_trip, etype):
     model, _cfg, parsed = compiled_round_trip
     eid = f"e_{etype}"

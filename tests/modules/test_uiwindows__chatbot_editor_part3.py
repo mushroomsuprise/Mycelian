@@ -122,6 +122,9 @@ def test_choose_lookup_targets_by_kind(ed_env):
             ed._choose_lookup("follow_age")
         assert ed.state.lookup["target"] == {"from": "event_user"}
         assert ed._target_options() == {"event_user": "The viewer from the event", "text": "A name I type…"}
+        with user.client:
+            ed._choose_lookup("set_title")
+        assert ed.state.lookup == {"id": "set_title", "text": ""}  # events have no {command_message}
 
     run_editor("event", None, check_event)
 
@@ -653,9 +656,6 @@ def test_builder_age_typed_date(cvb):
     run_builder("bday", check)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: choosing 'A date I type…' in a How long ago variable clears the date, and "
-                                       "render_builder then picks the first date variable again, so the typed-date "
-                                       "field never appears for a new variable")
 def test_builder_age_choose_typed_date(cvb):
     async def check(user):
         click(user, kind_tile(user, 2))

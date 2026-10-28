@@ -665,20 +665,23 @@ def test_maybe_start_preview_demo(engine, monkeypatch):
         engine._maybe_start_preview_demo("s4")  # logged
 
 
-def test_rebuild_url_map_keeps_the_old_map_when_rebuild_fails(served):
+def test_rebuild_url_map_keeps_the_old_map_when_rebuild_fails(served, monkeypatch):
     eng, client = served
     old = eng.app.url_map
-    eng._rebuild_url_map()  # werkzeug refuses rules bound to another map; logged
+    before = set(eng._registered_template_routes)
+    monkeypatch.setattr(eng, "register_routes", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert eng._rebuild_url_map() is False  # logged
     assert eng.app.url_map is old
+    assert eng._registered_template_routes == before
     assert client.get("/alpha").status_code == 200
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: _rebuild_url_map re-adds rules still bound to the old Map, so it always fails")
 def test_rebuild_url_map_replaces_the_map(served):
-    eng, _client = served
+    eng, client = served
     old = eng.app.url_map
-    eng._rebuild_url_map()
+    assert eng._rebuild_url_map() is True
     assert eng.app.url_map is not old
+    assert client.get("/alpha").status_code == 200
 
 
 def test_rebuild_url_map_with_rebindable_rules(served, monkeypatch):
@@ -742,7 +745,6 @@ def test_audio_files_listing_error(engine, sio, dirs, monkeypatch):
     assert resp["success"] is False and resp["error"].startswith("Error reading folder:")
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: get_audio_files calls data.get() on a non-dict payload inside its own error path")
 def test_audio_files_non_dict_payload_gets_an_error_response(engine, sio):
     sio.emit("get_audio_files", ["x"])
     (resp,) = received(sio, "audio_files_response")

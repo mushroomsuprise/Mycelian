@@ -528,8 +528,6 @@ def test_select_row_fonts(env, monkeypatch, fonts, value, expected):
     run_ui(render(holder, element, {}), check)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: a select setting whose value is empty (or missing) and not one of its "
-                                        "options raises ValueError in ui.select, so the template's form fails to render")
 @pytest.mark.parametrize("element", [
     {"type": "select", "id": "Mode", "options": ["a", "b"]},
     {"type": "select", "id": "Font", "options_from": "fonts", "value": ""},

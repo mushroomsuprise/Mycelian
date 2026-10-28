@@ -670,8 +670,6 @@ def test_restore_with_stacking_cancel_and_error(monkeypatch):
     run(a._restore_with_stacking(entry, "k", "", "", "", "t"))
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: _execute_with_duration uses undefined name trigger_data, so it "
-                                        "always fails after applying the change and never schedules a restore")
 def test_execute_with_duration_schedules_restore(monkeypatch, sleeps):
     a = audio(duration=1)
 

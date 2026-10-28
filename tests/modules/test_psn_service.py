@@ -352,8 +352,6 @@ def test_mismatch_present_still_broadcasts_data_update(env):
     assert env.state.set_calls == [c.psn_data]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: _update_and_broadcast uses dataclasses.asdict without importing "
-                                       "dataclasses (NameError swallowed), so psn_game_mismatch is never emitted")
 def test_mismatch_notification_throttled_and_swept(env, monkeypatch):
     c = FakeClient()
     env.mp.setattr(ps, "psn_client_instance", c)

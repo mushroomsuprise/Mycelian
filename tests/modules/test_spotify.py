@@ -935,10 +935,9 @@ def test_millis_to_timestamp(client, ms, text):
     assert client.millis_to_timestamp(ms) == text
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: millis_to_timestamp drops hours (minutes % 60), so a 75-minute "
-                                       "podcast/mix shows as 15:00")
 def test_millis_to_timestamp_over_an_hour(client):
-    assert client.millis_to_timestamp(75 * 60 * 1000) in ("75:00", "1:15:00")
+    assert client.millis_to_timestamp(75 * 60 * 1000) == "1:15:00"
+    assert client.millis_to_timestamp(3600 * 1000 + 5000) == "1:00:05"
 
 
 def test_set_empty_track_data(client):

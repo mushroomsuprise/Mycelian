@@ -287,6 +287,8 @@ def test_gear_display_name():
 
 
 def test_battle_log_name_lookups(monkeypatch):
+    # Mark the assets as loaded, or the first lookup would refill the tables below.
+    monkeypatch.setattr(ff7, "_BATTLE_LOG_NAME_ASSETS_LOADED", True)
     monkeypatch.setattr(ff7, "_BATTLE_LOG_CMD_EN", {"1": "Attack"})
     monkeypatch.setattr(ff7, "_BATTLE_LOG_ATK128_EN", {"0": "Cure"})
     assert ff7._battle_log_cmd_display(1, []) == "Attack"

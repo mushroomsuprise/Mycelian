@@ -256,9 +256,6 @@ def test_derived_config_style_fields(fonts):
     assert not any(k.startswith("n_") for k in ids)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: _derived_json_config stores numeric style props with int(), so a "
-                                       "fractional font_size / letter_spacing (e.g. 1.5px kerning) renders "
-                                       "truncated on the overlay while the editor shows the real value")
 def test_fractional_style_values_survive_render():
     out, _cfg = _render(_model([{"id": "title", "type": "text", "position": {"x": 0, "y": 0},
                                  "size": {"w": 100, "h": 30},
@@ -385,3 +382,18 @@ def test_compile_model_legacy_skips_migration(monkeypatch):
 def test_neutralize_user_markers():
     js = "// SPORE_STUDIO:user-begin x // SPORE_STUDIO:user-end"
     assert tc._neutralize_user_markers(js) == "// (SPORE_STUDIO user-begin marker) x // (SPORE_STUDIO user-end marker)"
+
+
+def test_widget_style_settings_are_exported_once():
+    # Poll exposes color/font props both as shared style props and as widget fields;
+    # the public config must list each setting id once (a duplicate id breaks Source Settings).
+    keys = ("color", "background_color", "font_family", "font_size", "font_weight", "track_color")
+    poll = {"id": "poll1", "type": "poll", "category": "Main", "position": {"x": 0, "y": 0},
+            "size": {"w": 300, "h": 200},
+            "props": {"color": "#ffffff", "background_color": "#000000", "font_family": "Arial",
+                      "font_size": 20, "font_weight": "700", "track_color": "#333333"},
+            "source_settings_expose": {k: True for k in keys}, "bindings": []}
+    _html, config = tc.compile_model(_model([poll]))
+    ids = [row["id"] for row in config["elements"] if row.get("id")]
+    assert len(ids) == len(set(ids))
+    assert {f"poll1_{k}" for k in keys} <= set(ids)

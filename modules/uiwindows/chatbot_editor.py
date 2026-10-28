@@ -765,7 +765,9 @@ class ChatbotEditor:
     def _input_row(self, idx: int, inp: Dict[str, Any]) -> None:
         with ui.element("div").classes("ce-arg"):
             ui.label(str(idx + 1)).classes("ce-arg-n")
-            ui.select({p: f"Word {p}" for p in range(1, 10)}, value=int(inp.get("position") or 1),
+            # Words 1-10 (what Add input hands out), plus a stored position outside that.
+            pos = int(inp.get("position") or 1)
+            ui.select({p: f"Word {p}" for p in sorted({*range(1, 11), pos})}, value=pos,
                       on_change=lambda e, i=inp: (i.update(position=int(e.value or 1)), self.refresh_live())).props("outlined dense options-dense")
             _html(_ic("arrow_forward"), "ce-arrow")
             name = ui.input(value=inp.get("name", ""), placeholder="target").props("outlined dense").tooltip("Use it in the reply as {name}")
@@ -1035,7 +1037,8 @@ class ChatbotEditor:
                     config["target"] = {"from": "chatter"}
             text_arg = entry.get("text_arg")
             if text_arg:
-                config["text"] = text_arg.get("default", "{command_message}" if s.kind == "command" else "")
+                # The default is {command_message}, which only commands have.
+                config["text"] = text_arg.get("default", "{command_message}") if s.kind == "command" else ""
             s.lookup = config
         self._rerender(self.lookup_box, self._build_lookup)
         self.render_vars()
@@ -1727,6 +1730,7 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
         if kind != state["kind"]:
             state["kind"] = kind
             state["params"] = {}
+            state.pop("typed_date", None)
             render_kinds()
             render_builder()
             refresh()
@@ -1763,13 +1767,16 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
             elif kind == "age":
                 opts = date_options()
                 current = str(state["params"].get("date") or "")
-                choice = current if current in opts else (_CV_DATE_OTHER if current else next(iter(opts)))
+                # "A date I type…" starts with no date; remember the pick so it stays chosen.
+                typed = bool(current) or state.get("typed_date", False)
+                choice = current if current in opts else (_CV_DATE_OTHER if typed else next(iter(opts)))
                 if not current and choice != _CV_DATE_OTHER:
                     state["params"]["date"] = choice
                 with ui.element("div").classes("ce-row"):
                     ui.label("Since").classes("ce-mini")
 
                     def pick_date(e) -> None:
+                        state["typed_date"] = e.value == _CV_DATE_OTHER
                         state["params"]["date"] = "" if e.value == _CV_DATE_OTHER else e.value
                         render_builder()
                         refresh()

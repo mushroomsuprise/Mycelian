@@ -788,6 +788,9 @@ class AppSettingsTab:
         self._sync_font_from_ui()
         # persist buffered values to state_manager (skip hardcoded metadata fields)
         _skip_save = frozenset({"version", "build_number", "build_date"})
+        saved = state_manager.get_app_settings()
+        update_schedule_changed = (saved.auto_update, saved.update_check_interval_minutes) != (
+            self.buffer.auto_update, self.buffer.update_check_interval_minutes)
         for field in self.buffer.__dataclass_fields__.keys():
             if field in _skip_save:
                 continue
@@ -796,6 +799,8 @@ class AppSettingsTab:
             apply_app_font(self.buffer.ui_font_family)
             apply_ui_scale(self.buffer.ui_scale_percent)
             self._apply_background_settings()
+            if update_schedule_changed:
+                self._reschedule_update_checks()
             self._apply_alert_storage_trim()
             try:
                 refresh_service_status_footer()
@@ -806,6 +811,16 @@ class AppSettingsTab:
             self.dirty = False
             self._refresh_derived()
         # A failed save_changes() was already reported once (changes stay pending).
+
+    @staticmethod
+    def _reschedule_update_checks() -> None:
+        """Apply a changed automatic-update switch or interval without a restart."""
+        try:
+            from ... import updater
+
+            updater.update_manager.reschedule_periodic_timer()
+        except Exception:
+            logger.debug("could not reschedule update checks", exc_info=True)
 
     @staticmethod
     def _push_notify_settings_to_docks() -> None:

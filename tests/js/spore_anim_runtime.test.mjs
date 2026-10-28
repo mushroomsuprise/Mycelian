@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeWindow, loadScript, plain, xfail } from "./helpers/env.mjs";
+import { makeWindow, loadScript, plain } from "./helpers/env.mjs";
 
 function setup(html = "") {
     const win = makeWindow();
@@ -172,13 +172,11 @@ test("audio fade uses at least 8 steps and volume 1 when unknown; volume errors 
     assert.equal(b.getAttribute("data-spore-hidden"), "true");
 });
 
-xfail(test, "a show during an audio fade-out keeps the element visible",
-    "BUG: spore_anim_runtime.js:107 (and the same sporeHide in templates/_boilerplates/queue_alert.html:310 / instant_alert.html) applyHidden() ignores the visibility token when there is no out-animation, so a show during an audio fade is undone when the fade ends",
-    () => {
-        const { win, doc, clock } = setup('<audio id="a" data-spore-audio-fade-out="400"></audio>');
-        win.sporeHide("a");
-        clock.tick(100);
-        win.sporeShow("a");
-        clock.tick(400);
-        assert.equal(doc.getElementById("a").hasAttribute("data-spore-hidden"), false);
-    });
+test("a show during an audio fade-out keeps the element visible", () => {
+    const { win, doc, clock } = setup('<audio id="a" data-spore-audio-fade-out="400"></audio>');
+    win.sporeHide("a");
+    clock.tick(100);
+    win.sporeShow("a");
+    clock.tick(400);
+    assert.equal(doc.getElementById("a").hasAttribute("data-spore-hidden"), false);
+});

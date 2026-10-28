@@ -151,66 +151,46 @@ def get_macos_audio_devices() -> Dict[str, str]:
             logger.warning("system_profiler failed, trying alternative method")
             return get_macos_audio_devices_fallback()
 
-        lines = result.stdout.split("\n")
-        current_section = None
-        device_name = None
-        device_type = None
+        # system_profiler prints each device as an indented "Name:" line followed by
+        # deeper "Key: Value" lines (Input Channels, Output Channels, Default Output Device...).
+        blocks = []  # [name, {key: value}, property indent]
+        for raw in result.stdout.split("\n"):
+            line = raw.strip()
+            key, sep, value = line.partition(":")
+            if not sep:
+                continue
+            indent = len(raw) - len(raw.lstrip())
+            current = blocks[-1] if blocks else None
+            if not value.strip() and (current is None or current[2] is None or indent < current[2]):
+                blocks.append([key.strip(), {}, None])
+            elif current is not None:
+                current[1][key.strip()] = value.strip()
+                if current[2] is None:
+                    current[2] = indent
 
-        for line in lines:
-            line = line.strip()
-
-            # Check for section headers
-            if "Audio Devices:" in line:
-                current_section = "devices"
-            elif "Output Devices:" in line:
-                current_section = "output"
-            elif "Input Devices:" in line:
-                current_section = "input"
-            elif line.startswith("Device Name:"):
-                device_name = line.split(":", 1)[1].strip()
-                device_type = "unknown"
-            elif line.startswith("Default Output Device:"):
-                default_device = line.split(":", 1)[1].strip()
-                if default_device and default_device != "Yes":
-                    devices[f"default_output:{default_device}"] = (
-                        f"[OUT] {default_device} (Default)"
-                    )
-            elif line.startswith("Default Input Device:"):
-                default_device = line.split(":", 1)[1].strip()
-                if default_device and default_device != "Yes":
-                    devices[f"default_input:{default_device}"] = (
-                        f"[MIC] {default_device} (Default)"
-                    )
-            elif device_name and current_section:
-                # Look for device type indicators
-                if "Headphones" in device_name or "Headset" in device_name:
-                    device_type = "headphones"
-                elif "Speaker" in device_name or "Speakers" in device_name:
-                    device_type = "speakers"
-                elif "Microphone" in device_name or "Mic" in device_name:
-                    device_type = "microphone"
-                elif "Display" in device_name:
-                    device_type = "display"
-
-                # Add device with appropriate icon
-                if device_type == "headphones":
-                    devices[f"{current_section}:{device_name}"] = (
-                        f"[HEAD] {device_name}"
-                    )
-                elif device_type == "microphone":
-                    devices[f"{current_section}:{device_name}"] = f"[MIC] {device_name}"
-                elif device_type == "speakers":
-                    devices[f"{current_section}:{device_name}"] = f"[SPK] {device_name}"
-                elif device_type == "display":
-                    devices[f"{current_section}:{device_name}"] = f"[DSP] {device_name}"
+        for name, props, _indent in blocks:
+            is_output = any(k in props for k in ("Output Channels", "Output Source", "Default Output Device"))
+            is_input = any(k in props for k in ("Input Channels", "Input Source", "Default Input Device"))
+            # Section headers ("Audio:", "Devices:") have no device properties.
+            lowered = name.lower()
+            if is_output:
+                if "headphone" in lowered or "headset" in lowered:
+                    icon = "[HEAD]"
+                elif "speaker" in lowered:
+                    icon = "[SPK]"
+                elif "display" in lowered:
+                    icon = "[DSP]"
                 else:
-                    # Generic device with section indicator
-                    icon = "[OUT]" if current_section == "output" else "[MIC]"
-                    devices[f"{current_section}:{device_name}"] = (
-                        f"{icon} {device_name}"
-                    )
-
-                device_name = None  # Reset for next device
+                    icon = "[OUT]"
+                label = f"{icon} {name}"
+                if props.get("Default Output Device") == "Yes":
+                    label += " (Default)"
+                devices[f"output:{name}"] = label
+            if is_input:
+                label = f"[MIC] {name}"
+                if props.get("Default Input Device") == "Yes":
+                    label += " (Default)"
+                devices[f"input:{name}"] = label
 
         # If we didn't find any devices, try fallback method
         if not devices:

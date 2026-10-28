@@ -83,10 +83,8 @@ def db(monkeypatch):
     monkeypatch.setattr(dbm, "set_data", fake.set_data)
     monkeypatch.setattr(dbm, "get_multiple_data_async", fake.get_multiple_data_async)
     monkeypatch.setattr(dbm, "startup_read_failed", lambda p: p in fake.startup_failed)
-    # database_manager has no module-level update_config (see the xfail below); give the
-    # fake one so the code after that call can be exercised.
-    monkeypatch.setattr(dbm, "update_config", fake.update_config, raising=False)
-    mgr = types.SimpleNamespace(get_config=lambda: dbm.DatabaseConfig(database_type="firebase"))
+    mgr = types.SimpleNamespace(get_config=lambda: dbm.DatabaseConfig(database_type="firebase"),
+                                update_config=fake.update_config)
     type(fake).manager = mgr
     monkeypatch.setattr(dbm, "database_manager", mgr)
     mgr._initialized = True
@@ -212,8 +210,6 @@ def test_apply_database_connection_settings_with_fake_update(db):
     assert kw["streamer_name"] == "mycelian" and "database_type" not in kw
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: dataobjects calls database_manager.update_config(), "
-                                        "but modules.database_manager has no module-level update_config")
 def test_apply_database_connection_settings_reaches_the_real_manager(monkeypatch):
     mgr = dbm.DatabaseManager()
     monkeypatch.setattr(dbm, "database_manager", mgr)
@@ -386,8 +382,6 @@ class TestInitializeWithData:
         m.initialize_with_data({"AppSettings": {"current_theme": "dark"}})
         assert m.get_app_settings().current_theme == "light"
 
-    @pytest.mark.xfail(strict=True, reason="BUG: a non-dict preloaded DatabaseSettings is stored in state before "
-                                            "the guarded parse fails, then _update_local_objects crashes on .items()")
     def test_bad_database_settings_ignored(self, db, notes):
         m = do.StateManager()
         m.initialize_with_data({"DatabaseSettings": ["bad"]})
@@ -419,7 +413,7 @@ class TestLoadFromFirebase:
         assert notes == []
 
     def test_database_settings_apply_error_tolerated(self, db, notes, monkeypatch):
-        monkeypatch.delattr(dbm, "update_config")
+        monkeypatch.setattr(db.manager, "update_config", lambda **kw: (_ for _ in ()).throw(RuntimeError()))
         db.data["DatabaseSettings"] = {"sql_database_path": "q.db"}
         db.data["AppSettings"] = {"current_theme": "light"}
         m = do.StateManager()
@@ -535,12 +529,15 @@ class TestImmediateSetters:
         getattr(m, method)({})
         assert m._initialized
 
-    @pytest.mark.xfail(strict=True, reason="BUG: _persist_unlocked ignores set_data()'s False result, so "
-                                            "set_*_data reports success and drops the pending changes")
     def test_failed_write_is_reported_and_kept_pending(self, sm, db):
         db.write_fail["TwitchData"] = ("failed", "rejected")
         ok = sm.set_twitch_data({"auth_token": "new"})
-        assert ok is False or sm.field_has_changes("twitch_data.auth_token")
+        assert ok is False and sm.field_has_changes("twitch_data.auth_token")
+
+    def test_superseded_write_counts_as_saved(self, sm, db):
+        db.write_fail["TwitchData"] = ("superseded", "")
+        assert sm.set_twitch_data({"auth_token": "new"}) is True
+        assert not sm.field_has_changes("twitch_data.auth_token")
 
 
 class TestPersistUnlocked:
@@ -826,16 +823,17 @@ class TestSaveChanges:
         assert dec(d["DiscordData"]["bot_token"]) == "dt"
         assert d["DatabaseSettings"]["connection_timeout"] == 11
         assert db.config_updates[-1]["connection_timeout"] == 11
-        assert db.config_updates[-1]["database_type"] == "sql"
+        assert "database_type" not in db.config_updates[-1]  # config.json picks the backend
         assert not sm.has_changes() and notes == []
         assert sm._spotify_write_failed is False
 
-    @pytest.mark.xfail(strict=True, reason="BUG: save_changes has no chatbot_data branch, so "
-                                            "update_chatbot_field changes are dropped yet reported as saved")
     def test_chatbot_field_changes_are_written(self, sm, db):
         sm.update_chatbot_field("user_id", "cu")
+        sm.update_chatbot_field("auth_token", "tok")
         assert sm.save_changes() is True
-        assert db.data.get("ChatbotData", {}).get("user_id") == "cu"
+        stored = db.data.get("ChatbotData", {})
+        assert stored.get("user_id") == "cu" and dec(stored["auth_token"]) == "tok"
+        assert not sm.has_changes()
 
     def test_quiet_during_writes(self, sm, db):
         seen = []
@@ -855,10 +853,7 @@ class TestSaveChanges:
             dbm.set_data = dbm_set
         assert seen == [True]
 
-    @pytest.mark.xfail(strict=True, reason="BUG: save_changes calls database_manager.update_config(), which "
-                                            "doesn't exist, so saved DatabaseSettings never reach the live manager")
     def test_saved_database_settings_reach_real_manager(self, sm, db, monkeypatch):
-        monkeypatch.delattr(dbm, "update_config")
         mgr = dbm.DatabaseManager()
         monkeypatch.setattr(dbm, "database_manager", mgr)
         sm.update_database_setting("connection_timeout", 44)
@@ -866,7 +861,7 @@ class TestSaveChanges:
         assert mgr.get_config().connection_timeout == 44
 
     def test_database_config_apply_error_logged(self, sm, db, monkeypatch):
-        monkeypatch.setattr(dbm, "update_config", lambda **kw: (_ for _ in ()).throw(RuntimeError()), raising=False)
+        monkeypatch.setattr(db.manager, "update_config", lambda **kw: (_ for _ in ()).throw(RuntimeError()))
         sm.update_database_setting("connection_timeout", 5)
         assert sm.save_changes() is True
 

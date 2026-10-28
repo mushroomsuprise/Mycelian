@@ -123,11 +123,6 @@ def test_set_hook_enabled_cached_updates_value(reg):
     assert registry.is_hook_enabled("ff7") is True
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: set_hook_enabled_cached assigns a local _enabled_cache_loaded (no `global`), so the next "
-    "is_hook_enabled re-reads the DB and overwrites the just-saved value",
-)
 def test_set_hook_enabled_cached_marks_cache_loaded(reg):
     reg.store = {"GameHooks/ff7_enabled": False}  # DB not yet updated (e.g. write still pending)
     registry.set_hook_enabled_cached("ff7", True)

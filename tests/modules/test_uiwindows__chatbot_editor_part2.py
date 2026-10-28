@@ -235,8 +235,6 @@ def test_inputs_add_edit_and_remove(ed_env):
     run_editor("command", None, check)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: with inputs on words 1-9, Add input picks position 10, but the position "
-                                       "select only offers Word 1-9, so NiceGUI raises ValueError and the step breaks")
 def test_add_tenth_input(ed_env):
     async def check(user, ed):
         with user.client:

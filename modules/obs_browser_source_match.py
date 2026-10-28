@@ -105,7 +105,11 @@ def parse_browser_source_url(url: Any) -> Optional[ParseResult]:
         parsed = urlparse(raw)
     except Exception:
         return None
-    if not parsed.scheme:
+    # "localhost:5000/ff7" parses with scheme "localhost" and path "5000/ff7".
+    host_as_scheme = (
+        bool(parsed.scheme) and not parsed.netloc and "://" not in raw and parsed.path[:1].isdigit()
+    )
+    if not parsed.scheme or host_as_scheme:
         hostport = raw.split("/", 1)[0]
         if ":" in hostport:
             try:

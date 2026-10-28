@@ -67,7 +67,12 @@ def test_dataclass_defaults():
 def test_constructor_defaults(mgr):
     assert mgr._credentials is None
     assert mgr._initialized is False
-    assert acm.APICredentialsManager().config_path == Path("api_credentials.json")
+
+
+def test_default_path_is_in_the_data_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("MYCELIAN_DATA_DIR", str(tmp_path))
+    assert acm.APICredentialsManager().config_path == tmp_path / "api_credentials.json"
+    assert acm.APICredentialsManager("other.json").config_path == Path("other.json")
 
 
 def test_initialize_creates_empty_file(mgr, notes):

@@ -5,7 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeWindow, loadScript, fire, xfail } from "./helpers/env.mjs";
+import { makeWindow, loadScript, fire } from "./helpers/env.mjs";
 
 const FILE = "assets/default_assets/mycelian_toast.js";
 
@@ -335,8 +335,7 @@ test("local() honours popups off, level switches and configured durations", () =
     assert.equal(I.items[id].timeout, 9000);
 });
 
-xfail(test, "local() error pop-ups stay until dismissed by default",
-    "BUG: mycelian_toast.js:335 the default map gives error: 0 (stay) but `|| 4000` turns 0 into 4000, so dock error pop-ups vanish after 4s",
+test("local() error pop-ups stay until dismissed by default",
     () => {
         const { T, I } = setup();
         const id = T.local("error", "E");
@@ -363,8 +362,7 @@ test("re-showing an id that is leaving brings it back", () => {
     assert.equal(text(card(doc), ".mt-count"), "×2");
 });
 
-xfail(test, "a pop-up updated right after it was dismissed stays on screen",
-    "BUG: mycelian_toast.js:304 dismiss()'s 340ms removal still runs after show() revives the same id, so the updated pop-up is removed and forgotten",
+test("a pop-up updated right after it was dismissed stays on screen",
     () => {
         const { T, doc, clock } = setup();
         T.show({ id: "a", title: "x" });

@@ -13,9 +13,10 @@ export const DEFAULT_SERVER_URL = "127.0.0.1:5000";
 export function parseServerConfig(serverUrl: string): ServerConfig {
 	const parts = serverUrl.split(":");
 	if (parts.length === 2) {
+		const port = parseInt(parts[1], 10);
 		return {
 			host: parts[0],
-			port: parseInt(parts[1], 10),
+			port: Number.isInteger(port) && port > 0 && port <= 65535 ? port : 5000,
 		};
 	}
 	if (parts.length === 1) {

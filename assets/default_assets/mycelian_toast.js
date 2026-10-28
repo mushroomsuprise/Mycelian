@@ -286,6 +286,7 @@
         } else {
             item.entry = entry;
             item.leaving = false;
+            clearTimeout(item.leaveTimer);
             item.node.classList.remove('is-leave');
             render(item);
         }
@@ -301,7 +302,7 @@
         item.leaving = true;
         clearTimer(item);
         item.node.classList.add('is-leave');
-        setTimeout(function () {
+        item.leaveTimer = setTimeout(function () {
             if (item.node.parentNode) { item.node.parentNode.removeChild(item.node); }
             if (items[id] === item) {
                 delete items[id];
@@ -331,8 +332,9 @@
         if (cfg.popups === false || (cfg.levels && cfg.levels[filterLevel] === false)) { return null; }
         var timeout = extra.timeout;
         if (timeout == null) {
+            var defaults = { error: 0, warning: 8000, info: 4000, success: 3000 };
             timeout = cfg.durations && cfg.durations[filterLevel] != null ? cfg.durations[filterLevel]
-                : ({ error: 0, warning: 8000, info: 4000, success: 3000 }[filterLevel] || 4000);
+                : (defaults[filterLevel] != null ? defaults[filterLevel] : 4000);
             if (level === 'ongoing') { timeout = 0; }
         }
         var id = extra.id || ('local-' + (++localSeq));

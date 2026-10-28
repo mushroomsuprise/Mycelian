@@ -408,9 +408,6 @@ def test_update_video_data_slow_and_error(client, state, clock, monkeypatch, cap
     client.update_video_data()  # logged
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: update_video_data reloads a fresh copy of YouTubeData after "
-                                       "authenticate(), discarding the channel titles/URLs it just cached "
-                                       "(never persisted), so the latest video's channel shows 'Unknown Channel'")
 def test_update_video_data_keeps_channel_title_from_authenticate(client, state, http):
     for target in (client.youtube_data, state.data):
         target.api_key = "KEY"

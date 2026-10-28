@@ -1737,6 +1737,10 @@
         if (ps.max === undefined) { ps.max = 100; }
         if (!ps.max_counter_id) { ps.max_counter_id = ""; }
         el.props = el.props || {};
+        /* Older templates only have near_goal_pulse; map it before the defaults fill in "none". */
+        if (el.props.near_goal_pulse && !el.props.near_goal_effect) {
+            el.props.near_goal_effect = "pulse";
+        }
         var defs = DEFAULT_PROPS.progress_bar;
         if (defs) {
             Object.keys(defs).forEach(function (k) {
@@ -1744,9 +1748,6 @@
                     el.props[k] = defs[k];
                 }
             });
-        }
-        if (el.props.near_goal_pulse && !el.props.near_goal_effect) {
-            el.props.near_goal_effect = "pulse";
         }
         if (!el.props.near_goal_effect) {
             el.props.near_goal_effect = "none";
@@ -3221,7 +3222,9 @@
 
     function renderValueAnimationSection(host, el) {
         if (!TEXT_LIKE_TYPES[el.type]) { return; }
-        var mode = el.text_mode || "static";
+        /* Counter and data display blocks carry no text_mode; their type is the mode. */
+        var mode = el.type === "counter" ? "counter"
+            : (el.type === "data_display" ? "data_display" : (el.text_mode || "static"));
         if (mode !== "counter" && mode !== "data_display") { return; }
         ensureValueAnimationDefaults(el);
         var va = el.value_animation;
@@ -5234,6 +5237,15 @@
         };
     }
 
+    /* Fill missing keys in place: open feed cards hold references to these objects. */
+    function feedFillDefaults(obj, defaults) {
+        if (!obj || typeof obj !== "object" || Array.isArray(obj)) { return defaults; }
+        Object.keys(defaults).forEach(function (k) {
+            if (!(k in obj)) { obj[k] = defaults[k]; }
+        });
+        return obj;
+    }
+
     function normalizeFeed(feed) {
         feed.enabled = feed.enabled !== false;
         if (feed.label == null) { feed.label = ""; }
@@ -5250,13 +5262,13 @@
         if (!s.value || typeof s.value !== "object") { s.value = { kind: "data_source", source: "" }; }
         s.refresh_ms = Number(s.refresh_ms) || 0;
         if (!Array.isArray(s.refresh_on)) { s.refresh_on = []; }
-        feed.filters = Object.assign(feedDefaultFilters(), feed.filters || {});
+        feed.filters = feedFillDefaults(feed.filters, feedDefaultFilters());
         if (!Array.isArray(feed.filters.rules)) { feed.filters.rules = []; }
-        feed.mapping = Object.assign({
+        feed.mapping = feedFillDefaults(feed.mapping, {
             text_field: "", value_field: "", template: "", split_field: "",
             prefix: "", suffix: "", decimals: "", fallback: ""
-        }, feed.mapping || {});
-        feed.timing = Object.assign({ delay_ms: 0 }, feed.timing || {});
+        });
+        feed.timing = feedFillDefaults(feed.timing, { delay_ms: 0 });
         if (!feed.target || typeof feed.target !== "object") { feed.target = {}; }
         if (!feed.target.options || typeof feed.target.options !== "object") { feed.target.options = {}; }
         return feed;
@@ -5652,10 +5664,23 @@
         rule.filter = {};
     }
 
+    /* Like sporeFeedText in the runtime: a flat list reads as "a, b, c", anything else as JSON. */
+    function feedPreviewValueText(raw) {
+        if (Array.isArray(raw) && raw.every(function (v) { return v == null || typeof v !== "object"; })) {
+            return raw.join(", ");
+        }
+        return JSON.stringify(raw);
+    }
+
     function feedPreviewMod(value, mod) {
         var cut = mod.indexOf(":");
         var name = (cut >= 0 ? mod.slice(0, cut) : mod).trim().toLowerCase();
         var arg = cut >= 0 ? mod.slice(cut + 1) : "";
+        if (Array.isArray(value)) {
+            if (name === "join") { return value.join(arg === "" ? ", " : arg); }
+            if (name === "count") { return String(value.length); }
+            value = feedPreviewValueText(value);
+        }
         var n = Number(value);
         var isNum = value !== "" && value != null && !isNaN(n);
         var s = value == null ? "" : String(value);
@@ -5690,6 +5715,13 @@
                 var len = parseInt(arg, 10);
                 return (len > 0 && s.length > len) ? s.slice(0, Math.max(0, len - 1)) + "\u2026" : s;
             case "default": return s === "" ? arg : s;
+            case "join": return s;
+            case "count": return s === "" ? "0" : String(s.split(",").length);
+            case "plural":
+                var forms = arg.split(",");
+                var one = (forms[0] || "").trim();
+                var many = (forms.length > 1 ? forms[1] : one + "s").trim();
+                return isNum ? (n.toLocaleString("en-US") + " " + (Math.abs(n) === 1 ? one : many)) : s;
         }
         return s;
     }
@@ -5700,12 +5732,13 @@
             /\{([^{}|]+)((?:\|[^{}|]*)*)\}/g,
             function (all, field, mods) {
                 var raw = data[String(field).trim()];
-                var value = raw == null ? "" : (typeof raw === "object" ? JSON.stringify(raw) : raw);
+                var value = raw == null ? "" : (typeof raw === "object" && !Array.isArray(raw) ? JSON.stringify(raw) : raw);
                 if (mods) {
                     mods.split("|").slice(1).forEach(function (mod) {
                         if (mod !== "") { value = feedPreviewMod(value, mod); }
                     });
                 }
+                if (Array.isArray(value)) { value = feedPreviewValueText(value); }
                 return value == null ? "" : String(value);
             }
         );
@@ -8855,10 +8888,11 @@
                         spec.default_data = {};
                     } else {
                         try {
-                            spec.default_data = JSON.parse(raw);
-                            if (typeof spec.default_data !== "object" || spec.default_data === null) {
+                            var parsed = JSON.parse(raw);
+                            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
                                 throw new Error("must be object");
                             }
+                            spec.default_data = parsed;
                         } catch (e) {
                             notify({
                                 type: "warning",

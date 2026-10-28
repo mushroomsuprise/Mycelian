@@ -274,7 +274,13 @@ class DiscordService:
 
     def get_status(self) -> Dict[str, Any]:
         with self._lock:
-            connected = bool(self._client and self._ready.is_set() and not self._stop_requested)
+            # A failed login/crash also sets ready (to unblock waiters) while _client is still set.
+            connected = bool(
+                self._client
+                and self._ready.is_set()
+                and not self._stop_requested
+                and self._status not in ("Auth Failed", "Error")
+            )
             bot_name = ""
             bot_id = ""
             bot_avatar = ""
@@ -394,6 +400,11 @@ class DiscordService:
         if not self.is_connected():
             status = self.get_status().get("status") or "Error"
             logger.error("Discord bot failed to connect (status=%s)", status)
+            # After a failed login or crash the bot thread is already closing its client and
+            # loop; let it finish so disconnect() doesn't queue a close on a loop about to stop.
+            thread = self._thread
+            if status in ("Auth Failed", "Error") and thread is not None and thread is not threading.current_thread():
+                thread.join(timeout=5.0)
             self.disconnect(join_timeout=5.0)
             self._set_status(status if status != "Disconnected" else "Error")
             self._persist_status_fields()

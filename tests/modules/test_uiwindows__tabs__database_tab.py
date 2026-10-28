@@ -12,6 +12,7 @@ import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -744,8 +745,6 @@ class TestDeleteCreate:
         _show(viewer, check)
         assert notes[-1][1]["title"] == "Couldn't delete A"
 
-    @pytest.mark.xfail(strict=True, reason="BUG: the Explorer's delete says the item 'and everything in it' is "
-                                            "removed, but on SQLite/MongoDB only the exact path row is deleted")
     def test_delete_removes_children_as_promised(self, viewer, mgr):
         mgr.set_data("A", {"x": 1})
         mgr.set_data("A/B", {"y": 2})
@@ -759,6 +758,27 @@ class TestDeleteCreate:
         viewer.close = lambda: None
         _show(viewer, check)
         assert mgr.get_all_paths() == []
+
+    def test_delete_with_children_keeps_siblings(self, mgr):
+        for p in ("A", "A/B", "A/B/C", "AB", "B"):
+            mgr.set_data(p, {"v": p})
+        assert dt._delete_with_children("A") is True
+        assert mgr.get_all_paths() == ["AB", "B"]
+
+    def test_delete_with_children_stops_on_failure(self, mgr, monkeypatch):
+        mgr.set_data("A", {"x": 1})
+        mgr.set_data("A/B", {"y": 2})
+        monkeypatch.setattr(mgr._database, "delete_data", lambda p: False)
+        assert dt._delete_with_children("A") is False
+
+    def test_delete_with_children_firebase_deletes_node_only(self, monkeypatch):
+        deleted = []
+        fake = SimpleNamespace(get_config=lambda: SimpleNamespace(database_type="firebase"),
+                               get_all_paths=lambda: pytest.fail("Firebase removes children itself"),
+                               delete_data=lambda p: deleted.append(p) or True)
+        monkeypatch.setattr(dt, "database_manager", fake)
+        assert dt._delete_with_children("A") is True
+        assert deleted == ["A"]
 
     def test_create_dialog(self, viewer, mgr, notes):
         async def check(user):

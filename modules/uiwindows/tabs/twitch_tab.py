@@ -77,6 +77,9 @@ class TwitchTab:
     def __init__(self) -> None:
         self.dirty: bool = False
         self.buffer: Optional[dataobjects.TwitchData] = None
+        # Fields the user edited; save() writes only these so it never overwrites the
+        # tokens the Twitch client refreshed or wrote after the buffer was loaded.
+        self._changed_fields: set = set()
         self._app_settings_buffer: Optional[dataobjects.AppSettings] = None
         self.ui_elements: Dict[str, Any] = {}
         self._creds: Dict[str, str] = {}
@@ -463,11 +466,13 @@ class TwitchTab:
             }
         )
 
+        self._changed_fields = set()
         self.dirty = False
 
     def _set(self, field: str, value) -> None:
         if getattr(self.buffer, field) != value:
             setattr(self.buffer, field, value)
+            self._changed_fields.add(field)
             self.dirty = True
 
     def _set_cred(self, field: str, value: str) -> None:
@@ -486,8 +491,8 @@ class TwitchTab:
     def save(self) -> None:
         if not self.buffer:
             return
-        # persist buffered twitch fields
-        for field in self.buffer.__dataclass_fields__.keys():
+        # persist the twitch fields the user changed
+        for field in sorted(self._changed_fields):
             state_manager.update_twitch_field(field, getattr(self.buffer, field))
 
         # persist credentials only on Save
@@ -511,6 +516,7 @@ class TwitchTab:
 
         if state_manager.save_changes():
             notify("", type="success", source="twitch", title="Twitch settings saved")
+            self._changed_fields = set()
             self.dirty = False
         # A failed save_changes() was already reported once (changes stay pending).
         self._refresh_overview()

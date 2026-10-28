@@ -1540,9 +1540,10 @@ class WebEngine:
             )
 
         # Initialize Flask app and SocketIO with template reloading enabled
+        # static_folder=None: Flask's built-in /static route would shadow serve_static_file_standard
         self.app = Flask(
-            __name__, template_folder=self.template_dir
-        )  # Don't set static_folder to avoid conflicts
+            __name__, template_folder=self.template_dir, static_folder=None
+        )
 
         # Template auto-reload: dev / unfrozen builds only (OBS sources stat every HTML file otherwise)
         _jinja_auto_reload = bool(
@@ -3117,9 +3118,11 @@ class WebEngine:
 
                         for template_name in template_configs:
                             try:
-                                # Load template configuration with Stream Deck options
+                                # Load template configuration with Stream Deck options and dynamic controls
                                 config = self.template_config_parser.load_config(
-                                    template_name, include_streamdeck_options=True
+                                    template_name,
+                                    include_dynamic_controls=True,
+                                    include_streamdeck_options=True,
                                 )
 
                                 if (
@@ -3457,9 +3460,11 @@ class WebEngine:
 
                 for template_name in template_configs:
                     try:
-                        # Load template configuration with Stream Deck options
+                        # Load template configuration with Stream Deck options and dynamic controls
                         config = self.template_config_parser.load_config(
-                            template_name, include_streamdeck_options=True
+                            template_name,
+                            include_dynamic_controls=True,
+                            include_streamdeck_options=True,
                         )
 
                         if isinstance(config, dict) and "streamdeck_options" in config:
@@ -6738,7 +6743,12 @@ class WebEngine:
             logger.warning("preview iframe register failed: %s", e, exc_info=True)
 
     def _rebuild_url_map(self):
-        """Rebuild the entire URL map to handle removed routes"""
+        """Rebuild the entire URL map to handle removed routes.
+
+        Returns True on success; on failure the previous map is kept and False is returned.
+        """
+        old_url_map = self.app.url_map
+        old_registered = set(self._registered_template_routes)
         try:
             logger.info("Rebuilding Flask URL map for template routes...")
 
@@ -6757,11 +6767,16 @@ class WebEngine:
             # Create a new URL map
             from werkzeug.routing import Map
 
-            new_url_map = Map()
+            new_url_map = Map(
+                strict_slashes=old_url_map.strict_slashes,
+                merge_slashes=old_url_map.merge_slashes,
+                host_matching=old_url_map.host_matching,
+            )
+            new_url_map.converters.update(old_url_map.converters)
 
-            # Add back the original system routes
+            # Add back the original system routes (unbound copies; a rule can only belong to one map)
             for rule in original_rules:
-                new_url_map.add(rule)
+                new_url_map.add(rule.empty())
 
             # Replace the app's URL map
             self.app.url_map = new_url_map
@@ -6771,9 +6786,13 @@ class WebEngine:
             self.register_routes()
 
             logger.info("Flask URL map rebuilt successfully")
+            return True
 
         except Exception as e:
             logger.error(f"Error rebuilding URL map: {str(e)}", exc_info=True)
+            self.app.url_map = old_url_map
+            self._registered_template_routes = old_registered
+            return False
 
     def register_socket_events(self):
         """Register SocketIO event handlers"""
@@ -6791,6 +6810,9 @@ class WebEngine:
             """
             client_sid = request.sid
             logger.debug(f"Received get_audio_files request from {client_sid}: {data}")
+            fallback_request_id = (
+                data.get("request_id", "unknown") if isinstance(data, dict) else "unknown"
+            )
 
             try:
                 if (
@@ -6802,7 +6824,7 @@ class WebEngine:
                     response_data = {
                         "success": False,
                         "error": "Invalid data format: folder and request_id required",
-                        "request_id": data.get("request_id", "unknown"),
+                        "request_id": fallback_request_id,
                         "files": [],
                     }
                     self.socketio.emit(
@@ -6899,7 +6921,7 @@ class WebEngine:
                 response_data = {
                     "success": False,
                     "error": str(e),
-                    "request_id": data.get("request_id", "unknown"),
+                    "request_id": fallback_request_id,
                     "files": [],
                 }
                 self.socketio.emit("audio_files_response", response_data, to=client_sid)
@@ -8697,6 +8719,9 @@ class WebEngine:
             """
             client_sid = request.sid
             logger.debug(f"Received twitch-api-request from {client_sid}: {data}")
+            request_id = (
+                data.get("requestId", "unknown") if isinstance(data, dict) else "unknown"
+            )
             try:
                 if (
                     not isinstance(data, dict)
@@ -8707,7 +8732,7 @@ class WebEngine:
                     response_data = {
                         "success": False,
                         "error": "Invalid data format: endpoint and requestId required",
-                        "requestId": data.get("requestId", "unknown"),
+                        "requestId": request_id,
                     }
                     self.safe_emit(
                         "twitch-api-response", response_data, to=client_sid
@@ -10850,7 +10875,9 @@ class WebEngine:
             self._registered_template_routes.clear()
 
             # Rebuild URL map
-            self._rebuild_url_map()
+            if not self._rebuild_url_map():
+                logger.error("Route resynchronization failed: URL map was not rebuilt")
+                return False
 
             logger.info("Route resynchronization completed")
             return True
@@ -11146,9 +11173,11 @@ class WebEngine:
 
                 for template_name in template_configs:
                     try:
-                        # Load template configuration with Stream Deck options
+                        # Load template configuration with Stream Deck options and dynamic controls
                         config = self.template_config_parser.load_config(
-                            template_name, include_streamdeck_options=True
+                            template_name,
+                            include_dynamic_controls=True,
+                            include_streamdeck_options=True,
                         )
 
                         if isinstance(config, dict) and "streamdeck_options" in config:

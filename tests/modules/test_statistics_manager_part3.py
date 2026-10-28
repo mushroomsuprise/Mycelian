@@ -145,7 +145,6 @@ def test_bit_alerts_count_totals_users_type_and_event(mgr):
     assert events(mgr) == [("Alice", "bit", 100.0, "Cheer")]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: bit/gift/watch-streak recorders index user_stats by the raw name; a case variant of a known viewer raises KeyError")
 @pytest.mark.parametrize("record", ["bits", "gifts", "streak"])
 def test_recorders_accept_a_known_viewer_in_different_case(mgr, record):
     calls = {
@@ -695,6 +694,22 @@ def test_load_error_keeps_defaults(env, mgr, caplog):
     assert "Error loading statistics from database" in caplog.text
 
 
+def test_failed_load_never_saves_over_stored_totals(env, mgr):
+    set_lifetime(mgr, "alerts", {"no_such_field": 1})
+    set_lifetime(mgr, "chat", {"total_messages": 42, "twitch_messages_received": 42})
+    _shutdown(mgr)
+    again = env.make()
+    assert any(n.get("dedupe_key") == "stats:load_failed" for n in env.notes)
+    again.increment_raids("Viewer")
+    again._save_to_database()
+    assert again.last_save_ok is False
+    assert lifetime_json(again, "chat")["total_messages"] == 42
+    assert lifetime_json(again, "alerts") == {"no_such_field": 1}
+    again.reset_statistics()  # a deliberate full reset may be saved
+    assert again.last_save_ok is True
+    assert lifetime_json(again, "chat")["total_messages"] == 0
+
+
 def test_load_repairs_float_hype_counts_quietly(env, mgr, caplog):
     set_lifetime(mgr, "hype_trains", {"level_completions": {"1": 2.0}, "total_completions": 2})
     _shutdown(mgr)
@@ -703,7 +718,6 @@ def test_load_repairs_float_hype_counts_quietly(env, mgr, caplog):
     assert "Data integrity issues found" in caplog.text
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: repair_data_integrity calls the missing save_statistics(); a bad hype-train count aborts loading every later category")
 def test_bad_hype_train_count_does_not_lose_other_totals(env, mgr):
     set_lifetime(mgr, "hype_trains", {"level_completions": {"1": "lots"}, "total_completions": 1})
     set_lifetime(mgr, "chat", {"total_messages": 42, "twitch_messages_received": 42})
@@ -947,7 +961,6 @@ def test_repair_data_integrity_without_problems(mgr, monkeypatch):
     assert mgr.repair_data_integrity() is False  # same number of entries: nothing replaced
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: repair_data_integrity calls self.save_statistics(), which does not exist (AttributeError)")
 @pytest.mark.parametrize("bad", [[1, 2], {1: "x"}])
 def test_repair_data_integrity_saves_the_repaired_data(mgr, bad):
     mgr.data.hype_trains.level_completions = bad
@@ -955,11 +968,14 @@ def test_repair_data_integrity_saves_the_repaired_data(mgr, bad):
     assert isinstance(mgr.data.hype_trains.level_completions, dict)
 
 
-def test_repair_data_integrity_fixes_before_failing_to_save(mgr):
+def test_repair_data_integrity_does_not_save_mid_load(mgr, monkeypatch):
+    # It runs while loading; a save there would write defaults over categories not loaded yet.
+    save = Mock()
+    monkeypatch.setattr(mgr, "_save_to_database", save)
     mgr.data.hype_trains.level_completions = {1: "x", 2: 2}
-    with pytest.raises(AttributeError):
-        mgr.repair_data_integrity()
+    assert mgr.repair_data_integrity() is True
     assert mgr.data.hype_trains.level_completions == {2: 2}
+    save.assert_not_called()
 
 
 # --------------------------------------------------------------------------- periodic saving

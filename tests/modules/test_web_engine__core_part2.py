@@ -187,8 +187,6 @@ def test_assets_route_error_returns_500(client, assets, monkeypatch):
     assert "Error serving file" in res.get_data(as_text=True)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: Flask's built-in /static endpoint (modules/static, which does "
-                   "not exist) shadows the custom /static/<path> assets route, so /static/ URLs always 404")
 def test_static_url_serves_assets(client, assets):
     res = client.get("/static/img.png")
     assert res.status_code == 200 and res.data == b"\x89PNG"
@@ -201,7 +199,7 @@ def _call_view(engine, endpoint, path, **kwargs):
 
 
 def test_static_standard_view_body(engine, assets, monkeypatch):
-    """The shadowed view itself (called directly) mirrors /assets."""
+    """The /static view (called directly) mirrors /assets."""
     res = _call_view(engine, "serve_static_file_standard", "/static/sub/ding.wav", filename="sub/ding.wav")
     res.direct_passthrough = False
     assert res.status_code == 200 and res.mimetype == "audio/wav" and res.get_data() == b"RIFF"
@@ -968,7 +966,8 @@ def _check_actions(body):
 def test_get_template_actions(engine, client, url):
     engine.template_config_parser = FakeParser(ACTION_CONFIGS, raise_for={"broken"})
     _check_actions(_json(client.get(url)))
-    assert engine.template_config_parser.calls[0][1] == {"include_streamdeck_options": True}
+    assert engine.template_config_parser.calls[0][1] == {"include_dynamic_controls": True,
+                                                         "include_streamdeck_options": True}
 
 
 @pytest.mark.parametrize("url", [

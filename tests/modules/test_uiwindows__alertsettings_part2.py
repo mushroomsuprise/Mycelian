@@ -593,8 +593,6 @@ def test_subs_fallback_toggle_saves(env):
     run(panels("subs"), fn)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: the Resub fallback switch saves at once but sits in the form "
-                                       "fields, so flipping it marks the Subscriptions alert as unsaved")
 def test_subs_fallback_toggle_does_not_mark_form_unsaved(env):
     def fn(user):
         env.run_scheduled()  # initialize_alert_values stores the originals

@@ -3279,8 +3279,10 @@ def fetch_alert_config_for_stored(stored: dict) -> Optional[AlertObj]:
         qty = _replay_int(stored.get("gift_qty"), 1)
         return fetch_giftsub_alert(qty if qty > 0 else 1)
     if alert_type in ("donation", "donations"):
+        from .donation_currency import donation_match_quantity
+
         amount = _replay_float(stored.get("donation_amount"), 0.0)
-        return fetch_donation_alert(amount)
+        return fetch_donation_alert(donation_match_quantity(amount))
     if alert_type in ("raid", "raids"):
         count = _replay_int(stored.get("raider_count"), 0)
         return fetch_raid_alert(count if count > 0 else 1)

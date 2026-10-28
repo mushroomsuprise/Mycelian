@@ -82,7 +82,7 @@ def process_file(path: Path) -> str | None:
 
     if "Copyright (c)" in text and "Mycelian" in text:
         text, changed = update_full_mit_copyright(text)
-        if changed:
+        if changed and text != original:
             path.write_text(text, encoding="utf-8", newline="\n")
             return "updated_other"
         return None

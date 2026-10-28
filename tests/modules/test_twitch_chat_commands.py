@@ -36,6 +36,5 @@ def test_command_set_contains_expected_entries():
     assert "me" not in tcc.TWITCH_SLASH_COMMANDS
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: a bare '/' (or '/ ' ) raises IndexError instead of being shown")
 def test_bare_slash_does_not_crash():
     assert tcc.is_allowed_slash_message("/") is True

@@ -413,8 +413,6 @@ def test_update_custom_theme_failures(manager, catalog, monkeypatch, caplog):
     assert manager.update_custom_theme(ThemeColors(name="nord")) is False
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: _theme_to_dict drops notify_style/radius/shadow/timer/density, "
-                                       "so saving a theme loses its pop-up look")
 def test_saved_theme_round_trips_every_field(manager, catalog):
     theme = ThemeColors(name="ocean", display_name="Ocean", theme_type="dark", notify_style="glass",
                         notify_radius="4", notify_shadow="strong", notify_timer="off", notify_density="compact")

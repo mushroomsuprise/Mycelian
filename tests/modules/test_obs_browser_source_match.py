@@ -210,7 +210,6 @@ def test_is_browser_input_kind(kind, ok):
     assert m.is_browser_input_kind(kind) is ok
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: schemeless 'localhost:5000/ff7' parses with scheme 'localhost', so it never matches")
 def test_schemeless_localhost_url_is_treated_as_http():
     # The docstrings promise schemeless OBS URLs are read as http://, and localhost is a
     # local overlay host, but urlparse treats "localhost:" as a URL scheme.

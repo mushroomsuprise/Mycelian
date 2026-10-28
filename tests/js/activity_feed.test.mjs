@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeWindow, loadScript, fire, plain, xfail } from "./helpers/env.mjs";
+import { makeWindow, loadScript, fire, plain } from "./helpers/env.mjs";
 
 const FILE = "assets/default_assets/activity_feed.js";
 const NOW = 1_700_000_000; // FakeClock wall start, in seconds
@@ -537,7 +537,7 @@ test("by-person view: loading, error, empty, filtered and grouped cards", () => 
             { username: "", lines: ["did <a> thing"], last_ts: NOW - 7200 },
         ],
     });
-    assert.equal(s.q(".afx-cond-head").textContent, "history5 events from 1 person in the last 12 hours");
+    assert.equal(s.q(".afx-cond-head").textContent, "history5 events from 1 person in the last 12 hoursshowing 50 of 80");
     const users = s.qa(".afx-user");
     assert.equal(users[0].querySelector(".afx-ava").textContent, "B");
     assert.equal(users[0].querySelector(".afx-user-sub").textContent, "1 event · just now");
@@ -746,8 +746,7 @@ test("a binder failure is swallowed until the next tick", () => {
     assert.doesNotThrow(() => s.clock.tick(250));
 });
 
-xfail(test, "by-person view shows the server's truncation note",
-    "BUG: activity_feed.js:329 set('person') rebuilds s.person without `truncation`, so personHtml never shows 'Showing first N of M people' that modules/uiwindows/activity_feed.py sends",
+test("by-person view shows the server's truncation note",
     () => {
         const s = feed();
         s.f.set("view", { mode: "person" });

@@ -166,10 +166,6 @@ def test_scene_names_from_resp_variants():
     assert svc._scene_names_from_resp(SimpleNamespace(scenes=None)) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: _attr(resp, 'scenes', None) calls hasattr(resp, None) -> TypeError for responses without the attribute",
-)
 def test_scene_names_from_resp_object_without_scenes_attribute():
     assert obs.ObsServiceImpl()._scene_names_from_resp(SimpleNamespace()) == []
 

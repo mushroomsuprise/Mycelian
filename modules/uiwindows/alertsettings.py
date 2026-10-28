@@ -199,6 +199,7 @@ _ALERT_DIRTY_SKIP = {
     "channel_points_locked_banner",
     "exact_input_row",
     "range_input_row",
+    "fallback_toggle",  # saves on its own when flipped
 }
 
 

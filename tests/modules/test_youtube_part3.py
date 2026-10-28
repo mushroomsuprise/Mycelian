@@ -316,9 +316,6 @@ def test_live_loop_chat_ended_while_live_notifies_discord(client, monkeypatch, d
     assert driver.sleeps == [yt._LIVE_OFFLINE_BACKOFF_SEC]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: _poll_live_chat_once sets live_chat_status to 'Offline' before "
-                                       "returning _LIVE_CHAT_ENDED, so the loop's was_live check is always "
-                                       "False and the Discord 'stream offline' hook never fires")
 def test_live_loop_real_chat_end_notifies_discord(client, monkeypatch, discord):
     _live_ready(client)
     client._live_chat_id = "CHAT1"
@@ -327,6 +324,7 @@ def test_live_loop_real_chat_end_notifies_discord(client, monkeypatch, discord):
     monkeypatch.setattr(client, "_oauth_get", lambda path, params: {"__live_chat_ended__": True})
     client.start_live_chat_monitoring()
     assert ("offline", "youtube") in discord
+    assert client.youtube_data.live_chat_status == "Offline"
 
 
 def test_live_loop_hooks_and_errors_are_contained(client, monkeypatch):
@@ -422,12 +420,13 @@ def test_poll_ended_paths(client, monkeypatch):
     monkeypatch.setattr(client, "_route_live_chat_message", lambda item: None)
     responses = iter([None, {"__live_chat_ended__": True}, {"items": [_msg("e", "chatEndedEvent")]}])
     monkeypatch.setattr(client, "_oauth_get", lambda p, q: next(responses))
-    assert client._poll_live_chat_once() is None
-    assert client._poll_live_chat_once() is yt._LIVE_CHAT_ENDED
-    assert client.youtube_data.live_chat_status == "Offline"
     client.youtube_data.live_chat_status = "Live"
+    assert client._poll_live_chat_once() is None
+    # The loop owns the "Offline" change (it needs the Live status to fire the offline hook).
     assert client._poll_live_chat_once() is yt._LIVE_CHAT_ENDED
-    assert client.youtube_data.live_chat_status == "Offline"
+    assert client.youtube_data.live_chat_status == "Live"
+    assert client._poll_live_chat_once() is yt._LIVE_CHAT_ENDED
+    assert client.youtube_data.live_chat_status == "Live"
 
 
 def test_remember_message_id_caps_memory(client, monkeypatch):

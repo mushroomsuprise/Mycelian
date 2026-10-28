@@ -727,7 +727,7 @@ def _to_int(value: Any, default: int = 0) -> int:
     number = _to_number(value, default)
     try:
         return int(number)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 

@@ -758,8 +758,6 @@ def test_migrate_legacy_api_fields(tw):
     assert "response_format" not in bare
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: set_title from an event (no {command_message} in context) sets the "
-                                       "stream title to the literal text '{command_message}'")
 def test_set_title_from_event_does_not_post_placeholder(tw):
     tw.routes[("PATCH", "/channels")] = lambda p, b: {"status": 204, "data": ""}
     # The editor stores the text_arg default ("{command_message}") for events too.

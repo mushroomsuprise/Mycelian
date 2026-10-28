@@ -400,11 +400,6 @@ def test_execute_menu_colors_materia_battle_items(hook, rec):
     assert run(hook, "add_materia", materia_level="x") == (False, "not an int: x")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: execute_operation's _tok_char falls back to kwargs['slot'], which for equip_materia is the "
-    "materia slot, so an empty character silently targets roster index <slot> instead of failing",
-)
 def test_execute_equip_materia_empty_character_is_rejected(hook, rec):
     rec("_op_equip_materia")
     # Connector config with no character: {"character": "", "slot": "3", ...}
@@ -1025,11 +1020,6 @@ def test_game_tick_snapshot_exception(env, win, monkeypatch):
     assert "bosses" in s
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: snapshot's enemy filter (`not (name or hp or max_hp)`) never drops a row because a blank "
-    "enemy name decodes to '?', so empty/garbage enemy slots show up as '?' foes with 0 HP",
-)
 def test_snapshot_skips_nameless_zero_hp_enemy(hook, mem, loaded):
     set_module(mem, 2)
     for slot in range(3):

@@ -92,6 +92,21 @@ def _reported_write(fn, *args) -> tuple:
     return False, reason or "The database rejected the change (see the log)."
 
 
+def _delete_with_children(path: str) -> bool:
+    """Delete ``path`` and every path under it, as the Explorer's delete dialog says.
+
+    Firebase removes a node's children itself; SQLite and MongoDB keep each path as
+    its own row, so the paths under it are deleted first (deepest first).
+    """
+    if database_manager.get_config().database_type != "firebase":
+        prefix = path.strip("/") + "/"
+        children = [p for p in database_manager.get_all_paths() if p.startswith(prefix)]
+        for child in sorted(children, reverse=True):
+            if not database_manager.delete_data(child):
+                return False
+    return database_manager.delete_data(path)
+
+
 def _notify_write_failed(title: str, reason: str) -> None:
     notify(
         reason,
@@ -801,7 +816,7 @@ class DatabaseViewer:
 
     async def _execute_delete(self, path: str, dialog: ui.dialog) -> None:
         """Execute path deletion"""
-        ok, reason = await run.io_bound(_reported_write, database_manager.delete_data, path)
+        ok, reason = await run.io_bound(_reported_write, _delete_with_children, path)
         if ok:
             notify("", type="success", source="database", title=f"Deleted {path}")
             # Refresh snapshot

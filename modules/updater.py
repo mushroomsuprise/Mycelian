@@ -251,16 +251,20 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
     except aiohttp.ClientError as e:
         logger.error(f"Network error while fetching update info from GitHub: {e}", exc_info=True)
         _last_fetch_error = ("Mycelian couldn't reach GitHub.", f"{api_url}: {type(e).__name__}: {e}")
+    except asyncio.CancelledError:
+        # CancelledError is a BaseException, so it needs its own clause. A real cancel of
+        # this task (app shutdown) must still propagate; a stray one from aiohttp is handled.
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            raise
+        logger.warning("GitHub update check cancelled or timed out")
+        if cached_fallback is not None:
+            return cached_fallback
+        _last_fetch_error = ("The update check was interrupted.", f"{api_url}: cancelled")
     except Exception as e:
-        if isinstance(e, asyncio.CancelledError):
-            logger.warning("GitHub update check cancelled or timed out")
-            if cached_fallback is not None:
-                return cached_fallback
-            _last_fetch_error = ("The update check was interrupted.", f"{api_url}: cancelled")
-        else:
-            logger.error(f"Unexpected error fetching update info from GitHub: {e}", exc_info=True)
-            _last_fetch_error = ("Something went wrong reading the release from GitHub.",
-                                 f"{api_url}: {type(e).__name__}: {e}")
+        logger.error(f"Unexpected error fetching update info from GitHub: {e}", exc_info=True)
+        _last_fetch_error = ("Something went wrong reading the release from GitHub.",
+                             f"{api_url}: {type(e).__name__}: {e}")
     finally:
         with _github_release_cache_lock:
             if result is not None:

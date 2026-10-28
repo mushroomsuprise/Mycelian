@@ -243,7 +243,7 @@
             insertText("\n" + indent);
             return;
         }
-        if ((CLOSERS[key] || PAIRS[key]) && start === end && value.charAt(start) === key) {
+        if ((CLOSERS[key] || PAIRS[key] === key) && start === end && value.charAt(start) === key) {
             ev.preventDefault();
             setCaret(start + 1);
             return;
@@ -289,7 +289,7 @@
             ? (ta.selectionStart || 0) - 1
             : (ta.selectionEnd || 0);
         var idx = dir < 0
-            ? text.lastIndexOf(q, Math.max(0, from))
+            ? (from < 0 ? -1 : text.lastIndexOf(q, from))
             : text.indexOf(q, from);
         if (idx < 0) {
             idx = dir < 0 ? text.lastIndexOf(q) : text.indexOf(q);

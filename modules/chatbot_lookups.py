@@ -593,7 +593,9 @@ def _text_arg(config: Dict[str, Any], context: Dict[str, Any], entry: Dict[str, 
     template = config.get("text")
     if template is None:
         template = (entry.get("text_arg") or {}).get("default", "")
-    return render_template(str(template or ""), context).strip()
+    # Events have no {command_message}: it resolves to nothing rather than staying
+    # as literal text, so an empty result skips the title/game change.
+    return render_template(str(template or ""), {"command_message": "", **(context or {})}).strip()
 
 
 # --------------------------------------------------------------------------

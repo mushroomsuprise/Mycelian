@@ -328,7 +328,8 @@
       var p = value || {};
       s.person = {
         groups: p.groups || [], hours: Number(p.hours) || s.settings.person_hours || 12, alert_count: Number(p.alert_count) || 0,
-        user_count: Number(p.user_count) || (p.groups || []).length, loading: !!p.loading, error: p.success === false ? (p.error || 'failed') : ''
+        user_count: Number(p.user_count) || (p.groups || []).length, loading: !!p.loading, error: p.success === false ? (p.error || 'failed') : '',
+        truncation: p.truncation || ''
       };
     } else if (name === 'queue') {
       s.queue = normQueue(value);

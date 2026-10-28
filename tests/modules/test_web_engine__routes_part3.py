@@ -268,8 +268,6 @@ def test_twitch_api_request_validation(engine, sio, helix, payload, error, rid):
     assert helix.coros == []
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: twitch-api-request calls data.get() on a non-dict payload, then "
-                                       "its except block reads the unassigned request_id")
 def test_twitch_api_request_non_dict_payload_gets_error_response(engine, sio, helix):
     sio.emit("twitch-api-request", ["not", "a", "dict"])
     assert _responses(engine, sio)[0]["success"] is False

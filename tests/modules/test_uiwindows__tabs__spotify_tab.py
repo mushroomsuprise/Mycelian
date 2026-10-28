@@ -418,7 +418,7 @@ def test_refresh_status_without_widgets_and_on_error(env):
 # --------------------------------------------------------------------------- save / discard / persist
 
 
-def test_save_writes_everything(env):
+def test_save_writes_credentials_and_changed_fields(env):
     env.state.data = SpotifyData(market_country="")
     tab = _tab(env, {"client_id": "id", "client_secret": "old"})
     fold = []
@@ -429,7 +429,7 @@ def test_save_writes_everything(env):
     assert ("client_id", "id") in env.state.updates and ("client_secret", "new") in env.state.updates
     assert ("market_country", "US") in env.state.updates
     written = {f for f, _ in env.state.updates}
-    assert written == set(SpotifyData.__dataclass_fields__)
+    assert written == {"client_id", "client_secret", "market_country"}
     assert env.creds.updated == [{"client_id": "id", "client_secret": "new"}]
     assert tab._saved_creds == {"client_id": "id", "client_secret": "new"} and fold == [True]
     assert env.notes[-1]["title"] == "Spotify settings saved" and tab.dirty is False
@@ -465,9 +465,6 @@ def test_save_settings_only(env, monkeypatch):
     assert note["actions"] == tabmod.nav_actions_settings("Database") and "OSError" in note["details"]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: SpotifyTab.save() writes every field of the buffer loaded at build "
-                                       "time, so saving after Connect overwrites the new OAuth tokens with the "
-                                       "stale (empty) ones and signs the user out")
 def test_save_after_oauth_keeps_new_tokens(env):
     tab = _tab(env, {"client_id": "id", "client_secret": "sec"})
     # OAuth completes in the background: the spotify client writes fresh tokens to state.

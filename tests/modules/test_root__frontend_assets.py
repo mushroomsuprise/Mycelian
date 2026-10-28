@@ -243,8 +243,6 @@ def test_every_overlay_template_has_a_config_and_vice_versa_for_templates():
     assert set(TEMPLATE_STEMS) - configs == set()
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: templates/template_configs/save_overwrite_test.json is a test "
-                                       "leftover with no template; it ships and is listed in Source Settings")
 def test_every_config_has_an_overlay_template():
     stems = set(TEMPLATE_STEMS)
     assert [p.stem for p in CONFIG_FILES if p.stem not in stems] == []
@@ -271,24 +269,15 @@ def test_overlay_template_inline_scripts_compile(stem, preview):
     assert node_compile_errors(items) == []
 
 
-def _strict_param(stem):
-    if stem == "follow":
-        return pytest.param(stem, marks=pytest.mark.xfail(
-            strict=True, raises=jinja2.UndefinedError,
-            reason="BUG: templates/follow.html:268 JS fallback 'Thanks for the follow {{FolName}}!' is "
-                   "read as Jinja, so it renders as 'Thanks for the follow !' and the name is never filled in"))
-    return stem
-
-
-@pytest.mark.parametrize("stem", [_strict_param(s) for s in TEMPLATE_STEMS])
+@pytest.mark.parametrize("stem", TEMPLATE_STEMS)
 def test_overlay_template_only_uses_variables_its_config_defines(stem):
     render_overlay(stem, undefined=jinja2.StrictUndefined)
 
 
-def test_follow_fallback_message_loses_the_name_placeholder():
-    """The concrete effect of the follow.html Jinja clash (documented by the xfail above)."""
+def test_follow_fallback_message_keeps_the_name_placeholder():
+    """follow.html's JS fallback {{FolName}} is kept away from Jinja so the browser can fill it in."""
     html = render_overlay("follow")
-    assert "'Thanks for the follow !'" in html
+    assert "'Thanks for the follow {{FolName}}!'" in html
     assert "/\\{\\{FolName\\}\\}/g" in html  # the replace() regex survives because its braces are escaped
 
 
@@ -454,15 +443,7 @@ def test_template_config_matches_parser_expectations(path):
         assert isinstance(data["connector_actions"], (dict, list))
 
 
-def _dup_param(path):
-    if path.stem == "poll":
-        return pytest.param(path, id=path.stem, marks=pytest.mark.xfail(
-            strict=True, reason="BUG: templates/template_configs/poll.json repeats six poll1_* settings "
-                                "(elements 43-50); Source Settings shows them twice and the last copy wins"))
-    return pytest.param(path, id=path.stem)
-
-
-@pytest.mark.parametrize("path", [_dup_param(p) for p in CONFIG_FILES])
+@pytest.mark.parametrize("path", CONFIG_FILES, ids=lambda p: p.stem)
 def test_template_config_element_ids_are_unique(path):
     ids = [el["id"] for el in _load_json(path)["elements"] if el.get("type") != "separator"]
     assert sorted({i for i in ids if ids.count(i) > 1}) == []
@@ -477,7 +458,7 @@ def test_variable_map_exposes_every_setting(path):
             continue
         assert el["id"] in variables
         if not el["id"].endswith("_font_family"):
-            # last value wins for duplicated ids (see the poll.json xfail)
+            # last value wins for duplicated ids
             last = [e for e in data["elements"] if e.get("id") == el["id"]][-1]["value"]
             assert variables[el["id"]] == last
     if "BGColor" in variables and "BGOpacity" in variables:
@@ -749,13 +730,7 @@ def _js_solve(cases):
 
 
 @needs_node
-@pytest.mark.parametrize("percents", [
-    False,
-    pytest.param(True, marks=pytest.mark.xfail(strict=True, reason=(
-        "BUG: container_layout.js:28/38 computes span * (pct / 100) while containers.py:504 computes "
-        "span * pct / 100.0; e.g. 55% of 1390 is 764.5000000000001 in JS (rounds to 765) but 764.5 in "
-        "Python (rounds to 764), so the live page and the server disagree by 1px"))),
-], ids=["px-only", "with-percents"])
+@pytest.mark.parametrize("percents", [False, True], ids=["px-only", "with-percents"])
 def test_container_layout_js_matches_python_solver(percents):
     """assets/.../container_layout.js mirrors containers.solve_layout: same input, same output."""
     import random

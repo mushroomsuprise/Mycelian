@@ -250,9 +250,6 @@ def test_flags_force_save_only_when_dirty(env, monkeypatch):
     assert calls == [1]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: GreetingFlagManager's default file is <code>/data/greeting_flags.json, not "
-                                       "get_data_path('data/...'); in a frozen build it lands in the bundle folder and "
-                                       "ignores MYCELIAN_DATA_DIR")
 def test_flags_default_path_follows_data_dir(env, monkeypatch):
     import os
 
@@ -306,9 +303,6 @@ def test_apply_settings_keeps_valid_values(env):
     assert m.default_greeting_text == "Hey" and m.quote_reply_format == "{text}"
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: a non-dict entry in a stored BotData list makes the except handler call "
-                                       "item.get() (chatbot_manager.py:476/489/504/527), so the whole load aborts instead "
-                                       "of skipping that one item; later saves then overwrite the unloaded data")
 def test_load_skips_bad_items_and_warns(env):
     bad = {"command_id": "bad", "cooldown": 1}
     env.db.store["BotData/Commands"] = [_cmd("c1").to_dict(), "not a dict", bad]
@@ -730,9 +724,6 @@ def test_build_save_payloads(env):
     assert payloads["BotData/Greetings"][0]["greeting_id"] == "g"
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: a non-numeric number in BotData/Settings (e.g. greeting_cooldown_hours "
-                                       "'abc') aborts _load_data before greetings load, and the next save overwrites "
-                                       "the stored greetings with an empty list")
 def test_corrupt_setting_does_not_lose_greetings(env):
     env.db.store["BotData/Greetings"] = [Greeting(greeting_id="g1", user_id="u1", username="A").to_dict()]
     env.db.store["BotData/Settings"] = {"greeting_cooldown_hours": "abc"}
@@ -740,6 +731,25 @@ def test_corrupt_setting_does_not_lose_greetings(env):
     m.add_quote("trigger a save")
     m.flush_pending_saves()
     assert [g["greeting_id"] for g in env.db.store["BotData/Greetings"]] == ["g1"]
+
+
+def test_load_stopped_early_never_saves_over_unloaded_paths(env, monkeypatch):
+    env.db.store["BotData/Quotes"] = [Quote(quote_id="q1", quote_number=1, text="t").to_dict()]
+    env.db.store["BotData/Greetings"] = [Greeting(greeting_id="g1", user_id="u1", username="A").to_dict()]
+
+    def boom(self, *a):
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(cm.ChatbotManager, "_apply_load_migrations", boom)
+    m = env.make()
+    assert m.quotes == {} and m.greetings == {}
+    assert {"BotData/Quotes", "BotData/Settings", "BotData/Greetings"} <= set(m._unreadable_paths)
+    assert "BotData/Commands" not in m._unreadable_paths
+    m.add_quote("new one")
+    m.flush_pending_saves()
+    # The stored copy was re-read and kept; the new quote went on top.
+    assert [g["greeting_id"] for g in env.db.store["BotData/Greetings"]] == ["g1"]
+    assert sorted(q["text"] for q in env.db.store["BotData/Quotes"]) == ["new one", "t"]
 
 
 # --------------------------------------------------------------------------- commands CRUD

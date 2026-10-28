@@ -531,8 +531,6 @@ def test_queue_toast_trims_to_limit(ne_env, monkeypatch):
     assert [p["id"] for p, _ in ne._pending_toasts] == ["i2", "i3"]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: _queue_toast puts errors first then keeps the LAST N, so queued "
-                                       "errors are the first thing dropped instead of being kept")
 def test_queue_toast_trim_keeps_errors(ne_env, monkeypatch):
     ensured = []
     monkeypatch.setattr(ne, "_ensure_toast_flush_timer", lambda: ensured.append(1))

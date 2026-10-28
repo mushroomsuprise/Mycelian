@@ -165,7 +165,7 @@ def fetch_spy(monkeypatch):
     ({"alert_type": "resub", "resub_month": -2}, ("fetch_resub_alert", (1,))),
     ({"alert_type": "giftsubs", "gift_qty": 0}, ("fetch_giftsub_alert", (1,))),
     ({"alert_type": "giftsub", "gift_qty": 5}, ("fetch_giftsub_alert", (5,))),
-    ({"alert_type": "donation", "donation_amount": "7.5"}, ("fetch_donation_alert", (7.5,))),
+    ({"alert_type": "donation", "donation_amount": "7.5"}, ("fetch_donation_alert", (8,))),
     ({"alert_type": "raids", "raider_count": 0}, ("fetch_raid_alert", (1,))),
     ({"alert_type": "raid", "raider_count": 9}, ("fetch_raid_alert", (9,))),
     ({"alert_type": "watch_streak", "streak_count": None}, ("fetch_streak_alert", (1,))),
@@ -184,8 +184,6 @@ def test_fetch_alert_config_for_stored_none(fetch_spy, stored):
     assert fetch_spy == []
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: replaying a donation looks up 'donations5.0' (float amount) "
-                                       "so an exact 'donations5' alert never matches")
 def test_replay_config_for_donation_matches_exact_alert(env):
     _, mgr = env
     mgr._alert_state["donations"] = {"donation1": _cfg("default"), "donations5": _cfg("five")}

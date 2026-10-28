@@ -108,7 +108,7 @@ def iter_target_files(root: Path) -> Iterable[Path]:
             yield p
 
 
-def process_file(path: Path) -> Tuple[bool, int]:
+def process_file(path: Path, write: bool = True) -> Tuple[bool, int]:
     changed = False
     changes = 0
     try:
@@ -126,7 +126,7 @@ def process_file(path: Path) -> Tuple[bool, int]:
             changes += 1
         new_lines.append(new_line)
 
-    if changed:
+    if changed and write:
         new_text = "".join(new_lines)
         path.write_text(new_text, encoding="utf-8")
     return changed, changes
@@ -175,10 +175,16 @@ def main(argv: List[str] | None = None) -> int:
         return 0 if outstanding == 0 else 1
 
     for p in targets:
-        changed, changes = process_file(p)
+        changed, changes = process_file(p, write=not args.dry_run)
         total_changes += changes
         if changed:
             modified.append(p)
+            if args.dry_run:
+                print(f"WOULD MODIFY: {p} ({changes} line(s))")
+
+    if args.dry_run:
+        print(f"Dry run: {len(targets)} files checked. Would modify {len(modified)} files. Line edits: {total_changes}")
+        return 0
 
     # Persist modified file list for follow-up tooling
     logs_dir = root / "logs"

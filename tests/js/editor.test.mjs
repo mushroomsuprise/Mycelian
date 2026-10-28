@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fire, plain, settle, xfail } from "./helpers/env.mjs";
+import { fire, plain, settle } from "./helpers/env.mjs";
 import { bootEditor, blankModel, ELEMENT_TYPES, API, control, field, prop, buttonByText, setValue, sectionByTitle } from "./helpers/editor_env.mjs";
 
 async function blank(extra = {}, opts = {}) {
@@ -481,7 +481,7 @@ test("progress bar defaults and preview max", async () => {
     const bar = { type: "progress_bar", props: { near_goal_pulse: true } };
     E.ensureProgressBarDefaults(bar);
     assert.deepEqual(plain(bar.progress_source), { counter_id: "", max_kind: "fixed", max: 100, max_counter_id: "" });
-    assert.equal(bar.props.near_goal_effect, "none", "see the xfail below");
+    assert.equal(bar.props.near_goal_effect, "pulse", "the legacy flag maps to the pulse effect");
     const bad = { type: "progress_bar", props: { near_goal_effect: "sparkle" } };
     E.ensureProgressBarDefaults(bad);
     assert.equal(bad.props.near_goal_effect, "none");
@@ -499,14 +499,15 @@ test("progress bar defaults and preview max", async () => {
     assert.equal(E.progressMaxForPreview({ type: "progress_bar", progress_source: { max: null, max_kind: "fixed" } }), 100);
 });
 
-xfail(test, "a legacy near_goal_pulse progress bar keeps its pulse",
-    "BUG: editor.js:1740-1750 ensureProgressBarDefaults copies DEFAULT_PROPS (near_goal_effect: none) before checking near_goal_pulse, so opening and saving an older template silently drops its near-goal pulse",
-    async () => {
-        const s = await blank();
-        const bar = { type: "progress_bar", props: { near_goal_pulse: true } };
-        s.E.ensureProgressBarDefaults(bar);
-        assert.equal(bar.props.near_goal_effect, "pulse");
-    });
+test("a legacy near_goal_pulse progress bar keeps its pulse", async () => {
+    const s = await blank();
+    const bar = { type: "progress_bar", props: { near_goal_pulse: true } };
+    s.E.ensureProgressBarDefaults(bar);
+    assert.equal(bar.props.near_goal_effect, "pulse");
+    const chosen = { type: "progress_bar", props: { near_goal_pulse: true, near_goal_effect: "shimmer" } };
+    s.E.ensureProgressBarDefaults(chosen);
+    assert.equal(chosen.props.near_goal_effect, "shimmer", "an explicit effect wins over the legacy flag");
+});
 
 test("counters: lookup, initial values, progressive previews and formatting", async () => {
     const s = await blank();
@@ -1038,14 +1039,15 @@ test("data display section and value animation section", async () => {
     assert.equal(h2.children.length, 0, "static text and non-text blocks have no value animation");
 });
 
-xfail(test, "counter blocks show the Value change animation settings",
-    "BUG: editor.js:3224 renderValueAnimationSection requires text_mode counter/data_display, but counter and data_display blocks never have a text_mode (data_feed_registry.migrate_legacy_element_types pops it), so their value animation (e.g. bitcounter's tick_up) can't be edited",
-    async () => {
-        const s = await bootEditor({ template: "bitcounter" });
-        const c = s.E.state.model.elements.find((e) => e.type === "counter");
-        s.select(c.id);
-        assert.ok(sectionByTitle(pane(s), "Value change animation"));
-    });
+test("counter blocks show the Value change animation settings", async () => {
+    const s = await bootEditor({ template: "bitcounter" });
+    const c = s.E.state.model.elements.find((e) => e.type === "counter");
+    s.select(c.id);
+    assert.ok(sectionByTitle(pane(s), "Value change animation"));
+    const d = await s.add("data_display");
+    s.select(d.id);
+    assert.ok(sectionByTitle(pane(s), "Value change animation"), "data display blocks too");
+});
 
 /* ------------------------------------------------------------------ data sources */
 

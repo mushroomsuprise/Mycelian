@@ -742,14 +742,17 @@ class SpotifyClient:
             return False
 
     def millis_to_timestamp(self, millis: int) -> str:
-        """Convert milliseconds to MM:SS format - same as old script"""
+        """Convert milliseconds to M:SS, or H:MM:SS for an hour or more."""
         if not millis:
             return "0:00"
 
         millis = int(millis)
         seconds = (millis // 1000) % 60
         minutes = (millis // (1000 * 60)) % 60
+        hours = millis // (1000 * 60 * 60)
 
+        if hours:
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
         if minutes == 0:
             return f"0:{seconds:02d}"
         else:

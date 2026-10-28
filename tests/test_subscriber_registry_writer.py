@@ -122,10 +122,15 @@ class SubscriberRegistryWriterTests(unittest.TestCase):
 
         registry._fetch_helix_subscribers = fake_fetch
 
+        def executor_threads():
+            # The loop's default executor names its threads asyncio_N. Counting every
+            # thread would also catch unrelated threads still winding down from other tests.
+            return {t for t in threading.enumerate() if t.name.startswith("asyncio_")}
+
         async def main():
-            before = threading.active_count()
+            before = executor_threads()
             results = await asyncio.gather(*(registry.sync_from_helix() for _ in range(20)))
-            return results, threading.active_count() - before
+            return results, len(executor_threads() - before)
 
         results, extra_threads = asyncio.run(main())
         self.assertTrue(all(results))

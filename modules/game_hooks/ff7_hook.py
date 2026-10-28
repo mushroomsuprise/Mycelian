@@ -4414,6 +4414,7 @@ class FF7Hook:
             + rec_off
         )
         cur = self._read_u8(rec_addr)
+        old_u = None
         if cur is not None and cur != 0xFF:
             if gk == "weapon":
                 old_u = _equipped_weapon_byte_to_unified(int(cur))
@@ -4421,9 +4422,15 @@ class FF7Hook:
                 old_u = _equipped_armor_byte_to_unified(int(cur))
             else:
                 old_u = _equipped_accessory_byte_to_unified(int(cur))
-            if old_u is not None:
-                self._inv_add_item(old_u, 1)
+            if old_u is not None and not self._inv_add_item(old_u, 1):
+                # No room for the old gear: put the new one back, keep the old equipped.
+                self._inv_add_item(new_item_id, 1)
+                return False, "inventory full (no room for the old gear)"
         if not self._write(rec_addr, bytes([int(gear_id) & 0xFF])):
+            # Undo the inventory swap so neither item is lost or duplicated.
+            if old_u is not None:
+                self._inv_remove_item(old_u, 1)
+            self._inv_add_item(new_item_id, 1)
             return False, "write gear failed"
         self._call_ff7_party_stat_recalc()
         return True, None
@@ -4642,12 +4649,12 @@ class FF7Hook:
         if not ok or not self._proc:
             return False, err or "Not attached"
 
-        def _tok_char() -> str:
+        def _tok_char(slot_fallback: bool = True) -> str:
             c = kwargs.get("character")
             if c is not None and str(c).strip() != "":
                 return str(c).strip()
             s = kwargs.get("slot")
-            if s is not None and str(s).strip() != "":
+            if slot_fallback and s is not None and str(s).strip() != "":
                 return str(s).strip()
             return ""
 
@@ -4785,8 +4792,9 @@ class FF7Hook:
             if se or slv is None:
                 return False, se or "slot"
             slot = max(0, min(7, int(slv)))
+            # "slot" here is the materia slot, never the character.
             return self._op_equip_materia(
-                _tok_char(),
+                _tok_char(slot_fallback=False),
                 str(kwargs.get("gear_kind", "weapon")),
                 slot,
                 str(kwargs.get("materia", "")),
@@ -5119,7 +5127,7 @@ class FF7Hook:
                 e = self._read_battle_enemy(slot)
                 if not e:
                     continue
-                if not (e.get("name") or e.get("hp") or e.get("max_hp")):
+                if e.get("name") in ("", "?", None) and not (e.get("hp") or e.get("max_hp")):
                     continue
                 enemies.append(e)
 

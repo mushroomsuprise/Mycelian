@@ -284,15 +284,26 @@ def test_fetch_failure_keeps_previous_good_cache(github, monkeypatch):
     assert up._github_release_cache == (0.0, cached)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: asyncio.CancelledError is a BaseException, so the "
-                                       "`except Exception` cancel branch is dead and the cached fallback is "
-                                       "never returned on cancellation")
 def test_fetch_cancelled_returns_cached_fallback(github, monkeypatch):
     cached = {"latest_version": "1.5", "commit_sha": SHA}
     monkeypatch.setattr(up, "_github_release_cache", (0.0, cached))
     monkeypatch.setattr(up.time, "monotonic", lambda: 10_000.0)
     github.routes[LATEST_URL] = asyncio.CancelledError()
     assert fetch() == cached
+
+
+def test_fetch_real_task_cancel_propagates(github, monkeypatch):
+    cached = {"latest_version": "1.5", "commit_sha": SHA}
+    monkeypatch.setattr(up, "_github_release_cache", (0.0, cached))
+    monkeypatch.setattr(up.time, "monotonic", lambda: 10_000.0)
+    github.routes[LATEST_URL] = asyncio.CancelledError()
+
+    async def run():
+        asyncio.current_task().cancel()  # the task itself is being cancelled (e.g. shutdown)
+        return await up.fetch_latest_update_info_from_github()
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run())
 
 
 # --------------------------------------------------------------------------- check_for_updates

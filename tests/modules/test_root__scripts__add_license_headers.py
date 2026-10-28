@@ -186,10 +186,6 @@ def test_process_file_other_copyright_not_matching_pattern(tmp_path):
     assert path.read_text(encoding="utf-8") == text
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: process_file reports an already-current 'other' copyright as updated_other and rewrites the file",
-)
 def test_process_file_other_copyright_already_current_is_not_reported(tmp_path):
     text = '"""Module.\r\n\r\nCopyright (c) 2024-2026 Mycelian\r\n"""\r\n'
     path = _file(tmp_path, "a.py", text)

@@ -192,11 +192,6 @@ def test_update_version_error_returns_false(version_env, root, capsys):
     assert "Traceback" in captured.err
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: update_version_across_files imports re only inside the pyproject.toml branch; "
-    "without pyproject.toml the other files raise UnboundLocalError and are not stamped",
-)
 def test_update_version_without_pyproject_still_updates_other_files(version_env, root):
     (root / "pyproject.toml").unlink()
     assert bld.update_version_across_files() is True

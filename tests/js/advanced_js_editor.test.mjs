@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeWindow, loadScript, fire, xfail } from "./helpers/env.mjs";
+import { makeWindow, loadScript, fire } from "./helpers/env.mjs";
 import { makeStudioWindow, fireDomReady } from "./helpers/studio.mjs";
 
 function setup(text = "") {
@@ -226,8 +226,7 @@ test("typing a closer or quote over the same character just steps over it", () =
     assert.deepEqual(state(s), ["f()", 3, 3]);
 });
 
-xfail(test, "typing an opener before the same opener inserts a new pair",
-    "BUG: advanced_js_editor.js:246 overtype also applies to openers ( [ {, so typing '(' just before an existing '(' moves the caret instead of inserting",
+test("typing an opener before the same opener inserts a new pair",
     () => {
         const s = setup("()");
         s.E.open();
@@ -298,8 +297,7 @@ test("find next/prev select matches and wrap around", () => {
     assert.equal(s.J.findFrom, 5);
 });
 
-xfail(test, "find previous from the first match wraps to the last one",
-    "BUG: advanced_js_editor.js:292 lastIndexOf(q, max(0, start - 1)) still finds the match at index 0, so Prev gets stuck on a match at the start of the script",
+test("find previous from the first match wraps to the last one",
     () => {
         const s = findSetup("ab ab ab", "ab");
         caret(s, 0, 2);

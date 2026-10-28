@@ -50,6 +50,9 @@ class SpotifyTab:
     def __init__(self) -> None:
         self.dirty: bool = False
         self.buffer: Optional[dataobjects.SpotifyData] = None
+        # Fields the user edited; save() writes only these so it never overwrites the
+        # OAuth tokens/status the Spotify client wrote to state after the buffer was loaded.
+        self._changed_fields: set = set()
         self.ui_elements: Dict[str, Any] = {}
         self._creds: Dict[str, str] = {}
         self._saved_creds: Dict[str, str] = {}
@@ -296,11 +299,13 @@ class SpotifyTab:
         )
         self._creds = dict(api_credentials_manager.get_spotify_credentials())
         self._saved_creds = dict(self._creds)
+        self._changed_fields = set()
         self.dirty = False
 
     def _set(self, field: str, value) -> None:
         if getattr(self.buffer, field) != value:
             setattr(self.buffer, field, value)
+            self._changed_fields.add(field)
             self.dirty = True
 
     def _set_cred(self, field: str, value: str) -> None:
@@ -328,10 +333,11 @@ class SpotifyTab:
         if not self.buffer:
             return
         self._persist_credentials_to_state()
-        for field in self.buffer.__dataclass_fields__.keys():
+        for field in sorted(self._changed_fields):
             state_manager.update_spotify_field(field, getattr(self.buffer, field))
         if state_manager.save_changes():
             notify("", type="success", source="spotify", title="Spotify settings saved")
+            self._changed_fields = set()
             self.dirty = False
         # A failed save_changes() was already reported once (changes stay pending).
 

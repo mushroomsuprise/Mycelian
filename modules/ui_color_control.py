@@ -188,22 +188,24 @@ def is_color_transparent(value: Any) -> bool:
     if raw.lower() == "transparent":
         return True
     if is_gradient(raw):
-        for token in _COLOUR_TOKEN_RE.findall(raw):
-            low = token.lower()
-            if low == "transparent":
-                return True
-            if low.startswith("hsl"):
-                parts = re.split(r"[,/\s]+", low[low.index("(") + 1 : -1].strip())
-                try:
-                    if len(parts) >= 4 and _alpha(parts[3]) < 1:
-                        return True
-                except ValueError:
-                    continue
-                continue
-            if parse_color_string(token).a < 1:
-                return True
-        return False
+        return any(_colour_token_transparent(token) for token in _COLOUR_TOKEN_RE.findall(raw))
+    if re.match(r"^hsla?\([^()]*\)$", raw, re.I):
+        return _colour_token_transparent(raw)
     return parse_color_string(raw).a < 1.0
+
+
+def _colour_token_transparent(token: str) -> bool:
+    """True when one colour token (a gradient stop or a plain hsl/hsla colour) has alpha below 1."""
+    low = token.lower()
+    if low == "transparent":
+        return True
+    if low.startswith("hsl"):
+        parts = re.split(r"[,/\s]+", low[low.index("(") + 1 : -1].strip())
+        try:
+            return len(parts) >= 4 and _alpha(parts[3]) < 1
+        except ValueError:
+            return False
+    return parse_color_string(token).a < 1
 
 
 def swatch_background(value: Any) -> str:

@@ -189,9 +189,9 @@ class DiscordTab:
         try:
             self._persist_credentials_to_state()
             if self.buffer is not None:
-                for field in DiscordData.__dataclass_fields__:
-                    if field == "bot_token":
-                        continue
+                # Only the fields this tab edits: connection_status / bot_* / application_id
+                # are written by the bot service and the buffer copy may be stale.
+                for field in ("go_live_enabled", "go_live_message", "go_live_channels"):
                     state_manager.update_discord_field(
                         field, getattr(self.buffer, field)
                     )
