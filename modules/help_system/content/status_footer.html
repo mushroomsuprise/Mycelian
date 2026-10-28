@@ -9,19 +9,21 @@
 
 <h2>What the footer looks like</h2>
 
-<p>Each badge has the service icon, its name, a colored dot and a short status word. Switch between the two display modes below.</p>
+<p>You pick how the badges look in <span class="hx-path"><span>Settings</span><span>App Settings</span><span>Status bar</span></span>. There are four full looks and four minimal looks. Every look uses the same colors and the same click and hover behavior.</p>
 
 <figure class="hx-figure">
   <div class="hm" data-tabs>
     <div class="hm-subtabs">
-      <span class="hm-subtab is-active" data-tab="full">Full badges</span>
-      <span class="hm-subtab" data-tab="min">Minimal badges</span>
+      <span class="hm-subtab is-active" data-tab="stacked">Name over status</span>
+      <span class="hm-subtab" data-tab="classic">Classic</span>
+      <span class="hm-subtab" data-tab="tiles">Tiles with a status dot</span>
+      <span class="hm-subtab" data-tab="rings">Colored rings</span>
     </div>
     <div class="hm-frame">
-      <div data-panel="full">
-        <div class="hm-sf">
+      <div data-panel="stacked">
+        <div class="hm-sf hm-sf-stacked">
           <span class="hm-sf-item hm-sf-success" data-tip="Online"><span class="hm-sf-icon">{{brand:internet}}</span><span class="hm-sf-name">Internet</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Online</span></span>
-          <span class="hm-sf-item hm-sf-success" data-tip="Running"><span class="hm-sf-name">Overlay Server</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Running</span></span>
+          <span class="hm-sf-item hm-sf-success" data-tip="Running"><span class="hm-sf-icon">{{brand:webengine}}</span><span class="hm-sf-name">Overlay Server</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Running</span></span>
           <span class="hm-sf-item hm-sf-success" data-tip="Connected"><span class="hm-sf-icon">{{brand:twitch}}</span><span class="hm-sf-name">Twitch</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connected</span></span>
           <span class="hm-sf-item hm-sf-muted" data-tip="Disconnected"><span class="hm-sf-icon">{{brand:obs}}</span><span class="hm-sf-name">OBS</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Disconnected</span></span>
           <span class="hm-sf-item hm-sf-warning" data-tip="Offline"><span class="hm-sf-icon">{{brand:psn}}</span><span class="hm-sf-name">PSN</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Offline</span></span>
@@ -29,9 +31,32 @@
           <span class="hm-sf-item hm-sf-info" data-tip="Connecting"><span class="hm-sf-icon">{{brand:streamelements}}</span><span class="hm-sf-name">StreamElements</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connecting</span></span>
         </div>
       </div>
-      <div data-panel="min">
+      <div data-panel="classic">
+        <div class="hm-sf ">
+          <span class="hm-sf-item hm-sf-success" data-tip="Online"><span class="hm-sf-icon">{{brand:internet}}</span><span class="hm-sf-name">Internet</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Online</span></span>
+          <span class="hm-sf-item hm-sf-success" data-tip="Running"><span class="hm-sf-icon">{{brand:webengine}}</span><span class="hm-sf-name">Overlay Server</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Running</span></span>
+          <span class="hm-sf-item hm-sf-success" data-tip="Connected"><span class="hm-sf-icon">{{brand:twitch}}</span><span class="hm-sf-name">Twitch</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connected</span></span>
+          <span class="hm-sf-item hm-sf-muted" data-tip="Disconnected"><span class="hm-sf-icon">{{brand:obs}}</span><span class="hm-sf-name">OBS</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Disconnected</span></span>
+          <span class="hm-sf-item hm-sf-warning" data-tip="Offline"><span class="hm-sf-icon">{{brand:psn}}</span><span class="hm-sf-name">PSN</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Offline</span></span>
+          <span class="hm-sf-item hm-sf-error" data-tip="Expired"><span class="hm-sf-icon">{{brand:spotify}}</span><span class="hm-sf-name">Spotify</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Expired</span></span>
+          <span class="hm-sf-item hm-sf-info" data-tip="Connecting"><span class="hm-sf-icon">{{brand:streamelements}}</span><span class="hm-sf-name">StreamElements</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connecting</span></span>
+        </div>
+      </div>
+      <div data-panel="tiles">
+        <div class="hm-sf hm-sf-minimal hm-sf-tiles">
+          <span class="hm-sf-item hm-sf-success" data-tip="Online"><span class="hm-sf-icon">{{brand:internet}}</span><span class="hm-sf-name">Internet</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Online</span></span>
+          <span class="hm-sf-item hm-sf-success" data-tip="Running"><span class="hm-sf-icon">{{brand:webengine}}</span><span class="hm-sf-name">Overlay Server</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Running</span></span>
+          <span class="hm-sf-item hm-sf-success" data-tip="Connected"><span class="hm-sf-icon">{{brand:twitch}}</span><span class="hm-sf-name">Twitch</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connected</span></span>
+          <span class="hm-sf-item hm-sf-muted" data-tip="Disconnected"><span class="hm-sf-icon">{{brand:obs}}</span><span class="hm-sf-name">OBS</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Disconnected</span></span>
+          <span class="hm-sf-item hm-sf-warning" data-tip="Offline"><span class="hm-sf-icon">{{brand:psn}}</span><span class="hm-sf-name">PSN</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Offline</span></span>
+          <span class="hm-sf-item hm-sf-error" data-tip="Expired"><span class="hm-sf-icon">{{brand:spotify}}</span><span class="hm-sf-name">Spotify</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Expired</span></span>
+          <span class="hm-sf-item hm-sf-info" data-tip="Connecting"><span class="hm-sf-icon">{{brand:streamelements}}</span><span class="hm-sf-name">StreamElements</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connecting</span></span>
+        </div>
+      </div>
+      <div data-panel="rings">
         <div class="hm-sf hm-sf-minimal">
           <span class="hm-sf-item hm-sf-success" data-tip="Online"><span class="hm-sf-icon">{{brand:internet}}</span><span class="hm-sf-name">Internet</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Online</span></span>
+          <span class="hm-sf-item hm-sf-success" data-tip="Running"><span class="hm-sf-icon">{{brand:webengine}}</span><span class="hm-sf-name">Overlay Server</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Running</span></span>
           <span class="hm-sf-item hm-sf-success" data-tip="Connected"><span class="hm-sf-icon">{{brand:twitch}}</span><span class="hm-sf-name">Twitch</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Connected</span></span>
           <span class="hm-sf-item hm-sf-muted" data-tip="Disconnected"><span class="hm-sf-icon">{{brand:obs}}</span><span class="hm-sf-name">OBS</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Disconnected</span></span>
           <span class="hm-sf-item hm-sf-warning" data-tip="Offline"><span class="hm-sf-icon">{{brand:psn}}</span><span class="hm-sf-name">PSN</span><span class="hm-sf-dot"></span><span class="hm-sf-badge">Offline</span></span>
@@ -41,15 +66,34 @@
       </div>
     </div>
   </div>
-  <figcaption>Click the two tabs to compare the modes. Hover a badge to see its status word, as in the app.</figcaption>
+  <figcaption>Two full looks and two minimal looks. Hover a badge to see its status word, as in the app.</figcaption>
 </figure>
 
-<ul>
-  <li><strong>Full badges</strong> (the default) show the icon, name, dot and status word.</li>
-  <li><strong>Minimal badges</strong> show only the service icon with a colored ring. The ring uses the same color as the full badge. Hover the icon to read the status word; in this mode that hover text is the only label.</li>
-</ul>
+<h3>Full badges</h3>
 
-<div class="hx-callout hx-note"><p><strong>Overlay Server</strong> has no icon, so it does not show up in minimal mode. Switch back to full badges to see it.</p></div>
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Badge style</th><th>What it shows</th></tr></thead>
+<tbody>
+<tr><td><strong>Name over status</strong> (default)</td><td>The icon in a small tile with a colored dot on its corner. The name sits above the status word. A badge with a problem gets a tinted background, and one that is not connected is faded.</td></tr>
+<tr><td><strong>Soft pills</strong></td><td>Each service in a rounded pill with its name and a dot. Working services show no status word; problems tint the pill and say what is wrong.</td></tr>
+<tr><td><strong>One segmented bar</strong></td><td>All services in one bar, split into sections. Like Soft pills, only problems show a status word.</td></tr>
+<tr><td><strong>Classic</strong></td><td>The original look: icon, name, dot and an uppercase status pill on every badge.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Minimal badges</h3>
+
+<p>Turn on <strong>Minimal badges</strong> to hide the names and save space. Hover an icon to read its name and status.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Minimal badge style</th><th>What it shows</th></tr></thead>
+<tbody>
+<tr><td><strong>Tiles with a status dot</strong> (default)</td><td>Each icon in a small tile with a colored dot on its corner. Tiles with a problem are tinted; services that are not connected are grayed out.</td></tr>
+<tr><td><strong>Problems spelled out</strong></td><td>All icons in one capsule. Services with a problem, or still connecting, move to the front and show their status word.</td></tr>
+<tr><td><strong>Summary and status bars</strong></td><td>A summary on the left (<em>All connected</em>, <em>Connecting</em> or <em>N need attention</em>) and a thin colored bar under each icon.</td></tr>
+<tr><td><strong>Colored rings</strong></td><td>The original minimal look: each icon with a ring in its status color.</td></tr>
+</tbody>
+</table></div>
 
 <h2>Which services appear</h2>
 
@@ -59,7 +103,7 @@
 <thead><tr><th>Badge</th><th>Shown when</th><th>Click opens</th></tr></thead>
 <tbody>
 <tr><td>{{brand:internet}} Internet</td><td>Always</td><td>Nothing (not clickable)</td></tr>
-<tr><td>Overlay Server</td><td>Always</td><td><span class="hx-path"><span>Settings</span><span>App Settings</span></span></td></tr>
+<tr><td>{{brand:webengine}} Overlay Server</td><td>Always</td><td><span class="hx-path"><span>Settings</span><span>App Settings</span></span></td></tr>
 <tr><td>{{brand:twitch}} Twitch</td><td>Always</td><td><span class="hx-path"><span>Settings</span><span>Twitch</span></span></td></tr>
 <tr><td>{{brand:obs}} OBS</td><td><strong>Enable OBS integration</strong> is on (it is on by default)</td><td><span class="hx-path"><span>Settings</span><span>OBS</span></span></td></tr>
 <tr><td>{{brand:psn}} PSN</td><td>An NPSSO code is saved</td><td><span class="hx-path"><span>Settings</span><span>PSN</span></span></td></tr>
@@ -75,7 +119,7 @@
 
 <h3>Progress badges</h3>
 
-<p>Two extra badges appear only while work is running, and disappear when it ends. They keep their text label in minimal mode, and they appear even when the footer is turned off.</p>
+<p>Two extra badges appear only while work is running, and disappear when it ends. They keep the Classic look with a text label whatever style you pick, and they appear even when the footer is turned off.</p>
 
 <figure class="hx-figure hx-static">
   <div class="hm">
@@ -100,18 +144,22 @@
       <div class="hm-row"><span class="hx-mi">signal_cellular_alt</span><span class="hm-panel-title">Status bar</span></div>
       <div class="hm-col hm-tight">
         <div class="hm-row hm-between"><span class="hm-row"><span class="hm-sm">Connection status bar</span><span class="hx-mi hm-muted">help_outline</span></span><span class="hm-row"><span class="hm-switch is-on"><i></i></span><span class="hm-marker" data-n="1"></span></span></div>
-        <div class="hm-row hm-between"><span class="hm-row"><span class="hm-sm">Minimal badges</span><span class="hx-mi hm-muted">help_outline</span></span><span class="hm-row"><span class="hm-switch"><i></i></span><span class="hm-marker" data-n="2"></span></span></div>
+        <div class="hm-row hm-between"><span class="hm-sm">Badge style</span><span class="hm-row"><div class="hm-field hm-select hm-nolabel"><span class="hm-value">Name over status</span></div><span class="hm-marker" data-n="2"></span></span></div>
+        <div class="hm-row hm-between"><span class="hm-row"><span class="hm-sm">Minimal badges</span><span class="hx-mi hm-muted">help_outline</span></span><span class="hm-row"><span class="hm-switch"><i></i></span><span class="hm-marker" data-n="3"></span></span></div>
+        <div class="hm-row hm-between"><span class="hm-sm">Minimal badge style</span><span class="hm-row"><div class="hm-field hm-select hm-nolabel is-disabled"><span class="hm-value">Tiles with a status dot</span></div><span class="hm-marker" data-n="4"></span></span></div>
       </div>
     </div>
-    <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span><span class="hm-marker" data-n="3"></span></div>
+    <div class="hm-actions"><span class="hm-btn hm-outline">Discard</span><span class="hm-btn">Save</span><span class="hm-marker" data-n="5"></span></div>
   </div>
   <figcaption>Part of Settings → App Settings. The switches here only flip the picture.</figcaption>
 </figure>
 
 <ol class="hx-annotations">
   <li data-n="1"><strong>Connection status bar</strong> shows or hides the whole bar. The <strong>?</strong> beside it opens this page.</li>
-  <li data-n="2"><strong>Minimal badges</strong> switches to icon-and-ring mode. Hover its <strong>?</strong> for a short reminder.</li>
-  <li data-n="3">Changes take effect when you click <strong>Save</strong>.</li>
+  <li data-n="2"><strong>Badge style</strong> picks the full look. It is dimmed while Minimal badges is on.</li>
+  <li data-n="3"><strong>Minimal badges</strong> hides the names and shows the icons only. Hover its <strong>?</strong> for a short reminder.</li>
+  <li data-n="4"><strong>Minimal badge style</strong> picks the minimal look. It is dimmed until Minimal badges is on.</li>
+  <li data-n="5">Changes take effect when you click <strong>Save</strong>.</li>
 </ol>
 
 <h2>Colors</h2>

@@ -17,7 +17,7 @@ import time
 import uuid
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .connection_status_tracker import service_configured as _service_configured
 from .service_alerts import ServiceAlertTracker
@@ -888,31 +888,74 @@ def _status_footer_enabled() -> bool:
         return True
 
 
-def _status_footer_minimal() -> bool:
+_FOOTER_TIERS = ("success", "warning", "error", "info", "muted")
+
+# Status bar badge looks, chosen in App Settings (value -> label).
+FOOTER_FULL_STYLES: Dict[str, str] = {
+    "stacked": "Name over status",
+    "pills": "Soft pills",
+    "bar": "One segmented bar",
+    "classic": "Classic",
+}
+FOOTER_MINIMAL_STYLES: Dict[str, str] = {
+    "tiles": "Tiles with a status dot",
+    "capsule": "Problems spelled out",
+    "summary": "Summary and status bars",
+    "rings": "Colored rings",
+}
+
+
+def footer_style_classes(minimal: bool, full_style: str, minimal_style: str) -> str:
+    """CSS classes for the status bar container (also used by the Theme tab preview)."""
+    if minimal:
+        style = minimal_style if minimal_style in FOOTER_MINIMAL_STYLES else "tiles"
+        return f"service-status-footer--minimal service-status-footer--min-{style}"
+    style = full_style if full_style in FOOTER_FULL_STYLES else "stacked"
+    return f"service-status-footer--full-{style}"
+
+
+def current_footer_style_classes() -> str:
     try:
         from .dataobjects import state_manager
 
         s = state_manager.get_app_settings()
-        if s is None:
-            return False
-        return bool(getattr(s, "status_footer_minimal", False))
     except Exception:
-        return False
+        s = None
+    return footer_style_classes(
+        bool(getattr(s, "status_footer_minimal", False)),
+        str(getattr(s, "status_footer_full_style", "stacked") or "stacked"),
+        str(getattr(s, "status_footer_minimal_style", "tiles") or "tiles"),
+    )
 
 
-_FOOTER_TIERS = ("success", "warning", "error", "info", "muted")
+_ALL_FOOTER_STYLE_CLASSES = ["service-status-footer--minimal"] + [
+    f"service-status-footer--min-{k}" for k in FOOTER_MINIMAL_STYLES
+] + [f"service-status-footer--full-{k}" for k in FOOTER_FULL_STYLES]
 
 
 def _apply_footer_minimal_class() -> None:
     if _footer_container is None:
         return
     try:
-        if _status_footer_minimal():
-            _footer_container.classes(add="service-status-footer--minimal")
-        else:
-            _footer_container.classes(remove="service-status-footer--minimal")
+        wanted = current_footer_style_classes()
+        if getattr(_footer_container, "_mycelian_style", None) == wanted:
+            return
+        _footer_container.classes(remove=" ".join(_ALL_FOOTER_STYLE_CLASSES))
+        _footer_container.classes(add=wanted)
+        _footer_container._mycelian_style = wanted
     except Exception:
         pass
+
+
+def footer_summary(tiers: List[str]) -> Tuple[str, str]:
+    """(tier, text) for the "Summary and status bars" chip."""
+    errors = sum(1 for t in tiers if t == "error")
+    problems = errors + sum(1 for t in tiers if t == "warning")
+    if problems:
+        return ("error" if errors else "warning"), f"{problems} need{'s' if problems == 1 else ''} attention"
+    if any(t == "info" for t in tiers):
+        return "info", "Connecting"
+    return "success", "All connected"
 
 
 def _set_footer_item_tier(container, tier: str) -> None:
@@ -1204,10 +1247,14 @@ def create_service_status_footer() -> None:
         ) as footer:
             _footer_container = footer
             with ui.element("div").classes("service-status-footer-inner w-full"):
+                # Only shown by the "Summary and status bars" minimal style.
+                _footer_summary_refs["chip"] = ui.html(
+                    '<span class="service-status-summary-icon"></span><span>All connected</span>', sanitize=False
+                ).classes("service-status-summary service-status-tier-success")
                 for key in _SERVICE_KEYS:
                     svg = SERVICE_BRAND_SVG.get(key, "")
                     with ui.element("div").classes(
-                        "service-status-item service-status-item--hidden "
+                        "service-status-item service-status-item--svc service-status-item--hidden "
                         "service-status-tier-info cursor-pointer select-none"
                     ) as item:
                         item.on(
@@ -1574,6 +1621,7 @@ def refresh_service_status_footer() -> None:
         return
 
     entries = {e.key: e for e in iter_service_footer_entries()}
+    _refresh_footer_summary([e.tier for e in entries.values()])
     for key in _SERVICE_KEYS:
         refs = _footer_item_refs.get(key)
         if not refs:
@@ -1611,6 +1659,25 @@ def refresh_service_status_footer() -> None:
 
     refresh_alert_trim_footer()
     refresh_template_copy_footer()
+
+
+_footer_summary_refs: Dict[str, Any] = {}
+
+
+def _refresh_footer_summary(tiers: List[str]) -> None:
+    chip = _footer_summary_refs.get("chip")
+    if chip is None:
+        return
+    tier, text = footer_summary(tiers)
+    icon = {"success": "check_circle", "info": "sync"}.get(tier, "error")
+    content = f'<span class="material-icons service-status-summary-icon">{icon}</span><span>{text}</span>'
+    try:
+        if _footer_summary_refs.get("last") != content:
+            _footer_summary_refs["last"] = content
+            chip.set_content(content)
+            _set_footer_item_tier(chip, tier)
+    except Exception:
+        pass
 
 
 def poll_service_status_changes() -> None:

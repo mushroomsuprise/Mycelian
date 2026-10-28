@@ -14,7 +14,7 @@ from ...ui_buttons import outline_button, primary_button
 from ...ui_font import apply_app_font, apply_ui_scale
 from ...ui_form_controls import form_number, form_select
 from .app_settings_styles import APP_SETTINGS_CSS
-from ...notification_engine import notify, refresh_service_status_footer
+from ...notification_engine import FOOTER_FULL_STYLES, FOOTER_MINIMAL_STYLES, notify, refresh_service_status_footer
 from ...notify_settings import DEFAULT_DURATIONS, LEVEL_LABELS, LEVELS, MAX_DURATION_SECONDS, POSITIONS, SOURCES, NotifyPrefs
 from ...help_system.contextual_help import help_button
 from ...streamdeck_plugin_utils import (
@@ -295,8 +295,19 @@ class AppSettingsTab:
                 help_topic="status_footer",
             ):
                 self._switch("status_footer_enabled")
-            with self._row("Minimal badges", "Only icons with a colored ring; hover a badge for its status.", key="status_footer_minimal"):
+            with self._row("Badge style", "How each service looks with its name and status showing.", key="status_footer_full_style"):
+                self._style_select("status_footer_full_style", FOOTER_FULL_STYLES, "stacked", "Full badge style")
+            with self._row("Minimal badges", "Only icons; hover a badge for its status.", key="status_footer_minimal"):
                 self._switch("status_footer_minimal")
+            with self._row("Minimal badge style", "How the icons show each service's status.", key="status_footer_minimal_style"):
+                self._style_select("status_footer_minimal_style", FOOTER_MINIMAL_STYLES, "tiles", "Minimal badge style")
+
+    def _style_select(self, field: str, options: Dict[str, str], default: str, tooltip: str) -> Any:
+        value = getattr(self.buffer, field, default)
+        el = form_select(tooltip=tooltip, options=dict(options), value=value if value in options else default, classes="w-56")
+        el.on_value_change(lambda e, f=field: self._set(f, e.value))
+        self.ui_elements[field] = el
+        return el
 
     # ----- notifications panel -----
     def _render_notify_panel(self) -> None:
@@ -653,6 +664,8 @@ class AppSettingsTab:
         mode = b.alert_storage_trim_mode or "both"
         dim = {
             "status_footer_minimal": not b.status_footer_enabled,
+            "status_footer_full_style": not b.status_footer_enabled or bool(b.status_footer_minimal),
+            "status_footer_minimal_style": not b.status_footer_enabled or not b.status_footer_minimal,
             "run_at_startup": not getattr(self, "_autostart_ok", True),
             "update_check_interval_minutes": not b.auto_update,
             "alert_storage_trim_mode": not trim_on,

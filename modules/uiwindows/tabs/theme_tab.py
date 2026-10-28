@@ -472,6 +472,8 @@ class ThemeTab:
             primary_button("Apply", self.save, icon="check").props("dense").classes("px-4")
 
     def _build_stage(self) -> None:
+        from ...notification_engine import current_footer_style_classes
+
         minimal = False
         try:
             minimal = bool(getattr(state_manager.get_app_settings(), "status_footer_minimal", False))
@@ -479,7 +481,7 @@ class ThemeTab:
             minimal = False
         with ui.element("div").classes("thm-stage"):
             with ui.element("div").classes("thm-mock theme-preview-container") as mock:
-                ui.html(build_mock_html(minimal), sanitize=False).classes("contents")
+                ui.html(build_mock_html(minimal, current_footer_style_classes()), sanitize=False).classes("contents")
             self.preview_container = mock
 
     def _build_side(self) -> None:

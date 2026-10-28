@@ -9,6 +9,7 @@ previewed theme only swaps those variables; the markup is built once.
 from __future__ import annotations
 
 import html
+from typing import Optional
 
 from ..service_brand_icons import SERVICE_BRAND_SVG
 
@@ -162,29 +163,42 @@ def _controls_card() -> str:
     )
 
 
-def _footer(minimal: bool) -> str:
-    from ...notification_engine import _SERVICE_LABELS, footer_status_display, footer_status_tier
+def _footer(minimal: bool, style_classes: Optional[str] = None) -> str:
+    from ...notification_engine import (
+        _SERVICE_LABELS,
+        footer_status_display,
+        footer_status_tier,
+        footer_style_classes,
+        footer_summary,
+    )
 
     items = []
+    tiers = [footer_status_tier(key, raw) for key, raw in _FOOTER_SAMPLES]
+    summary_tier, summary_text = footer_summary(tiers)
+    summary_icon = {"success": "check_circle", "info": "sync"}.get(summary_tier, "error")
+    items.append(
+        f'<div class="service-status-summary service-status-tier-{summary_tier}">'
+        f'<span class="material-icons service-status-summary-icon">{summary_icon}</span><span>{html.escape(summary_text)}</span></div>'
+    )
     for key, raw in _FOOTER_SAMPLES:
         tier = footer_status_tier(key, raw)
         label = html.escape(footer_status_display(key, raw))
         svg = SERVICE_BRAND_SVG.get(key, "")
         brand = f'<span class="service-status-brand-icon">{svg}</span>' if svg else ""
         items.append(
-            f'<div class="service-status-item service-status-tier-{tier}">{brand}'
+            f'<div class="service-status-item service-status-item--svc service-status-tier-{tier}">{brand}'
             f'<span class="service-status-name">{html.escape(_SERVICE_LABELS.get(key, key))}</span>'
             f'<div class="service-status-status-cluster"><span class="service-status-dot {tier}"></span>'
             f'<div class="service-status-badge {tier}"><span class="service-status-badge-label">{label}</span></div></div></div>'
         )
-    minimal_cls = " service-status-footer--minimal" if minimal else ""
+    classes = style_classes or footer_style_classes(minimal, "stacked", "tiles")
     return (
-        f'<div class="service-status-footer w-full{minimal_cls}">'
+        f'<div class="service-status-footer w-full {classes}">'
         f'<div class="service-status-footer-inner w-full">{"".join(items)}</div></div>'
     )
 
 
-def build_mock_html(minimal_footer: bool = False) -> str:
+def build_mock_html(minimal_footer: bool = False, footer_classes: Optional[str] = None) -> str:
     """The mock app: tab bars, a Settings page with sample cards, and the status footer."""
     return (
         '<div class="thm-m">'
@@ -195,6 +209,6 @@ def build_mock_html(minimal_footer: bool = False) -> str:
         + f'<div class="thm-m-col">{_settings_card()}{_feed_card()}</div>'
         + f'<div class="thm-m-col">{_stats()}{_toasts_card()}{_controls_card()}</div>'
         + "</div></div></div>"
-        + _footer(minimal_footer)
+        + _footer(minimal_footer, footer_classes)
         + "</div>"
     )

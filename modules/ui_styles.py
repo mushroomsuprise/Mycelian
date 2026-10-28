@@ -2073,50 +2073,207 @@ body:not(.body--dark) .notification-tray-badge {
     letter-spacing: 0.3px !important;
 }
 
-/* Minimal footer: service icon plus a status-colored ring.
-   The ring color is a custom property on the item so it wins over the
-   more specific icon rule below (that rule used to keep every ring gray). */
-.service-status-footer--minimal .service-status-tier-success {
-    --service-status-ring: var(--color-success);
+/* ---- Status bar badge looks (App Settings → Status bar) ------------------
+   Full: stacked (default) | pills | bar | classic (the rules above).
+   Minimal: tiles (default) | capsule | summary | rings.
+   Only service items (--svc) change; Alert trim and Copying keep the classic look. */
+
+.service-status-summary { display: none; }
+
+[class*="service-status-footer--full-"]:not(.service-status-footer--full-classic) .service-status-item--svc,
+.service-status-footer--minimal .service-status-item--svc {
+    transform: none;
 }
 
-.service-status-footer--minimal .service-status-tier-warning {
-    --service-status-ring: var(--color-warning);
-}
+/* Status colors as one custom property per item. */
+.service-status-item--svc.service-status-tier-success, .service-status-summary.service-status-tier-success { --ss-tier: var(--color-success); }
+.service-status-item--svc.service-status-tier-warning, .service-status-summary.service-status-tier-warning { --ss-tier: var(--color-warning); }
+.service-status-item--svc.service-status-tier-error, .service-status-summary.service-status-tier-error { --ss-tier: var(--color-error); }
+.service-status-item--svc.service-status-tier-info, .service-status-summary.service-status-tier-info { --ss-tier: var(--color-info); }
+.service-status-item--svc.service-status-tier-muted { --ss-tier: var(--color-text-muted); }
 
-.service-status-footer--minimal .service-status-tier-error {
-    --service-status-ring: var(--color-error);
+/* Full · Name over status: icon tile with a status dot, name above the status. */
+.service-status-footer--full-stacked { gap: 4px 4px; }
+.service-status-footer--full-stacked .service-status-item--svc {
+    display: inline-grid;
+    grid-template-columns: 22px auto;
+    grid-template-rows: auto auto;
+    column-gap: 7px;
+    align-items: center;
+    height: 30px;
+    padding: 0 9px 0 5px;
+    border-radius: 9px;
 }
+.service-status-footer--full-stacked .service-status-item--svc .service-status-brand-icon {
+    grid-column: 1; grid-row: 1 / span 2;
+    width: 22px; height: 22px; border-radius: 7px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    box-sizing: border-box;
+}
+.service-status-footer--full-stacked .service-status-item--svc .service-status-brand-icon svg { width: 13px; height: 13px; }
+.service-status-footer--full-stacked .service-status-item--svc .service-status-status-cluster { display: contents; }
+.service-status-footer--full-stacked .service-status-item--svc .service-status-name {
+    grid-column: 2; grid-row: 1; align-self: end;
+    font-size: 11.5px !important; height: auto !important; line-height: 1.15 !important; font-weight: 650 !important;
+}
+.service-status-footer--full-stacked .service-status-item--svc .service-status-dot {
+    grid-column: 1; grid-row: 1 / span 2; align-self: end; justify-self: end;
+    width: 7px; height: 7px; margin: 0 -2px -2px 0;
+    background: var(--ss-tier, var(--color-text-muted));
+    box-shadow: 0 0 0 2px var(--color-bg-elevated);
+}
+.service-status-footer--full-stacked .service-status-item--svc .service-status-badge {
+    grid-column: 2; grid-row: 2; align-self: start; justify-content: flex-start;
+    padding: 0; border: 0; background: none; border-radius: 0;
+    color: var(--color-text-muted);
+}
+.service-status-footer--full-stacked .service-status-item--svc .service-status-badge-label {
+    font-size: 10px !important; height: auto !important; line-height: 1.2 !important; font-weight: 550 !important;
+    text-transform: none !important; letter-spacing: 0 !important;
+}
+.service-status-footer--full-stacked .service-status-item--svc:is(.service-status-tier-warning, .service-status-tier-error, .service-status-tier-info) .service-status-badge {
+    color: var(--ss-tier);
+}
+.service-status-footer--full-stacked .service-status-item--svc:is(.service-status-tier-warning, .service-status-tier-error) {
+    background: color-mix(in srgb, var(--ss-tier) 11%, transparent);
+}
+.service-status-footer--full-stacked .service-status-item--svc.service-status-tier-muted { opacity: .6; }
 
-.service-status-footer--minimal .service-status-tier-info {
-    --service-status-ring: var(--color-info);
+/* Full · Soft pills: healthy = name + dot; problems tint the pill and say what's wrong. */
+.service-status-footer--full-pills { gap: 6px; }
+.service-status-footer--full-pills .service-status-item--svc {
+    height: 24px; padding: 0 9px 0 6px; border-radius: 999px;
+    background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle);
 }
+.service-status-footer--full-pills .service-status-item--svc:hover { border-color: var(--color-border-default); }
+.service-status-footer--full-pills .service-status-item--svc .service-status-name {
+    font-size: 11.5px !important; font-weight: 600 !important;
+}
+.service-status-footer--full-pills .service-status-item--svc .service-status-dot { width: 6px; height: 6px; background: var(--ss-tier, var(--color-text-muted)); }
+.service-status-footer--full-pills .service-status-item--svc .service-status-badge {
+    padding: 0; border: 0; background: none; color: var(--ss-tier, var(--color-text-muted));
+}
+.service-status-footer--full-pills .service-status-item--svc .service-status-badge-label {
+    font-size: 11.5px !important; height: auto !important; line-height: 1 !important; font-weight: 600 !important;
+    text-transform: none !important; letter-spacing: 0 !important;
+}
+.service-status-footer--full-pills .service-status-item--svc.service-status-tier-success .service-status-badge { display: none; }
+.service-status-footer--full-pills .service-status-item--svc:is(.service-status-tier-warning, .service-status-tier-error) {
+    background: color-mix(in srgb, var(--ss-tier) 12%, var(--color-bg-surface));
+    border-color: color-mix(in srgb, var(--ss-tier) 45%, transparent);
+}
+.service-status-footer--full-pills .service-status-item--svc.service-status-tier-muted { opacity: .6; }
 
-.service-status-footer--minimal .service-status-tier-muted {
-    --service-status-ring: var(--color-text-secondary);
+/* Full · One segmented bar. */
+.service-status-footer--full-bar .service-status-footer-inner {
+    display: inline-flex; align-items: stretch; height: 26px; width: auto !important;
+    border-radius: 9px; overflow: hidden;
+    background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle);
 }
+.service-status-footer--full-bar .service-status-item--svc {
+    height: 100%; padding: 0 10px; border-radius: 0;
+    border-left: 1px solid var(--color-border-subtle);
+}
+.service-status-footer--full-bar .service-status-item--svc:first-of-type { border-left: 0; }
+.service-status-footer--full-bar .service-status-item--svc .service-status-name { font-size: 11.5px !important; font-weight: 600 !important; }
+.service-status-footer--full-bar .service-status-item--svc .service-status-dot { width: 6px; height: 6px; background: var(--ss-tier, var(--color-text-muted)); }
+.service-status-footer--full-bar .service-status-item--svc .service-status-badge { padding: 0; border: 0; background: none; color: var(--ss-tier); }
+.service-status-footer--full-bar .service-status-item--svc .service-status-badge-label {
+    font-size: 11.5px !important; height: auto !important; line-height: 1 !important; font-weight: 600 !important;
+    text-transform: none !important; letter-spacing: 0 !important;
+}
+.service-status-footer--full-bar .service-status-item--svc.service-status-tier-success .service-status-badge { display: none; }
+.service-status-footer--full-bar .service-status-item--svc:not(.service-status-tier-success):not(.service-status-tier-muted) .service-status-dot { display: none; }
+.service-status-footer--full-bar .service-status-item--svc:is(.service-status-tier-warning, .service-status-tier-error) {
+    background: color-mix(in srgb, var(--ss-tier) 14%, transparent);
+}
+.service-status-footer--full-bar .service-status-item--svc.service-status-tier-muted { opacity: .6; }
 
-.service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) .service-status-name,
-.service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) .service-status-status-cluster {
-    display: none !important;
-}
+/* Minimal styles: name and status words hidden unless a style shows them. */
+.service-status-footer--minimal .service-status-item--svc .service-status-name { display: none !important; }
 
-.service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) {
-    gap: 0;
-    padding: 0 2px;
+/* Minimal · Tiles with a status dot. */
+.service-status-footer--min-tiles { gap: 6px; }
+.service-status-footer--min-tiles .service-status-item--svc {
+    position: relative; justify-content: center;
+    width: 26px; height: 26px; padding: 0; border-radius: 8px;
+    background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle);
 }
+.service-status-footer--min-tiles .service-status-item--svc:hover { border-color: var(--color-border-default); }
+.service-status-footer--min-tiles .service-status-item--svc .service-status-brand-icon svg { width: 15px; height: 15px; }
+.service-status-footer--min-tiles .service-status-item--svc .service-status-status-cluster { display: contents; }
+.service-status-footer--min-tiles .service-status-item--svc .service-status-badge { display: none; }
+.service-status-footer--min-tiles .service-status-item--svc .service-status-dot {
+    position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px;
+    background: var(--ss-tier, var(--color-text-muted));
+    box-shadow: 0 0 0 2px var(--color-bg-elevated);
+}
+.service-status-footer--min-tiles .service-status-item--svc:is(.service-status-tier-warning, .service-status-tier-error) {
+    background: color-mix(in srgb, var(--ss-tier) 14%, var(--color-bg-surface));
+    border-color: color-mix(in srgb, var(--ss-tier) 50%, transparent);
+}
+.service-status-footer--min-tiles .service-status-item--svc.service-status-tier-muted .service-status-brand-icon { opacity: .4; filter: grayscale(1); }
 
-.service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) .service-status-brand-icon {
-    width: 16px;
-    height: 16px;
-    border-radius: 999px;
-    box-shadow: 0 0 0 2px var(--service-status-ring, var(--color-text-muted));
+/* Minimal · Problems spelled out: one capsule, problems first with a short label. */
+.service-status-footer--min-capsule .service-status-footer-inner {
+    display: inline-flex; align-items: center; gap: 4px; width: auto !important;
+    height: 26px; padding: 0 4px; border-radius: 999px;
+    background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle);
 }
+.service-status-footer--min-capsule .service-status-item--svc {
+    height: 22px; min-width: 22px; padding: 0; justify-content: center; border-radius: 999px;
+}
+.service-status-footer--min-capsule .service-status-item--svc .service-status-brand-icon svg { width: 14px; height: 14px; }
+.service-status-footer--min-capsule .service-status-item--svc .service-status-dot { display: none; }
+.service-status-footer--min-capsule .service-status-item--svc .service-status-badge { display: none; }
+.service-status-footer--min-capsule .service-status-item--svc:is(.service-status-tier-warning, .service-status-tier-error, .service-status-tier-info) {
+    order: -1; gap: 6px; padding: 0 8px 0 4px;
+    background: color-mix(in srgb, var(--ss-tier) 15%, transparent);
+}
+.service-status-footer--min-capsule .service-status-item--svc:is(.service-status-tier-warning, .service-status-tier-error, .service-status-tier-info) .service-status-badge {
+    display: inline-flex; padding: 0; border: 0; background: none; color: var(--ss-tier);
+}
+.service-status-footer--min-capsule .service-status-item--svc .service-status-badge-label {
+    font-size: 11px !important; height: auto !important; line-height: 1 !important; font-weight: 650 !important;
+    text-transform: none !important; letter-spacing: 0 !important;
+}
+.service-status-footer--min-capsule .service-status-item--svc.service-status-tier-muted .service-status-brand-icon { opacity: .35; filter: grayscale(1); }
 
-.service-status-footer--minimal .service-status-item:not(.service-status-item--trim):not(.service-status-item--copy) .service-status-brand-icon svg {
-    width: 14px;
-    height: 14px;
+/* Minimal · Summary and status bars. */
+.service-status-footer--min-summary .service-status-summary {
+    display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; margin-right: auto;
+    border-radius: 999px; font-size: 11.5px; font-weight: 650;
+    color: var(--ss-tier); background: color-mix(in srgb, var(--ss-tier) 13%, transparent);
 }
+.service-status-footer--min-summary .service-status-summary .service-status-summary-icon { font-size: 15px; }
+.service-status-footer--min-summary { gap: 10px; }
+.service-status-footer--min-summary .service-status-item--svc {
+    flex-direction: column; gap: 3px; padding: 4px 0 0; border-radius: 4px;
+}
+.service-status-footer--min-summary .service-status-item--svc .service-status-brand-icon svg { width: 16px; height: 16px; }
+.service-status-footer--min-summary .service-status-item--svc .service-status-status-cluster { display: contents; }
+.service-status-footer--min-summary .service-status-item--svc .service-status-badge { display: none; }
+.service-status-footer--min-summary .service-status-item--svc .service-status-dot {
+    width: 16px; height: 3px; border-radius: 3px; background: var(--ss-tier, var(--color-border-default));
+}
+.service-status-footer--min-summary .service-status-item--svc.service-status-tier-info .service-status-dot {
+    background: linear-gradient(90deg, var(--color-info) 50%, color-mix(in srgb, var(--color-info) 30%, transparent) 50%);
+}
+.service-status-footer--min-summary .service-status-item--svc.service-status-tier-muted .service-status-dot { background: var(--color-border-default); }
+.service-status-footer--min-summary .service-status-item--svc.service-status-tier-muted .service-status-brand-icon { opacity: .4; filter: grayscale(1); }
+
+/* Minimal · Colored rings (the original minimal look). */
+.service-status-footer--min-rings .service-status-item--svc .service-status-status-cluster { display: none !important; }
+.service-status-footer--min-rings .service-status-item--svc { gap: 0; padding: 0 2px; }
+.service-status-footer--min-rings .service-status-item--svc .service-status-brand-icon {
+    width: 16px; height: 16px; border-radius: 999px;
+    box-shadow: 0 0 0 2px var(--ss-tier, var(--color-text-muted));
+}
+.service-status-footer--min-rings .service-status-item--svc.service-status-tier-muted .service-status-brand-icon {
+    box-shadow: 0 0 0 2px var(--color-text-secondary);
+}
+.service-status-footer--min-rings .service-status-item--svc .service-status-brand-icon svg { width: 14px; height: 14px; }
 
 /* About tab source URL cards: see uiwindows/tabs/about_styles.py */
 """

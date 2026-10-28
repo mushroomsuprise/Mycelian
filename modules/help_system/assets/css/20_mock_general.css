@@ -5,7 +5,8 @@
 
 /* ---- Service status footer, faithful copy of .service-status-footer ------
    (modules/ui_styles.py). The core .hm-footer is a simplified version; these
-   pieces add the pill badge, the dot and the minimal ring mode.            */
+   pieces add the pill badge, the dot, the default looks (Name over status,
+   Tiles with a status dot) and the original minimal ring mode.             */
 
 .help-doc .hm .hm-sf {
     display: flex;
@@ -89,6 +90,63 @@
     border-radius: 999px;
     box-shadow: 0 0 0 2px var(--hm-sf, var(--color-text-muted));
 }
+
+/* Name over status (default full look): icon tile with a corner dot, name above the status word */
+.help-doc .hm .hm-sf.hm-sf-stacked { gap: 4px; }
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-item {
+    display: inline-grid;
+    grid-template-columns: 22px auto;
+    grid-template-rows: auto auto;
+    column-gap: 7px;
+    align-items: center;
+    height: 30px;
+    padding: 0 9px 0 5px;
+    border-radius: 9px;
+}
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-icon {
+    grid-column: 1; grid-row: 1 / span 2;
+    width: 22px; height: 22px; border-radius: 7px; box-sizing: border-box;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-icon svg { width: 13px; height: 13px; }
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-name { grid-column: 2; grid-row: 1; align-self: end; font-size: 11.5px; font-weight: 650; line-height: 1.15; }
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-dot {
+    grid-column: 1; grid-row: 1 / span 2; align-self: end; justify-self: end;
+    margin: 0 -2px -2px 0;
+    box-shadow: 0 0 0 2px var(--color-bg-elevated);
+}
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-badge {
+    grid-column: 2; grid-row: 2; align-self: start;
+    padding: 0; border: 0; background: none; border-radius: 0;
+    font-size: 10px; font-weight: 550; line-height: 1.2; text-transform: none; letter-spacing: 0;
+    color: var(--color-text-muted);
+}
+.help-doc .hm .hm-sf.hm-sf-stacked :is(.hm-sf-warning, .hm-sf-error, .hm-sf-info) .hm-sf-badge { color: var(--hm-sf); }
+.help-doc .hm .hm-sf.hm-sf-stacked :is(.hm-sf-warning, .hm-sf-error) { background: color-mix(in srgb, var(--hm-sf) 11%, transparent); }
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-muted { opacity: .6; }
+
+/* Tiles with a status dot (default minimal look) */
+.help-doc .hm .hm-sf.hm-sf-tiles { gap: 6px; }
+.help-doc .hm .hm-sf.hm-sf-minimal.hm-sf-tiles .hm-sf-item:not(.hm-sf-progress) {
+    justify-content: center;
+    width: 26px; height: 26px; padding: 0; box-sizing: border-box; border-radius: 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm .hm-sf.hm-sf-minimal.hm-sf-tiles .hm-sf-item:not(.hm-sf-progress) .hm-sf-icon { box-shadow: none; border-radius: 0; width: 15px; height: 15px; }
+.help-doc .hm .hm-sf.hm-sf-minimal.hm-sf-tiles .hm-sf-item:not(.hm-sf-progress) .hm-sf-icon svg { width: 15px; height: 15px; }
+.help-doc .hm .hm-sf.hm-sf-minimal.hm-sf-tiles .hm-sf-item:not(.hm-sf-progress) .hm-sf-dot {
+    display: block; position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px;
+    box-shadow: 0 0 0 2px var(--color-bg-elevated);
+}
+.help-doc .hm .hm-sf.hm-sf-tiles :is(.hm-sf-warning, .hm-sf-error) {
+    background: color-mix(in srgb, var(--hm-sf) 14%, var(--color-bg-surface)) !important;
+    border-color: color-mix(in srgb, var(--hm-sf) 50%, transparent) !important;
+}
+.help-doc .hm .hm-sf.hm-sf-tiles .hm-sf-muted .hm-sf-icon { opacity: .4; filter: grayscale(1); }
+
+.help-doc .hm .hm-field.hm-select.is-disabled { opacity: .45; }
 
 /* Hover tooltip used in mocks to show the status word (data-tip) */
 .help-doc .hm .hm-sf-item[data-tip]:hover::after {

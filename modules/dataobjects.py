@@ -224,6 +224,9 @@ class AppSettings:
     notify_muted: dict = field(default_factory=dict)  # source id -> list of muted levels
     status_footer_enabled: bool = True
     status_footer_minimal: bool = False
+    # Badge looks (see notification_engine.FOOTER_FULL_STYLES / FOOTER_MINIMAL_STYLES)
+    status_footer_full_style: str = "stacked"
+    status_footer_minimal_style: str = "tiles"
     auto_update: bool = True
     activity_feed_limit: int = 20
     activity_feed_max_pages: int = 5
