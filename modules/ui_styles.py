@@ -179,12 +179,18 @@ body:not(.body--dark) .text-grey {
  * the native window edge.
  */
 .mycelian-main-shell {
-    height: 100vh;
-    height: 100dvh;
-    max-height: 100vh;
-    max-height: 100dvh;
+    /* NiceGUI pads .nicegui-content top and bottom; the bottom padding is dropped
+       below and the top is subtracted here, so the shell ends at the window edge. */
+    height: calc(100vh - var(--nicegui-default-padding, 1rem));
+    height: calc(100dvh - var(--nicegui-default-padding, 1rem));
+    max-height: calc(100vh - var(--nicegui-default-padding, 1rem));
+    max-height: calc(100dvh - var(--nicegui-default-padding, 1rem));
     box-sizing: border-box;
     overflow: hidden;
+}
+
+.nicegui-content:has(> .mycelian-main-shell) {
+    padding-bottom: 0;
 }
 
 /* Keep status footer inside the shell padding (avoids bottom-edge clipping) */
@@ -1885,10 +1891,6 @@ body:not(.body--dark) .notification-tray-badge {
     display: contents;
 }
 
-.service-status-footer .service-status-item {
-    transform: translateY(-3.5px);
-}
-
 .service-status-item {
     display: inline-flex;
     align-items: center;
@@ -2079,11 +2081,6 @@ body:not(.body--dark) .notification-tray-badge {
    Only service items (--svc) change; Alert trim and Copying keep the classic look. */
 
 .service-status-summary { display: none; }
-
-[class*="service-status-footer--full-"]:not(.service-status-footer--full-classic) .service-status-item--svc,
-.service-status-footer--minimal .service-status-item--svc {
-    transform: none;
-}
 
 /* Status colors as one custom property per item. */
 .service-status-item--svc.service-status-tier-success, .service-status-summary.service-status-tier-success { --ss-tier: var(--color-success); }

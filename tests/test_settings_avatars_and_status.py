@@ -32,8 +32,15 @@ def test_obs_just_opened_gets_time_before_cant_connect():
     assert [n.title for n in notices] == ["Mycelian can't connect to OBS"]
 
 
-def test_obs_tab_icon_has_a_light_backing():
-    assert '<circle cx="12" cy="12" r="11.6" fill="#FFFFFF"/>' in SERVICE_BRAND_SVG["obs"]
+def test_obs_mark_keeps_its_colors_with_a_light_halo():
+    from modules.uiwindows.tabs.integration_ui import brand_svg
+
+    svg = SERVICE_BRAND_SVG["obs"]
+    assert '<path fill="#302E31" stroke="#FFFFFF"' in svg and 'paint-order="stroke"' in svg
+    assert "<circle" not in svg
+    # Settings header and account card draw it in the text color, without the halo.
+    card = brand_svg("obs")
+    assert 'fill="currentColor"' in card and "stroke=" not in card
 
 
 def _account_card():

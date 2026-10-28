@@ -19,7 +19,7 @@ from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
 from nicegui import ui
 
 from ...ui_buttons import outline_button, primary_button
-from ..service_brand_icons import SERVICE_BRAND_SVG
+from ..service_brand_icons import OBS_HALO_ATTRS, SERVICE_BRAND_SVG
 
 BRAND_COLORS = {
     "twitch": "#9146FF",
@@ -368,7 +368,9 @@ def icon_html(name: str) -> str:
 def brand_svg(key: str) -> str:
     svg = re.sub(r'width="[^"]+" height="[^"]+"', "", SERVICE_BRAND_SVG.get(key, ""), count=1)
     # The OBS mark is near-black: draw it in the text color so it shows on dark themes.
-    return svg.replace('fill="#302E31"', 'fill="currentColor"') if key == "obs" else svg
+    if key == "obs":
+        return svg.replace('fill="#302E31"', 'fill="currentColor"').replace(OBS_HALO_ATTRS, "")
+    return svg
 
 
 def pill_html(kind: str, text: str, icon: Optional[str] = None) -> str:
