@@ -60,15 +60,16 @@ def get_data_path(relative_path):
     Returns:
         str: Absolute path to the data file
     """
+    # Set by the test suite so tests never write the real data files.
+    override = os.environ.get("MYCELIAN_DATA_DIR")
+    return os.path.join(override or _install_dir(), relative_path)
+
+
+def _install_dir():
+    """Folder next to the executable (PyInstaller) or the project root (development)."""
     if getattr(sys, 'frozen', False):
-        # Running in a PyInstaller bundle
-        # Data files should be relative to the executable location
-        base_path = os.path.dirname(sys.executable)
-    else:
-        # Running in development
-        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
-    return os.path.join(base_path, relative_path)
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def get_template_path(relative_path=""):
@@ -82,9 +83,9 @@ def get_template_path(relative_path=""):
         str: Absolute path to the template file/directory
     """
     if relative_path:
-        return get_data_path(os.path.join("templates", relative_path))
+        return os.path.join(_install_dir(), "templates", relative_path)
     else:
-        return get_data_path("templates")
+        return os.path.join(_install_dir(), "templates")
 
 
 def get_assets_path(relative_path=""):
@@ -109,9 +110,9 @@ def get_assets_path(relative_path=""):
             if os.path.exists(full):
                 return full
     if relative_path:
-        return get_data_path(os.path.join("assets", relative_path))
+        return os.path.join(_install_dir(), "assets", relative_path)
     else:
-        return get_data_path("assets")
+        return os.path.join(_install_dir(), "assets")
 
 
 def get_static_path(relative_path=""):
@@ -125,9 +126,9 @@ def get_static_path(relative_path=""):
         str: Absolute path to the static file/directory
     """
     if relative_path:
-        return get_data_path(os.path.join("static", relative_path))
+        return os.path.join(_install_dir(), "static", relative_path)
     else:
-        return get_data_path("static")
+        return os.path.join(_install_dir(), "static")
 
 
 def ensure_directory_exists(path):
