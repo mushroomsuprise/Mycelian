@@ -207,9 +207,14 @@ def test_shutdown_reaps_the_window_child_process(monkeypatch):
 
     class FakeChild:
         name = "webview-child"
+        alive = True
+
+        def is_alive(self):
+            return self.alive
 
         def terminate(self):
             terminated.append("terminate")
+            self.alive = False
 
         def join(self, timeout=None):
             terminated.append("join")

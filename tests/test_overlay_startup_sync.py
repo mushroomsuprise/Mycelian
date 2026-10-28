@@ -226,7 +226,9 @@ class OverlayHelloRouteTests(unittest.TestCase):
 
 
 class StartupLoopDockWakeTests(unittest.TestCase):
-    def test_connected_overlay_clients_still_wake_docks(self) -> None:
+    def test_connected_overlay_clients_still_refresh_sources_and_wake_docks(self) -> None:
+        # Some sources can be connected while others are stuck, so the one-shot
+        # OBS source refresh runs even when overlay clients are already connected.
         eng = object.__new__(WebEngine)
         eng.is_running = True
         eng.socketio = MagicMock()
@@ -240,8 +242,8 @@ class StartupLoopDockWakeTests(unittest.TestCase):
         eng._maybe_enqueue_startup_dock_wake = MagicMock(return_value=True)
         eng._startup_client_sync_loop()
         eng._emit_startup_overlay_recovery_once.assert_called()
-        eng._maybe_enqueue_startup_obs_refresh.assert_not_called()
-        eng._maybe_enqueue_startup_dock_wake.assert_called()
+        eng._maybe_enqueue_startup_obs_refresh.assert_called_once()
+        eng._maybe_enqueue_startup_dock_wake.assert_called_once()
 
 
 class StartupDockWakeEnqueueTests(unittest.TestCase):

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import multiprocessing
 import subprocess
 import sys
@@ -12,6 +13,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,6 +86,15 @@ class _FakeProc:
         self.running = False
 
 
+def _windows_startupinfo():
+    """The Windows-only STARTUPINFO pieces, so the win32 path can run on any OS."""
+    stack = contextlib.ExitStack()
+    stack.enter_context(mock.patch.object(subprocess, "STARTUPINFO", lambda: SimpleNamespace(dwFlags=0, wShowWindow=0), create=True))
+    stack.enter_context(mock.patch.object(subprocess, "STARTF_USESHOWWINDOW", 1, create=True))
+    stack.enter_context(mock.patch.object(subprocess, "SW_HIDE", 0, create=True))
+    return stack
+
+
 class UpdaterInstallerTests(unittest.TestCase):
     def setUp(self) -> None:
         shutdown._protected_child_pids.clear()
@@ -113,7 +124,7 @@ class UpdaterInstallerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             log_path = Path(tmp) / "launch.log"
-            with mock.patch.object(update_sync.sys, "platform", "win32"):
+            with mock.patch.object(update_sync.sys, "platform", "win32"), _windows_startupinfo():
                 with mock.patch.object(update_sync.subprocess, "Popen", fake_popen):
                     proc = update_sync._popen_hidden(
                         ["powershell.exe", "-File", "apply.ps1"], log_path
@@ -142,7 +153,7 @@ class UpdaterInstallerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             log_path = Path(tmp) / "launch.log"
-            with mock.patch.object(update_sync.sys, "platform", "win32"):
+            with mock.patch.object(update_sync.sys, "platform", "win32"), _windows_startupinfo():
                 with mock.patch.object(update_sync.subprocess, "Popen", fake_popen):
                     proc = update_sync._popen_hidden(
                         ["powershell.exe", "-File", "apply.ps1"], log_path
