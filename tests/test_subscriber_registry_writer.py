@@ -13,6 +13,7 @@ import sqlite3
 import tempfile
 import threading
 import time
+import types
 import unittest
 from unittest.mock import patch
 
@@ -66,20 +67,26 @@ class SubscriberRegistryWriterTests(unittest.TestCase):
 
     def test_loop_path_stores_the_same_rows_as_direct_writes(self):
         ops = _script()
-        clock = itertools.count(1000)
+
+        def registry_clock():
+            # The registry's own clock: patching time.time itself would also hand values
+            # to every other thread, and the two runs would no longer match.
+            ticks = itertools.count(1000)
+            fake = types.SimpleNamespace(**{k: getattr(time, k) for k in dir(time) if not k.startswith("__")})
+            fake.time = lambda: float(next(ticks))
+            return patch("modules.twitch_subscriber_registry.time", fake)
 
         direct = self._fresh("direct.db")
-        with patch("modules.twitch_subscriber_registry.time.time", lambda: float(next(clock))):
+        with registry_clock():
             _apply(direct, ops)
         direct.flush()
 
-        clock = itertools.count(1000)
         queued = self._fresh("queued.db")
 
         async def on_loop():
             _apply(queued, ops)
 
-        with patch("modules.twitch_subscriber_registry.time.time", lambda: float(next(clock))):
+        with registry_clock():
             asyncio.run(on_loop())
         queued.flush()
 

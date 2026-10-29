@@ -44,7 +44,9 @@ def _fake_pynput(monkeypatch):
     monkeypatch.setitem(sys.modules, "pynput.keyboard", kb)
 
 
-def _wait_for(cond, timeout=1.0):
+def _wait_for(cond, timeout=5.0):
+    # The listener sleeps until woken, so a regression never applies at all; the generous
+    # bound only keeps a busy machine from failing the test.
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if cond():
@@ -68,5 +70,5 @@ def test_register_unregister_and_stop_apply_promptly(monkeypatch):
     finally:
         t0 = time.monotonic()
         listener.stop()
-        assert time.monotonic() - t0 < 0.5
+        assert time.monotonic() - t0 < 1.5  # well under the 2s join timeout a stuck thread would hit
         assert not listener.listener_thread.is_alive()

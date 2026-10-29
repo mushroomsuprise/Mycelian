@@ -498,8 +498,12 @@ class StatisticsTab:
             self._build_spotlight_card(rng)
 
         with ui.element("div").classes("mst-grid mst-grid-2"):
-            self._build_mix_card(summary)
-            self._build_heatmap_card(rng)
+            # Holders (display: contents) let the live tick redraw one card in place.
+            for name in ("mix", "heatmap"):
+                self._overview_refs[name] = ui.element("div").style("display: contents")
+        grid = self._heatmap_grid(rng)
+        self._redraw_card("mix", self._mix_key(summary), lambda: self._build_mix_card(summary))
+        self._redraw_card("heatmap", self._heatmap_key(grid), lambda: self._build_heatmap_card(grid))
         self._overview_refs["series_bucket"] = series["bucket"]
 
     def _empty_range_notice(self, rng: DateRange) -> None:
@@ -618,6 +622,29 @@ class StatisticsTab:
             ref["value"].set_text(compact(value))
             ref["foot"].set_content(self._tile_foot(value, prev, Insights.metric_series(data["series"], metric)))
         self._redraw_trend()
+        self._update_spotlight(rng)
+        summary = data["summary"]
+        self._redraw_card("mix", self._mix_key(summary), lambda: self._build_mix_card(summary))
+        grid = self._heatmap_grid(rng)
+        self._redraw_card("heatmap", self._heatmap_key(grid), lambda: self._build_heatmap_card(grid))
+
+    def _redraw_card(self, name: str, key: Any, build: Callable[[], None]) -> None:
+        """Build an overview card into its holder, again only when its data changed."""
+        box = self._overview_refs.get(name)
+        if box is None or box.is_deleted or self._overview_refs.get(f"{name}_key") == key:
+            return
+        self._overview_refs[f"{name}_key"] = key
+        box.clear()
+        with box:
+            build()
+
+    @staticmethod
+    def _mix_key(summary: Dict[str, Any]) -> Tuple[Any, ...]:
+        counts = tuple(sorted((k, v["count"]) for k, v in summary["types"].items() if v["count"] and k in EVENT_TYPES))
+        return summary["total_events"], summary["unique_users"], counts
+
+    def _heatmap_key(self, grid: List[List[int]]) -> Tuple[Any, ...]:
+        return self.heatmap_scope, tuple(tuple(row) for row in grid)
 
     def _profile_pictures(self, names: Sequence[str]) -> Dict[str, str]:
         """{name: picture} for Twitch viewers among ``names``; missing ones are fetched in the background."""
@@ -647,38 +674,61 @@ class StatisticsTab:
                 still.append((name, extra, el))
         self._pending_avatars = still
 
-    def _build_spotlight_card(self, rng: DateRange) -> None:
+    def _spotlight_picks(self, rng: DateRange) -> Tuple[Tuple[str, str, List[Dict[str, Any]], str], ...]:
         ins = self.insights
-        picks = (
+        return (
             ("Most active viewer", "bolt", ins.leaders(rng, tuple(k for k in EVENT_TYPES if k != "giveaway_draw_complete"), "count", 1), "events"),
             ("Top chatter", "chat", ins.leaders(rng, ("chat_message",), "count", 1), "messages"),
             ("Biggest supporter (bits)", "diamond", ins.leaders(rng, ("bit",), "sum", 1), "bits"),
             ("Top gifter", "redeem", ins.leaders(rng, ("giftsub",), "sum", 1), "subs gifted"),
             ("Longest watch streak", "local_fire_department", ins.leaders(rng, ("watch_streak",), "max", 1), "streams"),
         )
+
+    @staticmethod
+    def _spotlight_key(picks) -> Tuple[Any, ...]:
+        return tuple((rows[0]["username"], rows[0]["value"]) if rows else None for _k, _i, rows, _u in picks)
+
+    def _build_spotlight_card(self, rng: DateRange) -> None:
         with ui.element("div").classes("mst-card"):
             with ui.element("div").classes("mst-card-head"):
                 with ui.column().classes("gap-0"):
                     ui.label("Spotlight").classes("mst-card-title")
                     ui.label("Click a name to see that viewer's activity").classes("mst-card-sub")
-            pictures = self._profile_pictures([rows[0]["username"] for _k, _i, rows, _u in picks if rows])
-            with ui.element("div").classes("mst-grid").style("gap:8px"):
-                shown = 0
-                for kicker, icon, rows, unit in picks:
-                    if not rows:
-                        continue
-                    shown += 1
-                    row = rows[0]
-                    spot = ui.element("div").classes("mst-spot")
-                    with spot:
-                        self._avatar(row["username"], pictures)
-                        with ui.column().classes("gap-0 min-w-0 grow"):
-                            ui.html(f'<div class="mst-spot-kicker">{_icon(icon, "text-sm align-middle")} {html.escape(kicker)}</div>', sanitize=False)
-                            ui.label(row["username"]).classes("mst-spot-name")
-                            ui.label(f"{compact(row['value'])} {unit}").classes("mst-spot-value")
-                    spot.on("click", lambda _e, u=row["username"]: self._open_viewer(u))
-                if not shown:
-                    ui.html(f'<div class="mst-empty">{_icon("emoji_events")}No viewer activity in this range yet.</div>', sanitize=False)
+            box = ui.element("div").classes("mst-grid").style("gap:8px")
+        self._overview_refs["spotlight"] = box
+        self._fill_spotlight(box, self._spotlight_picks(rng))
+
+    def _update_spotlight(self, rng: DateRange) -> None:
+        """Live tick: redraw the Spotlight only when a leader or their number changed."""
+        box = self._overview_refs.get("spotlight")
+        if box is None or box.is_deleted:
+            return
+        picks = self._spotlight_picks(rng)
+        if self._spotlight_key(picks) == self._overview_refs.get("spotlight_key"):
+            return
+        box.clear()
+        self._fill_spotlight(box, picks)
+
+    def _fill_spotlight(self, box, picks) -> None:
+        self._overview_refs["spotlight_key"] = self._spotlight_key(picks)
+        pictures = self._profile_pictures([rows[0]["username"] for _k, _i, rows, _u in picks if rows])
+        with box:
+            shown = 0
+            for kicker, icon, rows, unit in picks:
+                if not rows:
+                    continue
+                shown += 1
+                row = rows[0]
+                spot = ui.element("div").classes("mst-spot")
+                with spot:
+                    self._avatar(row["username"], pictures)
+                    with ui.column().classes("gap-0 min-w-0 grow"):
+                        ui.html(f'<div class="mst-spot-kicker">{_icon(icon, "text-sm align-middle")} {html.escape(kicker)}</div>', sanitize=False)
+                        ui.label(row["username"]).classes("mst-spot-name")
+                        ui.label(f"{compact(row['value'])} {unit}").classes("mst-spot-value")
+                spot.on("click", lambda _e, u=row["username"]: self._open_viewer(u))
+            if not shown:
+                ui.html(f'<div class="mst-empty">{_icon("emoji_events")}No viewer activity in this range yet.</div>', sanitize=False)
 
     def _build_mix_card(self, summary: Dict[str, Any]) -> None:
         metric_for_type = {}
@@ -716,10 +766,15 @@ class StatisticsTab:
                     if metric_key:
                         row.on("click", lambda _e, k=metric_key: self._select_metric(k))
 
-    def _build_heatmap_card(self, rng: DateRange) -> None:
-        scopes = {"chat": ("Chat messages", ("chat_message",), "messages"), "all": ("All events", None, "events")}
+    _HEATMAP_SCOPES = {"chat": ("Chat messages", ("chat_message",), "messages"), "all": ("All events", None, "events")}
+
+    def _heatmap_grid(self, rng: DateRange) -> List[List[int]]:
+        _title, types, _unit = self._HEATMAP_SCOPES.get(self.heatmap_scope, self._HEATMAP_SCOPES["chat"])
+        return self.insights.heatmap(rng, types)
+
+    def _build_heatmap_card(self, grid: List[List[int]]) -> None:
+        scopes = self._HEATMAP_SCOPES
         title, types, unit = scopes.get(self.heatmap_scope, scopes["chat"])
-        grid = self.insights.heatmap(rng, types)
         total = sum(sum(r) for r in grid)
         with ui.element("div").classes("mst-card"):
             with ui.element("div").classes("mst-card-head"):

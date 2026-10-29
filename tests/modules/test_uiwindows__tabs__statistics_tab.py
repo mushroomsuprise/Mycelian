@@ -811,3 +811,57 @@ def test_fill_pending_avatars_drops_deleted_elements(ctx, monkeypatch):
     tab._pending_avatars = [("a", "", gone), ("b", "", waiting)]
     tab._fill_pending_avatars()
     assert tab._pending_avatars == [("b", "", waiting)]
+
+
+def test_spotlight_updates_with_the_live_tick(ctx):
+    seed(ctx.mgr)
+    tab = tabmod.StatisticsTab()
+
+    async def check(user):
+        await user.should_see("500 bits")
+        box = tab._overview_refs["spotlight"]
+        first = list(box.default_slot.children)
+        # Nothing changed: the Spotlight is left as it is (no flicker, no new lookups).
+        with user.client:
+            tab._update_overview(tab._range())
+        assert list(box.default_slot.children) == first
+        # A new biggest supporter shows up on the next live update.
+        add(ctx.mgr, [("Zed", "bit", 2000, "Cheer", recent())])
+        with user.client:
+            tab._update_overview(tab._range())
+        await user.should_see("Zed")
+        await user.should_see("2,000 bits")
+        assert list(box.default_slot.children) != first
+        # The page was rebuilt meanwhile: a stale Spotlight is skipped.
+        box.delete()
+        tab._update_spotlight(tab._range())
+
+    run_tab(tab, check)
+
+
+def test_event_mix_and_heatmap_update_with_the_live_tick(ctx):
+    seed(ctx.mgr)
+    tab = tabmod.StatisticsTab()
+
+    async def check(user):
+        await user.should_see("10 events from 5 viewers")
+        mix, heat = tab._overview_refs["mix"], tab._overview_refs["heatmap"]
+        mix_first, heat_first = list(mix.default_slot.children), list(heat.default_slot.children)
+        with user.client:
+            tab._update_overview(tab._range())
+        assert list(mix.default_slot.children) == mix_first and list(heat.default_slot.children) == heat_first
+        add(ctx.mgr, [("Kim", "chat_message", 1, "", recent()), ("Kim", "raid", 12, "", recent())])
+        with user.client:
+            tab._update_overview(tab._range())
+        await user.should_see("12 events from 6 viewers")
+        await user.should_see("Raids")
+        assert list(mix.default_slot.children) != mix_first
+        assert list(heat.default_slot.children) != heat_first  # a new chat message moves the heatmap
+        # Switching the heatmap scope still redraws the page as before.
+        tab._set_heatmap("all")
+        assert tab._overview_refs["heatmap_key"][0] == "all"
+        assert mix.is_deleted  # the page was rebuilt with new holders
+        tab._overview_refs["mix"] = mix
+        tab._redraw_card("mix", None, lambda: pytest.fail("deleted holders are skipped"))
+
+    run_tab(tab, check)
