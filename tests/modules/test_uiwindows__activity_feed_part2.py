@@ -785,3 +785,59 @@ def test_tab_alive_and_live_push_end_to_end(monkeypatch, isolated, tab_env):
         assert "is-fallback" in feed._host.host.classes and "Bo" in feed._host.fallback.content
 
     run_ui(build, check)
+
+
+# --------------------------------------------------------------------------- By person profile pictures
+
+PIC = "https://static-cdn.jtvnw.net/jtv_user_pictures/x-profile_image-300x300.png"
+
+
+def _group(name, *kinds):
+    return {"username": name, "items": [{"kind": k} for k in kinds]}
+
+
+def test_person_avatars_only_for_twitch_viewers(monkeypatch):
+    from modules import twitch_avatars
+
+    asked = []
+    monkeypatch.setattr(twitch_avatars, "cached_avatars", lambda names: {n: PIC for n in names if n == "Bitsy"})
+    monkeypatch.setattr(twitch_avatars, "request_avatars", lambda names, on_update=None: asked.append((names, on_update)))
+    groups = [_group("Bitsy", "bits"), _group("Raider", "raid", "donation"), _group("Tipper", "donation"),
+              _group("Member", "member", "superchat")]
+    feed.attach_person_avatars(groups)
+    assert groups[0]["avatar"] == PIC
+    assert all("avatar" not in g for g in groups[1:])
+    assert asked == [(["Bitsy", "Raider"], feed._person_avatars_arrived)]
+
+
+def test_person_avatars_skip_the_lookup_when_all_are_known(monkeypatch):
+    from modules import twitch_avatars
+
+    monkeypatch.setattr(twitch_avatars, "cached_avatars", lambda names: {n: PIC for n in names})
+    monkeypatch.setattr(twitch_avatars, "request_avatars", lambda *a, **k: pytest.fail("nothing to fetch"))
+    groups = [_group("Bitsy", "follow")]
+    feed.attach_person_avatars(groups)
+    assert groups[0]["avatar"] == PIC
+    feed.attach_person_avatars([_group("Tipper", "donation")])  # no Twitch viewers: no lookups at all
+
+
+def test_person_avatars_arriving_rebuilds_the_view_on_the_ui_loop(monkeypatch):
+    hops, rebuilds = [], []
+    monkeypatch.setattr(feed, "run_on_ui_loop", lambda fn: hops.append(fn))
+    monkeypatch.setattr(feed, "schedule_condensed_view_update", lambda reason: rebuilds.append(reason))
+    feed._person_avatars_arrived()
+    assert rebuilds == []
+    hops[0]()
+    assert rebuilds == ["avatars"]
+
+
+def test_condensed_build_data_carries_avatars(monkeypatch):
+    from modules import twitch_avatars
+
+    monkeypatch.setattr(feed, "_person_hours", lambda: 2)
+    monkeypatch.setattr(feed, "collect_alerts_for_condensed_view",
+                        lambda cutoff: ([{"type": "Follow", "username": "Fan"}], 1, 1))
+    monkeypatch.setattr(twitch_avatars, "cached_avatars", lambda names: {"Fan": PIC})
+    data = feed._collect_condensed_build_data()
+    assert data["groups"][0]["avatar"] == PIC
+    assert feed._condensed_view_model(data)["groups"][0]["avatar"] == PIC

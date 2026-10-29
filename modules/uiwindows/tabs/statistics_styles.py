@@ -126,6 +126,8 @@ STATISTICS_CSS = """
     font-weight: 700; font-size: 0.95rem; color: var(--color-primary);
     background: var(--color-primary-light); border: 1px solid var(--color-border-accent); }
 .mst-avatar.is-lg { width: 54px; height: 54px; font-size: 1.35rem; }
+.mst-avatar.has-photo { position: relative; overflow: hidden; }
+.mst-avatar.has-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .mst-spot-kicker { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-muted); }
 .mst-spot-name { font-size: 0.92rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mst-spot-value { font-size: 0.78rem; color: var(--color-text-secondary); }

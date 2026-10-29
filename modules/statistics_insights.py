@@ -381,6 +381,30 @@ class Insights:
             for r in rows
         ]
 
+    def twitch_viewers(self, usernames: Sequence[str]) -> set:
+        """Lowercased names among ``usernames`` known to be Twitch viewers.
+
+        Events don't record their platform, so this goes by Twitch-only event types and by
+        the Twitch chat counter; subs and gifts are left out (YouTube memberships look alike).
+        """
+        names = sorted({str(u).strip().lower() for u in usernames if str(u or "").strip()})
+        if not names:
+            return set()
+        marks = ",".join("?" * len(names))
+        rows = self._query(
+            "SELECT DISTINCT IFNULL(username_lower, lower(username)) FROM user_events "
+            "WHERE event_type IN ('bit', 'point_redeem', 'follow', 'raid', 'watch_streak') "
+            f"AND IFNULL(username_lower, lower(username)) IN ({marks})",
+            names,
+        )
+        found = {str(r[0]) for r in rows if r and r[0]}
+        chat = getattr(getattr(getattr(self.mgr, "data", None), "chat", None), "user_stats", None) or {}
+        for key, stats in list(chat.items()):
+            lowered = str(key).strip().lower()
+            if lowered in names and int(getattr(stats, "twitch_messages_received", 0) or 0) > 0:
+                found.add(lowered)
+        return found
+
     def user_span(self, username: str) -> Tuple[Optional[float], Optional[float], int]:
         uc, up = self._user_clause(username)
         rows = self._query("SELECT MIN(timestamp), MAX(timestamp), COUNT(*) FROM user_events WHERE 1=1" + uc, up)

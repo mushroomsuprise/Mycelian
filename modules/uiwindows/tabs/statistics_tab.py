@@ -26,7 +26,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from nicegui import ui
 
-from ... import dataobjects
+from ... import dataobjects, twitch_avatars
 from ...notification_engine import notify
 from ...statistics_insights import (
     EVENT_TYPES,
@@ -44,7 +44,7 @@ from ...statistics_insights import (
 from ...statistics_manager import get_statistics_manager
 from ...ui_buttons import primary_button
 from ...ui_form_controls import form_input
-from ...ui_timer import layout_schedule
+from ...ui_timer import layout_schedule, run_on_ui_loop
 from .statistics_charts import ChartColors, level_columns, time_columns, weekly_heatmap
 from .statistics_styles import STATISTICS_CSS
 
@@ -83,6 +83,17 @@ def _icon(name: str, extra: str = "") -> str:
 def _initial(name: str) -> str:
     name = (name or "?").strip()
     return html.escape(name[:1].upper() or "?")
+
+
+def _avatar_html(name: str, picture: str = "", extra: str = "") -> str:
+    """Viewer avatar: the initial, covered by the Twitch profile picture when there is one."""
+    classes = "mst-avatar" + (f" {extra}" if extra else "")
+    img = ""
+    if picture.startswith("https://"):
+        classes += " has-photo"
+        img = (f'<img src="{html.escape(picture)}" alt="" loading="lazy" referrerpolicy="no-referrer" '
+               'onerror="this.remove()">')
+    return f'<div class="{classes}">{_initial(name)}{img}</div>'
 
 
 def _sparkline(values: Sequence[float], width: int = 74, height: int = 24) -> str:
@@ -173,6 +184,9 @@ class StatisticsTab:
         self.lookup_types: set = set()
         self.export_layout = "wide"
         self.export_last_path: Optional[str] = None
+
+        # Avatars still waiting for a Twitch profile picture: (name, extra class, element).
+        self._pending_avatars: List[Tuple[str, str, Any]] = []
 
         self.root = None
         self.toolbar = None
@@ -605,6 +619,34 @@ class StatisticsTab:
             ref["foot"].set_content(self._tile_foot(value, prev, Insights.metric_series(data["series"], metric)))
         self._redraw_trend()
 
+    def _profile_pictures(self, names: Sequence[str]) -> Dict[str, str]:
+        """{name: picture} for Twitch viewers among ``names``; missing ones are fetched in the background."""
+        twitch = self.insights.twitch_viewers(names)
+        wanted = [n for n in names if str(n).strip().lower() in twitch]
+        known = twitch_avatars.cached_avatars(wanted)
+        if len(known) < len(wanted):
+            twitch_avatars.request_avatars(wanted, on_update=lambda: run_on_ui_loop(self._fill_pending_avatars))
+        return known
+
+    def _avatar(self, name: str, pictures: Dict[str, str], extra: str = "") -> None:
+        picture = pictures.get(name, "")
+        el = ui.html(_avatar_html(name, picture, extra), sanitize=False)
+        if not picture:
+            self._pending_avatars.append((name, extra, el))
+
+    def _fill_pending_avatars(self) -> None:
+        """Put pictures that arrived into avatars already on screen (runs on the UI loop)."""
+        pending = [entry for entry in self._pending_avatars if not entry[2].is_deleted]
+        known = twitch_avatars.cached_avatars([name for name, _extra, _el in pending])
+        still: List[Tuple[str, str, Any]] = []
+        for name, extra, el in pending:
+            picture = known.get(name)
+            if picture:
+                el.set_content(_avatar_html(name, picture, extra))
+            else:
+                still.append((name, extra, el))
+        self._pending_avatars = still
+
     def _build_spotlight_card(self, rng: DateRange) -> None:
         ins = self.insights
         picks = (
@@ -619,6 +661,7 @@ class StatisticsTab:
                 with ui.column().classes("gap-0"):
                     ui.label("Spotlight").classes("mst-card-title")
                     ui.label("Click a name to see that viewer's activity").classes("mst-card-sub")
+            pictures = self._profile_pictures([rows[0]["username"] for _k, _i, rows, _u in picks if rows])
             with ui.element("div").classes("mst-grid").style("gap:8px"):
                 shown = 0
                 for kicker, icon, rows, unit in picks:
@@ -628,7 +671,7 @@ class StatisticsTab:
                     row = rows[0]
                     spot = ui.element("div").classes("mst-spot")
                     with spot:
-                        ui.html(f'<div class="mst-avatar">{_initial(row["username"])}</div>', sanitize=False)
+                        self._avatar(row["username"], pictures)
                         with ui.column().classes("gap-0 min-w-0 grow"):
                             ui.html(f'<div class="mst-spot-kicker">{_icon(icon, "text-sm align-middle")} {html.escape(kicker)}</div>', sanitize=False)
                             ui.label(row["username"]).classes("mst-spot-name")
@@ -956,7 +999,7 @@ class StatisticsTab:
 
             with ui.element("div").classes("mst-card"):
                 with ui.element("div").classes("mst-profile"):
-                    ui.html(f'<div class="mst-avatar is-lg">{_initial(display)}</div>', sanitize=False)
+                    self._avatar(display, self._profile_pictures([display]), "is-lg")
                     with ui.column().classes("gap-0 grow"):
                         ui.label(display).classes("mst-profile-name")
                         meta = []

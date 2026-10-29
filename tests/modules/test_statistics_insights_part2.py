@@ -13,6 +13,7 @@ import sqlite3
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -349,3 +350,25 @@ def test_type_filters_and_viewer_span(db, ins):
     evs = ins.recent_events(rng, "ann", ["bit", "chat_message"])
     assert [e["event_type"] for e in evs] == ["bit", "chat_message"]
     assert ins.user_span("ANN") == (wed.timestamp(), (wed + timedelta(hours=2)).timestamp(), 3)
+
+
+def test_twitch_viewers_by_event_type_and_chat_counter(db):
+    t = NOW
+    add(db, [
+        ("Bitsy", "bit", 100, "", t), ("Follower", "follow", 0, "", t), ("Chatty", "chat_message", 1, "", t),
+        ("Tipper", "donation", 5, "", t), ("Member", "sub", 0, "", t), ("Raider", "raid", 3, "", t),
+    ])
+    mgr = FakeManager(db)
+    mgr.data = SimpleNamespace(chat=SimpleNamespace(user_stats={
+        "CHATTY": SimpleNamespace(twitch_messages_received=4),
+        "Tipper": SimpleNamespace(twitch_messages_received=0),
+    }))
+    ins = si.Insights(mgr)
+    names = ["Bitsy", "follower", "Chatty", "Tipper", "Member", "Raider", "Nobody", " "]
+    assert ins.twitch_viewers(names) == {"bitsy", "follower", "chatty", "raider"}
+    assert ins.twitch_viewers([]) == set()
+
+
+def test_twitch_viewers_without_chat_stats(db):
+    add(db, [("Bitsy", "bit", 100, "", NOW)])
+    assert si.Insights(FakeManager(db)).twitch_viewers(["Bitsy", "Chatty"]) == {"bitsy"}

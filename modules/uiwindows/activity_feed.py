@@ -2416,6 +2416,41 @@ def serialize_condensed_groups(
     return groups
 
 
+# Event kinds that only come from Twitch; a person with one of these is a Twitch viewer.
+_TWITCH_PERSON_KINDS = frozenset(
+    ("follow", "sub", "resub", "giftsub", "bits", "points", "raid", "streak", "modiversary")
+)
+
+
+def attach_person_avatars(groups: List[Dict[str, Any]]) -> None:
+    """Add ``avatar`` (Twitch profile picture URL) to By person groups of Twitch viewers.
+
+    Uses pictures already looked up and fetches the rest in the background; the view is
+    rebuilt when they arrive. Tip-only and YouTube people keep their initial.
+    """
+    from .. import twitch_avatars
+
+    names = [
+        str(g.get("username") or "")
+        for g in groups
+        if any(item.get("kind") in _TWITCH_PERSON_KINDS for item in g.get("items") or [])
+    ]
+    if not names:
+        return
+    known = twitch_avatars.cached_avatars(names)
+    for group in groups:
+        url = known.get(str(group.get("username") or ""))
+        if url:
+            group["avatar"] = url
+    if len(known) < len(names):
+        twitch_avatars.request_avatars(names, on_update=_person_avatars_arrived)
+
+
+def _person_avatars_arrived() -> None:
+    # Called from the lookup thread; timers must be created on the UI loop.
+    run_on_ui_loop(lambda: schedule_condensed_view_update("avatars"))
+
+
 def _condensed_truncation(user_total: int) -> Optional[str]:
     if user_total > MAX_CONDENSED_GROUPS:
         return f"Showing first {MAX_CONDENSED_GROUPS} of {user_total} people"
@@ -2549,6 +2584,7 @@ def _collect_condensed_build_data() -> Dict[str, Any]:
         alerts_to_process, filter_state=filters, search=search
     )
     groups = serialize_condensed_groups(user_alerts)
+    attach_person_avatars(groups)
     return {
         "condense_historical_hours": hours,
         "alert_count": len(alerts_to_process),

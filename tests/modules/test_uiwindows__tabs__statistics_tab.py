@@ -734,3 +734,80 @@ def test_metric_tile_without_previous_period(ctx):
     tab.range_key = "30d"
     assert "is-up" in tab._tile_foot(5, 2, [1, 2])
     assert METRICS_BY_KEY["chat"].label == "Chat messages"
+
+
+# --------------------------------------------------------------------------- Twitch profile pictures
+
+PIC = "https://static-cdn.jtvnw.net/jtv_user_pictures/x-profile_image-300x300.png"
+
+
+def test_avatar_html_variants():
+    assert tabmod._avatar_html("bob") == '<div class="mst-avatar">B</div>'
+    with_pic = tabmod._avatar_html("bob", PIC, "is-lg")
+    assert with_pic.startswith('<div class="mst-avatar is-lg has-photo">B<img src="https://static-cdn')
+    assert 'onerror="this.remove()"' in with_pic and 'referrerpolicy="no-referrer"' in with_pic
+    assert "<img" not in tabmod._avatar_html("bob", "http://plain/x.png")
+    assert "&lt;" in tabmod._avatar_html("<x>")
+
+
+def _avatar_htmls(user):
+    return [e.content for e in user.find(kind=ui.html).elements if "mst-avatar" in str(e.content)]
+
+
+def test_spotlight_shows_twitch_pictures_and_fills_late_ones(ctx, monkeypatch):
+    from modules import twitch_avatars
+
+    seed(ctx.mgr)
+    known = {"Bob": PIC}
+    asked = []
+    monkeypatch.setattr(twitch_avatars, "cached_avatars", lambda names: {n: known[n] for n in names if n in known})
+    monkeypatch.setattr(twitch_avatars, "request_avatars", lambda names, on_update=None: asked.append((list(names), on_update)))
+    hops = []
+    monkeypatch.setattr(tabmod, "run_on_ui_loop", lambda fn: hops.append(fn))
+    tab = tabmod.StatisticsTab()
+
+    async def check(user):
+        await user.should_see("Spotlight")
+        avatars = _avatar_htmls(user)
+        # Bob (bits) has a picture; Dan (watch streak) is a Twitch viewer still being fetched;
+        # Alice (chat only, no Twitch counter) and Cara (gift subs) keep their initials.
+        assert sum("<img" in a for a in avatars) == 1 and any(PIC in a and ">B<" in a for a in avatars)
+        assert asked and sorted(asked[0][0]) == ["Bob", "Dan"]
+        known["Dan"] = PIC
+        asked[0][1]()  # the lookup thread reports back
+        with user.client:
+            hops[0]()
+        assert sum("<img" in a for a in _avatar_htmls(user)) == 2
+        # Alice is both most active and top chatter.
+        assert [name for name, _x, _el in tab._pending_avatars] == ["Alice", "Alice", "Cara"]
+
+    run_tab(tab, check)
+
+
+def test_viewer_profile_shows_the_picture(ctx, monkeypatch):
+    from modules import twitch_avatars
+
+    seed(ctx.mgr)
+    monkeypatch.setattr(twitch_avatars, "cached_avatars", lambda names: {n: PIC for n in names})
+    monkeypatch.setattr(twitch_avatars, "request_avatars", lambda *a, **k: pytest.fail("all known"))
+    tab = tabmod.StatisticsTab()
+
+    async def check(user):
+        await user.should_see("Spotlight")
+        click_text(user, "Dan")
+        await user.should_see("Recent activity")
+        assert any("is-lg has-photo" in a for a in _avatar_htmls(user))
+
+    run_tab(tab, check)
+
+
+def test_fill_pending_avatars_drops_deleted_elements(ctx, monkeypatch):
+    from modules import twitch_avatars
+
+    monkeypatch.setattr(twitch_avatars, "cached_avatars", lambda names: {})
+    tab = tabmod.StatisticsTab()
+    gone = SimpleNamespace(is_deleted=True)
+    waiting = SimpleNamespace(is_deleted=False, set_content=lambda c: pytest.fail("no picture yet"))
+    tab._pending_avatars = [("a", "", gone), ("b", "", waiting)]
+    tab._fill_pending_avatars()
+    assert tab._pending_avatars == [("b", "", waiting)]

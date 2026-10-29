@@ -761,3 +761,27 @@ test("personHtml renders a truncation note when one is present in state", () => 
     s.f.renderList();
     assert.ok(s.q(".afx-cond-head .afx-arrow").textContent.includes("Showing first 50 of 80 people"));
 });
+
+test("by-person cards show the Twitch profile picture over the initial", () => {
+    const s = feed();
+    s.f.set("view", { mode: "person" });
+    const pic = "https://static-cdn.jtvnw.net/jtv_user_pictures/x-profile_image-300x300.png";
+    s.f.set("person", {
+        alert_count: 3, user_count: 3, groups: [
+            { username: "bob", events: 1, avatar: pic },
+            { username: "tipper", events: 1 },
+            { username: "eve", events: 1, avatar: 'http://evil/x.png" onerror="alert(1)' },
+        ],
+    });
+    const users = s.qa(".afx-user");
+    const ava = users[0].querySelector(".afx-ava");
+    assert.ok(ava.className.includes("has-photo"));
+    assert.equal(ava.textContent, "B", "the initial stays underneath in case the picture fails");
+    const img = ava.querySelector("img");
+    assert.equal(img.getAttribute("src"), pic);
+    assert.equal(img.getAttribute("onerror"), "this.remove()");
+    assert.equal(img.getAttribute("referrerpolicy"), "no-referrer");
+    assert.equal(users[1].querySelector(".afx-ava img"), null);
+    assert.ok(!users[1].querySelector(".afx-ava").className.includes("has-photo"));
+    assert.equal(users[2].querySelector(".afx-ava img"), null, "only https pictures are used");
+});

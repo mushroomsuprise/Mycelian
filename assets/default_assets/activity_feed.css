@@ -301,6 +301,8 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx-user-head > .afx-user-id { min-width: 0; flex: 1 1 auto; }
 .afx-ava { width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .8rem; color: #fff;
   background: linear-gradient(135deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 50%, #000)); }
+.afx-ava.has-photo { position: relative; overflow: hidden; }
+.afx-ava.has-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .afx-user-name { font-weight: 700; font-size: .86rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .afx-user-sub { font-size: .68rem; color: var(--color-text-muted); white-space: nowrap; }
 .afx-totals { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; justify-content: flex-end; }
