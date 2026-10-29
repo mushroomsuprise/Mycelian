@@ -91,8 +91,8 @@ def _avatar_html(name: str, picture: str = "", extra: str = "") -> str:
     img = ""
     if picture.startswith("https://"):
         classes += " has-photo"
-        img = (f'<img src="{html.escape(picture)}" alt="" loading="lazy" referrerpolicy="no-referrer" '
-               'onerror="this.remove()">')
+        # Not loading="lazy": WebKit may never start a lazy image added to an open page.
+        img = f'<img src="{html.escape(picture)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">'
     return f'<div class="{classes}">{_initial(name)}{img}</div>'
 
 

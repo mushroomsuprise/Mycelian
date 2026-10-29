@@ -2515,6 +2515,7 @@ def build_condensed_overlay_payload(
         alerts_to_process, filter_state=filter_state, search=search
     )
     groups = serialize_condensed_groups(user_alerts)
+    attach_person_avatars(groups)
     return {
         "success": True,
         "groups": groups,

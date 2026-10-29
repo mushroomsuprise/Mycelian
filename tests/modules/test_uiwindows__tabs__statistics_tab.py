@@ -746,6 +746,7 @@ def test_avatar_html_variants():
     with_pic = tabmod._avatar_html("bob", PIC, "is-lg")
     assert with_pic.startswith('<div class="mst-avatar is-lg has-photo">B<img src="https://static-cdn')
     assert 'onerror="this.remove()"' in with_pic and 'referrerpolicy="no-referrer"' in with_pic
+    assert "loading=" not in with_pic  # lazy images may never load once the page is open
     assert "<img" not in tabmod._avatar_html("bob", "http://plain/x.png")
     assert "&lt;" in tabmod._avatar_html("<x>")
 
@@ -775,8 +776,7 @@ def test_spotlight_shows_twitch_pictures_and_fills_late_ones(ctx, monkeypatch):
         assert asked and sorted(asked[0][0]) == ["Bob", "Dan"]
         known["Dan"] = PIC
         asked[0][1]()  # the lookup thread reports back
-        with user.client:
-            hops[0]()
+        hops[0]()  # runs on the UI loop with no client context, as in the app
         assert sum("<img" in a for a in _avatar_htmls(user)) == 2
         # Alice is both most active and top chatter.
         assert [name for name, _x, _el in tab._pending_avatars] == ["Alice", "Alice", "Cara"]

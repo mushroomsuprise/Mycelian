@@ -33,6 +33,7 @@ MISSING_TTL_SEC = 6 * 3600
 MAX_SAVED = 5000  # most recently fetched viewers kept on disk
 CACHE_FILE = os.path.join("data", "twitch_avatars.json")
 _CALL_TIMEOUT_SEC = 15.0
+_WARN_EVERY_SEC = 600  # a failing lookup is logged at most this often
 
 # Twitch logins: 1-25 letters, digits or underscores. Display names that differ from the
 # login (spaces, other scripts) can't be looked up by name and keep their initial.
@@ -42,6 +43,7 @@ _lock = threading.Lock()
 _cache: Dict[str, Tuple[str, float]] = {}  # login -> (picture URL or "", fetched at)
 _pending: set = set()
 _loaded = False
+_last_warning = 0.0
 
 
 def _cache_path() -> str:
@@ -178,7 +180,7 @@ def _fetch_batch(logins: List[str]) -> Optional[Dict[str, str]]:
     try:
         data = asyncio.run(asyncio.wait_for(api.generic_api_call(url, "GET"), _CALL_TIMEOUT_SEC))
     except Exception as exc:
-        logger.debug("Twitch /users lookup failed: %s", exc)
+        _warn_lookup_failed(exc)
         return None
     pictures: Dict[str, str] = {}
     for row in (data or {}).get("data") or []:
@@ -191,9 +193,20 @@ def _fetch_batch(logins: List[str]) -> Optional[Dict[str, str]]:
     return pictures
 
 
+def _warn_lookup_failed(exc: BaseException) -> None:
+    global _last_warning
+    now = time.time()
+    if now - _last_warning >= _WARN_EVERY_SEC:
+        _last_warning = now
+        logger.warning("Twitch profile picture lookup failed: %s", str(exc) or type(exc).__name__)
+    else:
+        logger.debug("Twitch profile picture lookup failed: %s", exc)
+
+
 def _reset_for_tests() -> None:
-    global _loaded
+    global _loaded, _last_warning
     with _lock:
         _cache.clear()
         _pending.clear()
         _loaded = False
+        _last_warning = 0.0

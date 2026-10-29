@@ -841,3 +841,13 @@ def test_condensed_build_data_carries_avatars(monkeypatch):
     data = feed._collect_condensed_build_data()
     assert data["groups"][0]["avatar"] == PIC
     assert feed._condensed_view_model(data)["groups"][0]["avatar"] == PIC
+
+
+def test_dock_payload_carries_avatars(monkeypatch):
+    from modules import twitch_avatars
+
+    monkeypatch.setattr(feed, "collect_alerts_for_condensed_view",
+                        lambda cutoff: ([{"type": "Follow", "username": "Fan"}], 1, 1))
+    monkeypatch.setattr(twitch_avatars, "cached_avatars", lambda names: {"Fan": PIC})
+    payload = feed.build_condensed_overlay_payload(hours=2, filter_state={"all": True}, search="")
+    assert payload["groups"][0]["avatar"] == PIC

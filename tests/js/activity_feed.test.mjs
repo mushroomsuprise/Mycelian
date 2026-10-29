@@ -781,6 +781,7 @@ test("by-person cards show the Twitch profile picture over the initial", () => {
     assert.equal(img.getAttribute("src"), pic);
     assert.equal(img.getAttribute("onerror"), "this.remove()");
     assert.equal(img.getAttribute("referrerpolicy"), "no-referrer");
+    assert.equal(img.getAttribute("loading"), null, "lazy images may never load once the page is open");
     assert.equal(users[1].querySelector(".afx-ava img"), null);
     assert.ok(!users[1].querySelector(".afx-ava").className.includes("has-photo"));
     assert.equal(users[2].querySelector(".afx-ava img"), null, "only https pictures are used");

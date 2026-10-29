@@ -818,9 +818,10 @@
       }).join('') : (g.lines || []).map(function (l) {
         return '<div class="afx-ln">' + mi('chevron_right') + '<span class="t">' + esc(l) + '</span></div>';
       }).join('');
+      // Not loading="lazy": WebKit may never start a lazy image added to an open page.
       var pic = /^https:\/\//.test(String(g.avatar || '')) ? String(g.avatar) : '';
       var ava = '<span class="afx-ava' + (pic ? ' has-photo' : '') + '">' + esc((name.charAt(0) || '?').toUpperCase()) +
-        (pic ? '<img src="' + esc(pic) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '') + '</span>';
+        (pic ? '<img src="' + esc(pic) + '" alt="" referrerpolicy="no-referrer" onerror="this.remove()">' : '') + '</span>';
       return '<div class="afx-user"><div class="afx-user-head">' + ava +
         '<div class="afx-user-id"><div class="afx-user-name">' + esc(name) + '</div><div class="afx-user-sub">' + esc(sub) + '</div></div>' +
         '<div class="afx-totals">' + totals + '</div></div><div class="afx-lines">' + lines + '</div></div>';

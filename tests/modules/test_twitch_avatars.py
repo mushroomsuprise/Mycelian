@@ -238,3 +238,29 @@ def test_lookup_runs_on_a_background_thread(monkeypatch):
     fake_fetch(monkeypatch, {"alice": PIC})
     ta.request_avatars(["alice"], on_update=done.set)
     assert done.wait(2)
+
+
+def test_lookup_failures_warn_at_most_every_ten_minutes(monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setattr(twitch, "get_twitch_api", lambda: FakeApi(error=RuntimeError("401 Unauthorized")))
+    clock = [1000.0]
+    monkeypatch.setattr(ta.time, "time", lambda: clock[0])
+    with caplog.at_level(logging.DEBUG, logger="modules.twitch_avatars"):
+        ta._fetch_batch(["a"])
+        clock[0] += 60
+        ta._fetch_batch(["b"])
+        clock[0] += ta._WARN_EVERY_SEC
+        ta._fetch_batch(["c"])
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert [r.getMessage() for r in warnings] == ["Twitch profile picture lookup failed: 401 Unauthorized"] * 2
+    assert any(r.levelno == logging.DEBUG for r in caplog.records)
+
+
+def test_timeout_without_a_message_names_the_error(monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setattr(twitch, "get_twitch_api", lambda: FakeApi(error=TimeoutError()))
+    with caplog.at_level(logging.WARNING, logger="modules.twitch_avatars"):
+        ta._fetch_batch(["a"])
+    assert caplog.records[-1].getMessage() == "Twitch profile picture lookup failed: TimeoutError"
