@@ -95,6 +95,18 @@ class ObsTab:
         )
         self.dirty = False
 
+    def has_unsaved_changes(self) -> bool:
+        """Fields use the dirty flag. The page's Save calls save() directly, so the
+        Settings field snapshot (taken when the tab opened) goes stale after a save.
+        A port that isn't valid yet never reaches the buffer, so compare it here."""
+        if self.dirty:
+            return True
+        port = self.ui_elements.get("port")
+        if port is None or self.buffer is None:
+            return False
+        typed = "" if port.value is None else str(port.value).strip()
+        return typed != str(self.buffer.port)
+
     def _set(self, field: str, value) -> None:
         if self.buffer is None:
             return

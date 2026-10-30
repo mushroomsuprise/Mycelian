@@ -570,6 +570,11 @@ class GameHooksTab:
                 return meta.title
         return hook_id
 
+    def has_unsaved_changes(self) -> bool:
+        """Toggles use the dirty flag. The page's Save calls save() directly, so the
+        Settings field snapshot (taken when the tab opened) goes stale after a save."""
+        return bool(self.dirty)
+
     def _on_toggle(self, hook_id: str, value: bool) -> None:
         if not self._hook_supported.get(hook_id, True):
             return

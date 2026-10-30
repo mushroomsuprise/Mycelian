@@ -1702,6 +1702,11 @@ class DatabaseTab:
         with element.add_slot("after"):
             ui.button(icon="folder_open", on_click=pick).props("flat round dense").tooltip("Browse")
 
+    def has_unsaved_changes(self) -> bool:
+        """Fields use the dirty flag. The page's Save calls save() directly, so the
+        Settings field snapshot (taken when the tab opened) goes stale after a save."""
+        return bool(self.dirty)
+
     def _set(self, field: str, value) -> None:
         if getattr(self.buffer, field) != value:
             setattr(self.buffer, field, value)

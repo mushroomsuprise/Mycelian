@@ -649,6 +649,31 @@ def test_save_success(env, monkeypatch):
     assert env.notes[-1]["title"] == "Game Hooks saved"
 
 
+def test_saved_toggle_is_not_unsaved_when_leaving_settings_tab(env, monkeypatch):
+    """The page's Save calls save() directly, so the Settings field snapshot taken when
+    the tab opened is never refreshed. The tab's own flag must decide instead."""
+    from modules.uiwindows import settings as st
+
+    class Switch:  # _is_settings_field matches on the class name
+        def __init__(self, value):
+            self.value = value
+
+    tab = ght.GameHooksTab()
+    tab._load_from_db()
+    monkeypatch.setattr(tab, "_refresh_all_runtime_status", lambda: None)
+    tab.ui_elements["factorio_toggle"] = Switch(False)
+    s = st.SettingsUI()
+    s._tabs_by_name = {"Game Hooks": tab}
+    s._snapshot_tab_fields(tab)  # taken when the tab is opened
+
+    tab.ui_elements["factorio_toggle"].value = True
+    tab._on_toggle("factorio", True)
+    assert s._tab_is_dirty("Game Hooks") is True
+    tab.save()
+    assert s._tab_is_dirty("Game Hooks") is False
+    assert s.has_unsaved_changes() is False
+
+
 def test_save_superseded_counts_as_ok(env, monkeypatch):
     tab = _tab_with_fake_elements(env)
     monkeypatch.setattr(tab, "_refresh_all_runtime_status", lambda: None)

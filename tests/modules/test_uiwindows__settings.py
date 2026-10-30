@@ -194,6 +194,46 @@ def test_snapshot_tab_fields_skips_non_fields_and_errors():
     assert plain._field_snapshot == {}
 
 
+@pytest.mark.parametrize("module,cls", [
+    ("database_tab", "DatabaseTab"),
+    ("game_hooks_tab", "GameHooksTab"),
+    ("obs_tab", "ObsTab"),
+    ("spotify_tab", "SpotifyTab"),
+    ("twitch_tab", "TwitchTab"),
+])
+def test_page_saved_tab_is_not_unsaved_with_a_stale_snapshot(module, cls):
+    """These tabs' page Save calls save() directly, which never refreshes the snapshot
+    taken when the tab opened. Their own dirty flag must decide."""
+    import importlib
+
+    tab_cls = getattr(importlib.import_module(f"modules.uiwindows.tabs.{module}"), cls)
+    tab = tab_cls.__new__(tab_cls)
+    tab.buffer = None
+    tab.ui_elements = {"field": Input("edited and saved")}
+    tab._field_snapshot = {"field": "value when the tab opened"}
+    tab.dirty = False
+    s = new_ui()
+    s._tabs_by_name = {"T": tab}
+    assert s._tab_is_dirty("T") is False
+    tab.dirty = True
+    assert s._tab_is_dirty("T") is True
+
+
+def test_obs_tab_counts_an_invalid_port_as_unsaved():
+    """A port that fails validation never reaches the buffer, so dirty stays False."""
+    from modules.uiwindows.tabs.obs_tab import ObsTab
+
+    tab = ObsTab.__new__(ObsTab)
+    tab.buffer = SimpleNamespace(port=4455)
+    tab.ui_elements = {"port": Input(4455)}
+    tab.dirty = False
+    assert tab.has_unsaved_changes() is False
+    tab.ui_elements["port"].value = "99999"
+    assert tab.has_unsaved_changes() is True
+    tab.ui_elements["port"].value = None
+    assert tab.has_unsaved_changes() is True
+
+
 def test_note_settings_tab_loaded():
     s = new_ui()
     s._note_settings_tab_loaded("missing")
