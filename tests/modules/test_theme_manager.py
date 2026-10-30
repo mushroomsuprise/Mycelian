@@ -455,3 +455,23 @@ def test_delete_theme_with_loaded_catalog_does_not_rescan(manager, catalog, monk
     manager.load_themes_from_directory()
     monkeypatch.setattr(ThemeManager, "load_themes_from_directory", lambda self: pytest.fail("no rescan"))
     assert manager.delete_theme("nord") is True
+
+
+BUNDLED_THEMES = sorted((ROOT / "themes").glob("*_theme.json"))
+# Pop-up look fields are optional (empty = default); every other field is required.
+REQUIRED_FIELDS = [f for f in FIELDS if f not in ("notify_style", "notify_radius", "notify_shadow", "notify_timer", "notify_density")]
+
+
+@pytest.mark.parametrize("path", BUNDLED_THEMES, ids=lambda p: p.stem)
+def test_bundled_theme_defines_every_color(path):
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert sorted(data) == sorted(REQUIRED_FIELDS)
+    assert path.name == f"{data['name']}_theme.json"
+    assert data["theme_type"] in ("dark", "light") and data["display_name"]
+    for field in REQUIRED_FIELDS[3:]:
+        assert data[field].startswith(("rgb(", "rgba(")), f"{field}: {data[field]}"
+
+
+def test_bundled_theme_names_are_unique():
+    names = [json.loads(p.read_text(encoding="utf-8"))["display_name"] for p in BUNDLED_THEMES]
+    assert len(names) == len(set(names)) and PROTECTED_THEMES <= {p.stem[: -len("_theme")] for p in BUNDLED_THEMES}

@@ -1,11 +1,11 @@
 {
-  "version": "1.13.3",
+  "version": "1.14.0",
   "files": [
     {
       "path": "README.md",
       "install": "README.md",
-      "sha256": "53189cb457e3661c27ad396e451d70a6a5f5e985ee7e526bca9f82accef3c818",
-      "size": 6697,
+      "sha256": "95c7f30ba9a57dad3c8cbd610f033507f8d3be5c260a36dea058e00cb95721ba",
+      "size": 7525,
       "action": "replace"
     },
     {
@@ -23,10 +23,24 @@
       "action": "if-missing"
     },
     {
+      "path": "assets/default_assets/activity_feed.css",
+      "install": "assets/default_assets/activity_feed.css",
+      "sha256": "1b10cfc13d867b65f5ae3e97bd14ccdb219e47c434bec1324c61c100e4ee0f8c",
+      "size": 33384,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/activity_feed.js",
+      "install": "assets/default_assets/activity_feed.js",
+      "sha256": "2ed94e40e4ce853cff09cc8b8885acf8c3059cd69016b46a93bfdcbcd91fcaff",
+      "size": 55132,
+      "action": "replace"
+    },
+    {
       "path": "assets/default_assets/alert_queue.js",
       "install": "assets/default_assets/alert_queue.js",
-      "sha256": "66e05320934466f312461c2702e8f1e697a807e334127d25c80ab01f5780d111",
-      "size": 6277,
+      "sha256": "bd93d5ef7591045d0974841ee11ed6e8efa6e77eecbc0f14138fd538dc0a4fba",
+      "size": 7249,
       "action": "replace"
     },
     {
@@ -730,6 +744,20 @@
       "action": "replace"
     },
     {
+      "path": "assets/default_assets/images/game_hooks/factorio.jpg",
+      "install": "assets/default_assets/images/game_hooks/factorio.jpg",
+      "sha256": "83059b95c937b55be2809a8478193f7a1d5366135065f7ec7fb0f1715ad553c5",
+      "size": 31339,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/images/game_hooks/ff7.jpg",
+      "install": "assets/default_assets/images/game_hooks/ff7.jpg",
+      "sha256": "6779e6e2731d8d75505f55a83c5d2d07ff75c5a1d865c64ad2d498974aac1259",
+      "size": 20763,
+      "action": "replace"
+    },
+    {
       "path": "assets/default_assets/images/notconnected.png",
       "install": "assets/default_assets/images/notconnected.png",
       "sha256": "d7da16ca03c4543195c9d6a545d0c7a590067b329ae8527672505d6b9899f52d",
@@ -758,59 +786,122 @@
       "action": "replace"
     },
     {
+      "path": "assets/default_assets/mycelian_color_picker.css",
+      "install": "assets/default_assets/mycelian_color_picker.css",
+      "sha256": "350f03eddc6dd4a2cd50539cdb940af36e6f8f0e7dc88784f606dd827e76517a",
+      "size": 12107,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/mycelian_color_picker.js",
+      "install": "assets/default_assets/mycelian_color_picker.js",
+      "sha256": "4f24556a9a1abae523c3577348004437fb194d99b3573ea3323a57e3a7d1e8fe",
+      "size": 59356,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/mycelian_media_preview.js",
+      "install": "assets/default_assets/mycelian_media_preview.js",
+      "sha256": "66751ccac9c93a6cfc2437a0859709369b91b1a881c21084129c3ecd68b84141",
+      "size": 5298,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/mycelian_toast.js",
+      "install": "assets/default_assets/mycelian_toast.js",
+      "sha256": "338401ef195c2dae1082308ffde217862e8647d028f404e6f93f327867b90576",
+      "size": 20715,
+      "action": "replace"
+    },
+    {
       "path": "assets/default_assets/overlay_recovery.js",
       "install": "assets/default_assets/overlay_recovery.js",
-      "sha256": "c02bc19a74f9972691dae19f8bd1fba72f0f5c5b79cea14e6af89077f26f547f",
-      "size": 4217,
+      "sha256": "aeb268682381be4b14c41a1a9a687b4c42cf7818511f6a7bfe188ed2adcb5825",
+      "size": 4469,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/source_controls.css",
+      "install": "assets/default_assets/source_controls.css",
+      "sha256": "efde5e2532e5ca000436a68a2879256c6a4fe8523197b118cc0965e26f0a68e3",
+      "size": 11656,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/advanced_js_editor.js",
+      "install": "assets/default_assets/spore_studio/advanced_js_editor.js",
+      "sha256": "b9dfc27ebd03a752aab7b0d287bd70c7c0c21951f513cd4b02c8d6498981a433",
+      "size": 16586,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/container_editor.css",
       "install": "assets/default_assets/spore_studio/container_editor.css",
-      "sha256": "49b5a6a26d853606f43ac16cb69369fa1e97a57e86bac05a34d5d1aa1dc9f76d",
-      "size": 5166,
+      "sha256": "00466e66cd0b6f3de0d8a979111fd0a3fcd629a87623344fdc07a05b7ba5cd1f",
+      "size": 8149,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/container_editor.js",
       "install": "assets/default_assets/spore_studio/container_editor.js",
-      "sha256": "aacd7a3bed27dcb0094efd8948c7a8ac135aa782b583af064309d97ba89c0cf5",
-      "size": 59102,
+      "sha256": "2eb39e02adfcc7c64c7a8ffce203f6c5128d992be684d65d5f46a9f4f6441ed4",
+      "size": 73983,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/container_layout.js",
       "install": "assets/default_assets/spore_studio/container_layout.js",
-      "sha256": "93218984c749afb38e80d6b39096f668646eb91a82d38d2dcc8aa31b3304e826",
-      "size": 12403,
+      "sha256": "0585af5c281824fbb8972b991acc8ce02a17e4e837bb530dd796bbdf84f19dfd",
+      "size": 12793,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/container_shell.js",
       "install": "assets/default_assets/spore_studio/container_shell.js",
-      "sha256": "1b2922dfeec4d5d4289a70ed564af0fe3fcc7e66442faeb79ff7c48aaf76f290",
-      "size": 7644,
+      "sha256": "cccdbf6052fd430680e5a3ebfa9d46346e854ba8089ad7604d75ca270c0555a7",
+      "size": 8289,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/editor.css",
       "install": "assets/default_assets/spore_studio/editor.css",
-      "sha256": "7c91917a7b63505908e9c6729fd6a1caaaee131f8769a96daaa0d63161813a48",
-      "size": 26349,
+      "sha256": "c4a30ae1b8a339c2cf73cda2b11aac3dd6a9cf4941f12e35b8ba0121aa07961d",
+      "size": 71405,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/editor.html",
       "install": "assets/default_assets/spore_studio/editor.html",
-      "sha256": "711c92157789c59104a622c80447dc5fd4a5fdfe0eb128720db18c3ef6cc4e4a",
-      "size": 20307,
+      "sha256": "9ca9f6fb8649f97a4aa37e1976ecb93575c4b1c4fa18f503c214788c49628893",
+      "size": 29262,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/editor.js",
       "install": "assets/default_assets/spore_studio/editor.js",
-      "sha256": "a3a2c326449061fbf856d813a8bddc0ec6a9c927e7306bb502c75454a961eb1e",
-      "size": 282918,
+      "sha256": "0c7a8a95067ef31bf822517d7c46b4ce5fa7ee907cfa2de0cf97f5d74acfbce0",
+      "size": 513425,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/qrcode.js",
+      "install": "assets/default_assets/spore_studio/qrcode.js",
+      "sha256": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
+      "size": 56694,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/spore_ui.js",
+      "install": "assets/default_assets/spore_studio/spore_ui.js",
+      "sha256": "64a2e8ff9b01eec707bdbf110368c5042f5c57822051d974d07152085ba382a2",
+      "size": 14498,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/walkthrough.js",
+      "install": "assets/default_assets/spore_studio/walkthrough.js",
+      "sha256": "911e8e59a7fd1aa673d6ad36128a4d614686d07e84cbf2c7cb0be29446239baf",
+      "size": 17263,
       "action": "replace"
     },
     {
@@ -1075,15 +1166,8 @@
     {
       "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js",
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js",
-      "sha256": "16175a864de0970cf2dc8805f883e996f39e6c5814e14b7cf61cf779b23f6c7c",
-      "size": 79794,
-      "action": "replace"
-    },
-    {
-      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js.map",
-      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js.map",
-      "sha256": "4d60513f74d6b7862eaadce73d6e8c77a4a8370e18a32c44a1382ce3a6b5384c",
-      "size": 483050,
+      "sha256": "aa2c7c575b85b67954e7d94724783cc734498dbd0eb370f4a33c7d0f51aa3a5f",
+      "size": 81491,
       "action": "replace"
     },
     {
@@ -1257,8 +1341,8 @@
     {
       "path": "templates/_boilerplates/instant_alert.html",
       "install": "templates/_boilerplates/instant_alert.html",
-      "sha256": "3a67f4639a4a80ce1f9cbe47edab016d247b4537b47322707c36cd0b5567a0c0",
-      "size": 13330,
+      "sha256": "db3dd229254a373b57e7c67420c729b9073f34bfd05d862876e8303fc4d049c4",
+      "size": 16385,
       "action": "replace"
     },
     {
@@ -1271,8 +1355,8 @@
     {
       "path": "templates/_boilerplates/queue_alert.html",
       "install": "templates/_boilerplates/queue_alert.html",
-      "sha256": "c2da577c824bb26456d0e52a2af60db3cc384333106315af32acfecde4f0632c",
-      "size": 19825,
+      "sha256": "5e6a15f96052527d2670b907b14927d0bf55fecaf086d60dbb833fd564f7d9a8",
+      "size": 22568,
       "action": "replace"
     },
     {
@@ -1285,15 +1369,15 @@
     {
       "path": "templates/_boilerplates/spore_anim_runtime.js",
       "install": "templates/_boilerplates/spore_anim_runtime.js",
-      "sha256": "eeab42852e0bbfcd096eb9d392bbf01622e9f67a42d7b39e8b169ba7ef95e869",
-      "size": 6295,
+      "sha256": "6cd2b686df8edd225618a0cd2a7290dda2061d29b38f5408e197fb4af9ba32b4",
+      "size": 6854,
       "action": "replace"
     },
     {
       "path": "templates/_boilerplates/spore_data_runtime.js",
       "install": "templates/_boilerplates/spore_data_runtime.js",
-      "sha256": "ff7e9cce0067eb07acabb2117dba2e790ecf1832ca0a800d2e57f159a6fde656",
-      "size": 41075,
+      "sha256": "7f39d669370f48895ab8f6dda0eb8114930ac6e32c9667a57bb64f8cb3c40b5e",
+      "size": 161977,
       "action": "replace"
     },
     {
@@ -1304,17 +1388,31 @@
       "action": "replace"
     },
     {
+      "path": "templates/_spore/giveaway.spore.json",
+      "install": "templates/_spore/giveaway.spore.json",
+      "sha256": "48dcf3f72541a60f5ba94cf36b2e35975d4baeb1bb1fe0b4008160ba7f9b2f85",
+      "size": 35689,
+      "action": "replace"
+    },
+    {
+      "path": "templates/_spore/poll.spore.json",
+      "install": "templates/_spore/poll.spore.json",
+      "sha256": "63a50dd69bbc083555c4112662e77db1b0be4dbe0b3bd8fc787885cc8e5af030",
+      "size": 5835,
+      "action": "replace"
+    },
+    {
       "path": "templates/activity_feed.html",
       "install": "templates/activity_feed.html",
-      "sha256": "7c6b18cee202a9322fdac2739d22cf02d62a28e399bffd2ba417ab35305a6874",
-      "size": 116232,
+      "sha256": "0895a925463bc554ad8beaff818c7ae2fdf5a4236f376a8226477a7b30179726",
+      "size": 13530,
       "action": "replace"
     },
     {
       "path": "templates/alerts.html",
       "install": "templates/alerts.html",
-      "sha256": "ab06298578ba35a30ed4c707808dc3ebf3e486fd900ae84a5470ec89a02f2bcc",
-      "size": 131197,
+      "sha256": "99f2034fc107381bae7d36b6ed9e87b08a9e209fc42a83bc39c3e6f162ee4eb9",
+      "size": 134491,
       "action": "replace"
     },
     {
@@ -1341,8 +1439,8 @@
     {
       "path": "templates/chat.html",
       "install": "templates/chat.html",
-      "sha256": "c57b7f32ed281b3c43c26f85533b4fd5a68ddaac9e28556b93a88d47d6b1a247",
-      "size": 187364,
+      "sha256": "5272b15486da8a5a2662252baef118615ee12c057b06e8567cff11da6c6c128a",
+      "size": 249548,
       "action": "replace"
     },
     {
@@ -1369,8 +1467,8 @@
     {
       "path": "templates/giveaway.html",
       "install": "templates/giveaway.html",
-      "sha256": "5deabafc9f07c5ff84973d319e09af58eabb0e583328199ec9f7d6ae33646e1c",
-      "size": 28545,
+      "sha256": "e3377874d7ff57728a5c7d9861db6afa2ed68657d82a11dcce8ab9757e1ab5ba",
+      "size": 214756,
       "action": "replace"
     },
     {
@@ -1381,17 +1479,24 @@
       "action": "replace"
     },
     {
+      "path": "templates/poll.html",
+      "install": "templates/poll.html",
+      "sha256": "bd582ab1a070b2a1a9b5bc6cad4372b696a62b0a76ed85e0d55d9cda672e5838",
+      "size": 193079,
+      "action": "replace"
+    },
+    {
       "path": "templates/roulette.html",
       "install": "templates/roulette.html",
-      "sha256": "3268dc97e449b76cc664231ff767d20886c89825fc3f4b1135f8cb30bb7aaa8c",
-      "size": 115243,
+      "sha256": "45fb909200d85bce361ae85e03fef8da64b2eb01ff16b13d6ac110b88898da48",
+      "size": 118047,
       "action": "replace"
     },
     {
       "path": "templates/source_controls.html",
       "install": "templates/source_controls.html",
-      "sha256": "d6de9974a9f39de443b259ccd017f3612bba02b374b28f8831a9fedf7cafedc4",
-      "size": 60391,
+      "sha256": "9837a37458b9dd7d7edc0b945701bba0870039b4834b805f8811769a8a13e294",
+      "size": 49855,
       "action": "replace"
     },
     {
@@ -1411,8 +1516,8 @@
     {
       "path": "templates/template_configs/activity_feed.json",
       "install": "templates/template_configs/activity_feed.json",
-      "sha256": "56bf53fefc75e2f89b2e1bfdf64a53beea09f1d29a7e7b16a401ea8d6cb391f0",
-      "size": 6333,
+      "sha256": "1cbd27cca28760d6e03ccbe5d1b8c67dba8303b02d094e8e3e34151725ce310e",
+      "size": 60,
       "action": "merge"
     },
     {
@@ -1446,8 +1551,8 @@
     {
       "path": "templates/template_configs/chat.json",
       "install": "templates/template_configs/chat.json",
-      "sha256": "f63775e5a5ba492a983cedb211e5c8f6a362d9a63fbf5891d33980398e3bd26c",
-      "size": 56187,
+      "sha256": "0222445b13d16bd75d9a0927ceeb3acbecd196e1df0a927ed58bd29adff11da1",
+      "size": 64030,
       "action": "merge"
     },
     {
@@ -1474,8 +1579,8 @@
     {
       "path": "templates/template_configs/giveaway.json",
       "install": "templates/template_configs/giveaway.json",
-      "sha256": "0c15a58ade7e096b6209f028b9db8292dec450d41007cab82b51d02bfbd325ff",
-      "size": 32071,
+      "sha256": "16a3e24201346c6d7fc074fc61f05c814be002f659af54ae761c02523526acd3",
+      "size": 16822,
       "action": "merge"
     },
     {
@@ -1486,10 +1591,17 @@
       "action": "merge"
     },
     {
+      "path": "templates/template_configs/poll.json",
+      "install": "templates/template_configs/poll.json",
+      "sha256": "3c108b0380b8462c83efaeb19945953954ae77d13b872269eb4c13e0f13b2b1d",
+      "size": 13792,
+      "action": "merge"
+    },
+    {
       "path": "templates/template_configs/roulette.json",
       "install": "templates/template_configs/roulette.json",
-      "sha256": "11ee16e9956205aea382e777259184df8a4f7730433701e935118c1bc0d3fcc6",
-      "size": 115853,
+      "sha256": "b7cbbf58eae86e1e08e6d99fcb1df11528a8be3a936d903f3adc56c56d14f0ea",
+      "size": 118920,
       "action": "merge"
     },
     {
@@ -1635,8 +1747,8 @@
     {
       "path": "packaged/windows/Mycelian.exe",
       "install": "Mycelian.exe",
-      "sha256": "ce20a3ba7502f9c9bf4155af47f4b89f85e9389f8a03283cad30d33245939353",
-      "size": 75108799,
+      "sha256": "159e785f707b058fb69033b8f7b5f3e149f806a39e56f45c897652abe2caa1b3",
+      "size": 54061725,
       "action": "replace",
       "os": "windows"
     }

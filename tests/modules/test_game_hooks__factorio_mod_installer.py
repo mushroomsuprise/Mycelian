@@ -253,3 +253,95 @@ def test_install_copy_error(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr(inst.shutil, "copytree", boom)
     ok, msg = inst.install_mod(str(tmp_path / "data"))
     assert (ok, msg) == (False, "Could not install mod: disk full")
+
+
+# --------------------------------------------------------------------------- Factorio version
+
+
+def _game_log(data: Path, version: str) -> None:
+    data.mkdir(parents=True, exist_ok=True)
+    (data / "factorio-current.log").write_text(
+        f"   0.000 2026-10-29 19:39:30; Factorio {version} (build 87808, win64, steam, space-age)\n"
+        "   0.000 Operating system: Windows 11\n",
+        encoding="utf-8",
+    )
+
+
+def _versioned_bundle(tmp_path: Path, factorio="2.0", version="1.0.4") -> Path:
+    b = _bundle(tmp_path, version)
+    info = {"name": inst.MOD_NAME, "version": version, "factorio_version": factorio}
+    (b / "info.json").write_text(json.dumps(info), encoding="utf-8")
+    return b
+
+
+def test_game_version_from_log(tmp_path):
+    assert inst.game_version(None) == ""
+    assert inst.game_version(tmp_path) == ""  # no log
+    (tmp_path / "factorio-current.log").write_text("nothing useful\n", encoding="utf-8")
+    assert inst.game_version(tmp_path) == ""
+    _game_log(tmp_path, "2.1.24")
+    assert inst.game_version(tmp_path) == "2.1"
+
+
+@pytest.mark.parametrize("bundled,game,target", [
+    ("2.0", "2.1", "2.1"),  # newer game: match it so it loads
+    ("2.0", "2.0", "2.0"),
+    ("2.0", "1.1", "2.0"),  # older game: the mod needs the 2.0 API
+    ("2.0", "", "2.0"),
+    ("", "2.1", ""),
+    ("2.0", "2.10", "2.10"),  # compared as numbers, not text
+])
+def test_target_factorio_version(bundled, game, target):
+    assert inst.target_factorio_version(bundled, game) == target
+
+
+def test_install_matches_a_newer_game(monkeypatch, tmp_path):
+    """Factorio 2.1 refuses a mod declaring factorio_version 2.0."""
+    b = _versioned_bundle(tmp_path)
+    monkeypatch.setattr(inst, "bundled_mod_dir", lambda: b)
+    data = tmp_path / "data"
+    _game_log(data, "2.1.24")
+    ok, _ = inst.install_mod(str(data))
+    installed = json.loads((data / "mods" / f"{inst.MOD_NAME}_1.0.4" / "info.json").read_text(encoding="utf-8"))
+    assert ok and installed["factorio_version"] == "2.1" and installed["version"] == "1.0.4"
+    assert json.loads((b / "info.json").read_text(encoding="utf-8"))["factorio_version"] == "2.0"  # bundle untouched
+
+
+def test_install_keeps_bundled_version_for_same_or_unknown_game(monkeypatch, tmp_path):
+    b = _versioned_bundle(tmp_path)
+    monkeypatch.setattr(inst, "bundled_mod_dir", lambda: b)
+    data = tmp_path / "data"
+    inst.install_mod(str(data))  # no log yet
+    info = data / "mods" / f"{inst.MOD_NAME}_1.0.4" / "info.json"
+    assert inst.read_info_factorio_version(info) == "2.0"
+    _game_log(data, "2.0.72")
+    inst.install_mod(str(data))
+    assert inst.read_info_factorio_version(info) == "2.0"
+
+
+def test_status_flags_a_copy_built_for_another_factorio(monkeypatch, tmp_path):
+    """Same mod version, but the game moved to 2.1: offer Update instead of 'Mod installed'."""
+    b = _versioned_bundle(tmp_path)
+    monkeypatch.setattr(inst, "bundled_mod_dir", lambda: b)
+    data = tmp_path / "data"
+    monkeypatch.setattr(inst, "mods_dir_for", lambda data_dir=None: data / "mods")
+    _game_log(data, "2.0.72")
+    inst.install_mod(str(data))
+    assert inst.install_status() == ("current", "v1.0.4", "ok")
+    _game_log(data, "2.1.24")
+    assert inst.install_status() == ("outdated", "v1.0.4  ·  update for Factorio 2.1", "warning")
+    assert inst.detect_state() == "outdated"
+    inst.install_mod(str(data))
+    assert inst.install_status() == ("current", "v1.0.4", "ok")
+
+
+def test_installed_factorio_version_ignores_zips_and_missing(tmp_path):
+    mods = tmp_path / "mods"
+    assert inst.installed_factorio_version(None) == ""
+    mods.mkdir()
+    (mods / f"{inst.MOD_NAME}_1.0.0.zip").write_bytes(b"PK")
+    assert inst.installed_factorio_version(mods) == ""
+    folder = mods / f"{inst.MOD_NAME}_1.0.4"
+    folder.mkdir()
+    (folder / "info.json").write_text(json.dumps({"factorio_version": "2.1"}), encoding="utf-8")
+    assert inst.installed_factorio_version(mods) == "2.1"

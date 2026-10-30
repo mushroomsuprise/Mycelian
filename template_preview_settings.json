@@ -1,6 +1,7 @@
 {
   "enable_preview_sounds": true,
   "resolutions": {},
-  "show_inline_preview": false,
-  "show_mock_toolbar": true
+  "show_inline_preview": true,
+  "show_mock_toolbar": true,
+  "split_editor_pct": 47.0
 }
