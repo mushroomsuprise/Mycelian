@@ -46,6 +46,16 @@ html, body {
     overflow: hidden;
 }
 
+/* Open dropdown lists. Windows draws them natively and falls back to white when the
+   options have no colours of their own (selects here use see-through backgrounds). */
+select option,
+select optgroup {
+    background-color: var(--ss-bg-elevated);
+    color: var(--ss-text);
+}
+select optgroup { color: var(--ss-text-muted); }
+select option:checked { background-color: color-mix(in srgb, var(--ss-accent) 30%, var(--ss-bg-elevated)); }
+
 /* Line icons from spore_ui.js */
 .ss-ic { display: inline-flex; width: 16px; height: 16px; flex: none; }
 .ss-ic svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
