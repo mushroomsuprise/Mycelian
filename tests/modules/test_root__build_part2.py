@@ -19,6 +19,9 @@ from pathlib import Path
 
 import pytest
 
+# Windows has no POSIX execute bits: chmod there only toggles the read-only flag
+POSIX_MODES = os.name != "nt"
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -260,7 +263,8 @@ def test_copy_build_artifact_file(tmp_path, set_os, os_name, executable):
     dest = tmp_path / "out" / "deep" / "bin"
     bld._copy_build_artifact(src, dest)
     assert dest.read_bytes() == b"elf"
-    assert bool(dest.stat().st_mode & 0o111) is executable
+    if POSIX_MODES:
+        assert bool(dest.stat().st_mode & 0o111) is executable
 
 
 def test_installer_output_dir(tmp_path):
@@ -626,8 +630,8 @@ def test_find_iscc_not_found(monkeypatch, tmp_path):
     monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "none"))
     monkeypatch.setenv("ProgramFiles", str(tmp_path / "none"))
     checked = []
-    real_is_file = Path.is_file
-    monkeypatch.setattr(Path, "is_file", lambda self: checked.append(str(self)) or real_is_file(self))
+    # Pretend nothing is installed, even when this machine has Inno Setup in Program Files
+    monkeypatch.setattr(Path, "is_file", lambda self: checked.append(str(self)) and False)
     with pytest.raises(FileNotFoundError, match="Inno Setup compiler"):
         bld.find_iscc()
     assert checked.count(str(tmp_path / "none" / "Inno Setup 6" / "ISCC.exe")) == 1
@@ -638,13 +642,17 @@ def test_find_iscc_without_env(monkeypatch):
     monkeypatch.setattr(bld.shutil, "which", lambda name: None)
     monkeypatch.delenv("ProgramFiles(x86)", raising=False)
     monkeypatch.delenv("ProgramFiles", raising=False)
+    monkeypatch.setattr(Path, "is_file", lambda self: False)
     with pytest.raises(FileNotFoundError):
         bld.find_iscc()
 
 
+FAKE_ISCC = str(Path("/fake/ISCC.exe"))  # backslashes on Windows
+
+
 @pytest.fixture
 def inno_env(tmp_path, monkeypatch):
-    monkeypatch.setattr(bld, "find_iscc", lambda: Path("/fake/ISCC.exe"))
+    monkeypatch.setattr(bld, "find_iscc", lambda: Path(FAKE_ISCC))
     monkeypatch.setattr(bld, "VERSION", "3.0.0")
     (tmp_path / "Mycelian.iss").write_text("; script")
     return tmp_path
@@ -658,10 +666,10 @@ def test_build_inno_setup_missing_script(tmp_path, monkeypatch):
 
 def test_build_inno_setup_success(inno_env, run, messages):
     out = inno_env / "Output"
-    run.on(["/fake/ISCC.exe"], effect=lambda c, k: (out / "Mycelian v3.0.0.exe").write_bytes(b"x"))
+    run.on([FAKE_ISCC], effect=lambda c, k: (out / "Mycelian v3.0.0.exe").write_bytes(b"x"))
     assert bld.build_inno_setup(inno_env) == out / "Mycelian v3.0.0.exe"
-    assert run.calls[0] == (["/fake/ISCC.exe", f"/O{out}", str(inno_env / "Mycelian.iss")], {"cwd": inno_env})
-    assert _texts(messages) == ["Running /fake/ISCC.exe"]
+    assert run.calls[0] == ([FAKE_ISCC, f"/O{out}", str(inno_env / "Mycelian.iss")], {"cwd": inno_env})
+    assert _texts(messages) == [f"Running {FAKE_ISCC}"]
 
 
 def test_build_inno_setup_falls_back_to_latest_match(inno_env, run):
@@ -671,18 +679,18 @@ def test_build_inno_setup_falls_back_to_latest_match(inno_env, run):
         (out / "Mycelian v1.0.0.exe").write_bytes(b"x")
         (out / "Mycelian v2.0.0.exe").write_bytes(b"x")
 
-    run.on(["/fake/ISCC.exe"], effect=make)
+    run.on([FAKE_ISCC], effect=make)
     assert bld.build_inno_setup(inno_env) == out / "Mycelian v2.0.0.exe"
 
 
 def test_build_inno_setup_no_installer(inno_env, run):
-    run.on(["/fake/ISCC.exe"])
+    run.on([FAKE_ISCC])
     with pytest.raises(FileNotFoundError, match="no installer was found"):
         bld.build_inno_setup(inno_env)
 
 
 def test_build_inno_setup_failure(inno_env, run):
-    run.on(["/fake/ISCC.exe"], returncode=2)
+    run.on([FAKE_ISCC], returncode=2)
     with pytest.raises(RuntimeError, match="exit code 2"):
         bld.build_inno_setup(inno_env)
 
@@ -907,7 +915,9 @@ def test_build_macos_pkg_success(mac_env, run, messages):
     installer = bld.build_macos_pkg(root)
     assert installer == root / "Output" / "Mycelian-7.7.7.pkg"
     assert seen["files"] == ["Mycelian", "merge_template_configs", "templates"]
-    assert seen["postinstall"] == (b"#!/bin/sh\nexit 0\n", 0o755)
+    assert seen["postinstall"][0] == b"#!/bin/sh\nexit 0\n"
+    if POSIX_MODES:
+        assert seen["postinstall"][1] == 0o755
     assert seen["stale"] is False
     assert 'hostArchitectures="arm64"' in seen["distribution"]
     assert 'version="7.7.7"' in seen["distribution"]

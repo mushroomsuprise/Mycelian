@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 
 import copy  # noqa: E402
 import json  # noqa: E402
+import os  # noqa: E402
 import re  # noqa: E402
 import shutil  # noqa: E402
 import subprocess  # noqa: E402
@@ -664,7 +665,8 @@ def test_streamdeck_source_actions_match_manifest():
     assert declared == {a["UUID"] for a in manifest["Actions"]}
 
 
-TSC = ROOT / "streamdeck-plugin" / "mycelian" / "node_modules" / ".bin" / "tsc"
+# On Windows, npm puts a .cmd shim next to the POSIX shell script; only the shim can be run
+TSC = ROOT / "streamdeck-plugin" / "mycelian" / "node_modules" / ".bin" / ("tsc.cmd" if os.name == "nt" else "tsc")
 
 
 @pytest.mark.skipif(NODE is None or not TSC.exists(),

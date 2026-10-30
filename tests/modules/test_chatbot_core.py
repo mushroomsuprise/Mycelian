@@ -300,7 +300,8 @@ def test_format_time_zone_conversion_error_is_ignored(fixed_now, monkeypatch):
     assert core.format_time_variable("CST") == "19:05:07"
 
 
-def test_format_time_layout_falls_back_on_platforms_without_dash_flags(monkeypatch):
+def test_format_time_layout_unpadded_on_platforms_without_dash_flags(monkeypatch):
+    """Windows strftime rejects %-H / %-I, so h:mm must not depend on them."""
     class NoDash(FixedDateTime):
         @classmethod
         def now(cls, tz=None):
@@ -312,8 +313,9 @@ def test_format_time_layout_falls_back_on_platforms_without_dash_flags(monkeypat
             return datetime.strftime(self, fmt)
 
     monkeypatch.setattr(core, "datetime", NoDash)
-    assert core.format_time_variable("h:mm") == "09:05"
-    assert core.format_time_variable("h:mm.12") == "09:05"
+    assert core.format_time_variable("h:mm") == "9:05"
+    assert core.format_time_variable("h:mm.12") == "9:05"
+    assert core.format_time_variable("hh:mm") == "09:05"
 
 
 def test_format_time_unexpected_error_returns_plain_clock(monkeypatch, caplog):

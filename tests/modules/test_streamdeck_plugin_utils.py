@@ -34,6 +34,7 @@ def fake_os(tmp_path, monkeypatch):
     home.mkdir()
     data = tmp_path / "data"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() on Windows
     monkeypatch.setattr(sd.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(sd, "get_data_path", lambda rel="": str(data / rel))
     plugins = home / "Library" / "Application Support" / "com.elgato.StreamDeck" / "Plugins"

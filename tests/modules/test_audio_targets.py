@@ -8,6 +8,7 @@ is replaced with a fake, so nothing is enumerated, launched or played for real.
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 from pathlib import Path
@@ -642,6 +643,8 @@ def _install_pwd_grp(monkeypatch, user="streamer", members=None, group_missing=F
     grp.getgrnam = getgrnam
     monkeypatch.setitem(sys.modules, "pwd", pwd)
     monkeypatch.setitem(sys.modules, "grp", grp)
+    # os.getuid only exists on POSIX; the fake pwd ignores the uid anyway
+    monkeypatch.setattr(os, "getuid", lambda: 1000, raising=False)
 
 
 def test_check_linux_permissions_in_group(monkeypatch):

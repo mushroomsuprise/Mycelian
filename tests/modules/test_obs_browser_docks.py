@@ -34,7 +34,10 @@ def _isolate(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(docks.sys, "platform", "darwin")
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() on Windows
+    # The module only reads sys.platform: give it its own stand-in so the real
+    # sys.platform stays put (urllib imports macOS-only modules when it says darwin)
+    monkeypatch.setattr(docks, "sys", SimpleNamespace(platform="darwin"))
     monkeypatch.setattr(docks, "_dock_boot_port", None)
     monkeypatch.setattr(docks, "_dock_boot_routes", [])
     monkeypatch.setattr(docks, "_obs_exit_watcher_started", False)

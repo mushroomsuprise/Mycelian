@@ -53,6 +53,13 @@ def test_validated_dir_rejects_bad_names(assets, bad):
         aw._validated_template_assets_dir(bad)
 
 
+def _symlink_or_skip(target, link):
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except OSError as exc:  # Windows without Developer Mode or admin rights
+        pytest.skip(f"cannot create symlinks here: {exc}")
+
+
 def test_validated_dir_ok(assets):
     assert aw._validated_template_assets_dir("my_tpl-1") == os.path.realpath(str(assets / "my_tpl-1"))
 
@@ -60,7 +67,7 @@ def test_validated_dir_ok(assets):
 def test_validated_dir_symlink_escape(assets, tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
-    os.symlink(outside, assets / "evil")
+    _symlink_or_skip(outside, assets / "evil")
     with pytest.raises(ValueError, match="Invalid template path"):
         aw._validated_template_assets_dir("evil")
 
@@ -119,7 +126,7 @@ def test_safe_destination_symlink_escape(assets, tmp_path):
     (assets / "tpl").mkdir()
     outside = tmp_path / "out"
     outside.mkdir()
-    os.symlink(outside, assets / "tpl" / "link")
+    _symlink_or_skip(outside, assets / "tpl" / "link")
     with pytest.raises(ValueError, match="Invalid asset path"):
         aw._safe_asset_destination("tpl", "link/x.png")
 

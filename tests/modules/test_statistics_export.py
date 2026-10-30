@@ -303,7 +303,10 @@ def test_leaderboard_empty_and_cramped(cv, pal):
     assert pal.muted in colors_in(cv.img, (40, 85, 200, 115))
     tight = ex.Canvas((500, 300), pal)
     ex._leaderboard(tight, (20, 20, 400, 200), "Tight", [{"username": "A", "total": 3}], "total", rows=5)
-    assert pal.track not in colors_in(tight.img, (0, 0, 500, 300))  # rows too short for bars
+    # Rows too short for bars. Only the strip a bar would fill is checked: antialiased text
+    # edges can blend to the track colour with some fonts (seen on Windows).
+    bar_strip = colors_in(tight.img, (150, 20 + 66 + 26, 370, 20 + 66 + 30))
+    assert pal.track not in bar_strip and pal.primary not in bar_strip
 
 
 def test_footer_lists_totals_until_space_runs_out(cv, pal):

@@ -197,16 +197,20 @@ def test_wait_for_window_exit_spares_the_tray_process(monkeypatch):
     assert terminated == ["webview-child", "join:webview-child"]
 
 
-def test_shutdown_reaps_the_window_child_process(monkeypatch):
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_shutdown_reaps_the_window_child_process(monkeypatch, platform):
     """os._exit() skips multiprocessing's atexit hook, so children must be reaped here."""
     import multiprocessing
+    import types
 
     from modules import shutdown as shutdown_module
 
     terminated = []
+    killed_trees = []
 
     class FakeChild:
         name = "webview-child"
+        pid = 424242
         alive = True
 
         def is_alive(self):
@@ -223,9 +227,19 @@ def test_shutdown_reaps_the_window_child_process(monkeypatch):
     monkeypatch.setattr(shutdown_module, "_cleanup_pywebview_windows", lambda: None)
     # Shorten the grace period; this child never exits on its own.
     monkeypatch.setattr(shutdown_module, "_NATIVE_WINDOW_EXIT_GRACE_SEC", 0.05)
+    # Each OS has its own reap path; never touch the test process's real children.
+    monkeypatch.setattr(shutdown_module, "sys", types.SimpleNamespace(platform=platform))
+    monkeypatch.setattr(shutdown_module, "_iter_child_pids", lambda: [])
+    monkeypatch.setattr(shutdown_module, "_expanded_protected_pids", lambda: set())
+    monkeypatch.setattr(shutdown_module, "_tree_contains_protected", lambda pid, protected: False)
+    monkeypatch.setattr(shutdown_module, "_kill_process_tree", killed_trees.append)
 
     shutdown_module._close_native_window()
-    assert terminated == ["terminate", "join"]
+    if platform == "win32":
+        # The whole tree goes in one pass; terminate() first would orphan WebView2 helpers.
+        assert killed_trees == [424242] and terminated == []
+    else:
+        assert terminated == ["terminate", "join"] and killed_trees == []
 
 
 def test_shutdown_waits_for_a_child_that_exits_on_its_own(monkeypatch):
@@ -245,6 +259,8 @@ def test_shutdown_waits_for_a_child_that_exits_on_its_own(monkeypatch):
         multiprocessing, "active_children", lambda: remaining.pop(0) if remaining else []
     )
     monkeypatch.setattr(shutdown_module, "_cleanup_pywebview_windows", lambda: None)
+    # Never touch the test process's real children.
+    monkeypatch.setattr(shutdown_module, "_iter_child_pids", lambda: [])
     shutdown_module._close_native_window()
 
 

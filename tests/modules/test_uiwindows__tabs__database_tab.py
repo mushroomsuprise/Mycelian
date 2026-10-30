@@ -213,7 +213,8 @@ def test_live_type(monkeypatch):
 def test_resolved_sql_path(monkeypatch, tmp_path):
     monkeypatch.setenv("MYCELIAN_DATA_DIR", str(tmp_path))
     assert dt._resolved_sql_path("") == ""
-    assert dt._resolved_sql_path("/abs/x.db") == "/abs/x.db"
+    absolute = str(tmp_path / "abs" / "x.db")  # "/abs/x.db" has no drive, so it isn't absolute on Windows
+    assert dt._resolved_sql_path(absolute) == absolute
     assert dt._resolved_sql_path("rel.db") == str(tmp_path / "rel.db")
 
 

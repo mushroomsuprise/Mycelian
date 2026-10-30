@@ -672,6 +672,7 @@ def test_resolve_write_file_path(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pu, "get_data_path", lambda rel: str(tmp_path / rel))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))  # expanduser on Windows
     assert ca.resolve_write_file_path(" a/../b.txt ") == str(tmp_path / "b.txt")
     assert ca.resolve_write_file_path("~/x.txt") == str(tmp_path / "home" / "x.txt")
     assert ca.resolve_write_file_path(None) == str(tmp_path)

@@ -52,7 +52,7 @@ class SiFormatTests(unittest.TestCase):
 class DataDirTests(unittest.TestCase):
     def test_darwin_default(self) -> None:
         dirs = default_data_dirs("darwin")
-        self.assertTrue(dirs[0].endswith("Library/Application Support/factorio"))
+        self.assertTrue(dirs[0].replace("\\", "/").endswith("Library/Application Support/factorio"))
 
     def test_linux_default(self) -> None:
         dirs = default_data_dirs("linux")

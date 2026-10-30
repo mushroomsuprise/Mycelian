@@ -383,6 +383,9 @@ class StatisticsManager:
         self._stats_db_initialized = False
         self._event_batch: List[Tuple[Any, ...]] = []
         self._event_batch_lock = threading.Lock()
+        # Held from taking a batch until it is written, so batches land in order
+        # and a flush returns only after earlier in-flight rows are stored.
+        self._event_write_lock = threading.Lock()
         self._event_batch_stop = threading.Event()
         self._event_flush_wake = threading.Event()
         # Set when a batch fills up so the flusher skips the rest of its 1 s wait.
@@ -902,6 +905,14 @@ class StatisticsManager:
         self._event_flush_now.set()
         self._event_flush_wake.set()
         self._username_backfill_stop.set()
+        # Let background threads hand back any connection they borrowed, or it
+        # would be returned after the pool is cleared and never closed.
+        for thread in (
+            getattr(self, "_event_flush_thread", None),
+            getattr(self, "_username_backfill_thread", None),
+        ):
+            if thread is not None and thread is not threading.current_thread():
+                thread.join(timeout=5.0)
         self._flush_pending_events()
         with self._stats_db_pool_lock:
             for conn in self._stats_db_pool:
@@ -933,29 +944,26 @@ class StatisticsManager:
         if not self._stats_db_initialized or not username:
             return
         row = (username, event_type, amount, alert_name, time.time())
-        pending: Optional[List[Tuple[Any, ...]]] = None
         flusher = self._event_flush_thread
         flusher_alive = flusher is not None and flusher.is_alive()
         with self._event_batch_lock:
             self._event_batch.append(row)
             full = len(self._event_batch) >= 50
-            if full and not flusher_alive:
-                pending = self._event_batch
-                self._event_batch = []
         if full and flusher_alive:
             # Callers often hold _data_lock (e.g. per chat message on the EventSub
             # loop); let the flusher thread do the SQLite write right away instead.
             self._event_flush_now.set()
         self._event_flush_wake.set()
-        if pending:
-            self._flush_event_rows(pending)
+        if full and not flusher_alive:
+            self._flush_pending_events()
 
     def _flush_pending_events(self) -> None:
-        with self._event_batch_lock:
-            pending = self._event_batch
-            self._event_batch = []
-        if pending:
-            self._flush_event_rows(pending)
+        with self._event_write_lock:
+            with self._event_batch_lock:
+                pending = self._event_batch
+                self._event_batch = []
+            if pending:
+                self._flush_event_rows(pending)
 
     def _event_flush_loop(self) -> None:
         """Flush batched events. Idle until a record arrives, then within 1s."""

@@ -328,19 +328,14 @@ def format_time_variable(filters: str = "") -> str:
             use_padded = len(hour_token) == 2
             include_seconds = rest == "mm:ss"
             if hour_format == 12:
-                hour_fmt = "%I" if use_padded else "%-I"
+                hour = now.hour % 12 or 12
             else:
-                hour_fmt = "%H" if use_padded else "%-H"
-            # %-H / %-I are not supported on Windows; fall back to padded.
-            try:
-                time_str = now.strftime(
-                    f"{hour_fmt}:%M" + (":%S" if include_seconds else "")
-                )
-            except ValueError:
-                hour_fmt = "%I" if hour_format == 12 else "%H"
-                time_str = now.strftime(
-                    f"{hour_fmt}:%M" + (":%S" if include_seconds else "")
-                )
+                hour = now.hour
+            # Build the hour by hand: %-H / %-I are not supported on Windows.
+            hour_str = f"{hour:02d}" if use_padded else str(hour)
+            time_str = hour_str + now.strftime(
+                ":%M" + (":%S" if include_seconds else "")
+            )
         else:
             if hour_format == 12:
                 time_str = now.strftime("%I:%M:%S" if show_seconds else "%I:%M")

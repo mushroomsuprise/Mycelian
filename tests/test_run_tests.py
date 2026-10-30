@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import io
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import pytest
@@ -299,7 +299,7 @@ def test_run_stops_a_run_that_takes_too_long(monkeypatch, tmp_path):
 def test_print_report_lists_failures_and_the_log(junit):
     _total, outcomes = rt.parse_junit(junit)
     result = rt.TestRunResult(exit_code=1, duration=1, total=7, passed=1, outcomes=outcomes,
-                              guard_changes=["changed: a"], log_path=Path("/tmp/x.log"))
+                              guard_changes=["changed: a"], log_path=PurePosixPath("/tmp/x.log"))
     lines = []
     rt.print_report(result, echo=lines.append, limit=2)
     text = "\n".join(lines)

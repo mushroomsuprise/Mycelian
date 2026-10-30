@@ -103,7 +103,7 @@ def main() -> int:
             continue
         action = process_file(path)
         if action:
-            results.setdefault(action, []).append(str(path.relative_to(root)))
+            results.setdefault(action, []).append(path.relative_to(root).as_posix())
 
     for action, files in sorted(results.items()):
         print(f"\n{action} ({len(files)}):")

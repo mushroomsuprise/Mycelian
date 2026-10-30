@@ -31,6 +31,13 @@ from modules import update_sync as us
 SHA = "a" * 40
 
 
+def symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError as exc:  # Windows without Developer Mode or admin rights
+        pytest.skip(f"cannot create symlinks here: {exc}")
+
+
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -199,7 +206,7 @@ def test_destination_for_symlink_escape(tmp_path):
     data_root.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    (data_root / "link").symlink_to(outside, target_is_directory=True)
+    symlink_or_skip(data_root / "link", outside)
     with pytest.raises(us.UpdateSyncError, match="outside the install folder"):
         us.destination_for({"install": "link/evil"}, data_root, None)
 
@@ -430,7 +437,7 @@ def test_staged_file_symlink_escape(tmp_path):
     staging.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    (staging / "files").symlink_to(outside, target_is_directory=True)
+    symlink_or_skip(staging / "files", outside)
     with pytest.raises(us.UpdateSyncError, match="outside the download folder"):
         us._staged_file(staging, {"install": "x"})
 
@@ -754,7 +761,8 @@ def test_write_helper_script(monkeypatch, tmp_path, platform):
     else:
         assert path == tmp_path / "apply.sh"
         assert path.read_text().startswith("#!/bin/bash")
-        assert os.stat(path).st_mode & 0o111
+        if os.name != "nt":  # Windows has no execute bit
+            assert os.stat(path).st_mode & 0o111
 
 
 class Clock:
@@ -849,7 +857,8 @@ def test_launch_helper_windows(monkeypatch, tmp_path, launcher):
 
 def test_launch_helper_windows_elevated(monkeypatch, tmp_path, launcher):
     monkeypatch.setattr(us.sys, "platform", "win32")
-    staging = tmp_path / 'we"ird'
+    # Windows forbids " in folder names, so the VBS quote escaping is only exercised elsewhere
+    staging = tmp_path / ("we ird" if os.name == "nt" else 'we"ird')
     staging.mkdir()
     us.launch_apply_helper(staging, elevate=True)
     (args, _log), = launcher.popen

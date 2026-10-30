@@ -365,11 +365,11 @@ def test_system_places_darwin(monkeypatch, fake_home, tmp_path):
     (vols / "file").write_text("")
     real_listdir = fp._safe_listdir
     monkeypatch.setattr(fp.sys, "platform", "darwin")
-    monkeypatch.setattr(fp, "_safe_listdir", lambda p: real_listdir(vols) if str(p) == "/Volumes" else [])
+    monkeypatch.setattr(fp, "_safe_listdir", lambda p: real_listdir(vols) if Path(p).as_posix() == "/Volumes" else [])
     real_is_dir = fp.Path.is_dir
 
     def is_dir(self):
-        if str(self).startswith("/Volumes/"):
+        if self.as_posix().startswith("/Volumes/"):
             return real_is_dir(vols / self.name)
         return real_is_dir(self)
 
@@ -421,9 +421,10 @@ def test_breadcrumbs_system(monkeypatch, fake_home, tmp_path):
     assert fp.breadcrumbs(home, root=None) == [("Home", home)]
     other = tmp_path / "elsewhere" / "x"
     crumbs = fp.breadcrumbs(other, root=None)
-    assert crumbs[0][0] == "/" and crumbs[-1] == ("x", other)
+    # The first crumb is the drive on Windows ("C:") and "/" elsewhere
+    assert crumbs[0][0] == (other.drive or "/") and crumbs[-1] == ("x", other)
     rel = fp.breadcrumbs(Path("rel/dir"), root=None)
-    assert [c for c, _ in rel] == ["/", "rel", "dir"]
+    assert [c for c, _ in rel] == [str(Path("/")), "rel", "dir"]
 
 
 def test_image_dimensions(tmp_path):

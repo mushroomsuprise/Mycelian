@@ -28,6 +28,18 @@ import time as _time
 import types as _types
 
 
+def _link_dir(link: Path, target: Path) -> None:
+    """Symlink a folder; on Windows without the symlink privilege use a junction instead."""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        if sys.platform != "win32":
+            raise
+        import _winapi
+
+        _winapi.CreateJunction(str(target), str(link))
+
+
 def _local_clock(module, monkeypatch, **fakes):
     """Give ``module`` its own copy of ``time`` with some functions replaced.
 
@@ -858,7 +870,7 @@ def test_create_spec_file_windows_resolve_errors_and_duplicates(spec_env, set_os
     (base / "python314.dll").write_bytes(b"x")
     (base / "python3.dll").write_bytes(b"x")
     alias = spec_env / "alias"
-    alias.symlink_to(base)
+    _link_dir(alias, base)
     monkeypatch.setattr(
         bld,
         "sys",

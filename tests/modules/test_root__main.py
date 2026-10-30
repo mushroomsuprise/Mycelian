@@ -24,7 +24,7 @@ import subprocess
 import sys
 import threading
 import types
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -647,7 +647,7 @@ def test_fatal_error_windows_message_box(loaded, monkeypatch):
 
 def test_fatal_error_macos_alert_escapes_text(loaded, monkeypatch):
     monkeypatch.setattr(sys, "platform", "darwin")
-    loaded.mod("modules.log_parser").get_log_file_path = lambda: Path("/logs/m.log")
+    loaded.mod("modules.log_parser").get_log_file_path = lambda: PurePosixPath("/logs/m.log")
     loaded.ns["_show_fatal_startup_error"]('Bad "quote" and \\ slash')
     (args, kwargs), = loaded.subprocess_run.calls
     cmd = args[0]

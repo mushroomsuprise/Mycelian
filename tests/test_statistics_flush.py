@@ -167,7 +167,8 @@ class UnchangedUserRowTests(unittest.TestCase):
         users = {"Alpha": {"wins": 1}, "Beta": {"wins": 2}}
         calls, counting = self._count_upserts()
         with patch.object(self.manager, "_get_stats_db_connection", side_effect=counting), \
-                patch.object(self.manager, "_return_stats_db_connection"):
+                patch.object(self.manager, "_return_stats_db_connection",
+                             side_effect=lambda conn: conn and conn.close()):
             self.manager._spill_raw_user_map("giveaways.user_wins", users)
             self.manager._spill_raw_user_map("giveaways.user_wins", users)
             users["Beta"] = {"wins": 3}
