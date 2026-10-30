@@ -1763,6 +1763,9 @@ def _schedule_template_preview_refresh() -> None:
 
 GENERAL_SECTION_TITLE = "General"
 ROULETTE_CONFIG_NAME = "roulette"
+# Templates with nothing to set here. Not marked "hidden" in their config, because
+# that would also drop them from the browser source URL list.
+_NO_SETTINGS_TEMPLATES = frozenset({"activity_feed"})
 _SECTIONS_OPEN_BY_DEFAULT = 3
 _OPTION_ID_RE = re.compile(r"^Option(\d+)")
 _UNIT_RE = re.compile(r"(?:^|[\s,;:])\((px|pixels|ms|s|sec|secs|seconds|%|deg|degrees)\)", re.I)
@@ -2879,6 +2882,15 @@ def create_custom_sources_tab():
         load_config_files(config_parser, config_select, config_container)
 
 
+def _listed_config_names(config_parser) -> List[str]:
+    """Templates shown in the Source Settings list."""
+    return sorted(
+        name
+        for name in config_parser.get_non_hidden_config_files()
+        if name not in _NO_SETTINGS_TEMPLATES
+    )
+
+
 def load_config_files(config_parser, config_select, config_container):
     """Load the template list; keep the open template selected when it still exists."""
     global _active_config_name, _suppress_config_change
@@ -2887,7 +2899,7 @@ def load_config_files(config_parser, config_select, config_container):
         config_parser.invalidate_cache()
     except Exception:
         logger.debug("Template list cache refresh failed", exc_info=True)
-    configs = sorted(config_parser.get_non_hidden_config_files())
+    configs = _listed_config_names(config_parser)
 
     if configs:
         config_select.options = configs
@@ -4047,7 +4059,7 @@ def _rename_template_files(source_name: str, raw_name: str, config_parser) -> st
 def _show_duplicated_config(
     name, config_parser, config_select, config_container, verb: str = "Created"
 ) -> None:
-    configs = sorted(config_parser.get_non_hidden_config_files())
+    configs = _listed_config_names(config_parser)
     config_select.options = configs
     form_data_store.pop(name, None)
     _disk_baselines.pop(name, None)
@@ -4470,7 +4482,7 @@ def _refresh_config_dropdown(
     """Reload the template list from disk without discarding a different selection."""
     global _active_config_name
     config_parser.invalidate_cache()
-    configs = sorted(config_parser.get_non_hidden_config_files())
+    configs = _listed_config_names(config_parser)
     if skip:
         configs = [name for name in configs if name != skip]
     config_select.options = configs

@@ -82,6 +82,16 @@ def test_load_config_files_previous_gone_picks_first(env, monkeypatch):
     assert sel.value == "m" and rendered == ["m"]
 
 
+def test_load_config_files_leaves_out_templates_without_settings(env, monkeypatch):
+    """activity_feed has nothing to set, so the list skips it (it isn't "hidden" elsewhere)."""
+    parser = FakeParser({"activity_feed": {"elements": []}, "poll": {"elements": []}})
+    monkeypatch.setattr(cs, "_apply_config_selection", lambda n, p, c: None)
+    monkeypatch.setattr(cs, "_active_config_name", "activity_feed")
+    sel = FakeSelect()
+    cs.load_config_files(parser, sel, object())
+    assert sel.options == ["poll"] and sel.value == "poll"
+
+
 def test_load_config_files_empty(env, monkeypatch):
     flushed = []
     monkeypatch.setattr(cs, "_flush_template_preview", lambda: flushed.append(1))
