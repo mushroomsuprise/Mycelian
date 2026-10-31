@@ -25,15 +25,15 @@
     {
       "path": "assets/default_assets/activity_feed.css",
       "install": "assets/default_assets/activity_feed.css",
-      "sha256": "1b10cfc13d867b65f5ae3e97bd14ccdb219e47c434bec1324c61c100e4ee0f8c",
-      "size": 33384,
+      "sha256": "8465a56838cc484ea80138389fe1328ca93fbde0aab5a11832be0021f2cdd848",
+      "size": 36377,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/activity_feed.js",
       "install": "assets/default_assets/activity_feed.js",
-      "sha256": "2ed94e40e4ce853cff09cc8b8885acf8c3059cd69016b46a93bfdcbcd91fcaff",
-      "size": 55132,
+      "sha256": "865d99d09f0ace065ef9941cb3d7e15d732f6b7ad671c45d629a771a0e9745d9",
+      "size": 63142,
       "action": "replace"
     },
     {
@@ -865,8 +865,8 @@
     {
       "path": "assets/default_assets/spore_studio/editor.css",
       "install": "assets/default_assets/spore_studio/editor.css",
-      "sha256": "c4a30ae1b8a339c2cf73cda2b11aac3dd6a9cf4941f12e35b8ba0121aa07961d",
-      "size": 71405,
+      "sha256": "ae0b4393b82b592a70ce32dbaf26671541ccd3f20aacaac9af9d500e30e98989",
+      "size": 71843,
       "action": "replace"
     },
     {
@@ -1171,6 +1171,13 @@
       "action": "replace"
     },
     {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js.map",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js.map",
+      "sha256": "4d60513f74d6b7862eaadce73d6e8c77a4a8370e18a32c44a1382ce3a6b5384c",
+      "size": 483050,
+      "action": "replace"
+    },
+    {
       "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/connector/icon.png",
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/connector/icon.png",
       "sha256": "298f198b58230a61c6649923794ea71baca271f48e610f4aabefb65091551aa1",
@@ -1404,8 +1411,8 @@
     {
       "path": "templates/activity_feed.html",
       "install": "templates/activity_feed.html",
-      "sha256": "0895a925463bc554ad8beaff818c7ae2fdf5a4236f376a8226477a7b30179726",
-      "size": 13530,
+      "sha256": "ac6eeac54053ce01e5e66ffc6c9d5afc84e136b3682d07531ac20d3c760fc8b3",
+      "size": 12613,
       "action": "replace"
     },
     {
@@ -1642,113 +1649,155 @@
     {
       "path": "themes/arctic_theme.json",
       "install": "themes/arctic_theme.json",
-      "sha256": "d510611be2089e97ac67f8a28a2906db6c20df7e8e1e37c8397e02a10f342d0e",
-      "size": 1049,
+      "sha256": "1b710a5a67772e093fa7a5d1520857fea1d3f1f392025ca5c7e01827b17021da",
+      "size": 1718,
       "action": "if-missing"
     },
     {
       "path": "themes/crimson_night_theme.json",
       "install": "themes/crimson_night_theme.json",
-      "sha256": "6b029d8ffd0df5bed2efc826c77741ecfad5f50816f47ae47d2044a46199a01f",
-      "size": 1086,
+      "sha256": "f8c3e07f4fab38330c2fb793ad7575ea85ac196a9cd0448d796af45f9fa961ce",
+      "size": 1759,
       "action": "if-missing"
     },
     {
       "path": "themes/cyberpunk_theme.json",
       "install": "themes/cyberpunk_theme.json",
-      "sha256": "091295f175742318b0ac54d56d021eee7b53a1152fd5c0c2abd77b7a5d8a0c7f",
-      "size": 1077,
+      "sha256": "edf824b888b9faf87f934f651e3992fe3150ad2dc1adc94438c5298f5b7f64c8",
+      "size": 1755,
       "action": "if-missing"
     },
     {
       "path": "themes/dark_theme.json",
       "install": "themes/dark_theme.json",
-      "sha256": "5957af95bacec615f16982aae204dd193a55558fa45c92c51704f9045d7342a3",
-      "size": 1069,
+      "sha256": "1ad6839d4b9b79f4d17a77a88838183ddb16c83814750239b77fd6ac91473c7e",
+      "size": 1733,
       "action": "if-missing"
     },
     {
       "path": "themes/emerald_dark_theme.json",
       "install": "themes/emerald_dark_theme.json",
-      "sha256": "54d9386cd874e7434f31513b0a647cbb2c91756d164a259eb6330655a7a45153",
-      "size": 1086,
+      "sha256": "d4920aadf05f8df92bc00ca3c57d06600fe455cf05b7c17454a6edb1a0b52a6c",
+      "size": 1760,
       "action": "if-missing"
     },
     {
       "path": "themes/forest_glade_theme.json",
       "install": "themes/forest_glade_theme.json",
-      "sha256": "b4f4678a2f43d54eb003a160c2e2a101f9a4267dc8489839fd57e153b4807bef",
-      "size": 1057,
+      "sha256": "79d89773d79462ade930b0d7df4ca249b3b079f8f1b5ebba1c4b1d94da51dd3d",
+      "size": 1724,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/graphite_theme.json",
+      "install": "themes/graphite_theme.json",
+      "sha256": "35d52365e055615bc0f2cfe45ca05b562ccf8274adf72352c7de9cbd0539bac8",
+      "size": 1767,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/high_contrast_theme.json",
+      "install": "themes/high_contrast_theme.json",
+      "sha256": "0ef1b69c22d289ab66a10d097ccd1768460c97c20e4b18e8d85f443316f62df8",
+      "size": 1737,
       "action": "if-missing"
     },
     {
       "path": "themes/lavender_mist_theme.json",
       "install": "themes/lavender_mist_theme.json",
-      "sha256": "46d099ff5b497b270d14e12cede209670dd2c21d277d32d88c1e55973da2d2c4",
-      "size": 1064,
+      "sha256": "99a2f9e651dfa16cf74212ea819f33e614b2e6f635abf66fa7b95cecf5183256",
+      "size": 1728,
       "action": "if-missing"
     },
     {
       "path": "themes/light_theme.json",
       "install": "themes/light_theme.json",
-      "sha256": "25c83fec79c9eb7b3fe730c768ba527ab44574302786e45eaecef645202d1560",
-      "size": 1048,
+      "sha256": "8af0259e494d33d5b156a1328ca635b1ebe8524f4e369804a8a9506ccb57d931",
+      "size": 1715,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/midnight_blue_theme.json",
+      "install": "themes/midnight_blue_theme.json",
+      "sha256": "5842fed7860691d9ffc9c8164880614c6cb301b01c4c9ce058caec053ee45f3f",
+      "size": 1769,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/mint_theme.json",
+      "install": "themes/mint_theme.json",
+      "sha256": "a3cdf6aa8bd12e3c895442620103ff9a166c2c5db8380664843ac5de08c7c4c0",
+      "size": 1716,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/mocha_theme.json",
+      "install": "themes/mocha_theme.json",
+      "sha256": "3a482af3fc56f0840853b366d8780767c99132f0f121cc6104b8512d85b3f130",
+      "size": 1761,
       "action": "if-missing"
     },
     {
       "path": "themes/monokai_theme.json",
       "install": "themes/monokai_theme.json",
-      "sha256": "087c1dc975ba1b7d565177b6183c157cfaef0b33977a75caa48c881a1a4a73e1",
-      "size": 1087,
+      "sha256": "249643c61b0ccc5397003a360f575d0f433b3ae742239d8ee99cc721ec63dfbe",
+      "size": 1773,
       "action": "if-missing"
     },
     {
       "path": "themes/nord_dark_theme.json",
       "install": "themes/nord_dark_theme.json",
-      "sha256": "c0582fa4498afefbbaed8a69d4b3e7ab7024dc0d89af504ffeb876d6ea66b15a",
-      "size": 1094,
+      "sha256": "170f8ba3c7754b913d46e5ad61eaefea6da22393789968fd3accedf0a49556af",
+      "size": 1785,
       "action": "if-missing"
     },
     {
       "path": "themes/ocean_breeze_theme.json",
       "install": "themes/ocean_breeze_theme.json",
-      "sha256": "28e452f7957b6e82bd16aedb45d92f9422660fa859159670944b9e1efc86d9db",
-      "size": 1061,
+      "sha256": "065c00cb77cd76c09ceb3f9a1e4ec2bae948525aa26c7d49efb94247c00bb733",
+      "size": 1728,
       "action": "if-missing"
     },
     {
       "path": "themes/ocean_depths_theme.json",
       "install": "themes/ocean_depths_theme.json",
-      "sha256": "0ea360e6cb1a4dcf37ade9f24f15ccb878d277c8b35fa8ddcdbe287382e7a944",
-      "size": 1080,
+      "sha256": "29824fce8f427f5d719e7285522b024258bd1e1314dddf22bc69554d9c534796",
+      "size": 1753,
+      "action": "if-missing"
+    },
+    {
+      "path": "themes/parchment_theme.json",
+      "install": "themes/parchment_theme.json",
+      "sha256": "97a1a34b9cef7f3d6e7d4fdb75fd62db93b85a553c3e26e8b670f7121860f7ae",
+      "size": 1733,
       "action": "if-missing"
     },
     {
       "path": "themes/rose_garden_theme.json",
       "install": "themes/rose_garden_theme.json",
-      "sha256": "da0063429f89df36d4a93e2d0bd684cbbd1ab7419c1843df4ce7727584ee825c",
-      "size": 1055,
+      "sha256": "785e46d4ed8ae06834aa47b23fb361df7ae57c00f5dbcc683b303fb19f248cf6",
+      "size": 1724,
       "action": "if-missing"
     },
     {
       "path": "themes/sunset_dark_theme.json",
       "install": "themes/sunset_dark_theme.json",
-      "sha256": "85b58e4a478128f784f3aa56bdf2088de586195dd17e45a0ebedfa8888e652a7",
-      "size": 1084,
+      "sha256": "f19f7404df47d1ee463469068d26f7608e7e43f7ee7e1500e81f8f152694ad49",
+      "size": 1757,
       "action": "if-missing"
     },
     {
       "path": "themes/sunset_glow_theme.json",
       "install": "themes/sunset_glow_theme.json",
-      "sha256": "73277fe1c1d5a301e624cbe75eb9ad1392f03932f5523b2550437ab87258399a",
-      "size": 1059,
+      "sha256": "6b1458ba7ac6cbd5d6e6cc32a643fef56f5fc4d2e88cdaaa4403c9481373a10b",
+      "size": 1723,
       "action": "if-missing"
     },
     {
       "path": "packaged/windows/Mycelian.exe",
       "install": "Mycelian.exe",
-      "sha256": "159e785f707b058fb69033b8f7b5f3e149f806a39e56f45c897652abe2caa1b3",
-      "size": 54061725,
+      "sha256": "d6dcc8a1c23053e11ab529552162c6fa5cf64f3da0a9350e641525406020be02",
+      "size": 54117549,
       "action": "replace",
       "os": "windows"
     }
