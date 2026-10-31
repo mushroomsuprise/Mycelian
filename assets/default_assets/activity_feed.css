@@ -91,8 +91,11 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx-now .lbl .mi { font-size: 15px; }
 .afx-now .who { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .afx-now .bar { flex: 0 0 120px; height: 4px; border-radius: 999px; background: var(--color-border-subtle); overflow: hidden; }
-.afx-now .bar i { display: block; height: 100%; width: 0; background: var(--color-success); transition: width .25s linear; }
-.afx-now .bar.is-indet i { width: 35%; animation: afindet 1.4s ease-in-out infinite; }
+.afx-now .bar i { display: block; height: 100%; width: 100%; background: var(--color-success); transform-origin: left; transform: scaleX(0); }
+/* Duration and a negative delay (time already played) are set per alert, so the bar fills once, evenly. */
+.afx-now .bar i.is-run { animation-name: affill; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes affill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.afx-now .bar.is-indet i { width: 35%; transform: none; animation: afindet 1.4s ease-in-out infinite; }
 @keyframes afindet { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
 .afx-now .left { font-size: .72rem; font-variant-numeric: tabular-nums; color: var(--color-text-muted); }
 .afx-now.is-idle { background: var(--color-bg-surface); }

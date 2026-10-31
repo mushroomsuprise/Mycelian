@@ -373,7 +373,10 @@ test("queue: playing strip with timer, up-next chips, row tags and pill", () => 
     assert.ok(strip.textContent.includes("Now playing"));
     assert.ok(strip.querySelector(".who b").textContent === "Pat");
     assert.ok(strip.textContent.includes("(replay)"));
-    assert.equal(strip.querySelector("[data-afx-bar]").style.width, "25.0%");
+    const bar = strip.querySelector("[data-afx-bar]");
+    assert.ok(bar.classList.contains("is-run"), "one CSS fill animation, not width steps");
+    assert.equal(bar.style.animationDuration, "10000ms");
+    assert.equal(bar.style.animationDelay, "-2500ms", "starts where playback already is");
     assert.equal(strip.querySelector("[data-afx-left]").textContent, "0:08");
     assert.equal(strip.querySelectorAll(".afx-upi").length, 1);
     assert.equal(strip.querySelector(".afx-upmore").textContent, "(replay)");
@@ -471,7 +474,9 @@ test("item timer bars for playing and queued rows", () => {
     s.f.set("queue", { playing: { alert_id: "p", type: "follow", started_at_ms: 1, duration_ms: 4000 }, queue: [{ alert_id: "q", type: "follow" }] });
     s.f.s.queue.playing.started_at_ms = s.win.Date.now() - 1000;
     s.f.renderList();
-    assert.equal(s.q(".tbar.is-run").getAttribute("style"), "animation-duration:4000ms;animation-delay:-1000ms");
+    const tbar = s.q(".tbar.is-run");
+    assert.equal(tbar.style.animationDuration, "4000ms");
+    assert.equal(tbar.style.animationDelay, "-1000ms");
     assert.ok(s.q(".tbar.is-full"));
     s.f.set("queue", { playing: { alert_id: "p", type: "follow" } });
     assert.ok(s.q(".tbar.is-indet"));
@@ -896,4 +901,61 @@ test("person dialog: an unchanged repaint keeps the dialog and its scroll positi
     s.f.set("person_rows", { user: "Ann", rows: [row({ user: "Ann", what: "changed" })] });
     assert.notEqual(s.q(".afx-dlg-list"), list);
     assert.equal(s.q(".afx-dlg-list").scrollTop, 40, "scroll position carried over");
+});
+
+test("the strip timer bar keeps running through repaints and restarts for the next alert", () => {
+    const s = feed();
+    s.f.set("live", [row({ id: "p", alert_id: "p", user: "Pat" }), row({ id: "n", alert_id: "n", user: "Ned" })]);
+    const start = s.win.Date.now() - 1000;
+    s.f.set("queue", { playing: { alert_id: "p", type: "follow", started_at_ms: start, duration_ms: 5000 }, server_now_ms: s.win.Date.now() });
+    const bar = s.q("[data-afx-bar]");
+    assert.equal(bar.style.animationDelay, "-1000ms");
+    s.clock.tick(1000);
+    s.f.set("queue", { playing: { alert_id: "p", type: "follow", started_at_ms: start, duration_ms: 5000 }, server_now_ms: s.win.Date.now() });
+    s.f.set("add", row({ id: "x", alert_id: "x" }));
+    assert.equal(s.q("[data-afx-bar]"), bar, "same alert: the running animation is left alone");
+    assert.equal(s.q("[data-afx-left]").textContent, "0:03", "the countdown still ticks");
+    s.f.set("queue", { playing: { alert_id: "n", type: "follow", started_at_ms: s.win.Date.now(), duration_ms: 3000 }, server_now_ms: s.win.Date.now() });
+    const next = s.q("[data-afx-bar]");
+    assert.notEqual(next, bar);
+    assert.equal(next.style.animationDuration, "3000ms");
+    assert.equal(next.style.animationDelay, "-0ms");
+    s.f.set("queue", { playing: { alert_id: "n", type: "follow", started_at_ms: 1, duration_ms: 3000 } });
+    assert.equal(s.q("[data-afx-bar]").style.animationDelay, "-3000ms", "never more than the alert's length");
+});
+
+test("the playing row's timer bar survives list repaints; its row still updates", () => {
+    const s = feed();
+    s.f.set("settings", { timer: "item", times: "clock" });
+    s.f.set("live", [row({ id: "p", alert_id: "p", user: "Pat" }), row({ id: "o", alert_id: "o", user: "Old" })]);
+    const start = s.win.Date.now() - 500;
+    const playing = { alert_id: "p", type: "follow", started_at_ms: start, duration_ms: 6000 };
+    s.f.set("queue", { playing, server_now_ms: s.win.Date.now() });
+    const bar = s.q(".tbar.is-run");
+    const rowEl = bar.parentNode;
+    assert.equal(bar.style.animationDelay, "-500ms");
+    // A new alert arrives above, the playing row's text changes: the row and its bar stay.
+    s.clock.tick(2000);
+    s.f.set("live", [row({ id: "n", alert_id: "n", user: "New" }), row({ id: "p", alert_id: "p", user: "Pat2" }), row({ id: "o", alert_id: "o", user: "Old" })]);
+    assert.equal(s.q(".tbar.is-run"), bar, "same bar element: the animation keeps running");
+    assert.equal(bar.parentNode, rowEl);
+    assert.equal(bar.style.animationDelay, "-500ms", "not restarted");
+    assert.equal(rowEl.querySelector(".user").textContent, "Pat2", "the row's contents are refreshed");
+    assert.equal(rowEl.getAttribute("data-user"), "Pat2", "and its attributes");
+    assert.equal(rowEl.querySelectorAll(".tbar").length, 1);
+    assert.deepEqual(s.qa(".afx-row .user").map((u) => u.textContent), ["New", "Pat2", "Old"], "new rows go in around it, in order");
+    assert.ok(s.qa(".afx-row")[0] !== rowEl && s.qa(".afx-row")[0].parentNode === s.f.r.list);
+    // The next alert gets its own bar from the start.
+    s.f.set("queue", { playing: { alert_id: "n", type: "follow", started_at_ms: s.win.Date.now(), duration_ms: 3000 }, server_now_ms: s.win.Date.now() });
+    const next = s.q(".tbar.is-run");
+    assert.notEqual(next, bar);
+    assert.equal(next.style.animationDuration, "3000ms");
+    assert.equal(next.style.animationDelay, "-0ms");
+    // Its row scrolled to another page: plain repaint, no bar.
+    s.f.set("settings", { page_limit: 1 });
+    s.f.set("view", { page: 3 });
+    assert.equal(s.q(".tbar"), null);
+    // By person repaints never carry a bar.
+    s.f.set("view", { page: 1, mode: "person" });
+    assert.equal(s.q(".tbar"), null);
 });

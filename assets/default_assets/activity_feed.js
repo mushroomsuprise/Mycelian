@@ -202,6 +202,10 @@
     if (key(d) === key(y)) { return 'Yesterday'; }
     try { return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return key(d); }
   }
+  /* Identifies one play of one alert: a new key restarts its timer bar. */
+  function barKey(p) {
+    return [p.alert_id || '', p.started_at_ms || '', p.duration_ms || ''].join('|');
+  }
   function mmss(ms) {
     var s = Math.max(0, Math.ceil(ms / 1000));
     return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
@@ -512,23 +516,34 @@
   };
 
   Feed.prototype.renderStrip = function () {
-    var s = this.s, q = s.queue, st = s.settings, el = this.r.strip, playing = this.playingInfo();
+    this.setStrip(this.stripHtml());
+    this.tickTimers();
+  };
+
+  /* Repaints happen on every queue poll and new alert; only touch the strip when its markup
+     changes, so a running timer bar keeps animating instead of restarting. */
+  Feed.prototype.setStrip = function (html) {
+    if (html === this.stripCache) { return; }
+    this.stripCache = html;
+    this.r.strip.innerHTML = html;
+    this.startStripBar();
+  };
+
+  Feed.prototype.stripHtml = function () {
+    var s = this.s, q = s.queue, st = s.settings, playing = this.playingInfo();
     if (this.dock && s.meta.connected === false) {
-      el.innerHTML = '<div class="afx-now is-idle"><span class="lbl">' + mi('cloud_off') + 'Offline</span><span class="who">Reconnecting to Mycelian…</span></div>';
-      return;
+      return '<div class="afx-now is-idle"><span class="lbl">' + mi('cloud_off') + 'Offline</span><span class="who">Reconnecting to Mycelian…</span></div>';
     }
     if (q.paused) {
       var chips = q.queue.length ? '<span class="afx-up"><span class="k">Waiting</span>' + this.upChips(5) + '</span>' : '';
-      el.innerHTML = '<div class="afx-paused"><span class="lbl">' + mi('pause_circle') + 'Alerts paused</span>' +
+      return '<div class="afx-paused"><span class="lbl">' + mi('pause_circle') + 'Alerts paused</span>' +
         '<span class="txt">' + (q.queue.length ? 'These play in this order when you resume' : 'New alerts wait in order below and play when you resume') + '</span>' +
         chips + '<button type="button" class="afx-resume" data-a="resume">' + mi('play_arrow') + 'Resume</button></div>';
-      return;
     }
-    if (s.view.mode !== 'feed' || !st.now_playing || (!playing && !q.queue.length)) { el.innerHTML = ''; return; }
+    if (s.view.mode !== 'feed' || !st.now_playing || (!playing && !q.queue.length)) { return ''; }
     var up = st.up_next > 0 && q.queue.length ? '<span class="afx-up"><span class="k">Up next</span>' + this.upChips(st.up_next) + '</span>' : '';
     if (!playing) {
-      el.innerHTML = '<div class="afx-now is-idle"><span class="lbl">' + mi('queue_music') + 'Starting next</span><span class="afx-spacer"></span>' + up + '</div>';
-      return;
+      return '<div class="afx-now is-idle"><span class="lbl">' + mi('queue_music') + 'Starting next</span><span class="afx-spacer"></span>' + up + '</div>';
     }
     var row = this.findLive(playing.alert_id);
     var who = row ? '<b>' + esc(row.user) + '</b> ' + esc(this.s.settings.sub_duration && row.what_full ? row.what_full : row.what) +
@@ -537,23 +552,32 @@
     if (playing.is_replay) { who += ' <span class="afx-upmore">(replay)</span>'; }
     var timer = '';
     if (st.timer === 'strip') {
+      // The key changes when a different alert plays (or its timing becomes known), which
+      // repaints the strip and starts the bar again.
       timer = playing.duration_ms && playing.started_at_ms
-        ? '<span class="bar"><i data-afx-bar></i></span><span class="left" data-afx-left></span>'
+        ? '<span class="bar"><i data-afx-bar data-k="' + esc(barKey(playing)) + '"></i></span><span class="left" data-afx-left></span>'
         : '<span class="bar is-indet"><i></i></span>';
     }
-    el.innerHTML = '<div class="afx-now"><span class="lbl">' + EQ + 'Now playing</span><span class="who">' + who + '</span>' + timer +
+    return '<div class="afx-now"><span class="lbl">' + EQ + 'Now playing</span><span class="who">' + who + '</span>' + timer +
       '<span class="afx-spacer"></span>' + up + '</div>';
-    this.tickTimers();
   };
+
+  /* One linear run over the whole alert, started where playback already is. */
+  Feed.prototype.startBar = function (bar) {
+    var q = this.s.queue, p = q.playing;
+    if (!bar || !p || !p.duration_ms || !p.started_at_ms) { return; }
+    var elapsed = Math.min(p.duration_ms, Math.max(0, Date.now() + q.offset - p.started_at_ms));
+    bar.style.animationDuration = Math.round(p.duration_ms) + 'ms';
+    bar.style.animationDelay = '-' + Math.round(elapsed) + 'ms';
+    bar.classList.add('is-run');
+  };
+  Feed.prototype.startStripBar = function () { this.startBar(this.r.strip.querySelector('[data-afx-bar]')); };
 
   Feed.prototype.tickTimers = function () {
     var q = this.s.queue, p = q.playing;
-    var bar = this.root.querySelector('[data-afx-bar]'), left = this.root.querySelector('[data-afx-left]');
-    if (!p || !p.duration_ms || !p.started_at_ms || (!bar && !left)) { return; }
-    var elapsed = Date.now() + q.offset - p.started_at_ms;
-    var pct = Math.min(100, Math.max(0, elapsed / p.duration_ms * 100));
-    if (bar) { bar.style.width = pct.toFixed(1) + '%'; }
-    if (left) { left.textContent = mmss(p.duration_ms - elapsed); }
+    var left = this.root.querySelector('[data-afx-left]');
+    if (!p || !p.duration_ms || !p.started_at_ms || !left) { return; }
+    left.textContent = mmss(p.duration_ms - (Date.now() + q.offset - p.started_at_ms));
   };
 
   Feed.prototype.timeHtml = function (ts) {
@@ -652,8 +676,8 @@
     if (st.timer === 'item' && playing) {
       var p = q.playing;
       if (p && p.duration_ms && p.started_at_ms) {
-        var el = Math.max(0, Date.now() + q.offset - p.started_at_ms);
-        timer = '<i class="tbar is-run" style="animation-duration:' + Math.round(p.duration_ms) + 'ms;animation-delay:-' + Math.round(Math.min(el, p.duration_ms)) + 'ms"></i>';
+        // Timing is set by paintList, which also keeps a running bar through repaints.
+        timer = '<i class="tbar is-run" data-k="' + esc(barKey(p)) + '"></i>';
       } else {
         timer = '<i class="tbar is-indet"></i>';
       }
@@ -755,10 +779,53 @@
     return html;
   };
 
+  /* Replace the list, but keep the playing row's running timer bar (On each alert) alive.
+     A CSS animation stops when its element leaves the page, so that row stays where it is:
+     the other rows are swapped around it and its own contents are refreshed around the bar. */
+  Feed.prototype.paintList = function (html) {
+    var list = this.r.list, self = this;
+    var oldBar = list.querySelector('.tbar.is-run[data-k]');
+    var oldRow = oldBar && oldBar.parentNode;
+    var tmp = null, newBar = null, newRow = null, kids = null, at = -1;
+    if (oldRow && oldRow.parentNode === list) {
+      tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      var key = oldBar.getAttribute('data-k');
+      Array.prototype.forEach.call(tmp.querySelectorAll('.tbar.is-run[data-k]'), function (b) {
+        if (b.getAttribute('data-k') === key) { newBar = b; }
+      });
+      newRow = newBar && newBar.parentNode;
+      kids = Array.prototype.slice.call(tmp.childNodes);
+      at = newRow ? kids.indexOf(newRow) : -1;
+    }
+    if (at < 0) {
+      list.innerHTML = html;
+    } else {
+      Array.prototype.slice.call(oldRow.getAttributeNames ? oldRow.getAttributeNames() : []).forEach(function (n) {
+        if (!newRow.hasAttribute(n)) { oldRow.removeAttribute(n); }
+      });
+      Array.prototype.forEach.call(newRow.getAttributeNames ? newRow.getAttributeNames() : [], function (n) {
+        oldRow.setAttribute(n, newRow.getAttribute(n));
+      });
+      Array.prototype.slice.call(oldRow.childNodes).forEach(function (n) { if (n !== oldBar) { oldRow.removeChild(n); } });
+      var before = true;
+      Array.prototype.slice.call(newRow.childNodes).forEach(function (n) {
+        if (n === newBar) { before = false; return; }
+        if (before) { oldRow.insertBefore(n, oldBar); } else { oldRow.appendChild(n); }
+      });
+      Array.prototype.slice.call(list.childNodes).forEach(function (n) { if (n !== oldRow) { list.removeChild(n); } });
+      kids.slice(0, at).forEach(function (n) { list.insertBefore(n, oldRow); });
+      kids.slice(at + 1).forEach(function (n) { list.appendChild(n); });
+    }
+    Array.prototype.forEach.call(list.querySelectorAll('.tbar.is-run[data-k]'), function (b) {
+      if (!b.style.animationDuration) { self.startBar(b); }
+    });
+  };
+
   Feed.prototype.renderListHtml = function () {
     var list = this.r.list, s = this.s, mode = s.view.mode, self = this;
     list.classList.toggle('is-feed', mode !== 'person');
-    if (mode === 'person') { list.innerHTML = this.personHtml(); return; }
+    if (mode === 'person') { this.paintList(this.personHtml()); return; }
     var st = s.settings;
     var qi = this.queueItems();
     var tags = {};
@@ -783,7 +850,7 @@
         html += this.timelineHtml(rest.map(function (r, i) { return { row: r, tag: null, newest: first && i === 0 }; }),
           { recentHead: false, continued: !first });
       } else if (!html) { html = empty(); }
-      list.innerHTML = html;
+      this.paintList(html);
       return;
     }
     var top = [];
@@ -792,7 +859,7 @@
       if (qi.playing && qi.playing.synthetic) { top.push(qi.playing); }
     }
     var items = top.concat(pg.rows.map(function (r) { return { row: r, tag: (first && r.alert_id && tags[r.alert_id]) || null }; }));
-    list.innerHTML = items.length ? this.timelineHtml(items, { continued: !first }) : empty();
+    this.paintList(items.length ? this.timelineHtml(items, { continued: !first }) : empty());
   };
 
   Feed.prototype.personHtml = function () {
