@@ -31,8 +31,8 @@ from ui_sim import run_ui  # noqa: E402
 _ORIGINALS = {name: getattr(feed, name) for name in ("_emit_overlay_event", "_run_on_ui_loop")}
 
 _GLOBALS = (
-    "_live_seq", "_legacy_hours_cache", "_history_payload", "_person_payload", "_history_task_running",
-    "_history_rerun", "_condensed_update_scheduled", "_condensed_rebuild_running", "_condensed_rebuild_rerun",
+    "_live_seq", "_legacy_hours_cache", "_person_payload", "_person_rows_payload", "_stored_loaded",
+    "_condensed_update_scheduled", "_condensed_rebuild_running", "_condensed_rebuild_rerun",
     "_host", "_slot_cache", "_slot_rev", "_live_push_scheduled", "_queue_poll_timer", "_watchdog_timer",
     "_last_queue_sig", "_last_meta", "_meta_tick", "_health_failures", "_registered_event_clients",
     "_assets_shared", "_hooks_registered_client_ids",
@@ -114,9 +114,9 @@ def test_slot_values(monkeypatch):
     monkeypatch.setattr(feed, "_meta_state", lambda: {"m": 1})
     feed.activity_feed_state.live_alerts = [{"type": "follow", "username": "A"}]
     assert feed._slot_value("settings") == {"layout": "rows"}
-    assert feed._slot_value("view")["mode"] == "live"
+    assert feed._slot_value("view")["mode"] == "feed"
     assert feed._slot_value("live")[0]["kind"] == "follow"
-    assert feed._slot_value("history") is feed._history_payload
+    assert feed._slot_value("person_rows") is feed._person_rows_payload
     assert feed._slot_value("person") is feed._person_payload
     assert feed._slot_value("queue") == {"q": 1} and feed._slot_value("meta") == {"m": 1}
     assert feed._slot_value("nope") is None
@@ -136,8 +136,8 @@ def test_apply_slot_and_push(monkeypatch, sync_ui):
     host.slots.pop("queue")
     feed._apply_slot("queue", "{}")
     assert feed._slot_rev == 1
-    feed._push_slot("history", {"rows": [], "obj": object()})
-    assert json.loads(host.slots["history"]._props["data-json"]) == {"rows": []}
+    feed._push_slot("person_rows", {"rows": [], "obj": object()})
+    assert json.loads(host.slots["person_rows"]._props["data-json"]) == {"rows": []}
 
     class _Bad:
         pass
@@ -437,9 +437,16 @@ def test_handle_feed_action_queue_controls(actions):
     assert actions == [("replay", {"alert_id": "r", "type": "Bits", "username": "U"})]
 
 
-def test_handle_feed_action_view_and_misc(actions, isolated):
-    feed.handle_feed_action("mode", {"mode": "history"})
-    assert isolated.vm.snapshot()["mode"] == "history"
+def test_handle_feed_action_view_and_misc(actions, isolated, monkeypatch):
+    feed.handle_feed_action("mode", {"mode": "person"})
+    assert isolated.vm.snapshot()["mode"] == "person"
+    feed.handle_feed_action("mode", {"mode": "history"})  # an older name for the Feed
+    assert isolated.vm.snapshot()["mode"] == "feed"
+    asked = []
+    monkeypatch.setattr(feed, "schedule_person_rows", lambda user: asked.append(user))
+    feed.handle_feed_action("person-events", {"user": "Ann"})
+    feed.handle_feed_action("person-events", {})
+    assert asked == ["Ann", ""]
     feed.handle_feed_action("mode", {"mode": "bogus"})
     feed.handle_feed_action("filter", {"key": "bits", "value": 0})
     feed.handle_feed_action("filter", {"key": "nope", "value": 0})
@@ -679,12 +686,12 @@ def tab_env(monkeypatch):
     monkeypatch.setattr(feed, "_meta_state", lambda: {"app": True, "dock_open": None})
     monkeypatch.setattr(feed, "_read_asset", lambda name: "/*css*/" if name.endswith(".css") else "window.MycelianFeed={};")
     refreshed, rebuilt = [], []
-    monkeypatch.setattr(feed, "refresh_restored_alerts", lambda: refreshed.append(1))
+    monkeypatch.setattr(feed, "schedule_stored_feed_load", lambda reload=False: refreshed.append(1))
     monkeypatch.setattr(feed, "_schedule_condensed_rebuild", lambda reason: rebuilt.append(reason))
     return SimpleNamespace(refreshed=refreshed, rebuilt=rebuilt)
 
 
-@pytest.mark.parametrize("mode", ["live", "history", "person"])
+@pytest.mark.parametrize("mode", ["feed", "person"])
 def test_create_activity_feed_tab(monkeypatch, isolated, tab_env, mode):
     isolated.vm._view.update(feed.mode_patch(mode))
     feed.activity_feed_state.live_alerts = [{"type": "follow", "username": "Amy"}]
@@ -717,7 +724,7 @@ def test_create_activity_feed_tab(monkeypatch, isolated, tab_env, mode):
     run_ui(build, check)
     assert feed.activity_feed_state.is_initialized is True
     assert [d for d, *_ in isolated.timers] == [feed._QUEUE_POLL_SEC, feed._FEED_WATCHDOG_INTERVAL_SEC]
-    assert tab_env.refreshed == ([1] if mode == "history" else [])
+    assert tab_env.refreshed == [1]  # stored alerts load into the Feed once the tab exists
     assert tab_env.rebuilt == (["tab_open"] if mode == "person" else [])
     assert 'window.MycelianFeed' in Client.shared_head_html
 

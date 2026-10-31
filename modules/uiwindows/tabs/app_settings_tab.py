@@ -495,12 +495,12 @@ class AppSettingsTab:
 
     def _build_storage(self) -> None:
         with self._section("inventory_2", "Activity feed and storage").props('id="aps-storage"'):
-            with self._row("Items per page", "How many events the Activity Feed shows at a time."):
+            with self._row("Items per page", "How many events each page of the Activity Feed shows."):
                 self._number(
                     "activity_feed_limit", "Number of activity items shown per page",
                     lo=5, hi=100, step=5, default=5, unit="items",
                 )
-            with self._row("Pages to load", "How many pages of history the feed can page back through."):
+            with self._row("Pages to load", "How many pages of stored events the Feed loads when Mycelian starts. New events add pages while it runs."):
                 self._number(
                     "activity_feed_max_pages", "Maximum pages of history kept in the activity feed",
                     lo=1, hi=50, step=1, default=1, unit="pages",
@@ -616,7 +616,7 @@ class AppSettingsTab:
                     ui.label("Behaviour").classes("aps-nsub aps-feed-sub")
                     with self._row("Times", "\u201c3m\u201d or \u201c14:32\u201d."):
                         self._feed_select("times", {"relative": "Relative", "clock": "Clock", "hidden": "Hidden"}, "How event times show", "w-32")
-                    with self._row("Move to \u201cEarlier\u201d after", "Splits the live feed into Recent and Earlier."):
+                    with self._row("Move to \u201cEarlier\u201d after", "Splits the Feed into Recent and Earlier."):
                         self._feed_select("earlier_minutes", {15: "15 minutes", 30: "30 minutes", 60: "1 hour", 120: "2 hours", 0: "Never"}, "When events move under Earlier", "w-36")
                     with self._row("Show order numbers", "#41, #42 \u2026 in the order alerts arrived."):
                         self._feed_switch("order_numbers")
@@ -624,7 +624,7 @@ class AppSettingsTab:
                         self._feed_switch("dots")
                     with self._row("Highlight new events for", "NEW tag on fresh rows."):
                         self._feed_select("new_minutes", {0: "Off", 1: "1 minute", 2: "2 minutes", 5: "5 minutes", 10: "10 minutes", 15: "15 minutes", 30: "30 minutes"}, "How long the NEW tag stays", "w-36")
-                    with self._row("Show \u201cNow playing\u201d strip", "What is playing now, above the live feed."):
+                    with self._row("Show \u201cNow playing\u201d strip", "What is playing now, above the Feed."):
                         self._feed_switch("now_playing")
                     with self._row("Alert timer", "Where the countdown for each alert shows."):
                         self._feed_select("timer", {"strip": "In the Now playing strip", "item": "On each alert", "off": "Off"}, "Where the alert countdown shows", "w-60")
@@ -683,7 +683,7 @@ class AppSettingsTab:
 
         per_page = int(b.activity_feed_limit or 0)
         pages = int(b.activity_feed_max_pages or 0)
-        feed = f"Feed shows up to <b>{per_page * pages:,}</b> events."
+        feed = f"Feed starts with up to <b>{per_page * pages:,}</b> stored events."
         if not trim_on:
             storage = "Stored alerts are <b>kept forever</b>."
         else:
@@ -791,6 +791,8 @@ class AppSettingsTab:
         saved = state_manager.get_app_settings()
         update_schedule_changed = (saved.auto_update, saved.update_check_interval_minutes) != (
             self.buffer.auto_update, self.buffer.update_check_interval_minutes)
+        feed_size_changed = (saved.activity_feed_limit, saved.activity_feed_max_pages) != (
+            self.buffer.activity_feed_limit, self.buffer.activity_feed_max_pages)
         for field in self.buffer.__dataclass_fields__.keys():
             if field in _skip_save:
                 continue
@@ -801,6 +803,8 @@ class AppSettingsTab:
             self._apply_background_settings()
             if update_schedule_changed:
                 self._reschedule_update_checks()
+            if feed_size_changed:
+                self._reload_feed()
             self._apply_alert_storage_trim()
             try:
                 refresh_service_status_footer()
@@ -821,6 +825,16 @@ class AppSettingsTab:
             updater.update_manager.reschedule_periodic_timer()
         except Exception:
             logger.debug("could not reschedule update checks", exc_info=True)
+
+    @staticmethod
+    def _reload_feed() -> None:
+        """Items per page or Pages to load changed: the Feed reloads its stored alerts."""
+        try:
+            from ..activity_feed import reload_stored_feed
+
+            reload_stored_feed()
+        except Exception:
+            logger.debug("could not reload the activity feed", exc_info=True)
 
     @staticmethod
     def _push_notify_settings_to_docks() -> None:

@@ -41,7 +41,6 @@
             var appliedViewRevision = null;
             var lastPersonAt = 0;
             var personWatch = null;
-            var historyWatch = null;
 
             function socketReady() {
                 return typeof socket !== 'undefined' && socket && socket.connected;
@@ -89,16 +88,6 @@
                 }, 3000);
             }
 
-            function watchHistory(page) {
-                if (historyWatch) { clearTimeout(historyWatch); }
-                historyWatch = setTimeout(function () {
-                    historyWatch = null;
-                    if (feed.mode() === 'history' && feed.s.history.loading && socketReady()) {
-                        socket.emit('get_stored_alerts_paginated', { page: page || feed.s.view.page || 1 });
-                    }
-                }, 2500);
-            }
-
             function send(action, p) {
                 p = p || {};
                 if (action === 'settings') {
@@ -135,11 +124,10 @@
                         }
                     });
                 } else if (action === 'mode') {
-                    var patch = p.mode === 'history' ? { mode: 'history', tab: 'previous', page: 1 }
-                        : (p.mode === 'person' ? { mode: 'person', tab: 'current', condensed: true } : { mode: 'live', tab: 'current', condensed: false });
+                    var patch = p.mode === 'person' ? { mode: 'person', tab: 'current', condensed: true }
+                        : { mode: 'feed', tab: 'current', condensed: false, page: 1 };
                     emitView(patch);
                     if (p.mode === 'person') { watchPerson(); }
-                    if (p.mode === 'history') { watchHistory(1); }
                 } else if (action === 'filter') {
                     var f = {}; f[p.key] = !!p.value;
                     emitView({ filters: f });
@@ -149,7 +137,10 @@
                     if (feed.mode() === 'person') { watchPerson(); }
                 } else if (action === 'page') {
                     emitView({ page: p.page });
-                    watchHistory(p.page);
+                } else if (action === 'person-events') {
+                    socket.emit('activity_feed_person_events', { user: p.user || '' }, function (r) {
+                        feed.set('person_rows', r && typeof r === 'object' ? r : { user: p.user || '', rows: [], success: false });
+                    });
                 }
             }
 
@@ -211,19 +202,10 @@
                 if (data.live_alerts) { feed.set('live', data.live_alerts, { defer: true }); }
                 feed.renderAll();
                 if (feed.mode() === 'person' && before !== 'person') { watchPerson(); }
-                if (feed.mode() === 'history' && before !== 'history') { watchHistory(data.page); }
             });
 
             socket.on('activity_feed_alert', function (alertData) {
                 feed.set('add', alertData);
-            });
-
-            socket.on('stored_alerts_paginated', function (data) {
-                data = data || {};
-                feed.set('history', {
-                    rows: data.alerts || [], page: data.page, total_pages: data.total_pages, total_count: data.total_count,
-                    has_prev: data.has_prev, has_next: data.has_next, loading: false, error: data.success === false ? (data.error || 'failed') : ''
-                });
             });
 
             socket.on('condensed_view_alerts', function (data) {

@@ -203,9 +203,9 @@ def test_queue_state_uses_the_contract_api(monkeypatch):
 
 
 def test_view_modes_map_to_tab_and_condensed():
-    assert model.view_mode({"tab": "previous", "condensed": True}) == "history"
+    assert model.view_mode({"tab": "previous", "condensed": True}) == "feed"  # old History view
     assert model.view_mode({"tab": "current", "condensed": True}) == "person"
-    assert model.view_mode({"tab": "current"}) == "live"
+    assert model.view_mode({"tab": "current"}) == "feed"
     assert model.mode_patch("person") == {"tab": "current", "condensed": True}
 
 
@@ -218,7 +218,7 @@ def test_search_is_shared_but_never_saved(fresh_view, monkeypatch):
     assert feed.activity_feed_state.search_text == "spore lord"
     assert saves == []  # search alone is not persisted
     event, payload, _to = sent[-1]
-    assert event == "activity_feed_view" and payload["search"] == "spore lord" and payload["mode"] == "live"
+    assert event == "activity_feed_view" and payload["search"] == "spore lord" and payload["mode"] == "feed"
     # an echo with the same value is not a change
     rev = vm.revision
     vm.update({"search": "spore lord"})
@@ -229,16 +229,16 @@ def test_mode_patch_and_dock_echo(fresh_view):
     vm, sent = fresh_view
     snap = vm.update({"mode": "person"})
     assert (snap["tab"], snap["condensed"], snap["mode"]) == ("current", True, "person")
-    snap = vm.update({"mode": "history"})
-    assert snap["mode"] == "history" and snap["page"] == 1
+    snap = vm.update({"mode": "feed"})
+    assert snap["mode"] == "feed" and not snap["condensed"]
     # an older dock echo cannot roll the view back
     assert vm.apply_snapshot(dict(snap, revision=snap["revision"] - 1, tab="current")) is False
 
 
-def test_page_is_clamped_to_max_pages(fresh_view, monkeypatch):
+def test_feed_page_is_not_capped_by_pages_to_load(fresh_view):
+    # New alerts add pages while Mycelian runs, so the page can pass Pages to load.
     vm, _ = fresh_view
-    monkeypatch.setattr(feed, "_max_history_pages", lambda: 5)
-    assert vm.update({"page": 99})["page"] == 5
+    assert vm.update({"page": 99})["page"] == 99
     assert vm.update({"page": -3})["page"] == 1
 
 
@@ -344,24 +344,6 @@ def test_stored_alerts_map_to_live_type_keys():
     raid = feed.convert_stored_alert_to_feed_format({"alert_type": "raid", "username": "r", "raider_count": "1,500", "timestamp": 1})
     assert raid["raider_count"] == 1500 and raid["row"]["amount"] == "1,500 viewers"
     assert bits["row"]["restored"] is True
-
-
-def test_history_page_is_clamped_when_history_shrank(monkeypatch):
-    calls = []
-
-    def page(page, limit, max_total_alerts):
-        calls.append(page)
-        alerts = [{"alert_id": f"a{i}", "alert_type": "follow", "username": f"u{i}", "timestamp": 100 - i} for i in range(2)]
-        return {"alerts": alerts if page <= 2 else [], "total_count": 12, "total_pages": 2, "page": page}
-
-    manager = SimpleNamespace(initialize=lambda: None, get_limited_stored_alerts_paginated=page)
-    monkeypatch.setattr(feed.alertutils, "alert_state_manager", manager)
-    settings = SimpleNamespace(activity_feed_limit=10, activity_feed_max_pages=5)
-    monkeypatch.setattr("modules.dataobjects.state_manager", SimpleNamespace(get_app_settings=lambda: settings))
-    rows, info = feed.load_restored_alerts(4)
-    assert calls == [4, 2]
-    assert info["page"] == 2 and info["has_prev"] and not info["has_next"]
-    assert [r["row"]["seq"] for r in rows] == [2, 1]  # position in the stored history
 
 
 def test_person_window_reads_all_storage_not_just_feed_pages(monkeypatch):

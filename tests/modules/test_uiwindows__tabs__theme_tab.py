@@ -848,3 +848,67 @@ def test_option_dots_skip_missing_theme_and_escape(themes, state):
         assert content.count("</style>") == 1
 
     build_tab(check)
+
+
+# ----------------------------------------------------------------- Activity Feed event colours
+
+def test_event_panel_sits_under_the_existing_panels(themes, state):
+    async def check(user, tab):
+        panels = by_class(user.client, "thm-panels")
+        assert len(panels) == 2 and "thm-panels-wide" in panels[1].classes
+        assert "thm-panels-wide" not in panels[0].classes, "Colors and Pop-ups keep their row"
+        await user.should_see("Activity Feed events")
+        assert set(tt.EVENT_COLOR_FIELDS) <= set(tab._swatch_els)
+        chips = by_class(user.client, "thm-ev")
+        assert len(chips) == 17
+        # no event colours in the Colors panel or the readability list
+        assert all(f not in tt._PALETTE_COLOR_FIELDS for f in tt.EVENT_COLOR_FIELDS)
+        assert "event" not in tab.ui_elements["_readability"].content
+        # a theme without event colours shows the status colour fallbacks
+        assert tab._swatch_els["event_follow"]._style.get("--tc") == "rgb(115, 0, 255)"
+        assert tab._swatch_els["event_bits"]._style.get("--tc") == "#fa0"
+        sample = tab._event_sample_el.content
+        assert 'class="afx-host thm-evhost"' in sample and "--color-event-follow:rgb(115, 0, 255)" in sample
+        assert "--color-event-donation:#0f0" in sample and sample.count('class="afx-row"') == len(tt._EVENT_SAMPLE_ROWS)
+        assert disabled(tab.ui_elements["event_reset_btn"]) and disabled(tab.ui_elements["event_undo_btn"])
+
+    build_tab(check)
+
+
+def test_event_chip_opens_picker_previews_live_and_resets(themes, state, picker):
+    themes.themes["mine"].event_bits = "rgb(1, 1, 1)"
+
+    async def check(user, tab):
+        tab._on_theme_change("mine")
+        fire(user, tab._swatch_els["event_bits"])
+        anchor, value, kw = picker[-1]
+        assert anchor is tab._swatch_els["event_bits"] and value == "rgb(1, 1, 1)"
+        assert kw["title"] == "Twitch · Bits"
+        assert tab._event_focus == "event_bits" and "is-active" in tab._swatch_els["event_bits"].classes
+        assert tab._focus_field == "primary", "the Colors panel focus card is untouched"
+        kw["on_input"]("rgb(2, 2, 2)")
+        assert "--color-event-bits:rgb(2, 2, 2)" in tab._event_sample_el.content, "the sample follows live"
+        kw["on_done"]("rgb(3, 3, 3)")
+        assert tab._working_theme.event_bits == "rgb(3, 3, 3)" and tab._palette_dirty
+        assert "is-edited" in tab._swatch_els["event_bits"].classes
+        assert not disabled(tab.ui_elements["event_reset_btn"]) and not disabled(tab.ui_elements["event_undo_btn"])
+        tab._working_theme.bg_base = "rgb(4, 4, 4)"  # a Colors edit is not touched by the event reset
+        fire(user, tab.ui_elements["event_reset_btn"])
+        assert tab._working_theme.event_bits == "rgb(1, 1, 1)" and tab._working_theme.bg_base == "rgb(4, 4, 4)"
+        fire(user, tab.ui_elements["event_undo_btn"])
+        assert tab._working_theme.event_bits == "rgb(3, 3, 3)"
+        fire(user, tab.ui_elements["event_redo_btn"])
+        assert tab._working_theme.event_bits == "rgb(1, 1, 1)"
+        tab._reset_event_colors()  # already matches: nothing to do
+        tab.save()
+        assert themes.updated[-1].event_bits == "rgb(1, 1, 1)" and themes.updated[-1].bg_base == "rgb(4, 4, 4)"
+
+    build_tab(check)
+
+
+def test_event_section_without_container_or_theme(themes, state):
+    tab = tt.ThemeTab()
+    tab._build_event_section(make_theme("x", "X"), None)  # not built yet
+    tab._refresh_event_sample()
+    tab._on_event_click("event_bits", "Twitch · Bits")
+    assert tab._event_colors_match_disk() is True

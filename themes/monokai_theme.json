@@ -26,5 +26,22 @@
   "notify_success": "rgb(166, 226, 46)",
   "notify_warning": "rgb(230, 219, 116)",
   "notify_error": "rgb(249, 38, 114)",
-  "notify_info": "rgb(102, 217, 239)"
+  "notify_info": "rgb(102, 217, 239)",
+  "event_follow": "rgb(249, 38, 114)",
+  "event_sub": "rgb(102, 217, 239)",
+  "event_resub": "rgb(120, 220, 232)",
+  "event_giftsub": "rgb(166, 226, 46)",
+  "event_bits": "rgb(230, 219, 116)",
+  "event_points": "rgb(253, 151, 31)",
+  "event_raid": "rgb(255, 97, 136)",
+  "event_streak": "rgb(253, 151, 31)",
+  "event_hype": "rgb(174, 129, 255)",
+  "event_modiversary": "rgb(171, 157, 242)",
+  "event_donation": "rgb(169, 220, 118)",
+  "event_member": "rgb(102, 217, 239)",
+  "event_milestone": "rgb(120, 220, 232)",
+  "event_giftmember": "rgb(166, 226, 46)",
+  "event_superchat": "rgb(169, 220, 118)",
+  "event_supersticker": "rgb(230, 219, 116)",
+  "event_other": "rgb(249, 38, 114)"
 }

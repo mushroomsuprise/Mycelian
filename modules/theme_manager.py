@@ -14,6 +14,12 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
 from .path_utils import get_data_path
+from .theme_event_colors import (
+    BUILTIN_EVENT_COLORS,
+    EVENT_COLOR_FIELDS,
+    event_css_variables,
+    fill_builtin_event_colors,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +81,25 @@ class ThemeColors:
     active_overlay: str = ""
     focus_ring: str = ""
 
+    # Activity Feed event colours (theme_event_colors.EVENT_KINDS; empty = fallback)
+    event_follow: str = ""
+    event_sub: str = ""
+    event_resub: str = ""
+    event_giftsub: str = ""
+    event_bits: str = ""
+    event_points: str = ""
+    event_raid: str = ""
+    event_streak: str = ""
+    event_hype: str = ""
+    event_modiversary: str = ""
+    event_donation: str = ""
+    event_member: str = ""
+    event_milestone: str = ""
+    event_giftmember: str = ""
+    event_superchat: str = ""
+    event_supersticker: str = ""
+    event_other: str = ""
+
 
 def _notify_radius(theme: ThemeColors) -> int:
     try:
@@ -134,6 +159,9 @@ def generate_css_variables(theme: ThemeColors) -> str:
     --color-hover-overlay: {theme.hover_overlay};
     --color-active-overlay: {theme.active_overlay};
     --color-focus-ring: {theme.focus_ring};
+
+    /* Activity Feed events */
+{event_css_variables(theme)}
 }}
 """
 
@@ -1139,7 +1167,7 @@ class ThemeManager:
                 data = json.load(f)
 
             # Create ThemeColors from JSON data
-            return ThemeColors(**data)
+            return fill_builtin_event_colors(ThemeColors(**data))
         except Exception as e:
             logger.error(f"Error loading theme file {theme_file}: {e}")
             return None
@@ -1269,6 +1297,7 @@ class ThemeManager:
                 "hover_overlay": "rgba(0, 0, 0, 0.04)",
                 "active_overlay": "rgba(0, 0, 0, 0.08)",
                 "focus_ring": "rgba(100, 0, 230, 0.4)",
+                **{f"event_{k}": v for k, v in BUILTIN_EVENT_COLORS["light"].items()},
             }
         else:  # dark theme defaults
             return {
@@ -1297,6 +1326,7 @@ class ThemeManager:
                 "hover_overlay": "rgba(255, 255, 255, 0.05)",
                 "active_overlay": "rgba(255, 255, 255, 0.1)",
                 "focus_ring": "rgba(115, 0, 255, 0.5)",
+                **{f"event_{k}": v for k, v in BUILTIN_EVENT_COLORS["dark"].items()},
             }
 
     def _theme_to_dict(self, theme: ThemeColors) -> dict:
@@ -1342,6 +1372,7 @@ class ThemeManager:
             "hover_overlay": theme.hover_overlay,
             "active_overlay": theme.active_overlay,
             "focus_ring": theme.focus_ring,
+            **{field: getattr(theme, field, "") for field in EVENT_COLOR_FIELDS},
         }
 
     def _find_theme_file(self, theme_name: str) -> Optional[Path]:

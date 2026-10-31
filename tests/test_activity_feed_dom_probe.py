@@ -559,7 +559,7 @@ class ActivityFeedViewManagerTests(unittest.TestCase):
         self.assertEqual(set_data.call_args.args[0], "ActivityFeedView")
         payload = set_data.call_args.args[1]
         self.assertTrue(payload["condensed"])
-        self.assertEqual(payload["tab"], "previous")
+        self.assertEqual(payload["tab"], "current")  # the old History tab is the Feed now
         self.assertEqual(payload["page"], 3)
         self.assertFalse(payload["filters"]["raids"])
         self.assertNotIn("revision", payload)
@@ -567,7 +567,7 @@ class ActivityFeedViewManagerTests(unittest.TestCase):
     def test_view_patches_save_and_broadcast_once(self) -> None:
         for patch_body in (
             {"condensed": True},
-            {"tab": "previous"},
+            {"mode": "person"},
             {"page": 4},
         ):
             manager = feed.ActivityFeedViewManager()

@@ -7,7 +7,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = 4;
+  var VERSION = 5;
   if (window.MycelianFeed && window.MycelianFeed.version >= VERSION) { return; }
 
   var FILTERS = [
@@ -20,7 +20,7 @@
   var DEFAULTS = {
     layout: 'rows', density: 'comfortable', color: 'icon', icons: true, tier: 'icon', platform: true, messages: true, sub_duration: true,
     wrap: false, times: 'relative', earlier_minutes: 30, order_numbers: true, dots: true, new_minutes: 5,
-    now_playing: true, timer: 'strip', up_next: 1, text_size: 'medium', person_hours: 12,
+    now_playing: true, timer: 'strip', up_next: 1, text_size: 'medium', person_hours: 12, page_limit: 20, max_pages: 5,
     sub_duration_style: 'split', sub_duration_place: 'inline'
   };
   var CHOICES = {
@@ -31,23 +31,23 @@
   };
   // kind -> [icon, colour, label, filter key, verb used for queue-only rows]
   var KINDS = {
-    follow: ['favorite', 'var(--color-primary)', 'Follow', 'follows', 'followed'],
-    sub: ['star', 'var(--color-info)', 'Sub', 'subs', 'subscribed'],
-    resub: ['autorenew', 'var(--color-info)', 'Resub', 'resubs', 'resubscribed'],
-    giftsub: ['redeem', 'var(--color-success)', 'Gift', 'giftsubs', 'gifted subs'],
-    bits: ['diamond', 'var(--color-warning)', 'Bits', 'bits', 'cheered'],
-    points: ['toll', 'var(--color-error)', 'Points', 'points', 'redeemed a reward'],
-    raid: ['groups', 'var(--color-error)', 'Raid', 'raids', 'raided'],
-    donation: ['payments', 'var(--color-success)', 'Tip', 'donations', 'tipped'],
-    streak: ['local_fire_department', 'var(--color-warning)', 'Streak', 'streaks', 'is on a watch streak'],
-    hype: ['rocket_launch', 'var(--color-primary)', 'Hype Train', 'hype_train', 'Hype Train'],
-    modiversary: ['shield', 'var(--color-info)', 'Modiversary', 'modiversaries', 'celebrated a modiversary'],
-    member: ['workspace_premium', 'var(--color-info)', 'Member', 'subs', 'became a member'],
-    milestone: ['military_tech', 'var(--color-info)', 'Milestone', 'resubs', 'reached a member milestone'],
-    giftmember: ['card_giftcard', 'var(--color-success)', 'Gift', 'giftsubs', 'gifted memberships'],
-    superchat: ['chat', 'var(--color-success)', 'Super Chat', 'donations', 'sent a Super Chat'],
-    supersticker: ['sticky_note_2', 'var(--color-warning)', 'Super Sticker', 'donations', 'sent a Super Sticker'],
-    alert: ['notifications', 'var(--color-primary)', 'Alert', '', 'alert']
+    follow: ['favorite', 'var(--color-event-follow, var(--color-primary))', 'Follow', 'follows', 'followed'],
+    sub: ['star', 'var(--color-event-sub, var(--color-info))', 'Sub', 'subs', 'subscribed'],
+    resub: ['autorenew', 'var(--color-event-resub, var(--color-info))', 'Resub', 'resubs', 'resubscribed'],
+    giftsub: ['redeem', 'var(--color-event-giftsub, var(--color-success))', 'Gift', 'giftsubs', 'gifted subs'],
+    bits: ['diamond', 'var(--color-event-bits, var(--color-warning))', 'Bits', 'bits', 'cheered'],
+    points: ['toll', 'var(--color-event-points, var(--color-error))', 'Points', 'points', 'redeemed a reward'],
+    raid: ['groups', 'var(--color-event-raid, var(--color-error))', 'Raid', 'raids', 'raided'],
+    donation: ['payments', 'var(--color-event-donation, var(--color-success))', 'Tip', 'donations', 'tipped'],
+    streak: ['local_fire_department', 'var(--color-event-streak, var(--color-warning))', 'Streak', 'streaks', 'is on a watch streak'],
+    hype: ['rocket_launch', 'var(--color-event-hype, var(--color-primary))', 'Hype Train', 'hype_train', 'Hype Train'],
+    modiversary: ['shield', 'var(--color-event-modiversary, var(--color-info))', 'Modiversary', 'modiversaries', 'celebrated a modiversary'],
+    member: ['workspace_premium', 'var(--color-event-member, var(--color-info))', 'Member', 'subs', 'became a member'],
+    milestone: ['military_tech', 'var(--color-event-milestone, var(--color-info))', 'Milestone', 'resubs', 'reached a member milestone'],
+    giftmember: ['card_giftcard', 'var(--color-event-giftmember, var(--color-success))', 'Gift', 'giftsubs', 'gifted memberships'],
+    superchat: ['chat', 'var(--color-event-superchat, var(--color-success))', 'Super Chat', 'donations', 'sent a Super Chat'],
+    supersticker: ['sticky_note_2', 'var(--color-event-supersticker, var(--color-warning))', 'Super Sticker', 'donations', 'sent a Super Sticker'],
+    alert: ['notifications', 'var(--color-event-other, var(--color-primary))', 'Alert', '', 'alert']
   };
   var ALIASES = {
     follow: 'follow', sub: 'sub', subscription: 'sub', resub: 'resub', giftsub: 'giftsub', gift_sub: 'giftsub',
@@ -64,7 +64,7 @@
   var YT = '<svg class="plat" viewBox="0 0 24 24" aria-label="YouTube"><path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>';
   var PLAT_MARKS = { twitch: TW, youtube: YT, streamlabs: SL, streamelements: SE };
   var EQ = '<span class="afx-eq"><i></i><i></i><i></i><i></i></span>';
-  var LIVE_CAP = 500;
+  var LIVE_CAP = 20000;
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -103,10 +103,10 @@
     return out;
   }
   function modeOf(view) {
-    if (!view) { return 'live'; }
-    if (view.mode === 'live' || view.mode === 'history' || view.mode === 'person') { return view.mode; }
-    if (view.tab === 'previous') { return 'history'; }
-    return view.condensed ? 'person' : 'live';
+    if (!view) { return 'feed'; }
+    if (view.mode === 'person') { return 'person'; }
+    if (view.mode === 'feed' || view.mode === 'live' || view.mode === 'history') { return 'feed'; }
+    return view.condensed ? 'person' : 'feed';
   }
   function normQueue(raw) {
     var src = raw || {};
@@ -216,9 +216,10 @@
     this.send = opts.send || function () {};
     this.s = {
       settings: normSettings(null),
-      view: { mode: 'live', filters: normFilters(null), search: '', page: 1, revision: -1 },
-      live: [], history: { rows: [], page: 1, total_pages: 1, total_count: 0, has_prev: false, has_next: false, loading: true },
+      view: { mode: 'feed', filters: normFilters(null), search: '', page: 1, revision: -1 },
+      live: [],
       person: { groups: [], hours: 12, alert_count: 0, user_count: 0, loading: true },
+      personRows: { user: '', rows: [] },
       queue: normQueue(null), meta: { connected: true, dock_open: null, app: !opts.dock }
     };
     this.menuOpen = false;
@@ -236,8 +237,7 @@
       '<button type="button" data-a="mute" data-r="mute"></button>' +
       '<button type="button" class="is-skip" data-a="skip" data-r="skip">' + mi('skip_next') + '<span class="lb">Skip</span></button></div>';
     var tabs = '<div class="afx-seg" role="tablist">' +
-      '<button type="button" data-a="mode" data-mode="live">' + mi('bolt') + '<span class="lb">Live</span></button>' +
-      '<button type="button" data-a="mode" data-mode="history">' + mi('history') + '<span class="lb">History</span></button>' +
+      '<button type="button" data-a="mode" data-mode="feed">' + mi('dynamic_feed') + '<span class="lb">Feed</span></button>' +
       '<button type="button" data-a="mode" data-mode="person">' + mi('group_work') + '<span class="lb">By person</span></button></div>';
     var menu = FILTERS.map(function (f, i) {
       var k = KINDS[{ follows: 'follow', subs: 'sub', resubs: 'resub', giftsubs: 'giftsub', bits: 'bits', points: 'points', donations: 'donation', raids: 'raid', streaks: 'streak', modiversaries: 'modiversary', hype_train: 'hype' }[f[0]]];
@@ -261,7 +261,7 @@
         '<button type="button" class="afx-ibtn" data-a="help" title="Help">' + mi('help_outline') + '</button></div>' +
         '<div class="afx-bar">' + tabs + '<button type="button" class="afx-sync" data-a="copy-dock" data-r="sync"></button><span class="afx-spacer"></span>' + tools + '</div>';
     }
-    html += '<div data-r="strip"></div><div class="afx-list" data-r="list"></div><div data-r="pager"></div></div>';
+    html += '<div data-r="strip"></div><div class="afx-list" data-r="list"></div><div data-r="pager"></div></div><div data-r="dialog"></div>';
     var root = document.createElement('div');
     root.className = 'afx' + (dock ? ' is-dock' : '');
     root.innerHTML = html;
@@ -272,6 +272,7 @@
     this.mount.innerHTML = '';
     this.mount.appendChild(root);
     root.addEventListener('click', function (e) { self.onClick(e); });
+    root.addEventListener('keydown', function (e) { if (e.key === 'Escape' && self.dialogUser) { self.closeDialog(); } });
     root.addEventListener('change', function (e) { self.onChange(e); });
     this.r.search.addEventListener('input', function () { self.onSearchInput(); });
     this.r.search.addEventListener('keydown', function (e) { if (e.key === 'Escape') { self.r.search.value = ''; self.onSearchInput(); } });
@@ -310,7 +311,7 @@
         s.view.search = incoming;
         if (document.activeElement !== this.r.search) { this.r.search.value = incoming; }
       }
-      if (prevMode !== s.view.mode && s.view.mode === 'history') { s.history.loading = true; }
+      if (prevMode !== s.view.mode && s.view.mode !== 'person') { this.dialogUser = null; }
     } else if (name === 'live') {
       s.live = (value || []).map(rowFromAlert).slice(0, LIVE_CAP);
     } else if (name === 'add') {
@@ -318,12 +319,6 @@
       s.live = s.live.filter(function (r) { return r.id !== row.id; });
       s.live.unshift(row);
       if (s.live.length > LIVE_CAP) { s.live.length = LIVE_CAP; }
-    } else if (name === 'history') {
-      var h = value || {};
-      s.history = {
-        rows: (h.rows || h.alerts || []).map(rowFromAlert), page: Number(h.page) || 1, total_pages: Number(h.total_pages) || 1,
-        total_count: Number(h.total_count) || 0, has_prev: !!h.has_prev, has_next: !!h.has_next, loading: !!h.loading, error: h.error || ''
-      };
     } else if (name === 'person') {
       var p = value || {};
       s.person = {
@@ -331,6 +326,11 @@
         user_count: Number(p.user_count) || (p.groups || []).length, loading: !!p.loading, error: p.success === false ? (p.error || 'failed') : '',
         truncation: p.truncation || ''
       };
+      // The open dialog follows the groups: ask again for that person's rows.
+      if (this.dialogUser && !p.loading) { this.send('person-events', { user: this.dialogUser }); }
+    } else if (name === 'person_rows') {
+      var pr = value || {};
+      s.personRows = { user: String(pr.user || ''), rows: (pr.rows || []).map(rowFromAlert), error: pr.success === false };
     } else if (name === 'queue') {
       s.queue = normQueue(value);
     } else if (name === 'flags') {
@@ -351,6 +351,7 @@
   Feed.prototype.onClick = function (e) {
     var t = e.target.closest('[data-a]');
     var s = this.s;
+    if (e.target.classList && e.target.classList.contains('afx-modal')) { this.closeDialog(); return; }
     if (!t || !this.root.contains(t)) {
       var row = e.target.closest('.afx-row.is-click');
       if (row && this.root.contains(row)) {
@@ -369,7 +370,7 @@
       var mode = t.getAttribute('data-mode');
       if (mode !== s.view.mode) {
         s.view.mode = mode;
-        if (mode === 'history') { s.view.page = 1; s.history.loading = true; }
+        if (mode === 'feed') { s.view.page = 1; }
         if (mode === 'person') { s.person.loading = !s.person.groups.length; }
         this.renderAll();
         this.send('mode', { mode: mode });
@@ -383,10 +384,12 @@
     }
     else if (a === 'page') {
       var page = Number(t.getAttribute('data-page'));
-      if (page >= 1 && page <= Math.max(1, s.history.total_pages)) {
-        s.view.page = page; s.history.loading = true; this.renderAll(); this.send('page', { page: page });
+      if (page >= 1 && page <= this.feedPages().total) {
+        s.view.page = page; this.renderAll(); this.r.list.scrollTop = 0; this.send('page', { page: page });
       }
     }
+    else if (a === 'person') { this.openDialog(t.getAttribute('data-user') || ''); }
+    else if (a === 'dialog-close') { this.closeDialog(); }
     else if (a === 'settings' || a === 'help' || a === 'storage' || a === 'copy-dock') { this.send(a, {}); }
   };
 
@@ -435,6 +438,7 @@
     this.renderStrip();
     this.renderList();
     this.renderPager();
+    this.renderDialog();
   };
 
   Feed.prototype.playingInfo = function () {
@@ -493,8 +497,6 @@
     if (!alertId) { return null; }
     var rows = this.s.live;
     for (var i = 0; i < rows.length; i++) { if (rows[i].alert_id === alertId) { return rows[i]; } }
-    var h = this.s.history.rows;
-    for (var j = 0; j < h.length; j++) { if (h[j].alert_id === alertId) { return h[j]; } }
     return null;
   };
 
@@ -522,7 +524,7 @@
         chips + '<button type="button" class="afx-resume" data-a="resume">' + mi('play_arrow') + 'Resume</button></div>';
       return;
     }
-    if (s.view.mode !== 'live' || !st.now_playing || (!playing && !q.queue.length)) { el.innerHTML = ''; return; }
+    if (s.view.mode !== 'feed' || !st.now_playing || (!playing && !q.queue.length)) { el.innerHTML = ''; return; }
     var up = st.up_next > 0 && q.queue.length ? '<span class="afx-up"><span class="k">Up next</span>' + this.upChips(st.up_next) + '</span>' : '';
     if (!playing) {
       el.innerHTML = '<div class="afx-now is-idle"><span class="lbl">' + mi('queue_music') + 'Starting next</span><span class="afx-spacer"></span>' + up + '</div>';
@@ -596,7 +598,7 @@
     return !!box && box.scrollWidth > box.clientWidth + 1;
   }
   Feed.prototype.fitMonths = function () {
-    var self = this, tags = this.r.list.querySelectorAll('.afx-row .mm');
+    var self = this, tags = this.root.querySelectorAll('.afx-list .afx-row .mm');
     if (!this.mmObserver && window.ResizeObserver) {
       // Re-fit when the panel width changes (dock resized, window narrowed).
       this.mmObserver = new ResizeObserver(function () {
@@ -634,7 +636,7 @@
     var mkBelow = place === 'below' && mk ? '<div class="mm-below">' + mk + '</div>' : '';
     var whatTxt = mk ? (a.what_tagged || a.what) : a.what;
     var extra = (a.replay ? '<span class="replaytag">Replay</span>' : '') + (it.newest ? '<span class="newest">Newest</span>' : '');
-    var msg = st.messages && a.msg ? '<div class="msg">“' + esc(a.msg) + '”</div>' : '';
+    var msg = (st.messages || it.msgs) && a.msg ? '<div class="msg">“' + esc(a.msg) + '”</div>' : '';
     var acts = '';
     if (playing) {
       acts = '<div class="acts is-always"><button type="button" data-a="row-skip" data-id="' + esc(a.alert_id || '') + '" title="Stop this alert now">' + mi('skip_next') + '<span class="lb">Skip</span></button></div>';
@@ -645,7 +647,7 @@
       : (playing ? 'Playing now · click Skip to stop it'
         : (replayable ? 'Click to replay this alert for ' + a.user : 'This event has no saved alert, so it can\'t be replayed'));
     var cls = 'afx-row' + (isNew ? ' is-new' : '') + (playing ? ' is-playing' : '') + (queued ? ' is-waiting' : '') +
-      (a.restored ? ' is-old' : '') + (!queued && !playing && replayable ? ' is-click' : '');
+      (a.restored && !it.active ? ' is-old' : '') + (!queued && !playing && replayable ? ' is-click' : '');
     var timer = '';
     if (st.timer === 'item' && playing) {
       var p = q.playing;
@@ -709,86 +711,88 @@
     this.fitMonths();
   };
 
+  /* Events that pass the filters, newest first, and how they split into pages. */
+  Feed.prototype.feedRows = function () {
+    var s = this.s, f = s.view.filters, q = s.view.search;
+    return s.live.filter(function (r) { return filterMatch(r, f, q); });
+  };
+  Feed.prototype.feedPages = function (rows) {
+    rows = rows || this.feedRows();
+    var per = Math.max(1, this.s.settings.page_limit || 20);
+    var total = Math.max(1, Math.ceil(rows.length / per));
+    var page = Math.min(Math.max(1, this.s.view.page || 1), total);
+    return { rows: rows.slice((page - 1) * per, page * per), page: page, total: total, count: rows.length };
+  };
+
+  /* Recent / Earlier timeline shared by the feed and the person dialog.
+     items: [{row, tag, synthetic}] newest first. Rows loaded from storage at startup are
+     "restored"; they sort by time like everything else and fall under Earlier once they are
+     older than the Move to Earlier setting. opts.recentHead false: the caller drew its own
+     heading (ticker). opts.continued: a later page, so headings say "(continued)". */
+  Feed.prototype.timelineHtml = function (items, opts) {
+    opts = opts || {};
+    var self = this, st = this.s.settings, html = '';
+    var earlierSec = st.earlier_minutes > 0 ? st.earlier_minutes * 60 : 0, now = nowSec();
+    var isEarlier = function (r) { return earlierSec > 0 && (now - Number(r.ts || 0)) >= earlierSec; };
+    var recent = items.filter(function (it) { return it.tag || it.synthetic || !isEarlier(it.row); });
+    var older = items.filter(function (it) { return !(it.tag || it.synthetic) && isEarlier(it.row); });
+    var newestArrow = '<span class="afx-arrow">' + mi('north') + 'newest first</span>';
+    if (recent.length) {
+      var label = earlierSec ? 'Recent · last ' + minutesLabel(st.earlier_minutes) : 'Newest';
+      if (opts.recentHead !== false) { html += this.head(opts.continued ? label + ' (continued)' : label, newestArrow); }
+      recent.forEach(function (it) { html += self.rowHtml(Object.assign({ active: true }, it)); });
+    }
+    if (older.length) {
+      html += this.head(opts.continued && !recent.length ? 'Earlier (continued)' : 'Earlier',
+        recent.length || opts.recentHead === false ? '' : newestArrow);
+      var lastDay = dayLabel(now);
+      older.forEach(function (it) {
+        var d = dayLabel(it.row.ts);
+        if (d !== lastDay) { html += '<div class="afx-day is-sub">' + esc(d) + '</div>'; lastDay = d; }
+        html += self.rowHtml(it);
+      });
+    }
+    return html;
+  };
+
   Feed.prototype.renderListHtml = function () {
     var list = this.r.list, s = this.s, mode = s.view.mode, self = this;
     list.classList.toggle('is-feed', mode !== 'person');
     if (mode === 'person') { list.innerHTML = this.personHtml(); return; }
-    var st = s.settings, filters = s.view.filters, search = s.view.search;
+    var st = s.settings;
     var qi = this.queueItems();
     var tags = {};
     qi.queued.forEach(function (it) { if (it.row.alert_id && !it.synthetic) { tags[it.row.alert_id] = it.tag; } });
     if (qi.playing && qi.playing.row.alert_id && !qi.playing.synthetic) { tags[qi.playing.row.alert_id] = qi.playing.tag; }
-    var source = mode === 'history' ? s.history.rows : s.live;
-    var rows = source.filter(function (r) { return filterMatch(r, filters, search); });
-    var html = '';
-    if (mode === 'history') {
-      if (s.history.loading && !rows.length) { list.innerHTML = this.emptyHtml('hourglass_empty', 'Loading history…'); return; }
-      if (s.history.error) { list.innerHTML = this.emptyHtml('error_outline', 'Couldn\'t load stored alerts. Check Settings → Database.'); return; }
-      if (!rows.length) {
-        list.innerHTML = source.length ? this.emptyHtml('filter_alt_off', 'Nothing on this page matches your filters or search.', true)
-          : this.emptyHtml('inventory_2', 'No stored alerts yet. Past events are kept here between streams.');
-        return;
-      }
-      var lastDay = null;
-      rows.forEach(function (r) {
-        var d = dayLabel(r.ts);
-        if (d !== lastDay) { html += self.head(d); lastDay = d; }
-        html += self.rowHtml({ row: r, tag: (r.alert_id && tags[r.alert_id]) || null });
-      });
-      list.innerHTML = html;
-      return;
-    }
-    var earlierSec = st.earlier_minutes > 0 ? st.earlier_minutes * 60 : 0;
-    var now = nowSec();
-    var isEarlier = function (r) { return earlierSec > 0 && (now - Number(r.ts || 0)) >= earlierSec; };
+    var pg = this.feedPages();
+    var first = pg.page === 1;
+    var empty = function () {
+      return self.filtering() && s.live.length ? self.emptyHtml('filter_alt_off', 'Nothing matches your filters or search.', true)
+        : self.emptyHtml('dynamic_feed', 'No events yet. Follows, subs, cheers and raids show up here as they happen.');
+    };
     if (st.layout === 'ticker') {
-      var upItems = qi.queued;
-      if (upItems.length) {
+      var html = '';
+      if (first && qi.queued.length) {
         html += this.head(s.queue.paused ? 'Waiting to play' : 'Up next', '<span class="afx-arrow">' + mi('south') + 'plays in this order</span>', 'is-block is-warn');
-        upItems.forEach(function (it) { html += self.rowHtml(it); });
+        qi.queued.forEach(function (it) { html += self.rowHtml(it); });
       }
-      if (qi.playing) {
-        html += this.head('Now playing', '', 'is-block is-ok');
-        html += this.rowHtml(qi.playing);
-      }
-      var rest = rows.filter(function (r) { return !(r.alert_id && tags[r.alert_id]); });
-      var recent = rest.filter(function (r) { return !isEarlier(r); });
-      var older = rest.filter(isEarlier);
+      if (first && qi.playing) { html += this.head('Now playing', '', 'is-block is-ok'); html += this.rowHtml(qi.playing); }
+      var rest = pg.rows.filter(function (r) { return !(first && r.alert_id && tags[r.alert_id]); });
       if (rest.length) {
-        html += this.head('Feed · newest first', '<span class="afx-arrow">' + mi('north') + 'latest at the top</span>', 'is-block');
-        recent.forEach(function (r, i) { html += self.rowHtml({ row: r, tag: null, newest: i === 0 }); });
-        if (older.length) {
-          html += this.head('Earlier');
-          older.forEach(function (r, i) { html += self.rowHtml({ row: r, tag: null, newest: !recent.length && i === 0 }); });
-        }
-      } else if (!upItems.length && !qi.playing) {
-        html = this.filtering() && s.live.length ? this.emptyHtml('filter_alt_off', 'Nothing matches your filters or search.', true)
-          : this.emptyHtml('dynamic_feed', 'No events yet this session. Follows, subs, cheers and raids show up here as they happen.');
-      }
+        html += this.head(first ? 'Feed · newest first' : 'Feed · page ' + pg.page, '<span class="afx-arrow">' + mi('north') + 'latest at the top</span>', 'is-block');
+        html += this.timelineHtml(rest.map(function (r, i) { return { row: r, tag: null, newest: first && i === 0 }; }),
+          { recentHead: false, continued: !first });
+      } else if (!html) { html = empty(); }
       list.innerHTML = html;
       return;
     }
     var top = [];
-    for (var i = qi.queued.length - 1; i >= 0; i--) { if (qi.queued[i].synthetic) { top.push(qi.queued[i]); } }
-    if (qi.playing && qi.playing.synthetic) { top.push(qi.playing); }
-    var items = top.concat(rows.map(function (r) { return { row: r, tag: (r.alert_id && tags[r.alert_id]) || null }; }));
-    if (!items.length) {
-      list.innerHTML = this.filtering() && s.live.length ? this.emptyHtml('filter_alt_off', 'Nothing matches your filters or search.', true)
-        : this.emptyHtml('dynamic_feed', 'No events yet this session. Follows, subs, cheers and raids show up here as they happen.');
-      return;
+    if (first) {
+      for (var i = qi.queued.length - 1; i >= 0; i--) { if (qi.queued[i].synthetic) { top.push(qi.queued[i]); } }
+      if (qi.playing && qi.playing.synthetic) { top.push(qi.playing); }
     }
-    var recentItems = items.filter(function (it) { return it.tag || it.synthetic || !isEarlier(it.row); });
-    var olderItems = items.filter(function (it) { return !(it.tag || it.synthetic) && isEarlier(it.row); });
-    var label = earlierSec ? 'Recent · last ' + minutesLabel(st.earlier_minutes) : 'This session';
-    if (recentItems.length) {
-      html += this.head(label, '<span class="afx-arrow">' + mi('north') + 'newest first</span>');
-      recentItems.forEach(function (it) { html += self.rowHtml(it); });
-    }
-    if (olderItems.length) {
-      html += this.head('Earlier', recentItems.length ? '' : '<span class="afx-arrow">' + mi('north') + 'newest first</span>');
-      olderItems.forEach(function (it) { html += self.rowHtml(it); });
-    }
-    list.innerHTML = html;
+    var items = top.concat(pg.rows.map(function (r) { return { row: r, tag: (first && r.alert_id && tags[r.alert_id]) || null }; }));
+    list.innerHTML = items.length ? this.timelineHtml(items, { continued: !first }) : empty();
   };
 
   Feed.prototype.personHtml = function () {
@@ -822,9 +826,11 @@
       var pic = /^https:\/\//.test(String(g.avatar || '')) ? String(g.avatar) : '';
       var ava = '<span class="afx-ava' + (pic ? ' has-photo' : '') + '">' + esc((name.charAt(0) || '?').toUpperCase()) +
         (pic ? '<img src="' + esc(pic) + '" alt="" referrerpolicy="no-referrer" onerror="this.remove()">' : '') + '</span>';
-      return '<div class="afx-user"><div class="afx-user-head">' + ava +
+      return '<div class="afx-user is-click" data-a="person" data-user="' + esc(name) + '" title="Show ' + esc(name) + '\u2019s events">' +
+        '<div class="afx-user-head">' + ava +
         '<div class="afx-user-id"><div class="afx-user-name">' + esc(name) + '</div><div class="afx-user-sub">' + esc(sub) + '</div></div>' +
-        '<div class="afx-totals">' + totals + '</div></div><div class="afx-lines">' + lines + '</div></div>';
+        '<div class="afx-totals">' + totals + '</div></div><div class="afx-lines">' + lines + '</div>' +
+        '<div class="afx-user-more">' + mi('open_in_full') + 'Show ' + (events === 1 ? 'event' : 'all ' + events + ' events') + '</div></div>';
     }).join('');
     void self;
     return head + '<div class="afx-cond">' + cards + '</div>';
@@ -832,12 +838,64 @@
 
   Feed.prototype.renderPager = function () {
     var s = this.s, el = this.r.pager;
-    if (s.view.mode !== 'history') { el.innerHTML = ''; return; }
-    var h = s.history, page = s.view.page || h.page || 1, total = Math.max(1, h.total_pages || 1);
-    var link = this.dock ? '' : '<button type="button" class="afx-link" data-a="storage" title="How many events are kept: Settings → App Settings → Storage">' + mi('inventory_2') + 'Storage settings</button>';
-    el.innerHTML = '<div class="afx-pager"><button type="button" data-a="page" data-page="' + (page - 1) + '"' + (page <= 1 ? ' disabled' : '') + ' title="Newer">' + mi('chevron_left') + '</button>' +
-      '<span>Page ' + page + ' of ' + total + '</span><span class="tot">' + (h.total_count ? '(' + num(h.total_count) + ' alerts)' : '') + '</span>' +
-      '<button type="button" data-a="page" data-page="' + (page + 1) + '"' + (page >= total ? ' disabled' : '') + ' title="Older">' + mi('chevron_right') + '</button>' + link + '</div>';
+    if (s.view.mode !== 'feed') { el.innerHTML = ''; return; }
+    var pg = this.feedPages(), st = s.settings;
+    if (pg.total <= 1) { el.innerHTML = ''; return; }
+    var extra = pg.total - Math.max(1, st.max_pages || 1);
+    var grew = extra > 0 && !this.filtering() ? '<span class="afx-extra" title="New events filled more than the ' + st.max_pages + ' pages loaded at startup. Extra pages are dropped when Mycelian restarts.">+' +
+      extra + (extra === 1 ? ' page' : ' pages') + ' this session</span>' : '';
+    var link = this.dock ? '' : '<button type="button" class="afx-link" data-a="storage" title="Items per page and pages to load: Settings → App Settings → Activity feed and storage">' + mi('inventory_2') + 'Storage settings</button>';
+    el.innerHTML = '<div class="afx-pager"><button type="button" data-a="page" data-page="' + (pg.page - 1) + '"' + (pg.page <= 1 ? ' disabled' : '') + ' title="Newer">' + mi('chevron_left') + '</button>' +
+      '<span>Page ' + pg.page + ' of ' + pg.total + '</span><span class="tot">(' + num(pg.count) + ' events)</span>' +
+      '<button type="button" data-a="page" data-page="' + (pg.page + 1) + '"' + (pg.page >= pg.total ? ' disabled' : '') + ' title="Older">' + mi('chevron_right') + '</button>' + grew + link + '</div>';
+  };
+
+  /* ---- By person: one person's events as feed rows ---- */
+  Feed.prototype.openDialog = function (user) {
+    if (this.s.personRows.user !== user) { this.s.personRows = { user: '', rows: [] }; }
+    this.dialogUser = user;
+    this.renderDialog();
+    this.send('person-events', { user: user });
+    var close = this.r.dialog.querySelector('[data-a="dialog-close"]');
+    if (close) { close.focus(); }
+  };
+  Feed.prototype.closeDialog = function () { this.dialogUser = null; this.renderDialog(); };
+  Feed.prototype.renderDialog = function () {
+    var el = this.r.dialog, user = this.dialogUser, self = this;
+    if (!user || this.s.view.mode !== 'person') { if (el.innerHTML) { el.innerHTML = ''; this.dialogHtml = ''; } return; }
+    var g = null;
+    (this.s.person.groups || []).forEach(function (x) { if (String(x.username) === user) { g = x; } });
+    if (!g) { el.innerHTML = ''; this.dialogHtml = ''; this.dialogUser = null; return; }
+    var events = Number(g.events) || 0;
+    var hours = this.s.person.hours || this.s.settings.person_hours || 12;
+    var pic = /^https:\/\//.test(String(g.avatar || '')) ? String(g.avatar) : '';
+    var ava = '<span class="afx-ava' + (pic ? ' has-photo' : '') + '">' + esc((user.charAt(0) || '?').toUpperCase()) +
+      (pic ? '<img src="' + esc(pic) + '" alt="" referrerpolicy="no-referrer" onerror="this.remove()">' : '') + '</span>';
+    var totals = (g.totals || []).map(function (t) {
+      return '<span class="afx-total" style="--tc:' + esc(t.color || meta(t.kind)[1]) + '">' + mi(t.icon || meta(t.kind)[0]) + esc(t.text) + '</span>';
+    }).join('');
+    var pr = this.s.personRows, mine = pr.user === user, rows = mine ? pr.rows : [];
+    // Viewer messages always show here, even when the feed hides them.
+    var body = rows.length ? this.timelineHtml(rows.map(function (r) { return { row: r, tag: null, msgs: true }; }))
+      : !mine ? this.emptyHtml('hourglass_empty', 'Loading ' + user + '’s events…')
+      : pr.error ? this.emptyHtml('error_outline', 'Couldn’t load ' + user + '’s events.')
+      : this.emptyHtml('filter_alt_off', 'None of ' + user + '’s events are left in the last ' + hours + ' hours.');
+    var html = '<div class="afx-modal"><div class="afx-dlg" role="dialog" aria-label="' + esc(user) + '’s events">' +
+      '<div class="afx-dlg-head">' + ava + '<div class="afx-user-id"><div class="afx-user-name">' + esc(user) + '</div>' +
+      '<div class="afx-user-sub">' + events + (events === 1 ? ' event' : ' events') + ' in the last ' + hours + ' hours</div></div>' +
+      '<div class="afx-totals">' + totals + '</div>' +
+      '<button type="button" class="afx-ibtn" data-a="dialog-close" title="Close (Esc)">' + mi('close') + '</button></div>' +
+      '<div class="afx-list is-feed afx-dlg-list">' + body + '</div>' +
+      '<div class="afx-dlg-foot">' + mi('replay') + 'Click an event to replay it</div></div></div>';
+    // Feed updates repaint often; leave an unchanged dialog (and its scroll position) alone.
+    if (html === this.dialogHtml) { return; }
+    var old = el.querySelector('.afx-dlg-list'), top = old ? old.scrollTop : 0;
+    el.innerHTML = html;
+    this.dialogHtml = html;
+    var list = el.querySelector('.afx-dlg-list');
+    if (list && old) { list.scrollTop = top; }
+    this.fitMonths();
+    void self;
   };
 
   Feed.prototype.tick = function () {
@@ -853,6 +911,7 @@
       }
     }
     if (this.tickN % 60 === 0 && this.s.view.mode !== 'person') { this.renderList(); }
+    if (this.tickN % 60 === 0 && this.dialogUser) { this.renderDialog(); }
   };
 
   setInterval(function () {

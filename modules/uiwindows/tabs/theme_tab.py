@@ -18,6 +18,7 @@ from ...theme_manager import (
     ThemeColors,
 )
 from ...notification_engine import notify
+from ...theme_event_colors import EVENT_COLOR_FIELDS, event_color, event_groups
 from ...ui_buttons import destructive_button, outline_button, primary_button
 from ...ui_color_control import open_color_picker
 from ...ui_form_controls import form_input, form_select
@@ -102,7 +103,18 @@ _NOTIFY_STYLES: Tuple[Tuple[str, str], ...] = (
 _NOTIFY_LOOK_DEFAULTS: Dict[str, str] = {
     "notify_style": "accent", "notify_radius": "12", "notify_shadow": "soft", "notify_timer": "on", "notify_density": "comfortable",
 }
-_EDITABLE_FIELDS: Tuple[str, ...] = _PALETTE_COLOR_FIELDS + tuple(_NOTIFY_LOOK_DEFAULTS)
+_EDITABLE_FIELDS: Tuple[str, ...] = _PALETTE_COLOR_FIELDS + tuple(_NOTIFY_LOOK_DEFAULTS) + EVENT_COLOR_FIELDS
+
+# Rows in the Activity Feed events preview: (event key, icon, name, text, amount, tier)
+_EVENT_SAMPLE_ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
+    ("follow", "favorite", "mossy_mae", "just followed", "", ""),
+    ("sub", "star", "NorthernLyte", "subscribed", "", "T1"),
+    ("giftsub", "redeem", "PixelPaladin", "gifted 5 Tier 1 subs", "5", ""),
+    ("bits", "diamond", "Fernwick", "cheered 500 bits", "500", ""),
+    ("raid", "groups", "CozyCartographer", "raided with 48 viewers", "48", ""),
+    ("donation", "payments", "lumen_loaf", "tipped", "$10.00", ""),
+    ("hype", "rocket_launch", "Hype Train", "reached Level 3", "", ""),
+)
 
 _MAX_PALETTE_HISTORY = 50
 
@@ -207,6 +219,9 @@ class ThemeTab:
         self._select_dots = None
         self._focus_field: str = "primary"
         self._swatch_els: Dict[str, Any] = {}
+        self.event_container = None
+        self._event_focus: Optional[str] = None
+        self._event_sample_el = None
 
     # ----- helper methods -----
     def _get_theme_manager(self):
@@ -333,6 +348,9 @@ class ThemeTab:
             ("palette_undo_btn", bool(self._undo_stack)),
             ("palette_redo_btn", bool(self._redo_stack)),
             ("palette_discard_btn", self._palette_dirty),
+            ("event_undo_btn", bool(self._undo_stack)),
+            ("event_redo_btn", bool(self._redo_stack)),
+            ("event_reset_btn", not self._event_colors_match_disk()),
         ):
             btn = self.ui_elements.get(key)
             if btn is None:
@@ -367,6 +385,25 @@ class ThemeTab:
         if theme:
             self._working_theme = copy.deepcopy(theme)
         self._reset_palette_history()
+        self._refresh_dirty_from_palette()
+        self._apply_preview()
+
+    def _event_colors_match_disk(self) -> bool:
+        if not self._working_theme or not self.buffer:
+            return True
+        disk = self._get_current_theme(self.buffer)
+        if not disk:
+            return True
+        return all(getattr(self._working_theme, f, "") == getattr(disk, f, "") for f in EVENT_COLOR_FIELDS)
+
+    def _reset_event_colors(self) -> None:
+        """Put the Activity Feed event colors back to the saved theme's (undoable)."""
+        disk = self._get_current_theme(self.buffer) if self.buffer else None
+        if not disk or not self._working_theme or self._event_colors_match_disk():
+            return
+        self._push_undo_snapshot()
+        for field in EVENT_COLOR_FIELDS:
+            setattr(self._working_theme, field, getattr(disk, field, ""))
         self._refresh_dirty_from_palette()
         self._apply_preview()
 
@@ -412,6 +449,13 @@ class ThemeTab:
             "mycelian-theme-tab", promote_color_importance(scope_selectors(THEME_CSS, ".thm"))
         )
         inject_page_stylesheet("mycelian-theme-menu", THEME_MENU_CSS)
+        try:
+            # The event color preview is drawn with the Activity Feed's own stylesheet.
+            from ..activity_feed import _STYLE_ID as feed_style_id, feed_app_stylesheet
+
+            inject_page_stylesheet(feed_style_id, feed_app_stylesheet())
+        except Exception:
+            logger.debug("Theme tab: Activity Feed stylesheet unavailable", exc_info=True)
         self._load_from_state()
 
         theme_manager = self._get_theme_manager()
@@ -511,6 +555,21 @@ class ThemeTab:
                 with ui.element("div").classes("thm-side-head"):
                     ui.label("Pop-up notifications")
                 self.notify_container = ui.element("div").classes("thm-notify")
+        with ui.element("div").classes("thm-panels thm-panels-wide"):
+            with ui.element("div").classes("thm-side"):
+                with ui.element("div").classes("thm-side-head"):
+                    ui.label("Activity Feed events")
+                    ui.element("div").classes("thm-spacer")
+                    for key, icon, tip, handler in (
+                        ("event_undo_btn", "undo", "Undo", self._undo_palette),
+                        ("event_redo_btn", "redo", "Redo", self._redo_palette),
+                        ("event_reset_btn", "restart_alt", "Reset event colors to the saved theme", self._reset_event_colors),
+                    ):
+                        btn = ui.button(icon=icon).props("flat round dense size=sm")
+                        btn.on_click(handler)
+                        btn.tooltip(tip)
+                        self.ui_elements[key] = btn
+                self.event_container = ui.element("div").classes("thm-events")
         self._update_palette_toolbar_state()
 
     def _build_palette_section(self) -> None:
@@ -530,6 +589,102 @@ class ThemeTab:
                         for field_name, label, desc in fields:
                             self._build_swatch(theme, disk, group, field_name, label, desc)
         self._build_notify_section(theme)
+        self._build_event_section(theme, disk)
+
+    # ----- Activity Feed event colors -----
+
+    def _build_event_section(self, theme: ThemeColors, disk: Optional[ThemeColors]) -> None:
+        box = self.event_container
+        if box is None or getattr(box, "is_deleted", False):
+            return
+        box.clear()
+        with box:
+            with ui.element("div").classes("thm-evcol"):
+                for group, fields in event_groups():
+                    with ui.element("div").classes("thm-evgrp"):
+                        ui.label(group).classes("thm-evgrp-name")
+                        with ui.element("div").classes("thm-evs"):
+                            for field_name, label, icon in fields:
+                                self._build_event_chip(theme, disk, group, field_name, label, icon)
+                ui.label(
+                    "Click an event to change its color. Saved with the theme and used by the Activity Feed, "
+                    "the OBS dock and By person."
+                ).classes("thm-evnote")
+            with ui.element("div").classes("thm-evcol"):
+                self._event_sample_el = ui.html(self._event_sample_html(theme), sanitize=False).classes("thm-evsample")
+                ui.html(
+                    '<div class="thm-evsample-cap"><span class="thm-icon">visibility</span>'
+                    "Preview with this theme\u2019s colors</div>",
+                    sanitize=False,
+                )
+
+    def _build_event_chip(self, theme, disk, group, field_name, label, icon) -> None:
+        key = field_name[len("event_"):]
+        color = event_color(theme, key)
+        classes = ["thm-ev"]
+        if disk is not None and (getattr(theme, field_name, "") or "") != (getattr(disk, field_name, "") or ""):
+            classes.append("is-edited")
+        if field_name == self._event_focus:
+            classes.append("is-active")
+        # Register click before classes so NiceGUI 3.x does not treat it as a late listener.
+        chip = ui.element("div").on(
+            "click", lambda _, fn=field_name, g=group, lb=label: self._on_event_click(fn, f"{g} · {lb}")
+        )
+        chip.classes(" ".join(classes))
+        chip.style(f"--tc:{color}")
+        chip.tooltip(f"{label} · {self._describe_color(color)}")
+        self._swatch_els[field_name] = chip
+        with chip:
+            ui.html(
+                f'<span class="thm-ev-chip"><span class="thm-icon">{html.escape(icon)}</span></span>'
+                f'<span class="thm-ev-name">{html.escape(label)}</span>',
+                sanitize=False,
+            ).classes("contents")
+
+    def _on_event_click(self, field_name: str, title: str) -> None:
+        self._event_focus = field_name
+        theme = self._get_preview_theme()
+        if theme is not None:
+            self._build_event_section(theme, self._get_current_theme(self.buffer))
+        self._open_palette_color_picker(field_name, title)
+
+    def _event_sample_html(self, theme: ThemeColors) -> str:
+        """Feed rows drawn with the Activity Feed's own classes and this theme's colors."""
+        def c(field_name: str) -> str:
+            return html.escape(str(getattr(theme, field_name, "") or ""), quote=True)
+
+        base = (
+            "bg_base", "bg_surface", "border_subtle", "border_default", "text_primary", "text_secondary",
+            "text_muted", "text_inverse", "primary", "primary_light", "success", "warning", "error", "info",
+        )
+        variables = "".join(f"--color-{f.replace('_', '-')}:{c(f)};" for f in base)
+        variables += "".join(
+            f"--color-event-{f[len('event_'):]}:{html.escape(event_color(theme, f[len('event_'):]), quote=True)};"
+            for f in EVENT_COLOR_FIELDS
+        )
+        rows = []
+        for minutes, (key, icon, user, what, amount, tier) in enumerate(_EVENT_SAMPLE_ROWS):
+            badge = f'<span class="tb">{tier}</span>' if tier else ""
+            amt = f'<span class="amt">{html.escape(amount)}</span>' if amount else ""
+            rows.append(
+                f'<div class="afx-row" style="--tc:var(--color-event-{key})">'
+                f'<span class="ico"><span class="mi">{icon}</span>{badge}</span>'
+                f'<div class="body"><div class="line"><span class="user">{html.escape(user)}</span>'
+                f'<span class="what">{html.escape(what)}</span></div></div>{amt}'
+                f'<span class="time">{minutes * 4 + 1}m</span></div>'
+            )
+        return (
+            f'<div class="afx-host thm-evhost" style="{variables}"><div class="afx is-dock" data-layout="rows" '
+            'data-density="compact" data-color="icon" data-tier="icon" data-dots="1" data-text="medium">'
+            f'<div class="afx-list is-feed">{"".join(rows)}</div></div></div>'
+        )
+
+    def _refresh_event_sample(self) -> None:
+        el = self._event_sample_el
+        theme = self._get_preview_theme()
+        if el is None or theme is None or getattr(el, "is_deleted", False):
+            return
+        el.set_content(self._event_sample_html(theme))
 
     def _notify_look(self, theme: ThemeColors, field_name: str) -> str:
         return str(getattr(theme, field_name, "") or _NOTIFY_LOOK_DEFAULTS[field_name])
@@ -1170,6 +1325,9 @@ class ThemeTab:
             setattr(self._working_theme, field_name, value)
             if self._vars_el is not None:
                 self._vars_el.set_content(f"<style>{generate_preview_css_variables(self._working_theme)}</style>")
+            if field_name in EVENT_COLOR_FIELDS:
+                anchor.style(replace=f"--tc:{value}")
+                self._refresh_event_sample()
             self._refresh_focus()
 
         def restore() -> None:

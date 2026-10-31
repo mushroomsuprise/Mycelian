@@ -648,9 +648,9 @@ def test_get_twitch_data_strips_secrets(engine, sio, monkeypatch):
 def feed(monkeypatch):
     mod = types.ModuleType("modules.uiwindows.activity_feed")
     mod.calls = []
-    mod._emit_stored_alerts_payload = lambda alerts, info, to=None: mod.calls.append(("emit", alerts, info, to))
-    mod.load_restored_alerts = lambda page: (mod.calls.append(("load", page)) or
-                                             (["a"], {"page": page, "total_pages": 3, "total_count": 30}))
+    mod._json_ready = lambda value: dict(value, json_ready=True)
+    mod.person_rows_payload = lambda user: (mod.calls.append(("rows", user)) or
+                                            {"success": True, "user": user, "rows": [{"kind": "follow"}]})
     mod.parse_condensed_historical_hours = lambda raw: int(raw)
     mod.normalize_filter_state = lambda f: dict(f, normalized=True)
     mod.view_manager = SimpleNamespace(load=lambda: {"filters": {"saved": True}},
@@ -664,26 +664,15 @@ def feed(monkeypatch):
     return mod
 
 
-def test_stored_alerts_paginated(engine, sio, feed):
-    sid = _sid(engine, sio)
-    assert call(sio, "get_stored_alerts_paginated", {"page": "2", "limit": 99}) == {
-        "success": True, "page": 2, "total_pages": 3, "total_count": 30}
-    assert feed.calls == [("load", 2), ("emit", ["a"], {"page": 2, "total_pages": 3, "total_count": 30}, sid)]
-    feed.calls.clear()
-    call(sio, "get_stored_alerts_paginated", {"page": "x"})
-    call(sio, "get_stored_alerts_paginated", {"page": -4})
-    assert [c[1] for c in feed.calls if c[0] == "load"] == [1, 1]
-    assert call(sio, "get_stored_alerts_paginated", "junk")["error"] == "Invalid data format: dictionary required"
-    feed.load_restored_alerts = lambda page: ([], {"error": "db"})
-    assert call(sio, "get_stored_alerts_paginated", {}) == {"success": False, "page": 1, "total_pages": 1,
-                                                            "total_count": 0}
-
-
-def test_stored_alerts_paginated_error(engine, sio, feed):
-    feed.load_restored_alerts = _boom
-    out = call(sio, "get_stored_alerts_paginated", {})
-    assert out["success"] is False and out["error"] == "boom" and out["alerts"] == []
-    assert received(sio, "stored_alerts_paginated") == [out]
+def test_activity_feed_person_events(engine, sio, feed):
+    assert call(sio, "activity_feed_person_events", {"user": "Ann"}) == {
+        "success": True, "user": "Ann", "rows": [{"kind": "follow"}], "json_ready": True}
+    call(sio, "activity_feed_person_events", "junk")
+    call(sio, "activity_feed_person_events", {})
+    assert feed.calls == [("rows", "Ann"), ("rows", ""), ("rows", "")]
+    feed.person_rows_payload = _boom
+    assert call(sio, "activity_feed_person_events", {"user": "x"}) == {
+        "success": False, "user": "", "rows": [], "error": "boom"}
 
 
 def test_condensed_view_alerts(engine, sio, feed):

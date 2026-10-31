@@ -209,25 +209,26 @@ def giftsub_message(
 
 # --------------------------------------------------------------------------- kinds
 
-# kind -> (Material icon, colour variable, label, filter key, platform)
+# kind -> (Material icon, colour variable, label, filter key, platform). The colour is the theme's
+# event colour (theme_event_colors), falling back to the status colour used before those existed.
 KIND_META: Dict[str, tuple] = {
-    "follow": ("favorite", "var(--color-primary)", "Follow", "follows", "twitch"),
-    "sub": ("star", "var(--color-info)", "Sub", "subs", "twitch"),
-    "resub": ("autorenew", "var(--color-info)", "Resub", "resubs", "twitch"),
-    "giftsub": ("redeem", "var(--color-success)", "Gift", "giftsubs", "twitch"),
-    "bits": ("diamond", "var(--color-warning)", "Bits", "bits", "twitch"),
-    "points": ("toll", "var(--color-error)", "Points", "points", "twitch"),
-    "raid": ("groups", "var(--color-error)", "Raid", "raids", "twitch"),
-    "donation": ("payments", "var(--color-success)", "Tip", "donations", ""),
-    "streak": ("local_fire_department", "var(--color-warning)", "Streak", "streaks", "twitch"),
-    "hype": ("rocket_launch", "var(--color-primary)", "Hype Train", "hype_train", "twitch"),
-    "modiversary": ("shield", "var(--color-info)", "Modiversary", "modiversaries", "twitch"),
-    "member": ("workspace_premium", "var(--color-info)", "Member", "subs", "youtube"),
-    "milestone": ("military_tech", "var(--color-info)", "Milestone", "resubs", "youtube"),
-    "giftmember": ("card_giftcard", "var(--color-success)", "Gift", "giftsubs", "youtube"),
-    "superchat": ("chat", "var(--color-success)", "Super Chat", "donations", "youtube"),
-    "supersticker": ("sticky_note_2", "var(--color-warning)", "Super Sticker", "donations", "youtube"),
-    "alert": ("notifications", "var(--color-primary)", "Alert", "", "twitch"),
+    "follow": ("favorite", "var(--color-event-follow, var(--color-primary))", "Follow", "follows", "twitch"),
+    "sub": ("star", "var(--color-event-sub, var(--color-info))", "Sub", "subs", "twitch"),
+    "resub": ("autorenew", "var(--color-event-resub, var(--color-info))", "Resub", "resubs", "twitch"),
+    "giftsub": ("redeem", "var(--color-event-giftsub, var(--color-success))", "Gift", "giftsubs", "twitch"),
+    "bits": ("diamond", "var(--color-event-bits, var(--color-warning))", "Bits", "bits", "twitch"),
+    "points": ("toll", "var(--color-event-points, var(--color-error))", "Points", "points", "twitch"),
+    "raid": ("groups", "var(--color-event-raid, var(--color-error))", "Raid", "raids", "twitch"),
+    "donation": ("payments", "var(--color-event-donation, var(--color-success))", "Tip", "donations", ""),
+    "streak": ("local_fire_department", "var(--color-event-streak, var(--color-warning))", "Streak", "streaks", "twitch"),
+    "hype": ("rocket_launch", "var(--color-event-hype, var(--color-primary))", "Hype Train", "hype_train", "twitch"),
+    "modiversary": ("shield", "var(--color-event-modiversary, var(--color-info))", "Modiversary", "modiversaries", "twitch"),
+    "member": ("workspace_premium", "var(--color-event-member, var(--color-info))", "Member", "subs", "youtube"),
+    "milestone": ("military_tech", "var(--color-event-milestone, var(--color-info))", "Milestone", "resubs", "youtube"),
+    "giftmember": ("card_giftcard", "var(--color-event-giftmember, var(--color-success))", "Gift", "giftsubs", "youtube"),
+    "superchat": ("chat", "var(--color-event-superchat, var(--color-success))", "Super Chat", "donations", "youtube"),
+    "supersticker": ("sticky_note_2", "var(--color-event-supersticker, var(--color-warning))", "Super Sticker", "donations", "youtube"),
+    "alert": ("notifications", "var(--color-event-other, var(--color-primary))", "Alert", "", "twitch"),
 }
 
 _KIND_ALIASES = {
@@ -700,22 +701,22 @@ def queue_tag_text(tag: Mapping[str, Any], *, paused: bool) -> str:
 
 # --------------------------------------------------------------------------- view mode
 
-VIEW_MODES = ("live", "history", "person")
+VIEW_MODES = ("feed", "person")
+# Saved views and older docks still say "live" or "history"; both are the Feed now.
+ALL_MODE_NAMES = VIEW_MODES + ("live", "history")
 
 
 def view_mode(view: Mapping[str, Any]) -> str:
-    """live / history / person from the shared view (tab + condensed)."""
+    """feed / person from the shared view (``condensed`` picks By person)."""
     if not isinstance(view, Mapping):
-        return "live"
+        return "feed"
     if view.get("tab") == "previous":
-        return "history"
-    return "person" if view.get("condensed") else "live"
+        return "feed"
+    return "person" if view.get("condensed") else "feed"
 
 
 def mode_patch(mode: str) -> Dict[str, Any]:
-    """View patch that selects one mode."""
-    if mode == "history":
-        return {"tab": "previous", "page": 1}
+    """View patch that selects one mode (old names open the Feed)."""
     if mode == "person":
         return {"tab": "current", "condensed": True}
     return {"tab": "current", "condensed": False}

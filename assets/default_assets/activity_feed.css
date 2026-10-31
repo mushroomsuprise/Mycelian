@@ -2,7 +2,7 @@
    The renderer is activity_feed.js; markup classes start with afx-. The app tab scopes this
    file under .afx-host and marks colour declarations !important (see activity_feed.py). */
 
-.afx { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--color-text-primary); font-size: 14px;
+.afx { position: relative; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--color-text-primary); font-size: 14px;
   --af-font: 13px; --af-gap: 6px; --af-pad-y: 8px; --af-pad-x: 10px; --af-radius: 9px; --af-scale: 1;
   display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .afx * { box-sizing: border-box; }
@@ -283,7 +283,7 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx-row .tbar.is-indet { background: color-mix(in srgb, var(--color-success) 60%, transparent); animation: afpulse 1.2s ease-in-out infinite; }
 @keyframes afdrain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
-/* History pager */
+/* Feed pager */
 .afx-pager { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--color-border-subtle); flex: 0 0 auto;
   font-size: .76rem; color: var(--color-text-secondary); flex-wrap: wrap; }
 .afx-pager button { height: 28px; min-width: 32px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--color-border-subtle); background: var(--color-bg-base);
@@ -315,6 +315,36 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx-ln .t { min-width: 0; }
 .afx-ln .x { margin-left: auto; font-size: .68rem; font-weight: 700; color: var(--color-text-muted); flex: 0 0 auto; }
 .afx[data-color="none"] .afx-ln .mi, .afx[data-color="none"] .afx-total { --tc: var(--color-text-secondary); }
+
+/* Feed pager: pages added since Mycelian started */
+.afx-pager .afx-extra { font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  color: color-mix(in srgb, var(--color-primary) 60%, var(--color-text-primary)); background: var(--color-primary-light); border: 1px solid var(--color-border-accent); }
+/* Day labels inside Earlier */
+.afx-day.is-sub { padding: 4px 2px 0; font-size: .58rem; opacity: .85; }
+/* By person: cards open the person's events */
+.afx-user.is-click { cursor: pointer; transition: border-color .15s, transform .15s, box-shadow .15s; }
+.afx-user.is-click:hover { border-color: var(--color-border-accent); transform: translateY(-1px);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-primary) 12%, transparent); }
+.afx-user-more { display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 0 10px 8px; font-size: .68rem; font-weight: 650; color: var(--color-text-muted); }
+.afx-user-more .mi { font-size: 13px; }
+.afx-user.is-click:hover .afx-user-more { color: color-mix(in srgb, var(--color-primary) 60%, var(--color-text-primary)); }
+/* Person dialog */
+.afx-modal { position: absolute; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: color-mix(in srgb, #000 50%, transparent); backdrop-filter: blur(2px); }
+.afx-dlg { width: min(680px, 100%); max-height: 100%; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden;
+  background: var(--color-bg-surface); border: 1px solid var(--color-border-accent); box-shadow: 0 24px 64px rgba(0, 0, 0, .45); }
+.afx-dlg-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--color-border-subtle); flex-wrap: wrap;
+  background: radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--color-primary) 14%, transparent), transparent 60%), var(--color-bg-surface); }
+.afx-dlg-head .afx-user-id { min-width: 0; flex: 1 1 auto; }
+.afx-dlg-head .afx-ava { width: 38px; height: 38px; font-size: 1rem; }
+.afx-dlg-head .afx-user-name { font-size: 1rem; }
+.afx-dlg-head .afx-totals { margin-left: 0; }
+.afx-dlg .afx-list { flex: 1 1 auto; }
+.afx-dlg-foot { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--color-border-subtle); font-size: .7rem; color: var(--color-text-muted); }
+.afx-dlg-foot .mi { font-size: 14px; }
+.afx.is-dock .afx-modal { padding: 4px 0; align-items: stretch; }
+.afx.is-dock .afx-dlg { width: 100%; border-radius: 10px; }
+.afx.is-dock .afx-dlg-head .afx-totals { flex: 1 0 100%; justify-content: flex-start; order: 5; }
 
 /* Fail-open fallback (app tab only, shown when the renderer can't run) */
 .afx-fallback { display: none; }

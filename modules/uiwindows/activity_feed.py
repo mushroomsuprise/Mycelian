@@ -45,6 +45,7 @@ from ..notification_engine import nav_actions_main_tab, nav_actions_settings, no
 from .. import alertutils
 from ..ui_timer import app_schedule, run_on_ui_loop
 from .activity_feed_model import (
+    ALL_MODE_NAMES,
     FEED_SETTINGS,
     alert_duration_months,
     feed_row_model,
@@ -64,14 +65,16 @@ logger = logging.getLogger(__name__)
 
 _FEED_EVENT = "mycelian-afx"
 _STYLE_ID = "mycelian-activity-feed"
-_SLOT_NAMES = ("settings", "view", "live", "history", "person", "queue", "meta")
+_SLOT_NAMES = ("settings", "view", "live", "person", "person_rows", "queue", "meta")
 _QUEUE_POLL_SEC = 0.5
 _FEED_WATCHDOG_INTERVAL_SEC = 20.0
 _LIVE_PUSH_DEBOUNCE_SEC = 0.15
 
-# The live feed is a session view, not history: older alerts stay available on the
-# History view, which is paged from the database.
-MAX_LIVE_ALERTS = 500
+# The feed starts with the newest stored alerts (Pages to load x Items per page) and grows
+# as alerts arrive. Mycelian can sit in the tray for weeks, so it is still bounded: at least
+# MAX_LIVE_ALERTS, ten times what was loaded when that is more, never over LIVE_ALERTS_CEILING.
+MAX_LIVE_ALERTS = 5000
+LIVE_ALERTS_CEILING = 20000
 MAX_CONDENSED_GROUPS = 200
 
 
@@ -112,14 +115,22 @@ def _next_seq() -> int:
         return _live_seq
 
 
+def live_alerts_cap(settings: Optional[Dict[str, Any]] = None) -> int:
+    """How many alerts the feed keeps while Mycelian runs (see MAX_LIVE_ALERTS)."""
+    settings = settings or current_feed_settings()
+    loaded = int(settings.get("page_limit") or 20) * int(settings.get("max_pages") or 5)
+    return min(LIVE_ALERTS_CEILING, max(MAX_LIVE_ALERTS, loaded * 10))
+
+
 def _trim_live_alerts() -> None:
-    """Drop the oldest live alerts once the session feed exceeds its cap.
+    """Drop the oldest alerts once the feed exceeds its cap.
 
     With minimize-to-tray a session can run for weeks, so the list has to be bounded.
     Elements left over from older builds are deleted too.
     """
+    cap = live_alerts_cap()
     with _live_lock:
-        overflow = len(activity_feed_state.live_alerts) - MAX_LIVE_ALERTS
+        overflow = len(activity_feed_state.live_alerts) - cap
         if overflow <= 0:
             return
         for alert_data in activity_feed_state.live_alerts[-overflow:]:
@@ -136,7 +147,7 @@ def _trim_live_alerts() -> None:
 
 
 def live_alerts_snapshot() -> List[Dict[str, Any]]:
-    """Copy of the session feed (newest first), safe to iterate off the UI loop."""
+    """Copy of the feed (newest first), safe to iterate off the UI loop."""
     with _live_lock:
         return list(activity_feed_state.live_alerts)
 
@@ -278,24 +289,15 @@ def apply_filter_rules(
     return result
 
 
-def _max_history_pages() -> int:
-    try:
-        from modules import dataobjects
-
-        sm = dataobjects.state_manager
-        if not getattr(sm, "_initialized", False):
-            return 50  # never trigger a settings load just to clamp a page
-        return max(1, int(sm.get_app_settings().activity_feed_max_pages or 1))
-    except Exception:
-        return 50
+# Feed pages are cut in the renderer (it knows the filters); this only stops nonsense values.
+_MAX_FEED_PAGE = 10000
 
 
 def normalize_view(raw: Any) -> Dict[str, Any]:
     """Fill a complete activity-feed view from a partial or invalid document."""
     source = raw if isinstance(raw, dict) else {}
-    tab = source.get("tab", "current")
-    if tab not in ("current", "previous"):
-        tab = "current"
+    # "previous" was the History view, now part of the Feed.
+    tab = "current"
     try:
         page = int(source.get("page", 1))
     except (TypeError, ValueError):
@@ -581,7 +583,7 @@ class ActivityFeedViewManager:
         if not isinstance(patch, dict):
             return set()
         patch = dict(patch)
-        if patch.get("mode") in ("live", "history", "person"):
+        if patch.get("mode") in ALL_MODE_NAMES:
             for key, value in mode_patch(patch["mode"]).items():
                 patch.setdefault(key, value)
         changed: set = set()
@@ -595,7 +597,9 @@ class ActivityFeedViewManager:
 
         if "tab" in patch:
             tab = patch.get("tab")
-            if tab in ("current", "previous") and tab != view["tab"]:
+            if tab == "previous":
+                tab = "current"  # the old History view is part of the Feed
+            if tab == "current" and tab != view["tab"]:
                 view["tab"] = tab
                 changed.add("tab")
 
@@ -604,7 +608,7 @@ class ActivityFeedViewManager:
                 page = int(patch.get("page"))
             except (TypeError, ValueError):
                 page = int(view["page"])
-            page = min(max(page, 1), _max_history_pages())
+            page = min(max(page, 1), _MAX_FEED_PAGE)
             if page != int(view["page"]):
                 view["page"] = page
                 changed.add("page")
@@ -1799,80 +1803,112 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
         return None
 
 
-def load_restored_alerts(page=1):
-    """Load one page of stored alerts (newest first), clamped to pages that exist.
+# --------------------------------------------------------------------------- stored alerts in the feed
 
-    Returns (feed alerts, pagination info). Each alert carries a ``row`` whose ``seq`` is
-    its position in the stored history (oldest = #1).
-    """
-    try:
-        from modules import dataobjects
+_stored_lock = threading.Lock()
+_stored_loaded = False
 
-        app_settings = dataobjects.state_manager.get_app_settings()
-        limit = max(1, int(app_settings.activity_feed_limit or 20))
-        max_pages = max(1, int(app_settings.activity_feed_max_pages or 1))
-        max_total_alerts = max_pages * limit
-        activity_feed_state.pagination_limit = limit
-        try:
-            page = int(page)
-        except (TypeError, ValueError):
-            page = 1
-        page = min(max(page, 1), max_pages)
 
-        alertutils.alert_state_manager.initialize()
-        result = alertutils.alert_state_manager.get_limited_stored_alerts_paginated(
-            page=page, limit=limit, max_total_alerts=max_total_alerts
+def _load_stored_feed_alerts(limit: int, pages: int) -> List[Dict[str, Any]]:
+    """The newest ``limit * pages`` stored alerts as feed alerts, newest first."""
+    manager = alertutils.alert_state_manager
+    manager.initialize()
+    out: List[Dict[str, Any]] = []
+    for page in range(1, pages + 1):
+        result = manager.get_limited_stored_alerts_paginated(
+            page=page, limit=limit, max_total_alerts=limit * pages
         )
-        total_pages = max(1, min(int(result.get("total_pages") or 1), max_pages))
-        if page > total_pages:
-            # History shrank (trim, fewer pages allowed): show the last page that exists.
-            page = total_pages
-            result = alertutils.alert_state_manager.get_limited_stored_alerts_paginated(
-                page=page, limit=limit, max_total_alerts=max_total_alerts
-            )
-        total_count = int(result.get("total_count") or 0)
-        activity_feed_state.current_page = page
-        activity_feed_state.total_pages = total_pages
-
-        restored_alerts = []
-        for index, stored_alert in enumerate(result.get("alerts") or []):
-            feed_alert = convert_stored_alert_to_feed_format(stored_alert)
+        for stored in result.get("alerts") or []:
+            feed_alert = convert_stored_alert_to_feed_format(stored)
             if feed_alert:
-                seq = total_count - (page - 1) * limit - index
-                feed_alert["row"] = feed_row_model(feed_alert, seq=seq if seq > 0 else None)
-                restored_alerts.append(feed_alert)
+                out.append(feed_alert)
+        if not result.get("has_next"):
+            break
+    return out
 
-        info = {
-            "page": page,
-            "total_pages": total_pages,
-            "total_count": total_count,
-            "has_prev": page > 1,
-            "has_next": page < total_pages,
-            "limit": limit,
-        }
-        return restored_alerts, info
 
-    except Exception as e:
-        logger.error("Error loading restored alerts: %s", e, exc_info=True)
-        notify(
-            "The History view may look empty even though your history is still saved.",
-            type="warning",
-            source="activity_feed",
-            title="Couldn't load earlier alerts",
-            hint="Check your database connection in Settings → Database, then open History again.",
-            details=f"page={page}: {type(e).__name__}: {e}",
-            actions=nav_actions_settings("Database"),
-            dedupe_key="activity_feed:history_failed",
-            dedupe_cooldown_sec=60.0,
-        )
-        return [], {
-            "page": 1,
-            "total_count": 0,
-            "total_pages": 1,
-            "has_next": False,
-            "has_prev": False,
-            "error": str(e),
-        }
+def load_stored_into_feed(*, reload: bool = False) -> int:
+    """Put the newest stored alerts into the feed, once per run (or again with ``reload``).
+
+    How many: Items per page x Pages to load (App Settings). They sit in the same list as
+    alerts that arrive while Mycelian runs, so new alerts push them onto later pages and
+    the feed grows past that size until the next start. Alerts already in the feed are
+    not added twice. Numbering runs oldest = #1. Returns how many were added.
+    """
+    global _stored_loaded, _live_seq
+    with _stored_lock:
+        if _stored_loaded and not reload:
+            return 0
+        settings = current_feed_settings()
+        limit, pages = int(settings["page_limit"]), int(settings["max_pages"])
+        try:
+            stored = _load_stored_feed_alerts(limit, pages)
+        except Exception as exc:
+            logger.error("activity_feed: could not load stored alerts: %s", exc, exc_info=True)
+            notify(
+                "The Feed only shows alerts from since Mycelian started. Your stored alerts are still saved.",
+                type="warning",
+                source="activity_feed",
+                title="Couldn't load earlier alerts",
+                hint="Check your database connection in Settings → Database.",
+                details=f"{type(exc).__name__}: {exc}",
+                actions=nav_actions_settings("Database"),
+                dedupe_key="activity_feed:stored_failed",
+                dedupe_cooldown_sec=60.0,
+            )
+            return 0
+        with _live_lock, _seq_lock:
+            session = [
+                a for a in activity_feed_state.live_alerts
+                if isinstance(a, dict) and not a.get("is_restored")
+            ]
+            have = {a.get("alert_id") for a in session if a.get("alert_id")}
+            added = [a for a in stored if not (a.get("alert_id") and a.get("alert_id") in have)]
+            for index, alert in enumerate(added):
+                seq = len(added) - index
+                alert["seq"] = seq
+                alert["row"] = feed_row_model(alert, seq=seq)
+            for index, alert in enumerate(reversed(session), start=1):
+                seq = len(added) + index
+                alert["seq"] = seq
+                if isinstance(alert.get("row"), dict):
+                    alert["row"] = dict(alert["row"], seq=seq)
+            _live_seq = len(added) + len(session)
+            activity_feed_state.live_alerts = session + added
+        _stored_loaded = True
+    _trim_live_alerts()
+    logger.debug("activity_feed: %d stored alert(s) in the feed", len(added))
+    return len(added)
+
+
+def _after_stored_loaded() -> None:
+    """Repaint the tab and the docks with the feed that now includes stored alerts."""
+    _schedule_live_push()
+    broadcast_activity_feed_view(view_manager.snapshot(), include_live_alerts=True)
+
+
+async def _load_stored_async(reload: bool) -> None:
+    try:
+        if await run.io_bound(load_stored_into_feed, reload=reload) or reload:
+            _after_stored_loaded()
+    except Exception as exc:
+        logger.error("activity_feed: stored alert load failed: %s", exc, exc_info=True)
+
+
+def schedule_stored_feed_load(*, reload: bool = False) -> None:
+    """Load (or reload) the stored alerts off the UI loop."""
+    try:
+        background_tasks.create(_load_stored_async(reload), name="activity_feed_stored")
+    except Exception:
+        # No NiceGUI loop (early startup / tests): load inline.
+        if load_stored_into_feed(reload=reload) or reload:
+            _after_stored_loaded()
+
+
+def reload_stored_feed() -> None:
+    """Items per page or Pages to load changed: repaint and load the new amount."""
+    apply_feed_settings_changed({"page_limit", "max_pages"})
+    schedule_stored_feed_load(reload=True)
 
 
 # Stored alerts considered for "By person" before the time window is applied. Far more
@@ -1999,6 +2035,46 @@ def _person_hours() -> int:
     return parse_condensed_historical_hours(current_feed_settings().get("person_hours", 12))
 
 
+def _condensed_person(
+    alert_data: Dict[str, Any],
+    filter_state: Dict[str, Any],
+    type_to_filter: Dict[str, str],
+    search: Optional[str] = None,
+) -> tuple:
+    """("ok", username), ("excluded", None) or ("unknown", None) for one alert in By person.
+
+    The same rule picks the alerts behind a person's card and the rows of their dialog.
+    """
+    alert_type = alert_data.get("type", "").lower()
+    badge_type = alert_data.get("badge_type", "").lower()
+
+    # Exclude hype train only (channel points are included and grouped by reward)
+    if alert_type == "hype train" or badge_type == "hype_train":
+        return "excluded", None
+
+    display_type = alert_data.get("type", "")
+    filter_key = type_to_filter.get(display_type)
+    if not (
+        filter_state.get("all", True)
+        or (filter_key and filter_state.get(filter_key, True))
+    ):
+        return "excluded", None
+    if search is None:
+        search_match = _alert_matches_search(alert_data)
+    else:
+        search_match = _alert_matches_search(alert_data, str(search).strip().lower())
+    if not search_match:
+        return "excluded", None
+
+    username = alert_data.get("username")
+    if not username:
+        username = extract_username_from_message(alert_data.get("message", ""))
+
+    if not username or username == "Unknown":
+        return "unknown", None
+    return "ok", username
+
+
 def _accumulate_condensed_alert(
     alert_data: Dict[str, Any],
     user_alerts: Dict[str, Dict[str, Any]],
@@ -2015,34 +2091,12 @@ def _accumulate_condensed_alert(
     """
     import re
 
+    status, username = _condensed_person(alert_data, filter_state, type_to_filter, search)
+    if status != "ok":
+        return status
+
     alert_type = alert_data.get("type", "").lower()
     badge_type = alert_data.get("badge_type", "").lower()
-
-    # Exclude hype train only (channel points are included and grouped by reward)
-    if alert_type == "hype train" or badge_type == "hype_train":
-        return "excluded"
-
-    display_type = alert_data.get("type", "")
-    filter_key = type_to_filter.get(display_type)
-    if not (
-        filter_state.get("all", True)
-        or (filter_key and filter_state.get(filter_key, True))
-    ):
-        return "excluded"
-    if search is None:
-        search_match = _alert_matches_search(alert_data)
-    else:
-        search_match = _alert_matches_search(alert_data, str(search).strip().lower())
-    if not search_match:
-        return "excluded"
-
-    username = alert_data.get("username")
-    if not username:
-        username = extract_username_from_message(alert_data.get("message", ""))
-
-    if not username or username == "Unknown":
-        return "unknown"
-
     if username not in user_alerts:
         user_alerts[username] = {}
 
@@ -2716,100 +2770,13 @@ def create_aggregated_alert_text(grouping_key, data):
         return f"{grouping_key.title()}!"
 
 
-# --------------------------------------------------------------------------- history / person flows
+# --------------------------------------------------------------------------- by person flows
 
-_history_payload: Dict[str, Any] = {"rows": [], "page": 1, "total_pages": 1, "total_count": 0, "loading": True}
 _person_payload: Dict[str, Any] = {"groups": [], "loading": True}
-_history_task_running = False
-_history_rerun = False
+_person_rows_payload: Dict[str, Any] = {"user": "", "rows": []}
 _condensed_update_scheduled = False
 _condensed_rebuild_running = False
 _condensed_rebuild_rerun = False
-
-
-def _emit_stored_alerts_payload(
-    alerts: List[Dict[str, Any]],
-    pagination_info: Dict[str, Any],
-    *,
-    to: Optional[str] = None,
-) -> bool:
-    """Send one history page to the dock."""
-    response = {
-        "success": not pagination_info.get("error"),
-        "alerts": serialize_live_alerts(alerts),
-        "page": pagination_info.get("page", activity_feed_state.current_page),
-        "total_pages": pagination_info.get("total_pages", activity_feed_state.total_pages),
-        "total_count": pagination_info.get("total_count", 0),
-        "has_prev": bool(pagination_info.get("has_prev", False)),
-        "has_next": bool(pagination_info.get("has_next", False)),
-    }
-    if pagination_info.get("error"):
-        response["error"] = str(pagination_info["error"])
-    return _emit_overlay_event("stored_alerts_paginated", response, to=to)
-
-
-def emit_stored_alerts_page(page: int, *, to: Optional[str] = None) -> None:
-    """Load one stored page and send that payload to one dock (or all)."""
-    try:
-        alerts, info = load_restored_alerts(page)
-        _emit_stored_alerts_payload(alerts, info, to=to)
-    except Exception as exc:
-        logger.error("activity_feed: could not emit stored page %s: %s", page, exc)
-
-
-def _apply_history_page(alerts: List[Dict[str, Any]], info: Dict[str, Any]) -> None:
-    global _history_payload
-    _history_payload = {
-        "rows": [_row_for(a) for a in alerts],
-        "page": info.get("page", 1),
-        "total_pages": info.get("total_pages", 1),
-        "total_count": info.get("total_count", 0),
-        "has_prev": bool(info.get("has_prev")),
-        "has_next": bool(info.get("has_next")),
-        "loading": False,
-        "error": info.get("error") or "",
-    }
-    _push_slot("history", _history_payload)
-    _emit_stored_alerts_payload(alerts, info)
-    loaded_page = info.get("page")
-    if isinstance(loaded_page, int) and loaded_page >= 1 and loaded_page != view_manager.snapshot()["page"]:
-        # The saved page no longer exists (history shrank): show and keep the real one.
-        if view_manager.set_page_quietly(loaded_page):
-            snapshot = view_manager.snapshot()
-            broadcast_activity_feed_view(snapshot)
-            _push_slot("view", snapshot)
-
-
-async def _refresh_history_async() -> None:
-    global _history_task_running, _history_rerun
-    _history_task_running = True
-    try:
-        while True:
-            _history_rerun = False
-            page = view_manager.snapshot()["page"]
-            alerts, info = await run.io_bound(load_restored_alerts, page)
-            if view_mode(view_manager.snapshot()) == "history":
-                _apply_history_page(alerts, info)
-            if not _history_rerun:
-                break
-    except Exception as exc:
-        logger.error("activity_feed: history load failed: %s", exc, exc_info=True)
-    finally:
-        _history_task_running = False
-
-
-def refresh_restored_alerts() -> None:
-    """Load the shared history page off the UI loop, then repaint the tab and the docks."""
-    global _history_rerun
-    if _history_task_running:
-        _history_rerun = True
-        return
-    try:
-        background_tasks.create(_refresh_history_async(), name="activity_feed_history")
-    except Exception:
-        # No NiceGUI loop (early startup / tests): load inline.
-        alerts, info = load_restored_alerts(view_manager.snapshot()["page"])
-        _apply_history_page(alerts, info)
 
 
 def schedule_condensed_view_update(reason: str) -> None:
@@ -2878,6 +2845,62 @@ async def _update_condensed_view_async(reason: str) -> None:
         _condensed_rebuild_running = False
 
 
+def person_feed_rows(username: str) -> List[Dict[str, Any]]:
+    """Feed rows behind one By person card, newest first.
+
+    Same hours, filters and search as the card, so the dialog lists exactly the alerts the
+    card counted.
+    """
+    username = str(username or "")
+    if not username:
+        return []
+    filters = dict(activity_feed_state.filter_state)
+    search = activity_feed_state.search_text or ""
+    type_to_filter = activity_feed_state.alert_type_to_filter
+    cutoff = time.time() - _person_hours() * 3600
+    alerts, _historical, _live = collect_alerts_for_condensed_view(cutoff)
+    rows: List[Dict[str, Any]] = []
+    for alert in alerts:
+        if not isinstance(alert, dict):
+            continue
+        try:
+            status, who = _condensed_person(alert, filters, type_to_filter, search)
+        except Exception as exc:
+            logger.debug("activity_feed: skipping alert %s for %s: %s", alert.get("alert_id"), username, exc)
+            continue
+        if status == "ok" and who == username:
+            rows.append(_row_for(alert))
+    return rows
+
+
+def person_rows_payload(username: str) -> Dict[str, Any]:
+    """{"user", "rows", "success"} for the By person dialog."""
+    try:
+        return {"success": True, "user": username, "rows": person_feed_rows(username)}
+    except Exception as exc:
+        logger.error("activity_feed: could not list %s's events: %s", username, exc, exc_info=True)
+        return {"success": False, "user": username, "rows": [], "error": str(exc)}
+
+
+async def _person_rows_async(username: str) -> None:
+    global _person_rows_payload
+    payload = await run.io_bound(person_rows_payload, username)
+    _person_rows_payload = payload
+    _push_slot("person_rows", payload)
+
+
+def schedule_person_rows(username: str) -> None:
+    """The tab opened a person's dialog: load their rows off the UI loop."""
+    if not username:
+        return
+    try:
+        background_tasks.create(_person_rows_async(username), name="activity_feed_person_rows")
+    except Exception:
+        global _person_rows_payload
+        _person_rows_payload = person_rows_payload(username)
+        _push_slot("person_rows", _person_rows_payload)
+
+
 def update_condensed_view() -> bool:
     """Rebuild By person when it is the open view (kept for callers)."""
     if view_mode(view_manager.snapshot()) == "person":
@@ -2890,14 +2913,12 @@ def refresh_condensed_view() -> None:
 
 
 def publish_activity_feed_view(*, to: Optional[str] = None) -> Dict[str, Any]:
-    """Send one dock everything it needs: settings, view + live list, page or groups."""
+    """Send one dock everything it needs: settings, view + feed, or the groups."""
     snapshot = view_manager.load()
+    load_stored_into_feed()
     broadcast_feed_settings(to=to)
     broadcast_activity_feed_view(snapshot, to=to, include_live_alerts=True)
-    mode = view_mode(snapshot)
-    if mode == "history":
-        emit_stored_alerts_page(int(snapshot["page"]), to=to)
-    elif mode == "person":
+    if view_mode(snapshot) == "person":
         payload = build_condensed_overlay_payload(
             filter_state=snapshot["filters"], search=snapshot.get("search") or ""
         )
@@ -2909,11 +2930,7 @@ def _apply_view_to_desktop(changed: set) -> None:
     """The shared view changed: repaint the tab and load what the new view needs."""
     snapshot = view_manager.snapshot()
     _push_slot("view", snapshot)
-    mode = view_mode(snapshot)
-    if mode == "history" and ("tab" in changed or "page" in changed or "condensed" in changed):
-        _push_slot("history", dict(_history_payload, loading=True))
-        refresh_restored_alerts()
-    if mode == "person" and changed & {"tab", "condensed", "filters", "search"}:
+    if view_mode(snapshot) == "person" and changed & {"tab", "condensed", "filters", "search"}:
         if changed & {"tab", "condensed"}:
             _push_slot("person", dict(_person_payload, loading=True))
         schedule_condensed_view_update("view_change")
@@ -2925,24 +2942,19 @@ def on_checkbox_change(key, value):
 
 
 def switch_to_tab(tab_name):
-    """Switch to the current (Live / By person) or previous (History) tab."""
+    """Kept for callers: "current" and the old "previous" both open the Feed."""
     if tab_name not in ("current", "previous"):
         return
-    patch: Dict[str, Any] = {"tab": tab_name}
-    if tab_name == "previous":
-        patch["page"] = 1
-    view_manager.update(patch)
+    view_manager.update(mode_patch("feed"))
 
 
 def go_to_page(page):
-    """Open one history page (clamped to the pages that exist)."""
+    """Open one Feed page (the renderer clamps it to the pages its filters leave)."""
     try:
         page = int(page)
     except (TypeError, ValueError):
         return
-    max_allowed = max(1, min(activity_feed_state.total_pages or 1, _max_history_pages()))
-    page = min(max(page, 1), max_allowed)
-    view_manager.update({"page": page})
+    view_manager.update({"page": min(max(page, 1), _MAX_FEED_PAGE)})
 
 
 # --------------------------------------------------------------------------- the tab host
@@ -2981,10 +2993,10 @@ def _slot_value(name: str) -> Any:
         return view_manager.snapshot()
     if name == "live":
         return [_row_for(a) for a in live_alerts_snapshot()]
-    if name == "history":
-        return _history_payload
     if name == "person":
         return _person_payload
+    if name == "person_rows":
+        return _person_rows_payload
     if name == "queue":
         return current_queue_state()
     if name == "meta":
@@ -3346,8 +3358,10 @@ def handle_feed_action(action: str, data: Optional[Dict[str, Any]] = None) -> An
             return replay_alert({"alert_id": alert_id, "type": label, "username": data.get("user")})
         elif action == "mode":
             mode = data.get("mode")
-            if mode in ("live", "history", "person"):
+            if mode in ALL_MODE_NAMES:
                 view_manager.update(mode_patch(mode))
+        elif action == "person-events":
+            schedule_person_rows(str(data.get("user") or ""))
         elif action == "filter":
             key = data.get("key")
             if key in FILTER_KEYS:
@@ -3602,10 +3616,8 @@ def create_activity_feed_tab():
             continue
         _apply_slot(name, payload)
     activity_feed_state.is_initialized = True
-    mode = view_mode(view_manager.snapshot())
-    if mode == "history":
-        refresh_restored_alerts()
-    elif mode == "person":
+    schedule_stored_feed_load()
+    if view_mode(view_manager.snapshot()) == "person":
         _schedule_condensed_rebuild("tab_open")
     _start_timers()
     logger.debug("Activity feed tab built")

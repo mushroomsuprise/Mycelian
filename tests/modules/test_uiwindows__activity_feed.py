@@ -39,8 +39,8 @@ def _local_clock(module, monkeypatch, **fakes):
 _ORIGINALS = {name: getattr(feed, name) for name in ("_emit_overlay_event", "_run_on_ui_loop", "notify", "show_sub_duration")}
 
 _GLOBALS = (
-    "_live_seq", "_legacy_hours_cache", "_history_payload", "_person_payload", "_history_task_running",
-    "_history_rerun", "_condensed_update_scheduled", "_condensed_rebuild_running", "_condensed_rebuild_rerun",
+    "_live_seq", "_legacy_hours_cache", "_person_payload", "_person_rows_payload", "_stored_loaded",
+    "_condensed_update_scheduled", "_condensed_rebuild_running", "_condensed_rebuild_rerun",
     "_host", "_slot_cache", "_slot_rev", "_live_push_scheduled", "_queue_poll_timer", "_watchdog_timer",
     "_last_queue_sig", "_last_meta", "_meta_tick", "_health_failures", "_registered_event_clients",
     "_assets_shared", "_hooks_registered_client_ids",
@@ -106,7 +106,7 @@ def test_stale_client_and_element_alive():
 
 def test_next_seq_and_trim(monkeypatch):
     assert feed._next_seq() == feed._live_seq
-    monkeypatch.setattr(feed, "MAX_LIVE_ALERTS", 2)
+    monkeypatch.setattr(feed, "live_alerts_cap", lambda settings=None: 2)
     deleted = []
 
     class _El:
@@ -184,17 +184,12 @@ def test_filters_and_view_normalisation():
     assert feed.normalize_view(None)["tab"] == "current"
 
 
-def test_max_history_pages(monkeypatch):
-    sm = SimpleNamespace(_initialized=False)
-    monkeypatch.setattr(dataobjects, "state_manager", sm)
-    assert feed._max_history_pages() == 50
-    sm._initialized = True
-    sm.get_app_settings = lambda: SimpleNamespace(activity_feed_max_pages=0)
-    assert feed._max_history_pages() == 1
-    sm.get_app_settings = lambda: SimpleNamespace(activity_feed_max_pages=7)
-    assert feed._max_history_pages() == 7
-    sm.get_app_settings = lambda: 1 / 0
-    assert feed._max_history_pages() == 50
+def test_live_alerts_cap():
+    # At least MAX_LIVE_ALERTS, ten times what was loaded when that is more, never past the ceiling.
+    assert feed.live_alerts_cap({"page_limit": 20, "max_pages": 5}) == feed.MAX_LIVE_ALERTS
+    assert feed.live_alerts_cap({"page_limit": 100, "max_pages": 10}) == 10000
+    assert feed.live_alerts_cap({"page_limit": 100, "max_pages": 50}) == feed.LIVE_ALERTS_CEILING
+    assert feed.live_alerts_cap({}) == feed.MAX_LIVE_ALERTS
 
 
 def test_json_ready_and_serialize():
@@ -239,12 +234,13 @@ def fresh_vm():
 
 
 def test_view_load_saved_document(db):
+    # A view saved on the old History tab opens the Feed.
     db.data = {"tab": "previous", "page": 3, "filters": {"bits": False}, "search": "kept?"}
     vm = fresh_vm()
     snap = vm.load()
-    assert snap["tab"] == "previous" and snap["page"] == 3 and snap["filters"]["bits"] is False
-    assert snap["search"] == "" and snap["mode"] == "history"
-    assert feed.activity_feed_state.current_tab == "previous"
+    assert snap["tab"] == "current" and snap["page"] == 3 and snap["filters"]["bits"] is False
+    assert snap["search"] == "" and snap["mode"] == "feed"
+    assert feed.activity_feed_state.current_tab == "current"
     assert vm.load()["page"] == 3  # second load returns the cached view
 
 
@@ -268,13 +264,13 @@ def test_view_save_and_merge_after_failed_read(db):
     vm = fresh_vm()
     db.ok = False
     vm.load()
-    vm.update({"tab": "previous"})
-    assert vm._unsaved_fields == {"tab", "page"} or "tab" in vm._unsaved_fields
+    vm.update({"condensed": True})
+    assert "condensed" in vm._unsaved_fields
     assert db.sets == []  # still unreadable: nothing saved over it
     db.ok = True
     db.data = {"filters": {"bits": False}, "condensed": False, "tab": "current", "page": 1}
     vm.update({"page": 2})
-    assert db.sets[-1][1]["tab"] == "previous" and db.sets[-1][1]["filters"]["bits"] is False
+    assert db.sets[-1][1]["condensed"] is True and db.sets[-1][1]["filters"]["bits"] is False
     assert vm._read_failed is False
 
 
@@ -297,14 +293,18 @@ def test_view_update_merges_patches(isolated, monkeypatch):
     vm = isolated.vm
     assert vm.update(None)["revision"] == 0
     assert vm.update({"mode": "person"})["mode"] == "person"
-    snap = vm.update({"mode": "history"})
-    assert snap["tab"] == "previous" and snap["page"] == 1 and snap["revision"] == 2
+    snap = vm.update({"mode": "history"})  # an older dock: the Feed
+    assert snap["tab"] == "current" and snap["mode"] == "feed" and snap["revision"] == 2
     assert isolated.emitted[-1][0] == "activity_feed_view" and len(isolated.ui_calls) == 2
+    assert vm.update({"mode": "person"})["mode"] == "person"
+    assert vm.update({"mode": "feed"})["mode"] == "feed"
     vm.update({"condensed": "no"})
     vm.update({"tab": "nope"})
+    assert vm.update({"tab": "previous"})["tab"] == "current"
     vm.update({"page": "x"})
-    monkeypatch.setattr(feed, "_max_history_pages", lambda: 3)
-    assert vm.update({"page": 10})["page"] == 3
+    # Feed pages grow while Mycelian runs; the renderer clamps to the pages its filters leave.
+    assert vm.update({"page": 10})["page"] == 10
+    assert vm.update({"page": 10 ** 9})["page"] == feed._MAX_FEED_PAGE
     assert vm.update({"search": " hi  there "})["search"] == "hi there"
     snap = vm.update({"filters": {"bits": False, "unknown": True}})
     assert snap["filters"]["bits"] is False and snap["filters"]["all"] is False
@@ -317,13 +317,13 @@ def test_view_update_merges_patches(isolated, monkeypatch):
 
 def test_view_update_save_failure_notifies(isolated, monkeypatch):
     monkeypatch.setattr(isolated.vm, "save", lambda: False)
-    isolated.vm.update({"tab": "previous"})
+    isolated.vm.update({"condensed": True})
     assert isolated.notes[-1][1]["dedupe_key"] == "activity_feed:view_save_failed"
 
 
 def test_view_update_restored_fields_repaint(isolated):
     isolated.vm._restored_fields = {"filters"}
-    isolated.vm.update({"tab": "previous"})
+    isolated.vm.update({"condensed": True})
     assert isolated.vm._restored_fields == set()
 
 
@@ -332,7 +332,7 @@ def test_apply_snapshot(isolated, monkeypatch):
     assert vm.apply_snapshot("x") is False
     assert vm.apply_snapshot({"revision": "bad"}) is False
     assert vm.apply_snapshot({"revision": 0}) is False
-    assert vm.apply_snapshot({"revision": 5, "tab": "previous", "page": 2}) is True
+    assert vm.apply_snapshot({"revision": 5, "tab": "current", "page": 2}) is True
     assert vm.snapshot()["revision"] == 5 and feed.activity_feed_state.current_page == 2
     vm._read_failed = True
     monkeypatch.setattr(vm, "save", lambda: False)
@@ -829,28 +829,75 @@ def _stored(n, base=1700000000):
     return {"alert_id": f"a{n}", "alert_type": "follow", "username": f"U{n}", "timestamp": base + n}
 
 
-def test_load_restored_alerts(monkeypatch, settings):
-    pager = _Pager(lambda page: {"alerts": [_stored(1), "junk", _stored(2)], "total_pages": 2, "total_count": 3})
+def _pages(*pages):
+    """Pager pages: each a list of stored alerts; has_next until the last."""
+    def page(n):
+        rows = pages[n - 1] if n <= len(pages) else []
+        return {"alerts": rows, "has_next": n < len(pages)}
+    return page
+
+
+def test_load_stored_into_feed(monkeypatch, settings, isolated):
+    pager = _Pager(_pages([_stored(6), _stored(5)], [_stored(4), "junk", _stored(3)], [_stored(2), _stored(1)]))
     monkeypatch.setattr(alertutils, "alert_state_manager", pager)
-    alerts, info = feed.load_restored_alerts("x")
-    assert info == {"page": 1, "total_pages": 2, "total_count": 3, "has_prev": False, "has_next": True, "limit": 2}
-    assert [a["row"]["seq"] for a in alerts] == [3, 1]
-    assert pager.calls == [(1, 2, 6)]
-    # asked for page 3 but only 2 exist: reloads the last page
-    alerts, info = feed.load_restored_alerts(3)
-    assert info["page"] == 2 and pager.calls[-2:] == [(3, 2, 6), (2, 2, 6)]
-    assert feed.activity_feed_state.total_pages == 2
-    # seq <= 0 is left out
-    pager.pages = lambda page: {"alerts": [_stored(1)], "total_pages": 1, "total_count": 0}
-    alerts, _ = feed.load_restored_alerts(1)
-    assert alerts[0]["row"]["seq"] is None
+    live_new = {"alert_id": "live", "type": "Follow", "username": "L", "row": {"kind": "follow", "seq": 2}}
+    live_dup = {"alert_id": "a5", "type": "Follow", "username": "U5", "row": {"kind": "follow", "seq": 1}, "is_restored": False}
+    feed.activity_feed_state.live_alerts = [live_new, live_dup]
+
+    assert feed.load_stored_into_feed() == 5  # a5 is already in the feed
+    assert pager.calls == [(1, 2, 6), (2, 2, 6), (3, 2, 6)]  # Items per page x Pages to load
+    feed_ids = [a["alert_id"] for a in feed.live_alerts_snapshot()]
+    assert feed_ids == ["live", "a5", "a6", "a4", "a3", "a2", "a1"]
+    seqs = [a["row"]["seq"] for a in feed.live_alerts_snapshot()]
+    assert seqs == [7, 6, 5, 4, 3, 2, 1] and feed._live_seq == 7  # oldest = #1; new alerts continue from here
+    assert all(a["is_restored"] for a in feed.live_alerts_snapshot()[2:])
+
+    assert feed.load_stored_into_feed() == 0  # once per run
+    pager.pages = _pages([_stored(9)])
+    assert feed.load_stored_into_feed(reload=True) == 1  # settings changed: stored alerts swap, live ones stay
+    assert [a["alert_id"] for a in feed.live_alerts_snapshot()] == ["live", "a5", "a9"]
 
 
-def test_load_restored_alerts_error(monkeypatch, settings, isolated):
+def test_load_stored_into_feed_error(monkeypatch, settings, isolated):
     monkeypatch.setattr(alertutils, "alert_state_manager", _Pager(lambda page: 1 / 0))
-    alerts, info = feed.load_restored_alerts(1)
-    assert alerts == [] and info["error"]
-    assert isolated.notes[-1][1]["dedupe_key"] == "activity_feed:history_failed"
+    assert feed.load_stored_into_feed() == 0
+    assert isolated.notes[-1][1]["dedupe_key"] == "activity_feed:stored_failed"
+    assert feed._stored_loaded is False  # tried again next time
+
+
+def test_schedule_stored_feed_load(monkeypatch, isolated):
+    loads, after = [], []
+    monkeypatch.setattr(feed, "load_stored_into_feed", lambda reload=False: loads.append(reload) or 3)
+    monkeypatch.setattr(feed, "_after_stored_loaded", lambda: after.append(1))
+
+    def no_loop(coro, name=""):
+        coro.close()
+        raise RuntimeError("no loop")
+
+    monkeypatch.setattr(feed.background_tasks, "create", no_loop)
+    feed.schedule_stored_feed_load()
+    assert loads == [False] and after == [1]
+
+    async def io_bound(fn, *a, **k):
+        return fn(*a, **k)
+
+    monkeypatch.setattr(feed.run, "io_bound", io_bound)
+    asyncio.run(feed._load_stored_async(True))
+    assert loads[-1] is True and after == [1, 1]
+    monkeypatch.setattr(feed, "load_stored_into_feed", lambda reload=False: 1 / 0)
+    asyncio.run(feed._load_stored_async(False))  # logged, no raise
+
+
+def test_after_stored_loaded_and_reload(monkeypatch, isolated):
+    pushes, scheduled, changed = [], [], []
+    monkeypatch.setattr(feed, "_schedule_live_push", lambda: pushes.append(1))
+    feed._after_stored_loaded()
+    event, payload, _ = isolated.emitted[-1]
+    assert pushes == [1] and event == "activity_feed_view" and "live_alerts" in payload
+    monkeypatch.setattr(feed, "apply_feed_settings_changed", lambda keys: changed.append(keys))
+    monkeypatch.setattr(feed, "schedule_stored_feed_load", lambda reload=False: scheduled.append(reload))
+    feed.reload_stored_feed()
+    assert changed == [{"page_limit", "max_pages"}] and scheduled == [True]
 
 
 def test_time_window_loaders(monkeypatch):
@@ -1201,68 +1248,57 @@ def test_create_aggregated_alert_text_error():
 
 # ----------------------------------------------------------------- history / person flows
 
-def test_emit_stored_alerts_payload(isolated):
-    feed._emit_stored_alerts_payload([{"type": "follow", "element": object()}], {"page": 2, "error": "x"}, to="s")
-    event, payload, to = isolated.emitted[-1]
-    assert event == "stored_alerts_paginated" and payload["success"] is False and payload["error"] == "x"
-    assert payload["alerts"] == [{"type": "follow"}] and payload["page"] == 2 and to == "s"
+def _person_alerts():
+    now = time.time()
+    return [
+        {"alert_id": "1", "type": "Bits", "badge_type": "bits", "username": "Ann", "timestamp": now - 5,
+         "user_message": "gg", "row": {"kind": "bits", "msg": "gg"}},
+        {"alert_id": "2", "type": "Follow", "badge_type": "follow", "username": "Bob", "timestamp": now - 6},
+        {"alert_id": "3", "type": "Follow", "badge_type": "follow", "username": "Ann", "timestamp": now - 7},
+        {"alert_id": "4", "type": "Hype Train", "badge_type": "hype_train", "username": "Ann", "timestamp": now - 8},
+        "junk",
+    ]
 
 
-def test_emit_stored_alerts_page(monkeypatch, isolated):
-    monkeypatch.setattr(feed, "load_restored_alerts", lambda page: ([], {"page": page}))
-    feed.emit_stored_alerts_page(3, to="x")
-    assert isolated.emitted[-1][1]["page"] == 3
-    monkeypatch.setattr(feed, "load_restored_alerts", lambda page: 1 / 0)
-    feed.emit_stored_alerts_page(1)
+def test_person_feed_rows_match_the_card(monkeypatch, isolated):
+    monkeypatch.setattr(feed, "collect_alerts_for_condensed_view", lambda cutoff: (_person_alerts(), 0, 0))
+    rows = feed.person_feed_rows("Ann")
+    assert [r["kind"] for r in rows] == ["bits", "follow"]  # Hype Train is never in By person
+    assert rows[0]["msg"] == "gg"
+    assert feed.person_feed_rows("") == []
+    isolated.vm.update({"filters": {"follows": False}})
+    assert [r["kind"] for r in feed.person_feed_rows("Ann")] == ["bits"]  # same filters as the card
+    isolated.vm.update({"filters": {"all": True}, "search": "nobody"})
+    assert feed.person_feed_rows("Ann") == []
+    monkeypatch.setattr(feed, "_condensed_person", lambda *a: 1 / 0)
+    assert feed.person_feed_rows("Ann") == []
 
 
-def test_apply_history_page(monkeypatch, isolated):
+def test_person_rows_payload_and_schedule(monkeypatch, isolated):
+    monkeypatch.setattr(feed, "person_feed_rows", lambda user: [{"kind": "follow"}])
+    assert feed.person_rows_payload("Ann") == {"success": True, "user": "Ann", "rows": [{"kind": "follow"}]}
     slots = []
     monkeypatch.setattr(feed, "_push_slot", lambda name, value: slots.append((name, value)))
-    feed._apply_history_page([{"type": "follow", "username": "A"}], {"page": 1, "total_pages": 2, "has_next": True})
-    assert feed._history_payload["rows"][0]["kind"] == "follow" and feed._history_payload["loading"] is False
-    assert [s[0] for s in slots] == ["history"]
-    isolated.vm._view["page"] = 5
-    feed._apply_history_page([], {"page": 2})
-    assert isolated.vm.snapshot()["page"] == 2 and [s[0] for s in slots][-2:] == ["history", "view"]
-
-
-def test_refresh_history_inline_and_async(monkeypatch, isolated):
-    applied = []
-    monkeypatch.setattr(feed, "load_restored_alerts", lambda page: ([], {"page": page}))
-    monkeypatch.setattr(feed, "_apply_history_page", lambda a, i: applied.append(i))
 
     def no_loop(coro, name=""):
         coro.close()
         raise RuntimeError("no loop")
 
     monkeypatch.setattr(feed.background_tasks, "create", no_loop)
-    feed.refresh_restored_alerts()
-    assert applied == [{"page": 1}]
-    monkeypatch.setattr(feed, "_history_task_running", True)
-    feed.refresh_restored_alerts()
-    assert feed._history_rerun is True
-    monkeypatch.setattr(feed, "_history_task_running", False)
+    feed.schedule_person_rows("")
+    feed.schedule_person_rows("Ann")
+    assert slots == [("person_rows", {"success": True, "user": "Ann", "rows": [{"kind": "follow"}]})]
+    assert feed._slot_value("person_rows")["user"] == "Ann"
 
     async def io_bound(fn, *a):
         return fn(*a)
 
     monkeypatch.setattr(feed.run, "io_bound", io_bound)
-    isolated.vm._view["tab"] = "previous"
-    runs = {"n": 0}
-
-    def load(page):
-        runs["n"] += 1
-        if runs["n"] == 1:
-            feed._history_rerun = True  # a change arrived while loading
-        return [], {"page": page}
-
-    monkeypatch.setattr(feed, "load_restored_alerts", load)
-    asyncio.run(feed._refresh_history_async())
-    assert runs["n"] == 2 and feed._history_task_running is False
-    monkeypatch.setattr(feed, "load_restored_alerts", lambda page: 1 / 0)
-    asyncio.run(feed._refresh_history_async())
-    assert feed._history_task_running is False
+    asyncio.run(feed._person_rows_async("Cy"))
+    assert slots[-1][1]["user"] == "Cy"
+    monkeypatch.setattr(feed, "person_feed_rows", lambda user: 1 / 0)
+    failed = feed.person_rows_payload("Ann")
+    assert failed["success"] is False and failed["rows"] == []
 
 
 def test_schedule_condensed_view_update(monkeypatch, isolated):
@@ -1347,33 +1383,28 @@ def test_update_and_refresh_condensed_view(monkeypatch, isolated):
     assert rebuilds == ["update_condensed_view"]
 
 
-@pytest.mark.parametrize("mode", ["live", "history", "person"])
+@pytest.mark.parametrize("mode", ["feed", "person"])
 def test_publish_activity_feed_view(monkeypatch, isolated, mode):
     isolated.vm._view.update(feed.mode_patch(mode))
-    pages = []
+    loads = []
     monkeypatch.setattr(feed, "current_feed_settings", lambda app_settings=None: {"layout": "rows"})
-    monkeypatch.setattr(feed, "emit_stored_alerts_page", lambda page, to=None: pages.append((page, to)))
+    monkeypatch.setattr(feed, "load_stored_into_feed", lambda reload=False: loads.append(reload))
     monkeypatch.setattr(feed, "build_condensed_overlay_payload", lambda filter_state=None, search=None: {"groups": []})
     snap = feed.publish_activity_feed_view(to="sid")
     events = [e for e, _, _ in isolated.emitted]
     assert events[:2] == ["activity_feed_settings", "activity_feed_view"] and snap["mode"] == mode
-    if mode == "history":
-        assert pages == [(1, "sid")]
+    assert loads == [False]  # a dock that connects first still gets the stored alerts
     if mode == "person":
         assert events[-1] == "condensed_view_alerts"
 
 
 def test_apply_view_to_desktop(monkeypatch, isolated):
-    slots, refreshed, rebuilds = [], [], []
+    slots, rebuilds = [], []
     monkeypatch.setattr(feed, "_push_slot", lambda name, value: slots.append(name))
-    monkeypatch.setattr(feed, "refresh_restored_alerts", lambda: refreshed.append(1))
     monkeypatch.setattr(feed, "schedule_condensed_view_update", lambda reason: rebuilds.append(reason))
     feed._apply_view_to_desktop({"filters"})
-    assert slots == ["view"]
-    isolated.vm._view.update(feed.mode_patch("history"))
     feed._apply_view_to_desktop({"page"})
-    feed._apply_view_to_desktop({"search"})
-    assert slots[1:] == ["view", "history", "view"] and refreshed == [1]
+    assert slots == ["view", "view"] and rebuilds == []
     isolated.vm._view.update(feed.mode_patch("person"))
     feed._apply_view_to_desktop({"condensed"})
     feed._apply_view_to_desktop({"search"})
@@ -1384,14 +1415,15 @@ def test_apply_view_to_desktop(monkeypatch, isolated):
 def test_checkbox_tab_and_page_helpers(monkeypatch, isolated):
     feed.on_checkbox_change("bits", 0)
     assert isolated.vm.snapshot()["filters"]["bits"] is False
+    isolated.vm.update({"condensed": True})
     feed.switch_to_tab("nope")
-    feed.switch_to_tab("previous")
-    assert isolated.vm.snapshot()["tab"] == "previous"
-    feed.switch_to_tab("current")
-    feed.activity_feed_state.total_pages = 4
-    monkeypatch.setattr(feed, "_max_history_pages", lambda: 3)
+    assert isolated.vm.snapshot()["mode"] == "person"
+    feed.switch_to_tab("previous")  # the old History tab opens the Feed
+    assert isolated.vm.snapshot()["mode"] == "feed" and isolated.vm.snapshot()["tab"] == "current"
     feed.go_to_page("x")
     feed.go_to_page(9)
-    assert isolated.vm.snapshot()["page"] == 3
+    assert isolated.vm.snapshot()["page"] == 9
+    feed.go_to_page(10 ** 9)
+    assert isolated.vm.snapshot()["page"] == feed._MAX_FEED_PAGE
     feed.go_to_page(-1)
     assert isolated.vm.snapshot()["page"] == 1

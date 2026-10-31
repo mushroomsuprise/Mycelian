@@ -109,6 +109,31 @@ body:not(.body--dark) .thm :is(p, span, div, label):not([class]) { color: inheri
 .thm-focus-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-warning); }
 .thm-focus-val { font-size: .68rem; color: var(--color-text-muted); line-height: 1.35; }
 .thm-reads { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+/* ---- Activity Feed events (own row under Colors / Pop-ups) ---- */
+.thm-panels.thm-panels-wide { grid-template-columns: minmax(0, 1fr); }
+.thm-events { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 10px 22px; align-items: start; }
+@media (max-width: 1250px) { .thm-events { grid-template-columns: 1fr; } }
+.thm-evcol { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.thm-evgrp { display: grid; grid-template-columns: 84px 1fr; gap: 6px; align-items: start; }
+.thm-evgrp-name { font-size: .74rem; color: var(--color-text-secondary); padding-top: 7px; }
+.thm-evs { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 5px; }
+.thm-ev { --tc: var(--color-primary); display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 8px 0 4px; border-radius: 8px; cursor: pointer;
+    background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); font-size: .74rem; color: var(--color-text-primary);
+    position: relative; min-width: 0; transition: border-color .12s; }
+.thm-ev:hover { border-color: var(--color-border-default); }
+.thm-ev.is-active { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary) inset; }
+.thm-ev.is-edited::after { content: ''; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--color-warning); }
+.thm-ev-chip { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+    color: var(--tc); background: color-mix(in srgb, var(--tc) 16%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 40%, transparent); }
+.thm-ev-chip .thm-icon { font-size: 14px; color: var(--tc); }
+.thm-ev-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thm-evnote { font-size: .7rem; color: var(--color-text-muted); line-height: 1.4; margin: 2px 0 0 90px; }
+.thm-evsample { display: block; }
+.thm-evhost { height: 300px; border-radius: 10px; background: var(--color-bg-base); border: 1px solid var(--color-border-subtle); padding: 2px 6px;
+    display: flex; flex-direction: column; overflow: hidden; }
+.thm-evsample-cap { font-size: .68rem; color: var(--color-text-muted); display: flex; align-items: center; gap: 4px; }
+.thm-evsample-cap .thm-icon { font-size: 13px; }
 .thm-notify { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 18px; align-items: start; }
 .thm-notify > :not(.thm-nsample) { grid-column: 1; }
 .thm-notify > .thm-nsample { grid-column: 2; grid-row: 1 / span 3; }

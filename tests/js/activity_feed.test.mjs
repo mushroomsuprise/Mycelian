@@ -74,11 +74,12 @@ test("normFilters and modeOf", () => {
     assert.equal(f.bits, false);
     assert.equal(f.follows, true, "only an explicit false turns a filter off");
     assert.equal(Object.keys(f).length, I.FILTERS.length);
-    assert.equal(I.modeOf(null), "live");
+    assert.equal(I.modeOf(null), "feed");
     assert.equal(I.modeOf({ mode: "person" }), "person");
-    assert.equal(I.modeOf({ tab: "previous" }), "history");
+    for (const old of ["feed", "live", "history"]) { assert.equal(I.modeOf({ mode: old }), "feed"); }
+    assert.equal(I.modeOf({ tab: "previous" }), "feed", "the old History tab is the Feed");
     assert.equal(I.modeOf({ condensed: true }), "person");
-    assert.equal(I.modeOf({ mode: "bogus" }), "live");
+    assert.equal(I.modeOf({ mode: "bogus" }), "feed");
 });
 
 test("normQueue normalises entries, clock offset and the contract flag", () => {
@@ -217,12 +218,12 @@ test("app feed builds the shell with header pill, tabs, search and filter menu",
     const s = feed();
     assert.equal(s.f.root.className, "afx");
     assert.equal(s.q(".afx-title").textContent, "Activity Feed");
-    assert.equal(s.qa('[data-a="mode"]').length, 3);
+    assert.deepEqual(s.qa('[data-a="mode"]').map((b) => b.textContent), ["dynamic_feedFeed", "group_workBy person"]);
     assert.equal(s.qa("[data-filter]").length, 12);
     assert.equal(s.q('[data-r="pill"]').textContent, "Ready");
-    assert.ok(s.q('[data-a="mode"][data-mode="live"]').classList.contains("is-on"));
-    assert.equal(s.f.mode(), "live");
-    assert.equal(s.q(".afx-empty").textContent.includes("No events yet this session"), true);
+    assert.ok(s.q('[data-a="mode"][data-mode="feed"]').classList.contains("is-on"));
+    assert.equal(s.f.mode(), "feed");
+    assert.equal(s.q(".afx-empty").textContent.includes("No events yet."), true);
     assert.ok(s.f.isAlive());
     assert.equal(s.F.instances.includes(s.f), true);
     s.f.destroy();
@@ -279,7 +280,7 @@ test("settings switch off icons, platform marks, messages, seq numbers and times
     assert.ok(s.f.root.classList.contains("no-icons"));
     assert.ok(s.f.root.classList.contains("is-wrap"));
     assert.equal(s.f.root.getAttribute("data-color"), "bar");
-    assert.equal(s.q(".afx-day").textContent, "This sessionnorthnewest first");
+    assert.equal(s.q(".afx-day").textContent, "Newestnorthnewest first", "Move to Earlier: Never");
     s.f.set("settings", { times: "clock" });
     s.f.set("live", [row()]);
     assert.match(s.q(".time").textContent, /\d/);
@@ -344,15 +345,16 @@ test("fitMonths marks cramped tags short and re-fits on resize", () => {
     assert.ok(b.q(".mm").classList.contains("is-short"));
 });
 
-test("add puts the newest row first, replaces same id and caps at 500", () => {
+test("add puts the newest row first, replaces same id and caps at 20,000", () => {
     const s = feed();
-    s.f.set("live", Array.from({ length: 600 }, (_, i) => row({ id: "r" + i, alert_id: "a" + i })));
-    assert.equal(s.f.s.live.length, 500);
+    s.f.set("live", Array.from({ length: 20050 }, (_, i) => row({ id: "r" + i, alert_id: "a" + i })));
+    assert.equal(s.f.s.live.length, 20000);
+    assert.equal(s.qa(".afx-row").length, 20, "only one page is drawn");
     s.f.set("add", row({ id: "r5", user: "Updated" }));
     assert.equal(s.f.s.live[0].user, "Updated");
     assert.equal(s.f.s.live.filter((r) => r.id === "r5").length, 1);
     s.f.set("add", row({ id: "new" }));
-    assert.equal(s.f.s.live.length, 500);
+    assert.equal(s.f.s.live.length, 20000);
     s.f.set("live", null);
     assert.equal(s.f.s.live.length, 0);
 });
@@ -482,41 +484,65 @@ test("dock rows show the playing tag under the name", () => {
     assert.ok(s.q(".afx-row .body .st .playtag"));
 });
 
-test("history view: loading, error, empty, filtered-empty, day heads and pager", () => {
+test("feed pages: items per page, pager, added pages, Earlier continued, storage link", () => {
     const s = feed();
-    s.q('[data-a="mode"][data-mode="history"]').click();
-    assert.deepEqual(s.sent.at(-1), ["mode", { mode: "history" }]);
-    assert.ok(s.q(".afx-empty").textContent.includes("Loading history"));
-    s.f.set("history", { error: "boom" });
-    assert.ok(s.q(".afx-empty").textContent.includes("Couldn't load stored alerts"));
-    s.f.set("history", { rows: [] });
-    assert.ok(s.q(".afx-empty").textContent.includes("No stored alerts yet"));
-    s.f.set("history", { alerts: [row({ ts: NOW }), row({ id: "y", ts: NOW - 86400 })], page: 2, total_pages: 3, total_count: 1234 });
-    assert.deepEqual(s.qa(".afx-day").map((d) => d.textContent), ["Today", "Yesterday"]);
-    const pager = s.q(".afx-pager");
-    assert.ok(pager.textContent.includes("Page 1 of 3"), "page comes from the view, not the payload");
-    assert.ok(pager.textContent.includes("(1,234 alerts)"));
-    assert.ok(pager.querySelector('[data-a="storage"]'));
+    s.f.set("settings", { page_limit: 2, max_pages: 1 });
+    s.f.set("live", [
+        row({ id: "1", alert_id: "1", user: "A", ts: NOW - 10 }), row({ id: "2", alert_id: "2", user: "B", ts: NOW - 20 }),
+        row({ id: "3", alert_id: "3", user: "C", ts: NOW - 4000, restored: true }),
+        row({ id: "4", alert_id: "4", user: "D", ts: NOW - 4100, restored: true }),
+        row({ id: "5", alert_id: "5", user: "E", ts: NOW - 90000, restored: true }),
+    ]);
+    const users = () => s.qa(".afx-row .user").map((u) => u.textContent);
+    assert.deepEqual(users(), ["A", "B"]);
+    const pager = () => s.q(".afx-pager");
+    assert.ok(pager().textContent.includes("Page 1 of 3"));
+    assert.ok(pager().textContent.includes("(5 events)"));
+    assert.equal(pager().querySelector(".afx-extra").textContent, "+2 pages this session", "pages past Pages to load");
+    assert.ok(pager().querySelector('[data-a="storage"]'));
     s.q('[data-a="page"][data-page="2"]').click();
     assert.deepEqual(s.sent.at(-1), ["page", { page: 2 }]);
-    s.f.set("history", { rows: [row()], page: 2, total_pages: 3 });
-    s.q('[data-a="page"][data-page="1"]').click();
-    assert.deepEqual(s.sent.at(-1), ["page", { page: 1 }]);
-    s.f.set("history", { rows: [row()], total_pages: 3 });
+    assert.deepEqual(users(), ["C", "D"]);
+    assert.deepEqual(s.qa(".afx-day").map((d) => d.textContent), ["Earlier (continued)northnewest first"]);
+    assert.ok(s.qa(".afx-row").every((r) => r.classList.contains("is-old")), "stored rows under Earlier are dimmed");
+    s.q('[data-a="page"][data-page="3"]').click();
+    assert.deepEqual(users(), ["E"]);
+    assert.ok(s.qa(".afx-day").some((d) => d.classList.contains("is-sub") && d.textContent === "Yesterday"), "day labels inside Earlier");
     const before = s.sent.length;
-    s.f.onClick({ target: Object.assign(s.doc.createElement("button"), {}), stopPropagation() {} });
     const fake = s.doc.createElement("button");
     fake.setAttribute("data-a", "page");
     fake.setAttribute("data-page", "9");
     s.q('[data-r="pager"]').appendChild(fake);
     fake.click();
     assert.equal(s.sent.length, before, "out-of-range pages are ignored");
-    s.f.set("view", { mode: "history", search: "nomatch" });
-    assert.ok(s.q(".afx-empty").textContent.includes("Nothing on this page matches"));
+    s.f.set("view", { page: 9 });
+    assert.ok(pager().textContent.includes("Page 3 of 3"), "a stale page shows the last one");
+    s.f.set("view", { page: 1, search: "a" });
+    assert.equal(s.q(".afx-pager"), null, "one page: no pager");
+    s.f.set("view", { page: 1, search: "", filters: { all: false, follows: true, bits: false } });
+    assert.equal(pager().querySelector(".afx-extra"), null, "filtered pages say nothing about added pages");
     const d = feed({ dock: true });
-    d.f.set("view", { mode: "history" });
-    d.f.set("history", { rows: [row()] });
+    d.f.set("settings", { page_limit: 1 });
+    d.f.set("live", [row(), row({ id: "2" })]);
     assert.equal(d.q('[data-a="storage"]'), null);
+});
+
+test("stored alerts younger than Move to Earlier sit under Recent and are not dimmed", () => {
+    const s = feed();
+    s.f.set("live", [row({ id: "live", ts: NOW - 30 }), row({ id: "st", alert_id: "st", ts: NOW - 60, restored: true }),
+        row({ id: "old", alert_id: "old", ts: NOW - 4000, restored: true })]);
+    const rows = s.qa(".afx-row");
+    assert.deepEqual(s.qa(".afx-day").map((d) => d.textContent), ["Recent · last 30 minnorthnewest first", "Earlier"]);
+    assert.ok(!rows[1].classList.contains("is-old") && !rows[1].classList.contains("is-new"), "active again, never NEW");
+    assert.ok(rows[2].classList.contains("is-old"));
+    assert.equal(s.q(".afx-gap"), null, "no break line between this run and stored alerts");
+});
+
+test("event kinds use the theme's event colours, falling back to the status colours", () => {
+    const { F } = setup();
+    assert.equal(F.rowFromAlert({ type: "follow" }).color, "var(--color-event-follow, var(--color-primary))");
+    assert.equal(F.rowFromAlert({ type: "Super Chat" }).color, "var(--color-event-superchat, var(--color-success))");
+    assert.equal(F.rowFromAlert({ type: "mystery" }).color, "var(--color-event-other, var(--color-primary))");
 });
 
 test("by-person view: loading, error, empty, filtered and grouped cards", () => {
@@ -552,21 +578,21 @@ test("by-person view: loading, error, empty, filtered and grouped cards", () => 
 
 test("view updates: older revisions are ignored, search is kept while typing", () => {
     const s = feed();
-    s.f.set("view", { mode: "history", revision: 5, page: 3, search: "abc" });
-    assert.equal(s.f.mode(), "history");
+    s.f.set("view", { mode: "person", revision: 5, page: 3, search: "abc" });
+    assert.equal(s.f.mode(), "person");
     assert.equal(s.f.s.view.page, 3);
     assert.equal(s.f.r.search.value, "abc");
-    s.f.set("view", { mode: "live", revision: 4 });
-    assert.equal(s.f.mode(), "history");
+    s.f.set("view", { mode: "feed", revision: 4 });
+    assert.equal(s.f.mode(), "person");
     s.f.r.search.focus();
     s.f.r.search.value = "typing";
-    s.f.set("view", { mode: "live", revision: 6, search: "server" });
+    s.f.set("view", { mode: "feed", revision: 6, search: "server" });
     assert.equal(s.f.s.view.search, "abc", "server search does not overwrite what the user is typing");
     assert.equal(s.f.r.search.value, "typing");
     s.f.set("view", { revision: 7, search: "typing" });
     assert.equal(s.f.s.view.search, "typing");
     s.f.set("view", null);
-    assert.equal(s.f.mode(), "live");
+    assert.equal(s.f.mode(), "feed");
 });
 
 test("buttons send pause, mute, skip, row-skip, settings, help, storage and copy-dock", () => {
@@ -584,7 +610,7 @@ test("buttons send pause, mute, skip, row-skip, settings, help, storage and copy
         ["pause", { paused: true }], ["mute", { muted: true }], ["skip", { alert_id: null }], ["skip", { alert_id: "p" }],
         ["settings", {}], ["help", {}], ["copy-dock", {}],
     ]);
-    s.q('[data-a="mode"][data-mode="live"]').click();
+    s.q('[data-a="mode"][data-mode="feed"]').click();
     assert.equal(s.sent.length, 7, "clicking the current tab sends nothing");
     const noSend = setup();
     const m = noSend.doc.createElement("div");
@@ -694,7 +720,7 @@ test("bindHosts creates one Feed per host, applies changed slots and re-binds a 
     const host = s.doc.querySelector(".afx-host");
     const inst = host.__afx;
     assert.ok(inst);
-    assert.equal(host.getAttribute("data-afx-bound"), "4");
+    assert.equal(host.getAttribute("data-afx-bound"), "5");
     assert.equal(inst.s.settings.layout, "cards");
     assert.equal(host.querySelector(".afx-row .user").textContent, "Host'User");
     assert.ok(s.win.__console.some(([k, a]) => k === "warn" && a[0] === "activity feed: bad slot"));
@@ -724,7 +750,7 @@ test("health reports bound and painted hosts", () => {
     host._rect = { width: 300, height: 400 };
     s.F.bindHosts();
     const h = plain(s.F.health());
-    assert.deepEqual(h, { ok: true, version: 4, hosts: 1, bound: 1, painted: 1, rows: 1, visible: 1 });
+    assert.deepEqual(h, { ok: true, version: 5, hosts: 1, bound: 1, painted: 1, rows: 1, visible: 1 });
 });
 
 test("a newer copy already on the page wins; the binder interval is installed once", () => {
@@ -737,7 +763,7 @@ test("a newer copy already on the page wins; the binder interval is installed on
     s.win.MycelianFeed = { version: 1 };
     loadScript(s.win, FILE);
     assert.equal(s.win.__mycelianFeedBinder, binder);
-    assert.equal(s.win.MycelianFeed.version, 4);
+    assert.equal(s.win.MycelianFeed.version, 5);
 });
 
 test("a binder failure is swallowed until the next tick", () => {
@@ -785,4 +811,89 @@ test("by-person cards show the Twitch profile picture over the initial", () => {
     assert.equal(users[1].querySelector(".afx-ava img"), null);
     assert.ok(!users[1].querySelector(".afx-ava").className.includes("has-photo"));
     assert.equal(users[2].querySelector(".afx-ava img"), null, "only https pictures are used");
+});
+
+function personFeed() {
+    const s = feed();
+    s.f.set("settings", { messages: false });
+    s.f.set("view", { mode: "person" });
+    s.f.set("person", {
+        alert_count: 3, user_count: 2, groups: [
+            { username: "Ann", events: 2, last_ts: NOW - 10, totals: [{ kind: "bits", text: "500 bits" }], items: [{ kind: "bits", text: "Cheered 500 bits", count: 1 }] },
+            { username: "Bob", events: 1, last_ts: NOW - 20, items: [{ kind: "follow", text: "Followed", count: 1 }] },
+        ],
+    });
+    return s;
+}
+
+test("by-person cards open a dialog of that person's rows, with their messages", () => {
+    const s = personFeed();
+    const card = s.qa(".afx-user")[0];
+    assert.ok(card.classList.contains("is-click"));
+    assert.equal(card.querySelector(".afx-user-more").textContent, "open_in_fullShow all 2 events");
+    assert.equal(s.qa(".afx-user")[1].querySelector(".afx-user-more").textContent, "open_in_fullShow event");
+    card.querySelector(".afx-user-name").click();
+    assert.deepEqual(s.sent.at(-1), ["person-events", { user: "Ann" }]);
+    const dlg = () => s.q(".afx-dlg");
+    assert.ok(dlg().textContent.includes("Loading Ann’s events"));
+    assert.equal(dlg().querySelector(".afx-user-sub").textContent, "2 events in the last 12 hours");
+    assert.equal(dlg().querySelector(".afx-total").textContent, "diamond500 bits");
+    s.f.set("person_rows", { user: "Bob", rows: [row({ user: "Bob" })] });
+    assert.ok(dlg().textContent.includes("Loading Ann’s events"), "rows for someone else are ignored");
+    s.f.set("person_rows", { user: "Ann", rows: [
+        row({ id: "b", alert_id: "b", user: "Ann", kind: "bits", what: "cheered 500 bits", msg: "GG!", ts: NOW - 5 }),
+        row({ id: "f", alert_id: "f", user: "Ann", what: "followed", ts: NOW - 5000, restored: true }),
+    ] });
+    const rows = dlg().querySelectorAll(".afx-dlg-list .afx-row");
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].querySelector(".msg").textContent, "“GG!”", "messages show here even when the feed hides them");
+    assert.equal(s.f.r.list.querySelector(".afx-row"), null, "the feed itself shows cards, not rows");
+    assert.deepEqual(dlg().querySelectorAll(".afx-day").map((d) => d.textContent), ["Recent · last 30 minnorthnewest first", "Earlier"]);
+    rows[0].querySelector(".what").click();
+    assert.deepEqual(s.sent.at(-1), ["replay", { alert_id: "b", user: "Ann", label: "Follow" }]);
+});
+
+test("person dialog: empty and error states, closing, and following the groups", () => {
+    const s = personFeed();
+    s.qa(".afx-user")[0].click();
+    s.f.set("person_rows", { user: "Ann", rows: [] });
+    assert.ok(s.q(".afx-dlg").textContent.includes("None of Ann’s events are left in the last 12 hours"));
+    s.f.set("person_rows", { user: "Ann", rows: [], success: false });
+    assert.ok(s.q(".afx-dlg").textContent.includes("Couldn’t load Ann’s events"));
+    s.q('[data-a="dialog-close"]').click();
+    assert.equal(s.q(".afx-modal"), null);
+    s.qa(".afx-user")[1].click();
+    assert.ok(s.q(".afx-dlg").textContent.includes("Loading Bob’s events"), "another person's old rows are not shown");
+    s.q(".afx-modal").click();
+    assert.equal(s.q(".afx-modal"), null, "a click outside closes it");
+    s.qa(".afx-user")[0].click();
+    fire(s.win, s.f.root, "keydown", { key: "Escape" });
+    assert.equal(s.q(".afx-modal"), null, "Escape closes it");
+    fire(s.win, s.f.root, "keydown", { key: "Escape" });
+    s.qa(".afx-user")[0].click();
+    const asked = s.sent.length;
+    s.f.set("person", { groups: [{ username: "Ann", events: 3 }], alert_count: 3 });
+    assert.deepEqual(s.sent.at(-1), ["person-events", { user: "Ann" }], "new groups ask again for the open person");
+    assert.equal(s.sent.length, asked + 1);
+    s.f.set("person", { groups: [{ username: "Ann", events: 3 }], loading: true });
+    assert.equal(s.sent.length, asked + 1, "not while the groups are still loading");
+    s.f.set("person", { groups: [{ username: "Bob", events: 1 }] });
+    assert.equal(s.q(".afx-modal"), null, "the person dropped out of the groups");
+    assert.equal(s.f.dialogUser, null);
+    s.qa(".afx-user")[0].click();
+    s.f.set("view", { mode: "feed" });
+    assert.equal(s.q(".afx-modal"), null, "leaving By person closes it");
+});
+
+test("person dialog: an unchanged repaint keeps the dialog and its scroll position", () => {
+    const s = personFeed();
+    s.qa(".afx-user")[0].click();
+    s.f.set("person_rows", { user: "Ann", rows: [row({ user: "Ann" }), row({ id: "2", alert_id: "2", user: "Ann" })] });
+    const list = s.q(".afx-dlg-list");
+    list.scrollTop = 40;
+    s.f.renderAll();
+    assert.equal(s.q(".afx-dlg-list"), list, "same element: nothing repainted");
+    s.f.set("person_rows", { user: "Ann", rows: [row({ user: "Ann", what: "changed" })] });
+    assert.notEqual(s.q(".afx-dlg-list"), list);
+    assert.equal(s.q(".afx-dlg-list").scrollTop, 40, "scroll position carried over");
 });

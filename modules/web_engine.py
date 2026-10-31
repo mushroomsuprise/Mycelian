@@ -8265,70 +8265,17 @@ class WebEngine:
                 )
                 return False
 
-        @self.socketio.on("get_stored_alerts_paginated")
-        @self._hub_alert_state_serialized
-        def handle_get_stored_alerts_paginated(data):
-            """
-            Handle get_stored_alerts_paginated websocket event.
-            Retrieves paginated stored alerts for the activity feed.
-
-            Args:
-                data (dict): Dictionary containing:
-                    - page (int): Page number to retrieve
-                    - limit (int): Number of alerts per page
-            """
-            logger.debug(
-                f"Received get_stored_alerts_paginated request from {request.sid}"
-            )
+        @self.socketio.on("activity_feed_person_events")
+        def handle_activity_feed_person_events(data):
+            """Rows behind one By person card, for the dock's person dialog."""
             try:
-                if not isinstance(data, dict):
-                    logger.error(
-                        "Invalid data format received in get_stored_alerts_paginated event"
-                    )
-                    return {
-                        "success": False,
-                        "error": "Invalid data format: dictionary required",
-                    }
+                user = str((data or {}).get("user") or "") if isinstance(data, dict) else ""
+                from .uiwindows.activity_feed import _json_ready, person_rows_payload
 
-                from .uiwindows.activity_feed import (
-                    _emit_stored_alerts_payload,
-                    load_restored_alerts,
-                )
-
-                # The page size comes from App Settings (the client's limit is ignored);
-                # the page is clamped to pages that exist.
-                try:
-                    page = int(data.get("page", 1))
-                except (TypeError, ValueError):
-                    page = 1
-                page = max(1, page)
-                alerts, info = load_restored_alerts(page)
-                _emit_stored_alerts_payload(alerts, info, to=request.sid)
-                return {
-                    "success": not info.get("error"),
-                    "page": info.get("page", 1),
-                    "total_pages": info.get("total_pages", 1),
-                    "total_count": info.get("total_count", 0),
-                }
+                return _json_ready(person_rows_payload(user))
             except Exception as e:
-                logger.error(
-                    f"Error handling get_stored_alerts_paginated: {str(e)}",
-                    exc_info=True,
-                )
-                error_response = {
-                    "success": False,
-                    "error": str(e),
-                    "alerts": [],
-                    "page": 1,
-                    "total_pages": 1,
-                    "total_count": 0,
-                    "has_prev": False,
-                    "has_next": False,
-                }
-                self.socketio.emit(
-                    "stored_alerts_paginated", error_response, to=request.sid
-                )
-                return error_response
+                logger.error("Error handling activity_feed_person_events: %s", e, exc_info=True)
+                return {"success": False, "user": "", "rows": [], "error": str(e)}
 
         @self.socketio.on("get_condensed_view_alerts")
         def handle_get_condensed_view_alerts(data):

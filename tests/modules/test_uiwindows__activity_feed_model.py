@@ -356,13 +356,14 @@ def test_ordinal(n, out):
 # ----------------------------------------------------------------- view modes
 
 def test_view_modes():
-    assert m.view_mode(None) == "live"
-    assert m.view_mode({"tab": "previous"}) == "history"
+    assert m.view_mode(None) == "feed"
+    assert m.view_mode({"tab": "previous"}) == "feed"  # the old History view
     assert m.view_mode({"condensed": True}) == "person"
-    assert m.view_mode({}) == "live"
-    assert m.mode_patch("history") == {"tab": "previous", "page": 1}
+    assert m.view_mode({}) == "feed"
     assert m.mode_patch("person") == {"tab": "current", "condensed": True}
-    assert m.mode_patch("live") == {"tab": "current", "condensed": False}
+    for old in ("feed", "live", "history"):
+        assert m.mode_patch(old) == {"tab": "current", "condensed": False}
+    assert set(m.ALL_MODE_NAMES) == {"feed", "person", "live", "history"}
     for mode in m.VIEW_MODES:
         assert m.view_mode(m.mode_patch(mode)) == mode
     assert m.normalize_search("  a   b \n c ") == "a b c"
@@ -391,4 +392,4 @@ def test_person_totals_every_kind():
     by_kind = {t["kind"]: t for t in m.person_totals([{"kind": "sub"}, {"kind": "streak"}, {"kind": "mystery"}])}
     assert by_kind["sub"]["text"] == "Sub" and by_kind["streak"]["text"] == "Streak"
     assert by_kind["mystery"]["icon"] == m.KIND_META["alert"][0]
-    assert by_kind["sub"]["icon"] == "star" and by_kind["sub"]["color"] == "var(--color-info)"
+    assert by_kind["sub"]["icon"] == "star" and by_kind["sub"]["color"] == "var(--color-event-sub, var(--color-info))"

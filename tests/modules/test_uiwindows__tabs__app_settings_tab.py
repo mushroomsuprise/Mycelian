@@ -96,6 +96,7 @@ def side(monkeypatch):
     feed = []
     monkeypatch.setattr(activity_feed, "set_feed_setting", lambda key, value: feed.append((key, value)) or True)
     monkeypatch.setattr(activity_feed, "_legacy_person_hours", lambda: 12)
+    monkeypatch.setattr(activity_feed, "reload_stored_feed", lambda: calls.append("feed-reload"))
     return SimpleNamespace(calls=calls, feed=feed)
 
 
@@ -265,7 +266,7 @@ def test_window_and_storage_rows(state, plugin, side):
         # storage
         tab.ui_elements["activity_feed_limit"].set_value(10)
         tab.ui_elements["activity_feed_max_pages"].set_value(3)
-        assert "<b>30</b> events" in tab._storage_note.content
+        assert "<b>30</b> stored events" in tab._storage_note.content
         tab.ui_elements["alert_storage_auto_trim"].set_value(False)
         assert "kept forever" in tab._storage_note.content
         assert all(dimmed(tab, k) for k in ("alert_storage_trim_mode", "alert_storage_keep_count", "alert_storage_keep_days"))
@@ -300,6 +301,22 @@ def test_update_checks_not_rescheduled_when_unchanged(state, notes, plugin, side
     tab._set("activity_feed_limit", 25)
     tab.save()
     assert "updates" not in side.calls
+
+
+@pytest.mark.parametrize("field, value, reloads", [
+    ("activity_feed_limit", 25, True), ("activity_feed_max_pages", 9, True), ("update_check_interval_minutes", 45, False),
+])
+def test_feed_reloads_when_its_size_changes(state, notes, plugin, side, field, value, reloads):
+    tab = ast.AppSettingsTab()
+    tab._load_from_state()
+    tab._set(field, value)
+    tab.save()
+    assert ("feed-reload" in side.calls) is reloads
+
+
+def test_reload_feed_error_swallowed(monkeypatch):
+    monkeypatch.setattr(activity_feed, "reload_stored_feed", lambda: (_ for _ in ()).throw(RuntimeError("x")))
+    ast.AppSettingsTab._reload_feed()
 
 
 def test_reschedule_update_checks_error_swallowed(monkeypatch):
