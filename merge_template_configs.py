@@ -84,9 +84,12 @@ def merge_element_arrays(new_array: List, old_array: List) -> List:
             if el_id in old_by_id:
                 old_el = old_by_id[el_id]
 
-                # Transfer user's value from old element
+                # Transfer user's value from old element. "transparent" is
+                # saved alongside a color value, so it travels with it.
                 if "value" in old_el and "value" in merged_el:
                     merged_el["value"] = clone_value(old_el["value"])
+                    if "transparent" in old_el:
+                        merged_el["transparent"] = clone_value(old_el["transparent"])
 
                 # Recursively merge nested elements arrays
                 if "elements" in merged_el and "elements" in old_el:

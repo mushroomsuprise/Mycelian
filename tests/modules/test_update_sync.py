@@ -290,7 +290,9 @@ def test_plan_changes_all_paths():
         dest_exists=lambda e: e["install"] == "seed2.txt",
         installed_unchanged=lambda e: e["install"] in ("fresh.txt", "cfg.json"),
     )
-    assert [e["install"] for e in plan["downloads"]] == ["changed.txt", "cfg.json", "seed.txt"]
+    # same.txt matches the last release hash but not the disk, so it is repaired
+    assert [e["install"] for e in plan["downloads"]] == ["same.txt", "changed.txt", "cfg.json", "seed.txt"]
+    assert plan["links"] == []
     assert plan["deletes"] == [{"install": "gone.txt", "bundle": True}]
     assert set(plan["files"]) == {e["install"] for e in entries}
     assert plan["files"]["cfg.json"] == {"sha256": merge["sha256"], "action": "merge", "bundle": False}
@@ -404,9 +406,14 @@ def test_directory_not_writable_cleanup_error(tmp_path, monkeypatch):
 def test_report_and_cancelled():
     state = {}
     us._report(state, "downloading", 1.5, None, "lbl")
-    assert state == {"phase": "downloading", "progress": 1.0, "speed_bps": 0.0, "label": "lbl"}
+    started = state.pop("started_at")
+    assert state == {"phase": "downloading", "progress": 1.0, "speed_bps": 0.0, "label": "lbl",
+                     "step_index": 3, "step_count": 5, "step_title": "Downloading changed files",
+                     "total_progress": pytest.approx(0.88), "eta_seconds": None}
+    state["started_at"] = started
     us._report(state, "x", -1, 10, "l")
-    assert state["progress"] == 0.0 and state["speed_bps"] == 10.0
+    assert state["progress"] == 0.0 and state["speed_bps"] == 0.0  # speed only while downloading
+    assert state["total_progress"] == 1.0 and state["eta_seconds"] == 0.0
     assert us._cancelled(None) is False
     ev = threading.Event()
     assert us._cancelled(ev) is False
@@ -634,7 +641,8 @@ def test_relaunch_target(monkeypatch, tmp_path):
 def test_write_apply_plan(monkeypatch, tmp_path, platform):
     monkeypatch.setattr(us.sys, "platform", platform)
     us._write_apply_plan(tmp_path, [(tmp_path / "s", tmp_path / "d")], [tmp_path / "old"], [tmp_path / "exe"],
-                         "linux", tmp_path / "exe")
+                         "linux", tmp_path / "exe", links=[("../lib", tmp_path / "ln")],
+                         result_path=tmp_path / "result.txt")
     raw = (tmp_path / "apply_plan.txt").read_bytes()
     if platform == "win32":
         assert raw.startswith(b"\xef\xbb\xbf")
@@ -642,16 +650,19 @@ def test_write_apply_plan(monkeypatch, tmp_path, platform):
     lines = raw.decode("utf-8").splitlines()
     assert lines == [
         f"PID\t{os.getpid()}", f"STAGING\t{tmp_path}", f"LAUNCH\tlinux\t{tmp_path / 'exe'}",
-        f"COPY\t{tmp_path / 's'}\t{tmp_path / 'd'}", f"DELETE\t{tmp_path / 'old'}", f"CHMOD\t{tmp_path / 'exe'}",
+        f"RESULT\t{tmp_path / 'result.txt'}",
+        f"DELETE\t{tmp_path / 'old'}", f"COPY\t{tmp_path / 's'}\t{tmp_path / 'd'}",
+        f"LINK\t../lib\t{tmp_path / 'ln'}", f"CHMOD\t{tmp_path / 'exe'}",
     ]
 
 
 def test_helper_scripts_cover_every_plan_op():
     ps = us._windows_helper_script()
     sh = us._unix_helper_script()
-    for op in ("PID", "STAGING", "LAUNCH", "COPY", "DELETE"):
+    for op in ("PID", "STAGING", "LAUNCH", "RESULT", "COPY", "DELETE"):
         assert op in ps and op in sh
-    assert "CHMOD" in sh  # Windows plans never carry CHMOD
+    assert "CHMOD" in sh and "LINK" in sh  # Windows plans never carry CHMOD or LINK
+    assert ".mycelian-old" in ps and ".mycelian-old" in sh  # both roll back a failed apply
     assert "helper.pid" in ps and "helper.pid" in sh
     assert sh.startswith("#!/bin/bash")
     assert "PYINSTALLER_RESET_ENVIRONMENT" in ps and "PYINSTALLER_RESET_ENVIRONMENT" in sh
@@ -1199,3 +1210,138 @@ def test_sync_release_reports_download_progress(install, monkeypatch):
     assert downloading[0] == ("downloading", 0.0, False, "Downloading Mycelian (1 of 1)")
     assert downloading[-1][1] == 1.0 and downloading[-1][2] is True
     assert [s[0] for s in seen][-2:] == ["merging", "restarting"]
+
+
+# --------------------------------------------------------------------------- links, exec bits, backups
+
+def link_entry(install, target, **kw):
+    return entry(f"packaged/macos/Mycelian.app/{install}", install=install, action="symlink",
+                 data=target.encode(), os_name="macos", bundle=True, target=target, **kw)
+
+
+@pytest.mark.parametrize("bad, match", [
+    ({"target": ""}, "no target"),
+    ({"target": "/usr/lib"}, "absolute link target"),
+    ({"target": "C:/x"}, "absolute link target"),
+    ({"target": "..\\x"}, "absolute link target"),
+    ({"sha256": "0" * 64}, "link hash is invalid"),
+])
+def test_validate_symlink_entry(bad, match):
+    e = link_entry("Contents/Resources/PIL", "../Frameworks/PIL")
+    us._validate_entry(e)
+    e.update(bad)
+    with pytest.raises(us.UpdateSyncError, match=match):
+        us._validate_entry(e)
+
+
+def test_symlink_target_within(tmp_path):
+    root = tmp_path / "Mycelian.app"
+    dest = root / "Contents" / "Resources" / "PIL"
+    assert us.symlink_target_within({"target": "../Frameworks/PIL"}, dest, root)
+    assert not us.symlink_target_within({"target": "../../../outside"}, dest, root)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX links")
+def test_symlink_matches(tmp_path):
+    (tmp_path / "real").mkdir()
+    (tmp_path / "ln").symlink_to("real")
+    assert us.symlink_matches(tmp_path / "ln", "real")
+    assert not us.symlink_matches(tmp_path / "ln", "other")
+    assert not us.symlink_matches(tmp_path / "real", "real")
+
+
+def test_plan_changes_links_and_merge_repair():
+    ok_link = link_entry("Contents/Resources/a", "../Frameworks/a")
+    new_link = link_entry("Contents/Resources/b", "../Frameworks/b")
+    cfg = entry("cfg.json", action="merge", data=b"{}")
+    local = {"files": {
+        "cfg.json": {"sha256": cfg["sha256"], "action": "merge"},  # same release, but the file is gone
+        "Contents/Resources/old": {"sha256": "4" * 64, "action": "symlink", "bundle": True},
+    }}
+    plan = us.plan_changes([ok_link, new_link, cfg], local, dest_exists=lambda e: False,
+                           installed_unchanged=lambda e: e is ok_link)
+    assert plan["links"] == [new_link]
+    assert plan["downloads"] == [cfg]
+    assert plan["deletes"] == [{"install": "Contents/Resources/old", "bundle": True}]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX links")
+def test_sync_release_macos_links_and_exec(install, monkeypatch, tmp_path):
+    app = tmp_path / "Mycelian.app"
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    (app / "Contents" / "Frameworks" / "same").mkdir(parents=True)
+    (app / "Contents" / "Resources").mkdir()
+    (app / "Contents" / "Resources" / "same").symlink_to("../Frameworks/same")
+    monkeypatch.setattr(us.sys, "platform", "darwin")
+    monkeypatch.setattr(us.sys, "executable", str(app / "Contents" / "MacOS" / "Mycelian"))
+    install.add("packaged/macos/Mycelian.app/Contents/MacOS/Mycelian", b"macbin", os_name="macos",
+                install_path="Contents/MacOS/Mycelian", bundle=True)
+    install.add("packaged/macos/Mycelian.app/Contents/MacOS/helper", b"tool", os_name="macos",
+                install_path="Contents/MacOS/helper", bundle=True)
+    install.manifest["files"][-1]["exec"] = True
+    install.manifest["files"].append(link_entry("Contents/Resources/same", "../Frameworks/same"))
+    install.manifest["files"].append(link_entry("Contents/Resources/PIL", "../Frameworks/PIL"))
+    assert sync() == 4242
+    lines = install.launches[0]["plan"].splitlines()
+    app = app.resolve()
+    assert [l for l in lines if l.startswith("LINK")] == [f"LINK\t../Frameworks/PIL\t{app / 'Contents/Resources/PIL'}"]
+    assert f"CHMOD\t{app / 'Contents/MacOS/helper'}" in lines
+    record = json.loads((install.launches[0]["staging"] / "update_manifest.json").read_text())
+    assert record["files"]["Contents/Resources/PIL"]["action"] == "symlink"
+
+
+def test_sync_release_refuses_escaping_link(install, monkeypatch, tmp_path):
+    app = tmp_path / "Mycelian.app"
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    monkeypatch.setattr(us.sys, "platform", "darwin")
+    monkeypatch.setattr(us.sys, "executable", str(app / "Contents" / "MacOS" / "Mycelian"))
+    install.add("packaged/macos/Mycelian.app/Contents/MacOS/Mycelian", b"macbin", os_name="macos",
+                install_path="Contents/MacOS/Mycelian", bundle=True)
+    install.manifest["files"].append(link_entry("Contents/x", "../../../../etc"))
+    with pytest.raises(us.UpdateSyncError, match="outside the install folder"):
+        sync()
+    assert install.launches == []
+
+
+def test_sync_release_reports_steps_and_backs_up_templates(install):
+    install.add("Mycelian", b"B" * 1000)
+    install.add("templates/cfg.json", b'{"a": 2}', action="merge", os_name=None)
+    (install.root / "templates").mkdir()
+    (install.root / "templates" / "cfg.json").write_text('{"a": "mine"}', encoding="utf-8")
+    install.write_local({})
+    state = {}
+    assert sync(state) == 4242
+    assert state["step_index"] == state["step_count"] == 5
+    assert state["total_progress"] == 1.0 and state["speed_bps"] == 0.0
+    assert state["bytes_total"] == 1000 + len(b'{"a": 2}') and state["files_done"] == state["files_total"] == 2
+    assert state["files_checked"] == 2
+    (backup,) = list((install.data_dir / us.TEMPLATE_BACKUPS_RELATIVE).iterdir())
+    assert (backup / "templates" / "cfg.json").read_text() == '{"a": "mine"}'
+    assert f"RESULT\t{us.update_result_path()}" in install.launches[0]["plan"].splitlines()
+
+
+def test_backup_template_configs_prunes(install, monkeypatch):
+    cfg = entry("templates/cfg.json", action="merge")
+    (install.root / "templates").mkdir()
+    (install.root / "templates" / "cfg.json").write_text("{}", encoding="utf-8")
+    stamps = iter(f"2026010{i}-000000" for i in range(1, 9))
+    monkeypatch.setattr(us.time, "strftime", lambda fmt: next(stamps))
+    for _ in range(7):
+        us.backup_template_configs([cfg], install.root, None, "1.14.0")
+    names = sorted(p.name for p in (install.data_dir / us.TEMPLATE_BACKUPS_RELATIVE).iterdir())
+    assert names == [f"2026010{i}-000000_v1.14.0" for i in range(3, 8)]
+    assert us.backup_template_configs([entry("x.txt")], install.root, None, "1") is None
+
+
+def test_sync_release_refuses_manifest_for_another_version(install):
+    install.add("Mycelian", b"bin")
+    state = {}
+    with pytest.raises(us.UpdateSyncError, match="Release 2.1 contains the files for version 2.0"):
+        run(us.sync_release(commit_sha=SHA, owner="o", repo="r", state=state, expected_version="2.1"))
+    assert install.stagings == []
+    assert run(us.sync_release(commit_sha=SHA, owner="o", repo="r", state={}, expected_version="v2.0.0")) == 4242
+
+
+def test_same_version():
+    assert us._same_version("1.14", "v1.14.0") and not us._same_version("1.14.1", "1.14.0")
+    assert us._same_version("odd", "odd") and not us._same_version("", "1.0")

@@ -1175,3 +1175,61 @@ def test_script_entry_point_calls_main(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exc:
         exec(code, ns)
     assert exc.value.code == 1
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX links and modes")
+def test_binary_manifest_entries_macos_links_and_exec(tmp_path, set_os):
+    set_os("macos")
+    app = tmp_path / "packaged" / "macos" / "Mycelian.app"
+    frameworks = app / "Contents" / "Frameworks"
+    resources = app / "Contents" / "Resources"
+    (frameworks / "PIL").mkdir(parents=True)
+    resources.mkdir(parents=True)
+    (app / "Contents" / "MacOS").mkdir()
+    exe = app / "Contents" / "MacOS" / "Mycelian"
+    exe.write_bytes(b"bin")
+    exe.chmod(0o755)
+    (frameworks / "PIL" / "_imaging.so").write_bytes(b"so")
+    (resources / "base_library.zip").write_bytes(b"zip")
+    (resources / "PIL").symlink_to("../Frameworks/PIL")  # directory link: not walked into
+    (frameworks / "base_library.zip").symlink_to("../Resources/base_library.zip")  # file link
+
+    entries = {e["install"]: e for e in bld._binary_manifest_entries(tmp_path)}
+    assert set(entries) == {
+        "Contents/MacOS/Mycelian",
+        "Contents/Frameworks/PIL/_imaging.so",
+        "Contents/Resources/base_library.zip",
+        "Contents/Resources/PIL",
+        "Contents/Frameworks/base_library.zip",
+    }
+    link = entries["Contents/Resources/PIL"]
+    assert link["action"] == "symlink" and link["target"] == "../Frameworks/PIL"
+    assert link["sha256"] == _sha(b"../Frameworks/PIL") and link["size"] == len(b"../Frameworks/PIL")
+    assert link["bundle"] is True and link["os"] == "macos"
+    assert entries["Contents/Frameworks/base_library.zip"]["target"] == "../Resources/base_library.zip"
+    assert entries["Contents/MacOS/Mycelian"]["exec"] is True
+    assert "exec" not in entries["Contents/Resources/base_library.zip"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX links")
+def test_binary_manifest_entries_reject_absolute_links(tmp_path, set_os):
+    set_os("macos")
+    app = tmp_path / "packaged" / "macos" / "Mycelian.app"
+    app.mkdir(parents=True)
+    (app / "real").write_bytes(b"x")
+    (app / "abs").symlink_to("/usr/lib")
+    with pytest.raises(RuntimeError, match="absolute path"):
+        bld._binary_manifest_entries(tmp_path)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX links")
+def test_copy_build_artifact_keeps_bundle_links(tmp_path):
+    src = tmp_path / "dist" / "Mycelian.app"
+    (src / "Frameworks").mkdir(parents=True)
+    (src / "Frameworks" / "lib.so").write_bytes(b"so")
+    (src / "Resources").mkdir()
+    (src / "Resources" / "lib.so").symlink_to("../Frameworks/lib.so")
+    dest = tmp_path / "out" / "Mycelian.app"
+    bld._copy_build_artifact(src, dest)
+    assert (dest / "Resources" / "lib.so").is_symlink()
+    assert os.readlink(dest / "Resources" / "lib.so") == "../Frameworks/lib.so"

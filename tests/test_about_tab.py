@@ -105,3 +105,22 @@ def test_page_stylesheet_reaches_an_already_open_page(monkeypatch):
     help_render.inject_page_stylesheet("x-style", ".a{color:red}")
     assert len(shared) == 1 and shared[0][1] == {"shared": True}
     assert len(scripts) == 2 and all("x-style" in s and "getElementById" in s for s in scripts)
+
+
+def test_older_versions_button_opens_window_or_explains(monkeypatch):
+    from types import SimpleNamespace
+
+    from modules.uiwindows.tabs import about_tab as at
+
+    tab = at.AboutTab.__new__(at.AboutTab)
+    shown = []
+    notes = []
+    monkeypatch.setattr(at, "notify", lambda message, **kw: notes.append((message, kw)))
+    monkeypatch.setattr(at.AboutTab, "_manager", staticmethod(lambda: SimpleNamespace(show_older_versions=lambda: shown.append(1) or True)))
+    tab._open_older_versions()
+    assert shown == [1] and notes == []
+    monkeypatch.setattr(at.AboutTab, "_manager", staticmethod(lambda: SimpleNamespace(show_older_versions=lambda: False)))
+    tab._open_older_versions()
+    monkeypatch.setattr(at.AboutTab, "_manager", staticmethod(lambda: None))
+    tab._open_older_versions()
+    assert [kw["title"] for _, kw in notes] == ["An update window is already open"] * 2

@@ -149,6 +149,7 @@ class AboutTab:
             with ui.element("div").classes("abt-hero-actions"):
                 primary_button("Check for updates", self._check_updates, icon="system_update")
                 outline_button("What's new", self.host.show_changelog_modal, icon="history")
+                outline_button("Older versions", self._open_older_versions, icon="settings_backup_restore")
                 ui.button(icon="open_in_new", on_click=lambda: webbrowser.open(GITHUB_URL)).props(
                     "flat round dense"
                 ).tooltip("Mycelian on GitHub")
@@ -217,6 +218,16 @@ class AboutTab:
         mgr = self._manager()
         if mgr is None or not mgr.show_available_update():
             self._check_updates()
+
+    def _open_older_versions(self) -> None:
+        mgr = self._manager()
+        if mgr is None or not mgr.show_older_versions():
+            notify(
+                "Close the update window that's already open, then try again.",
+                type="info",
+                source="updates",
+                title="An update window is already open",
+            )
 
     def _tick_update(self) -> None:
         if self.update_box is None or getattr(self.update_box, "is_deleted", False):

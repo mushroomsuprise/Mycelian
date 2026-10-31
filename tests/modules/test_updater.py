@@ -188,7 +188,7 @@ def test_fetch_success_and_cache(github):
     release(github)
     info = fetch()
     assert info == {"latest_version": "2.0.0", "tag_name": "v2.0.0", "release_notes": "notes",
-                    "release_url": "https://gh/r", "commit_sha": SHA}
+                    "release_url": "https://gh/r", "published_at": "", "commit_sha": SHA}
     assert up.last_update_check_error() is None
     assert github.timeouts[0].total == 15.0
     info["latest_version"] = "mutated"
@@ -516,3 +516,63 @@ def test_connected_client_error(monkeypatch, caplog):
     with caplog.at_level(logging.DEBUG, logger=up.logger.name):
         assert up._connected_client() is None
     assert "could not resolve a connected client" in caplog.text
+
+
+# --------------------------------------------------------------------------- release history / downgrade
+
+def releases_url(page):
+    return f"{up.GITHUB_API_BASE}/repos/{up.GITHUB_OWNER}/{up.GITHUB_REPO}/releases?per_page=100&page={page}"
+
+
+def test_fetch_release_history_filters_and_sorts(github):
+    github.routes[releases_url(1)] = FakeResponse(200, [
+        {"tag_name": "v1.14.0", "body": "first", "html_url": "u14", "published_at": "2026-10-01T00:00:00Z"},
+        {"tag_name": "v1.16.0", "body": "newest", "html_url": "u16"},
+        {"tag_name": "v1.15.0-beta", "prerelease": True},
+        {"tag_name": "v1.15.1", "draft": True},
+        {"tag_name": "v1.13.9"},  # older than the first release with this updater
+        {"tag_name": "nightly"},
+        {"tag_name": "1.15.0"},
+        "junk",
+    ])
+    history = asyncio.run(up.fetch_release_history())
+    assert [r["latest_version"] for r in history] == ["1.16.0", "1.15.0", "1.14.0"]
+    assert history[2] == {"latest_version": "1.14.0", "tag_name": "v1.14.0", "release_notes": "first",
+                          "release_url": "u14", "published_at": "2026-10-01T00:00:00Z"}
+    assert github.requested == [releases_url(1)]  # a short page is the last one
+
+
+def test_fetch_release_history_pages_and_errors(github):
+    github.routes[releases_url(1)] = FakeResponse(200, [{"tag_name": f"v1.14.{i}"} for i in range(100)])
+    github.routes[releases_url(2)] = FakeResponse(200, [])
+    assert len(asyncio.run(up.fetch_release_history())) == 100
+    assert github.requested == [releases_url(1), releases_url(2)]
+    github.routes[releases_url(1)] = FakeResponse(403, text="rate limited")
+    with pytest.raises(RuntimeError, match="HTTP 403"):
+        asyncio.run(up.fetch_release_history())
+
+
+def test_downgrade_choices():
+    history = [{"latest_version": v} for v in ("1.16.0", "1.15.0", "1.14.0")]
+    assert [r["latest_version"] for r in up.downgrade_choices("1.15.0", history)] == ["1.14.0"]
+    assert up.downgrade_choices("1.14.0", history) == []
+    assert up.downgrade_choices("not a version", history) == []
+
+
+def test_resolve_release_commit(github):
+    github.routes[commit_url("v1.14.0")] = FakeResponse(200, {"sha": SHA})
+    assert asyncio.run(up.resolve_release_commit("v1.14.0")) == SHA
+    assert asyncio.run(up.resolve_release_commit("v9")) is None
+
+
+@pytest.mark.parametrize("outcome, kind", [((True, ""), "success"), ((False, "copy failed"), "error"), (None, None)])
+def test_report_last_apply_result(monkeypatch, notes, outcome, kind):
+    monkeypatch.setattr(update_sync, "take_update_result", lambda: outcome)
+    up.UpdateManager().report_last_apply_result()
+    if kind is None:
+        assert notes == []
+        return
+    (msg, kw), = notes
+    assert kw["type"] == kind
+    if kind == "error":
+        assert "previous version was restored" in msg and kw["details"] == "copy failed"

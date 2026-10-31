@@ -513,3 +513,111 @@ def test_script_entry_point_exits_with_main_code(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exc:
         runpy.run_path(str(ROOT / "merge_template_configs.py"), run_name="__main__")
     assert exc.value.code == 1
+
+
+# --------------------------------------------------------------------------- update / downgrade semantics
+
+_OLDER = {
+    "template_name": "demo",
+    "elements": [
+        {"type": "separator", "label": "Font"},
+        {"id": "font", "type": "select", "label": "Font", "options": ["A", "B"], "value": "A"},
+        {"id": "size", "type": "number", "label": "Size", "value": 20},
+        {"id": "retired", "type": "text", "label": "Retired", "value": "x"},
+        {"id": "bg", "type": "color", "label": "Background", "value": "#000000", "transparent": False},
+    ],
+    "connector_actions": {"bump": {"action_name": "Bump", "elements": [{"id": "step", "value": 1}]}},
+}
+
+_NEWER = {
+    "template_name": "demo",
+    "elements": [
+        {"type": "separator", "label": "Font settings"},
+        {"id": "font", "type": "select", "label": "Typeface", "options": ["A", "B", "C"], "value": "C"},
+        {"id": "size", "type": "number", "label": "Size", "value": 24, "max": 200},
+        {"id": "bg", "type": "color", "label": "Background", "value": "#111111", "transparent": False},
+        {"id": "shadow", "type": "checkbox", "label": "Shadow", "value": True},
+    ],
+    "connector_actions": {
+        "bump": {"action_name": "Bump it", "elements": [{"id": "step", "value": 5}]},
+        "reset": {"action_name": "Reset", "elements": [{"id": "to", "value": 0}]},
+    },
+    "streamdeck_options": {"actions": {}},
+}
+
+
+def _user(config, **values):
+    user = json.loads(json.dumps(config))
+    for el in user["elements"]:
+        if el.get("id") in values:
+            el["value"] = values[el["id"]]
+    return user
+
+
+def _by_id(config):
+    return {el["id"]: el for el in config["elements"] if "id" in el}
+
+
+def test_update_adds_new_settings_drops_removed_and_keeps_user_values():
+    installed = _user(_OLDER, font="B", size=31, retired="mine", bg="rgba(0,0,0,0)")
+    _by_id(installed)["bg"]["transparent"] = True
+    installed["connector_actions"]["bump"]["elements"][0]["value"] = 9
+
+    merged = mtc.merge_config(_NEWER, installed)
+    els = _by_id(merged)
+    assert els["font"]["value"] == "B" and els["font"]["label"] == "Typeface"  # value kept, metadata new
+    assert els["font"]["options"] == ["A", "B", "C"]
+    assert els["size"]["value"] == 31 and els["size"]["max"] == 200
+    assert els["bg"]["value"] == "rgba(0,0,0,0)" and els["bg"]["transparent"] is True
+    assert els["shadow"]["value"] is True  # added with its default
+    assert "retired" not in els  # removed setting is gone
+    assert merged["elements"][0] == {"type": "separator", "label": "Font settings"}
+    assert merged["connector_actions"]["bump"] == {"action_name": "Bump it", "elements": [{"id": "step", "value": 9}]}
+    assert merged["connector_actions"]["reset"] == _NEWER["connector_actions"]["reset"]
+    assert merged["streamdeck_options"] == {"actions": {}}
+
+
+def test_downgrade_merges_newer_user_file_into_older_structure():
+    installed = _user(_NEWER, font="C", size=48, shadow=False)
+    installed["connector_actions"]["reset"]["elements"][0]["value"] = 7
+
+    merged = mtc.merge_config(_OLDER, installed)
+    els = _by_id(merged)
+    assert [el.get("id") for el in merged["elements"]] == [None, "font", "size", "retired", "bg"]
+    assert els["font"]["value"] == "C"  # kept even though the older options list lacks it
+    assert els["font"]["options"] == ["A", "B"]
+    assert els["size"]["value"] == 48 and "max" not in els["size"]
+    assert els["retired"]["value"] == "x"  # comes back with the older default
+    assert "shadow" not in els
+    assert set(merged["connector_actions"]) == {"bump"}
+    assert "streamdeck_options" not in merged
+
+
+def test_round_trip_through_a_downgrade_keeps_shared_values():
+    installed = _user(_NEWER, font="A", size=12)
+    down = mtc.merge_config(_OLDER, installed)
+    up = mtc.merge_config(_NEWER, down)
+    assert _by_id(up)["font"]["value"] == "A" and _by_id(up)["size"]["value"] == 12
+    assert _by_id(up)["shadow"]["value"] is True  # newer-only value returns as the default
+
+
+@pytest.mark.parametrize("path", sorted((ROOT / "templates" / "template_configs").glob("*.json")), ids=lambda p: p.name)
+def test_every_shipped_template_keeps_every_user_value(path):
+    config = json.loads(path.read_text(encoding="utf-8"))
+    marker = "__user__"
+
+    def mark(node):
+        if isinstance(node, dict):
+            return {k: (marker if k == "value" else mark(v)) for k, v in node.items()}
+        if isinstance(node, list):
+            return [mark(v) for v in node]
+        return node
+
+    def unmarked(node):
+        if isinstance(node, dict):
+            return any((k == "value" and v != marker) or (k != "value" and unmarked(v)) for k, v in node.items())
+        if isinstance(node, list):
+            return any(unmarked(v) for v in node)
+        return False
+
+    assert not unmarked(mtc.merge_config(config, mark(config)))

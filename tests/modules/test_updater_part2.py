@@ -8,7 +8,7 @@ Timers, threads, GitHub and the sync/restart are all faked; nothing is downloade
 
 from __future__ import annotations
 
-import asyncio
+import contextlib
 import logging
 import sys
 import threading
@@ -22,11 +22,9 @@ if str(ROOT / "tests") not in sys.path:
     sys.path.insert(0, str(ROOT / "tests"))
 
 import pytest  # noqa: E402
-from nicegui import ui  # noqa: E402
 
 from modules import update_sync  # noqa: E402
 from modules import updater as up  # noqa: E402
-from ui_sim import run_ui  # noqa: E402
 
 SHA = "c" * 40
 INFO = {"latest_version": "2.0.0", "tag_name": "v2.0.0", "commit_sha": SHA, "release_notes": "line1\nline2",
@@ -618,7 +616,53 @@ def test_flush_pending_prompt_build_error(mgr, sched, desktop, client, monkeypat
     assert "flush_pending_prompt error: ui" in caplog.text
 
 
-# --------------------------------------------------------------------------- update dialog (UI)
+# --------------------------------------------------------------------------- update window (UpdateDialog is faked)
+
+class FakeDialog:
+    """Records every view the manager asks for."""
+
+    def __init__(self, on_dismiss=None):
+        self.on_dismiss = on_dismiss
+        self.calls = []
+        self.gone = False
+        self.client = contextlib.nullcontext()
+        self.sub_label = SimpleNamespace(set_text=lambda text: self.calls.append(("sub", text)))
+
+    @property
+    def is_gone(self):
+        return self.gone
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+
+        def record(*args, **kwargs):
+            self.calls.append((name, args, kwargs))
+
+        return record
+
+    def dismiss(self):
+        self.calls.append(("dismiss",))
+        self.on_dismiss()
+
+    def named(self, name):
+        return [c for c in self.calls if c[0] == name]
+
+
+@pytest.fixture
+def dialogs(monkeypatch):
+    from modules.uiwindows import update_dialog
+
+    made = []
+
+    def factory(on_dismiss):
+        d = FakeDialog(on_dismiss)
+        made.append(d)
+        return d
+
+    monkeypatch.setattr(update_dialog, "UpdateDialog", factory)
+    return made
+
 
 @pytest.fixture
 def flow(mgr, monkeypatch):
@@ -627,191 +671,105 @@ def flow(mgr, monkeypatch):
     return calls
 
 
-def test_build_update_modal_shows_release(mgr, notes, flow):
-    def build():
-        mgr._build_update_modal(INFO, manual=False)
+@pytest.fixture
+def frozen(monkeypatch):
+    monkeypatch.setattr(update_sync, "can_apply_updates", lambda: True)
 
-    async def check(user):
-        await user.should_see("New Version Available: 2.0.0")
-        await user.should_see("View release on GitHub")
-        await user.should_see("What's new:")
-        await user.should_see("Decline")
-        await user.should_see("Update")
 
-    run_ui(build, check)
+def test_current_version(mgr, settings):
+    assert mgr._current_version() == "1.0.0"
+    settings.error = RuntimeError("db")
+    assert mgr._current_version() == ""
+
+
+def test_build_update_modal_shows_offer(mgr, settings, dialogs, notes, monkeypatch):
+    begun = []
+    monkeypatch.setattr(mgr, "_begin_install", lambda d, release, **k: begun.append((d, release, k)))
+    mgr._build_update_modal(INFO, manual=True)
+    (d,) = dialogs
+    (offer,) = d.named("show_offer")
+    assert offer[1] == (INFO, "1.0.0") and d.named("open")
     assert mgr._dialog_open is True
+    offer[2]["on_update"]()
+    assert begun == [(d, INFO, {})]
+    offer[2]["on_later"]()
+    assert mgr._dialog_open is False and mgr._session_suppressed is False  # manual: not suppressed
 
 
-def test_build_update_modal_minimal_info(mgr, notes, flow):
-    def build():
-        mgr._build_update_modal({"commit_sha": SHA})
-
-    async def check(user):
-        await user.should_see("New Version Available: ?")
-        await user.should_not_see("View release on GitHub")
-        await user.should_not_see("What's new:")
-
-    run_ui(build, check)
+def test_build_update_modal_later_suppresses_automatic_prompts(mgr, settings, dialogs, notes):
+    t = FakeTimer(1, None)
+    mgr._periodic_timer = t
+    mgr._build_update_modal(INFO, manual=False)
+    dialogs[0].named("show_offer")[0][2]["on_later"]()
+    assert mgr._session_suppressed is True and t.deactivated == 1 and mgr._dialog_open is False
 
 
-def test_build_update_modal_skips_when_open(mgr, notes, monkeypatch):
+def test_build_update_modal_skips_when_open(mgr, dialogs):
     mgr._dialog_open = True
-    monkeypatch.setattr(ui, "dialog", lambda: pytest.fail("no second dialog"))
     mgr._build_update_modal(INFO)
-
-
-@pytest.mark.parametrize("manual, suppressed", [(False, True), (True, False)])
-def test_build_update_modal_decline(mgr, notes, flow, manual, suppressed):
-    mgr._periodic_timer = FakeTimer(1, None)
-    timer = mgr._periodic_timer
-
-    def build():
-        mgr._build_update_modal(INFO, manual=manual)
-
-    async def check(user):
-        user.find("Decline").click()
-
-    run_ui(build, check)
-    assert mgr._dialog_open is False
-    assert mgr._session_suppressed is suppressed
-    assert (timer.deactivated == 1) is suppressed
-
-
-def test_build_update_modal_close_and_cancel_buttons(mgr, notes, flow):
-    def build():
-        mgr._build_update_modal(INFO)
-
-    async def check(user):
-        user.find("Cancel").click()
-        await user.should_see("Cancelling update...")
-        user.find("Close").click()
-
-    run_ui(build, check)
-    assert mgr._dialog_open is False
-
-
-def test_build_update_modal_update_from_source_checkout(mgr, notes, flow, monkeypatch):
-    monkeypatch.setattr(update_sync, "can_apply_updates", lambda: False)
-
-    def build():
-        mgr._build_update_modal(INFO)
-
-    async def check(user):
-        user.find("Update").click()
-
-    run_ui(build, check)
-    (msg, kw), = notes.notifications
-    assert "runs from source code" in msg and kw["title"] == "Updates need the installed app"
-    assert kw["actions"] == [{"kind": "copy", "text": INFO["release_url"], "label": "Copy release link"}]
-    assert flow == []
-
-
-@pytest.mark.parametrize("url, actions", [("https://x", [{"kind": "copy", "text": "https://x",
-                                                         "label": "Copy release link"}]), ("", None)])
-def test_build_update_modal_update_without_commit(mgr, notes, flow, monkeypatch, url, actions):
-    monkeypatch.setattr(update_sync, "can_apply_updates", lambda: True)
-
-    def build():
-        mgr._build_update_modal({"latest_version": "2", "commit_sha": "main", "release_url": url})
-
-    async def check(user):
-        user.find("Update").click()
-
-    run_ui(build, check)
-    (msg, kw), = notes.notifications
-    assert msg == "This release can't be installed automatically." and kw["actions"] == actions
-    assert flow == []
-
-
-def test_build_update_modal_source_checkout_without_url(mgr, notes, flow, monkeypatch):
-    monkeypatch.setattr(update_sync, "can_apply_updates", lambda: False)
-
-    def build():
-        mgr._build_update_modal({"latest_version": "2", "commit_sha": SHA})
-
-    async def check(user):
-        user.find("Update").click()
-
-    run_ui(build, check)
-    assert notes.notifications[0][1]["actions"] is None
-
-
-def test_build_update_modal_update_starts_sync(mgr, notes, flow, monkeypatch):
-    monkeypatch.setattr(update_sync, "can_apply_updates", lambda: True)
-
-    def build():
-        mgr._build_update_modal(INFO)
-
-    async def check(user):
-        user.find("Update").click()
-        await user.should_see("Preparing update...")
-
-    run_ui(build, check)
-    ((args, kwargs),) = flow
-    assert args[0] == SHA
-    assert isinstance(kwargs["cancel_event"], threading.Event)
-    assert notes.notifications == []
-
-
-def test_build_update_modal_start_failure_notifies(mgr, notes, monkeypatch):
-    monkeypatch.setattr(update_sync, "can_apply_updates", lambda: True)
-    monkeypatch.setattr(mgr, "_start_sync_flow", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("thread")))
-
-    def build():
-        mgr._build_update_modal(INFO)
-
-    async def check(user):
-        user.find("Update").click()
-
-    run_ui(build, check)
-    (msg, kw), = notes.notifications
-    assert msg == "The update couldn't start. Mycelian is unchanged."
-    assert kw["details"] == "RuntimeError: thread"
+    assert dialogs == []
 
 
 def test_build_update_modal_failure_notifies(mgr, notes, monkeypatch):
-    monkeypatch.setattr(ui, "dialog", lambda: (_ for _ in ()).throw(RuntimeError("no slot")))
+    from modules.uiwindows import update_dialog
+
+    monkeypatch.setattr(update_dialog, "UpdateDialog", lambda on_dismiss: (_ for _ in ()).throw(RuntimeError("ui")))
     mgr._build_update_modal(INFO)
-    assert mgr._dialog_open is False
-    (msg, kw), = notes.notifications
-    assert msg == "Mycelian 2.0.0 is available, but the update window couldn't open."
-    assert kw["dedupe_key"] == "updates:modal_failed" and kw["details"] == "RuntimeError: no slot"
     mgr._build_update_modal({})
-    assert notes.notifications[1][0] == "Mycelian update is available, but the update window couldn't open."
+    assert mgr._dialog_open is False
+    (msg, kw), (msg2, _) = notes.notifications
+    assert msg.startswith("Mycelian 2.0.0 is available") and kw["details"] == "RuntimeError: ui"
+    assert msg2.startswith("Mycelian update is available")
 
 
-# --------------------------------------------------------------------------- download / restart flow
+# --------------------------------------------------------------------------- _begin_install
 
-class FakeWidget:
-    def __init__(self, fail=False):
-        self.text = None
-        self.value = None
-        self.styles = []
-        self.is_deleted = False
-        self.fail = fail
-
-    def set_text(self, text):
-        if self.fail:
-            raise RuntimeError("widget gone")
-        self.text = text
-
-    def set_value(self, value):
-        self.value = value
-
-    def style(self, s):
-        self.styles.append(s)
-        return self
+def test_begin_install_from_source_checkout(mgr, notes, flow, monkeypatch):
+    monkeypatch.setattr(update_sync, "can_apply_updates", lambda: False)
+    d = FakeDialog()
+    mgr._begin_install(d, INFO)
+    (msg, kw), = notes.notifications
+    assert "runs from source" in msg and kw["actions"][0]["text"] == INFO["release_url"]
+    assert d.calls == [] and flow == []
+    mgr._begin_install(d, {"latest_version": "2"})
+    assert notes.notifications[1][1]["actions"] is None
 
 
-@pytest.fixture
-def widgets():
-    return SimpleNamespace(title=FakeWidget(), progress=FakeWidget(), bar=FakeWidget(), speed=FakeWidget(),
-                           cancel=FakeWidget(), close=FakeWidget())
+def test_begin_install_without_commit_or_tag(mgr, notes, flow, frozen):
+    d = FakeDialog()
+    mgr._begin_install(d, {"latest_version": "2", "commit_sha": "main", "release_url": "https://r"})
+    (msg, kw), = notes.notifications
+    assert msg == "This release can't be installed automatically." and kw["actions"][0]["text"] == "https://r"
+    mgr._begin_install(d, {"latest_version": "2"})
+    assert notes.notifications[1][1]["actions"] is None and flow == []
 
+
+def test_begin_install_starts_progress_and_sync(mgr, notes, flow, frozen):
+    d = FakeDialog()
+    mgr._begin_install(d, {"latest_version": "1.14.0", "tag_name": "v1.14.0"}, downgrade=True)
+    (progress,) = d.named("show_progress")
+    assert progress[1] == ("1.14.0",) and progress[2]["downgrade"] is True
+    ((args, kwargs),) = flow
+    assert args[0] is d and kwargs["downgrade"] is True
+    cancel_event = kwargs["cancel_event"]
+    progress[2]["on_cancel"]()
+    assert cancel_event.is_set() and ("sub", "Cancelling…") in d.calls
+    d.sub_label = None
+    progress[2]["on_cancel"]()  # a missing label is ignored
+
+
+def test_begin_install_start_failure_notifies(mgr, notes, frozen, monkeypatch):
+    monkeypatch.setattr(mgr, "_start_sync_flow", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("thread")))
+    mgr._begin_install(FakeDialog(), INFO)
+    (msg, kw), = notes.notifications
+    assert msg == "The update couldn't start. Mycelian is unchanged." and kw["details"] == "RuntimeError: thread"
+
+
+# --------------------------------------------------------------------------- _start_sync_flow
 
 @pytest.fixture
 def syncer(monkeypatch):
-    ns = SimpleNamespace(result=None, exc=None, state=None, kwargs=None)
+    ns = SimpleNamespace(result=None, exc=None, state=None, kwargs=None, resolved=[], resolve_to=SHA)
 
     async def fake_sync_release(**kwargs):
         ns.kwargs = kwargs
@@ -820,13 +778,13 @@ def syncer(monkeypatch):
             raise ns.exc
         return ns.result
 
+    async def fake_resolve(tag):
+        ns.resolved.append(tag)
+        return ns.resolve_to
+
     monkeypatch.setattr(update_sync, "sync_release", fake_sync_release)
+    monkeypatch.setattr(up, "resolve_release_commit", fake_resolve)
     return ns
-
-
-def start_flow(mgr, widgets, cancel_event=None):
-    w = widgets
-    mgr._start_sync_flow(SHA, w.title, w.progress, w.bar, w.speed, w.cancel, w.close, cancel_event=cancel_event)
 
 
 @pytest.fixture
@@ -842,205 +800,305 @@ def finish(monkeypatch):
     return ns
 
 
-def test_sync_flow_ready_then_restart(mgr, sched, widgets, syncer, sync_threads, client, finish):
-    syncer.result = 999
-    start_flow(mgr, widgets)
-    assert syncer.kwargs["commit_sha"] == SHA and syncer.kwargs["owner"] == up.GITHUB_OWNER
-    assert syncer.state["status"] == "ready" and syncer.state["helper_pid"] == 999 and syncer.state["done"]
-    poll = sched[0]
-    assert poll.interval == 0.2
-    mgr._dialog_open = True
-    poll.fn()
-    assert widgets.title.text == "Restarting Mycelian" and widgets.bar.value == 1.0
-    assert widgets.cancel.styles == ["display: none;"]
-    assert poll.active is False and poll.deactivated == 1
-    launch = sched[1]
-    assert launch.interval == 0.6 and launch.once
-    launch.fn()
-    assert finish.pids == [999] and mgr._dialog_open is False
-
-
-def test_sync_flow_restart_failure_shown_in_dialog(mgr, sched, widgets, syncer, sync_threads, client, finish,
-                                                   notes):
-    syncer.result = 5
-    finish.error = RuntimeError("helper died")
-    start_flow(mgr, widgets)
-    sched[0].fn()
-    sched[1].fn()
-    assert widgets.title.text == "Update failed" and widgets.progress.text == "helper died"
-    assert widgets.close.styles == ["display: inline-flex;"]
-    assert notes.notifications == []
-
-
-def test_sync_flow_restart_failure_after_window_closed(mgr, sched, widgets, syncer, sync_threads, client, finish,
-                                                       notes):
-    syncer.result = 5
-    finish.error = RuntimeError("helper died")
-    start_flow(mgr, widgets)
-    mgr._dialog_open = True
-    sched[0].fn()
-    widgets.title.is_deleted = True
-    sched[1].fn()
-    assert mgr._dialog_open is False
-    (msg, kw), = notes.notifications
-    assert msg == "The update downloaded, but Mycelian couldn't restart to apply it."
-    assert kw["details"] == "RuntimeError: helper died"
-
-
-def test_sync_flow_ready_with_dead_widgets(mgr, sched, widgets, syncer, sync_threads, client, finish):
-    syncer.result = 5
-    start_flow(mgr, widgets)
-    widgets.bar.is_deleted = True
-    sched[0].fn()
-    assert widgets.title.text is None
-    assert sched[1].interval == 0.6
-
-
-def test_sync_flow_ready_widget_errors_swallowed(mgr, sched, widgets, syncer, sync_threads, client, finish):
-    syncer.result = 5
-    widgets.title.fail = True
-    start_flow(mgr, widgets)
-    sched[0].fn()
-    assert len(sched) == 2
+def start_flow(mgr, dialog, release=INFO, cancel_event=None, downgrade=False):
+    mgr._start_sync_flow(dialog, release, cancel_event=cancel_event or threading.Event(), downgrade=downgrade)
 
 
 @pytest.mark.parametrize(
     "result, exc, cancel_set, status, error",
     [
-        (None, None, True, "cancelled", "Update cancelled."),
+        (4242, None, False, "ready", None),
         (None, None, False, "current", None),
+        (None, None, True, "cancelled", "Update cancelled."),
         (None, update_sync.UpdateCancelled("Stopped by user."), False, "cancelled", "Stopped by user."),
         (None, RuntimeError("disk full"), False, "failed", "disk full"),
+        (None, RuntimeError(), False, "failed", "RuntimeError"),
     ],
 )
-def test_sync_flow_worker_outcomes(mgr, sched, widgets, syncer, sync_threads, client, result, exc, cancel_set,
-                                   status, error):
+def test_sync_flow_worker_outcomes(mgr, sched, syncer, sync_threads, client, result, exc, cancel_set, status, error):
     syncer.result, syncer.exc = result, exc
     ev = threading.Event()
     if cancel_set:
         ev.set()
-    start_flow(mgr, widgets, ev)
-    assert syncer.state["status"] == status and syncer.state["error"] == error and syncer.state["done"]
+    start_flow(mgr, FakeDialog(), cancel_event=ev)
+    state = syncer.state
+    assert state["status"] == status and state["error"] == error and state["done"]
+    assert syncer.kwargs["commit_sha"] == SHA and syncer.kwargs["expected_version"] == "2.0.0"
+    assert syncer.resolved == []  # the release already had its commit
 
 
-def test_sync_flow_worker_without_cancel_event(mgr, sched, widgets, syncer, sync_threads, client):
-    start_flow(mgr, widgets, None)
-    assert syncer.state["status"] == "current"
+def test_sync_flow_resolves_tag_for_older_release(mgr, sched, syncer, sync_threads, client):
+    release = {"latest_version": "1.14.0", "tag_name": "v1.14.0"}
+    start_flow(mgr, FakeDialog(), release, downgrade=True)
+    assert syncer.resolved == ["v1.14.0"] and syncer.kwargs["commit_sha"] == SHA
+    syncer.resolve_to, syncer.kwargs, syncer.state = None, None, None
+    start_flow(mgr, FakeDialog(), release, downgrade=True)
+    assert syncer.kwargs is None  # never downloaded
+    assert syncer.state is None
 
 
-@pytest.mark.parametrize(
-    "status, error, label, title, bar",
-    [
-        ("cancelled", "Update cancelled.", None, "Update cancelled", 0.0),
-        ("current", None, "Installed files already match this release.", "Already up to date", 1.0),
-        ("failed", "disk full", None, "Update failed", 0.0),
-        ("failed", None, None, "Update failed", 0.0),
-    ],
-)
-def test_sync_flow_final_states_in_dialog(mgr, sched, widgets, syncer, sync_threads, client, notes, status, error,
-                                          label, title, bar):
-    start_flow(mgr, widgets)
-    syncer.state.update(status=status, error=error, label=label)
+def test_sync_flow_unresolvable_tag_fails(mgr, sched, syncer, sync_threads, client):
+    syncer.resolve_to = None
+    d = FakeDialog()
+    start_flow(mgr, d, {"latest_version": "1.14.0", "tag_name": "v1.14.0"})
     sched[0].fn()
-    assert widgets.title.text == title
-    assert widgets.progress.text == (error or label or "Unknown error")
-    assert widgets.speed.text == "" and widgets.bar.value == bar
-    assert widgets.close.styles == ["display: inline-flex;"] and widgets.cancel.styles == ["display: none;"]
-    assert sched[0].deactivated == 1 and notes.notifications == []
+    (failed,) = d.named("show_failed")
+    assert "couldn't find the files for Mycelian 1.14.0" in failed[1][1]
 
 
-def test_sync_flow_final_state_widget_errors(mgr, sched, widgets, syncer, sync_threads, client):
-    widgets.title.fail = True
-    widgets.cancel.style = lambda s: (_ for _ in ()).throw(RuntimeError("gone"))
-    start_flow(mgr, widgets)
-    syncer.state.update(status="failed", error="x")
+def test_sync_flow_starts_at_step_one(mgr, sched, held_threads, client):
+    d = FakeDialog()
+    start_flow(mgr, d)
+    client.client = object()
+    sched[0].fn()
+    ((_, (state,), _),) = d.named("render_progress")
+    assert state["step_index"] == 1 and state["label"] == "Finding Mycelian 2.0.0 on GitHub..."
+    assert sched[0].deactivated == 0
+
+
+def test_sync_flow_progress_skipped_without_ui(mgr, sched, held_threads, client):
+    d = FakeDialog()
+    start_flow(mgr, d)
+    sched[0].fn()  # no client
+    client.client = object()
+    d.gone = True
+    sched[0].fn()  # window gone
+    assert d.named("render_progress") == []
+
+
+def test_sync_flow_failed_shows_retry(mgr, sched, syncer, sync_threads, client, settings, monkeypatch):
+    syncer.exc = RuntimeError("disk full")
+    d = FakeDialog()
+    start_flow(mgr, d, downgrade=True)
     sched[0].fn()
     assert sched[0].deactivated == 1
+    ((_, (state, message, current), kwargs),) = d.named("show_failed")
+    assert message == "disk full" and current == "1.0.0" and kwargs["details"] == "disk full"
+    begun = []
+    monkeypatch.setattr(mgr, "_begin_install", lambda dialog, release, **k: begun.append((dialog, release, k)))
+    kwargs["on_retry"]()
+    assert begun == [(d, INFO, {"downgrade": True})]
 
 
-@pytest.mark.parametrize("status, notified", [("failed", 1), ("cancelled", 0), ("current", 0)])
-def test_sync_flow_final_state_after_window_closed(mgr, sched, widgets, syncer, sync_threads, client, notes,
-                                                   status, notified):
-    start_flow(mgr, widgets)
-    syncer.state.update(status=status, error="boom")
+def test_sync_flow_failed_after_window_closed_notifies(mgr, sched, syncer, sync_threads, client, notes):
+    syncer.exc = RuntimeError("boom")
+    d = FakeDialog()
+    start_flow(mgr, d)
     mgr._dialog_open = True
-    widgets.progress.is_deleted = True
+    d.gone = True
     sched[0].fn()
     assert mgr._dialog_open is False
-    assert len(notes.notifications) == notified
-    if notified:
-        assert notes.notifications[0][0] == "Something went wrong while downloading the update."
-        assert notes.notifications[0][1]["details"] == "boom"
+    (msg, kw), = notes.notifications
+    assert msg == "Something went wrong while downloading the update." and kw["details"] == "boom"
 
 
-def test_sync_flow_progress_updates(mgr, sched, widgets, syncer, sync_threads, client):
-    start_flow(mgr, widgets)
-    poll = sched[0]
-    client.client = object()
-    syncer.state.update(done=False, phase="downloading", progress=0.25, speed_bps=2048, label="Downloading x")
-    poll.fn()
-    assert widgets.bar.value == 0.25 and widgets.progress.text == "Downloading x"
-    assert widgets.speed.text == "Speed: 2 KB/s"
-    syncer.state.update(phase="merging", progress=None, speed_bps=None, label="")
-    poll.fn()
-    assert widgets.bar.value == 0.0 and widgets.progress.text == "Updating..." and widgets.speed.text == ""
-    assert poll.deactivated == 0
-
-
-def test_sync_flow_progress_skipped_without_ui(mgr, sched, widgets, syncer, sync_threads, client):
-    start_flow(mgr, widgets)
-    syncer.state.update(done=False, label="x")
-    sched[0].fn()  # no client
-    assert widgets.progress.text is None
-    client.client = object()
-    widgets.title.is_deleted = True
-    sched[0].fn()  # widgets gone
-    assert widgets.progress.text is None
-
-
-def test_sync_flow_unknown_status_stops_poll(mgr, sched, widgets, syncer, sync_threads, client):
-    start_flow(mgr, widgets)
-    syncer.state.update(status="working")
+@pytest.mark.parametrize("downgrade, title", [(False, "Already up to date"), (True, "Already on 2.0.0")])
+def test_sync_flow_current(mgr, sched, syncer, sync_threads, client, downgrade, title):
+    d = FakeDialog()
+    start_flow(mgr, d, downgrade=downgrade)
     sched[0].fn()
-    assert sched[0].deactivated == 1
+    ((_, args, kwargs),) = d.named("show_message")
+    assert args[0] == title and kwargs["kind"] == "is-ok"
 
 
-def test_sync_flow_poll_errors(mgr, sched, widgets, syncer, sync_threads, client, caplog):
-    start_flow(mgr, widgets)
+def test_sync_flow_cancelled(mgr, sched, syncer, sync_threads, client):
+    syncer.exc = update_sync.UpdateCancelled("Update cancelled.")
+    d = FakeDialog()
+    start_flow(mgr, d)
+    sched[0].fn()
+    ((_, args, _),) = d.named("show_message")
+    assert args == ("Update cancelled", "Nothing was changed.")
+
+
+@pytest.mark.parametrize("status", ["current", "cancelled"])
+def test_sync_flow_finished_after_window_closed(mgr, sched, syncer, sync_threads, client, notes, status):
+    syncer.exc = update_sync.UpdateCancelled("x") if status == "cancelled" else None
+    d = FakeDialog()
+    start_flow(mgr, d)
+    mgr._dialog_open = True
+    d.gone = True
+    sched[0].fn()
+    assert mgr._dialog_open is False and notes.notifications == [] and d.named("show_message") == []
+
+
+def test_sync_flow_ready_then_restart(mgr, sched, syncer, sync_threads, client, finish):
+    syncer.result = 4242
+    d = FakeDialog()
+    start_flow(mgr, d)
+    mgr._dialog_open = True
+    sched[0].fn()
+    assert d.named("render_progress") and d.named("show_restarting")
+    launch = sched[-1]
+    assert launch.interval == 0.6 and launch.once
+    launch.fn()
+    assert finish.pids == [4242] and mgr._dialog_open is False
+
+
+def test_sync_flow_ready_with_window_gone(mgr, sched, syncer, sync_threads, client, finish):
+    syncer.result = 4242
+    d = FakeDialog()
+    d.gone = True
+    start_flow(mgr, d)
+    sched[0].fn()
+    assert d.named("show_restarting") == []
+    sched[-1].fn()
+    assert finish.pids == [4242]
+
+
+def test_sync_flow_restart_failure_shown_in_window(mgr, sched, syncer, sync_threads, client, finish, settings):
+    syncer.result = 4242
+    finish.error = RuntimeError("no helper")
+    d = FakeDialog()
+    start_flow(mgr, d)
+    sched[0].fn()
+    sched[-1].fn()
+    ((_, (_, message, _), _),) = d.named("show_failed")
+    assert "couldn't restart to apply it. no helper" in message
+
+
+def test_sync_flow_restart_failure_after_window_closed(mgr, sched, syncer, sync_threads, client, finish, notes,
+                                                        monkeypatch):
+    syncer.result = 4242
+    finish.error = RuntimeError("no helper")
+    d = FakeDialog()
+    start_flow(mgr, d)
+    sched[0].fn()
+    d.gone = True
+    mgr._dialog_open = True
+    sched[-1].fn()
+    assert mgr._dialog_open is False
+    assert "couldn't restart to apply it" in notes.notifications[0][1]["details"]
+
+    d2 = FakeDialog()
+    d2.show_failed = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("ui gone"))
+    start_flow(mgr, d2)
+    sched[-1].fn()
+    sched[-1].fn()
+    assert notes.notifications[-1][1]["details"] == "RuntimeError: no helper"
+
+
+def test_sync_flow_unknown_status_stops_poll(mgr, sched, held_threads, client):
+    d = FakeDialog()
+    start_flow(mgr, d)
     poll = sched[0]
+    state = None  # the worker never ran; reach its state through the closure
+    for cell in held_threads[0].target.__closure__:
+        if isinstance(cell.cell_contents, dict) and "status" in cell.cell_contents:
+            state = cell.cell_contents
+    state.update(done=True, status="working")
+    poll.fn()
+    assert poll.deactivated == 1 and d.named("show_message") == [] and d.named("show_failed") == []
+
+
+def test_sync_flow_poll_errors_are_logged(mgr, sched, held_threads, client, caplog):
+    d = FakeDialog()
+    d.render_progress = lambda state: (_ for _ in ()).throw(RuntimeError("render"))
+    start_flow(mgr, d)
     client.client = object()
-    syncer.state.update(done=False, progress="not a number")
     with caplog.at_level(logging.ERROR, logger=up.logger.name):
-        poll.fn()
-    assert "poll_update error" in caplog.text and poll.deactivated == 0
-
-    class Exploding:
-        @property
-        def is_deleted(self):
-            raise RuntimeError("boom")
-
-    syncer.state.update(done=True)
-    w = widgets
-    mgr._start_sync_flow(SHA, w.title, w.progress, Exploding(), w.speed, w.cancel, w.close)
-    second = sched[-1]
-    second.fn()
-    assert second.deactivated == 1
+        sched[0].fn()
+    assert "poll_update error: render" in caplog.text and sched[0].deactivated == 0
 
 
-def test_sync_flow_stop_poll_tolerates_timer_errors(mgr, sched, widgets, syncer, sync_threads, client):
-    start_flow(mgr, widgets)
+def test_sync_flow_stop_poll_tolerates_timer_errors(mgr, sched, syncer, sync_threads, client):
+    d = FakeDialog()
+    start_flow(mgr, d)
     poll = sched[0]
     poll.active_error = RuntimeError("x")
     poll.deactivate_error = RuntimeError("y")
-    syncer.state.update(status="current")
     poll.fn()
     assert poll.deactivated == 1
-    poll.fn()  # timer slot cleared: nothing else happens
-    assert poll.deactivated == 1
+    poll.fn()  # the timer slot is cleared: nothing else is shown
+    assert len(d.named("show_message")) == 2
 
 
-def test_sync_flow_setup_error_logged(mgr, widgets, monkeypatch, caplog):
+def test_sync_flow_setup_error_logged(mgr, monkeypatch, caplog):
     monkeypatch.setattr(threading, "Thread", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no threads")))
     with caplog.at_level(logging.ERROR, logger=up.logger.name):
-        start_flow(mgr, widgets)
+        start_flow(mgr, FakeDialog())
     assert "_start_sync_flow error: no threads" in caplog.text
+
+
+# --------------------------------------------------------------------------- older versions
+
+@pytest.fixture
+def history(monkeypatch):
+    ns = SimpleNamespace(releases=[{"latest_version": v} for v in ("1.16.0", "1.15.0", "1.14.0")], error=None)
+
+    async def fake_history():
+        if ns.error:
+            raise ns.error
+        return ns.releases
+
+    monkeypatch.setattr(up, "fetch_release_history", fake_history)
+    return ns
+
+
+def test_show_older_versions_lists_older_releases(mgr, sched, settings, dialogs, history, sync_threads, monkeypatch):
+    settings.value.version = "1.16.0"
+    assert mgr.show_older_versions() is True
+    (d,) = dialogs
+    assert d.named("show_loading") and d.named("open") and mgr._dialog_open is True
+    sched[0].fn()
+    assert sched[0].deactivated == 1
+    ((_, (current, choices), kwargs),) = d.named("show_picker")
+    assert current == "1.16.0" and [r["latest_version"] for r in choices] == ["1.15.0", "1.14.0"]
+    begun = []
+    monkeypatch.setattr(mgr, "_begin_install", lambda dialog, release, **k: begun.append((dialog, release, k)))
+    kwargs["on_install"](choices[1])
+    assert begun == [(d, choices[1], {"downgrade": True})]
+    kwargs["on_cancel"]()
+    assert mgr._dialog_open is False
+
+
+def test_show_older_versions_waits_for_github(mgr, sched, settings, dialogs, history, held_threads):
+    mgr.show_older_versions()
+    sched[0].fn()
+    assert sched[0].deactivated == 0 and dialogs[0].named("show_picker") == []
+
+
+def test_show_older_versions_error(mgr, sched, settings, dialogs, history, sync_threads):
+    history.error = RuntimeError("HTTP 403")
+    mgr.show_older_versions()
+    sched[0].fn()
+    ((_, args, kwargs),) = dialogs[0].named("show_message")
+    assert args[0] == "Couldn't load older versions" and kwargs["kind"] == "is-error"
+
+
+def test_show_older_versions_cancelled_or_closed(mgr, sched, settings, dialogs, history, held_threads):
+    mgr.show_older_versions()
+    d = dialogs[0]
+    d.named("show_loading")[0][2]["on_cancel"]()
+    held_threads[0].target()
+    sched[0].fn()
+    assert d.named("show_picker") == [] and mgr._dialog_open is False
+
+    mgr.show_older_versions()
+    d2 = dialogs[1]
+    d2.gone = True
+    held_threads[1].target()
+    sched[-1].fn()
+    assert d2.named("show_picker") == []
+
+
+def test_show_older_versions_picker_error_logged(mgr, sched, settings, dialogs, history, sync_threads, caplog):
+    mgr.show_older_versions()
+    dialogs[0].show_picker = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("ui"))
+    with caplog.at_level(logging.ERROR, logger=up.logger.name):
+        sched[0].fn()
+    assert "older versions window error: ui" in caplog.text
+
+
+def test_show_older_versions_refused_while_open(mgr, client, dialogs):
+    client.client = object()
+    mgr._dialog_open = True
+    assert mgr.show_older_versions() is False and dialogs == []
+
+
+def test_show_older_versions_window_error(mgr, settings, monkeypatch, caplog):
+    from modules.uiwindows import update_dialog
+
+    monkeypatch.setattr(update_dialog, "UpdateDialog", lambda on_dismiss: (_ for _ in ()).throw(RuntimeError("ui")))
+    with caplog.at_level(logging.ERROR, logger=up.logger.name):
+        assert mgr.show_older_versions() is False
+    assert mgr._dialog_open is False and "show_older_versions error: ui" in caplog.text

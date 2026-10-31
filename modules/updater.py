@@ -51,6 +51,11 @@ GITHUB_API_BASE = "https://api.github.com"
 _GITHUB_RELEASE_CACHE_TTL_SEC = 60.0
 _github_release_cache_lock = threading.Lock()
 _github_release_cache: Optional[Tuple[float, Optional[Dict[str, Any]]]] = None
+# The first release whose updater can install an arbitrary release. Older tags have
+# no per-file manifest this updater understands, so they are never offered.
+MIN_DOWNGRADE_VERSION = "1.14.0"
+_RELEASE_HISTORY_PAGES = 3
+
 # Why the last GitHub fetch returned nothing: (plain message, technical details), or None
 # when it worked or found no release worth offering. Manual checks report it.
 _last_fetch_error: Optional[Tuple[str, str]] = None
@@ -195,6 +200,7 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
                             "tag_name": tag_name,
                             "release_notes": release_notes,
                             "release_url": release_page_url,
+                            "published_at": data.get("published_at") or "",
                         }
                     else:
                         pending = None
@@ -275,6 +281,76 @@ async def fetch_latest_update_info_from_github(*, force_refresh: bool = False):
     if result is None:
         return None
     return copy.deepcopy(result)
+
+def _release_version(tag_name: Any) -> Optional[str]:
+    text = str(tag_name or "").strip().lstrip("vV")
+    try:
+        parse_version(text)
+    except Exception:
+        return None
+    return text or None
+
+
+async def fetch_release_history() -> list:
+    """Published releases this updater can install, newest first.
+
+    Drafts, pre-releases, unparseable tags and anything older than
+    ``MIN_DOWNGRADE_VERSION`` are left out. Commit SHAs are not resolved here;
+    ``resolve_release_commit`` does that for the one release the user picks.
+    Raises ``aiohttp.ClientError``/``RuntimeError`` when GitHub can't be read.
+    """
+    floor = parse_version(MIN_DOWNGRADE_VERSION)
+    releases: list = []
+    timeout = aiohttp.ClientTimeout(total=20.0)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for page in range(1, _RELEASE_HISTORY_PAGES + 1):
+            url = (
+                f"{GITHUB_API_BASE}/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases"
+                f"?per_page=100&page={page}"
+            )
+            async with session.get(url) as response:
+                if response.status != 200:
+                    body = (await response.text())[:300]
+                    raise RuntimeError(f"GitHub returned HTTP {response.status}: {body}")
+                data = await response.json(content_type=None)
+            if not isinstance(data, list) or not data:
+                break
+            for item in data:
+                if not isinstance(item, dict) or item.get("draft") or item.get("prerelease"):
+                    continue
+                version = _release_version(item.get("tag_name"))
+                if version is None or parse_version(version) < floor:
+                    continue
+                releases.append(
+                    {
+                        "latest_version": version,
+                        "tag_name": str(item.get("tag_name")),
+                        "release_notes": item.get("body") or "",
+                        "release_url": item.get("html_url") or "",
+                        "published_at": item.get("published_at") or "",
+                    }
+                )
+            if len(data) < 100:
+                break
+    releases.sort(key=lambda r: parse_version(r["latest_version"]), reverse=True)
+    return releases
+
+
+def downgrade_choices(current_app_version: str, releases: list) -> list:
+    """Releases older than the running version, newest first."""
+    try:
+        current = parse_version(str(current_app_version))
+    except Exception:
+        return []
+    return [r for r in releases if parse_version(r["latest_version"]) < current]
+
+
+async def resolve_release_commit(tag_name: str) -> Optional[str]:
+    """The commit a release tag points at, or None when GitHub can't resolve it."""
+    timeout = aiohttp.ClientTimeout(total=15.0)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        return await _fetch_release_commit_sha(session, tag_name)
+
 
 async def check_for_updates(current_app_version: str, *, force_refresh: bool = False):
     """
@@ -508,6 +584,7 @@ class UpdateManager:
             logger.debug("UpdateManager.on_ui_ready already scheduled; skipping")
             return
         self._ui_ready_scheduled = True
+        self.report_last_apply_result()
 
         try:
             def _after_settle_schedule_pre_check() -> None:
@@ -527,6 +604,35 @@ class UpdateManager:
         except Exception as e:
             logger.error(f"UpdateManager.on_ui_ready error: {e}", exc_info=True)
             self._ui_ready_scheduled = False
+
+    def report_last_apply_result(self) -> None:
+        """Say whether the update applied while Mycelian was closed went in."""
+        try:
+            outcome = update_sync.take_update_result()
+        except Exception as e:
+            logger.debug("UpdateManager: could not read the last update result: %s", e)
+            return
+        if outcome is None:
+            return
+        applied, message = outcome
+        if applied:
+            try:
+                from . import dataobjects
+
+                version = dataobjects.state_manager.get_app_settings().version
+            except Exception:
+                version = ""
+            notify(
+                f"Mycelian is now on version {version}." if version else "The update was installed.",
+                type="success",
+                source="updates",
+                title="Update installed",
+            )
+            return
+        _notify_update_failed(
+            "Mycelian couldn't replace its files, so the previous version was restored.",
+            message,
+        )
 
     def _run_initial_check(self) -> None:
         if self._session_suppressed:
@@ -818,136 +924,46 @@ class UpdateManager:
 
         state["timer"] = app_schedule(1.0, _show)
 
+    def _current_version(self) -> str:
+        try:
+            from . import dataobjects
+
+            return str(dataobjects.state_manager.get_app_settings().version or "")
+        except Exception:
+            return ""
+
+    def _new_dialog(self):
+        from .uiwindows.update_dialog import UpdateDialog
+
+        def dismissed() -> None:
+            self._dialog_open = False
+
+        dialog = UpdateDialog(on_dismiss=dismissed)
+        self._dialog_open = True
+        return dialog
+
     def _build_update_modal(self, update_info: Dict[str, Any], *, manual: bool = False) -> None:
         try:
-            from nicegui import ui
-
             if self._dialog_open:
                 logger.info("UpdateManager: update dialog already open; skipping")
                 return
+            dialog = self._new_dialog()
 
-            version = update_info.get("latest_version", "?")
-            commit_sha = update_sync.normalize_commit_sha(update_info.get("commit_sha")) or ""
-            release_notes = update_info.get("release_notes", "")
-            release_url = update_info.get("release_url", "")
+            def on_later() -> None:
+                try:
+                    if not manual:
+                        self._session_suppressed = True
+                        self._cancel_periodic()
+                finally:
+                    dialog.dismiss()
 
-            self._dialog_open = True
-
-            update_dialog = ui.dialog().props("persistent")
-            with update_dialog:
-                card = ui.card().classes("w-[500px] p-6").style(
-                    "background: linear-gradient(135deg, #2a1d4a 0%, #1a1a2e 100%);"
-                    "color: white; border-radius: 12px; border: 1px solid rgba(115, 0, 255, 0.3);"
-                    "box-shadow: 0 8px 32px rgba(115, 0, 255, 0.2);"
-                )
-                with card:
-                    title_label = ui.label(f"🚀 New Version Available: {version}").classes("text-h5 font-bold mb-4").style("color: #b980ff;")
-                    content_area = ui.column().classes("w-full gap-3")
-                    with content_area:
-                        if release_url:
-                            ui.link("View release on GitHub", release_url).classes("text-sm underline").style("color: #7c3aed;")
-                        if release_notes:
-                            ui.label("📋 What's new:").classes("text-sm font-semibold mt-2").style("color: #e2e8f0;")
-                            # Create scrollable area for release notes
-                            with ui.scroll_area().classes("w-full").style("max-height: 150px; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px; background: rgba(0,0,0,0.2);"):
-                                ui.html(release_notes.replace("\n", "<br>")).classes("text-sm").style("color: #cbd5e1; line-height: 1.4;")
-
-                    progress_area = ui.column().classes("w-full gap-3").style("display: none;")
-                    with progress_area:
-                        progress_label = ui.label("Preparing update...").classes("text-sm").style("color: #e2e8f0;")
-                        progress_bar = ui.linear_progress(value=0, show_value=False).classes("w-full").style("height: 8px;")
-                        speed_label = ui.label("").classes("text-xs").style("color: #94a3b8;")
-
-                    button_row = ui.row().classes("w-full justify-end gap-2 mt-4")
-                    cancel_event = threading.Event()
-
-                    def on_decline():
-                        try:
-                            if not manual:
-                                self._session_suppressed = True
-                                self._cancel_periodic()
-                        finally:
-                            self._dialog_open = False
-                            update_dialog.close()
-
-                    def on_close():
-                        self._dialog_open = False
-                        update_dialog.close()
-
-                    def on_accept():
-                        try:
-                            if not update_sync.can_apply_updates():
-                                notify(
-                                    "This copy of Mycelian runs from source code, so it can't update itself.",
-                                    type="warning",
-                                    source="updates",
-                                    title="Updates need the installed app",
-                                    hint="Install the packaged build from the release page, or update your checkout with git.",
-                                    actions=[{"kind": "copy", "text": release_url, "label": "Copy release link"}]
-                                    if release_url else None,
-                                )
-                                return
-                            if not commit_sha:
-                                notify(
-                                    "This release can't be installed automatically.",
-                                    type="warning",
-                                    source="updates",
-                                    title="Can't install this update",
-                                    hint="Download it from the release page on GitHub instead.",
-                                    actions=[{"kind": "copy", "text": release_url, "label": "Copy release link"}]
-                                    if release_url else None,
-                                )
-                                return
-                            content_area.style("display: none;")
-                            progress_area.style("display: block;")
-                            try:
-                                decline_btn.style("display: none;")
-                                update_btn.style("display: none;")
-                                cancel_btn.style("display: inline-flex;")
-                            except Exception:
-                                pass
-
-                            self._start_sync_flow(
-                                commit_sha,
-                                title_label,
-                                progress_label,
-                                progress_bar,
-                                speed_label,
-                                cancel_btn,
-                                close_btn,
-                                cancel_event=cancel_event,
-                            )
-                        except Exception as e:
-                            logger.error(f"Error starting update: {e}", exc_info=True)
-                            notify(
-                                "The update couldn't start. Mycelian is unchanged.",
-                                type="error",
-                                source="updates",
-                                title="Couldn't start the update",
-                                hint="Close the update window and try again from Settings → About.",
-                                details=f"{type(e).__name__}: {e}",
-                            )
-
-                    with button_row:
-                        decline_btn = ui.button("Decline", on_click=on_decline).props("flat").classes("secondary-text").style("border: 1px solid rgba(255,255,255,0.2);")
-                        update_btn = ui.button("Update", on_click=on_accept).props("unelevated").classes("font-semibold").style("background: linear-gradient(135deg, #7c3aed 0%, #b980ff 100%); color: white; border: none;")
-                        cancel_btn = ui.button(
-                            "Cancel",
-                            on_click=lambda: (
-                                cancel_event.set(),
-                                progress_label.set_text("Cancelling update..."),
-                            ),
-                        ).props("flat").classes("secondary-text").style(
-                            "border: 1px solid rgba(255,255,255,0.2); display: none;"
-                        )
-                        close_btn = ui.button(
-                            "Close",
-                            on_click=on_close,
-                        ).props("flat").classes("secondary-text").style(
-                            "border: 1px solid rgba(255,255,255,0.2); display: none;"
-                        )
-
-            update_dialog.open()
+            dialog.show_offer(
+                update_info,
+                self._current_version(),
+                on_update=lambda: self._begin_install(dialog, update_info),
+                on_later=on_later,
+            )
+            dialog.open()
         except Exception as e:
             self._dialog_open = False
             logger.error(f"UpdateManager._show_update_modal error: {e}", exc_info=True)
@@ -962,31 +978,144 @@ class UpdateManager:
                 actions=nav_actions_settings("About"),
             )
 
+    def show_older_versions(self) -> bool:
+        """Open the older-versions window (Settings → About). False if a window is already open."""
+        if self._dialog_is_open():
+            return False
+        current = self._current_version()
+        try:
+            dialog = self._new_dialog()
+        except Exception as e:
+            logger.error(f"UpdateManager.show_older_versions error: {e}", exc_info=True)
+            self._dialog_open = False
+            return False
+        loading: Dict[str, Any] = {"done": False, "releases": None, "error": None, "timer": None, "cancelled": False}
+
+        def cancel() -> None:
+            loading["cancelled"] = True
+            dialog.dismiss()
+
+        dialog.show_loading("Older versions", "Loading releases from GitHub…", on_cancel=cancel)
+        dialog.open()
+
+        def worker() -> None:
+            try:
+                loading["releases"] = asyncio.run(fetch_release_history())
+            except Exception as e:
+                logger.warning("UpdateManager: could not list releases: %s", e)
+                loading["error"] = f"{type(e).__name__}: {e}"
+            finally:
+                loading["done"] = True
+
+        def poll() -> None:
+            if not loading["done"]:
+                return
+            timer = loading["timer"]
+            if timer is not None:
+                timer.deactivate()
+                loading["timer"] = None
+            if loading["cancelled"] or dialog.is_gone:
+                return
+            try:
+                with dialog.client:
+                    if loading["error"]:
+                        dialog.show_message(
+                            "Couldn't load older versions",
+                            "GitHub didn't answer. Check your internet connection and try again.",
+                            kind="is-error",
+                            art="cloud_off",
+                        )
+                        return
+                    dialog.show_picker(
+                        current,
+                        downgrade_choices(current, loading["releases"] or []),
+                        on_install=lambda release: self._begin_install(dialog, release, downgrade=True),
+                        on_cancel=dialog.dismiss,
+                    )
+            except Exception as e:
+                logger.error(f"UpdateManager: older versions window error: {e}", exc_info=True)
+
+        threading.Thread(target=worker, daemon=True).start()
+        loading["timer"] = app_schedule(0.2, poll)
+        return True
+
+    def _begin_install(self, dialog, release: Dict[str, Any], *, downgrade: bool = False) -> None:
+        """Switch the window to progress and start downloading ``release``."""
+        release_url = str(release.get("release_url") or "")
+        try:
+            if not update_sync.can_apply_updates():
+                notify(
+                    "This copy of Mycelian runs from source code, so it can't update itself.",
+                    type="warning",
+                    source="updates",
+                    title="Updates need the installed app",
+                    hint="Install the packaged build from the release page, or update your checkout with git.",
+                    actions=[{"kind": "copy", "text": release_url, "label": "Copy release link"}]
+                    if release_url else None,
+                )
+                return
+            if not update_sync.normalize_commit_sha(release.get("commit_sha")) and not release.get("tag_name"):
+                notify(
+                    "This release can't be installed automatically.",
+                    type="warning",
+                    source="updates",
+                    title="Can't install this update",
+                    hint="Download it from the release page on GitHub instead.",
+                    actions=[{"kind": "copy", "text": release_url, "label": "Copy release link"}]
+                    if release_url else None,
+                )
+                return
+            cancel_event = threading.Event()
+
+            def cancel() -> None:
+                cancel_event.set()
+                try:
+                    dialog.sub_label.set_text("Cancelling…")
+                except Exception:
+                    pass
+
+            dialog.show_progress(
+                str(release.get("latest_version") or "?"), downgrade=downgrade, on_cancel=cancel
+            )
+            self._start_sync_flow(dialog, release, cancel_event=cancel_event, downgrade=downgrade)
+        except Exception as e:
+            logger.error(f"Error starting update: {e}", exc_info=True)
+            notify(
+                "The update couldn't start. Mycelian is unchanged.",
+                type="error",
+                source="updates",
+                title="Couldn't start the update",
+                hint="Close the update window and try again from Settings → About.",
+                details=f"{type(e).__name__}: {e}",
+            )
+
     def _start_sync_flow(
         self,
-        commit_sha: str,
-        title_label,
-        progress_label,
-        progress_bar,
-        speed_label,
-        cancel_btn,
-        close_btn,
-        cancel_event: Optional[threading.Event] = None,
+        dialog,
+        release: Dict[str, Any],
+        *,
+        cancel_event: threading.Event,
+        downgrade: bool = False,
     ) -> None:
         try:
+            version = str(release.get("latest_version") or "")
             download_state: Dict[str, Any] = {
                 "status": "working",
-                "phase": "listing",
-                "progress": 0.0,
-                "speed_bps": 0.0,
-                "label": "Reading the release file list...",
                 "error": None,
                 "helper_pid": None,
                 "done": False,
             }
+            update_sync._report(download_state, "listing", 0.0, 0.0, f"Finding Mycelian {version} on GitHub...")
 
             def worker():
                 try:
+                    commit_sha = update_sync.normalize_commit_sha(release.get("commit_sha"))
+                    if commit_sha is None:
+                        commit_sha = asyncio.run(resolve_release_commit(str(release.get("tag_name") or "")))
+                        if commit_sha is None:
+                            raise update_sync.UpdateSyncError(
+                                f"GitHub couldn't find the files for Mycelian {version}."
+                            )
                     helper_pid = asyncio.run(
                         update_sync.sync_release(
                             commit_sha=commit_sha,
@@ -994,12 +1123,13 @@ class UpdateManager:
                             repo=GITHUB_REPO,
                             state=download_state,
                             cancel_event=cancel_event,
+                            expected_version=version or None,
                         )
                     )
                     if helper_pid:
                         download_state["helper_pid"] = helper_pid
                         download_state["status"] = "ready"
-                    elif cancel_event is not None and cancel_event.is_set():
+                    elif cancel_event.is_set():
                         download_state["status"] = "cancelled"
                         download_state["error"] = "Update cancelled."
                     else:
@@ -1010,7 +1140,7 @@ class UpdateManager:
                 except Exception as e:
                     logger.error(f"UpdateManager sync worker error: {e}", exc_info=True)
                     download_state["status"] = "failed"
-                    download_state["error"] = str(e)
+                    download_state["error"] = str(e) or type(e).__name__
                 finally:
                     download_state["done"] = True
 
@@ -1030,109 +1160,76 @@ class UpdateManager:
                     pass
                 poll_holder["timer"] = None
 
-            def _widget_gone(el) -> bool:
-                return el is None or getattr(el, "is_deleted", False)
+            def retry() -> None:
+                self._begin_install(dialog, release, downgrade=downgrade)
 
-            def _show_close() -> None:
-                try:
-                    cancel_btn.style("display: none;")
-                    close_btn.style("display: inline-flex;")
-                except Exception:
-                    pass
+            def fail(message: str) -> None:
+                if dialog.is_gone:
+                    self._dialog_open = False
+                    _notify_update_failed(
+                        "Something went wrong while downloading the update.", message
+                    )
+                    return
+                with dialog.client:
+                    dialog.show_failed(
+                        download_state, message, self._current_version(), on_retry=retry, details=message
+                    )
 
             def poll_update():
                 try:
-                    widgets_dead = (
-                        _widget_gone(progress_bar)
-                        or _widget_gone(progress_label)
-                        or _widget_gone(title_label)
-                    )
                     if not download_state["done"]:
-                        if _connected_client() is None or widgets_dead:
+                        if _connected_client() is None or dialog.is_gone:
                             return
-                        progress_bar.set_value(float(download_state.get("progress") or 0.0))
-                        progress_label.set_text(
-                            download_state.get("label") or "Updating..."
-                        )
-                        speed_bps = float(download_state.get("speed_bps") or 0.0)
-                        if download_state.get("phase") == "downloading" and speed_bps > 0:
-                            speed_label.set_text(f"Speed: {_format_speed(speed_bps)}")
-                        else:
-                            speed_label.set_text("")
-                        return
-
-                    status = download_state["status"]
-                    if status in ("failed", "cancelled", "current"):
-                        if not widgets_dead:
-                            try:
-                                if status == "cancelled":
-                                    title_label.set_text("Update cancelled")
-                                elif status == "current":
-                                    title_label.set_text("Already up to date")
-                                else:
-                                    title_label.set_text("Update failed")
-                                progress_label.set_text(
-                                    download_state.get("error")
-                                    or download_state.get("label")
-                                    or "Unknown error"
-                                )
-                                speed_label.set_text("")
-                                progress_bar.set_value(0.0 if status != "current" else 1.0)
-                            except Exception:
-                                pass
-                            _show_close()
-                        else:
-                            self._dialog_open = False
-                            if status == "failed":
-                                _notify_update_failed(
-                                    "Something went wrong while downloading the update.",
-                                    str(download_state.get("error") or ""),
-                                )
-                        _stop_poll()
-                        return
-
-                    if status == "ready":
-                        if not widgets_dead:
-                            try:
-                                title_label.set_text("Restarting Mycelian")
-                                progress_label.set_text(
-                                    "Closing Mycelian to finish the update..."
-                                )
-                                speed_label.set_text("")
-                                progress_bar.set_value(1.0)
-                                cancel_btn.style("display: none;")
-                            except Exception:
-                                pass
-
-                        def launch():
-                            try:
-                                finish_update_and_exit(download_state.get("helper_pid"))
-                                self._dialog_open = False
-                            except Exception as e:
-                                logger.error(f"Error restarting after update: {e}", exc_info=True)
-                                try:
-                                    if _widget_gone(title_label) or _widget_gone(progress_label):
-                                        raise RuntimeError("update window closed")
-                                    title_label.set_text("Update failed")
-                                    progress_label.set_text(str(e))
-                                    _show_close()
-                                except Exception:
-                                    self._dialog_open = False
-                                    _notify_update_failed(
-                                        "The update downloaded, but Mycelian couldn't restart to apply it.",
-                                        f"{type(e).__name__}: {e}",
-                                    )
-
-                        app_schedule(0.6, launch, once=True)
-                        _stop_poll()
+                        dialog.render_progress(download_state)
                         return
 
                     _stop_poll()
+                    status = download_state["status"]
+                    if status == "failed":
+                        fail(str(download_state.get("error") or "Unknown error"))
+                        return
+                    if status in ("cancelled", "current"):
+                        if dialog.is_gone:
+                            self._dialog_open = False
+                            return
+                        with dialog.client:
+                            if status == "cancelled":
+                                dialog.show_message(
+                                    "Update cancelled", "Nothing was changed.", art="block"
+                                )
+                            else:
+                                dialog.show_message(
+                                    f"Already on {version}" if downgrade else "Already up to date",
+                                    "Your installed files already match this release.",
+                                    kind="is-ok",
+                                    art="check_circle",
+                                )
+                        return
+                    if status != "ready":
+                        return
+
+                    if not dialog.is_gone:
+                        dialog.render_progress(download_state)
+                        dialog.show_restarting()
+
+                    def launch():
+                        try:
+                            finish_update_and_exit(download_state.get("helper_pid"))
+                            self._dialog_open = False
+                        except Exception as e:
+                            logger.error(f"Error restarting after update: {e}", exc_info=True)
+                            message = f"The update downloaded, but Mycelian couldn't restart to apply it. {e}"
+                            try:
+                                fail(message)
+                            except Exception:
+                                self._dialog_open = False
+                                _notify_update_failed(message, f"{type(e).__name__}: {e}")
+
+                    app_schedule(0.6, launch, once=True)
                 except Exception as e:
                     logger.error(f"UpdateManager.poll_update error: {e}")
-                    if not download_state["done"]:
-                        return
-                    _stop_poll()
+                    if download_state["done"]:
+                        _stop_poll()
 
             t = threading.Thread(target=worker, daemon=True)
             t.start()

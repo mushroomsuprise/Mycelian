@@ -298,6 +298,7 @@ def test_build_hero_and_actions(monkeypatch, timers, notes):
         # update box shows "not checked yet"
         await user.should_see("Not checked yet this session")
         # buttons
+        await user.should_see("Older versions")
         fire(user, [e for e in user.client.elements.values() if isinstance(e, ui.button) and e.text == "What's new"][0])
         fire(user, icon_button(user.client, "open_in_new")[0])
         fire(user, [e for e in user.client.elements.values() if isinstance(e, ui.button) and e.text == "Check for updates"][0])

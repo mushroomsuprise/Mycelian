@@ -882,6 +882,9 @@ def get_hidden_imports(current_os):
             "modules.status_manager",
             "modules.updater",
             "modules.update_sync",
+            # Imported only when an update window opens.
+            "modules.uiwindows.update_dialog",
+            "modules.uiwindows.update_dialog_styles",
             "merge_template_configs",
             "modules.uiwindows.activity_feed",
             "modules.uiwindows.alertsettings",
@@ -1674,7 +1677,8 @@ def _copy_build_artifact(src: Path, dest: Path) -> None:
     if src.is_dir():
         if dest.exists():
             shutil.rmtree(dest)
-        shutil.copytree(src, dest)
+        # Keep the .app bundle's relative links as links (its code signature covers them).
+        shutil.copytree(src, dest, symlinks=True)
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest)
@@ -1764,8 +1768,12 @@ def _manifest_entry(
     *,
     os_name: str | None = None,
     bundle: bool = False,
+    exact: bool = False,
 ) -> dict:
-    digest, size = _release_hash_and_size(src)
+    if exact:
+        digest, size = _sha256_file(src), src.stat().st_size
+    else:
+        digest, size = _release_hash_and_size(src)
     if size >= GITHUB_MAX_FILE_BYTES:
         raise RuntimeError(
             f"{src} is {size / (1024 * 1024):.1f} MB. "
@@ -1786,8 +1794,34 @@ def _manifest_entry(
     return entry
 
 
+def _symlink_manifest_entry(link: Path, repo_path: str, install_path: str, *, bundle: bool) -> dict:
+    """A link inside the app bundle. The updater recreates it instead of downloading it."""
+    target = os.readlink(link)
+    if os.path.isabs(target):
+        raise RuntimeError(f"{link} links to an absolute path ({target}); the updater only installs relative links.")
+    data = target.encode("utf-8")
+    entry = {
+        "path": repo_path,
+        "install": install_path,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "size": len(data),
+        "action": "symlink",
+        "target": target,
+        "os": CURRENT_OS,
+    }
+    if bundle:
+        entry["bundle"] = True
+    return entry
+
+
 def _binary_manifest_entries(project_root: Path) -> list:
-    """Hash the compiled app just copied under ``packaged/<os>/``."""
+    """Hash the compiled app just copied under ``packaged/<os>/``.
+
+    PyInstaller's macOS bundle cross-links ``Contents/Frameworks`` and
+    ``Contents/Resources`` with relative symlinks. Those are listed as
+    ``symlink`` entries and never followed, so each file is listed once at its
+    real path. Files with the execute bit carry ``exec`` so the updater keeps it.
+    """
     os_dir = project_root / "packaged" / CURRENT_OS
     if CURRENT_OS == "macos":
         base = os_dir / "Mycelian.app"
@@ -1800,24 +1834,41 @@ def _binary_manifest_entries(project_root: Path) -> list:
     if not base.exists():
         raise FileNotFoundError(f"Packaged binary missing: {base}")
 
+    if base.is_file():
+        found = [(base, base.name)]
+    else:
+        found = []
+        for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+            here = Path(dirpath)
+            for name in list(dirnames):
+                if (here / name).is_symlink():
+                    found.append((here / name, (here / name).relative_to(base).as_posix()))
+            dirnames[:] = sorted(n for n in dirnames if not (here / n).is_symlink())
+            for name in sorted(filenames):
+                found.append((here / name, (here / name).relative_to(base).as_posix()))
+        found.sort(key=lambda item: item[1])
+
     entries = []
-    files = [base] if base.is_file() else sorted(p for p in base.rglob("*") if p.is_file())
-    for path in files:
-        if path.name == ".DS_Store" or "__pycache__" in path.parts:
+    for path, rel in found:
+        if path.name == ".DS_Store" or "__pycache__" in Path(rel).parts:
             continue
-        rel = path.name if base.is_file() else path.relative_to(base).as_posix()
         repo_path = f"{repo_prefix}/{rel}"
-        entries.append(
-            _manifest_entry(
-                path,
-                repo_path,
-                rel,
-                "replace",
-                os_name=CURRENT_OS,
-                bundle=bundle,
-            )
+        if path.is_symlink():
+            entries.append(_symlink_manifest_entry(path, repo_path, rel, bundle=bundle))
+            continue
+        entry = _manifest_entry(
+            path,
+            repo_path,
+            rel,
+            "replace",
+            os_name=CURRENT_OS,
+            bundle=bundle,
+            exact=True,
         )
-    if not entries:
+        if CURRENT_OS != "windows" and path.stat().st_mode & 0o111:
+            entry["exec"] = True
+        entries.append(entry)
+    if not any(entry["action"] == "replace" for entry in entries):
         raise FileNotFoundError(f"Packaged binary directory is empty: {base}")
     return entries
 
