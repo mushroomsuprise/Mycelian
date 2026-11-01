@@ -68,3 +68,5 @@ class PSNData:
     connection_status: str = "Disconnected"
     presence: dict = field(default_factory=dict)
     current_game_mismatch: PSNGameMismatch | None = None  # Active mismatch state
+    avatar_url: str | None = None  # Profile picture of the signed-in account
+    target_avatar_url: str | None = None  # Profile picture of the tracked PSN username

@@ -92,6 +92,10 @@ class FakeUser:
         self._maybe_raise("trophy_summary")
         return self.api.summary
 
+    def profile(self):
+        self._maybe_raise("profile")
+        return self.api.profiles.get(self.kw.get("online_id") or self.kw.get("account_id"), {})
+
     def trophy_groups_summary(self, np_communication_id, platform, include_progress):
         self._maybe_raise("trophy_groups_summary")
         self.api.group_calls.append((np_communication_id, platform, include_progress))
@@ -121,6 +125,7 @@ class FakeAPI:
         self.for_title_calls = []
         self.user_calls = []
         self.target_account_ids = {}
+        self.profiles = {}
 
     def me(self):
         if self.me_exc:
@@ -1145,3 +1150,83 @@ def test_all_games_truthy_response_that_yields_nothing():
     api.title_pages = [TruthyEmpty()]
     assert make_client(api).get_all_games() == {}
     assert api.title_calls == [(0, 800)]
+
+
+# --------------------------------------------------------------------------- profile pictures
+
+
+def avatars(prefix):
+    return {"avatars": [{"size": "s", "url": f"https://img/{prefix}-s.png"},
+                        {"size": "xl", "url": f"https://img/{prefix}-xl.png"},
+                        {"size": "m", "url": f"https://img/{prefix}-m.png"}]}
+
+
+def test_largest_avatar_prefers_xl_and_https():
+    big = psnapi.PSNClient._largest_avatar
+    assert big(avatars("a")) == "https://img/a-xl.png"
+    # PSN sends http:// links; the same host serves https.
+    assert big({"avatars": [{"size": "huge", "url": "https://x"}, "junk", {"size": "l", "url": "http://psn/a.png"}]}) == "https://psn/a.png"
+    assert big({"avatars": [{"size": "xl", "url": "ftp://nope"}, {"size": "s", "url": ""}]}) is None
+    assert big({"avatars": []}) is None and big(None) is None and big({"avatars": None}) is None
+
+
+def test_avatar_url_uses_account_id_for_self_and_caches(monkeypatch):
+    api = FakeAPI()
+    api.profiles = {"acc-me": avatars("me"), "pal": avatars("pal")}
+    c = make_client(api, username="pal")
+    clock = [1000.0]
+    monkeypatch.setattr(psnapi.time, "time", lambda: clock[0])
+    c.refresh_avatars()
+    assert c.psn_data.avatar_url == "https://img/me-xl.png"
+    assert c.psn_data.target_avatar_url == "https://img/pal-xl.png"
+    assert api.user_calls == [{"account_id": "acc-me"}, {"online_id": "pal"}]
+    c.refresh_avatars()
+    assert len(api.user_calls) == 2  # cached
+    clock[0] += c.AVATAR_TTL_SEC + 1
+    c.refresh_avatars()
+    assert len(api.user_calls) == 4  # stale: fetched again
+
+
+def test_avatar_failures_retry_later_and_own_account_is_reused(monkeypatch):
+    api = FakeAPI()
+    api.raises["profile"] = [PSNAWPForbiddenError("private")]
+    api.profiles = {"acc-me": avatars("me")}
+    c = make_client(api)
+    clock = [1000.0]
+    monkeypatch.setattr(psnapi.time, "time", lambda: clock[0])
+    c.refresh_avatars()
+    assert c.psn_data.avatar_url is None and c.psn_data.target_avatar_url is None
+    c.refresh_avatars()
+    assert len(api.user_calls) == 1  # failure cached
+    clock[0] += c.AVATAR_RETRY_SEC + 1
+    c.refresh_avatars()
+    assert c.psn_data.avatar_url == c.psn_data.target_avatar_url == "https://img/me-xl.png"
+    c.update_psn_username("ME")  # same account, any case: no second request
+    c.refresh_avatars()
+    assert len(api.user_calls) == 2
+
+
+def test_avatar_url_needs_a_connection_and_a_name():
+    c = make_client(connected=False)
+    assert c.get_avatar_url("me") is None
+    assert make_client().get_avatar_url("  ") is None
+
+
+def test_avatar_auth_expiry_marks_the_client(monkeypatch):
+    api = FakeAPI()
+    api.raises["profile"] = [PSNAWPAuthenticationError("expired")]
+    c = make_client(api)
+    expired = []
+    monkeypatch.setattr(c, "_on_psn_auth_expired", lambda ctx, e: expired.append(ctx))
+    assert c.get_avatar_url("pal") is None
+    assert expired == ["get_avatar_url(pal)"] and "pal" not in c._avatar_cache
+
+
+def test_new_username_or_credentials_clear_pictures():
+    c = make_client()
+    c.psn_data.avatar_url, c.psn_data.target_avatar_url = "https://a", "https://b"
+    c._avatar_cache["me"] = ("https://a", 1.0)
+    c.update_psn_username("other")
+    assert c.psn_data.target_avatar_url is None and c.psn_data.avatar_url == "https://a"
+    c.update_credentials("tok2", "other")
+    assert c.psn_data.avatar_url is None and c._avatar_cache == {}

@@ -284,6 +284,9 @@ def test_account_card_avatar_variants_and_meta():
         assert card._meta.visible is True
         assert '<div class="s">sub</div>' in card._meta.content
         assert card._meta.content.count('<div class="s">') == 1
+        card.set_meta([("Tracking", "pal", "", "", "https://img/pal.png"), ("Odd", "x", "", "", "http://no")])
+        assert card._meta.content.count('class="itg-meta-ava"') == 1
+        assert 'src="https://img/pal.png"' in card._meta.content
         card.set_meta([])
         assert card._meta.visible is False and card._meta.content == ""
 

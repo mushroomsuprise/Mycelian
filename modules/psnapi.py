@@ -28,6 +28,7 @@ import difflib
 import logging
 import re
 import threading
+import time
 import unicodedata
 from collections.abc import Iterable, Sequence
 from datetime import datetime
@@ -625,6 +626,8 @@ class PSNClient:
         self._cached_target_account_id: str | None = None
         self._cached_target_username_key: str | None = None
         self.psn_data: PSNData = PSNData()
+        # Profile pictures by lowercased online ID: (url or None, fetched at).
+        self._avatar_cache: dict[str, tuple[str | None, float]] = {}
         if npsso_code:
             self.psn_data.npsso_code = npsso_code
 
@@ -650,6 +653,7 @@ class PSNClient:
         """Updates the target PSN username for API calls."""
         self.psn_username = psn_username
         self._clear_target_account_cache()
+        self.psn_data.target_avatar_url = None
         logger.info(f"PSN username updated to: {psn_username}")
 
     def update_credentials(self, npsso_code: str, psn_username: str):
@@ -662,6 +666,9 @@ class PSNClient:
         self._auth_expired = False
         self._auth_expired_warned = False
         self._clear_target_account_cache()
+        self._avatar_cache.clear()
+        self.psn_data.avatar_url = None
+        self.psn_data.target_avatar_url = None
         self.psn_data.connection_status = (
             "Not Connected" if not (npsso_code or "").strip() else "Disconnected"
         )
@@ -923,6 +930,70 @@ class PSNClient:
     def is_connected(self) -> bool:
         """Checks if the client is authenticated."""
         return self.authenticated
+
+    # Pictures rarely change: refetch after AVATAR_TTL_SEC, retry a failed lookup after
+    # AVATAR_RETRY_SEC (one profile request each, inside the PSNAWP rate budget).
+    AVATAR_TTL_SEC = 6 * 3600.0
+    AVATAR_RETRY_SEC = 15 * 60.0
+    _AVATAR_SIZES = ("xl", "l", "m", "s")
+
+    @classmethod
+    def _largest_avatar(cls, profile: Any) -> str | None:
+        """Biggest avatar URL in a ``User.profile()`` response, as https.
+
+        PSN lists avatars as http:// on static-resource.np.community.playstation.net, which
+        also serves them over https (the settings page only loads https pictures).
+        """
+        avatars = profile.get("avatars") if isinstance(profile, dict) else None
+        best: tuple[int, str] | None = None
+        for avatar in avatars or []:
+            if not isinstance(avatar, dict):
+                continue
+            url = str(avatar.get("url") or "").strip()
+            if url.startswith("http://"):
+                url = "https://" + url[len("http://"):]
+            if not url.startswith("https://"):
+                continue
+            size = str(avatar.get("size") or "").lower()
+            rank = cls._AVATAR_SIZES.index(size) if size in cls._AVATAR_SIZES else len(cls._AVATAR_SIZES)
+            if best is None or rank < best[0]:
+                best = (rank, url)
+        return best[1] if best else None
+
+    def get_avatar_url(self, online_id: str | None) -> str | None:
+        """Profile picture URL for a PSN online ID (cached; None when unknown or private)."""
+        key = str(online_id or "").strip().lower()
+        if not key or not self.api or not self.authenticated:
+            return None
+        now = time.time()
+        cached = self._avatar_cache.get(key)
+        if cached is not None:
+            url, fetched_at = cached
+            if now - fetched_at < (self.AVATAR_TTL_SEC if url else self.AVATAR_RETRY_SEC):
+                return url
+        url = None
+        try:
+            if self.user_online_id and key == self.user_online_id.lower() and self.account_id:
+                user = self.api.user(account_id=self.account_id)
+            else:
+                user = self.api.user(online_id=str(online_id).strip())
+            url = self._largest_avatar(user.profile())
+        except Exception as e:
+            if _is_psn_auth_expired_error(e):
+                self._on_psn_auth_expired(f"get_avatar_url({online_id})", e)
+                return cached[0] if cached else None
+            logger.debug("Could not fetch PSN profile picture for %s: %s", online_id, e)
+        self._avatar_cache[key] = (url, now)
+        return url
+
+    def refresh_avatars(self) -> None:
+        """Fill ``avatar_url`` (signed-in account) and ``target_avatar_url`` (tracked user)."""
+        self.psn_data.avatar_url = self.get_avatar_url(self.user_online_id)
+        target = (self.psn_username or "").strip()
+        if target and target.lower() != (self.user_online_id or "").lower():
+            self.psn_data.target_avatar_url = self.get_avatar_url(target)
+        else:
+            self.psn_data.target_avatar_url = self.psn_data.avatar_url
 
     def _sync_presence_connection_status(self) -> None:
         """Reflect authenticated API session vs PlayStation presence in connection_status."""

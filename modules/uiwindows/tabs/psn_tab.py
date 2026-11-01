@@ -738,6 +738,23 @@ class PSNTab:
         pill = "Connected" if kind == "ok" else str(status_text).split(" - ")[0]
         return kind, pill, name, kind, state_text, meta
 
+    @staticmethod
+    def _with_avatars(name: str, meta: list) -> tuple:
+        """(card picture, meta) with PSN profile pictures from the live data.
+
+        The card shows whoever it names; a tracked friend's picture goes on the Tracking cell.
+        """
+        live = state_manager.get_live_psn_data()
+        own = str(getattr(live, "avatar_url", "") or "") if live else ""
+        target = str(getattr(live, "target_avatar_url", "") or "") if live else ""
+        online_id = str(getattr(live, "online_id", "") or "").lower() if live else ""
+        photo = own if online_id and name.lower() == online_id else target
+        rows = [
+            (*row, target) if row[0] == "Tracking" and target and row[1].lower() != name.lower() else row
+            for row in meta
+        ]
+        return photo or None, rows
+
     def _refresh_status(self) -> None:
         """Update the header pill, account card and NPSSO fold from the PSN service."""
         try:
@@ -746,8 +763,11 @@ class PSNTab:
             if self._page is not None:
                 self._page.set_status([(pill_kind, pill_text)])
             if self._card is not None:
+                photo = None
+                if self._connected:
+                    photo, meta = self._with_avatars(name, meta)
                 initial = initial_of(name) if self._connected and name != "PlayStation account" else None
-                self._card.set(name, state_kind, state_text, initial=initial)
+                self._card.set(name, state_kind, state_text, initial=initial, photo_url=photo)
                 self._card.set_meta(meta)
             if self._fold is not None:
                 saved = state_manager.get_psn_settings_data()

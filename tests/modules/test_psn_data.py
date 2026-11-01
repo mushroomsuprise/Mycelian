@@ -56,5 +56,5 @@ def test_mismatch_defaults_and_nesting():
 def test_field_order_is_stable():
     assert [f.name for f in fields(PSNGameMismatch)] == [
         "presence_name", "np_title_id", "platform", "detected_at", "notified"]
-    assert len(fields(PSNData)) == 15
+    assert len(fields(PSNData)) == 17
     assert PSNData() == PSNData()

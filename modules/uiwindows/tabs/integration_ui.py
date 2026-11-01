@@ -118,6 +118,7 @@ body:not(.body--dark) .itg :is(p, span, div, label):not([class]) { color: inheri
 .itg-meta > div:first-child { border-left: none; }
 .itg-meta .k { font-size: .62rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-muted); }
 .itg-meta .v { font-size: .8rem; font-weight: 600; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.itg-meta .v .itg-meta-ava { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; vertical-align: -3px; margin-right: 5px; }
 .itg-meta .s { font-size: .68rem; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .itg-meta .v.is-warn { color: var(--color-warning); }
 .itg-meta .v.is-error { color: var(--color-error); }
@@ -559,9 +560,10 @@ class AccountCard:
         if icon:
             ava = f'<span class="itg-tile itg-acct-tile">{icon_html(icon)}</span>'
         elif photo:
+            # Not loading="lazy": WebKit may never start a lazy image added to an open page.
             ava = (
                 f'<div class="itg-ava has-photo">{esc((initial or name or "?")[:1].upper())}'
-                f'<img src="{esc(photo)}" alt="" referrerpolicy="no-referrer" loading="lazy" '
+                f'<img src="{esc(photo)}" alt="" referrerpolicy="no-referrer" '
                 'onerror="this.remove()"></div>'
             )
         elif initial:
@@ -577,14 +579,24 @@ class AccountCard:
             self._top = content
             self._who.set_content(content)
 
-    def set_meta(self, rows: Iterable[Tuple[str, str, str, str]]) -> None:
-        """Detail cells: (label, value, sub-line, value class ok|warn|error|"")."""
-        cells = "".join(
-            f'<div><div class="k">{esc(k)}</div><div class="v {esc(c)}">{esc(v)}</div>'
-            + (f'<div class="s">{esc(s)}</div>' if s else "")
-            + "</div>"
-            for k, v, s, c in rows
-        )
+    def set_meta(self, rows: Iterable[Tuple[str, ...]]) -> None:
+        """Detail cells: (label, value, sub-line, value class ok|warn|error|"") and an optional
+        fifth item, a profile picture URL shown small before the value."""
+
+        def cell(k: str, v: str, s: str, c: str, photo: Optional[str] = None) -> str:
+            photo = str(photo or "").strip()
+            img = (
+                f'<img class="itg-meta-ava" src="{esc(photo)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">'
+                if photo.startswith("https://")
+                else ""
+            )
+            return (
+                f'<div><div class="k">{esc(k)}</div><div class="v {esc(c)}">{img}{esc(v)}</div>'
+                + (f'<div class="s">{esc(s)}</div>' if s else "")
+                + "</div>"
+            )
+
+        cells = "".join(cell(*row) for row in rows)
         content = f'<div class="itg-meta">{cells}</div>' if cells else ""
         if content != self._meta_content:
             self._meta_content = content

@@ -485,6 +485,43 @@ def test_refresh_status_error_updates_page_and_card(env):
                      ("meta", [])]
 
 
+def test_refresh_status_shows_profile_pictures(env):
+    tab = tabmod.PSNTab()
+    calls = []
+    tab._page = SimpleNamespace(set_status=lambda pills: None)
+    tab._card = SimpleNamespace(set=lambda *a, **k: calls.append(("card", a, k)),
+                                set_meta=lambda rows: calls.append(("meta", rows)))
+    env.state.settings.npsso_code = "tok"
+    env.service.display = ("Connected - Tracking pal", "pal (target)", "text-theme-success")
+    env.state.live = PSNData(online_id="Me", avatar_url="https://img/me.png", target_avatar_url="https://img/pal.png")
+    tab._refresh_status()
+    (_, args, kw), (_, rows) = calls
+    assert args[0] == "Me" and kw["photo_url"] == "https://img/me.png"
+    assert rows == [("Tracking", "pal", "tracking target", "", "https://img/pal.png")]
+    # Tracking your own account: the card already shows the picture.
+    calls.clear()
+    env.service.display = ("Connected as Me", "Me (own account)", "text-theme-success")
+    env.state.live.target_avatar_url = env.state.live.avatar_url
+    tab._refresh_status()
+    assert calls[1][1] == [("Tracking", "Me", "own account", "")]
+    # The card names the tracked user when the signed-in name isn't known yet.
+    calls.clear()
+    env.service.display = ("Offline - Tracking pal", "pal (target)", "text-theme-warning")
+    env.state.live = PSNData(target_avatar_url="https://img/pal.png")
+    tab._refresh_status()
+    assert calls[0][1][0] == "pal" and calls[0][2]["photo_url"] == "https://img/pal.png"
+    assert calls[1][1] == [("Tracking", "pal", "tracking target", "")]
+    # No pictures yet, or not connected: letters only.
+    calls.clear()
+    env.state.live = None
+    tab._refresh_status()
+    assert calls[0][2]["photo_url"] is None
+    calls.clear()
+    env.service.display = ("Token Expired", "N/A", "text-theme-error")
+    tab._refresh_status()
+    assert calls[0][2]["photo_url"] is None
+
+
 def test_sync_connect_button(env):
     tab = tabmod.PSNTab()
     tab._sync_connect_button()  # no button

@@ -311,6 +311,12 @@ def psn_data_update_loop():
 
             logger.debug("PSNClient is connected. Fetching updates...")
 
+            # Profile pictures for Settings → PSN (cached; rarely a request).
+            try:
+                psn_client_instance.refresh_avatars()
+            except Exception:
+                logger.debug("PSN profile picture refresh failed", exc_info=True)
+
             # --- Presence (every cycle) ---
             presence_result = psn_client_instance.get_presence()
             if not presence_result:
