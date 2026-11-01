@@ -1761,20 +1761,9 @@ def toggle_alerts():
         except Exception as sync_error:
             logger.debug(f"Could not sync pause button state: {str(sync_error)}")
 
+        # No toast here: the pause button and the feed's paused banner already show the
+        # state, and toggling often (Stream Deck, dock) made the toasts spammy.
         ui.update()
-
-        # Show user feedback
-        from .notification_engine import notify as app_notify
-
-        if web_engine.ALERTS_PAUSED:
-            app_notify(
-                "New alerts wait in the queue until you resume.",
-                type="info",
-                source="alerts",
-                title="Alerts paused",
-            )
-        else:
-            app_notify("", type="info", source="alerts", title="Alerts resumed")
 
     except Exception as e:
         logger.error(f"Error toggling alerts: {str(e)}", exc_info=True)

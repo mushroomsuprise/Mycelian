@@ -897,13 +897,13 @@ def test_toggle_alerts_with_instance(engine):
     engine.we.web_engine_instance = inst
     mw.toggle_alerts()
     assert inst.calls == ["toggle_alerts"] and engine.synced == ["pause"] and engine.updates == [1]
-    assert engine.notes[-1][1]["title"] == "Alerts resumed"
+    assert engine.notes == []  # no paused/resumed toast
 
 
 def test_toggle_alerts_without_instance_schedules_broadcast(engine):
     mw.toggle_alerts()
     assert engine.we.ALERTS_PAUSED is True
-    assert engine.notes[-1][1]["title"] == "Alerts paused"
+    assert engine.notes == []
     ((kind, (delay, retry), kw),) = engine.sched
     assert kind == "app" and delay == 1.0 and kw == {"once": True}
     assert retry() is False
@@ -955,7 +955,7 @@ def test_toggle_sync_failures_are_tolerated(engine, monkeypatch):
     engine.we.web_engine_instance = FakeEngineInstance()
     mw.toggle_alerts()
     mw.toggle_mute()
-    assert len(engine.notes) == 2
+    assert len(engine.notes) == 1  # only the mute toast; pausing shows none
 
 
 @pytest.mark.parametrize("fn,title", [(mw.toggle_alerts, "Couldn't pause or resume alerts"),
