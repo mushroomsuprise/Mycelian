@@ -26,6 +26,7 @@ EXPECTED_FILLS = {
     "youtube": "#FF0000",
     "spotify": "#1DB954",
     "psn": "#0070CC",
+    "steam": "#66C0F4",
     "obs": "#302E31",
     "discord": "#5865F2",
     "streamlabs": "#80F5D2",

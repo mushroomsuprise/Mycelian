@@ -841,6 +841,7 @@ _SERVICE_KEYS = (
     "twitch",
     "obs",
     "psn",
+    "steam",
     "spotify",
     "youtube",
     "discord",
@@ -854,6 +855,7 @@ _SERVICE_LABELS: Dict[str, str] = {
     "spotify": "Spotify",
     "youtube": "YouTube",
     "psn": "PSN",
+    "steam": "Steam",
     "obs": "OBS",
     "discord": "Discord",
     "streamlabs": "Streamlabs",
@@ -866,6 +868,7 @@ _SERVICE_SUBTABS: Dict[str, str] = {
     "spotify": "Spotify",
     "youtube": "YouTube",
     "psn": "PSN",
+    "steam": "Steam",
     "obs": "OBS",
     "discord": "Discord",
     "streamlabs": "Streamlabs",
@@ -1064,6 +1067,10 @@ def footer_status_display(service_key: str, status_raw: str) -> str:
         return "Expired"
     if "all channels failed" in s:
         return "Error"
+    if service_key == "steam":
+        steam_labels = {"invalid api key": "Auth Failed", "profile not found": "No Profile", "profile not set": "Setup Needed"}
+        if s in steam_labels:
+            return steam_labels[s]
     if any(
         x in s
         for x in (
@@ -1134,8 +1141,11 @@ def footer_status_tier(service_key: str, status_raw: str) -> str:
         "auth failed",
         "no internet",
         "unreachable",
+        "no profile",
     ):
         return "error"
+    if display == "setup needed":
+        return "warning"
     return "info"
 
 

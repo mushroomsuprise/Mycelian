@@ -495,6 +495,7 @@ def _fake_service_modules(monkeypatch):
     mod("spotify", spotify_configured_for_monitor=rec("spotify.cfg"), attempt_auto_reconnect=rec("spotify.rc"))
     mod("youtube", youtube_configured_for_monitor=rec("youtube.cfg"), attempt_auto_reconnect=rec("youtube.rc"))
     mod("psn_service", psn_configured_for_monitor=rec("psn.cfg"), attempt_auto_reconnect=rec("psn.rc"))
+    mod("steam_service", steam_configured_for_monitor=rec("steam.cfg"), attempt_auto_reconnect=rec("steam.rc"))
     mod("discord_service", discord_configured_for_monitor=rec("discord.cfg"), attempt_auto_reconnect=rec("discord.rc"))
     mod("chatbot", chatbot_has_dedicated_credentials=rec("chatbot.cfg"), attempt_auto_reconnect=rec("chatbot.rc"))
     mod("database_manager", database_needs_remote_monitor=rec("db.cfg"), attempt_auto_reconnect=rec("db.rc"))
@@ -505,10 +506,10 @@ def _fake_service_modules(monkeypatch):
 def test_build_registry_wires_every_service(monkeypatch):
     calls = _fake_service_modules(monkeypatch)
     reg = cm._build_registry()
-    assert [e.key for e in reg] == ["twitch", "spotify", "youtube", "psn", "discord", "chatbot", "database"]
+    assert [e.key for e in reg] == ["twitch", "spotify", "youtube", "psn", "steam", "discord", "chatbot", "database"]
     for e in reg:
         assert e.is_configured() and e.is_disconnected() and e.attempt_reconnect()
-    for tag in ("twitch", "spotify", "youtube", "psn", "discord", "chatbot", "db"):
+    for tag in ("twitch", "spotify", "youtube", "psn", "steam", "discord", "chatbot", "db"):
         assert f"{tag}.cfg" in calls and f"{tag}.rc" in calls
     assert "disc:database" in calls and "disc:twitch" in calls
 

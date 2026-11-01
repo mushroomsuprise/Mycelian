@@ -735,6 +735,7 @@ def test_startup_registers_services_by_priority(startup):
         ("connectors", 4, False),
         ("spotify", 5, False),
         ("psn", 6, False),
+        ("steam", 6, False),
         ("youtube", 7, False),
         ("streamlabs", 8, False),
         ("streamelements", 8, False),

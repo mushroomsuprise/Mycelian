@@ -197,6 +197,8 @@ def test_set_footer_item_tooltip_error_swallowed():
     ("youtube", "Missing API key", "Idle"), ("youtube", "Set channel URL", "Idle"),
     ("twitch", "Some error", "Error"), ("twitch", "Failure", "Error"),
     ("twitch", "Paused", "Paused"), ("twitch", "A very long status text here", "A very long…"),
+    ("steam", "Invalid API Key", "Auth Failed"), ("steam", "Profile Not Found", "No Profile"),
+    ("steam", "Profile Not Set", "Setup Needed"), ("steam", "Offline", "Offline"), ("psn", "Profile Not Set", "Profile Not…"),
 ])
 def test_footer_status_display(key, raw, display):
     assert ne.footer_status_display(key, raw) == display
@@ -214,6 +216,8 @@ def test_footer_status_display(key, raw, display):
     ("twitch", "Error", "error"), ("webengine", "crashed", "error"), ("webengine", "frozen", "error"),
     ("spotify", "Token Expired", "error"), ("obs", "Auth Failed", "error"), ("twitch", "No Internet", "error"),
     ("twitch", "Unreachable", "error"), ("twitch", "Paused", "info"),
+    ("steam", "Invalid API Key", "error"), ("steam", "Profile Not Found", "error"), ("steam", "Profile Not Set", "warning"),
+    ("steam", "Offline", "warning"),
 ])
 def test_footer_status_tier(key, raw, tier):
     assert ne.footer_status_tier(key, raw) == tier

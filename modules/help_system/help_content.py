@@ -130,6 +130,14 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         keywords=['psn', 'playstation', 'npsso', 'trophies', 'sony', 'sign in'],
         related_topics=['connection_guides_overview', 'integrations_psn', 'status_footer'],
     ),
+    'guide_steam': HelpTopic(
+        id='guide_steam',
+        title='Connect Steam',
+        category=HelpCategory.CONNECTION_GUIDES,
+        summary='Add a Steam Web API key and your profile for achievement overlays and game info',
+        keywords=['steam', 'valve', 'api key', 'achievements', 'steamid', 'profile', 'pc gaming'],
+        related_topics=['connection_guides_overview', 'integrations_steam', 'status_footer'],
+    ),
     'guide_youtube': HelpTopic(
         id='guide_youtube',
         title='Connect YouTube',
@@ -610,6 +618,15 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         keywords=['psn', 'playstation', 'trophy', 'gaming', 'ps4', 'ps5'],
         related_topics=['alerts_overview', 'templates_intro', 'status_footer', 'guide_psn'],
         ui_context='settings.psn',
+    ),
+    'integrations_steam': HelpTopic(
+        id='integrations_steam',
+        title='Steam Integration',
+        category=HelpCategory.INTEGRATIONS,
+        summary='Show the Steam game you are playing and its achievements on stream',
+        keywords=['steam', 'achievements', 'gaming', 'pc', 'overlay', 'steam level'],
+        related_topics=['templates_intro', 'status_footer', 'guide_steam', 'spore_studio_advanced_js'],
+        ui_context='settings.steam',
     ),
     'integrations_youtube': HelpTopic(
         id='integrations_youtube',

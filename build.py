@@ -731,6 +731,18 @@ def get_hidden_imports(current_os):
         ]
     )
 
+    # Steam Web API (python-steam-api imports bs4 for store search)
+    hidden_imports.extend(
+        [
+            "steam_web_api",
+            "steam_web_api.apps",
+            "steam_web_api.client",
+            "steam_web_api.users",
+            "steam_web_api.utils",
+            "bs4",
+        ]
+    )
+
     # Crypto and security
     hidden_imports.extend(
         [
@@ -872,6 +884,9 @@ def get_hidden_imports(current_os):
             "modules.mainuiwindow",
             "modules.psnapi",
             "modules.psn_service",
+            "modules.steamapi",
+            "modules.steam_service",
+            "modules.steam_data",
             "modules.spotify",
             "modules.template_config_parser",
             "modules.twitch",

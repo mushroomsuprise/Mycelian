@@ -20,6 +20,7 @@ _SUB_TABS = (
     ("brand", "twitch", "Twitch"),
     ("brand", "obs", "OBS"),
     ("brand", "psn", "PSN"),
+    ("brand", "steam", "Steam"),
     ("brand", "spotify", "Spotify"),
     ("brand", "youtube", "YouTube"),
     ("brand", "streamlabs", "Streamlabs"),

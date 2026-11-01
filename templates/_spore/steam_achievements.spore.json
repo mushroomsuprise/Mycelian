@@ -1,0 +1,351 @@
+{
+  "template_name": "steam_achievements",
+  "alert_system": "instant",
+  "design": {
+    "width": 470,
+    "height": 230
+  },
+  "duration_seconds": 5.0,
+  "queued": false,
+  "elements": [
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Game Icon",
+      "id": "game_icon",
+      "position": {
+        "x": 27,
+        "y": 35
+      },
+      "size": {
+        "w": 100,
+        "h": 100
+      },
+      "props": {
+        "src": "/assets/default_assets/images/notingame.png",
+        "border_radius": 10,
+        "border_width": 2,
+        "border_style": "solid",
+        "border_color": "#991b1b",
+        "box_shadow": "0 2px 8px rgba(0,0,0,0.3)"
+      },
+      "source_settings_expose": {
+        "border_radius": true,
+        "border_width": true,
+        "border_color": true,
+        "box_shadow": true
+      },
+      "type": "image",
+      "data_feed": []
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Game Title",
+      "id": "game_title",
+      "position": {
+        "x": 135,
+        "y": 38
+      },
+      "size": {
+        "w": 280,
+        "h": 24
+      },
+      "props": {
+        "text": "No Game Detected",
+        "color": "#ffffff",
+        "font_family": "Renogare.ttf",
+        "font_size": 16,
+        "font_weight": "normal",
+        "text_shadow": "2px 2px 4px rgba(0,0,0,0.8)",
+        "vertical_align": "center",
+        "white_space": "nowrap",
+        "overflow": "hidden",
+        "text_overflow": "ellipsis"
+      },
+      "source_settings_expose": {
+        "color": true,
+        "font_family": true,
+        "font_size": true,
+        "font_weight": true,
+        "text_shadow": true,
+        "text": true
+      },
+      "type": "text",
+      "data_feed": []
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Achievement Message",
+      "id": "ach_message",
+      "position": {
+        "x": 135,
+        "y": 63
+      },
+      "size": {
+        "w": 230,
+        "h": 24
+      },
+      "props": {
+        "text": "",
+        "color": "#ffffff",
+        "font_family": "Renogare.ttf",
+        "font_size": 16,
+        "font_weight": "normal",
+        "text_shadow": "2px 2px 4px rgba(0,0,0,0.8)",
+        "vertical_align": "center",
+        "white_space": "nowrap",
+        "overflow": "hidden",
+        "text_overflow": "ellipsis"
+      },
+      "source_settings_expose": {
+        "color": true,
+        "font_family": true,
+        "font_size": true,
+        "font_weight": true,
+        "text_shadow": true,
+        "text": true
+      },
+      "type": "text",
+      "data_feed": []
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Steam Level",
+      "id": "level_info",
+      "position": {
+        "x": 135,
+        "y": 88
+      },
+      "size": {
+        "w": 230,
+        "h": 24
+      },
+      "props": {
+        "text": "",
+        "color": "#ffffff",
+        "font_family": "Renogare.ttf",
+        "font_size": 16,
+        "font_weight": "normal",
+        "text_shadow": "2px 2px 4px rgba(0,0,0,0.8)",
+        "vertical_align": "center",
+        "white_space": "nowrap",
+        "overflow": "hidden",
+        "text_overflow": "ellipsis"
+      },
+      "source_settings_expose": {
+        "color": true,
+        "font_family": true,
+        "font_size": true,
+        "font_weight": true,
+        "text_shadow": true,
+        "text": true
+      },
+      "type": "text",
+      "data_feed": []
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Progress Bar",
+      "id": "progress",
+      "position": {
+        "x": 135,
+        "y": 120
+      },
+      "size": {
+        "w": 280,
+        "h": 17
+      },
+      "props": {
+        "border_color": "#000000",
+        "border_radius": 10,
+        "border_width": 0,
+        "fill_animation_duration_ms": 800,
+        "fill_animation_easing": "ease-out",
+        "fill_color": "#dc2626",
+        "track_color": "#94a3b8",
+        "near_goal_effect": "none"
+      },
+      "source_settings_expose": {
+        "fill_color": true,
+        "track_color": true,
+        "border_radius": true,
+        "fill_animation_duration_ms": true
+      },
+      "type": "progress_bar",
+      "progress_source": {
+        "counter_id": "",
+        "max": 100,
+        "max_kind": "fixed"
+      },
+      "data_feed": []
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Progress Bar",
+      "id": "progress_label",
+      "position": {
+        "x": 135,
+        "y": 120
+      },
+      "size": {
+        "w": 280,
+        "h": 17
+      },
+      "props": {
+        "text": "0%",
+        "color": "#ffffff",
+        "font_family": "Renogare.ttf",
+        "font_size": 12,
+        "font_weight": "normal",
+        "text_shadow": "2px 2px 4px rgba(0,0,0,0.8)",
+        "vertical_align": "center",
+        "white_space": "nowrap",
+        "overflow": "hidden",
+        "text_overflow": "ellipsis",
+        "text_align": "center",
+        "z_index": 2
+      },
+      "source_settings_expose": {
+        "color": true,
+        "font_family": true,
+        "font_size": true,
+        "font_weight": true,
+        "text_shadow": true,
+        "text": true
+      },
+      "type": "text",
+      "data_feed": []
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Perfect Badge",
+      "id": "perfect_badge",
+      "position": {
+        "x": 370,
+        "y": 63
+      },
+      "size": {
+        "w": 50,
+        "h": 50
+      },
+      "props": {
+        "src": "/assets/default_assets/images/steam_perfect.svg"
+      },
+      "source_settings_expose": {
+        "src": true
+      },
+      "type": "image",
+      "start_hidden": true,
+      "data_feed": []
+    },
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "none",
+        "anim_in_ms": 300,
+        "anim_out": "none",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Achievement Change",
+      "id": "ach_change",
+      "position": {
+        "x": 280,
+        "y": 8
+      },
+      "size": {
+        "w": 155,
+        "h": 26
+      },
+      "props": {
+        "text": "+1 achievement",
+        "color": "#00ff00",
+        "font_family": "Renogare.ttf",
+        "font_size": 18,
+        "font_weight": "bold",
+        "text_shadow": "2px 2px 4px rgba(0,0,0,0.8)",
+        "vertical_align": "center",
+        "white_space": "nowrap",
+        "overflow": "hidden",
+        "text_overflow": "ellipsis",
+        "text_align": "right",
+        "z_index": 5
+      },
+      "source_settings_expose": {
+        "color": true,
+        "font_family": true,
+        "font_size": true,
+        "font_weight": true,
+        "text_shadow": true,
+        "text": true
+      },
+      "type": "text",
+      "data_feed": []
+    }
+  ],
+  "advanced_js": "/* Steam achievements: behaves like the PSN trophy overlay.\n   Data: steam_data_update (sent by Mycelian about every 15 s; asked for with get_steam_data).\n   Change the settings below to tune it; colors, fonts and sizes are in Source Settings. */\nvar STEAM_SETTINGS = {\n    updateIntervalSec: 30,       /* ask Mycelian for fresh data this often (0 = only on change) */\n    autoHide: true,              /* fade out while no game is running */\n    autoHideDelaySec: 30,        /* ...after this many seconds */\n    showChanges: true,           /* \"+1 achievement\" pop-up when you unlock one */\n    changeDurationSec: 3,        /* how long the pop-up stays */\n    enableAnimations: true,      /* small scale flash when the numbers change */\n    animationSec: 0.3,\n    showPerfectBadge: true,      /* gold badge once every achievement is unlocked */\n    shimmerSec: 2,               /* progress bar shine speed (0 = off) */\n    defaultGameName: 'No Game Detected',\n    defaultGameIcon: '/assets/default_assets/images/notingame.png',\n    notConnectedIcon: '/assets/default_assets/images/notconnected.png',\n    messageFormat: '{earned} out of {total} achievements',\n    noAchievementsText: 'No achievements in this game',\n    privateText: 'Achievements are private',\n    levelFormat: 'Steam Level: {level}'\n};\n\n(function () {\n    var S = STEAM_SETTINGS;\n    var $ = function (id) { return document.getElementById(id); };\n    var root = $('game_icon') ? $('game_icon').parentElement : document.body;\n    var state = { appid: null, earned: 0, total: 0, gameName: '', icon: '', hidden: false };\n    var hideTimer = null;\n    var changeTimer = null;\n    var lastPaint = 0;\n    var painted = false;\n    var CACHE_KEY = 'mycelian_steam_achievements_state';\n\n    var css = document.createElement('style');\n    css.textContent = [\n        '.stm-root{transition:opacity ' + S.animationSec + 's ease,transform ' + S.animationSec + 's ease;transform-origin:center}',\n        '.stm-root.stm-updating{opacity:.8;transform:scale(.98)}',\n        '.stm-root.stm-hidden{opacity:0;visibility:hidden;transform:scale(.8)}',\n        '#game_icon{object-fit:cover;transition:transform ' + S.animationSec + 's ease}',\n        '#progress .spore-progress-fill{position:relative;overflow:hidden}',\n        S.shimmerSec > 0 ? '#progress .spore-progress-fill::after{content:\"\";position:absolute;top:0;left:-100%;width:100%;height:100%;' +\n            'background:linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent);animation:stmShimmer ' + S.shimmerSec + 's infinite}' : '',\n        '@keyframes stmShimmer{0%{left:-100%}100%{left:100%}}',\n        '#perfect_badge{animation:stmGlow 1.5s infinite alternate}',\n        '@keyframes stmGlow{0%{filter:brightness(1.2) drop-shadow(0 0 5px #ffd700)}100%{filter:brightness(1.2) drop-shadow(0 0 15px #ffd700)}}',\n        '#ach_change{transition:opacity ' + S.changeDurationSec + 's ease,transform ' + S.changeDurationSec + 's ease;opacity:0;pointer-events:none}',\n        '#ach_change.stm-show{opacity:1;transform:translateY(-30px)}'\n    ].join('\\n');\n    document.head.appendChild(css);\n    if (root) { root.classList.add('stm-root'); }\n\n    function setText(id, text) {\n        if (typeof sporeSetText === 'function') { sporeSetText(id, text); return; }\n        var el = $(id);\n        if (el) { el.textContent = text; }\n    }\n    function show(id, on) {\n        var el = $(id);\n        if (!el) { return; }\n        if (on) {\n            if (typeof sporeShow === 'function') { sporeShow(id); } else { el.style.display = ''; }\n        } else if (typeof sporeHide === 'function') {\n            sporeHide(id);\n        } else {\n            el.style.display = 'none';\n        }\n    }\n    function fmt(template, values) {\n        return String(template).replace(/\\{(\\w+)\\}/g, function (m, k) { return values[k] != null ? values[k] : m; });\n    }\n    function setProgress(earned, total) {\n        var pct = total > 0 ? Math.round(earned / total * 100) : 0;\n        var bars = window.__sporeProgressBars || [];\n        var spec = null;\n        for (var i = 0; i < bars.length; i++) { if (bars[i].elementId === 'progress') { spec = bars[i]; } }\n        if (spec && typeof sporeUpdateProgressBars === 'function') {\n            spec.override_value = pct;\n            spec.override_max = 100;\n            sporeUpdateProgressBars(null);\n        } else {\n            var fill = document.querySelector('#progress .spore-progress-fill');\n            if (fill) { fill.style.width = pct + '%'; }\n        }\n        setText('progress_label', pct + '%');\n    }\n    function setIcon(urls) {\n        var img = $('game_icon');\n        if (!img) { return; }\n        var list = urls.filter(Boolean);\n        var key = list.join('|');\n        if (img.getAttribute('data-stm-src') === key) { return; }\n        img.setAttribute('data-stm-src', key);\n        var i = 0;\n        img.onerror = function () { i += 1; if (i < list.length) { img.src = list[i]; } else { img.onerror = null; } };\n        img.src = list[0] || S.defaultGameIcon;\n    }\n    function showChange(n) {\n        if (!S.showChanges || n <= 0) { return; }\n        var el = $('ach_change');\n        if (!el) { return; }\n        setText('ach_change', '+' + n + ' achievement' + (n > 1 ? 's' : ''));\n        show('ach_change', true);\n        el.classList.remove('stm-show');\n        void el.offsetWidth;\n        el.classList.add('stm-show');\n        clearTimeout(changeTimer);\n        changeTimer = setTimeout(function () {\n            el.classList.remove('stm-show');\n            setTimeout(function () { show('ach_change', false); }, S.changeDurationSec * 1000);\n        }, S.changeDurationSec * 1000);\n    }\n    function setHidden(hidden) {\n        state.hidden = hidden;\n        if (root) { root.classList.toggle('stm-hidden', hidden); }\n    }\n    function checkAutoHide(inGame) {\n        clearTimeout(hideTimer);\n        if (inGame || !S.autoHide) { setHidden(false); return; }\n        hideTimer = setTimeout(function () { setHidden(true); }, S.autoHideDelaySec * 1000);\n    }\n    function paint(d) {\n        var counts = d.achievement_counts || {};\n        var earned = Number(counts.unlocked) || 0;\n        var total = Number(counts.total) || 0;\n        var inGame = !!d.current_game_appid;\n        var connected = d.connection_status === 'Connected' || d.connection_status === 'Offline';\n        var name = inGame ? (d.current_game_name || S.defaultGameName) : S.defaultGameName;\n\n        if (inGame && d.current_game_appid === state.appid && earned > state.earned) {\n            showChange(earned - state.earned);\n        }\n        state.appid = d.current_game_appid || null;\n        state.earned = earned;\n        state.total = total;\n\n        setText('game_title', name);\n        var message;\n        if (!inGame) {\n            message = connected ? '' : 'Steam not connected';\n        } else if (d.achievements_private) {\n            message = S.privateText;\n        } else if (!total) {\n            message = S.noAchievementsText;\n        } else {\n            message = fmt(S.messageFormat, { earned: earned, total: total });\n        }\n        setText('ach_message', message);\n        setText('level_info', d.steam_level != null ? fmt(S.levelFormat, { level: d.steam_level }) : '');\n        setProgress(inGame ? earned : 0, inGame ? total : 0);\n        setIcon(inGame ? [d.current_game_capsule_url, d.current_game_art_url, S.defaultGameIcon]\n                       : [connected ? S.defaultGameIcon : S.notConnectedIcon]);\n        show('perfect_badge', S.showPerfectBadge && inGame && total > 0 && earned >= total);\n        checkAutoHide(inGame);\n        painted = true;\n        try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* private mode */ }\n    }\n    function handle(d) {\n        if (!d || typeof d !== 'object') { return; }\n        var now = Date.now();\n        /* First data paints at once; later changes get the short scale flash (at most every 2 s). */\n        if (!S.enableAnimations || !root || !painted || now - lastPaint < 2000) {\n            lastPaint = now;\n            paint(d);\n            return;\n        }\n        lastPaint = now;\n        root.classList.add('stm-updating');\n        setTimeout(function () { paint(d); root.classList.remove('stm-updating'); }, S.animationSec * 500);\n    }\n    function request() {\n        if (typeof socket !== 'undefined' && socket && socket.emit) { socket.emit('get_steam_data'); }\n    }\n\n    try {\n        var cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');\n        if (cached) { paint(cached); }\n    } catch (e) { /* no cache */ }\n    show('ach_change', false);\n\n    if (typeof socket !== 'undefined' && socket && socket.on) {\n        socket.on('steam_data_update', handle);\n        socket.on('steam_data_error', function () {\n            if (root) { root.classList.add('stm-error'); setTimeout(function () { root.classList.remove('stm-error'); }, 3000); }\n        });\n        socket.on('connect', request);\n    }\n    request();\n    if (S.updateIntervalSec > 0) { setInterval(request, S.updateIntervalSec * 1000); }\n    document.addEventListener('visibilitychange', function () { if (!document.hidden) { request(); } });\n    window.steamAchievementsDebug = { state: state, request: request, paint: paint };\n})();\n",
+  "streamdeck_options": {
+    "description": "",
+    "actions": []
+  },
+  "dynamic_controls": {
+    "elements": []
+  },
+  "preview_mocks": []
+}

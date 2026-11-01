@@ -1,0 +1,71 @@
+<p class="hx-lead">Steam gives every account a free <strong>Web API key</strong>. With that key and your Steam profile, Mycelian sees the game you are playing, its achievements and your profile picture, and sends them to your overlays.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} About 3 minutes</span>
+  <span>{{icon:person}} Steam account</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Steam</span></span></span>
+</div>
+
+<p>After you connect, see <a href="help:integrations_steam">Steam Integration</a> for the achievements overlay.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="guide_steam_prereqs">
+  <li>You can sign in to Steam in a web browser.</li>
+  <li>In your Steam privacy settings, <strong>My profile</strong> and <strong>Game details</strong> are <strong>Public</strong>. Steam hides the game you are playing and your achievements from everyone else otherwise, including Mycelian.</li>
+</ul>
+
+<section class="hx-guide" data-guide="guide_steam_setup" data-title="Steam setup">
+  <div class="hx-step">
+    <h3>Get a Web API key</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>Steam</span></span> and click <strong>Get an API key</strong> (or go to <span class="hx-copy" data-copy="https://steamcommunity.com/dev/apikey">steamcommunity.com/dev/apikey</span>). Sign in, enter any domain name such as <code>localhost</code>, agree to the terms and click <strong>Register</strong>. Copy the 32-character key.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Paste the key</h3>
+    <p>Open <strong>Web API key</strong> on the account card and paste the key. Mycelian stores it encrypted. Treat it like a password: anyone with the key can use it as you.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Enter your profile</h3>
+    <p>Under <strong>Tracking</strong>, enter your Steam profile in any of these forms:</p>
+    <ul>
+      <li>your profile link, for example <code>https://steamcommunity.com/id/yourname</code></li>
+      <li>your custom URL name, for example <code>yourname</code></li>
+      <li>your 17-digit SteamID64, for example <code>76561198000000000</code></li>
+    </ul>
+  </div>
+  <div class="hx-step">
+    <h3>Click Connect</h3>
+    <p>Mycelian saves the settings and connects. The account card shows your Steam name, profile picture and status, and <strong>Current game</strong> lists the achievements of the game you are playing.</p>
+  </div>
+</section>
+
+<h2>Status</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Status</th><th>Meaning</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>The key works and you are online on Steam</td><td>Nothing</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Offline</td><td>The key works; you are offline (or invisible) on Steam</td><td>Start Steam to show your game</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Profile needed</td><td>The key is saved, but no profile is set (the status bar shows <em>Setup Needed</em>)</td><td>Enter your profile under <strong>Tracking</strong> and click <strong>Connect</strong></td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Invalid API Key</td><td>Steam refused the key (the status bar shows <em>Auth Failed</em>)</td><td>Copy the key again from the API key page and click <strong>Connect</strong></td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Profile Not Found</td><td>No profile matches what you entered</td><td>Paste your profile link instead of a name</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Disconnected</td><td>Steam couldn't be reached</td><td>Mycelian retries every minute</td></tr>
+</tbody>
+</table></div>
+
+<h2>Questions</h2>
+
+<details class="hx-details">
+  <summary>It says I'm not in a game, but I am</summary>
+  <p>Set <strong>Game details</strong> to Public in your Steam privacy settings, and make sure you aren't set to Invisible. Steam only reports the game of a visible profile. Non-Steam games added to your library are not reported.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Achievements are private</summary>
+  <p>The game shows, but its achievements don't: set <strong>Game details</strong> to Public. Changes can take a few minutes to reach the Steam Web API.</p>
+</details>
+
+<details class="hx-details">
+  <summary>How quickly do new achievements show?</summary>
+  <p>Mycelian checks your profile every 15 seconds and the current game's achievements every 30 seconds, so a new achievement shows within about half a minute.</p>
+</details>

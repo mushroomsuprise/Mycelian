@@ -28,6 +28,7 @@ PATHS = {
     "twitch_data": "TwitchData", "app_settings": "AppSettings", "psn_settings_data": "PSNSettings",
     "spotify_data": "SpotifyData", "database_settings": "DatabaseSettings", "youtube_data": "YouTubeData",
     "chatbot_data": "ChatbotData", "obs_data": "OBSData", "discord_data": "DiscordData",
+    "steam_settings_data": "SteamSettings",
 }
 
 

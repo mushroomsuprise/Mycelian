@@ -530,6 +530,11 @@ if __name__ == "__main__":
 
                 psn_service.initialize_psn_module()
 
+            def _start_steam():
+                from modules import steam_service
+
+                steam_service.initialize_steam_module()
+
             def _start_youtube():
                 from modules import youtube
 
@@ -547,6 +552,7 @@ if __name__ == "__main__":
 
             service_manager.register("spotify", _start_spotify, priority=5)
             service_manager.register("psn", _start_psn, priority=6)
+            service_manager.register("steam", _start_steam, priority=6)
             service_manager.register("youtube", _start_youtube, priority=7)
             service_manager.register("streamlabs", _start_streamlabs, priority=8)
             service_manager.register("streamelements", _start_streamelements, priority=8)

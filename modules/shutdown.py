@@ -254,6 +254,12 @@ def _stop_psn() -> None:
     psn_service.stop_psn_data_updater_thread(join_timeout=_SHUTDOWN_JOIN_TIMEOUT)
 
 
+def _stop_steam() -> None:
+    from . import steam_service
+
+    steam_service.stop_steam_data_updater_thread(join_timeout=_SHUTDOWN_JOIN_TIMEOUT)
+
+
 def _stop_twitch() -> None:
     from . import twitch
     from .twitch_oauth import stop_active_oauth
@@ -799,6 +805,7 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
                 ("spotify", _stop_spotify),
                 ("discord", _stop_discord),
                 ("psn", _stop_psn),
+                ("steam", _stop_steam),
                 ("twitch", _stop_twitch),
                 ("chatbot", _stop_chatbot),
             ],

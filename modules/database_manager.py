@@ -2927,6 +2927,7 @@ async def load_all_initial_data() -> Dict[str, Any]:
         "TwitchData",
         "AppSettings",
         "PSNSettings",
+        "SteamSettings",
         "SpotifyData",
         "YouTubeData",  # Include for tab data loading
         "ChatbotData",  # Chatbot is auto-started

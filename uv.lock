@@ -179,6 +179,19 @@ wheels = [
 ]
 
 [[package]]
+name = "beautifulsoup4"
+version = "4.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "soupsieve" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/65/318323f98dbee45d42dff61d8f047181bc6f2268a9068cfad035a46be5af/beautifulsoup4-4.15.0.tar.gz", hash = "sha256:288e3ca7d54b06f2ac191970bc275c1939cb46d450b255bf6718b04aa37ab4f7", size = 632571, upload-time = "2026-06-07T16:44:20.453Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl", hash = "sha256:d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9", size = 109924, upload-time = "2026-06-07T16:44:21.566Z" },
+]
+
+[[package]]
 name = "bidict"
 version = "0.23.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1138,6 +1151,7 @@ dependencies = [
     { name = "pystray" },
     { name = "python-engineio" },
     { name = "python-socketio" },
+    { name = "python-steam-api" },
     { name = "pytz" },
     { name = "pywebview" },
     { name = "qtpy", marker = "sys_platform == 'linux'" },
@@ -1180,6 +1194,7 @@ requires-dist = [
     { name = "pystray", specifier = ">=0.19.5" },
     { name = "python-engineio", specifier = ">=4.11.2" },
     { name = "python-socketio", specifier = ">=5.11.0" },
+    { name = "python-steam-api", specifier = "==2.2.1" },
     { name = "pytz", specifier = ">=2025.2" },
     { name = "pywebview", specifier = ">=6.2.1" },
     { name = "qtpy", marker = "sys_platform == 'linux'", specifier = ">=2.4.1" },
@@ -1951,6 +1966,19 @@ asyncio-client = [
 ]
 
 [[package]]
+name = "python-steam-api"
+version = "2.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1f/1e/ccb81e91001785c3a48ab6647de80dc74be77ea6fb8c6391a7fb03b796ab/python_steam_api-2.2.1.tar.gz", hash = "sha256:f80159562bed72c072d346aaeb8eda7536cdbfe3a161b6f874fbb7992816fbff", size = 25956, upload-time = "2025-09-20T16:49:54.669Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/7f/d0dc427358d1f43f8958ccee603e652155276ddd1e94495490541b50e357/python_steam_api-2.2.1-py3-none-any.whl", hash = "sha256:4cd4e75c366d4cc363612214eccb66201a7b86cbfe761c4fa0cec85cbb8b2e3e", size = 18284, upload-time = "2025-09-20T16:49:53.457Z" },
+]
+
+[[package]]
 name = "python-xlib"
 version = "0.33"
 source = { registry = "https://pypi.org/simple" }
@@ -2096,6 +2124,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "soupsieve"
+version = "3.0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/63/0b6bae54546aed98d72f12d09df57b19a287f01c84d22047fa2e23772ab9/soupsieve-3.0.4.tar.gz", hash = "sha256:924fab84ae21604c19e175e1f39815eb6fa83ba23836e09e9de180925e5bc4c0", size = 119017, upload-time = "2026-10-22T00:45:26.362Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/66/473f7ca0be0b06e38ee8c85ee2db184e3981bd769fac2e7c19c8a8865211/soupsieve-3.0.4-py3-none-any.whl", hash = "sha256:8412826614f9c632227067d0985aeb9f584bd15efc852955430e097a9fe7afbf", size = 42458, upload-time = "2026-10-22T00:45:24.843Z" },
 ]
 
 [[package]]

@@ -32,6 +32,7 @@ def test_tables_line_up():
         ("webengine", "Frozen (no heartbeat)", "problem"), ("webengine", "starting", "busy"),
         ("psn", "Token Expired", "off"), ("psn", "expired", "problem"),
         ("obs", "Auth Failed", "off"),
+        ("steam", "Offline", "ok"), ("steam", "Profile Not Set", "off"), ("steam", "Invalid API Key", "problem"),
         ("twitch", "Connected as bob", "ok"), ("twitch", "online", "ok"), ("spotify", "ready", "ok"),
         ("youtube", "live", "ok"), ("discord", "running", "ok"),
         ("twitch", "Not configured", "off"), ("twitch", "disabled", "off"), ("twitch", "Off", "off"),

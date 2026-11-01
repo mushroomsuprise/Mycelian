@@ -25,6 +25,7 @@ BRAND_COLORS = {
     "twitch": "#9146FF",
     "obs": "#8A8A96",
     "psn": "#0070CC",
+    "steam": "#66C0F4",
     "spotify": "#1DB954",
     "youtube": "#FF0000",
     "streamlabs": "#80F5D2",

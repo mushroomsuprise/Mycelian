@@ -25,6 +25,7 @@ LABELS: Dict[str, str] = {
     "twitch": "Twitch",
     "obs": "OBS",
     "psn": "PlayStation",
+    "steam": "Steam",
     "spotify": "Spotify",
     "youtube": "YouTube",
     "discord": "Discord",
@@ -38,6 +39,7 @@ SOURCES: Dict[str, str] = {
     "twitch": "twitch",
     "obs": "obs",
     "psn": "psn",
+    "steam": "steam",
     "spotify": "spotify",
     "youtube": "youtube",
     "discord": "discord",
@@ -49,6 +51,7 @@ SETTINGS_TABS: Dict[str, str] = {
     "twitch": "Twitch",
     "obs": "OBS",
     "psn": "PSN",
+    "steam": "Steam",
     "spotify": "Spotify",
     "youtube": "YouTube",
     "discord": "Discord",
@@ -61,6 +64,7 @@ HINTS: Dict[str, str] = {
     "obs": "Check that OBS is open on that computer with its WebSocket server on (Tools → WebSocket Server "
            "Settings), and that the host, port and password in Settings → OBS match.",
     "psn": "Open Settings → PSN and paste a fresh NPSSO code.",
+    "steam": "Check the Web API key and the profile in Settings → Steam.",
     "spotify": "Open Settings → Spotify and sign in again.",
     "youtube": "Open Settings → YouTube and reconnect your account.",
     "discord": "Check the bot token in Settings → Discord, and that the bot is still in your server.",
@@ -74,6 +78,7 @@ AUTH_HINTS: Dict[str, str] = {
     "spotify": "Open Settings → Spotify and sign in again.",
     "youtube": "Open Settings → YouTube and sign in again.",
     "discord": "The bot token was rejected. Paste a new one in Settings → Discord.",
+    "steam": "Steam refused the Web API key. Paste a new one from steamcommunity.com/dev/apikey in Settings → Steam.",
     "streamlabs": "Open Settings → Streamlabs and sign in again.",
     "streamelements": "Paste a new JWT token in Settings → StreamElements.",
     "obs": "The WebSocket password was rejected. Copy it from OBS (Tools → WebSocket Server Settings) into Settings → OBS.",
@@ -112,6 +117,10 @@ def classify(key: str, status: Optional[str]) -> str:
         return "busy"
     if key == "psn" and s == "token expired":
         return "off"  # psn_service has its own sign-in notice
+    if key == "steam" and s == "offline":
+        return "ok"  # the player is offline on Steam; the connection is fine
+    if key == "steam" and s == "profile not set":
+        return "off"  # waiting for a profile in Settings → Steam, not a connection problem
     if key == "obs" and s == "auth failed":
         return "off"  # obs_service has its own password notice
     if s.startswith("connected") or s in ("online", "running", "ready", "live"):

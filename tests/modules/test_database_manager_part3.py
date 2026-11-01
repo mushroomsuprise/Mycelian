@@ -940,7 +940,7 @@ class TestStartupPreload:
         out = asyncio.run(dbm.load_all_initial_data())
         assert out["TwitchData"] == {"t": 1}
         assert out["Alerts/AlertQueue"] == {}
-        assert len(out) == 21
+        assert len(out) == 22
         assert dbm.startup_read_failed("OBSData") and not dbm.startup_read_failed("TwitchData")
         copy1 = dbm.wait_for_startup_preload("DatabaseSettings", 0)
         assert copy1 == {"database_type": "sql"}

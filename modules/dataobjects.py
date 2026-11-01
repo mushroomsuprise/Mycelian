@@ -51,6 +51,7 @@ _BLOB_LABELS = {
     "twitch_data": "Twitch",
     "app_settings": "app",
     "psn_settings_data": "PSN",
+    "steam_settings_data": "Steam",
     "spotify_data": "Spotify",
     "database_settings": "database",
     "youtube_data": "YouTube",
@@ -287,6 +288,16 @@ class AppSettings:
 
 
 @dataclass
+class SteamSettingsData:
+    """
+    Data class for storing Steam settings (Web API key and the profile to track).
+    """
+
+    api_key: str = ""  # Steam Web API key (stored encrypted)
+    steam_profile: str = ""  # Profile URL, custom URL name or SteamID64 to track
+
+
+@dataclass
 class PSNSettingsData:
     """
     Data class for storing PSN specific settings.
@@ -509,6 +520,7 @@ class StateManager:
             "twitch_data": {},
             "app_settings": {},
             "psn_settings_data": {},  # Added for PSN
+            "steam_settings_data": {},
             "spotify_data": {},  # Added for Spotify
             "database_settings": {},  # Added for DatabaseSettings
             "youtube_data": {},  # Added for YouTube
@@ -520,6 +532,7 @@ class StateManager:
             "twitch_data": "TwitchData",
             "app_settings": "AppSettings",
             "psn_settings_data": "PSNSettings",  # Firebase path for PSN settings
+            "steam_settings_data": "SteamSettings",
             "spotify_data": "SpotifyData",  # Firebase path for Spotify data
             "database_settings": "DatabaseSettings",  # Firebase path for DatabaseSettings
             "youtube_data": "YouTubeData",  # Firebase path for YouTube data
@@ -547,6 +560,8 @@ class StateManager:
         self._live_psn_data: Optional[PSNData] = (
             PSNData()
         )  # For live PSN data from psnapi.PSNClient
+        self._steam_settings_data = SteamSettingsData()
+        self._live_steam_data: Any = None  # steam_data.SteamData from steam_service
         self._spotify_data = SpotifyData()  # Initialize default Spotify data
         self._database_settings = (
             DatabaseSettings()
@@ -623,6 +638,9 @@ class StateManager:
             self._state["app_settings"] = all_data.get(self._paths["app_settings"], {})
             self._state["psn_settings_data"] = all_data.get(
                 self._paths["psn_settings_data"], {}
+            )
+            self._state["steam_settings_data"] = all_data.get(
+                self._paths["steam_settings_data"], {}
             )
             self._state["spotify_data"] = all_data.get(self._paths["spotify_data"], {})
             self._state["youtube_data"] = all_data.get(self._paths["youtube_data"], {})
@@ -818,6 +836,9 @@ class StateManager:
             psn_settings_data = self._read_blob_checked("psn_settings_data", failed)
             self._state["psn_settings_data"] = psn_settings_data
 
+            # Load Steam settings data
+            self._state["steam_settings_data"] = self._read_blob_checked("steam_settings_data", failed)
+
             # Load Spotify data
             spotify_data = self._read_blob_checked("spotify_data", failed)
             self._state["spotify_data"] = spotify_data
@@ -988,6 +1009,17 @@ class StateManager:
             field.name: getattr(self._psn_settings_data, field.name)
             for field in PSNSettingsData.__dataclass_fields__.values()
             if not field.name.startswith("_")
+        }
+
+        # Update Steam settings data (the API key is stored encrypted)
+        steam_dict = self._state.get("steam_settings_data") or {}
+        steam_keys = SteamSettingsData.__dataclass_fields__.keys()
+        filtered_dict = {k: v for k, v in steam_dict.items() if k in steam_keys}
+        if filtered_dict.get("api_key"):
+            filtered_dict["api_key"] = ensure_decrypted(filtered_dict["api_key"])
+        self._steam_settings_data = SteamSettingsData(**filtered_dict)
+        self._state["steam_settings_data"] = {
+            name: getattr(self._steam_settings_data, name) for name in steam_keys
         }
 
         # Update Spotify data
@@ -1199,6 +1231,42 @@ class StateManager:
                 self.initialize()
 
             return copy.deepcopy(self._app_settings)
+
+    def get_steam_settings_data(self) -> SteamSettingsData:
+        """Get a copy of the Steam settings data."""
+        with self._lock:
+            if not self._initialized:
+                self.initialize()
+            return copy.deepcopy(self._steam_settings_data)
+
+    def get_live_steam_data(self) -> Any:
+        """Get a copy of the live Steam data (steam_data.SteamData), or None if not set."""
+        with self._lock:
+            return copy.deepcopy(self._live_steam_data)
+
+    def set_live_steam_data(self, data: Any) -> bool:
+        """Set the live Steam data in memory (never saved)."""
+        with self._lock:
+            try:
+                self._live_steam_data = copy.deepcopy(data)
+                return True
+            except Exception as e:
+                logger.error(f"Error setting live Steam data: {str(e)}", exc_info=True)
+                return False
+
+    def update_steam_setting(self, field: str, value: Any) -> bool:
+        """Update one Steam settings field (saved by save_changes)."""
+        with self._lock:
+            if not self._initialized:
+                self.initialize()
+            if not hasattr(self._steam_settings_data, field):
+                logger.error(f"Invalid Steam settings data field: {field}")
+                return False
+            self._state["steam_settings_data"][field] = "" if value is None else str(value)
+            self._changed_fields.add(f"steam_settings_data.{field}")
+            self._changes_pending = True
+            self._update_local_objects()
+            return True
 
     def get_psn_settings_data(self) -> PSNSettingsData:
         """Get the current PSN settings data
@@ -2311,6 +2379,13 @@ class StateManager:
                             self._state["psn_settings_data"].copy(),
                         )
                     )
+
+                # Steam settings data (API key encrypted)
+                if _changed("steam_settings_data"):
+                    encrypted_steam = self._state["steam_settings_data"].copy()
+                    if encrypted_steam.get("api_key"):
+                        encrypted_steam["api_key"] = ensure_encrypted(encrypted_steam["api_key"])
+                    writes.append((self._paths["steam_settings_data"], encrypted_steam))
 
                 # Spotify data with encryption
                 if _changed("spotify_data"):

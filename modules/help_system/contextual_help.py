@@ -261,6 +261,7 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
             # Service tabs are where accounts get connected, so open the setup guide.
             "Twitch": "twitch_setup",
             "PSN": "guide_psn",
+            "Steam": "guide_steam",
             "Spotify": "guide_spotify",
             "YouTube": "guide_youtube",
             "Streamlabs": "guide_streamlabs",

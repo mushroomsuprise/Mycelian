@@ -28,6 +28,7 @@ SETTINGS_TAB_ORDER: List[str] = [
     "Twitch",
     "OBS",
     "PSN",
+    "Steam",
     "Spotify",
     "YouTube",
     "Streamlabs",

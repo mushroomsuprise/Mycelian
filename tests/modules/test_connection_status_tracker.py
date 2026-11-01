@@ -462,5 +462,5 @@ def test_disconnected_unknown_key():
 
 
 def test_constants():
-    assert cst.REMOTE_SERVICE_KEYS == {"twitch", "spotify", "youtube", "psn"}
+    assert cst.REMOTE_SERVICE_KEYS == {"twitch", "spotify", "youtube", "psn", "steam"}
     assert set(cst.SERVICE_KEYS) <= set(cst._PROBE_INTERVAL_SEC) | {"obs"}

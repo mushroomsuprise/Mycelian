@@ -1,0 +1,497 @@
+{
+    "template_name": "steam_achievements",
+    "spore_studio": true,
+    "alert_system": "instant",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Canvas"
+        },
+        {
+            "type": "number",
+            "id": "DesignWidth",
+            "label": "Design Width",
+            "value": 470,
+            "min": 50,
+            "max": 7680,
+            "description": "Logical canvas width in pixels."
+        },
+        {
+            "type": "number",
+            "id": "DesignHeight",
+            "label": "Design Height",
+            "value": 230,
+            "min": 50,
+            "max": 4320,
+            "description": "Logical canvas height in pixels."
+        },
+        {
+            "type": "text",
+            "id": "TemplateTitle",
+            "label": "Title",
+            "value": "steam_achievements",
+            "description": "Browser title for this overlay."
+        },
+        {
+            "type": "number",
+            "id": "Duration",
+            "label": "Duration",
+            "value": 5.0,
+            "min": 0.1,
+            "max": 600,
+            "step": 0.1,
+            "description": "Display/hold duration in seconds for alert queue integration (point-reward templates matching this name)."
+        },
+        {
+            "type": "checkbox",
+            "id": "Queued",
+            "label": "Queued",
+            "value": false,
+            "description": "When enabled, point redemptions whose reward title matches this template name can hold the main alert queue."
+        },
+        {
+            "type": "separator",
+            "label": "Game Icon"
+        },
+        {
+            "type": "text",
+            "id": "game_iconSrc",
+            "label": "game_icon source URL",
+            "value": "/assets/default_assets/images/notingame.png",
+            "description": "Source URL or path for element 'game_icon'."
+        },
+        {
+            "type": "number",
+            "id": "game_icon_border_radius",
+            "label": "game_icon border radius",
+            "value": 10,
+            "min": 0,
+            "max": 4096,
+            "description": "Border Radius for 'game_icon' (pixels)."
+        },
+        {
+            "type": "number",
+            "id": "game_icon_border_width",
+            "label": "game_icon border width",
+            "value": 2,
+            "min": 0,
+            "max": 4096,
+            "description": "Border Width for 'game_icon' (pixels)."
+        },
+        {
+            "type": "color",
+            "id": "game_icon_border_color",
+            "label": "game_icon border color",
+            "value": "#991b1b",
+            "description": "Border color for 'game_icon'."
+        },
+        {
+            "type": "separator",
+            "label": "Game Title"
+        },
+        {
+            "type": "text",
+            "id": "game_titleText",
+            "label": "game_title text",
+            "value": "No Game Detected",
+            "description": "Text shown by element 'game_title'."
+        },
+        {
+            "type": "color",
+            "id": "game_title_color",
+            "label": "game_title color",
+            "value": "#ffffff",
+            "description": "Color for 'game_title'."
+        },
+        {
+            "type": "text",
+            "id": "game_title_font_family",
+            "label": "game_title font family",
+            "value": "Renogare.ttf",
+            "description": "Font Family for 'game_title'."
+        },
+        {
+            "type": "text",
+            "id": "game_title_font_weight",
+            "label": "game_title font weight",
+            "value": "normal",
+            "description": "Font Weight for 'game_title'."
+        },
+        {
+            "type": "number",
+            "id": "game_title_font_size",
+            "label": "game_title font size",
+            "value": 16,
+            "min": 0,
+            "max": 4096,
+            "description": "Font Size for 'game_title' (pixels)."
+        },
+        {
+            "type": "separator",
+            "label": "Achievement Message"
+        },
+        {
+            "type": "text",
+            "id": "ach_messageText",
+            "label": "ach_message text",
+            "value": "",
+            "description": "Text shown by element 'ach_message'."
+        },
+        {
+            "type": "color",
+            "id": "ach_message_color",
+            "label": "ach_message color",
+            "value": "#ffffff",
+            "description": "Color for 'ach_message'."
+        },
+        {
+            "type": "text",
+            "id": "ach_message_font_family",
+            "label": "ach_message font family",
+            "value": "Renogare.ttf",
+            "description": "Font Family for 'ach_message'."
+        },
+        {
+            "type": "text",
+            "id": "ach_message_font_weight",
+            "label": "ach_message font weight",
+            "value": "normal",
+            "description": "Font Weight for 'ach_message'."
+        },
+        {
+            "type": "number",
+            "id": "ach_message_font_size",
+            "label": "ach_message font size",
+            "value": 16,
+            "min": 0,
+            "max": 4096,
+            "description": "Font Size for 'ach_message' (pixels)."
+        },
+        {
+            "type": "separator",
+            "label": "Steam Level"
+        },
+        {
+            "type": "text",
+            "id": "level_infoText",
+            "label": "level_info text",
+            "value": "",
+            "description": "Text shown by element 'level_info'."
+        },
+        {
+            "type": "color",
+            "id": "level_info_color",
+            "label": "level_info color",
+            "value": "#ffffff",
+            "description": "Color for 'level_info'."
+        },
+        {
+            "type": "text",
+            "id": "level_info_font_family",
+            "label": "level_info font family",
+            "value": "Renogare.ttf",
+            "description": "Font Family for 'level_info'."
+        },
+        {
+            "type": "text",
+            "id": "level_info_font_weight",
+            "label": "level_info font weight",
+            "value": "normal",
+            "description": "Font Weight for 'level_info'."
+        },
+        {
+            "type": "number",
+            "id": "level_info_font_size",
+            "label": "level_info font size",
+            "value": 16,
+            "min": 0,
+            "max": 4096,
+            "description": "Font Size for 'level_info' (pixels)."
+        },
+        {
+            "type": "separator",
+            "label": "Progress Bar"
+        },
+        {
+            "type": "number",
+            "id": "progress_max",
+            "label": "progress max",
+            "value": 100,
+            "min": 0,
+            "max": 9999999999,
+            "description": "Goal value (100% fill) for progress bar 'progress' when max kind is fixed."
+        },
+        {
+            "type": "text",
+            "id": "progress_max_kind",
+            "label": "progress max kind",
+            "value": "fixed",
+            "description": "Max kind for 'progress': 'fixed' or 'counter'."
+        },
+        {
+            "type": "text",
+            "id": "progress_fill_animation_easing",
+            "label": "progress fill animation easing",
+            "value": "ease-out",
+            "description": "CSS easing for fill width transitions on 'progress'."
+        },
+        {
+            "type": "text",
+            "id": "progress_near_goal_effect",
+            "label": "progress near-goal effect",
+            "value": "none",
+            "description": "Animation when near goal for 'progress': none, pulse, shimmer, or scroll."
+        },
+        {
+            "type": "color",
+            "id": "progress_track_color",
+            "label": "progress track color",
+            "value": "#94a3b8",
+            "description": "Track Color for 'progress'."
+        },
+        {
+            "type": "color",
+            "id": "progress_fill_color",
+            "label": "progress fill color",
+            "value": "#dc2626",
+            "description": "Fill Color for 'progress'."
+        },
+        {
+            "type": "number",
+            "id": "progress_border_radius",
+            "label": "progress border radius",
+            "value": 10,
+            "min": 0,
+            "max": 4096,
+            "description": "Border Radius for 'progress' (pixels)."
+        },
+        {
+            "type": "number",
+            "id": "progress_border_width",
+            "label": "progress border width",
+            "value": 0,
+            "min": 0,
+            "max": 4096,
+            "description": "Border Width for 'progress' (pixels)."
+        },
+        {
+            "type": "number",
+            "id": "progress_fill_animation_duration_ms",
+            "label": "progress fill animation duration ms",
+            "value": 800,
+            "min": 0,
+            "max": 4096,
+            "description": "Fill Animation Duration Ms for 'progress' (pixels)."
+        },
+        {
+            "type": "color",
+            "id": "progress_border_color",
+            "label": "progress border color",
+            "value": "#000000",
+            "description": "Border color for 'progress'."
+        },
+        {
+            "type": "text",
+            "id": "progress_labelText",
+            "label": "progress_label text",
+            "value": "0%",
+            "description": "Text shown by element 'progress_label'."
+        },
+        {
+            "type": "color",
+            "id": "progress_label_color",
+            "label": "progress_label color",
+            "value": "#ffffff",
+            "description": "Color for 'progress_label'."
+        },
+        {
+            "type": "text",
+            "id": "progress_label_font_family",
+            "label": "progress_label font family",
+            "value": "Renogare.ttf",
+            "description": "Font Family for 'progress_label'."
+        },
+        {
+            "type": "text",
+            "id": "progress_label_font_weight",
+            "label": "progress_label font weight",
+            "value": "normal",
+            "description": "Font Weight for 'progress_label'."
+        },
+        {
+            "type": "text",
+            "id": "progress_label_text_align",
+            "label": "progress_label text align",
+            "value": "center",
+            "description": "Text Align for 'progress_label'."
+        },
+        {
+            "type": "number",
+            "id": "progress_label_font_size",
+            "label": "progress_label font size",
+            "value": 12,
+            "min": 0,
+            "max": 4096,
+            "description": "Font Size for 'progress_label' (pixels)."
+        },
+        {
+            "type": "separator",
+            "label": "Perfect Badge"
+        },
+        {
+            "type": "text",
+            "id": "perfect_badgeSrc",
+            "label": "perfect_badge source URL",
+            "value": "/assets/default_assets/images/steam_perfect.svg",
+            "description": "Source URL or path for element 'perfect_badge'."
+        },
+        {
+            "type": "separator",
+            "label": "Achievement Change"
+        },
+        {
+            "type": "text",
+            "id": "ach_changeText",
+            "label": "ach_change text",
+            "value": "+1 achievement",
+            "description": "Text shown by element 'ach_change'."
+        },
+        {
+            "type": "color",
+            "id": "ach_change_color",
+            "label": "ach_change color",
+            "value": "#00ff00",
+            "description": "Color for 'ach_change'."
+        },
+        {
+            "type": "text",
+            "id": "ach_change_font_family",
+            "label": "ach_change font family",
+            "value": "Renogare.ttf",
+            "description": "Font Family for 'ach_change'."
+        },
+        {
+            "type": "text",
+            "id": "ach_change_font_weight",
+            "label": "ach_change font weight",
+            "value": "bold",
+            "description": "Font Weight for 'ach_change'."
+        },
+        {
+            "type": "text",
+            "id": "ach_change_text_align",
+            "label": "ach_change text align",
+            "value": "right",
+            "description": "Text Align for 'ach_change'."
+        },
+        {
+            "type": "number",
+            "id": "ach_change_font_size",
+            "label": "ach_change font size",
+            "value": 18,
+            "min": 0,
+            "max": 4096,
+            "description": "Font Size for 'ach_change' (pixels)."
+        }
+    ],
+    "streamdeck_options": {
+        "description": "",
+        "actions": {}
+    },
+    "preview_mocks": [
+        {
+            "event": "instant_alert",
+            "label": "Random instant alert"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Follow",
+            "alert_type": "follow"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Sub",
+            "alert_type": "sub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Resub",
+            "alert_type": "resub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Gift sub",
+            "alert_type": "giftsub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Bits",
+            "alert_type": "bit"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Raid",
+            "alert_type": "raid"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Donation",
+            "alert_type": "donation"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Points",
+            "alert_type": "point"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Streak",
+            "alert_type": "streak"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Hype train",
+            "alert_type": "hype_train"
+        }
+    ],
+    "outputs": {
+        "progress_goal": {
+            "event": "goal_reached",
+            "label": "progress goal reached",
+            "description": "The bar's value reached its goal.",
+            "element_id": "progress",
+            "element_type": "progress_bar",
+            "payload": [
+                {
+                    "key": "template",
+                    "label": "Template name",
+                    "type": "string"
+                },
+                {
+                    "key": "elementId",
+                    "label": "Block id",
+                    "type": "string"
+                },
+                {
+                    "key": "counterId",
+                    "label": "Counter id",
+                    "type": "string"
+                },
+                {
+                    "key": "value",
+                    "label": "Value",
+                    "type": "number"
+                },
+                {
+                    "key": "max",
+                    "label": "Goal",
+                    "type": "number"
+                }
+            ],
+            "generated": true,
+            "match": {
+                "elementId": "progress"
+            }
+        }
+    }
+}

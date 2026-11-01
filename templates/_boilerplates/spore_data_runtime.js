@@ -3513,7 +3513,7 @@
 
     /* Feeds only hear events as they happen. For sources that can replay their current
        state, ask once on load (and after a reconnect) so a refreshed overlay is not blank. */
-    var SPORE_STATE_REQUESTS = { giveaway_: 'giveaway_request_state' };
+    var SPORE_STATE_REQUESTS = { giveaway_: 'giveaway_request_state', steam_: 'get_steam_data' };
 
     function sporeRequestFeedState(feeds) {
         if (typeof socket === 'undefined' || !socket || !socket.emit) { return; }

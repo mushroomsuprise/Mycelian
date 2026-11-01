@@ -1003,6 +1003,7 @@ class SettingsUI:
             from .tabs.game_hooks_tab import GameHooksTab
             from .tabs.obs_tab import ObsTab
             from .tabs.psn_tab import PSNTab
+            from .tabs.steam_tab import SteamTab
             from .tabs.spotify_tab import SpotifyTab
             from .tabs.statistics_tab import StatisticsTab
             from .tabs.theme_tab import ThemeTab
@@ -1020,6 +1021,8 @@ class SettingsUI:
                 twitch_tab = TwitchTab()
             with StartupTimer("settings_tab_objects_psn"):
                 psn_tab = PSNTab()
+            with StartupTimer("settings_tab_objects_steam"):
+                steam_tab = SteamTab()
             with StartupTimer("settings_tab_objects_spotify"):
                 spotify_tab = SpotifyTab()
             with StartupTimer("settings_tab_objects_youtube"):
@@ -1044,6 +1047,7 @@ class SettingsUI:
                 "Theme": theme_tab,
                 "Twitch": twitch_tab,
                 "PSN": psn_tab,
+                "Steam": steam_tab,
                 "Spotify": spotify_tab,
                 "YouTube": youtube_tab,
                 "Streamlabs": streamlabs_tab,
@@ -1077,6 +1081,7 @@ class SettingsUI:
                         "Twitch",
                         "OBS",
                         "PSN",
+                        "Steam",
                         "Spotify",
                         "YouTube",
                         "Streamlabs",
@@ -1093,6 +1098,7 @@ class SettingsUI:
                         ui.tab("Twitch", icon=service_tab_icon("twitch"))
                         ui.tab("OBS", icon=service_tab_icon("obs"))
                         ui.tab("PSN", icon=service_tab_icon("psn"))
+                        ui.tab("Steam", icon=service_tab_icon("steam"))
                         ui.tab("Spotify", icon=service_tab_icon("spotify"))
                         ui.tab("YouTube", icon=service_tab_icon("youtube"))
                         ui.tab("Streamlabs", icon=service_tab_icon("streamlabs"))
@@ -1172,6 +1178,8 @@ class SettingsUI:
                                         self._tabs_by_name["Twitch"].build(container)
                                     elif tab_name == "PSN":
                                         self._tabs_by_name["PSN"].build(container)
+                                    elif tab_name == "Steam":
+                                        self._tabs_by_name["Steam"].build(container)
                                     elif tab_name == "Spotify":
                                         self._tabs_by_name["Spotify"].build(container)
                                     elif tab_name == "YouTube":
@@ -1228,6 +1236,7 @@ class SettingsUI:
                             "Twitch",
                             "OBS",
                             "PSN",
+                            "Steam",
                             "Spotify",
                             "YouTube",
                             "Streamlabs",

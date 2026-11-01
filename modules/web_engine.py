@@ -7879,6 +7879,22 @@ class WebEngine:
                 self.socketio.emit("psn_data_error", {"error": str(e)}, to=client_sid)
                 return False
 
+        @self.socketio.on("get_steam_data")
+        def handle_get_steam_data(data=None):
+            """Send the latest Steam state (profile, game, achievements) to the requesting overlay."""
+            client_sid = request.sid
+            try:
+                from .steam_data import SteamData
+                from .steamapi import public_payload
+
+                live = state_manager.get_live_steam_data() or SteamData()
+                self.socketio.emit("steam_data_update", public_payload(live), to=client_sid)
+                return True
+            except Exception as e:
+                logger.error("Error handling get_steam_data: %s", e, exc_info=True)
+                self.socketio.emit("steam_data_error", {"error": str(e)}, to=client_sid)
+                return False
+
         @self.socketio.on("pause-loaded")
         def handle_pause_loaded():
             """

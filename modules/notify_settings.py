@@ -50,6 +50,7 @@ SOURCES: Tuple[Tuple[str, str, str], ...] = (
     ("discord", "Discord", "forum"),
     ("spotify", "Spotify", "music_note"),
     ("psn", "PlayStation", "sports_esports"),
+    ("steam", "Steam", "sports_esports"),
     ("streamlabs", "Streamlabs", "volunteer_activism"),
     ("streamelements", "StreamElements", "volunteer_activism"),
     ("game_hooks", "Game Hooks", "videogame_asset"),

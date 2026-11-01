@@ -234,6 +234,40 @@ _EVENTS: List[Dict[str, Any]] = [
         ],
     },
     {
+        "event": "steam_data_update",
+        "label": "Steam game & achievements",
+        "alert_system": "either",
+        "description": (
+            "Fired about every 15 seconds with the tracked Steam profile, the game it is playing "
+            "and that game's achievements."
+        ),
+        "payload": [
+            {"key": "persona_name", "label": "Profile name", "type": "string"},
+            {"key": "avatar_url", "label": "Profile picture URL", "type": "string"},
+            {"key": "persona_state", "label": "Status (Online, Away...)", "type": "string"},
+            {"key": "current_game_name", "label": "Game name", "type": "string"},
+            {"key": "current_game_art_url", "label": "Game art URL", "type": "string"},
+            {"key": "achievement_counts.unlocked", "label": "Achievements unlocked", "type": "number"},
+            {"key": "achievement_counts.total", "label": "Achievements in the game", "type": "number"},
+            {"key": "current_game_progress", "label": "Progress (percent)", "type": "number"},
+            {"key": "steam_level", "label": "Steam level", "type": "number"},
+            {"key": "last_unlock.name", "label": "Latest achievement", "type": "string"},
+        ],
+    },
+    {
+        "event": "steam_achievement_unlocked",
+        "label": "Steam achievement unlocked",
+        "alert_system": "either",
+        "description": "Fired once for each new achievement the tracked Steam profile unlocks.",
+        "payload": [
+            {"key": "name", "label": "Achievement name", "type": "string"},
+            {"key": "description", "label": "Description", "type": "string"},
+            {"key": "icon_url", "label": "Icon URL", "type": "string"},
+            {"key": "global_percent", "label": "Players who have it (percent)", "type": "number"},
+            {"key": "game_name", "label": "Game name", "type": "string"},
+        ],
+    },
+    {
         "event": "refresh-alerts",
         "label": "Refresh alerts",
         "alert_system": "either",

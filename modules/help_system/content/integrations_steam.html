@@ -1,0 +1,39 @@
+<p class="hx-lead">With Steam connected, Mycelian knows which Steam game you are playing and how many of its achievements you have, and shows it on stream with the Steam achievements overlay.</p>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:guide_steam">{{brand:steam}}<span><strong>Not connected yet?</strong><span class="hx-card-text">Connect Steam with a free Web API key and your profile</span></span></a>
+</div>
+
+<h2>What the connection gives you</h2>
+
+<ul>
+<li><strong>Profile</strong>: your Steam name, profile picture, status (Online, Away, Busy...) and Steam level.</li>
+<li><strong>Now playing</strong>: the current game's name and artwork.</li>
+<li><strong>Achievements</strong>: unlocked and total achievements for the current game, its completion percentage, every achievement with its icon and how many players have it, and the ones you unlocked most recently.</li>
+</ul>
+
+<h2>Steam achievements overlay</h2>
+
+<p>The <code>steam_achievements</code> template looks and behaves like the PlayStation <code>trophies</code> overlay: game art, the game name, "<em>X out of Y achievements</em>", your Steam level, a progress bar with a shine, a gold badge once every achievement is unlocked, and a "+1 achievement" pop-up when you unlock one. It fades out after 30 seconds without a game.</p>
+
+<ol>
+<li>Open <span class="hx-path"><span>Settings</span><span>About</span></span> and find <code>steam_achievements</code> under <strong>Browser source URLs</strong>, then add it to OBS as a browser source (470 × 230).</li>
+<li>Change colors, fonts and sizes in <strong>Source Settings</strong>, or open it in <a href="help:spore_studio_overview">Spore Studio</a> to move things around.</li>
+<li>Behavior (update interval, auto-hide, the pop-up, the badge and the text formats) is in the <code>STEAM_SETTINGS</code> block at the top of the template's <a href="help:spore_studio_advanced_js">Advanced JS</a>.</li>
+</ol>
+
+<h2>Build your own</h2>
+
+<p>Spore Studio offers two Steam events for data feeds and Advanced JS:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Event</th><th>When</th><th>Useful fields</th></tr></thead>
+<tbody>
+<tr><td><code>steam_data_update</code></td><td>About every 15 seconds</td><td><code>persona_name</code>, <code>avatar_url</code>, <code>current_game_name</code>, <code>current_game_art_url</code>, <code>achievement_counts.unlocked</code>, <code>achievement_counts.total</code>, <code>current_game_progress</code>, <code>steam_level</code>, <code>last_unlock.name</code></td></tr>
+<tr><td><code>steam_achievement_unlocked</code></td><td>Once per new achievement</td><td><code>name</code>, <code>description</code>, <code>icon_url</code>, <code>global_percent</code>, <code>game_name</code></td></tr>
+</tbody>
+</table></div>
+
+<p>An overlay can ask for the latest data at any time by emitting <code>get_steam_data</code>. Feeds listening to a Steam event ask for it on their own when the overlay loads.</p>
+
+<div class="hx-callout hx-note"><p>Steam achievements are not part of the alert system: there are no achievement alert types and no chatbot variables.</p></div>

@@ -20,6 +20,7 @@ SERVICE_KEYS = (
     "spotify",
     "youtube",
     "psn",
+    "steam",
     "obs",
     "discord",
     "webengine",
@@ -168,6 +169,16 @@ def streamelements_configured() -> bool:
         return False
 
 
+def steam_configured() -> bool:
+    """A Steam Web API key is saved."""
+    try:
+        from .dataobjects import state_manager
+
+        return bool((state_manager.get_steam_settings_data().api_key or "").strip())
+    except Exception:
+        return False
+
+
 def service_configured(key: str) -> bool:
     if key == "twitch":
         return twitch_configured()
@@ -177,6 +188,8 @@ def service_configured(key: str) -> bool:
         return youtube_configured()
     if key == "psn":
         return psn_configured()
+    if key == "steam":
+        return steam_configured()
     if key == "obs":
         return obs_configured()
     if key == "discord":
@@ -197,6 +210,7 @@ _PROBE_INTERVAL_SEC: Dict[str, float] = {
     "spotify": 15.0,
     "youtube": 30.0,
     "psn": 12.0,
+    "steam": 15.0,
     "discord": 15.0,
     "streamlabs": 15.0,
     "streamelements": 15.0,
@@ -204,7 +218,7 @@ _PROBE_INTERVAL_SEC: Dict[str, float] = {
 }
 
 # Remote integrations whose footer/settings status reflects connectivity probes.
-REMOTE_SERVICE_KEYS = frozenset({"twitch", "spotify", "youtube", "psn"})
+REMOTE_SERVICE_KEYS = frozenset({"twitch", "spotify", "youtube", "psn", "steam"})
 
 # A WebEngine heartbeat older than this means the gevent hub is stalled.
 _WEBENGINE_FREEZE_SEC = 60.0
@@ -388,6 +402,11 @@ def get_connection_status(key: str) -> str:
 
         base_status = psn_service.get_psn_status_label()
 
+    elif key == "steam":
+        from . import steam_service
+
+        base_status = steam_service.get_steam_status_label()
+
     elif key == "obs":
         from .obs_service import obs_service
 
@@ -502,6 +521,11 @@ def is_remote_service_disconnected(key: str) -> bool:
         from . import psn_service
 
         return psn_service.is_psn_api_disconnected()
+
+    if key == "steam":
+        from . import steam_service
+
+        return steam_service.is_steam_api_disconnected()
 
     if key == "discord":
         from . import discord_service

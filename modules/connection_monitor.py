@@ -299,6 +299,7 @@ _SERVICE_PROBE_URLS: Dict[str, str] = {
     "spotify": "https://api.spotify.com/v1/me",
     "youtube": "https://www.googleapis.com/youtube/v3/",
     "psn": "https://ca.account.sony.com/",
+    "steam": "https://api.steampowered.com/",
     "chatbot": "https://api.twitch.tv/helix/users",
 }
 
@@ -394,7 +395,7 @@ class _ServiceEntry:
 def _build_registry() -> List[_ServiceEntry]:
     from . import chatbot, discord_service, spotify, twitch, youtube
     from . import database_manager
-    from . import psn_service
+    from . import psn_service, steam_service
     from .connection_status_tracker import is_remote_service_disconnected
 
     entries: List[_ServiceEntry] = [
@@ -421,6 +422,12 @@ def _build_registry() -> List[_ServiceEntry]:
             is_configured=psn_service.psn_configured_for_monitor,
             is_disconnected=lambda: is_remote_service_disconnected("psn"),
             attempt_reconnect=lambda: psn_service.attempt_auto_reconnect(),
+        ),
+        _ServiceEntry(
+            key="steam",
+            is_configured=steam_service.steam_configured_for_monitor,
+            is_disconnected=lambda: is_remote_service_disconnected("steam"),
+            attempt_reconnect=lambda: steam_service.attempt_auto_reconnect(),
         ),
         _ServiceEntry(
             key="discord",

@@ -2702,6 +2702,97 @@
    },
    {
     "alert_system": "either",
+    "description": "Fired about every 15 seconds with the tracked Steam profile, the game it is playing and that game's achievements.",
+    "event": "steam_data_update",
+    "label": "Steam game & achievements",
+    "payload": [
+     {
+      "key": "persona_name",
+      "label": "Profile name",
+      "type": "string"
+     },
+     {
+      "key": "avatar_url",
+      "label": "Profile picture URL",
+      "type": "string"
+     },
+     {
+      "key": "persona_state",
+      "label": "Status (Online, Away...)",
+      "type": "string"
+     },
+     {
+      "key": "current_game_name",
+      "label": "Game name",
+      "type": "string"
+     },
+     {
+      "key": "current_game_art_url",
+      "label": "Game art URL",
+      "type": "string"
+     },
+     {
+      "key": "achievement_counts.unlocked",
+      "label": "Achievements unlocked",
+      "type": "number"
+     },
+     {
+      "key": "achievement_counts.total",
+      "label": "Achievements in the game",
+      "type": "number"
+     },
+     {
+      "key": "current_game_progress",
+      "label": "Progress (percent)",
+      "type": "number"
+     },
+     {
+      "key": "steam_level",
+      "label": "Steam level",
+      "type": "number"
+     },
+     {
+      "key": "last_unlock.name",
+      "label": "Latest achievement",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired once for each new achievement the tracked Steam profile unlocks.",
+    "event": "steam_achievement_unlocked",
+    "label": "Steam achievement unlocked",
+    "payload": [
+     {
+      "key": "name",
+      "label": "Achievement name",
+      "type": "string"
+     },
+     {
+      "key": "description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "icon_url",
+      "label": "Icon URL",
+      "type": "string"
+     },
+     {
+      "key": "global_percent",
+      "label": "Players who have it (percent)",
+      "type": "number"
+     },
+     {
+      "key": "game_name",
+      "label": "Game name",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
     "description": "Broadcast when alert settings change. Bind to this if your overlay needs to reset state or reload assets.",
     "event": "refresh-alerts",
     "label": "Refresh alerts",
@@ -2994,7 +3085,7 @@
     "alert_system": "either",
     "description": "The bar's value reached its goal.",
     "event": "goal_reached",
-    "label": "progress_bar3 goal reached (subcounter)",
+    "label": "progress goal reached (steam_achievements)",
     "origin": "template",
     "payload": [
      {
@@ -3024,6 +3115,7 @@
      }
     ],
     "templates": [
+     "steam_achievements",
      "subcounter"
     ]
    }
@@ -5992,6 +6084,48 @@
    },
    {
     "description": "The bar's value reached its goal.",
+    "element_id": "progress",
+    "element_type": "progress_bar",
+    "event": "goal_reached",
+    "generated": true,
+    "id": "steam_achievements:progress_goal",
+    "label": "progress goal reached",
+    "match": {
+     "elementId": "progress"
+    },
+    "origin": "declared",
+    "output_id": "progress_goal",
+    "payload": [
+     {
+      "key": "template",
+      "label": "Template name",
+      "type": "string"
+     },
+     {
+      "key": "elementId",
+      "label": "Block id",
+      "type": "string"
+     },
+     {
+      "key": "counterId",
+      "label": "Counter id",
+      "type": "string"
+     },
+     {
+      "key": "value",
+      "label": "Value",
+      "type": "number"
+     },
+     {
+      "key": "max",
+      "label": "Goal",
+      "type": "number"
+     }
+    ],
+    "template": "steam_achievements"
+   },
+   {
+    "description": "The bar's value reached its goal.",
     "element_id": "progress_bar3",
     "element_type": "progress_bar",
     "event": "goal_reached",
@@ -7437,6 +7571,97 @@
    },
    {
     "alert_system": "either",
+    "description": "Fired about every 15 seconds with the tracked Steam profile, the game it is playing and that game's achievements.",
+    "event": "steam_data_update",
+    "label": "Steam game & achievements",
+    "payload": [
+     {
+      "key": "persona_name",
+      "label": "Profile name",
+      "type": "string"
+     },
+     {
+      "key": "avatar_url",
+      "label": "Profile picture URL",
+      "type": "string"
+     },
+     {
+      "key": "persona_state",
+      "label": "Status (Online, Away...)",
+      "type": "string"
+     },
+     {
+      "key": "current_game_name",
+      "label": "Game name",
+      "type": "string"
+     },
+     {
+      "key": "current_game_art_url",
+      "label": "Game art URL",
+      "type": "string"
+     },
+     {
+      "key": "achievement_counts.unlocked",
+      "label": "Achievements unlocked",
+      "type": "number"
+     },
+     {
+      "key": "achievement_counts.total",
+      "label": "Achievements in the game",
+      "type": "number"
+     },
+     {
+      "key": "current_game_progress",
+      "label": "Progress (percent)",
+      "type": "number"
+     },
+     {
+      "key": "steam_level",
+      "label": "Steam level",
+      "type": "number"
+     },
+     {
+      "key": "last_unlock.name",
+      "label": "Latest achievement",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired once for each new achievement the tracked Steam profile unlocks.",
+    "event": "steam_achievement_unlocked",
+    "label": "Steam achievement unlocked",
+    "payload": [
+     {
+      "key": "name",
+      "label": "Achievement name",
+      "type": "string"
+     },
+     {
+      "key": "description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "icon_url",
+      "label": "Icon URL",
+      "type": "string"
+     },
+     {
+      "key": "global_percent",
+      "label": "Players who have it (percent)",
+      "type": "number"
+     },
+     {
+      "key": "game_name",
+      "label": "Game name",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
     "description": "Broadcast when alert settings change. Bind to this if your overlay needs to reset state or reload assets.",
     "event": "refresh-alerts",
     "label": "Refresh alerts",
@@ -7729,7 +7954,7 @@
     "alert_system": "either",
     "description": "The bar's value reached its goal.",
     "event": "goal_reached",
-    "label": "progress_bar3 goal reached (subcounter)",
+    "label": "progress goal reached (steam_achievements)",
     "origin": "template",
     "payload": [
      {
@@ -7759,6 +7984,7 @@
      }
     ],
     "templates": [
+     "steam_achievements",
      "subcounter"
     ]
    }

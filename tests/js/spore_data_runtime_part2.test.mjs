@@ -1319,6 +1319,17 @@ test("sporeInitFeeds binds once, polls stats for stats feeds and asks giveaway s
     n.I.sporeRequestFeedState([]);
 });
 
+test("Steam feeds ask Mycelian for the latest Steam data on load and on reconnect", () => {
+    const s = setup({ html: '<span id="e"></span>' });
+    s.I.sporeRequestFeedState([
+        { enabled: true, source: { kind: "event", events: ["steam_data_update"] } },
+        { enabled: true, source: { kind: "event", events: ["steam_achievement_unlocked"] } },
+    ]);
+    assert.equal(s.socket.emitted.filter((e) => e[0] === "get_steam_data").length, 1, "asked once for both feeds");
+    s.socket._recv("connect");
+    assert.equal(s.socket.emitted.filter((e) => e[0] === "get_steam_data").length, 2);
+});
+
 /* ------------------------------------------------------------------ transforms */
 
 test("transform helpers: origins, mapping, first number", () => {
