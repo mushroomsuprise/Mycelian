@@ -227,6 +227,7 @@
       queue: normQueue(null), meta: { connected: true, dock_open: null, app: !opts.dock }
     };
     this.menuOpen = false;
+    this.searchOpen = false;
     this.searchTimer = null;
     this.pendingSearch = null;
     this.tickN = 0;
@@ -248,15 +249,17 @@
       var color = k ? k[1] : 'var(--color-text-muted)';
       return '<label class="' + (i === 0 ? 'is-all' : '') + '" style="--tc:' + color + '"><input type="checkbox" data-filter="' + f[0] + '">' + mi(f[2]) + esc(f[1]) + '</label>';
     }).join('');
-    var tools = '<label class="afx-search">' + mi('search') + '<input type="text" data-r="search" placeholder="Search people or messages" autocomplete="off" spellcheck="false">' +
-      '<button type="button" class="afx-clear" data-a="clear-search" title="Clear search">' + mi('close') + '</button></label>' +
-      '<div class="afx-filter-wrap" data-r="fwrap"><button type="button" class="afx-filter" data-a="filters" title="Choose which events show">' + mi('filter_list') + 'Filters<span class="n" data-r="fcount"></span></button>' +
+    // afx-sopen: the magnifier a narrow dock shows instead of the search box.
+    var tools = '<div class="afx-sbox" data-r="sbox"><button type="button" class="afx-sopen" data-a="search-open" title="Search people or messages">' + mi('search') + '</button>' +
+      '<label class="afx-search">' + mi('search') + '<input type="text" data-r="search" placeholder="Search people or messages" autocomplete="off" spellcheck="false">' +
+      '<button type="button" class="afx-clear" data-a="clear-search" title="Clear search">' + mi('close') + '</button></label></div>' +
+      '<div class="afx-filter-wrap" data-r="fwrap"><button type="button" class="afx-filter" data-a="filters" title="Choose which events show">' + mi('filter_list') + '<span class="lb">Filters</span><span class="n" data-r="fcount"></span></button>' +
       '<div class="afx-menu" data-r="menu">' + menu + '</div></div>';
     var html;
     if (dock) {
       html = '<div class="afx-shell"><div class="afx-head">' + play +
         '<button type="button" class="afx-ibtn" data-a="settings" title="Feed look: Mycelian → Settings → App Settings → Activity Feed">' + mi('tune') + '</button></div>' +
-        '<div class="afx-bar">' + tabs + '</div><div class="afx-bar">' + tools + '</div>';
+        '<div class="afx-bar">' + tabs + tools + '</div>';
     } else {
       html = '<div class="afx-shell"><div class="afx-head"><span class="afx-tile">' + mi('dynamic_feed') + '</span>' +
         '<div><div class="afx-title">Activity Feed</div><div class="afx-sub">Everything that happened on stream · mirrored in the OBS dock</div></div>' +
@@ -279,7 +282,16 @@
     root.addEventListener('keydown', function (e) { if (e.key === 'Escape' && self.dialogUser) { self.closeDialog(); } });
     root.addEventListener('change', function (e) { self.onChange(e); });
     this.r.search.addEventListener('input', function () { self.onSearchInput(); });
-    this.r.search.addEventListener('keydown', function (e) { if (e.key === 'Escape') { self.r.search.value = ''; self.onSearchInput(); } });
+    this.r.search.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        self.r.search.value = ''; self.searchOpen = false; self.onSearchInput();
+        if (self.dock) { self.r.search.blur(); }
+      }
+    });
+    // An empty search folds back into the magnifier on narrow docks.
+    this.r.search.addEventListener('blur', function () {
+      if (self.searchOpen && !self.r.search.value) { self.searchOpen = false; self.renderHead(); }
+    });
     this.docClick = function (e) {
       if (self.menuOpen && !self.r.fwrap.contains(e.target)) { self.menuOpen = false; self.renderHead(); }
     };
@@ -381,6 +393,7 @@
       }
     }
     else if (a === 'filters') { this.menuOpen = !this.menuOpen; this.renderHead(); }
+    else if (a === 'search-open') { this.searchOpen = true; this.renderHead(); this.r.search.focus(); }
     else if (a === 'clear-search') { this.r.search.value = ''; this.onSearchInput(); this.r.search.focus(); }
     else if (a === 'clear-filters') {
       s.view.filters = normFilters(null); this.r.search.value = ''; this.onSearchInput();
@@ -488,7 +501,11 @@
       box.checked = f[box.getAttribute('data-filter')] !== false;
     });
     r.menu.classList.toggle('is-open', this.menuOpen);
-    r.search.parentNode.classList.toggle('has-text', !!r.search.value);
+    var hasText = !!r.search.value, searching = this.searchOpen || hasText;
+    r.search.parentNode.classList.toggle('has-text', hasText);
+    r.sbox.classList.toggle('has-text', hasText);
+    r.sbox.classList.toggle('is-open', searching);
+    this.root.classList.toggle('is-searching', searching);
     if (r.sync) {
       var open = s.meta.dock_open;
       r.sync.classList.toggle('is-off', open === false);

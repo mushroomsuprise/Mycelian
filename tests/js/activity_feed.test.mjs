@@ -241,6 +241,40 @@ test("dock feed has the compact head and no app-only controls", () => {
     assert.ok(s.q('[data-r="strip"]').textContent.includes("Reconnecting to Mycelian"));
 });
 
+test("dock: tabs, search and filters share one toolbar row; the magnifier opens the search", () => {
+    const s = feed({ dock: true });
+    const bars = s.qa(".afx-bar");
+    assert.equal(bars.length, 1);
+    for (const sel of [".afx-seg", ".afx-sbox", ".afx-search", ".afx-sopen", ".afx-filter"]) {
+        assert.ok(bars[0].querySelector(sel), sel);
+    }
+    assert.equal(s.q(".afx-filter .lb").textContent, "Filters");
+    const box = s.q('[data-r="sbox"]'), input = s.q('[data-r="search"]');
+    assert.ok(!box.classList.contains("is-open") && !s.f.root.classList.contains("is-searching"));
+    fire(s.win, s.q('[data-a="search-open"]'), "click");
+    assert.ok(box.classList.contains("is-open") && s.f.root.classList.contains("is-searching"));
+    assert.equal(s.doc.activeElement, input);
+    fire(s.win, input, "blur");
+    assert.ok(!box.classList.contains("is-open"), "an empty search folds back");
+    fire(s.win, s.q('[data-a="search-open"]'), "click");
+    input.value = "ali";
+    fire(s.win, input, "input");
+    fire(s.win, input, "blur");
+    assert.ok(box.classList.contains("is-open") && box.classList.contains("has-text"), "a search with text stays open");
+    fire(s.win, input, "keydown", { key: "Escape" });
+    assert.equal(input.value, "");
+    assert.ok(!box.classList.contains("is-open") && !s.f.root.classList.contains("is-searching"));
+    s.clock.tick(250); // the cleared search is sent
+    s.f.set("view", { mode: "feed", search: "bob", revision: 3 });
+    assert.ok(box.classList.contains("is-open"), "a search from the other view opens the box");
+});
+
+test("app feed keeps tabs and tools on its own toolbar", () => {
+    const s = feed();
+    assert.equal(s.qa(".afx-bar").length, 1);
+    assert.ok(s.q(".afx-bar .afx-sync") && s.q(".afx-bar .afx-sbox"));
+});
+
 test("live rows render escaped text, icons, platform, seq, time and replay hint", () => {
     const s = feed();
     s.f.set("live", [

@@ -63,6 +63,10 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx-search .mi { font-size: 16px; }
 .afx-search .afx-clear { display: none; border: 0; background: transparent; color: var(--color-text-muted); cursor: pointer; padding: 0; }
 .afx-search.has-text .afx-clear { display: inline-flex; }
+.afx-sbox { display: contents; }
+.afx-sopen { display: none; height: 30px; width: 30px; padding: 0; border-radius: 8px; border: 1px solid var(--color-border-subtle); background: var(--color-bg-base);
+  color: var(--color-text-secondary); cursor: pointer; align-items: center; justify-content: center; flex: 0 0 auto; position: relative; }
+.afx-sopen .mi { font-size: 17px; }
 .afx-filter-wrap { position: relative; }
 .afx-filter { height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--color-border-subtle); background: var(--color-bg-base); color: var(--color-text-secondary);
   font-size: .76rem; font-weight: 650; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
@@ -366,6 +370,10 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx.is-dock .afx-seg { flex: 0 1 auto; min-width: 0; }
 .afx.is-dock .afx-seg button { padding: 0 9px; }
 .afx.is-dock .afx-search { min-width: 0; flex: 1 1 auto; }
+/* Dock: view tabs, search and filters share one row. */
+.afx.is-dock .afx-bar > .afx-seg { flex: 0 0 auto; }
+.afx.is-dock .afx-sbox { display: flex; flex: 1 1 auto; min-width: 0; justify-content: flex-end; }
+.afx.is-dock .afx-filter-wrap { flex: 0 0 auto; }
 .afx.is-dock .afx-list { padding: 6px 2px; }
 .afx.is-dock .afx-now, .afx.is-dock .afx-paused { border-radius: 9px; margin: 2px 2px 4px; }
 .afx.is-dock .afx-now { border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent); }
@@ -381,6 +389,20 @@ body:not(.body--dark) .afx :is(p, span, div, label, b, i):not([class]) { color: 
 .afx.is-dock .afx-sub, .afx.is-dock .afx-tile, .afx.is-dock .afx-title { display: none; }
 .afx.is-dock[data-layout="rows"] .afx-list.is-feed { padding-left: 30px; }
 .afx.is-dock[data-layout="rows"] .afx-list.is-feed::before { left: 16px; }
+/* Narrow docks: the search box folds into a magnifier until opened; while it is open the
+   tab and Filters labels give way to icons. */
+@media (max-width: 460px) {
+  .afx.is-dock .afx-sbox:not(.is-open) .afx-search { display: none; }
+  .afx.is-dock .afx-sbox:not(.is-open) .afx-sopen { display: inline-flex; }
+  .afx.is-dock .afx-sbox.has-text .afx-sopen { color: var(--color-primary); border-color: var(--color-border-accent); }
+  .afx.is-dock.is-searching .afx-seg button .lb, .afx.is-dock.is-searching .afx-filter .lb { display: none; }
+}
+@media (max-width: 360px) {
+  .afx.is-dock .afx-filter .lb { display: none; }
+}
+@media (max-width: 300px) {
+  .afx.is-dock .afx-seg button .lb { display: none; }
+}
 @media (max-width: 420px) {
   .afx.is-dock .afx-play button .lb { display: none; }
   .afx.is-dock .afx-seg button { padding: 0 7px; }
