@@ -248,6 +248,13 @@ def test_activity_chart_with_one_bucket(cv, pal):
     assert pal.primary in colors_in(cv.img, (20, 130, 780, 450))
 
 
+def test_activity_chart_with_tiny_bars_next_to_a_tall_one(cv, pal):
+    # A 3 px bar used to crash Pillow: "y1 must be greater than or equal to y0".
+    values = [5000] + [1] * 40
+    ex._activity_chart(cv, (20, 20, 780, 500), [f"L{i}" for i in range(41)], values, "day")
+    assert pal.primary in colors_in(cv.img, (20, 130, 780, 450))
+
+
 FULL = {
     "most_active_user": {"username": "Alice", "event_count": 222},
     "biggest_bit_donation": {"username": "Bob", "amount": 1000},
@@ -362,6 +369,48 @@ def test_render_portrait_with_lifetime_source():
         source="lifetime",
     )
     assert img.size == (1080, 1350) and img.mode == "RGB"
+
+
+FULL_H = {
+    "total_events": 9, "unique_users": 3, "total_chat_messages": 4, "most_active_user": {"username": "Al", "event_count": 5},
+    "top_chat_messages": [{"username": "Al", "count": 4}], "top_bits": [{"username": "Bo", "total": 10}],
+    "total_follows": 2,
+}
+
+
+@pytest.mark.parametrize("layout", ["wide", "portrait"])
+@pytest.mark.parametrize("filters", [
+    {},
+    {"hidden_sections": ["kpis", "footer"]},
+    {"hidden_sections": ["activity"], "hidden_kpis": ["bits", "subs"], "hidden_boards": ["gifters"]},
+    {"hidden_sections": ["spotlight", "boards"], "hidden_kpis": ["viewers"]},
+    {"hidden_sections": ["activity", "spotlight"]},
+    {"hidden_sections": [k for k, _l in ex.EXPORT_SECTIONS]},
+    {"hidden_kpis": [k for k, _l in ex.EXPORT_KPIS], "hidden_boards": [k for k, _l in ex.EXPORT_BOARDS]},
+])
+def test_render_with_export_filters(layout, filters):
+    extra = {"activity_labels": ["a", "b", "c"], "activity_values": [1, 0, 7], **filters}
+    img = ex.render_highlights_image(FULL_H, datetime(2026, 1, 1), datetime(2026, 1, 7), theme=_theme(), layout=layout, extra=extra)
+    assert img.size == ex.LAYOUTS[layout]
+
+
+def test_export_filters_pick_tiles_and_boards_by_key():
+    kpis, chart, spot, boards, footer = ex._blocks(FULL_H, {"hidden_kpis": ["chat", "gifts"], "hidden_boards": ["cheerers"],
+                                                            "hidden_sections": ["footer"]})
+    assert [k[0] for k in kpis] == ["Active viewers", "Bits cheered", "Subs"]
+    assert [b[0] for b in boards] == ["Top chatters", "Top gifters", "Channel points"]
+    assert (chart, spot, footer) == (True, True, False)
+    assert ex._blocks(FULL_H, {"hidden_sections": ["kpis", "boards"]})[0] == []
+
+
+def test_hidden_footer_frees_the_bottom_of_the_wide_image():
+    extra = {"activity_labels": ["a"], "activity_values": [1]}
+    shown = ex.render_highlights_image(FULL_H, datetime(2026, 1, 1), datetime(2026, 1, 1), theme=_theme(), extra=extra)
+    hidden = ex.render_highlights_image(FULL_H, datetime(2026, 1, 1), datetime(2026, 1, 1), theme=_theme(),
+                                        extra={**extra, "hidden_sections": ["footer"]})
+    surface = ex.Palette.from_theme(_theme()).surface
+    assert shown.getpixel((300, 1000)) != surface  # footer strip, not a card
+    assert hidden.getpixel((300, 1000)) == surface  # leaderboards reach down
 
 
 def test_generate_writes_a_png(tmp_path):

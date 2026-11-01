@@ -346,19 +346,31 @@ class Insights:
     # -- leaderboards --
 
     def leaders(
-        self, rng: DateRange, event_types: Sequence[str], agg: str = "count", limit: int = 10
+        self,
+        rng: DateRange,
+        event_types: Sequence[str],
+        agg: str = "count",
+        limit: int = 10,
+        exclude: Sequence[str] = (),
     ) -> List[Dict[str, Any]]:
-        """Top viewers for the given event types. ``agg`` is count, sum or max."""
+        """Top viewers for the given event types. ``agg`` is count, sum or max.
+
+        ``exclude`` names viewers to leave out (any case).
+        """
         if not event_types:
             return []
         value = {"count": "COUNT(*)", "sum": "COALESCE(SUM(amount), 0)", "max": "COALESCE(MAX(amount), 0)"}[agg]
         placeholders = ",".join("?" * len(event_types))
+        excluded = sorted({str(u).strip().lower() for u in exclude if str(u or "").strip()})
+        exclude_clause = (
+            f"AND IFNULL(username_lower, lower(username)) NOT IN ({','.join('?' * len(excluded))}) " if excluded else ""
+        )
         rows = self._query(
             f"SELECT MIN(username), {value} AS v, COUNT(*) FROM user_events "
             f"WHERE timestamp >= ? AND timestamp <= ? AND event_type IN ({placeholders}) "
-            "AND IFNULL(username_lower, lower(username)) != ? "
+            "AND IFNULL(username_lower, lower(username)) != ? " + exclude_clause +
             "GROUP BY IFNULL(username_lower, lower(username)) ORDER BY v DESC, 3 DESC LIMIT ?",
-            [rng.start_ts, rng.end_ts, *event_types, SYSTEM_USERNAME, limit],
+            [rng.start_ts, rng.end_ts, *event_types, SYSTEM_USERNAME, *excluded, limit],
         )
         return [{"username": r[0] or "?", "value": float(r[1] or 0), "events": int(r[2] or 0)} for r in rows]
 

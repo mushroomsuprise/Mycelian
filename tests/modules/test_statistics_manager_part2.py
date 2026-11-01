@@ -416,8 +416,30 @@ def test_highlights_for_export_prefers_the_event_log(mgr):
     assert source == "event_log" and h["total_events"] == 27
 
 
+def test_highlights_exclude_viewers_from_rankings_only(mgr):
+    seed_highlights(mgr)
+    h, source = mgr.get_highlights_for_export(T0 - 1, T0 + 1, exclude_users=["bob", " KIM "])
+    assert source == "event_log"
+    assert h["top_bits"] == [{"username": "Alice", "total": 150}]
+    assert h["biggest_bit_donation"] == {"username": "Alice", "amount": 100}
+    assert [e["username"] for e in h["top_chat_messages"]] == ["Alice"]
+    assert h["biggest_watch_streak"] == {"username": "Lee", "amount": 3}
+    assert [e["username"] for e in h["top_watch_streak_peaks"]] == ["Lee"]
+    assert h["most_active_user"]["username"] == "Alice" and h["top_chatter"]["username"] == "Alice"
+    assert h["total_bits"] == 450 and h["total_events"] == 27  # totals still count everyone
+
+
+def test_lifetime_highlights_drop_excluded_viewers():
+    h = {"top_bits": [{"username": "Bob", "total": 3}, {"username": "Al", "total": 1}],
+         "most_active_user": {"username": "BOB", "event_count": 3}, "top_chatter": None, "total_bits": 4}
+    out = sm.StatisticsManager._drop_excluded_viewers(h, ["bob"])
+    assert out["top_bits"] == [{"username": "Al", "total": 1}] and out["most_active_user"] is None
+    assert out["total_bits"] == 4
+    assert sm.StatisticsManager._drop_excluded_viewers({"x": [1]}, []) == {"x": [1]}
+
+
 def test_highlights_for_export_marks_fallback_results(mgr, monkeypatch):
-    monkeypatch.setattr(mgr, "get_date_range_highlights", lambda a, b: {"total_events": 3, "_fallback_partial": True})
+    monkeypatch.setattr(mgr, "get_date_range_highlights", lambda a, b, exclude=(): {"total_events": 3, "_fallback_partial": True})
     assert mgr.get_highlights_for_export(0, 1) == ({"total_events": 3, "_fallback_partial": True}, "event_log_fallback")
 
 

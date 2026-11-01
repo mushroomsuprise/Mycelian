@@ -282,7 +282,9 @@ def _activity_chart(cv: Canvas, box, labels: Sequence[str], values: Sequence[flo
         cx = px0 + slot * (i + 0.5)
         h = max(3, (py1 - py0) * v / peak)
         color = p.primary if i == peak_i else _mix(p.surface, p.primary, 0.62)
-        r = int(min(4, bar_w / 2))
+        # Pillow's top-corners-only fill needs the bar taller than the radius + 1, or
+        # rounded_rectangle raises "y1 must be greater than or equal to y0".
+        r = int(max(0, min(4, bar_w / 2, h - 2)))
         cv.draw.rounded_rectangle((cx - bar_w / 2, py1 - h, cx + bar_w / 2, py1), radius=r, fill=color, corners=(True, True, False, False))
     cv.draw.line([(px0, py1), (px1, py1)], fill=_mix(p.surface, p.text, 0.25), width=2)
     # Sparse x labels: first, middle, last (plus peak, if it does not collide).
@@ -423,6 +425,30 @@ def _footer(cv: Canvas, box, h: Dict[str, Any], source: str) -> None:
 # layouts
 # ---------------------------------------------------------------------------
 
+# Export filters: (key, label). The Statistics tab passes the hidden keys in ``extra``
+# (``hidden_sections`` / ``hidden_kpis`` / ``hidden_boards``); the order matches the specs below.
+EXPORT_SECTIONS = (
+    ("kpis", "Headline tiles"),
+    ("activity", "Activity chart"),
+    ("spotlight", "Spotlight"),
+    ("boards", "Leaderboards"),
+    ("footer", "Footer totals"),
+)
+EXPORT_KPIS = (
+    ("viewers", "Active viewers"),
+    ("chat", "Chat messages"),
+    ("bits", "Bits cheered"),
+    ("subs", "Subs"),
+    ("gifts", "Gifted subs"),
+)
+EXPORT_BOARDS = (
+    ("chatters", "Top chatters"),
+    ("cheerers", "Top cheerers"),
+    ("gifters", "Top gifters"),
+    ("points", "Channel points"),
+)
+
+
 def _kpi_specs(h: Dict[str, Any], deltas: Dict[str, Optional[float]]):
     return [
         ("Active viewers", float(h.get("unique_users", 0) or 0), deltas.get("viewers")),
@@ -442,6 +468,19 @@ def _leader_specs(h: Dict[str, Any]):
     ]
 
 
+def _visible(specs: list, keys: Sequence[Tuple[str, str]], hidden: Optional[Sequence[str]]) -> list:
+    hidden_set = set(hidden or ())
+    return [spec for spec, (key, _label) in zip(specs, keys) if key not in hidden_set]
+
+
+def _blocks(h: Dict[str, Any], extra: Dict[str, Any]):
+    """(kpis, show_chart, show_spotlight, boards, show_footer) after the export filters."""
+    hidden = set(extra.get("hidden_sections") or ())
+    kpis = [] if "kpis" in hidden else _visible(_kpi_specs(h, extra.get("deltas") or {}), EXPORT_KPIS, extra.get("hidden_kpis"))
+    boards = [] if "boards" in hidden else _visible(_leader_specs(h), EXPORT_BOARDS, extra.get("hidden_boards"))
+    return kpis, "activity" not in hidden, "spotlight" not in hidden, boards, "footer" not in hidden
+
+
 def _render_wide(cv: Canvas, h, start, end, streamer, extra, source) -> None:
     m = 64
     W, H = cv.w, cv.h
@@ -449,27 +488,41 @@ def _render_wide(cv: Canvas, h, start, end, streamer, extra, source) -> None:
     cv.glow((120, H - 60), 380, cv.pal.primary, 34)
     _header(cv, (m, 56, W - m, 200), streamer, start, end, False)
 
-    deltas = extra.get("deltas") or {}
-    kpis = _kpi_specs(h, deltas)
+    kpis, show_chart, show_spot, boards, show_footer = _blocks(h, extra)
     gap = 22
-    ky0, ky1 = 232, 392
-    kw = (W - 2 * m - gap * (len(kpis) - 1)) / len(kpis)
-    for i, (label, value, pct) in enumerate(kpis):
-        kx = m + i * (kw + gap)
-        _kpi(cv, (kx, ky0, kx + kw, ky1), label, value, pct, 72)
+    y = 232
+    bottom = H - 92 if show_footer else H - m
+    if kpis:
+        kw = (W - 2 * m - gap * (len(kpis) - 1)) / len(kpis)
+        for i, (label, value, pct) in enumerate(kpis):
+            kx = m + i * (kw + gap)
+            _kpi(cv, (kx, y, kx + kw, y + 160), label, value, pct, 72)
+        y += 160 + gap
 
-    cy0, cy1 = ky1 + gap, 712
-    split = m + (W - 2 * m) * 0.64
-    _activity_chart(cv, (m, cy0, split - gap / 2, cy1), extra.get("activity_labels") or [], extra.get("activity_values") or [], extra.get("activity_bucket", "day"))
-    _spotlight(cv, (split + gap / 2, cy0, W - m, cy1), h)
+    # The chart/spotlight row and the leaderboards share what is left (about 54/46).
+    middle = show_chart or show_spot
+    free = bottom - y - (gap if middle and boards else 0)
+    if middle:
+        cy0, cy1 = y, y + (round(free * 0.54) if boards else free)
+        labels, values = extra.get("activity_labels") or [], extra.get("activity_values") or []
+        bucket = extra.get("activity_bucket", "day")
+        if show_chart and show_spot:
+            split = m + (W - 2 * m) * 0.64
+            _activity_chart(cv, (m, cy0, split - gap / 2, cy1), labels, values, bucket)
+            _spotlight(cv, (split + gap / 2, cy0, W - m, cy1), h)
+        elif show_chart:
+            _activity_chart(cv, (m, cy0, W - m, cy1), labels, values, bucket)
+        else:
+            _spotlight(cv, (m, cy0, W - m, cy1), h)
+        y = cy1 + gap
 
-    ly0, ly1 = cy1 + gap, H - 92
-    boards = _leader_specs(h)
-    lw = (W - 2 * m - gap * 3) / 4
-    for i, (title, entries, key) in enumerate(boards):
-        lx = m + i * (lw + gap)
-        _leaderboard(cv, (lx, ly0, lx + lw, ly1), title, entries, key, rows=5)
-    _footer(cv, (m, H - 62, W - m, H - 30), h, source)
+    if boards:
+        lw = (W - 2 * m - gap * (len(boards) - 1)) / len(boards)
+        for i, (title, entries, key) in enumerate(boards):
+            lx = m + i * (lw + gap)
+            _leaderboard(cv, (lx, y, lx + lw, bottom), title, entries, key, rows=5)
+    if show_footer:
+        _footer(cv, (m, H - 62, W - m, H - 30), h, source)
 
 
 def _render_portrait(cv: Canvas, h, start, end, streamer, extra, source) -> None:
@@ -479,36 +532,41 @@ def _render_portrait(cv: Canvas, h, start, end, streamer, extra, source) -> None
     cv.glow((80, H - 80), 320, cv.pal.primary, 30)
     _header(cv, (m, 52, W - m, 220), streamer, start, end, True)
 
-    deltas = extra.get("deltas") or {}
-    kpis = _kpi_specs(h, deltas)
+    kpis, show_chart, show_spot, boards, show_footer = _blocks(h, extra)
+    boards = boards[:2]
     gap = 18
-    # 2 + 3 grid: the two headline numbers get the wider tiles.
     y = 236
+    bottom = H - 96 if show_footer else H - m
+    # 2 + 3 grid for five tiles (the first two get the wider tiles), 2 + 2 for four.
+    rows = {4: [2, 2], 5: [2, 3]}.get(len(kpis), [len(kpis)] if kpis else [])
     row_h = 150
-    w2 = (W - 2 * m - gap) / 2
-    for i, (label, value, pct) in enumerate(kpis[:2]):
-        x = m + i * (w2 + gap)
-        _kpi(cv, (x, y, x + w2, y + row_h), label, value, pct, 62)
-    y += row_h + gap
-    w3 = (W - 2 * m - gap * 2) / 3
-    for i, (label, value, pct) in enumerate(kpis[2:]):
-        x = m + i * (w3 + gap)
-        _kpi(cv, (x, y, x + w3, y + row_h), label, value, pct, 52)
-    y += row_h + gap
+    i = 0
+    for count in rows:
+        w = (W - 2 * m - gap * (count - 1)) / count
+        for j in range(count):
+            label, value, pct = kpis[i]
+            x = m + j * (w + gap)
+            _kpi(cv, (x, y, x + w, y + row_h), label, value, pct, 62 if count <= 2 else 52)
+            i += 1
+        y += row_h + gap
 
-    _activity_chart(cv, (m, y, W - m, y + 300), extra.get("activity_labels") or [], extra.get("activity_values") or [], extra.get("activity_bucket", "day"))
-    y += 300 + gap
+    if show_chart:
+        # 300 px when leaderboards follow, otherwise the chart takes the free space.
+        chart_h = 300 if boards else bottom - y - ((92 + gap) if show_spot else 0)
+        _activity_chart(cv, (m, y, W - m, y + chart_h), extra.get("activity_labels") or [], extra.get("activity_values") or [], extra.get("activity_bucket", "day"))
+        y += chart_h + gap
 
-    _mvp_strip(cv, (m, y, W - m, y + 92), h)
-    y += 92 + gap
+    if show_spot:
+        _mvp_strip(cv, (m, y, W - m, y + 92), h)
+        y += 92 + gap
 
-    boards = _leader_specs(h)[:2]
-    bw = (W - 2 * m - gap) / 2
-    board_h = H - 96 - y
-    for i, (title, entries, key) in enumerate(boards):
-        x = m + i * (bw + gap)
-        _leaderboard(cv, (x, y, x + bw, y + board_h), title, entries, key, rows=5)
-    _footer(cv, (m, H - 62, W - m, H - 30), h, source)
+    if boards:
+        bw = (W - 2 * m - gap * (len(boards) - 1)) / len(boards)
+        for i, (title, entries, key) in enumerate(boards):
+            x = m + i * (bw + gap)
+            _leaderboard(cv, (x, y, x + bw, bottom), title, entries, key, rows=5)
+    if show_footer:
+        _footer(cv, (m, H - 62, W - m, H - 30), h, source)
 
 
 def render_highlights_image(

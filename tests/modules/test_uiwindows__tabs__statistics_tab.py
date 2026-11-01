@@ -590,8 +590,15 @@ def test_trend_chart_line_mode_and_previous_period(ctx):
         assert tab.chart_as_line is True
         assert tab._overview_refs["trend_chart"].options["series"][0]["type"] == "line"
         tab._toggle_line(True)  # no change, no rebuild
+        body_first = list(tab.body.default_slot.children)
+        chart = tab._overview_refs["trend_chart"]
         click_text(user, "bar_chart")
         assert tab.chart_as_line is False
+        # Redrawn in place (a rebuilt page lost the scroll position on Windows).
+        assert list(tab.body.default_slot.children) == body_first and tab._overview_refs["trend_chart"] is chart
+        assert chart.options["series"][0]["type"] == "bar"
+        assert "is-active" in tab._overview_refs["line_buttons"][False].classes
+        assert "is-active" not in tab._overview_refs["line_buttons"][True].classes
 
     run_tab(tab, check)
 
@@ -845,23 +852,180 @@ def test_event_mix_and_heatmap_update_with_the_live_tick(ctx):
 
     async def check(user):
         await user.should_see("10 events from 5 viewers")
-        mix, heat = tab._overview_refs["mix"], tab._overview_refs["heatmap"]
-        mix_first, heat_first = list(mix.default_slot.children), list(heat.default_slot.children)
+        mix, heat = tab._overview_refs["mix"], tab._overview_refs["heatmap_chart"]
+        mix_first, heat_first = list(mix.default_slot.children), json.dumps(heat.options)
         with user.client:
             tab._update_overview(tab._range())
-        assert list(mix.default_slot.children) == mix_first and list(heat.default_slot.children) == heat_first
+        assert list(mix.default_slot.children) == mix_first and json.dumps(heat.options) == heat_first
         add(ctx.mgr, [("Kim", "chat_message", 1, "", recent()), ("Kim", "raid", 12, "", recent())])
         with user.client:
             tab._update_overview(tab._range())
         await user.should_see("12 events from 6 viewers")
         await user.should_see("Raids")
         assert list(mix.default_slot.children) != mix_first
-        assert list(heat.default_slot.children) != heat_first  # a new chat message moves the heatmap
-        # Switching the heatmap scope still redraws the page as before.
+        assert json.dumps(heat.options) != heat_first  # a new chat message moves the heatmap
+        # Switching the heatmap scope updates the same card: nothing on the page is rebuilt.
+        body_first = list(tab.body.default_slot.children)
         tab._set_heatmap("all")
         assert tab._overview_refs["heatmap_key"][0] == "all"
-        assert mix.is_deleted  # the page was rebuilt with new holders
-        tab._overview_refs["mix"] = mix
+        assert tab._overview_refs["heatmap_chart"] is heat and not mix.is_deleted
+        assert list(tab.body.default_slot.children) == body_first
+        assert "is-active" in tab._overview_refs["heatmap_buttons"]["all"].classes
+        assert "is-active" not in tab._overview_refs["heatmap_buttons"]["chat"].classes
+        mix.delete()
         tab._redraw_card("mix", None, lambda: pytest.fail("deleted holders are skipped"))
+        heat.delete()
+        tab._update_heatmap([[0] * 24 for _ in range(7)])  # stale chart: skipped
+
+    run_tab(tab, check)
+
+
+# --------------------------------------------------------------------------- filters
+
+
+def saving_settings(ctx, monkeypatch, filters=None):
+    """State manager that remembers statistics_filters writes."""
+    ctx.settings.statistics_filters = dict(filters or {})
+    saved = []
+
+    def set_app_settings(values):
+        saved.append(values)
+        ctx.settings.statistics_filters = values["statistics_filters"]
+        return True
+
+    monkeypatch.setattr(tabmod.dataobjects, "state_manager",
+                        SimpleNamespace(get_app_settings=lambda: ctx.settings, set_app_settings=set_app_settings))
+    return saved
+
+
+def spot_kickers(tab):
+    return [kicker for kicker, _i, _rows, _u in tab._spotlight_picks(tab._range())]
+
+
+def test_filters_load_from_app_settings_and_ignore_junk(ctx, monkeypatch):
+    saving_settings(ctx, monkeypatch, {"hidden_viewers": ["Bob", ""], "spotlight_hidden": "chat", "bogus": [1]})
+    tab = tabmod.StatisticsTab()
+    assert tab.hidden_viewers == ["Bob"] and tab.filters["spotlight_hidden"] == []
+    assert set(tab.filters) == set(tabmod.StatisticsTab.FILTER_KEYS)
+    ctx.settings.statistics_filters = "broken"
+    assert tabmod.StatisticsTab().filters["hidden_viewers"] == []
+    monkeypatch.setattr(tabmod.dataobjects, "state_manager", None)
+    tab = tabmod.StatisticsTab()  # no settings at all: defaults, and saving is a no-op
+    tab._set_filter("hidden_viewers", ["x"])
+    assert tab.hidden_viewers == ["x"]
+
+
+def test_spotlight_filters_hide_picks_narrow_most_active_and_skip_hidden_viewers(ctx, monkeypatch):
+    seed(ctx.mgr)
+    saved = saving_settings(ctx, monkeypatch)
+    tab = tabmod.StatisticsTab()
+
+    async def check(user):
+        assert len(spot_kickers(tab)) == 5
+        assert tab._overview_refs["spotlight_filter"].props.get("color") is None
+        with user.client:
+            assert tab._toggle_filter("spotlight_hidden", "streak") is False
+            tab._refresh_spotlight()
+        assert "Longest watch streak" not in spot_kickers(tab)
+        assert saved[-1]["statistics_filters"]["spotlight_hidden"] == ["streak"]
+        assert tab._overview_refs["spotlight_filter"].props.get("color") == "primary"
+        # Most active counting only bits: Bob.
+        tab._set_filter("spotlight_active_types", ["bit"])
+        picks = dict((k, rows) for k, _i, rows, _u in tab._spotlight_picks(tab._range()))
+        assert picks["Most active viewer"][0]["username"] == "Bob"
+        # Hidden viewers drop out of every pick.
+        tab._set_filter("hidden_viewers", ["BOB"])
+        picks = dict((k, rows) for k, _i, rows, _u in tab._spotlight_picks(tab._range()))
+        assert picks["Most active viewer"] == [] and picks["Top chatter"][0]["username"] == "Alice"
+        assert picks["Biggest supporter (bits)"] == []
+        with user.client:
+            tab._set_filter("spotlight_hidden", [k for k, *_r in tabmod.SPOTLIGHT_PICKS])
+            tab._refresh_spotlight()
+        await user.should_see("All Spotlight picks are hidden")
+        assert tab._overview_refs["spotlight_hidden_btn"].text == "Hidden viewers (1)"
+
+    run_tab(tab, check)
+
+
+def test_spotlight_menu_checkboxes(ctx, monkeypatch):
+    seed(ctx.mgr)
+    saving_settings(ctx, monkeypatch)
+    tab = tabmod.StatisticsTab()
+
+    async def check(user):
+        boxes = {b.text: b for b in user.find(kind=ui.checkbox).elements if b.text != "Previous period average"}
+        boxes["Top chatter"].value = False
+        assert tab.filters["spotlight_hidden"] == ["chat"] and "Top chatter" not in spot_kickers(tab)
+        boxes["Top chatter"].value = True
+        assert tab.filters["spotlight_hidden"] == []
+        boxes["Chat messages"].value = False
+        assert "chat_message" not in tab._active_types() and len(tab.filters["spotlight_active_types"]) == len(tabmod.MOST_ACTIVE_TYPES) - 1
+        for label in [tabmod.EVENT_TYPES[t].label for t in tabmod.MOST_ACTIVE_TYPES]:
+            boxes[label].value = False
+        assert boxes["Poll wins"].value is True  # the last type can't be unticked
+        assert tab._active_types() == ("poll_win",)
+        (all_button,) = [b for b in user.find(kind=ui.button).elements if b.text == "All"]
+        UserInteraction(user, {all_button}, None).click()
+        assert tab.filters["spotlight_active_types"] == [] and boxes["Chat messages"].value is True
+
+    run_tab(tab, check)
+
+
+def test_hidden_viewers_dialog_saves_and_applies_to_leaderboards(ctx, monkeypatch):
+    seed(ctx.mgr)
+    saved = saving_settings(ctx, monkeypatch)
+    tab = tabmod.StatisticsTab()
+    tab.section = "leaders"
+
+    async def check(user):
+        await user.should_see("Hide viewers…")
+        user.find("Hide viewers…").click()
+        await user.should_see("Hidden viewers")
+        picker = [s for s in user.find(kind=ui.select).elements if s.props.get("label") == "Viewers"][0]
+        picker.value = ["Alice", "alice ", "NightBot"]
+        (save,) = [b for b in user.find(kind=ui.button).elements if b.text == "Save"]
+        UserInteraction(user, {save}, None).click()
+        assert tab.hidden_viewers == ["Alice", "NightBot"]
+        assert saved[-1]["statistics_filters"]["hidden_viewers"] == ["Alice", "NightBot"]
+        await user.should_see("Hidden viewers (2)")
+        chatters = tab.insights.leaders(tab._range(), ("chat_message",), "count", 10, exclude=tab.hidden_viewers)
+        assert [r["username"] for r in chatters] == ["Bob"]
+
+    run_tab(tab, check)
+
+
+def test_export_filter_chips_and_layout_update_in_place(ctx, monkeypatch):
+    seed(ctx.mgr)
+    saved = saving_settings(ctx, monkeypatch, {"export_hidden_sections": ["boards"], "hidden_viewers": ["Bob"]})
+    tab = tabmod.StatisticsTab()
+    tab.section = "export"
+
+    async def check(user):
+        await user.should_see("Headline tiles")
+        await user.should_see("Bob")
+        assert ctx.renders[-1]["extra"]["hidden_sections"] == ["boards"]
+        body_first = list(tab.body.default_slot.children)
+        click_text(user, "Footer totals")
+        assert tab.filters["export_hidden_sections"] == ["boards", "footer"]
+        assert ctx.renders[-1]["extra"]["hidden_sections"] == ["boards", "footer"]
+        click_text(user, "Bits cheered")
+        assert ctx.renders[-1]["extra"]["hidden_kpis"] == ["bits"]
+        (chip,) = {clickable(e) for e in user.find("Leaderboards").elements} & {
+            c for c in user.find(kind=ui.element).elements if "mst-chip" in c.classes
+        }
+        UserInteraction(user, {chip}, None).click()
+        assert tab.filters["export_hidden_sections"] == ["footer"]
+        assert saved[-1]["statistics_filters"]["export_hidden_sections"] == ["footer"]
+        n = len(ctx.renders)
+        click_text(user, "Portrait 4:5")
+        assert tab.export_layout == "portrait" and len(ctx.renders) == n + 1
+        assert ctx.renders[-1]["layout"] == "portrait" and "is-portrait" in tab._export_preview.classes
+        tab._set_export_layout("portrait")  # no change
+        assert len(ctx.renders) == n + 1
+        click_text(user, "Wide 16:9")
+        assert "is-portrait" not in tab._export_preview.classes
+        assert list(tab.body.default_slot.children) == body_first  # nothing rebuilt
+        highlights = ctx.renders[-1]["highlights"]
+        assert all(e["username"] != "Bob" for e in highlights.get("top_chat_messages") or [])
 
     run_tab(tab, check)

@@ -43,7 +43,7 @@ from ...statistics_insights import (
 )
 from ...statistics_manager import get_statistics_manager
 from ...ui_buttons import primary_button
-from ...ui_form_controls import form_input
+from ...ui_form_controls import form_input, form_select
 from ...ui_timer import layout_schedule, run_on_ui_loop
 from .statistics_charts import ChartColors, level_columns, time_columns, weekly_heatmap
 from .statistics_styles import STATISTICS_CSS
@@ -71,6 +71,17 @@ LEADERBOARDS: Tuple[Tuple[str, str, Tuple[str, ...], str, str], ...] = (
     ("Giveaway entries", "confirmation_number", ("giveaway_entry",), "count", "entries"),
     ("Bot command users", "terminal", ("chatbot_command",), "count", "uses"),
 )
+
+# Spotlight picks: (key, kicker, icon, event types or None for "Most active", aggregation, unit)
+SPOTLIGHT_PICKS: Tuple[Tuple[str, str, str, Optional[Tuple[str, ...]], str, str], ...] = (
+    ("active", "Most active viewer", "bolt", None, "count", "events"),
+    ("chat", "Top chatter", "chat", ("chat_message",), "count", "messages"),
+    ("bits", "Biggest supporter (bits)", "diamond", ("bit",), "sum", "bits"),
+    ("gifts", "Top gifter", "redeem", ("giftsub",), "sum", "subs gifted"),
+    ("streak", "Longest watch streak", "local_fire_department", ("watch_streak",), "max", "streams"),
+)
+# What "Most active viewer" counts unless the Spotlight filter narrows it.
+MOST_ACTIVE_TYPES: Tuple[str, ...] = tuple(k for k in EVENT_TYPES if k != "giveaway_draw_complete")
 
 LIVE_INTERVAL_SEC = 5
 LIVE_REQUERY_EVERY = 6  # ticks: re-query the event log every 30s while live
@@ -184,6 +195,9 @@ class StatisticsTab:
         self.lookup_types: set = set()
         self.export_layout = "wide"
         self.export_last_path: Optional[str] = None
+        # Saved filters (App Settings → statistics_filters); every list holds what is hidden,
+        # except spotlight_active_types (empty = MOST_ACTIVE_TYPES).
+        self.filters: Dict[str, List[str]] = self._load_filters()
 
         # Avatars still waiting for a Twitch profile picture: (name, extra class, element).
         self._pending_avatars: List[Tuple[str, str, Any]] = []
@@ -253,6 +267,111 @@ class StatisticsTab:
 
     def _range_includes_now(self, rng: DateRange) -> bool:
         return rng.end_ts >= time.time()
+
+    # ----- saved filters -----
+
+    FILTER_KEYS = (
+        "hidden_viewers",
+        "spotlight_hidden",
+        "spotlight_active_types",
+        "export_hidden_sections",
+        "export_hidden_kpis",
+        "export_hidden_boards",
+    )
+
+    @classmethod
+    def _load_filters(cls) -> Dict[str, List[str]]:
+        raw: Any = {}
+        try:
+            raw = getattr(dataobjects.state_manager.get_app_settings(), "statistics_filters", None) or {}
+        except Exception as e:
+            logger.debug("Could not read statistics filters: %s", e)
+        if not isinstance(raw, dict):
+            raw = {}
+        out: Dict[str, List[str]] = {}
+        for key in cls.FILTER_KEYS:
+            value = raw.get(key)
+            out[key] = [str(v) for v in value if str(v or "").strip()] if isinstance(value, (list, tuple)) else []
+        return out
+
+    def _set_filter(self, key: str, values: Sequence[str]) -> None:
+        self.filters[key] = list(dict.fromkeys(str(v) for v in values))
+        try:
+            dataobjects.state_manager.set_app_settings({"statistics_filters": {k: list(v) for k, v in self.filters.items()}})
+        except Exception as e:
+            logger.debug("Could not save statistics filters: %s", e)
+
+    def _toggle_filter(self, key: str, item: str) -> bool:
+        """Flip ``item`` in a hidden-list filter. Returns True when it is now shown."""
+        hidden = self.filters.get(key) or []
+        shown = item in hidden
+        self._set_filter(key, [h for h in hidden if h != item] if shown else [*hidden, item])
+        return shown
+
+    @property
+    def hidden_viewers(self) -> List[str]:
+        return list(self.filters.get("hidden_viewers") or [])
+
+    def _active_types(self) -> Tuple[str, ...]:
+        chosen = [t for t in self.filters.get("spotlight_active_types") or [] if t in MOST_ACTIVE_TYPES]
+        return tuple(chosen) or MOST_ACTIVE_TYPES
+
+    def _edit_hidden_viewers(self) -> None:
+        """Dialog for the hidden-viewer list shared by Spotlight, Leaderboards and the export."""
+        known: List[str] = []
+        try:
+            known = list(self.mgr.get_all_tracked_usernames() or [])
+        except Exception:
+            pass
+        current = self.hidden_viewers
+        lowered = {c.lower() for c in current}
+        options = sorted({*current, *(k for k in known if k.lower() not in lowered)}, key=str.lower)
+        with self.root, ui.dialog() as dialog, ui.card().classes("w-[460px] max-w-full p-4 gap-3"):
+            ui.label("Hidden viewers").classes("text-lg font-semibold")
+            ui.label(
+                "Left out of Spotlight, Leaderboards and the highlights image, for example bots or your own account. "
+                "Totals still count their activity."
+            ).classes("text-sm text-theme-secondary")
+            picker = form_select(
+                tooltip="Type a username and press Enter, or pick a viewer from the list",
+                options=options,
+                label="Viewers",
+                value=current,
+                multiple=True,
+                with_input=True,
+                new_value_mode="add-unique",
+                classes="w-full",
+            )
+            picker.props("use-chips clearable")
+
+            def save() -> None:
+                names: Dict[str, str] = {}
+                for name in picker.value or []:
+                    text = str(name or "").strip()
+                    if text:
+                        names.setdefault(text.lower(), text)
+                self._set_filter("hidden_viewers", list(names.values()))
+                dialog.close()
+                self._after_hidden_viewers_change()
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("Cancel", on_click=dialog.close).props("flat no-caps")
+                primary_button("Save", save)
+        dialog.on("hide", lambda _e: dialog.delete())
+        dialog.open()
+
+    def _hidden_viewers_text(self) -> str:
+        count = len(self.hidden_viewers)
+        return f"Hidden viewers ({count})" if count else "Hide viewers…"
+
+    def _after_hidden_viewers_change(self) -> None:
+        if self.section == "overview":
+            self._refresh_spotlight()
+        elif self.section == "export":
+            self._render_export_hidden()
+            self._render_export_preview()
+        elif self.section == "leaders":
+            self._render_section()
 
     @staticmethod
     def _button(html_content: str, classes: str, on_click: Callable[[], None], title: str = ""):
@@ -498,12 +617,11 @@ class StatisticsTab:
             self._build_spotlight_card(rng)
 
         with ui.element("div").classes("mst-grid mst-grid-2"):
-            # Holders (display: contents) let the live tick redraw one card in place.
-            for name in ("mix", "heatmap"):
-                self._overview_refs[name] = ui.element("div").style("display: contents")
-        grid = self._heatmap_grid(rng)
+            # The holder (display: contents) lets the live tick redraw the card in place.
+            self._overview_refs["mix"] = ui.element("div").style("display: contents")
+            self._build_heatmap_card()
         self._redraw_card("mix", self._mix_key(summary), lambda: self._build_mix_card(summary))
-        self._redraw_card("heatmap", self._heatmap_key(grid), lambda: self._build_heatmap_card(grid))
+        self._update_heatmap(self._heatmap_grid(rng))
         self._overview_refs["series_bucket"] = series["bucket"]
 
     def _empty_range_notice(self, rng: DateRange) -> None:
@@ -559,14 +677,16 @@ class StatisticsTab:
                         ui.checkbox("Previous period average", value=self.compare_previous, on_change=lambda e: self._toggle_compare(bool(e.value))).props(
                             "dense"
                         ).classes("text-xs").tooltip("Average of the equally long period before this one")
+                    line_buttons = {}
                     with ui.element("div").classes("mst-seg"):
                         for as_line, icon, tip in ((False, "bar_chart", "Columns"), (True, "show_chart", "Line")):
-                            self._button(
+                            line_buttons[as_line] = self._button(
                                 _icon(icon),
                                 "mst-seg-btn" + (" is-active" if self.chart_as_line == as_line else ""),
                                 lambda v=as_line: self._toggle_line(v),
                                 title=tip,
                             )
+                    self._overview_refs["line_buttons"] = line_buttons
             self._overview_refs["trend_chart"] = ui.echart({}).classes("mst-chart")
         self._overview_refs["data"] = data
         self._redraw_trend()
@@ -575,11 +695,19 @@ class StatisticsTab:
         self.compare_previous = value
         self._redraw_trend()
 
+    @staticmethod
+    def _set_active(buttons: Dict[Any, Any], active: Any) -> None:
+        """Move ``is-active`` between segmented buttons without rebuilding them."""
+        for key, el in buttons.items():
+            el.classes(add="is-active") if key == active else el.classes(remove="is-active")
+
     def _toggle_line(self, value: bool) -> None:
+        # Updated in place: rebuilding the section reset the settings scroll position (WebView2).
         if self.chart_as_line == value:
             return
         self.chart_as_line = value
-        self._render_section()
+        self._set_active(self._overview_refs.get("line_buttons") or {}, value)
+        self._redraw_trend()
 
     def _redraw_trend(self) -> None:
         refs = self._overview_refs
@@ -625,8 +753,7 @@ class StatisticsTab:
         self._update_spotlight(rng)
         summary = data["summary"]
         self._redraw_card("mix", self._mix_key(summary), lambda: self._build_mix_card(summary))
-        grid = self._heatmap_grid(rng)
-        self._redraw_card("heatmap", self._heatmap_key(grid), lambda: self._build_heatmap_card(grid))
+        self._update_heatmap(self._heatmap_grid(rng))
 
     def _redraw_card(self, name: str, key: Any, build: Callable[[], None]) -> None:
         """Build an overview card into its holder, again only when its data changed."""
@@ -675,28 +802,107 @@ class StatisticsTab:
         self._pending_avatars = still
 
     def _spotlight_picks(self, rng: DateRange) -> Tuple[Tuple[str, str, List[Dict[str, Any]], str], ...]:
+        """(kicker, icon, top row, unit) for each Spotlight pick the filters leave shown."""
         ins = self.insights
-        return (
-            ("Most active viewer", "bolt", ins.leaders(rng, tuple(k for k in EVENT_TYPES if k != "giveaway_draw_complete"), "count", 1), "events"),
-            ("Top chatter", "chat", ins.leaders(rng, ("chat_message",), "count", 1), "messages"),
-            ("Biggest supporter (bits)", "diamond", ins.leaders(rng, ("bit",), "sum", 1), "bits"),
-            ("Top gifter", "redeem", ins.leaders(rng, ("giftsub",), "sum", 1), "subs gifted"),
-            ("Longest watch streak", "local_fire_department", ins.leaders(rng, ("watch_streak",), "max", 1), "streams"),
+        hidden = set(self.filters.get("spotlight_hidden") or [])
+        exclude = self.hidden_viewers
+        return tuple(
+            (kicker, icon, ins.leaders(rng, types or self._active_types(), agg, 1, exclude=exclude), unit)
+            for key, kicker, icon, types, agg, unit in SPOTLIGHT_PICKS
+            if key not in hidden
         )
 
     @staticmethod
     def _spotlight_key(picks) -> Tuple[Any, ...]:
         return tuple((rows[0]["username"], rows[0]["value"]) if rows else None for _k, _i, rows, _u in picks)
 
+    def _spotlight_filtered(self) -> bool:
+        return bool(self.filters.get("spotlight_hidden") or self.hidden_viewers or self._active_types() != MOST_ACTIVE_TYPES)
+
     def _build_spotlight_card(self, rng: DateRange) -> None:
         with ui.element("div").classes("mst-card"):
             with ui.element("div").classes("mst-card-head"):
-                with ui.column().classes("gap-0"):
+                with ui.column().classes("gap-0 grow"):
                     ui.label("Spotlight").classes("mst-card-title")
                     ui.label("Click a name to see that viewer's activity").classes("mst-card-sub")
+                self._spotlight_filter_button()
             box = ui.element("div").classes("mst-grid").style("gap:8px")
         self._overview_refs["spotlight"] = box
         self._fill_spotlight(box, self._spotlight_picks(rng))
+
+    def _spotlight_filter_button(self) -> None:
+        """Filter menu: which picks show, what "Most active" counts, hidden viewers."""
+        btn = ui.button(icon="filter_list").props("flat round dense").tooltip("Choose what Spotlight shows")
+        self._overview_refs["spotlight_filter"] = btn
+        self._mark_spotlight_filter()
+        sync = {"busy": False}
+        type_boxes: Dict[str, Any] = {}
+
+        def toggle_pick(key: str) -> None:
+            if sync["busy"]:
+                return
+            self._toggle_filter("spotlight_hidden", key)
+            self._refresh_spotlight()
+
+        def types_changed(key: str) -> None:
+            if sync["busy"]:
+                return
+            chosen = [t for t, box in type_boxes.items() if box.value]
+            if not chosen:  # keep at least one type
+                sync["busy"] = True
+                type_boxes[key].value = True
+                sync["busy"] = False
+                return
+            self._set_filter("spotlight_active_types", [] if len(chosen) == len(MOST_ACTIVE_TYPES) else chosen)
+            self._refresh_spotlight()
+
+        def count_everything() -> None:
+            sync["busy"] = True
+            for box in type_boxes.values():
+                box.value = True
+            sync["busy"] = False
+            self._set_filter("spotlight_active_types", [])
+            self._refresh_spotlight()
+
+        with btn, ui.menu().props("anchor='bottom right' self='top right'"):
+            with ui.column().classes("gap-0 p-3").style("min-width: 240px"):
+                ui.label("Show").classes("mst-option-label")
+                hidden = set(self.filters.get("spotlight_hidden") or [])
+                for key, kicker, _icon_name, _types, _agg, _unit in SPOTLIGHT_PICKS:
+                    ui.checkbox(kicker, value=key not in hidden, on_change=lambda _e, k=key: toggle_pick(k)).props("dense")
+                with ui.row().classes("w-full items-center justify-between no-wrap mt-3"):
+                    ui.label("Most active viewer counts").classes("mst-option-label")
+                    ui.button("All", on_click=count_everything).props("flat dense no-caps size=sm color=primary")
+                active = set(self._active_types())
+                with ui.column().classes("gap-0").style("max-height: 220px; overflow-y: auto"):
+                    for et in MOST_ACTIVE_TYPES:
+                        meta = EVENT_TYPES[et]
+                        type_boxes[et] = ui.checkbox(meta.label, value=et in active, on_change=lambda _e, k=et: types_changed(k)).props("dense")
+                ui.separator().classes("my-2")
+                self._overview_refs["spotlight_hidden_btn"] = ui.button(
+                    self._hidden_viewers_text(), icon="person_off", on_click=self._edit_hidden_viewers
+                ).props("flat dense no-caps align=left").classes("w-full")
+
+    def _mark_spotlight_filter(self) -> None:
+        btn = self._overview_refs.get("spotlight_filter")
+        if btn is None or btn.is_deleted:
+            return
+        if self._spotlight_filtered():
+            btn.props("color=primary")
+        else:
+            btn.props(remove="color")
+        hidden_btn = self._overview_refs.get("spotlight_hidden_btn")
+        if hidden_btn is not None and not hidden_btn.is_deleted:
+            hidden_btn.set_text(self._hidden_viewers_text())
+
+    def _refresh_spotlight(self) -> None:
+        """Redraw the Spotlight after a filter change (no section rebuild)."""
+        box = self._overview_refs.get("spotlight")
+        if box is None or box.is_deleted:
+            return
+        box.clear()
+        self._fill_spotlight(box, self._spotlight_picks(self._range()))
+        self._mark_spotlight_filter()
 
     def _update_spotlight(self, rng: DateRange) -> None:
         """Live tick: redraw the Spotlight only when a leader or their number changed."""
@@ -727,7 +933,9 @@ class StatisticsTab:
                         ui.label(row["username"]).classes("mst-spot-name")
                         ui.label(f"{compact(row['value'])} {unit}").classes("mst-spot-value")
                 spot.on("click", lambda _e, u=row["username"]: self._open_viewer(u))
-            if not shown:
+            if not picks:
+                ui.html(f'<div class="mst-empty">{_icon("filter_list_off")}All Spotlight picks are hidden. Use the filter button to show some.</div>', sanitize=False)
+            elif not shown:
                 ui.html(f'<div class="mst-empty">{_icon("emoji_events")}No viewer activity in this range yet.</div>', sanitize=False)
 
     def _build_mix_card(self, summary: Dict[str, Any]) -> None:
@@ -772,30 +980,55 @@ class StatisticsTab:
         _title, types, _unit = self._HEATMAP_SCOPES.get(self.heatmap_scope, self._HEATMAP_SCOPES["chat"])
         return self.insights.heatmap(rng, types)
 
-    def _build_heatmap_card(self, grid: List[List[int]]) -> None:
-        scopes = self._HEATMAP_SCOPES
-        title, types, unit = scopes.get(self.heatmap_scope, scopes["chat"])
-        total = sum(sum(r) for r in grid)
+    def _build_heatmap_card(self) -> None:
+        """The heatmap card's frame; ``_update_heatmap`` fills it (scope switches and live ticks)."""
+        refs = self._overview_refs
         with ui.element("div").classes("mst-card"):
             with ui.element("div").classes("mst-card-head"):
                 with ui.column().classes("gap-0 grow"):
                     ui.label("When your community is active").classes("mst-card-title")
-                    sub = "Local time, by weekday and hour"
-                    if total:
-                        d, h = max(((d, h) for d in range(7) for h in range(24)), key=lambda dh: grid[dh[0]][dh[1]])
-                        sub += f" · busiest {['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'][d]} at {h:02d}:00"
-                    ui.label(sub).classes("mst-card-sub")
+                    refs["heatmap_sub"] = ui.label("").classes("mst-card-sub")
+                buttons = {}
                 with ui.element("div").classes("mst-seg"):
-                    for key, (label, _t, _u) in scopes.items():
-                        self._button(html.escape(label), "mst-seg-btn" + (" is-active" if key == self.heatmap_scope else ""), lambda k=key: self._set_heatmap(k))
-            if not total:
-                ui.html(f'<div class="mst-empty">{_icon("calendar_view_week")}No {unit} in this range.</div>', sanitize=False)
-                return
-            ui.echart(weekly_heatmap(grid, self._colors(), value_name=unit)).classes("mst-chart").style("height: 250px")
+                    for key, (label, _t, _u) in self._HEATMAP_SCOPES.items():
+                        buttons[key] = self._button(
+                            html.escape(label),
+                            "mst-seg-btn" + (" is-active" if key == self.heatmap_scope else ""),
+                            lambda k=key: self._set_heatmap(k),
+                        )
+                refs["heatmap_buttons"] = buttons
+            refs["heatmap_empty"] = ui.html("", sanitize=False)
+            refs["heatmap_chart"] = ui.echart({}).classes("mst-chart").style("height: 250px")
+
+    def _update_heatmap(self, grid: List[List[int]]) -> None:
+        refs = self._overview_refs
+        chart = refs.get("heatmap_chart")
+        key = self._heatmap_key(grid)
+        if chart is None or chart.is_deleted or refs.get("heatmap_key") == key:
+            return
+        refs["heatmap_key"] = key
+        scopes = self._HEATMAP_SCOPES
+        _title, _types, unit = scopes.get(self.heatmap_scope, scopes["chat"])
+        self._set_active(refs.get("heatmap_buttons") or {}, self.heatmap_scope)
+        total = sum(sum(r) for r in grid)
+        sub = "Local time, by weekday and hour"
+        if total:
+            d, h = max(((d, h) for d in range(7) for h in range(24)), key=lambda dh: grid[dh[0]][dh[1]])
+            sub += f" · busiest {['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'][d]} at {h:02d}:00"
+        refs["heatmap_sub"].set_text(sub)
+        empty = refs["heatmap_empty"]
+        empty.set_content(f'<div class="mst-empty">{_icon("calendar_view_week")}No {unit} in this range.</div>' if not total else "")
+        empty.set_visibility(not total)
+        chart.set_visibility(bool(total))
+        if total:
+            chart.options.clear()
+            chart.options.update(weekly_heatmap(grid, self._colors(), value_name=unit))
+            chart.update()
 
     def _set_heatmap(self, scope: str) -> None:
+        # Updated in place: rebuilding the section reset the settings scroll position (WebView2).
         self.heatmap_scope = scope
-        self._render_section()
+        self._update_heatmap(self._heatmap_grid(self._range()))
 
     # ======================================================================
     # Leaderboards
@@ -804,10 +1037,17 @@ class StatisticsTab:
     def _build_leaders(self) -> None:
         rng = self._range()
         ins = self.insights
-        ui.label(f"Leaders for {rng.label.lower() if self.range_key != 'custom' else rng.label}. Click a viewer for details.").classes("mst-muted")
+        hidden = self.hidden_viewers
+        with ui.row().classes("w-full items-center gap-2"):
+            ui.label(f"Leaders for {rng.label.lower() if self.range_key != 'custom' else rng.label}. Click a viewer for details.").classes("mst-muted grow")
+            ui.button(
+                self._hidden_viewers_text(),
+                icon="person_off",
+                on_click=self._edit_hidden_viewers,
+            ).props("flat dense no-caps size=sm" + (" color=primary" if hidden else "")).tooltip("Leave bots or your own account out of the rankings")
         with ui.element("div").classes("mst-grid mst-grid-3"):
             for title, icon, types, agg, unit in LEADERBOARDS:
-                rows = ins.leaders(rng, types, agg, 10)
+                rows = ins.leaders(rng, types, agg, 10, exclude=hidden)
                 with ui.element("div").classes("mst-card"):
                     with ui.element("div").classes("mst-card-head"):
                         ui.html(f'<div class="mst-tile-label" style="font-size:.95rem;color:var(--color-text-primary);font-weight:600">{_icon(icon)}{html.escape(title)}</div>', sanitize=False)
@@ -1190,13 +1430,15 @@ class StatisticsTab:
                 ui.label(rng.label if self.range_key in ("custom", "today", "all") else f"{rng.start:%b %d} – {rng.end:%b %d, %Y}").classes("font-semibold")
                 ui.label("Change it in the bar above.").classes("mst-muted mb-3")
                 ui.label("Layout").classes("mst-option-label")
+                self._export_layout_buttons = {}
                 with ui.element("div").classes("mst-seg mb-3"):
                     for key, label, icon in (("wide", "Wide 16:9", "crop_16_9"), ("portrait", "Portrait 4:5", "crop_portrait")):
-                        self._button(
+                        self._export_layout_buttons[key] = self._button(
                             _icon(icon) + html.escape(label),
                             "mst-seg-btn" + (" is-active" if key == self.export_layout else ""),
                             lambda k=key: self._set_export_layout(k),
                         )
+                self._build_export_filters()
                 with ui.row().classes("gap-2"):
                     primary_button("Save PNG", self._export_save, icon="download")
                     ui.button(icon="folder_open", on_click=self._open_exports_folder).props("outline no-caps color=primary").tooltip("Open the exports folder")
@@ -1206,8 +1448,70 @@ class StatisticsTab:
         self._render_export_preview()
 
     def _set_export_layout(self, key: str) -> None:
+        # Updated in place: rebuilding the section reset the settings scroll position (WebView2).
+        if key == self.export_layout:
+            return
         self.export_layout = key
-        self._render_section()
+        self._set_active(getattr(self, "_export_layout_buttons", None) or {}, key)
+        if self._export_preview is not None and not self._export_preview.is_deleted:
+            self._export_preview.classes(add="is-portrait") if key == "portrait" else self._export_preview.classes(remove="is-portrait")
+        self._render_export_preview()
+
+    def _build_export_filters(self) -> None:
+        """Chip toggles for what the image shows, plus the hidden-viewer list."""
+        from ...statistics_export import EXPORT_BOARDS, EXPORT_KPIS, EXPORT_SECTIONS
+
+        hidden_sections = set(self.filters.get("export_hidden_sections") or [])
+        groups: Dict[str, Any] = {}
+
+        def chips(filter_key: str, items) -> None:
+            hidden = set(self.filters.get(filter_key) or [])
+            with ui.element("div").classes("mst-chips mb-3"):
+                for key, label in items:
+                    on = key not in hidden
+                    ref: Dict[str, Any] = {}
+                    ref["chip"] = self._button(
+                        html.escape(label),
+                        "mst-chip" + (" is-active" if on else ""),
+                        lambda k=key, r=ref: toggle(filter_key, k, r["chip"]),
+                    )
+                    ref["chip"].props(f"aria-pressed={'true' if on else 'false'}")
+
+        def toggle(filter_key: str, key: str, chip) -> None:
+            shown = self._toggle_filter(filter_key, key)
+            chip.classes(add="is-active") if shown else chip.classes(remove="is-active")
+            chip.props(f"aria-pressed={'true' if shown else 'false'}")
+            if filter_key == "export_hidden_sections" and key in groups:
+                groups[key].set_visibility(shown)
+            self._render_export_preview()
+
+        ui.label("Show").classes("mst-option-label")
+        chips("export_hidden_sections", EXPORT_SECTIONS)
+        groups["kpis"] = ui.column().classes("gap-0 w-full")
+        with groups["kpis"]:
+            ui.label("Headline tiles").classes("mst-option-label")
+            chips("export_hidden_kpis", EXPORT_KPIS)
+        groups["boards"] = ui.column().classes("gap-0 w-full")
+        with groups["boards"]:
+            ui.label("Leaderboards").classes("mst-option-label")
+            ui.label("Portrait images show the first two.").classes("mst-muted mb-1")
+            chips("export_hidden_boards", EXPORT_BOARDS)
+        for key, group in groups.items():
+            group.set_visibility(key not in hidden_sections)
+        ui.label("Hidden viewers").classes("mst-option-label")
+        self._export_hidden = ui.row().classes("items-center gap-2 mb-3 no-wrap w-full")
+        self._render_export_hidden()
+
+    def _render_export_hidden(self) -> None:
+        box = getattr(self, "_export_hidden", None)
+        if box is None or box.is_deleted:
+            return
+        box.clear()
+        names = self.hidden_viewers
+        with box:
+            text = ", ".join(names) if names else "None. Every viewer can appear in the rankings."
+            ui.label(text).classes("mst-muted grow min-w-0 truncate").tooltip(text)
+            ui.button("Edit", icon="person_off", on_click=self._edit_hidden_viewers).props("flat dense no-caps size=sm color=primary")
 
     def _render_export_status(self) -> None:
         if not getattr(self, "_export_status", None):
@@ -1219,7 +1523,7 @@ class StatisticsTab:
                 ui.label(self.export_last_path).classes("mst-path")
 
     def _export_inputs(self, rng: DateRange) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
-        highlights, source = self.mgr.get_highlights_for_export(rng.start_ts, rng.end_ts)
+        highlights, source = self.mgr.get_highlights_for_export(rng.start_ts, rng.end_ts, exclude_users=self.hidden_viewers)
         ins = self.insights
         series = ins.timeseries(rng)
         totals = [0.0] * len(series["keys"])
@@ -1232,6 +1536,9 @@ class StatisticsTab:
             "activity_labels": series["labels"],
             "activity_values": totals,
             "activity_bucket": series["bucket"],
+            "hidden_sections": list(self.filters.get("export_hidden_sections") or []),
+            "hidden_kpis": list(self.filters.get("export_hidden_kpis") or []),
+            "hidden_boards": list(self.filters.get("export_hidden_boards") or []),
         }
         if self._comparing:
             cur, prev = ins.summary(rng), ins.summary(rng.previous())

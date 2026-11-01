@@ -253,6 +253,9 @@ class AppSettings:
     activity_feed_up_next: int = 1  # 0 | 1 | 3 | 5
     activity_feed_text_size: str = "medium"  # small | medium | large
     activity_feed_person_hours: int = 0  # 0 = not chosen yet (uses the old dock setting, else 12)
+    # Statistics tab filters (Spotlight picks, export sections, hidden viewers); see
+    # uiwindows/tabs/statistics_tab.StatisticsTab._load_filters. Keys hold what is hidden.
+    statistics_filters: dict = field(default_factory=dict)
     alert_storage_auto_trim: bool = False
     alert_storage_trim_mode: str = "both"
     alert_storage_keep_count: int = 500

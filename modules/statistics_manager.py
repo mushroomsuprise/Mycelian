@@ -34,7 +34,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .database_manager import get_data, set_data, update_data
 from .path_utils import get_data_path
@@ -1401,21 +1401,36 @@ class StatisticsManager:
             self._return_stats_db_connection(conn)
 
     def _compute_highlights_from_user_events(
-        self, cursor: sqlite3.Cursor, start_time: float, end_time: float
+        self,
+        cursor: sqlite3.Cursor,
+        start_time: float,
+        end_time: float,
+        exclude_users: Sequence[str] = (),
     ) -> Dict[str, Any]:
-        """Aggregate highlight metrics from ``user_events`` for ``[start_time, end_time]``."""
+        """Aggregate highlight metrics from ``user_events`` for ``[start_time, end_time]``.
+
+        ``exclude_users`` leaves those viewers out of the rankings (top lists, MVP,
+        biggest cheer/streak); totals still count everything.
+        """
         logger.debug("[highlights] _compute_highlights_from_user_events start")
         highlights: Dict[str, Any] = {}
         ts_params = (start_time, end_time)
         not_system = "IFNULL(username_lower, lower(username)) != ?"
         sys_name = (self._STATS_SYSTEM_USERNAME.lower(),)
+        excluded = tuple(sorted({str(u).strip().lower() for u in exclude_users if str(u or "").strip()}))
+        not_excluded = (
+            f"AND IFNULL(username_lower, lower(username)) NOT IN ({','.join('?' * len(excluded))}) "
+            if excluded
+            else ""
+        )
 
         def top_by_sum(event_type: str, limit: int = 5) -> List[Dict[str, Any]]:
             cursor.execute(
                 "SELECT username, COALESCE(SUM(amount), 0) AS v FROM user_events "
                 "WHERE timestamp >= ? AND timestamp <= ? AND event_type = ? "
-                "GROUP BY username ORDER BY v DESC LIMIT ?",
-                (*ts_params, event_type, limit),
+                + not_excluded
+                + "GROUP BY username ORDER BY v DESC LIMIT ?",
+                (*ts_params, event_type, *excluded, limit),
             )
             return [
                 {
@@ -1436,6 +1451,8 @@ class StatisticsManager:
             if exclude_system:
                 q += f"AND {not_system} "
                 params.append(sys_name[0])
+            q += not_excluded
+            params.extend(excluded)
             q += " GROUP BY username ORDER BY c DESC LIMIT ?"
             params.append(limit)
             cursor.execute(q, tuple(params))
@@ -1468,8 +1485,9 @@ class StatisticsManager:
         cursor.execute(
             "SELECT username, amount FROM user_events "
             "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'bit' "
-            "ORDER BY amount DESC LIMIT 1",
-            ts_params,
+            + not_excluded
+            + "ORDER BY amount DESC LIMIT 1",
+            ts_params + excluded,
         )
         row = cursor.fetchone()
         highlights["biggest_bit_donation"] = (
@@ -1586,8 +1604,9 @@ class StatisticsManager:
         cursor.execute(
             "SELECT username, amount FROM user_events "
             "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'watch_streak' "
-            "ORDER BY amount DESC LIMIT 1",
-            ts_params,
+            + not_excluded
+            + "ORDER BY amount DESC LIMIT 1",
+            ts_params + excluded,
         )
         row = cursor.fetchone()
         highlights["biggest_watch_streak"] = (
@@ -1602,8 +1621,9 @@ class StatisticsManager:
         cursor.execute(
             "SELECT username, MAX(amount) AS peak FROM user_events "
             "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'watch_streak' "
-            "GROUP BY username ORDER BY peak DESC LIMIT 5",
-            ts_params,
+            + not_excluded
+            + "GROUP BY username ORDER BY peak DESC LIMIT 5",
+            ts_params + excluded,
         )
         highlights["top_watch_streak_peaks"] = [
             {
@@ -1617,8 +1637,9 @@ class StatisticsManager:
             "SELECT username, COUNT(*) as event_count FROM user_events "
             "WHERE timestamp >= ? AND timestamp <= ? AND event_type = 'chat_message' "
             f"AND {not_system} "
-            "GROUP BY username ORDER BY event_count DESC LIMIT 1",
-            ts_params + sys_name,
+            + not_excluded
+            + "GROUP BY username ORDER BY event_count DESC LIMIT 1",
+            ts_params + sys_name + excluded,
         )
         row = cursor.fetchone()
         highlights["top_chatter"] = (
@@ -1634,8 +1655,9 @@ class StatisticsManager:
             "SELECT username, COUNT(*) as event_count FROM user_events "
             "WHERE timestamp >= ? AND timestamp <= ? "
             f"AND {not_system} "
-            "GROUP BY username ORDER BY event_count DESC LIMIT 1",
-            ts_params + sys_name,
+            + not_excluded
+            + "GROUP BY username ORDER BY event_count DESC LIMIT 1",
+            ts_params + sys_name + excluded,
         )
         row = cursor.fetchone()
         highlights["most_active_user"] = (
@@ -2189,13 +2211,14 @@ class StatisticsManager:
         logger.debug("[highlights debug] ---- end layout ----")
 
     def get_date_range_highlights(
-        self, start_time: float, end_time: float
+        self, start_time: float, end_time: float, exclude_users: Sequence[str] = ()
     ) -> Dict[str, Any]:
         """Get highlight data for the export card.
 
         Args:
             start_time: Start of range (unix timestamp).
             end_time: End of range (unix timestamp).
+            exclude_users: Viewers left out of the rankings (totals still count them).
 
         Returns:
             Dictionary of highlight metrics (top donors, totals, etc.).
@@ -2221,7 +2244,7 @@ class StatisticsManager:
             self._debug_print_user_events_db_layout(cursor, start_time, end_time)
             try:
                 data = self._compute_highlights_from_user_events(
-                    cursor, start_time, end_time
+                    cursor, start_time, end_time, exclude_users
                 )
                 logger.debug("[highlights] full compute OK total_events= %s",
                     data.get("total_events"),
@@ -2250,16 +2273,34 @@ class StatisticsManager:
         finally:
             self._return_stats_db_connection(conn)
 
+    @staticmethod
+    def _drop_excluded_viewers(highlights: Dict[str, Any], exclude_users: Sequence[str]) -> Dict[str, Any]:
+        """Remove excluded viewers from ranking entries (lists and single picks) in place."""
+        excluded = {str(u).strip().lower() for u in exclude_users if str(u or "").strip()}
+        if not excluded:
+            return highlights
+
+        def hidden(entry: Any) -> bool:
+            return isinstance(entry, dict) and str(entry.get("username") or "").strip().lower() in excluded
+
+        for key, value in list(highlights.items()):
+            if isinstance(value, list):
+                highlights[key] = [e for e in value if not hidden(e)]
+            elif hidden(value):
+                highlights[key] = None
+        return highlights
+
     def get_highlights_for_export(
-        self, start_time: float, end_time: float
+        self, start_time: float, end_time: float, exclude_users: Sequence[str] = ()
     ) -> Tuple[Dict[str, Any], str]:
         """Return ``(highlights, source)`` for the PNG export.
 
         ``source`` is ``\"event_log\"`` when SQLite has rows in the date range,
         ``\"lifetime\"`` when the event log window is empty but lifetime JSON-backed
         aggregates in ``self.data`` can populate the image, otherwise ``\"empty\"``.
+        ``exclude_users`` leaves those viewers out of every ranking.
         """
-        sql = self.get_date_range_highlights(start_time, end_time)
+        sql = self.get_date_range_highlights(start_time, end_time, exclude_users)
         te = int(sql.get("total_events", 0) or 0)
         if te:
             src = "event_log_fallback" if sql.get("_fallback_partial") else "event_log"
@@ -2271,7 +2312,7 @@ class StatisticsManager:
                 list(sql.keys())[:8],
             )
             return sql, src
-        life = self._compute_highlights_from_lifetime()
+        life = self._drop_excluded_viewers(self._compute_highlights_from_lifetime(), exclude_users)
         lte = int(life.get("total_events", 0) or 0)
         if lte:
             logger.debug("[highlights] get_highlights_for_export: source=lifetime total_events= %s %s %s %s %s",

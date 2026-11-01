@@ -301,6 +301,14 @@ def test_leaders_need_event_types_and_order_ties_by_event_count(db, ins):
         ins.leaders(rng, ("bit",), "median")
 
 
+def test_leaders_leave_out_excluded_viewers(db, ins):
+    rng = si.preset_range("today", now=NOW)
+    add(db, [("Ann", "bit", 100, "", NOW), ("NightBot", "bit", 500, "", NOW), ("Bob", "bit", 50, "", NOW)])
+    top = ins.leaders(rng, ("bit",), "sum", limit=5, exclude=["nightbot", "", "  "])
+    assert [r["username"] for r in top] == ["Ann", "Bob"]
+    assert [r["username"] for r in ins.leaders(rng, ("bit",), "sum", limit=5, exclude=["ANN", "bob"])] == ["NightBot"]
+
+
 def test_recent_events_all_types_newest_first(db, ins):
     add(db, [
         ("Ann", "follow", 0, "", NOW - timedelta(hours=2)),
