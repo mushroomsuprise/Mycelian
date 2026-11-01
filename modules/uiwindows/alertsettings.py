@@ -111,10 +111,26 @@ ALERT_TAB_TO_TYPE = {
     "Gift Subs": "giftsubs",
     "Donations": "donations",
     "Raids": "raids",
+    "Hype Train": "hypetrain",
     "Follows": "follows",
     "Channel Points": "points",
 }
 _ALERT_TYPE_TO_TAB = {t: name for name, t in ALERT_TAB_TO_TYPE.items()}
+
+# Alerts that exist once per tab and have no amount: tab type -> (alert id, list name, list badge).
+_SPECIAL_ALERTS = {
+    "subs": (alertutils.AlertSettings.FALLBACK_ALERT_ID, "Resub Fallback", "Fallback"),
+    "hypetrain": (alertutils.AlertSettings.HYPE_RECORD_ALERT_ID, "New all-time high", "Record"),
+}
+
+
+_SPECIAL_ALERT_IDS = frozenset(special[0] for special in _SPECIAL_ALERTS.values())
+
+
+def _special_alert_id(alert_type: str) -> "str | None":
+    """The tab's no-amount alert (resub fallback, Hype Train all-time high), if it has one."""
+    special = _SPECIAL_ALERTS.get(alert_type)
+    return special[0] if special else None
 
 
 def _alerts_nav(alert_type: str) -> list:
@@ -640,6 +656,7 @@ _ALERT_TAB_ICONS = {
     "Gift Subs": "redeem",
     "Donations": "volunteer_activism",
     "Raids": "groups",
+    "Hype Train": "train",
     "Follows": "favorite",
     "Channel Points": "toll",
 }
@@ -652,6 +669,7 @@ _TRIGGER_UNITS = {
     "giftsubs": "gifts",
     "donations": "",
     "raids": "viewers",
+    "hypetrain": "level",
 }
 
 # Per-type view state that is not a form field (kept out of the elements dict so
@@ -1112,6 +1130,13 @@ def create_twitch_options_section(alert_type: str):
                 _dim_on(alert_type, dim_key, amount)
         with _row("Skip request queue", "Skip the request queue and auto-fulfill redemptions"):
             _switch_field(alert_type, "twitch_skip_queue_switch")
+        with _row(
+            "Complete after the alert plays",
+            "Mark the redemption complete on Twitch once its alert has played. Only matters when "
+            "Skip request queue is off, and only for rewards Mycelian created (Twitch only lets "
+            "the app that made a reward complete its redemptions). Saved in Mycelian, not on Twitch.",
+        ):
+            _switch_field(alert_type, "complete_redemption_switch")
     _watch_dims(alert_type, "twitch_user_input_switch", "twitch_max_per_stream_switch",
                 "twitch_max_per_user_switch", "twitch_cooldown_switch")
 
@@ -1141,7 +1166,7 @@ def _alert_list_entries(alert_type: str):
     select = _el(alert_type).get("alert_select")
     options = dict(getattr(select, "options", None) or {}) if select is not None else {}
     saved = get_alerts_for_type(alert_type)
-    fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
+    special = _SPECIAL_ALERTS.get(alert_type)
     entries = []
     for alert_id, label in options.items():
         if alert_id == "new" or alert_id in POINTS_REWARD_SELECT_PLACEHOLDERS:
@@ -1162,8 +1187,8 @@ def _alert_list_entries(alert_type: str):
         else:
             name = str(label)
             numeric = alert_id[len(alert_type):] if alert_id.startswith(alert_type) else alert_id
-            if alert_id == fallback_id:
-                meta = '<span class="alr-kind is-fb">Fallback</span>'
+            if special and alert_id == special[0]:
+                meta = f'<span class="alr-kind is-fb">{special[2]}</span>'
             elif "-" in numeric:
                 meta = '<span class="alr-kind">Range</span>'
             else:
@@ -1287,6 +1312,12 @@ def _build_alert_list(alert_type: str, select) -> None:
                         value=alertutils.alert_state_manager.get_resub_fallback_enabled(),
                         on_change=lambda e: _set_resub_fallback(bool(e.value)),
                     ).props("dense")
+        if alert_type == "hypetrain":
+            with ui.element("div").classes("alr-rail-foot"):
+                ui.label(
+                    "A level alert plays as a train reaches each level. Set up “New all-time high” "
+                    "to play instead when a train beats your channel's record."
+                ).classes("text-xs text-theme-secondary")
     select.on_value_change(lambda _e, at=alert_type: _render_alert_list(at))
 
 
@@ -1426,6 +1457,7 @@ def create_alert_settings_tab():
                 giftsubs_tab = tab_refs["Gift Subs"]
                 donations_tab = tab_refs["Donations"]
                 raids_tab = tab_refs["Raids"]
+                hypetrain_tab = tab_refs["Hype Train"]
                 follows_tab = tab_refs["Follows"]
                 points_tab = tab_refs["Channel Points"]
 
@@ -1521,6 +1553,14 @@ def create_alert_settings_tab():
                         "Raids", lambda: create_alert_type_panel("raids")
                     )
 
+                # Hype Train Alerts Tab
+                with ui.tab_panel(hypetrain_tab).classes(
+                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                ):
+                    _defer_alert_panel(
+                        "Hype Train", lambda: create_alert_type_panel("hypetrain")
+                    )
+
                 # Follow Alerts Tab
                 with ui.tab_panel(follows_tab).classes(
                     "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
@@ -1580,6 +1620,7 @@ def initialize_tab_values(tab_name):
                 "Gift Subs": "giftsubs",
                 "Donations": "donations",
                 "Raids": "raids",
+                "Hype Train": "hypetrain",
                 "Follows": "follows",
                 "Channel Points": "points",
             }
@@ -1654,7 +1695,8 @@ def initialize_tab_values(tab_name):
 def _initial_alert_count(alert_type: str) -> int:
     alerts = get_alerts_for_type(alert_type)
     count = len(alerts)
-    if alert_type == "subs" and alertutils.AlertSettings.FALLBACK_ALERT_ID not in alerts:
+    special_id = _special_alert_id(alert_type)
+    if special_id and special_id not in alerts:
         count += 1
     return count
 
@@ -1678,11 +1720,10 @@ def create_alert_type_panel(alert_type: str):
         )
         alert_options[alert_id] = display_name
 
-    # For subs tab, always ensure the fallback alert entry is present
-    if alert_type == "subs":
-        fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
-        if fallback_id not in alert_options:
-            alert_options[fallback_id] = "Resub Fallback"
+    # The resub fallback / Hype Train all-time-high entry is always listed
+    special = _SPECIAL_ALERTS.get(alert_type)
+    if special and special[0] not in alert_options:
+        alert_options[special[0]] = special[1]
 
     with ui.element("div").classes("alr"):
         # The selector drives loading, the unsaved prompt and saving; the list on the
@@ -1732,8 +1773,8 @@ def sort_alert_ids(alert_type: str, alert_items: list) -> list:
             def extract_sort_key(item):
                 alert_id = item[0]
 
-                # Always push the resub fallback alert to the very end
-                if alert_id == alertutils.AlertSettings.FALLBACK_ALERT_ID:
+                # Always push the resub fallback / all-time-high alert to the very end
+                if alert_id in _SPECIAL_ALERT_IDS:
                     return (float("inf"), float("inf"), 1)
 
                 # Remove the alert type prefix to get the numeric part
@@ -1839,6 +1880,7 @@ _QUANTITY_ALERT_TYPES = {
     "giftsubs",
     "donations",
     "raids",
+    "hypetrain",
 }
 
 
@@ -1986,8 +2028,8 @@ def handle_alert_selection(e, alert_type: str):
         )
         return
     try:
-        fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
-        is_fallback = alert_type == "subs" and e.value == fallback_id
+        fallback_id = _special_alert_id(alert_type)
+        is_fallback = bool(fallback_id) and e.value == fallback_id
 
         if e.value == "new":
             # Load default values for new alert
@@ -2115,6 +2157,7 @@ def set_default_values_for_new_alert(alert_type: str):
         "giftsubs",
         "donations",
         "raids",
+        "hypetrain",
     ]:
         # Default to exact mode for simplicity
         alert_settings_state.get_elements(alert_type)["range_toggle"].value = False
@@ -2132,6 +2175,8 @@ def set_default_values_for_new_alert(alert_type: str):
             alert_settings_state.get_elements(alert_type)["amount_input"].value = 5
         elif alert_type == "raids":
             alert_settings_state.get_elements(alert_type)["amount_input"].value = 10
+        elif alert_type == "hypetrain":
+            alert_settings_state.get_elements(alert_type)["amount_input"].value = 1
 
         # Default values for range mode too
         if alert_type == "subs":
@@ -2141,6 +2186,9 @@ def set_default_values_for_new_alert(alert_type: str):
         elif alert_type == "streaks":
             alert_settings_state.get_elements(alert_type)["min_input"].value = 2
             alert_settings_state.get_elements(alert_type)["max_input"].value = 5
+        elif alert_type == "hypetrain":
+            alert_settings_state.get_elements(alert_type)["min_input"].value = 2
+            alert_settings_state.get_elements(alert_type)["max_input"].value = 4
         else:
             alert_settings_state.get_elements(alert_type)[
                 "min_input"
@@ -2423,15 +2471,8 @@ def load_alert_settings(alert_type: str, alert_id: str, quiet: bool = False):
         layout_schedule(0.3, force_ui_refresh_multiple, once=True)
 
         # Update range/exact inputs if applicable
-        is_fallback = alert_id == alertutils.AlertSettings.FALLBACK_ALERT_ID
-        if alert_type in [
-            "bits",
-            "subs",
-            "streaks",
-            "giftsubs",
-            "donations",
-            "raids",
-        ]:
+        is_fallback = alert_id == _special_alert_id(alert_type)
+        if alert_type in _QUANTITY_ALERT_TYPES:
             if is_fallback:
                 # Fallback alert has no amount/range — hide controls
                 _update_amount_inputs_visibility(alert_type, hide=True)
@@ -2685,6 +2726,18 @@ def _collect_test_alert_data(alert_type: str, elements: dict) -> dict:
             alert_data["raider_count"] = int(amount)
         else:
             alert_data["raider_count"] = 10
+    elif alert_type == "hypetrain":
+        record = _element_value(elements, "alert_select", "") == _special_alert_id("hypetrain")
+        if use_range and min_amount is not None:
+            level = int(min_amount)
+        elif amount is not None and not record:
+            level = int(amount)
+        else:
+            level = 5 if record else 1
+        alert_data["hype_train_level"] = max(1, level)
+        alert_data["hype_train_record"] = bool(record)
+        alert_data["hype_train_type"] = "regular"
+        alert_data["hype_train_in_progress"] = True
     elif alert_type == "points":
         reward_id = _element_value(elements, "alert_select", "test_reward")
         if reward_id in POINTS_REWARD_SELECT_PLACEHOLDERS or reward_id == "new":
@@ -2914,14 +2967,17 @@ def save_alert(alert_type: str):
             alert_data["alert_name"] = "Resub Fallback"
             alert_data["resub_month"] = 0
 
-        elif alert_type in [
-            "bits",
-            "subs",
-            "streaks",
-            "giftsubs",
-            "donations",
-            "raids",
-        ]:
+        # Hype Train: the "New all-time high" alert has no level
+        elif (
+            alert_type == "hypetrain"
+            and selected_value == alertutils.AlertSettings.HYPE_RECORD_ALERT_ID
+        ):
+            alert_id = alertutils.AlertSettings.HYPE_RECORD_ALERT_ID
+            alert_data["alert_name"] = "New all-time high"
+            alert_data["hype_train_level"] = 0
+            alert_data["hype_train_record"] = True
+
+        elif alert_type in _QUANTITY_ALERT_TYPES:
             if alert_settings_state.get_elements(alert_type)["range_toggle"].value:
                 # Format as <alert_type><min-max>
                 min_val = int(
@@ -2944,6 +3000,8 @@ def save_alert(alert_type: str):
                     alert_data["donation_amount"] = min_val
                 elif alert_type == "raids":
                     alert_data["raider_count"] = min_val
+                elif alert_type == "hypetrain":
+                    alert_data["hype_train_level"] = min_val
 
                 alert_id = f"{alert_type}{min_val}-{max_val}"
 
@@ -2976,6 +3034,8 @@ def save_alert(alert_type: str):
                     alert_data["donation_amount"] = quantity
                 elif alert_type == "raids":
                     alert_data["raider_count"] = quantity
+                elif alert_type == "hypetrain":
+                    alert_data["hype_train_level"] = quantity
 
                 alert_id = f"{alert_type}{quantity}"
 
@@ -3041,10 +3101,10 @@ def save_alert(alert_type: str):
                     if (
                         alert_settings_state.get_elements(alert_type)["alert_select"].value
                         == "new"
-                        or selected_value == alertutils.AlertSettings.FALLBACK_ALERT_ID
+                        or selected_value == _special_alert_id(alert_type)
                     ):
                         alerts = get_alerts_for_type(alert_type)
-                        if alerts or alert_type == "subs":
+                        if alerts or _special_alert_id(alert_type):
                             # Create updated options
                             alert_options = {
                                 "new": "+ Create New Alert",
@@ -3062,11 +3122,10 @@ def save_alert(alert_type: str):
                                 )
                                 alert_options[a_id] = display_name
 
-                            # Ensure fallback entry is always present for subs
-                            if alert_type == "subs":
-                                fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
-                                if fallback_id not in alert_options:
-                                    alert_options[fallback_id] = "Resub Fallback"
+                            # The resub fallback / all-time-high entry is always listed
+                            special = _SPECIAL_ALERTS.get(alert_type)
+                            if special and special[0] not in alert_options:
+                                alert_options[special[0]] = special[1]
 
                             # Update the select options
                             alert_settings_state.get_elements(alert_type)[
@@ -3702,12 +3761,16 @@ def set_default_values_for_new_point_reward(alert_type: str):
     alert_settings_state.get_elements(alert_type)[
         "twitch_skip_queue_switch"
     ].value = True
+    if "complete_redemption_switch" in alert_settings_state.get_elements(alert_type):
+        alert_settings_state.get_elements(alert_type)["complete_redemption_switch"].value = True
 
 
 def set_default_values_for_new_point_reward_non_twitch(alert_type: str):
     """Set default values for a new point reward, excluding Twitch settings (which should be loaded from API)"""
     # Set common alert defaults
     alert_settings_state.get_elements(alert_type)["enable_alert_switch"].value = False
+    if "complete_redemption_switch" in alert_settings_state.get_elements(alert_type):
+        alert_settings_state.get_elements(alert_type)["complete_redemption_switch"].value = True
     alert_settings_state.get_elements(alert_type)["duration_input"].value = 3.0
     alert_settings_state.get_elements(alert_type)["stackable_switch"].value = False
     alert_settings_state.get_elements(alert_type)["fade_in_input"].value = 0
@@ -3842,6 +3905,10 @@ def load_point_reward_settings(alert_type: str, reward_id: str):
             if "enable_alert_switch" in elements and elements["enable_alert_switch"]:
                 elements["enable_alert_switch"].value = alert_data.get(
                     "enable_alert", False
+                )
+            if elements.get("complete_redemption_switch") is not None:
+                elements["complete_redemption_switch"].value = bool(
+                    alert_data.get("complete_redemption", True)
                 )
             if "duration_input" in elements and elements["duration_input"]:
                 elements["duration_input"].value = float(
@@ -4179,6 +4246,8 @@ def save_point_alert(on_complete=None):
         gif_file = elements["gif_file_input"].value or ""
 
         enable_alert = elements["enable_alert_switch"].value
+        complete_switch = elements.get("complete_redemption_switch")
+        complete_redemption = bool(complete_switch.value) if complete_switch is not None else True
         reward_title = (elements["twitch_title_input"].value or "").strip()
         point_cost = elements["twitch_cost_input"].value
         captured_reward_id = selected
@@ -4187,6 +4256,7 @@ def save_point_alert(on_complete=None):
             alert_data = {
                 "alert_type": alert_type,
                 "enable_alert": enable_alert,
+                "complete_redemption": complete_redemption,
                 "duration": duration,
                 "stackable": stackable,
                 "fade_in": fade_in,
@@ -4545,10 +4615,9 @@ def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
                             )
                             alert_options[a_id] = display_name
 
-                        if alert_type == "subs":
-                            fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
-                            if fallback_id not in alert_options:
-                                alert_options[fallback_id] = "Resub Fallback"
+                        special = _SPECIAL_ALERTS.get(alert_type)
+                        if special and special[0] not in alert_options:
+                            alert_options[special[0]] = special[1]
 
                         alert_settings_state.get_elements(alert_type)[
                             "alert_select"
@@ -4607,6 +4676,7 @@ def refresh_alert_dropdowns():
                 "giftsubs",
                 "donations",
                 "raids",
+                "hypetrain",
                 "follows",
                 "points",
             ]
@@ -4633,11 +4703,10 @@ def refresh_alert_dropdowns():
                         )
                         alert_options[alert_id] = display_name
 
-                    # Ensure fallback entry is always present for subs
-                    if alert_type == "subs":
-                        fallback_id = alertutils.AlertSettings.FALLBACK_ALERT_ID
-                        if fallback_id not in alert_options:
-                            alert_options[fallback_id] = "Resub Fallback"
+                    # The resub fallback / all-time-high entry is always listed
+                    special = _SPECIAL_ALERTS.get(alert_type)
+                    if special and special[0] not in alert_options:
+                        alert_options[special[0]] = special[1]
 
                     # Update the select options
                     alert_select.options = alert_options

@@ -29,6 +29,8 @@ STARTUP_PATHS = [
     "Alerts/GiftsubRangeAlerts",
     "Alerts/RaidAlerts",
     "Alerts/RaidRangeAlerts",
+    "Alerts/HypeTrainAlerts",
+    "Alerts/HypeTrainRangeAlerts",
     "Alerts/PointAlerts",
 ]
 

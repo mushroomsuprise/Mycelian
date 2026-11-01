@@ -2945,6 +2945,8 @@ async def load_all_initial_data() -> Dict[str, Any]:
         "Alerts/GiftsubRangeAlerts",
         "Alerts/RaidAlerts",
         "Alerts/RaidRangeAlerts",
+        "Alerts/HypeTrainAlerts",
+        "Alerts/HypeTrainRangeAlerts",
         "Alerts/PointAlerts",
         "Alerts/AlertQueue",
         # Skip: BotData/*, ViewerData, AlertStorage, other extended alert ranges

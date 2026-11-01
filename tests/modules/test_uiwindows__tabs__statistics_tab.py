@@ -962,8 +962,9 @@ def test_spotlight_menu_checkboxes(ctx, monkeypatch):
         assert "chat_message" not in tab._active_types() and len(tab.filters["spotlight_active_types"]) == len(tabmod.MOST_ACTIVE_TYPES) - 1
         for label in [tabmod.EVENT_TYPES[t].label for t in tabmod.MOST_ACTIVE_TYPES]:
             boxes[label].value = False
-        assert boxes["Poll wins"].value is True  # the last type can't be unticked
-        assert tab._active_types() == ("poll_win",)
+        last = tabmod.MOST_ACTIVE_TYPES[-1]
+        assert boxes[tabmod.EVENT_TYPES[last].label].value is True  # the last type can't be unticked
+        assert tab._active_types() == (last,)
         (all_button,) = [b for b in user.find(kind=ui.button).elements if b.text == "All"]
         UserInteraction(user, {all_button}, None).click()
         assert tab.filters["spotlight_active_types"] == [] and boxes["Chat messages"].value is True

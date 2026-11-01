@@ -108,6 +108,7 @@
 <tbody>
 <tr><td>Wheel</td><td><code>wheel_result</code></td><td>The wheel stops</td><td>template, elementId, index, label</td><td>On</td></tr>
 <tr><td>Poll</td><td><code>poll_result</code></td><td>The poll ends</td><td>template, elementId, winners, total_votes, options</td><td>On</td></tr>
+<tr><td>Prediction</td><td><code>prediction_result</code></td><td>The prediction is resolved or refunded</td><td>template, elementId, winner, status, total_points, outcomes</td><td>On</td></tr>
 <tr><td>Timer</td><td><code>timer_finished</code></td><td>The timer reaches its limit or 0 (not on pause)</td><td>template, elementId, mode, elapsed</td><td>On</td></tr>
 <tr><td>Counter</td><td><code>counter_changed</code></td><td>The value changes</td><td>template, elementId, counterId, value, delta</td><td>On</td></tr>
 <tr><td>Counter</td><td><code>goal_reached</code></td><td>The count reaches one of its progressive goals</td><td>template, elementId, counterId, value, goal, nextGoal, index, max</td><td>On</td></tr>
@@ -538,6 +539,19 @@
 <p><strong>Start hidden until shown</strong> on a Poll keeps it hidden until a poll runs, then reveals it with its entrance animation. When the overlay loads it asks Mycelian for the current poll, so a refreshed browser source shows the live poll straight away. It only paints this template's poll, even when a Data feed drives it.</p>
 
 <p>Exposed Poll settings appear in Source Settings; Style, Winner effect, Layout, Display, Rotator animation and After a winner appear there as dropdowns. The built-in <code>poll</code> template uses the Bars style with the title <em>Vote now!</em>, rank numbers and a purple-to-pink gradient, at 460 × 480.</p>
+
+<h3>Prediction</h3>
+
+<p>A live view of the Twitch prediction started from <span class="hx-path"><span>Chatbot</span><span>Predictions</span></span> for this template (or one started on Twitch while this template is picked there). It shows one row per outcome with a bar sized by its share of the channel points, in Twitch's order.</p>
+
+<ul>
+  <li><strong>Chip</strong>: <em>Live</em> with the time until predictions lock, then <em>Predictions locked</em>, then the result (<em>{winner} won!</em>) or <em>Refunded</em>. Change each text in the block's settings.</li>
+  <li><strong>Stats</strong>: turn on each outcome's percent, points, number of predictors, payout ratio (1:2.5 means 2.5 points back for each point spent) and top predictor, plus the totals in the footer.</li>
+  <li><strong>Colors</strong>: the first two outcomes use Twitch's blue and pink by default; <strong>More outcome colors</strong> sets outcomes 3 to 10.</li>
+  <li><strong>After the result</strong>: the winner is highlighted (glow or pulse) and the others dim. <strong>Hide after the result</strong> hides the widget that many seconds later (0 keeps it up).</li>
+</ul>
+
+<p>The built-in <code>predictions</code> template is one Prediction block that starts hidden and appears when a prediction starts. Its Data feed listens to <code>prediction_state</code> and <code>prediction_ended</code>; the widget also asks Mycelian for the current prediction when the overlay loads.</p>
 
 <h3>Progress bar</h3>
 

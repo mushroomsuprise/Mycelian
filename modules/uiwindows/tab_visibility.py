@@ -29,7 +29,7 @@ _MAIN_TAB_LABELS = frozenset(
     }
 )
 _CHATBOT_SUB_TABS = frozenset(
-    {"Commands", "Events", "Quotes", "Greetings", "Giveaways", "Polls"}
+    {"Commands", "Events", "Quotes", "Greetings", "Giveaways", "Polls", "Predictions"}
 )
 
 _show_callbacks: Dict[str, Callable[[], Any]] = {}

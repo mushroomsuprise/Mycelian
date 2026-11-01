@@ -138,6 +138,24 @@ def _audio_mode_options(cfg: dict) -> Dict[str, str]:
     }
 
 
+def _poll_template_options(_cfg: dict) -> Dict[str, str]:
+    def load() -> Dict[str, str]:
+        from ..poll_manager import list_poll_template_names
+
+        return {name: name for name in list_poll_template_names()}
+
+    return _cached_options("poll_templates", load)
+
+
+def _prediction_template_options(_cfg: dict) -> Dict[str, str]:
+    def load() -> Dict[str, str]:
+        from ..prediction_manager import list_prediction_template_names
+
+        return {name: name for name in list_prediction_template_names()}
+
+    return _cached_options("prediction_templates", load)
+
+
 _COLOR_OPTIONS = {"primary": "Channel colour", "blue": "Blue", "green": "Green", "orange": "Orange", "purple": "Purple"}
 _HTTP_METHODS = {m: m for m in ("GET", "POST", "PUT", "PATCH", "DELETE")}
 _MOUSE_BUTTONS = {"left_click": "Left click", "right_click": "Right click", "middle_click": "Middle click"}
@@ -149,6 +167,7 @@ _MOUSE_BUTTONS = {"left_click": "Left click", "right_click": "Right click", "mid
 
 ACTION_GROUPS: Tuple[Tuple[str, str], ...] = (
     ("Chat & social", "forum"),
+    ("Twitch", "twitch"),
     ("Alerts & overlays", "notifications_active"),
     ("OBS", "obs"),
     ("Input & audio", "keyboard"),
@@ -192,6 +211,46 @@ _add(ActionSpec("send_greeting", "Send greeting", "Chat & social", "record_voice
     Field("user_id", "Viewer ID", default="{user_id}", variables=True, width="half"),
     Field("force_send", "Send even if greeted recently", "toggle", default=True),
 ]))
+
+_add(ActionSpec("twitch_shoutout", "Shoutout", "Twitch", "campaign", "Give a channel a Twitch shoutout", [
+    Field("target", "Channel", default="{username}", variables=True, required=True,
+          help="A Twitch name, or a variable such as {username}. You must be live; Twitch allows one shoutout "
+               "every 2 minutes."),
+]))
+_add(ActionSpec("twitch_raid", "Start a raid", "Twitch", "groups_2", "Raid another channel", [
+    Field("target", "Channel to raid", variables=True, required=True, placeholder="friendlystreamer"),
+]))
+_add(ActionSpec("twitch_stream_marker", "Add stream marker", "Twitch", "bookmark_add",
+                "Mark this moment for highlights (you must be live)", [
+    Field("description", "Description", variables=True, placeholder="{username} raided"),
+]))
+_add(ActionSpec("twitch_set_title", "Change stream title", "Twitch", "title", "Set a new stream title", [
+    Field("title", "New title", variables=True, required=True, placeholder="Speedrunning all day!"),
+]))
+_add(ActionSpec("twitch_set_game", "Change category", "Twitch", "category", "Switch the stream category", [
+    Field("game", "Category", variables=True, required=True, placeholder="Just Chatting",
+          help="The closest Twitch category match is used."),
+]))
+_add(ActionSpec("twitch_snooze_ad", "Snooze next ad", "Twitch", "snooze", "Push the next scheduled ad back 5 minutes"))
+_add(ActionSpec("twitch_start_poll", "Start a poll", "Twitch", "ballot", "Start an overlay's poll from Chatbot → Polls", [
+    Field("template", "Poll overlay", "select", options=_poll_template_options, required=True, strict=False),
+]))
+_add(ActionSpec("twitch_end_poll", "End a poll", "Twitch", "how_to_vote", "End an overlay's running poll", [
+    Field("template", "Poll overlay", "select", options=_poll_template_options, required=True, strict=False),
+]))
+_add(ActionSpec("twitch_start_prediction", "Start a prediction", "Twitch", "casino",
+                "Start an overlay's prediction from Chatbot → Predictions", [
+    Field("template", "Prediction overlay", "select", options=_prediction_template_options, required=True, strict=False),
+]))
+_add(ActionSpec("twitch_lock_prediction", "Lock prediction bets", "Twitch", "lock",
+                "Stop taking bets on the running prediction"))
+_add(ActionSpec("twitch_resolve_prediction", "Pay out prediction", "Twitch", "emoji_events",
+                "Pick the winning outcome of the running prediction", [
+    Field("outcome", "Winning outcome", default="1", variables=True, required=True,
+          help="The outcome's name, or its number (1 is the first outcome)."),
+]))
+_add(ActionSpec("twitch_cancel_prediction", "Cancel prediction", "Twitch", "money_off",
+                "Cancel the running prediction and refund every bet"))
 
 _add(ActionSpec("trigger_alert", "Play an alert", "Alerts & overlays", "notifications_active",
                 "Play one of your Alerts tab alerts", [
@@ -549,6 +608,21 @@ def summarize(action_type: Optional[str], cfg: dict, render: Callable[[str], str
         return " · ".join(p for p in (op, _quote(render(detail), 40)) if p) or "Choose an OBS action"
     if action_type == "game_hook":
         return labels.get(c.get("operation", ""), c.get("operation", "")) or "Choose an operation"
+    if action_type in ("twitch_shoutout", "twitch_raid"):
+        verb = "Shoutout to" if action_type == "twitch_shoutout" else "Raid"
+        return f"{verb} {render(c.get('target') or '')}".strip()
+    if action_type == "twitch_stream_marker":
+        return " · ".join(p for p in ("Marker", _quote(render(c.get("description") or ""))) if p)
+    if action_type == "twitch_set_title":
+        return _quote(render(c.get("title") or "")) or "Choose a title"
+    if action_type == "twitch_set_game":
+        return render(c.get("game") or "") or "Choose a category"
+    if action_type in ("twitch_start_poll", "twitch_end_poll", "twitch_start_prediction"):
+        verb = {"twitch_start_poll": "Start poll", "twitch_end_poll": "End poll",
+                "twitch_start_prediction": "Start prediction"}[action_type]
+        return f"{verb} · {c.get('template')}" if c.get("template") else "Choose an overlay"
+    if action_type == "twitch_resolve_prediction":
+        return f"Winner: {render(str(c.get('outcome') or ''))}"
     if action_type == "key_press":
         if c.get("input_type") == "macro":
             try:

@@ -730,3 +730,58 @@ def initialize_integration():
 def get_integration() -> ConnectorIntegration:
     """Get the global connector integration instance"""
     return connector_integration
+
+
+# ---------------------------------------------------------------------------
+#  Direct Twitch events (called from twitch.py and the poll / prediction managers)
+# ---------------------------------------------------------------------------
+
+
+def emit_twitch_event(event_type: str, fields: Optional[Dict[str, Any]] = None) -> None:
+    """Send a Twitch connector event (e.g. ``"twitch_ad_break_begin"``) with flat *fields*.
+
+    Safe from any thread or event loop; never raises; does nothing while connectors aren't running.
+    """
+    try:
+        manager = get_manager()
+        if not getattr(manager, "is_running", False):
+            return
+        event_data: Dict[str, Any] = dict(fields or {})
+        event_data.update({"event_type": str(event_type), "timestamp": time.time(), "source": "twitch"})
+        if not manager._schedule_event_on_connector_loop(event_data):
+            logger.debug("Connector loop not ready, dropping %s", event_type)
+    except Exception:
+        logger.debug("Could not send connector event %s", event_type, exc_info=True)
+
+
+_PREDICTION_EVENTS = {
+    "begin": "twitch_prediction_begin",
+    "lock": "twitch_prediction_lock",
+    "resolved": "twitch_prediction_end",
+    "canceled": "twitch_prediction_end",
+    "end": "twitch_prediction_end",
+}
+
+
+def handle_twitch_prediction(kind: str, snapshot: Optional[Dict[str, Any]]) -> None:
+    """Turn a prediction manager update into a connector event (progress and sync updates are ignored)."""
+    try:
+        event_type = _PREDICTION_EVENTS.get(str(kind or "").lower())
+        if event_type is None or not isinstance(snapshot, dict):
+            return
+        outcomes = [o for o in snapshot.get("outcomes") or [] if isinstance(o, dict)]
+        winner = next((o for o in outcomes if o.get("winner")), None)
+        if winner is None and snapshot.get("winning_outcome_id"):
+            winner = next((o for o in outcomes if o.get("id") == snapshot.get("winning_outcome_id")), None)
+        emit_twitch_event(event_type, {
+            "prediction_id": str(snapshot.get("prediction_id") or ""),
+            "title": str(snapshot.get("title") or ""),
+            "outcomes": ", ".join(str(o.get("name") or "") for o in outcomes),
+            "status": str(snapshot.get("status") or ""),
+            "winner": str((winner or {}).get("name") or ""),
+            "points": int(snapshot.get("total_points") or 0),
+            "users": int(snapshot.get("total_users") or 0),
+            "template": str(snapshot.get("template") or ""),
+        })
+    except Exception:
+        logger.debug("Could not send prediction connector event", exc_info=True)

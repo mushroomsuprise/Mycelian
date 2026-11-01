@@ -44,6 +44,7 @@ GENERATED_WIDGET_EVENTS = frozenset(
     {
         "wheel_result",
         "poll_result",
+        "prediction_result",
         "timer_finished",
         "counter_changed",
         "goal_reached",

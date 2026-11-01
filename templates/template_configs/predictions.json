@@ -1,0 +1,419 @@
+{
+    "template_name": "predictions",
+    "spore_studio": true,
+    "alert_system": "instant",
+    "elements": [
+        {
+            "type": "separator",
+            "label": "Canvas"
+        },
+        {
+            "type": "number",
+            "id": "DesignWidth",
+            "label": "Design Width",
+            "value": 520,
+            "min": 50,
+            "max": 7680,
+            "description": "Logical canvas width in pixels."
+        },
+        {
+            "type": "number",
+            "id": "DesignHeight",
+            "label": "Design Height",
+            "value": 360,
+            "min": 50,
+            "max": 4320,
+            "description": "Logical canvas height in pixels."
+        },
+        {
+            "type": "text",
+            "id": "TemplateTitle",
+            "label": "Title",
+            "value": "predictions",
+            "description": "Browser title for this overlay."
+        },
+        {
+            "type": "number",
+            "id": "Duration",
+            "label": "Duration",
+            "value": 5.0,
+            "min": 0.1,
+            "max": 600,
+            "step": 0.1,
+            "description": "Display/hold duration in seconds for alert queue integration (point-reward templates matching this name)."
+        },
+        {
+            "type": "checkbox",
+            "id": "Queued",
+            "label": "Queued",
+            "value": false,
+            "description": "When enabled, point redemptions whose reward title matches this template name can hold the main alert queue."
+        },
+        {
+            "type": "separator",
+            "label": "Prediction"
+        },
+        {
+            "type": "color",
+            "id": "prediction1_color",
+            "label": "prediction1 color",
+            "value": "#ffffff",
+            "description": "Color for 'prediction1'."
+        },
+        {
+            "type": "color",
+            "id": "prediction1_background_color",
+            "label": "prediction1 background color",
+            "value": "rgba(15,23,42,0.85)",
+            "description": "Background Color for 'prediction1'."
+        },
+        {
+            "type": "text",
+            "id": "prediction1_font_family",
+            "label": "prediction1 font family",
+            "value": "Arial",
+            "description": "Font Family for 'prediction1'."
+        },
+        {
+            "type": "color",
+            "id": "prediction1_track_color",
+            "label": "prediction1 track color",
+            "value": "rgba(255,255,255,0.15)",
+            "description": "Track Color for 'prediction1'."
+        },
+        {
+            "type": "text",
+            "id": "prediction1_font_weight",
+            "label": "prediction1 font weight",
+            "value": "normal",
+            "description": "Font Weight for 'prediction1'."
+        },
+        {
+            "type": "number",
+            "id": "prediction1_font_size",
+            "label": "prediction1 font size",
+            "value": 20,
+            "min": 0,
+            "max": 4096,
+            "description": "Font Size for 'prediction1' (pixels)."
+        },
+        {
+            "type": "number",
+            "id": "prediction1_border_radius",
+            "label": "prediction1 border radius",
+            "value": 16,
+            "min": 0,
+            "max": 4096,
+            "description": "Border Radius for 'prediction1' (pixels)."
+        },
+        {
+            "type": "number",
+            "id": "prediction1_border_width",
+            "label": "prediction1 border width",
+            "value": 0,
+            "min": 0,
+            "max": 4096,
+            "description": "Border Width for 'prediction1' (pixels)."
+        },
+        {
+            "type": "color",
+            "id": "prediction1_border_color",
+            "label": "prediction1 border color",
+            "value": "rgba(255,255,255,0.12)",
+            "description": "Border color for 'prediction1'."
+        },
+        {
+            "type": "text",
+            "id": "prediction1_title",
+            "label": "prediction1 title",
+            "value": "",
+            "description": "Title for 'prediction1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_show_timer",
+            "label": "prediction1 show timer",
+            "value": true,
+            "description": "Show Timer for 'prediction1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_show_timer_bar",
+            "label": "prediction1 show timer bar",
+            "value": true,
+            "description": "Show Timer Bar for 'prediction1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_show_points",
+            "label": "prediction1 show points",
+            "value": true,
+            "description": "Show Points for 'prediction1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_show_users",
+            "label": "prediction1 show users",
+            "value": true,
+            "description": "Show Users for 'prediction1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_show_percent",
+            "label": "prediction1 show percent",
+            "value": true,
+            "description": "Show Percent for 'prediction1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_show_ratio",
+            "label": "prediction1 show ratio",
+            "value": true,
+            "description": "Show Ratio for 'prediction1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_show_top",
+            "label": "prediction1 show top",
+            "value": false,
+            "description": "Show Top for 'prediction1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_show_total",
+            "label": "prediction1 show total",
+            "value": true,
+            "description": "Show Total for 'prediction1'."
+        },
+        {
+            "type": "text",
+            "id": "prediction1_foot_text",
+            "label": "prediction1 foot text",
+            "value": "",
+            "description": "Foot Text for 'prediction1'."
+        },
+        {
+            "type": "text",
+            "id": "prediction1_locked_text",
+            "label": "prediction1 locked text",
+            "value": "Predictions locked",
+            "description": "Locked Text for 'prediction1'."
+        },
+        {
+            "type": "text",
+            "id": "prediction1_won_text",
+            "label": "prediction1 won text",
+            "value": "{winner} won!",
+            "description": "Won Text for 'prediction1'."
+        },
+        {
+            "type": "text",
+            "id": "prediction1_refund_text",
+            "label": "prediction1 refund text",
+            "value": "Refunded",
+            "description": "Refund Text for 'prediction1'."
+        },
+        {
+            "type": "number",
+            "id": "prediction1_autohide_seconds",
+            "label": "prediction1 autohide seconds",
+            "value": 60.0,
+            "description": "Autohide Seconds for 'prediction1'."
+        },
+        {
+            "type": "number",
+            "id": "prediction1_row_gap",
+            "label": "prediction1 row gap",
+            "value": 10.0,
+            "description": "Row Gap for 'prediction1'."
+        },
+        {
+            "type": "color",
+            "id": "prediction1_color_1",
+            "label": "prediction1 color 1",
+            "value": "#387aff",
+            "description": "Color 1 for 'prediction1'."
+        },
+        {
+            "type": "color",
+            "id": "prediction1_color_2",
+            "label": "prediction1 color 2",
+            "value": "#f5009b",
+            "description": "Color 2 for 'prediction1'."
+        },
+        {
+            "type": "text",
+            "id": "prediction1_extra_colors",
+            "label": "prediction1 extra colors",
+            "value": "",
+            "description": "Extra Colors for 'prediction1'."
+        },
+        {
+            "type": "color",
+            "id": "prediction1_winner_color",
+            "label": "prediction1 winner color",
+            "value": "#facc15",
+            "description": "Winner Color for 'prediction1'."
+        },
+        {
+            "type": "number",
+            "id": "prediction1_bar_height",
+            "label": "prediction1 bar height",
+            "value": 12.0,
+            "description": "Bar Height for 'prediction1'."
+        },
+        {
+            "type": "number",
+            "id": "prediction1_bar_radius",
+            "label": "prediction1 bar radius",
+            "value": 12.0,
+            "description": "Bar Radius for 'prediction1'."
+        },
+        {
+            "type": "select",
+            "id": "prediction1_winner_effect",
+            "label": "prediction1 winner effect",
+            "value": "glow",
+            "description": "Winner Effect for 'prediction1'.",
+            "options": [
+                "glow",
+                "pulse",
+                "none"
+            ]
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_dim_losers",
+            "label": "prediction1 dim losers",
+            "value": true,
+            "description": "Dim Losers for 'prediction1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_animate_bars",
+            "label": "prediction1 animate bars",
+            "value": true,
+            "description": "Animate Bars for 'prediction1'."
+        },
+        {
+            "type": "checkbox",
+            "id": "prediction1_panel_shadow",
+            "label": "prediction1 panel shadow",
+            "value": true,
+            "description": "Panel Shadow for 'prediction1'."
+        }
+    ],
+    "streamdeck_options": {
+        "description": "",
+        "actions": {}
+    },
+    "preview_mocks": [
+        {
+            "event": "instant_alert",
+            "label": "Random instant alert"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Follow",
+            "alert_type": "follow"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Sub",
+            "alert_type": "sub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Resub",
+            "alert_type": "resub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Gift sub",
+            "alert_type": "giftsub"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Bits",
+            "alert_type": "bit"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Raid",
+            "alert_type": "raid"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Donation",
+            "alert_type": "donation"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Points",
+            "alert_type": "point"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Streak",
+            "alert_type": "streak"
+        },
+        {
+            "event": "instant_alert",
+            "label": "Hype train",
+            "alert_type": "hype_train"
+        },
+        {
+            "event": "prediction_state",
+            "label": "Prediction update"
+        },
+        {
+            "event": "prediction_ended",
+            "label": "Prediction ended"
+        }
+    ],
+    "outputs": {
+        "prediction1_result": {
+            "event": "prediction_result",
+            "label": "prediction1 result",
+            "description": "The winning outcome when the prediction is resolved (no winner when it is refunded).",
+            "element_id": "prediction1",
+            "element_type": "prediction",
+            "payload": [
+                {
+                    "key": "template",
+                    "label": "Template name",
+                    "type": "string"
+                },
+                {
+                    "key": "elementId",
+                    "label": "Block id",
+                    "type": "string"
+                },
+                {
+                    "key": "winner",
+                    "label": "Winning outcome",
+                    "type": "string"
+                },
+                {
+                    "key": "status",
+                    "label": "Status (resolved or canceled)",
+                    "type": "string"
+                },
+                {
+                    "key": "total_points",
+                    "label": "Total points",
+                    "type": "number"
+                },
+                {
+                    "key": "outcomes",
+                    "label": "Outcomes",
+                    "type": "array"
+                }
+            ],
+            "generated": true,
+            "match": {
+                "elementId": "prediction1"
+            }
+        }
+    }
+}

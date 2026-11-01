@@ -268,6 +268,7 @@ MOCK_TTS_MESSAGES: Dict[str, List[str]] = {
     "points": ["Hydrate!", "Do the victory dance!"],
     "raids": ["We come in peace! Raid party has arrived."],
     "streaks": ["Haven't missed a stream all month!"],
+    "hypetrain": ["Choo choo! All aboard the hype train!", "Next stop: a new record!"],
 }
 
 

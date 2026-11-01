@@ -1143,6 +1143,55 @@ def _render_widget_element(
             + "</div>"
         )
 
+    if etype == "prediction":
+        def _pflag(key: str, default: bool) -> str:
+            return _widget_jinja(eid, key, _on_attr(props, key, default))
+
+        def _ptext(key: str, default: str) -> str:
+            value = props.get(key)
+            return _widget_jinja(eid, key, default if value is None else str(value))
+
+        return (
+            open_tag
+            + 'data-spore-type="prediction" '
+            + f'data-spore-pred-title="{_ptext("title", "")}" '
+            + f'data-spore-pred-timer="{_pflag("show_timer", True)}" '
+            + f'data-spore-pred-timer-bar="{_pflag("show_timer_bar", True)}" '
+            + f'data-spore-pred-points="{_pflag("show_points", True)}" '
+            + f'data-spore-pred-users="{_pflag("show_users", True)}" '
+            + f'data-spore-pred-percent="{_pflag("show_percent", True)}" '
+            + f'data-spore-pred-ratio="{_pflag("show_ratio", True)}" '
+            + f'data-spore-pred-top="{_pflag("show_top", False)}" '
+            + f'data-spore-pred-total="{_pflag("show_total", True)}" '
+            + f'data-spore-pred-foot-text="{_ptext("foot_text", "")}" '
+            + f'data-spore-pred-locked-text="{_ptext("locked_text", "Predictions locked")}" '
+            + f'data-spore-pred-won-text="{_ptext("won_text", "{winner} won!")}" '
+            + f'data-spore-pred-refund-text="{_ptext("refund_text", "Refunded")}" '
+            + f'data-spore-pred-autohide="{_widget_jinja(eid, "autohide_seconds", _num_or(props.get("autohide_seconds"), 60))}" '
+            + f'data-spore-pred-font-size="{_widget_jinja(eid, "font_size", _num_or(props.get("font_size"), 20))}" '
+            + f'data-spore-pred-color="{_ptext("color", "#ffffff")}" '
+            + f'data-spore-pred-font="{_ptext("font_family", "Arial")}" '
+            + f'data-spore-pred-weight="{_ptext("font_weight", "normal")}" '
+            + f'data-spore-pred-gap="{_widget_jinja(eid, "row_gap", _num_or(props.get("row_gap"), 10))}" '
+            + f'data-spore-pred-bg="{_ptext("background_color", "rgba(15,23,42,0.85)")}" '
+            + f'data-spore-pred-color-1="{_ptext("color_1", "#387aff")}" '
+            + f'data-spore-pred-color-2="{_ptext("color_2", "#f5009b")}" '
+            + f'data-spore-pred-extra-colors="{_ptext("extra_colors", "")}" '
+            + f'data-spore-pred-track="{_ptext("track_color", "rgba(255,255,255,0.15)")}" '
+            + f'data-spore-pred-winner="{_ptext("winner_color", "#facc15")}" '
+            + f'data-spore-pred-bar-height="{_widget_jinja(eid, "bar_height", _num_or(props.get("bar_height"), 12))}" '
+            + f'data-spore-pred-bar-radius="{_widget_jinja(eid, "bar_radius", _num_or(props.get("bar_radius"), 12))}" '
+            + f'data-spore-pred-winner-fx="{_ptext("winner_effect", "glow")}" '
+            + f'data-spore-pred-dim="{_pflag("dim_losers", True)}" '
+            + f'data-spore-pred-animate="{_pflag("animate_bars", True)}" '
+            + f'data-spore-pred-shadow="{_pflag("panel_shadow", True)}">'
+            + '<div class="spore-pred-head" hidden><div class="spore-pred-title"></div><div class="spore-pred-chip" hidden></div></div>'
+            + '<div class="spore-pred-timer" hidden><div class="spore-pred-timer-track"><div class="spore-pred-timer-fill"></div></div></div>'
+            + '<div class="spore-pred-outcomes"></div>'
+            + '<div class="spore-pred-foot" hidden><span class="spore-pred-foot-text"></span><span class="spore-pred-total"></span></div>'
+            + "</div>"
+        )
+
     return None
 
 
@@ -2496,6 +2545,39 @@ _WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[Any, ...]]] = {
         ("bar_color", "color"),
         ("track_color", "color"),
         ("winner_color", "color"),
+    ],
+    "prediction": [
+        ("title", "text"),
+        ("show_timer", "checkbox"),
+        ("show_timer_bar", "checkbox"),
+        ("show_points", "checkbox"),
+        ("show_users", "checkbox"),
+        ("show_percent", "checkbox"),
+        ("show_ratio", "checkbox"),
+        ("show_top", "checkbox"),
+        ("show_total", "checkbox"),
+        ("foot_text", "text"),
+        ("locked_text", "text"),
+        ("won_text", "text"),
+        ("refund_text", "text"),
+        ("autohide_seconds", "number"),
+        ("font_size", "number"),
+        ("color", "color"),
+        ("font_family", "text"),
+        ("font_weight", "text"),
+        ("row_gap", "number"),
+        ("background_color", "color"),
+        ("color_1", "color"),
+        ("color_2", "color"),
+        ("extra_colors", "text"),
+        ("track_color", "color"),
+        ("winner_color", "color"),
+        ("bar_height", "number"),
+        ("bar_radius", "number"),
+        ("winner_effect", "select", ["glow", "pulse", "none"]),
+        ("dim_losers", "checkbox"),
+        ("animate_bars", "checkbox"),
+        ("panel_shadow", "checkbox"),
     ],
 }
 

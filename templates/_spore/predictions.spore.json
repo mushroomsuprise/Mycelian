@@ -1,0 +1,170 @@
+{
+  "template_name": "predictions",
+  "alert_system": "instant",
+  "design": {
+    "width": 520,
+    "height": 360
+  },
+  "duration_seconds": 5.0,
+  "queued": false,
+  "elements": [
+    {
+      "animations": {
+        "anim_delay_ms": 0,
+        "anim_easing": "ease-out",
+        "anim_in": "fade",
+        "anim_in_ms": 300,
+        "anim_out": "fade",
+        "anim_out_ms": 300
+      },
+      "bindings": [],
+      "category": "Prediction",
+      "data_feed": [
+        {
+          "id": "feed1",
+          "enabled": true,
+          "label": "",
+          "source": {
+            "kind": "event",
+            "events": [
+              "prediction_state",
+              "prediction_ended"
+            ],
+            "template_output": {
+              "template": "",
+              "event": "",
+              "match": {}
+            },
+            "value": {
+              "kind": "data_source",
+              "source": ""
+            },
+            "refresh_ms": 0,
+            "refresh_on": []
+          },
+          "filters": {
+            "alert_type": "any",
+            "tier": "any",
+            "rules": [],
+            "match": "all",
+            "users_allow": "",
+            "users_block": "",
+            "cooldown_ms": 0,
+            "max_per_minute": 0,
+            "dedupe_ms": 0,
+            "skip_first": 0
+          },
+          "mapping": {
+            "text_field": "",
+            "value_field": "",
+            "template": "",
+            "split_field": "",
+            "prefix": "",
+            "suffix": "",
+            "decimals": "",
+            "fallback": ""
+          },
+          "timing": {
+            "delay_ms": 0
+          },
+          "target": {
+            "id": "repaint",
+            "options": {}
+          }
+        }
+      ],
+      "id": "prediction1",
+      "output_settings": {},
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "size": {
+        "w": 520,
+        "h": 360
+      },
+      "start_hidden": true,
+      "type": "prediction",
+      "transforms": [],
+      "props": {
+        "title": "",
+        "show_timer": true,
+        "show_timer_bar": true,
+        "show_points": true,
+        "show_users": true,
+        "show_percent": true,
+        "show_ratio": true,
+        "show_top": false,
+        "show_total": true,
+        "foot_text": "",
+        "locked_text": "Predictions locked",
+        "won_text": "{winner} won!",
+        "refund_text": "Refunded",
+        "autohide_seconds": 60,
+        "font_size": 20,
+        "color": "#ffffff",
+        "font_family": "Arial",
+        "font_weight": "normal",
+        "row_gap": 10,
+        "background_color": "rgba(15,23,42,0.85)",
+        "color_1": "#387aff",
+        "color_2": "#f5009b",
+        "extra_colors": "",
+        "track_color": "rgba(255,255,255,0.15)",
+        "winner_color": "#facc15",
+        "bar_height": 12,
+        "bar_radius": 12,
+        "winner_effect": "glow",
+        "dim_losers": true,
+        "animate_bars": true,
+        "panel_shadow": true,
+        "padding": 16,
+        "border_radius": 16,
+        "border_width": 0,
+        "border_color": "rgba(255,255,255,0.12)"
+      },
+      "source_settings_expose": {
+        "title": true,
+        "show_timer": true,
+        "show_timer_bar": true,
+        "show_points": true,
+        "show_users": true,
+        "show_percent": true,
+        "show_ratio": true,
+        "show_top": true,
+        "show_total": true,
+        "foot_text": true,
+        "locked_text": true,
+        "won_text": true,
+        "refund_text": true,
+        "autohide_seconds": true,
+        "font_size": true,
+        "color": true,
+        "font_family": true,
+        "font_weight": true,
+        "row_gap": true,
+        "background_color": true,
+        "color_1": true,
+        "color_2": true,
+        "extra_colors": true,
+        "track_color": true,
+        "winner_color": true,
+        "bar_height": true,
+        "bar_radius": true,
+        "winner_effect": true,
+        "dim_losers": true,
+        "animate_bars": true,
+        "panel_shadow": true
+      }
+    }
+  ],
+  "advanced_js": "",
+  "streamdeck_options": {
+    "actions": {},
+    "description": ""
+  },
+  "dynamic_controls": {
+    "elements": []
+  },
+  "canvas_transforms": []
+}

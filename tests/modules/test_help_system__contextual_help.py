@@ -281,6 +281,7 @@ def test_get_tab_name_with_nicegui_tab():
         ("Alerts", "Media", "alerts_overview"),
         ("Chatbot", None, "chatbot_commands"),
         ("Chatbot", "Polls", "chatbot_polls"),
+        ("Chatbot", "Predictions", "chatbot_predictions"),
         ("Chatbot", "Unknown", "chatbot_commands"),
         ("Settings", None, "settings"),
         ("Settings", "Twitch", "twitch_setup"),
@@ -300,7 +301,7 @@ def test_every_mapped_help_target_exists():
     categories = {c.value for c in HelpCategory}
     pairs = [(m, None) for m in MAIN_TAB_ORDER]
     pairs += [("Settings", s) for s in SETTINGS_TAB_ORDER]
-    pairs += [("Chatbot", s) for s in ("Commands", "Events", "Quotes", "Greetings", "Giveaways", "Polls")]
+    pairs += [("Chatbot", s) for s in ("Commands", "Events", "Quotes", "Greetings", "Giveaways", "Polls", "Predictions")]
     for main, sub in pairs:
         target = ch.get_help_target_for_tab(main, sub)
         assert target is not None, (main, sub)

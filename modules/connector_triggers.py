@@ -276,6 +276,122 @@ class TwitchStreamOfflineTrigger(BaseTrigger):
 
 
 @dataclass
+class TwitchHypeTrainProgressTrigger(BaseTrigger):
+    """Trigger for Hype Train progress (every contribution)"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_HYPE_TRAIN_PROGRESS
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_hype_train_progress":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class TwitchPollBeginTrigger(BaseTrigger):
+    """Trigger for a Twitch poll starting"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_POLL_BEGIN
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_poll_begin":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class TwitchPollEndTrigger(BaseTrigger):
+    """Trigger for a Twitch poll ending"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_POLL_END
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_poll_end":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class TwitchPredictionBeginTrigger(BaseTrigger):
+    """Trigger for a Twitch prediction starting"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_PREDICTION_BEGIN
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_prediction_begin":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class TwitchPredictionLockTrigger(BaseTrigger):
+    """Trigger for a Twitch prediction locking (bets closed)"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_PREDICTION_LOCK
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_prediction_lock":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class TwitchPredictionEndTrigger(BaseTrigger):
+    """Trigger for a Twitch prediction resolving or being canceled"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_PREDICTION_END
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_prediction_end":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class TwitchAdBreakBeginTrigger(BaseTrigger):
+    """Trigger for an ad break starting"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_AD_BREAK_BEGIN
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_ad_break_begin":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class TwitchChannelUpdateTrigger(BaseTrigger):
+    """Trigger for the stream title or category changing"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_CHANNEL_UPDATE
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_channel_update":
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class TwitchShoutoutReceivedTrigger(BaseTrigger):
+    """Trigger for another channel shouting you out"""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.TWITCH_SHOUTOUT_RECEIVED
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "twitch_shoutout_received":
+            return False
+        return self.evaluate_conditions(event_data)
+
+@dataclass
 class DonationTrigger(BaseTrigger):
     """Trigger for donation events from the connector system"""
 
@@ -598,6 +714,15 @@ CONNECTOR_EVENT_TYPES = frozenset(
         "twitch_hype_train_end",
         "twitch_stream_online",
         "twitch_stream_offline",
+        "twitch_hype_train_progress",
+        "twitch_poll_begin",
+        "twitch_poll_end",
+        "twitch_prediction_begin",
+        "twitch_prediction_lock",
+        "twitch_prediction_end",
+        "twitch_ad_break_begin",
+        "twitch_channel_update",
+        "twitch_shoutout_received",
         "youtube_chat_message",
         "youtube_member",
         "youtube_member_milestone",
@@ -654,6 +779,15 @@ def create_trigger(
         TriggerType.TWITCH_HYPE_TRAIN_END: TwitchHypeTrainEndTrigger,
         TriggerType.TWITCH_STREAM_ONLINE: TwitchStreamOnlineTrigger,
         TriggerType.TWITCH_STREAM_OFFLINE: TwitchStreamOfflineTrigger,
+        TriggerType.TWITCH_HYPE_TRAIN_PROGRESS: TwitchHypeTrainProgressTrigger,
+        TriggerType.TWITCH_POLL_BEGIN: TwitchPollBeginTrigger,
+        TriggerType.TWITCH_POLL_END: TwitchPollEndTrigger,
+        TriggerType.TWITCH_PREDICTION_BEGIN: TwitchPredictionBeginTrigger,
+        TriggerType.TWITCH_PREDICTION_LOCK: TwitchPredictionLockTrigger,
+        TriggerType.TWITCH_PREDICTION_END: TwitchPredictionEndTrigger,
+        TriggerType.TWITCH_AD_BREAK_BEGIN: TwitchAdBreakBeginTrigger,
+        TriggerType.TWITCH_CHANNEL_UPDATE: TwitchChannelUpdateTrigger,
+        TriggerType.TWITCH_SHOUTOUT_RECEIVED: TwitchShoutoutReceivedTrigger,
         TriggerType.YOUTUBE_CHAT_MESSAGE: YouTubeChatMessageTrigger,
         TriggerType.YOUTUBE_MEMBER: YouTubeMemberTrigger,
         TriggerType.YOUTUBE_MEMBER_MILESTONE: YouTubeMemberMilestoneTrigger,

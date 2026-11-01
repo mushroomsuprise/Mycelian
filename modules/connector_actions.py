@@ -3354,6 +3354,324 @@ def migrate_action_kwargs(action_type: ActionType, kwargs: Dict[str, Any]) -> Di
     return out
 
 
+# ---------------------------------------------------------------------------
+#  Twitch channel tools (shoutout, raid, marker, title/game, ads, polls, predictions)
+# ---------------------------------------------------------------------------
+
+_TWITCH_SIGN_IN_HINT = "Check that Twitch is connected in Settings → Twitch. If it is, sign in again to grant the newest permissions."
+
+
+def _render_text(text: str, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> str:
+    from .connector_placeholders import (
+        build_connector_placeholder_context,
+        substitute_connector_placeholders,
+    )
+
+    ctx = build_connector_placeholder_context(event_data, trigger_data)
+    return str(substitute_connector_placeholders(str(text or ""), ctx) or "").strip()
+
+
+def _store_outputs(trigger_data: Dict[str, Any], outputs: Dict[str, Any]) -> None:
+    """Expose results as {actionN.field} to later actions of the same run."""
+    results = trigger_data.get("action_results")
+    index = trigger_data.get("action_index")
+    if isinstance(results, dict) and index is not None:
+        try:
+            results[str(int(index))] = {k: v for k, v in outputs.items() if not str(k).startswith("lookup_")}
+        except (TypeError, ValueError):
+            pass
+
+
+_LOOKUP_REASONS = {
+    "not_connected": ("Twitch isn't connected", _TWITCH_SIGN_IN_HINT),
+    "missing_scope": ("your Twitch sign-in doesn't allow this", "Open Settings → Twitch and click Connect to sign in again."),
+    "no_target": ("no channel was named", "Fill in the channel, for example {username}."),
+    "not_found": ("Twitch has no channel or category by that name", "Check the spelling, or use a variable such as {username}."),
+    "no_text": ("the text came out empty", "Fill in the text, or check the variables it uses."),
+}
+
+
+class _TwitchLookupAction(BaseAction):
+    """Runs one curated chatbot lookup (Helix call) with text from this action."""
+
+    lookup_id = ""
+    what = "Twitch request"
+
+    def _lookup_config(self, text: str) -> Dict[str, Any]:
+        return {"text": text}
+
+    def _text(self) -> str:
+        return ""
+
+    def _check(self, out: Dict[str, Any]) -> Optional[str]:
+        """Extra failure check on a lookup that reported ok (returns a reason)."""
+        return None
+
+    async def execute(self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
+        try:
+            from . import chatbot_lookups
+
+            text = _render_text(self._text(), trigger_data, event_data)
+            if self._needs_text and not text:
+                report_action_problem(f"the {self.what} needs text and it came out empty",
+                                      "Fill in the field, or check the variables it uses.")
+                return False
+            out = await chatbot_lookups.run_lookup(self.lookup_id, self._lookup_config(text), {}, kind="event")
+            out = dict(out or {})
+            _store_outputs(trigger_data, out)
+            if not out.get("lookup_ok"):
+                reason, hint = _LOOKUP_REASONS.get(out.get("lookup_reason"), ("Twitch refused it", _TWITCH_SIGN_IN_HINT))
+                report_action_problem(f"The {self.what} failed: {reason}", hint, str(out.get("lookup_error") or ""))
+                return False
+            extra = self._check(out)
+            if extra:
+                report_action_problem(f"The {self.what} failed: {extra}", _TWITCH_SIGN_IN_HINT)
+                return False
+            return True
+        except Exception as e:
+            logger.error("Error executing %s action: %s", self.lookup_id, e, exc_info=True)
+            report_action_problem(f"The {self.what} failed", _TWITCH_SIGN_IN_HINT, f"{type(e).__name__}: {e}")
+            return False
+
+    _needs_text = True
+
+
+@dataclass
+class TwitchShoutoutAction(_TwitchLookupAction):
+    """Send a Twitch shoutout to a channel."""
+
+    target: str = "{username}"
+    lookup_id = "shoutout"
+    what = "shoutout"
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_SHOUTOUT
+
+    def _text(self) -> str:
+        return self.target
+
+    def _lookup_config(self, text: str) -> Dict[str, Any]:
+        return {"target": {"from": "text", "text": text}}
+
+    def _check(self, out: Dict[str, Any]) -> Optional[str]:
+        if str(out.get("shoutout_sent") or "").lower() == "no":
+            return ("Twitch didn't send it (you must be live, and Twitch allows one shoutout every 2 minutes "
+                    "and one per channel every hour)")
+        return None
+
+
+@dataclass
+class TwitchRaidAction(_TwitchLookupAction):
+    """Start a raid to a channel."""
+
+    target: str = ""
+    lookup_id = "raid"
+    what = "raid"
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_RAID
+
+    def _text(self) -> str:
+        return self.target
+
+    def _lookup_config(self, text: str) -> Dict[str, Any]:
+        return {"target": {"from": "text", "text": text}}
+
+
+@dataclass
+class TwitchStreamMarkerAction(_TwitchLookupAction):
+    """Add a stream marker (for highlights) at this moment."""
+
+    description: str = ""
+    lookup_id = "stream_marker"
+    what = "stream marker"
+    _needs_text = False
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_STREAM_MARKER
+
+    def _text(self) -> str:
+        return self.description
+
+
+@dataclass
+class TwitchSetTitleAction(_TwitchLookupAction):
+    """Change the stream title."""
+
+    title: str = ""
+    lookup_id = "set_title"
+    what = "title change"
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_SET_TITLE
+
+    def _text(self) -> str:
+        return self.title
+
+
+@dataclass
+class TwitchSetGameAction(_TwitchLookupAction):
+    """Change the stream category."""
+
+    game: str = ""
+    lookup_id = "set_game"
+    what = "category change"
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_SET_GAME
+
+    def _text(self) -> str:
+        return self.game
+
+
+@dataclass
+class TwitchSnoozeAdAction(_TwitchLookupAction):
+    """Push the next scheduled ad back by 5 minutes."""
+
+    lookup_id = "snooze_ad"
+    what = "ad snooze"
+    _needs_text = False
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_SNOOZE_AD
+
+
+def _manager_failed(what: str, message: str, hint: str) -> bool:
+    report_action_problem(f"{what}: {message}" if message else what, hint)
+    return False
+
+
+@dataclass
+class TwitchStartPollAction(BaseAction):
+    """Start the chatbot poll of an overlay (Chatbot → Polls)."""
+
+    template: str = ""
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_START_POLL
+
+    async def execute(self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
+        try:
+            from .poll_manager import get_poll_manager
+
+            ok, message = await asyncio.to_thread(get_poll_manager().start_poll, self.template)
+            if ok:
+                return True
+            return _manager_failed("The poll didn't start", message, "Check the poll in Chatbot → Polls.")
+        except Exception as e:
+            logger.error("Error starting poll from connector: %s", e, exc_info=True)
+            return _manager_failed("The poll didn't start", str(e), "Check the poll in Chatbot → Polls.")
+
+
+@dataclass
+class TwitchEndPollAction(BaseAction):
+    """End the running chatbot poll of an overlay."""
+
+    template: str = ""
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_END_POLL
+
+    async def execute(self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
+        try:
+            from .poll_manager import get_poll_manager
+
+            result = await asyncio.to_thread(get_poll_manager().stop_poll, self.template)
+            ok, message = result if isinstance(result, tuple) else (bool(result), "")
+            if ok:
+                return True
+            if "not" in str(message).lower() and "run" in str(message).lower():
+                mark_action_skipped()  # nothing was running: nothing to do
+                return False
+            return _manager_failed("The poll didn't end", message, "Check the poll in Chatbot → Polls.")
+        except Exception as e:
+            logger.error("Error ending poll from connector: %s", e, exc_info=True)
+            return _manager_failed("The poll didn't end", str(e), "Check the poll in Chatbot → Polls.")
+
+
+_PREDICTION_HINT = "Check the prediction in Chatbot → Predictions."
+
+
+@dataclass
+class TwitchStartPredictionAction(BaseAction):
+    """Start the prediction set up for an overlay (Chatbot → Predictions)."""
+
+    template: str = ""
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_START_PREDICTION
+
+    async def execute(self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
+        try:
+            from .prediction_manager import get_prediction_manager
+
+            ok, message = await asyncio.to_thread(get_prediction_manager().start_prediction, self.template)
+            return True if ok else _manager_failed("The prediction didn't start", message, _PREDICTION_HINT)
+        except Exception as e:
+            logger.error("Error starting prediction from connector: %s", e, exc_info=True)
+            return _manager_failed("The prediction didn't start", str(e), _PREDICTION_HINT)
+
+
+@dataclass
+class TwitchLockPredictionAction(BaseAction):
+    """Stop taking bets on the running prediction."""
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_LOCK_PREDICTION
+
+    async def execute(self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
+        try:
+            from .prediction_manager import get_prediction_manager
+
+            ok, message = await asyncio.to_thread(get_prediction_manager().lock_prediction)
+            return True if ok else _manager_failed("Bets weren't locked", message, _PREDICTION_HINT)
+        except Exception as e:
+            logger.error("Error locking prediction from connector: %s", e, exc_info=True)
+            return _manager_failed("Bets weren't locked", str(e), _PREDICTION_HINT)
+
+
+@dataclass
+class TwitchResolvePredictionAction(BaseAction):
+    """Pay out the running prediction to an outcome (name or number)."""
+
+    outcome: str = "1"
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_RESOLVE_PREDICTION
+
+    async def execute(self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
+        try:
+            from .prediction_manager import get_prediction_manager
+
+            outcome = _render_text(self.outcome, trigger_data, event_data)
+            if not outcome:
+                return _manager_failed("The prediction wasn't paid out", "no outcome was named",
+                                       "Fill in the winning outcome's name or number (1 is the first).")
+            ok, message = await asyncio.to_thread(get_prediction_manager().resolve_prediction, outcome)
+            return True if ok else _manager_failed("The prediction wasn't paid out", message, _PREDICTION_HINT)
+        except Exception as e:
+            logger.error("Error resolving prediction from connector: %s", e, exc_info=True)
+            return _manager_failed("The prediction wasn't paid out", str(e), _PREDICTION_HINT)
+
+
+@dataclass
+class TwitchCancelPredictionAction(BaseAction):
+    """Cancel the running prediction and refund every bet."""
+
+    def __post_init__(self):
+        self.action_type = ActionType.TWITCH_CANCEL_PREDICTION
+
+    async def execute(self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
+        try:
+            from .prediction_manager import get_prediction_manager
+
+            ok, message = await asyncio.to_thread(get_prediction_manager().cancel_prediction)
+            return True if ok else _manager_failed("The prediction wasn't canceled", message, _PREDICTION_HINT)
+        except Exception as e:
+            logger.error("Error canceling prediction from connector: %s", e, exc_info=True)
+            return _manager_failed("The prediction wasn't canceled", str(e), _PREDICTION_HINT)
+
+
 # Factory function for creating actions
 def create_action(
     action_type: ActionType, action_id: str, name: str, **kwargs
@@ -3377,6 +3695,18 @@ def create_action(
         ActionType.AUDIO_CONTROL: AudioControlAction,
         ActionType.GAME_HOOK: GameHookAction,
         ActionType.OBS_CONTROL: ObsControlAction,
+        ActionType.TWITCH_SHOUTOUT: TwitchShoutoutAction,
+        ActionType.TWITCH_RAID: TwitchRaidAction,
+        ActionType.TWITCH_STREAM_MARKER: TwitchStreamMarkerAction,
+        ActionType.TWITCH_SET_TITLE: TwitchSetTitleAction,
+        ActionType.TWITCH_SET_GAME: TwitchSetGameAction,
+        ActionType.TWITCH_SNOOZE_AD: TwitchSnoozeAdAction,
+        ActionType.TWITCH_START_POLL: TwitchStartPollAction,
+        ActionType.TWITCH_END_POLL: TwitchEndPollAction,
+        ActionType.TWITCH_START_PREDICTION: TwitchStartPredictionAction,
+        ActionType.TWITCH_LOCK_PREDICTION: TwitchLockPredictionAction,
+        ActionType.TWITCH_RESOLVE_PREDICTION: TwitchResolvePredictionAction,
+        ActionType.TWITCH_CANCEL_PREDICTION: TwitchCancelPredictionAction,
     }
 
     action_class = action_classes.get(action_type)

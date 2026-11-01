@@ -41,6 +41,18 @@ from .service_brand_icons import SERVICE_BRAND_SVG
 
 logger = logging.getLogger(__name__)
 
+# Results an action leaves for later actions of the same run ({actionN.key}, label).
+ACTION_OUTPUTS: Dict[str, tuple] = {
+    "game_hook": (("item_name", "item name"), ("quantity", "quantity"), ("resolved_name", "resolved name"), ("error", "error")),
+    "twitch_shoutout": (("target_name", "channel name"), ("target_url", "channel link"), ("target_game", "channel's category"),
+                        ("target_title", "channel's title")),
+    "twitch_raid": (("target_name", "raided channel"), ("target_url", "raided channel link")),
+    "twitch_stream_marker": (("marker_time", "marker time"),),
+    "twitch_set_title": (("new_title", "new title"),),
+    "twitch_set_game": (("new_game", "new category"),),
+    "twitch_snooze_ad": (("snooze_count", "snoozes left"),),
+}
+
 _TRIGGER_BRANDS = (("twitch_", "twitch"), ("youtube_", "youtube"), ("obs_", "obs"))
 _TRIGGER_ICONS = {
     "donation": "volunteer_activism", "timer": "timer", "schedule": "event", "hotkey": "keyboard",
@@ -489,9 +501,8 @@ class ConnectorEditor:
             out = [dict(v, group=v.get("group") or "Event") for v in cv.EVENT_VARIABLES.get(self.state.trigger_type, [])] + out
         if action_index:
             for j, action in enumerate(self.state.actions[:action_index], 1):
-                if action.get("type") == "game_hook":
-                    for key, label in (("item_name", "item name"), ("quantity", "quantity"), ("resolved_name", "resolved name"), ("error", "error")):
-                        out.append({"key": f"action{j}.{key}", "label": f"Action {j} {label}", "example": "", "group": "Earlier actions"})
+                for key, label in ACTION_OUTPUTS.get(action.get("type") or "", ()):
+                    out.append({"key": f"action{j}.{key}", "label": f"Action {j} {label}", "example": "", "group": "Earlier actions"})
         out.extend(extra or [])
         return out
 
@@ -717,7 +728,7 @@ class ConnectorEditor:
                                     if entry.get("hint"):
                                         ui.label(entry["hint"]).classes("ce-popt-hint")
                                     if entry.get("warning"):
-                                        ui.label("May not fire").classes("ce-popt-warn")
+                                        ui.label(entry.get("badge") or "May not fire").classes("ce-popt-warn")
                                 opt.on("click", lambda _e, v=entry["value"]: self._choose_trigger(v))
 
         search.on_value_change(lambda e: fill(e.value or ""))

@@ -537,7 +537,7 @@ def test_event_number_text_and_warning_filters(ed_env):
     run_editor("event", "e1", check)
 
     async def check_warn(user, ed):
-        assert "Twitch may no longer send Hype Train events" in htmls(user)
+        assert "Twitch decides when a Hype Train starts" in htmls(user)
 
     run_editor("event", "h", check_warn)
 

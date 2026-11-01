@@ -47,6 +47,7 @@ from .chatbot_cards import CHATBOT_CARDS_CSS, CardActions, ItemsPanel
 from .chatbot_quotes_greetings import GreetingsPanel, QuotesPanel, open_greeting_editor, open_quote_editor
 from .chatbot_giveaways import GiveawaysPanel
 from .chatbot_polls import PollsPanel
+from .chatbot_predictions import PredictionsPanel
 from ..twitch import get_twitch_api  # noqa: F401 - re-exported
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,7 @@ quotes_container = None
 greetings_container = None
 giveaways_container = None
 polls_container = None
+predictions_container = None
 
 # Global search term (shared across tabs)
 search_terms = {
@@ -523,7 +525,7 @@ CUSTOM_CSS = """
 def create_chatbot_tab():
     """Create the Chatbot tab UI"""
     global commands_container, events_container, quotes_container, greetings_container
-    global giveaways_container, polls_container
+    global giveaways_container, polls_container, predictions_container
 
     # Add custom CSS to the page
     ui.add_head_html(
@@ -549,6 +551,7 @@ def create_chatbot_tab():
                 greetings_tab = ui.tab("Greetings")
                 giveaways_tab = ui.tab("Giveaways")
                 polls_tab = ui.tab("Polls")
+                predictions_tab = ui.tab("Predictions")
 
             set_chatbot_ui_references(chatbot_tabs)
 
@@ -610,6 +613,14 @@ def create_chatbot_tab():
                         "w-full h-full min-h-0 flex flex-col"
                     )
 
+                # Predictions Tab
+                with ui.tab_panel(predictions_tab).classes(
+                    "transition-all duration-300 w-full h-full flex flex-col min-h-0"
+                ):
+                    predictions_container = ui.element("div").classes(
+                        "w-full h-full min-h-0 flex flex-col"
+                    )
+
             # Load and display chatbot items for all tabs
             load_chatbot_items()
 
@@ -652,7 +663,7 @@ def refresh_tab_content(tab_type: str):
 def get_container_for_tab(tab_type: str):
     """Get the container element for a specific tab"""
     global commands_container, events_container, quotes_container, greetings_container
-    global giveaways_container, polls_container
+    global giveaways_container, polls_container, predictions_container
 
     if tab_type == "commands":
         return commands_container
@@ -666,6 +677,8 @@ def get_container_for_tab(tab_type: str):
         return giveaways_container
     elif tab_type == "polls":
         return polls_container
+    elif tab_type == "predictions":
+        return predictions_container
     else:
         return None
 
@@ -686,10 +699,11 @@ def load_chatbot_items():
             panel = _qg_panels.setdefault(kind, QuotesPanel() if kind == "quotes" else GreetingsPanel())
             panel.build(container)
 
-    for kind in ("giveaways", "polls"):
+    panel_classes = {"giveaways": GiveawaysPanel, "polls": PollsPanel, "predictions": PredictionsPanel}
+    for kind, panel_class in panel_classes.items():
         container = get_container_for_tab(kind)
         if container is not None:
-            panel = _gp_panels.setdefault(kind, GiveawaysPanel() if kind == "giveaways" else PollsPanel())
+            panel = _gp_panels.setdefault(kind, panel_class())
             try:
                 panel.build(container)
             except Exception as e:
@@ -1022,6 +1036,7 @@ def refresh_chatbot_items():
     refresh_tab_content("greetings")
     refresh_tab_content("giveaways")
     refresh_tab_content("polls")
+    refresh_tab_content("predictions")
 
 
 # Greeting-specific functions

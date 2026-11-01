@@ -302,6 +302,17 @@ class PollStatistics:
 
 
 @dataclass
+class PredictionStatistics:
+    """Lifetime totals for Twitch predictions (per-viewer winnings are timestamped events)."""
+
+    predictions_completed: int = 0  # paid out
+    predictions_canceled: int = 0  # refunded
+    total_points: int = 0  # channel points bet on paid-out predictions
+    total_predictors: int = 0
+    biggest_pot: Dict[str, Any] = field(default_factory=dict)  # {"title", "points", "winner"}
+
+
+@dataclass
 class UserChatStatistics:
     """Per-user statistics for chat messages"""
 
@@ -352,6 +363,7 @@ class StatisticsData:
     quotes: QuoteStatistics = field(default_factory=QuoteStatistics)
     giveaways: GiveawayStatistics = field(default_factory=GiveawayStatistics)
     polls: PollStatistics = field(default_factory=PollStatistics)
+    predictions: PredictionStatistics = field(default_factory=PredictionStatistics)
     chat: ChatStatistics = field(default_factory=ChatStatistics)
     templates: Dict[str, TemplateStatistics] = field(
         default_factory=dict
@@ -937,7 +949,7 @@ class StatisticsManager:
             event_type: Type of event (bit, sub, resub, giftsub, donation, point_redeem, follow,
                 raid, watch_streak, connector, chatbot_command, chatbot_event, quote_redeem,
                 chat_message, giveaway_entry, giveaway_win, giveaway_draw_complete,
-                poll_complete, poll_win).
+                poll_complete, poll_win, prediction_complete, prediction_win).
             amount: Numeric amount (bits, gift quantity, points, etc.).
             alert_name: Name of the alert that was triggered.
         """
@@ -2704,6 +2716,20 @@ class StatisticsManager:
                             }
                     self.data.polls.options = options
 
+                if "predictions" in data_dict and isinstance(data_dict["predictions"], dict):
+                    prd = data_dict["predictions"]
+                    pred = self.data.predictions
+                    pred.predictions_completed = int(prd.get("predictions_completed", 0) or 0)
+                    pred.predictions_canceled = int(prd.get("predictions_canceled", 0) or 0)
+                    pred.total_points = int(prd.get("total_points", 0) or 0)
+                    pred.total_predictors = int(prd.get("total_predictors", 0) or 0)
+                    pot = prd.get("biggest_pot")
+                    pred.biggest_pot = {
+                        "title": str(pot.get("title") or ""),
+                        "points": int(pot.get("points") or 0),
+                        "winner": str(pot.get("winner") or ""),
+                    } if isinstance(pot, dict) and pot.get("points") else {}
+
                 if "chat" in data_dict:
                     chat_dict = data_dict["chat"]
                     self._take_user_map(chat_dict, "user_stats", "chat.user_stats")
@@ -2924,6 +2950,13 @@ class StatisticsManager:
                             for keyword, row in (self.data.polls.options or {}).items()
                             if isinstance(row, dict)
                         },
+                    },
+                    "predictions": {
+                        "predictions_completed": self.data.predictions.predictions_completed,
+                        "predictions_canceled": self.data.predictions.predictions_canceled,
+                        "total_points": self.data.predictions.total_points,
+                        "total_predictors": self.data.predictions.total_predictors,
+                        "biggest_pot": dict(self.data.predictions.biggest_pot or {}),
                     },
                     "chat": {
                         "twitch_messages_received": self.data.chat.twitch_messages_received,
@@ -3681,6 +3714,43 @@ class StatisticsManager:
         return {"name": best_name, "keyword": best_keyword, "count": best_count}
 
     @_stats_data_locked
+    def record_prediction_finished(self, snapshot: Optional[Dict[str, Any]] = None) -> None:
+        """Count one ended Twitch prediction (a prediction_manager snapshot).
+
+        A paid-out prediction adds its points and predictors, may set the biggest pot, and records
+        a ``prediction_win`` event (points won) for each top predictor on the winning outcome, so
+        the Statistics tab can rank winners for any date range. A refund only counts as canceled.
+        """
+        snap = snapshot if isinstance(snapshot, dict) else {}
+        pred = self.data.predictions
+        if str(snap.get("status") or "") != "resolved":
+            pred.predictions_canceled += 1
+            return
+        title = str(snap.get("title") or "")
+        try:
+            points = max(0, int(snap.get("total_points") or 0))
+            predictors = max(0, int(snap.get("total_users") or 0))
+        except (TypeError, ValueError):
+            points, predictors = 0, 0
+        winner = next((o for o in snap.get("outcomes") or [] if isinstance(o, dict) and o.get("winner")), None) or {}
+        pred.predictions_completed += 1
+        pred.total_points += points
+        pred.total_predictors += predictors
+        if points > int((pred.biggest_pot or {}).get("points") or 0):
+            pred.biggest_pot = {"title": title, "points": points, "winner": str(winner.get("name") or "")}
+        for top in winner.get("top_predictors") or []:
+            if not isinstance(top, dict):
+                continue
+            name = str(top.get("name") or "").strip()
+            try:
+                won = int(top.get("points_won") or 0)
+            except (TypeError, ValueError):
+                won = 0
+            if name and won > 0:
+                self._record_event(name, "prediction_win", float(won), title)
+        self._record_event(self._STATS_SYSTEM_USERNAME, "prediction_complete", float(points), title)
+
+    @_stats_data_locked
     def record_poll_finished(
         self,
         options: Optional[List[Dict[str, Any]]] = None,
@@ -4065,6 +4135,18 @@ class StatisticsManager:
                     if isinstance(row, dict)
                 },
             },
+            "predictions": {
+                "predictions_completed": self.data.predictions.predictions_completed,
+                "predictions_canceled": self.data.predictions.predictions_canceled,
+                "total_points": self.data.predictions.total_points,
+                "total_predictors": self.data.predictions.total_predictors,
+                "average_predictors": (
+                    self.data.predictions.total_predictors / self.data.predictions.predictions_completed
+                    if self.data.predictions.predictions_completed
+                    else 0.0
+                ),
+                "biggest_pot": dict(self.data.predictions.biggest_pot or {}),
+            },
             "chat": {
                 "twitch_messages_received": self.data.chat.twitch_messages_received,
                 "total_messages": self.data.chat.total_messages,
@@ -4132,6 +4214,9 @@ class StatisticsManager:
         elif category == "giveaways":
             self.data.giveaways = GiveawayStatistics()
             logger.info("Giveaway statistics reset")
+        elif category == "predictions":
+            self.data.predictions = PredictionStatistics()
+            logger.info("Prediction statistics reset")
         elif category == "chat":
             self.data.chat = ChatStatistics()
             logger.info("Chat statistics reset")

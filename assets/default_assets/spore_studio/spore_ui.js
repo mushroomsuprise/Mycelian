@@ -57,6 +57,7 @@
         globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
         badge: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 15V9l2 3 2-3v6M15 9v6h3"/>',
         poll: '<path d="M4 6h10M4 12h16M4 18h7"/>',
+        prediction: '<circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/>',
         party: '<path d="m4 20 4-11 7 7-11 4Z"/><path d="M14 4v2M20 10h-2M17 7l1.5-1.5M11 5c.5 1.5 0 3-1 4M19 13c-1.5-.5-3 0-4 1"/>',
         hash: '<path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/>',
         progress: '<rect x="2" y="9" width="20" height="6" rx="3"/><path d="M5 12h8" stroke-width="3"/>',
@@ -71,7 +72,7 @@
     var TYPE_ICONS = {
         text: "type", image: "image", video: "film", audio: "volume", container: "box", shape: "square", divider: "minus",
         gradient: "blend", marquee: "marquee", clock: "clock", timer: "timer", list: "list", wheel: "wheel",
-        now_playing: "music", qr: "qr", embed: "globe", stat_card: "badge", poll: "poll", confetti: "party",
+        now_playing: "music", qr: "qr", embed: "globe", stat_card: "badge", poll: "poll", prediction: "prediction", confetti: "party",
         counter: "hash", progress_bar: "progress", data_display: "braces"
     };
 

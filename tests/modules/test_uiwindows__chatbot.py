@@ -146,7 +146,7 @@ def notes(monkeypatch):
 def clean_globals(monkeypatch):
     """Reset every UI global so tests can't leak containers/panels into each other."""
     for name in ("commands_container", "events_container", "quotes_container", "greetings_container",
-                 "giveaways_container", "polls_container", "create_dialog", "edit_dialog", "_active_editor"):
+                 "giveaways_container", "polls_container", "predictions_container", "create_dialog", "edit_dialog", "_active_editor"):
         monkeypatch.setattr(tab, name, None)
     monkeypatch.setattr(tab, "_items_panels", {})
     monkeypatch.setattr(tab, "_qg_panels", {})
@@ -233,7 +233,7 @@ def test_unique_command_token():
 
 def test_get_container_for_tab_maps_every_tab(monkeypatch, clean_globals):
     sentinels = {}
-    for kind in ("commands", "events", "quotes", "greetings", "giveaways", "polls"):
+    for kind in ("commands", "events", "quotes", "greetings", "giveaways", "polls", "predictions"):
         sentinels[kind] = object()
         monkeypatch.setattr(tab, f"{kind}_container", sentinels[kind])
     for kind, obj in sentinels.items():
@@ -270,14 +270,14 @@ def test_refresh_tab_content_without_panel_is_a_noop(monkeypatch, clean_globals,
 
 def test_refresh_chatbot_items_refreshes_all_six(refreshes):
     tab.refresh_chatbot_items()
-    assert refreshes == ["commands", "events", "quotes", "greetings", "giveaways", "polls"]
+    assert refreshes == ["commands", "events", "quotes", "greetings", "giveaways", "polls", "predictions"]
 
 
 def test_load_chatbot_items_builds_every_panel(monkeypatch, clean_globals):
-    containers = {k: FakeContainer() for k in ("commands", "events", "quotes", "greetings", "giveaways", "polls")}
+    containers = {k: FakeContainer() for k in ("commands", "events", "quotes", "greetings", "giveaways", "polls", "predictions")}
     for k, c in containers.items():
         monkeypatch.setattr(tab, f"{k}_container", c)
-    for name in ("QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel"):
+    for name in ("QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel", "PredictionsPanel"):
         monkeypatch.setattr(tab, name, type(name, (FakePanel,), {}))
     tab._items_panels["commands"] = FakePanel()
     tab._items_panels["events"] = FakePanel()
@@ -291,6 +291,8 @@ def test_load_chatbot_items_builds_every_panel(monkeypatch, clean_globals):
     assert type(tab._gp_panels["giveaways"]).__name__ == "GiveawaysPanel"
     assert type(tab._gp_panels["polls"]).__name__ == "PollsPanel"
     assert tab._gp_panels["polls"].built == [containers["polls"]]
+    assert type(tab._gp_panels["predictions"]).__name__ == "PredictionsPanel"
+    assert tab._gp_panels["predictions"].built == [containers["predictions"]]
 
     # A second load reuses the existing panels (setdefault).
     quotes_panel = tab._qg_panels["quotes"]
@@ -756,7 +758,7 @@ def test_lookup_twitch_user_not_connected(monkeypatch, api):
 def test_create_chatbot_tab_builds_all_sub_tabs(monkeypatch, clean_globals, mgr):
     refs = []
     monkeypatch.setattr(tab, "set_chatbot_ui_references", lambda tabs: refs.append(tabs))
-    for name in ("QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel"):
+    for name in ("QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel", "PredictionsPanel"):
         monkeypatch.setattr(tab, name, FakePanel)
     loaded = []
     monkeypatch.setattr(tab, "load_custom_variables", lambda: loaded.append(1) or {"a": 1})
@@ -772,18 +774,18 @@ def test_create_chatbot_tab_builds_all_sub_tabs(monkeypatch, clean_globals, mgr)
     monkeypatch.setattr(tab, "ItemsPanel", SpyItemsPanel)
 
     async def check(user):
-        for label in ("Commands", "Events", "Quotes", "Greetings", "Giveaways", "Polls"):
+        for label in ("Commands", "Events", "Quotes", "Greetings", "Giveaways", "Polls", "Predictions"):
             await user.should_see(label)
 
     run_ui(tab.create_chatbot_tab, check)
 
     assert len(refs) == 1
     assert loaded == [1]
-    for kind in ("commands", "events", "quotes", "greetings", "giveaways", "polls"):
+    for kind in ("commands", "events", "quotes", "greetings", "giveaways", "polls", "predictions"):
         assert tab.get_container_for_tab(kind) is not None
     assert tab._items_panels["commands"].built and tab._items_panels["events"].built
     assert set(tab._qg_panels) == {"quotes", "greetings"}
-    assert set(tab._gp_panels) == {"giveaways", "polls"}
+    assert set(tab._gp_panels) == {"giveaways", "polls", "predictions"}
 
     # The item providers read the manager.
     items_cmds, cmd_actions = actions["commands"]
@@ -796,7 +798,7 @@ def test_create_chatbot_tab_builds_all_sub_tabs(monkeypatch, clean_globals, mgr)
 
 def test_create_chatbot_tab_action_lambdas_route_correctly(monkeypatch, clean_globals, mgr):
     monkeypatch.setattr(tab, "set_chatbot_ui_references", lambda tabs: None)
-    for name in ("QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel"):
+    for name in ("QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel", "PredictionsPanel"):
         monkeypatch.setattr(tab, name, FakePanel)
     monkeypatch.setattr(tab, "load_custom_variables", lambda: {})
     captured = {}
@@ -830,7 +832,7 @@ def test_create_chatbot_tab_action_lambdas_route_correctly(monkeypatch, clean_gl
 
 def test_create_chatbot_tab_survives_custom_variable_load_error(monkeypatch, clean_globals, mgr, caplog):
     monkeypatch.setattr(tab, "set_chatbot_ui_references", lambda tabs: None)
-    for name in ("ItemsPanel", "QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel"):
+    for name in ("ItemsPanel", "QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel", "PredictionsPanel"):
         monkeypatch.setattr(tab, name, FakePanel)
 
     def boom():
@@ -848,7 +850,7 @@ def test_create_chatbot_tab_survives_custom_variable_load_error(monkeypatch, cle
 def test_create_chatbot_tab_with_real_items_panel(monkeypatch, clean_globals, mgr):
     """The real card list renders a command from the manager."""
     monkeypatch.setattr(tab, "set_chatbot_ui_references", lambda tabs: None)
-    for name in ("QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel"):
+    for name in ("QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel", "PredictionsPanel"):
         monkeypatch.setattr(tab, name, FakePanel)
     monkeypatch.setattr(tab, "load_custom_variables", lambda: {})
     mgr.commands["c1"] = _cmd("c1", name="Dice roller", word="dice")

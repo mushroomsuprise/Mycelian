@@ -278,6 +278,9 @@ BLOCK_TARGETS: Dict[str, List[Dict[str, Any]]] = {
     "poll": [
         _target("repaint", "Paint from the data", "Repaints the poll from a poll-shaped payload."),
     ],
+    "prediction": [
+        _target("repaint", "Paint from the data", "Repaints the prediction from a prediction-shaped payload."),
+    ],
     "confetti": [
         _target("confetti_burst", "Burst confetti", "Fires a burst using this block's count, duration, spread and colors.", accepts="trigger"),
     ],
@@ -303,6 +306,7 @@ DEFAULT_TARGET: Dict[str, str] = {
     "qr": "set_qr_text",
     "embed": "set_embed_url",
     "poll": "repaint",
+    "prediction": "repaint",
     "now_playing": "repaint",
     "confetti": "confetti_burst",
 }
@@ -310,13 +314,14 @@ DEFAULT_TARGET: Dict[str, str] = {
 # Sources a block starts with when a feed is added from scratch.
 DEFAULT_SOURCE_EVENTS: Dict[str, List[str]] = {
     "poll": ["poll_state", "poll_ended"],
+    "prediction": ["prediction_state", "prediction_ended"],
     "confetti": ["giveaway_winner"],
     "now_playing": ["spotify_data_update"],
 }
 
 BLOCK_TYPES = (
     "audio", "clock", "confetti", "container", "counter", "data_display", "divider", "embed",
-    "gradient", "image", "list", "marquee", "now_playing", "poll", "progress_bar",
+    "gradient", "image", "list", "marquee", "now_playing", "poll", "prediction", "progress_bar",
     "qr", "shape", "stat_card", "text", "timer", "video", "wheel",
 )
 
@@ -384,6 +389,19 @@ BLOCK_OUTPUTS: Dict[str, List[Dict[str, Any]]] = {
                 _p("winners", "Winners", "array"),
                 _p("total_votes", "Total votes", "number"),
                 _p("options", "Options", "array"),
+            ],
+        ),
+    ],
+    "prediction": [
+        _out(
+            "result", "prediction_result", "result",
+            "The winning outcome when the prediction is resolved (no winner when it is refunded).",
+            [
+                _TEMPLATE_FIELD, _ELEMENT_FIELD,
+                _p("winner", "Winning outcome"),
+                _p("status", "Status (resolved or canceled)"),
+                _p("total_points", "Total points", "number"),
+                _p("outcomes", "Outcomes", "array"),
             ],
         ),
     ],
@@ -790,7 +808,7 @@ def migrate_legacy_feeds(element: Dict[str, Any]) -> List[Dict[str, Any]]:
         feed["target"] = {"id": "set_text", "options": {}}
         return [normalize_feed(feed, etype)]
 
-    if etype in ("poll", "now_playing"):
+    if etype in ("poll", "prediction", "now_playing"):
         return [normalize_feed(default_feed(etype), etype)]
 
     return []

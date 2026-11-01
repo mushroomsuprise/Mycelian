@@ -120,6 +120,7 @@ class AlertSettings:
         "hype_train_start",
         "hype_train_progress",
         "hype_train_end",
+        "hype_train_level",
     )
     default_bit_alert: str = "bit1"
     default_sub_alert: str = "sub1"
@@ -129,7 +130,10 @@ class AlertSettings:
     default_giftsub_alert: str = "giftsub1"
     default_donation_alert: str = "donation1"
     default_streak_alert: str = "streaks1"
+    default_hypetrain_alert: str = "hypetrain1"
     FALLBACK_ALERT_ID: str = "subs_fallback"
+    # Hype Train: plays instead of the level alert when a train sets a new all-time high level.
+    HYPE_RECORD_ALERT_ID: str = "hypetrain_record"
 
 
 # Alerts tab uses plural keys; Twitch/overlay use singular runtime types.
@@ -142,6 +146,7 @@ UI_TAB_TO_RUNTIME_ALERT_TYPE = {
     "raids": "raid",
     "follows": "follow",
     "points": "point",
+    "hypetrain": "hype_train_level",
 }
 
 
@@ -165,6 +170,8 @@ PointAlerts = {}
 FollowAlerts = {}
 StreakAlerts = {}
 StreakRangeAlerts = {}
+HypeTrainAlerts = {}
+HypeTrainRangeAlerts = {}
 
 
 class _ConfigWriteFailed(RuntimeError):
@@ -216,6 +223,8 @@ class AlertStateManager:
             "follows": {},
             "streaks": {},
             "streak_ranges": {},
+            "hypetrain": {},
+            "hypetrain_ranges": {},
         }
         # Add alert storage for completed alerts
         self._alert_storage = {}
@@ -240,6 +249,8 @@ class AlertStateManager:
             "follows": "Alerts/FollowAlerts",
             "streaks": "Alerts/StreakAlerts",
             "streak_ranges": "Alerts/StreakRangeAlerts",
+            "hypetrain": "Alerts/HypeTrainAlerts",
+            "hypetrain_ranges": "Alerts/HypeTrainRangeAlerts",
             "alert_storage": "Alerts/AlertStorage",
         }
         self._initialized = False
@@ -925,7 +936,9 @@ class AlertStateManager:
             PointAlerts, \
             FollowAlerts, \
             StreakAlerts, \
-            StreakRangeAlerts
+            StreakRangeAlerts, \
+            HypeTrainAlerts, \
+            HypeTrainRangeAlerts
 
         # Clear existing collections
         BitAlerts.clear()
@@ -942,6 +955,8 @@ class AlertStateManager:
         FollowAlerts.clear()
         StreakAlerts.clear()
         StreakRangeAlerts.clear()
+        HypeTrainAlerts.clear()
+        HypeTrainRangeAlerts.clear()
 
         # Update with new data, filtering out invalid fields
         for key, value in self._alert_state["bits"].items():
@@ -1000,6 +1015,14 @@ class AlertStateManager:
             filtered_value = self._filter_alert_obj_fields(value)
             StreakRangeAlerts[key] = AlertObj(**filtered_value)
 
+        for key, value in self._alert_state["hypetrain"].items():
+            filtered_value = self._filter_alert_obj_fields(value)
+            HypeTrainAlerts[key] = AlertObj(**filtered_value)
+
+        for key, value in self._alert_state["hypetrain_ranges"].items():
+            filtered_value = self._filter_alert_obj_fields(value)
+            HypeTrainRangeAlerts[key] = AlertObj(**filtered_value)
+
         logger.debug("Updated global alert collections")
 
     def _get_state_and_firebase_keys(self, alert_type: str, alert_id: str = None):
@@ -1016,7 +1039,7 @@ class AlertStateManager:
             alert_id
             and "-" in str(alert_id)
             and alert_type
-            in ["bits", "subs", "giftsubs", "donations", "raids", "streaks"]
+            in ["bits", "subs", "giftsubs", "donations", "raids", "streaks", "hypetrain"]
         )
 
         # Map alert type to state key
@@ -1027,6 +1050,7 @@ class AlertStateManager:
             "donations": "donations" if not is_range else "donation_ranges",
             "raids": "raids" if not is_range else "raid_ranges",
             "streaks": "streaks" if not is_range else "streak_ranges",
+            "hypetrain": "hypetrain" if not is_range else "hypetrain_ranges",
             "follows": "follows",
             "points": "points",
         }
@@ -1258,6 +1282,7 @@ class AlertStateManager:
                 "follows": "default_follow_alert",
                 "points": "default_point_alert",
                 "raids": "default_raids_alert",
+                "hypetrain": "default_hypetrain_alert",
                 "giftsubs": "default_giftsub_alert",
                 "donations": "default_donation_alert",
                 "streaks": "default_streak_alert",
@@ -1335,6 +1360,9 @@ class AlertStateManager:
                 "streaks": (
                     ["streaks", "streak_ranges"] if include_ranges else ["streaks"]
                 ),
+                "hypetrain": (
+                    ["hypetrain", "hypetrain_ranges"] if include_ranges else ["hypetrain"]
+                ),
                 "follows": ["follows"],
                 "points": ["points"],
             }
@@ -1392,6 +1420,9 @@ class AlertStateManager:
             "raids": ["raids", "raid_ranges"] if include_ranges else ["raids"],
             "streaks": (
                 ["streaks", "streak_ranges"] if include_ranges else ["streaks"]
+            ),
+            "hypetrain": (
+                ["hypetrain", "hypetrain_ranges"] if include_ranges else ["hypetrain"]
             ),
             "follows": ["follows"],
             "points": ["points"],
@@ -1996,6 +2027,7 @@ class AlertStateManager:
                 "raider_count": int,
                 "donation_amount": float,
                 "hype_train_level": int,
+                "hype_train_total": int,
                 "streak_count": int,
                 "channel_points_awarded": int,
                 "fade_in": int,
@@ -2026,6 +2058,7 @@ class AlertStateManager:
                 "randomized",
                 "randomized_extra",
                 "hype_train_in_progress",
+                "hype_train_record",
             ]
 
             for field in boolean_fields:
@@ -2451,6 +2484,10 @@ class AlertStateManager:
             if alert_id == AlertSettings.FALLBACK_ALERT_ID:
                 return "Resub Fallback"
 
+            # Hype Train: the all-time-high alert has no level
+            if alert_id == AlertSettings.HYPE_RECORD_ALERT_ID:
+                return "New all-time high"
+
             # Parse numeric part from alert ID
             numeric_part = alert_id
             if alert_id.startswith(alert_type):
@@ -2475,6 +2512,8 @@ class AlertStateManager:
                         return f"{min_val}-{max_val} Raiders"
                     elif alert_type == "streaks":
                         return f"{min_val}-{max_val} Streak"
+                    elif alert_type == "hypetrain":
+                        return f"Levels {min_val}-{max_val}"
                 except ValueError:
                     # Fallback if parsing fails
                     return f"{alert_type.title()} {numeric_part}"
@@ -2495,6 +2534,8 @@ class AlertStateManager:
                     return f"{amount} Raiders"
                 elif alert_type == "streaks":
                     return f"{amount} Streak" if amount == 1 else f"{amount} Streaks"
+                elif alert_type == "hypetrain":
+                    return f"Level {amount}"
             except ValueError:
                 # Fallback if parsing fails
                 pass
@@ -2533,6 +2574,7 @@ class AlertStateManager:
                     "donations",
                     "raids",
                     "follows",
+                    "hypetrain",
                 ]
             ):
                 # Assume it's a point alert with Twitch reward ID
@@ -2544,6 +2586,7 @@ class AlertStateManager:
                 "donations",
                 "follows",
                 "raids",
+                "hypetrain",
                 "bits",
                 "streaks",
                 "subs",
@@ -2754,6 +2797,11 @@ class AlertObj:
     twitch_reward_id: str = None
     point_cost: int = 0
     enable_alert: bool = False
+    # Mark the Twitch redemption FULFILLED once its alert has played (reward setting).
+    complete_redemption: bool = True
+    # The redemption behind a live point alert, and its status when it arrived.
+    redemption_id: str = ""
+    redemption_status: str = ""
 
     # Raid options:
     raider_count: int = 0
@@ -2774,6 +2822,10 @@ class AlertObj:
     # Hype train options:
     hype_train_level: int = 0
     hype_train_in_progress: bool = False
+    # True when this level is a new all-time high for the channel
+    hype_train_record: bool = False
+    hype_train_type: str = ""  # regular | treasure | golden_kappa
+    hype_train_total: int = 0  # contributions so far
 
     # Audio options:
     fade_in: int = 0
@@ -2966,6 +3018,35 @@ def fetch_donation_alert(quantity: int) -> Optional[AlertObj]:
     elif alerts:
         # Fall back to first available alert if default not found
         return _alert_obj_from_db(next(iter(alerts.values())))
+    return None
+
+
+def fetch_hype_train_alert(level: int, *, record: bool = False) -> Optional[AlertObj]:
+    """The Hype Train alert for a level the train just reached.
+
+    ``record``: the level is a new all-time high, so the "New all-time high" alert plays when one
+    is set up. Otherwise (or without one): exact level, then a level range, then the default
+    level alert, then any level alert. The all-time-high alert never stands in for a level.
+    """
+    alert_state_manager.initialize()
+    alerts = alert_state_manager.get_alerts_by_type("hypetrain", include_ranges=True)
+    record_id = AlertSettings.HYPE_RECORD_ALERT_ID
+    if record and record_id in alerts:
+        alert = _alert_obj_from_db(alerts[record_id])
+        alert.hype_train_record = True
+        return alert
+    levels = {k: v for k, v in alerts.items() if k != record_id}
+    exact = levels.get("hypetrain" + str(level))
+    if exact is not None:
+        return _alert_obj_from_db(exact)
+    found = _find_range_amount_alert(levels, level, prefix="hypetrain", prefix_strip_len=len("hypetrain"))
+    if found is not None:
+        return found
+    default = levels.get(AlertSettings.default_hypetrain_alert)
+    if default is not None:
+        return _alert_obj_from_db(default)
+    if levels:
+        return _alert_obj_from_db(next(iter(levels.values())))
     return None
 
 
@@ -3239,6 +3320,9 @@ _REPLAY_EVENT_FIELDS = (
     "donation_text",
     "hype_train_level",
     "hype_train_in_progress",
+    "hype_train_record",
+    "hype_train_type",
+    "hype_train_total",
     "streak_count",
     "channel_points_awarded",
     "alert_type",
@@ -3291,6 +3375,9 @@ def fetch_alert_config_for_stored(stored: dict) -> Optional[AlertObj]:
         return fetch_streak_alert(count if count > 0 else 1)
     if alert_type == "follow":
         return fetch_follow_alert()
+    if alert_type == "hype_train_level":
+        level = _replay_int(stored.get("hype_train_level"), 1)
+        return fetch_hype_train_alert(level if level > 0 else 1, record=bool(stored.get("hype_train_record")))
     if alert_type in ("point", "points"):
         reward_id = stored.get("twitch_reward_id")
         if reward_id:
@@ -3302,7 +3389,8 @@ def fetch_alert_config_for_stored(stored: dict) -> Optional[AlertObj]:
 _MISSING = object()
 
 # Alert types that never enter the queue live (instant_alert only), so their
-# replay is the instant mirror alone.
+# replay is the instant mirror alone. Hype Train level alerts (hype_train_level)
+# are queued like any configured alert.
 _REPLAY_INSTANT_ONLY_TYPES = frozenset(
     {"hype_train_start", "hype_train_progress", "hype_train_end", "hype_train"}
 )

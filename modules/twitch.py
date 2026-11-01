@@ -159,6 +159,34 @@ def _queue_twitch_alert(alert, stored=None, *, play=True) -> bool:
     return True
 
 
+def _emit_connector_event(event_type: str, fields: dict) -> None:
+    """Fire a connector trigger (never raises; a no-op while connectors aren't running)."""
+    try:
+        from .connector_integration import emit_twitch_event
+
+        emit_twitch_event(event_type, fields)
+    except Exception as e:
+        logger.debug("connector event %s skipped: %s", event_type, e)
+
+
+def _poll_trigger_fields(event, *, ended: bool = False) -> dict:
+    """Connector fields for a Twitch poll begin / end event."""
+    choices = list(getattr(event, "choices", None) or [])
+    votes = [(str(getattr(c, "title", "") or ""), int(getattr(c, "votes", 0) or 0)) for c in choices]
+    fields = {
+        "poll_id": str(getattr(event, "id", "") or ""),
+        "title": str(getattr(event, "title", "") or ""),
+        "choices": ", ".join(title for title, _ in votes),
+        "total_votes": sum(v for _, v in votes),
+    }
+    if ended:
+        top = max(votes, key=lambda tv: tv[1]) if votes else ("", 0)
+        status = getattr(event, "status", "")
+        fields.update(winner=top[0] if top[1] else "", winner_votes=top[1],
+                      status=str(getattr(status, "value", status) or "").lower())
+    return fields
+
+
 def _send_twitch_instant_alert(alert_data: dict) -> None:
     if not _twitch_alerts_enabled():
         return
@@ -1743,6 +1771,8 @@ class Twitch_API:
             AuthScope.CHANNEL_MANAGE_PREDICTIONS,
             AuthScope.CHANNEL_MANAGE_RAIDS,
             AuthScope.CHANNEL_MANAGE_ADS,
+            AuthScope.CHANNEL_READ_ADS,  # optional: ad-break connector trigger
+            AuthScope.CHANNEL_READ_GOALS,  # optional: goal overlays
             AuthScope.CHANNEL_SUBSCRIPTIONS,
             AuthScope.CHANNEL_MANAGE_MODERATORS,  # GET /moderation/moderators
             AuthScope.CHAT_EDIT,
@@ -3055,6 +3085,10 @@ class Twitch_API:
             f"Channel update event: Category changed to {data.event.category_name}"
         )
         current_category = data.event.category_name
+        try:
+            previous_category = str(dataobjects.state_manager.get_twitch_data().current_category or "")
+        except Exception:
+            previous_category = ""
 
         # Update the current category in the state manager. This has to be
         # flushed: overlays read the cached value on load, so leaving it pending
@@ -3102,6 +3136,14 @@ class Twitch_API:
 
         # Send updated Twitch data to WebSocket clients for real-time updates
         self._broadcast_twitch_data_update(current_category)
+
+        _emit_connector_event("twitch_channel_update", {
+            "title": str(getattr(data.event, "title", "") or ""),
+            "category": str(current_category or ""),
+            "previous_category": previous_category,
+            "category_changed": bool(previous_category) and previous_category != str(current_category or ""),
+            "language": str(getattr(data.event, "language", "") or ""),
+        })
 
     def _broadcast_twitch_data_update(self, current_category: str = "") -> None:
         """Push the current Twitch data to every connected overlay."""
@@ -4446,6 +4488,10 @@ class Twitch_API:
         alert.alert_id = alertutils.new_alert_id()
         alert.timestamp = time.time()
         alert.point_cost = data.event.reward.cost
+        # Kept so the redemption can be marked FULFILLED once its alert has played.
+        alert.redemption_id = str(getattr(data.event, "id", "") or "")
+        status = getattr(data.event, "status", "")
+        alert.redemption_status = str(getattr(status, "value", status) or "").lower()
         if alert.enable_alert:
             dedicated = match_point_reward_dedicated_template(alert.alert_name)
             if dedicated and dedicated.get("queued"):
@@ -4521,6 +4567,62 @@ class Twitch_API:
             _points_chatbot_data(data, alert),
         )
 
+    def _queue_hype_train_level_alerts(self, event, *, begin: bool = False) -> None:
+        """Queue the Alerts → Hype Train alert for each level this train newly reached.
+
+        Progress events arrive on every contribution, so the last announced level is kept per
+        train (``event.id``; trains without one share a slot, Twitch runs one per channel).
+
+        All-time high: the record is read once per train, from the first event Mycelian sees
+        (``all_time_high_level`` at begin is the channel's record before this train). The first
+        level above that record plays the "New all-time high" alert (when one is set up) instead
+        of the level alert, once per train. Without a known record (no earlier train of this type,
+        or Mycelian joined mid-train after Twitch already counted it) no record alert plays.
+        """
+        try:
+            level = int(getattr(event, "level", 0) or 0)
+        except (TypeError, ValueError):
+            return
+        if level <= 0:
+            return
+        trains = getattr(self, "_hype_level_state", None)
+        if trains is None:
+            trains = self._hype_level_state = {}
+        train_id = str(getattr(event, "id", "") or "")
+        state = trains.get(train_id)
+        if state is None:
+            try:
+                record = int(getattr(event, "all_time_high_level", 0) or 0)
+            except (TypeError, ValueError):
+                record = 0
+            # Joined mid-train: count the levels already passed as announced.
+            state = trains[train_id] = {"announced": 0 if begin else level - 1, "record": record, "record_played": False}
+        if level <= state["announced"]:
+            return
+        train_type = _hype_train_type_from_event(event)
+        try:
+            total = int(getattr(event, "total", 0) or 0)
+        except (TypeError, ValueError):
+            total = 0
+        for reached in range(state["announced"] + 1, level + 1):
+            is_record = bool(state["record"]) and reached > state["record"] and not state["record_played"]
+            if is_record:
+                state["record_played"] = True
+            alert = alertutils.fetch_hype_train_alert(reached, record=is_record)
+            if alert is None:
+                continue
+            alert.alert_type = "hype_train_level"
+            alert.hype_train_level = reached
+            alert.hype_train_record = is_record
+            alert.hype_train_type = train_type or ""
+            alert.hype_train_total = total
+            alert.hype_train_in_progress = True
+            alert.username = ""
+            alert.alert_id = alertutils.new_alert_id()
+            alert.timestamp = time.time()
+            _queue_twitch_alert(alert)
+        state["announced"] = level
+
     async def on_hype_train_start(
         self, data: HypeTrainEvent
     ):  # data.event is HypeTrainBeginEventData
@@ -4547,6 +4649,10 @@ class Twitch_API:
             alertutils.alert_state_manager.store_completed_alert(
                 start_alert.alert_id, dict(start_alert.__dict__)
             )
+        try:
+            self._queue_hype_train_level_alerts(data.event, begin=True)
+        except Exception as e:
+            logger.error("Error queueing Hype Train level alert: %s", e, exc_info=True)
 
         # Send instant alert
         try:
@@ -4615,6 +4721,10 @@ class Twitch_API:
             f"Hype train progress: Level {data.event.level}, Progress: {data.event.progress}/{data.event.goal}"
         )
         # username = data.event.user_name # HypeTrainEvent does not have user_name directly
+        try:
+            self._queue_hype_train_level_alerts(data.event)
+        except Exception as e:
+            logger.error("Error queueing Hype Train level alert: %s", e, exc_info=True)
 
         # Send instant alert
         try:
@@ -4666,12 +4776,26 @@ class Twitch_API:
             },
         )
 
+        event = data.event
+        train_type = getattr(event, "type", "") or ""
+        _emit_connector_event("twitch_hype_train_progress", {
+            "level": int(getattr(event, "level", 0) or 0),
+            "progress": int(getattr(event, "progress", 0) or 0),
+            "goal": int(getattr(event, "goal", 0) or 0),
+            "total": int(getattr(event, "total", 0) or 0),
+            "type": str(getattr(train_type, "value", train_type) or ""),
+            "is_shared_train": bool(getattr(event, "is_shared_train", False)),
+            "all_time_high_level": int(getattr(event, "all_time_high_level", 0) or 0),
+        })
+
     async def on_hype_train_end(
         self, data: HypeTrainEndEvent
     ):  # data.event is HypeTrainEndEventData
         self._note_event_received()
         logger.debug(f"Hype train ended at level {data.event.level}")
         event_data = data.event
+        # The train is over: forget which levels it announced.
+        (getattr(self, "_hype_level_state", None) or {}).pop(str(getattr(event_data, "id", "") or ""), None)
         level = event_data.level
         total_contributions = event_data.total
         current_ts = time.time()  # Use a consistent timestamp
@@ -4806,6 +4930,7 @@ class Twitch_API:
         from . import twitch_polls
 
         await asyncio.to_thread(twitch_polls.handle_begin, data.event)
+        _emit_connector_event("twitch_poll_begin", _poll_trigger_fields(data.event))
 
     async def on_poll_progress(self, data):
         """channel.poll.progress — live vote counts for a Twitch poll."""
@@ -4820,6 +4945,120 @@ class Twitch_API:
         from . import twitch_polls
 
         await asyncio.to_thread(twitch_polls.handle_end, data.event)
+        _emit_connector_event("twitch_poll_end", _poll_trigger_fields(data.event, ended=True))
+
+    async def _granted_scopes(self):
+        """Scopes Twitch granted the current sign-in (reads them from Twitch when not known yet)."""
+        granted = token_scopes(self.auth_token)
+        if granted is None:
+            await validate_access_token(self.auth_token)
+            granted = token_scopes(self.auth_token)
+        return granted
+
+    async def _subscribe_extra_events(self, eventsub) -> None:
+        """Predictions, goals, ad breaks and received shoutouts.
+
+        Each needs a scope an older sign-in may not have; a missing one only switches that
+        feature off (predictions and goals ask the user to sign in again). One failing
+        subscription never stops the others.
+        """
+        from . import twitch_goals, twitch_predictions
+
+        granted = await self._granted_scopes()
+        if granted is None:
+            logger.warning("Couldn't read the Twitch sign-in's scopes; skipping prediction, goal, ad and shoutout events")
+            return
+        uid = self.user.id
+
+        async def listen(label, scope, subscribe, on_missing=None) -> bool:
+            if scope not in granted:
+                logger.info("Twitch sign-in lacks %s; %s events are off until the user signs in again", scope, label)
+                if on_missing is not None:
+                    on_missing()
+                return False
+            try:
+                await subscribe()
+                return True
+            except Exception as e:
+                logger.error("Failed to subscribe to %s events (other EventSub topics will continue): %s",
+                             label, e, exc_info=True)
+                return False
+
+        async def predictions():
+            await eventsub.listen_channel_prediction_begin(uid, self.on_prediction_begin)
+            await eventsub.listen_channel_prediction_progress(uid, self.on_prediction_progress)
+            await eventsub.listen_channel_prediction_lock(uid, self.on_prediction_lock)
+            await eventsub.listen_channel_prediction_end(uid, self.on_prediction_end)
+
+        async def goals():
+            await eventsub.listen_goal_begin(uid, self.on_goal_begin)
+            await eventsub.listen_goal_progress(uid, self.on_goal_progress)
+            await eventsub.listen_goal_end(uid, self.on_goal_end)
+
+        await listen("prediction", twitch_predictions.PREDICTION_SCOPE, predictions, twitch_predictions.notify_scope_missing)
+        if await listen("goal", twitch_goals.GOAL_SCOPE, goals, twitch_goals.notify_scope_missing):
+            await asyncio.to_thread(twitch_goals.refresh_from_twitch)
+        await listen("ad break", "channel:read:ads",
+                     lambda: eventsub.listen_channel_ad_break_begin(uid, self.on_ad_break_begin))
+        await listen("shoutout", "moderator:manage:shoutouts",
+                     lambda: eventsub.listen_channel_shoutout_receive(uid, uid, self.on_shoutout_receive))
+
+    async def _on_prediction(self, kind: str, data) -> None:
+        self._note_event_received()
+        from . import twitch_predictions
+
+        await asyncio.to_thread(twitch_predictions.handle_event, kind, data.event)
+
+    async def on_prediction_begin(self, data):
+        """channel.prediction.begin — a prediction opened (here or on the Twitch dashboard)."""
+        await self._on_prediction("begin", data)
+
+    async def on_prediction_progress(self, data):
+        """channel.prediction.progress — new bets."""
+        await self._on_prediction("progress", data)
+
+    async def on_prediction_lock(self, data):
+        """channel.prediction.lock — betting closed."""
+        await self._on_prediction("lock", data)
+
+    async def on_prediction_end(self, data):
+        """channel.prediction.end — paid out or refunded."""
+        await self._on_prediction("end", data)
+
+    async def _on_goal(self, kind: str, data) -> None:
+        self._note_event_received()
+        from . import twitch_goals
+
+        await asyncio.to_thread(twitch_goals.handle_event, kind, data.event)
+
+    async def on_goal_begin(self, data):
+        await self._on_goal("begin", data)
+
+    async def on_goal_progress(self, data):
+        await self._on_goal("progress", data)
+
+    async def on_goal_end(self, data):
+        await self._on_goal("end", data)
+
+    async def on_ad_break_begin(self, data):
+        """channel.ad_break.begin — connector trigger (e.g. pause a scene or post a chat message)."""
+        self._note_event_received()
+        event = data.event
+        _emit_connector_event("twitch_ad_break_begin", {
+            "duration_seconds": int(getattr(event, "duration_seconds", 0) or 0),
+            "is_automatic": bool(getattr(event, "is_automatic", False)),
+            "requester": str(getattr(event, "requester_user_name", "") or ""),
+        })
+
+    async def on_shoutout_receive(self, data):
+        """channel.shoutout.receive — another streamer shouted this channel out."""
+        self._note_event_received()
+        event = data.event
+        _emit_connector_event("twitch_shoutout_received", {
+            "username": str(getattr(event, "from_broadcaster_user_name", "") or ""),
+            "user_login": str(getattr(event, "from_broadcaster_user_login", "") or ""),
+            "viewer_count": int(getattr(event, "viewer_count", 0) or 0),
+        })
 
     async def on_stream_online(self, data: StreamOnlineEvent):
         """Twitch EventSub stream.online — Discord go-live + connector hook."""
@@ -5618,6 +5857,7 @@ class Twitch_API:
                 # older sign-in may not have. Without it everything else still connects; the user
                 # is asked to sign in again and Twitch polls stay off.
                 await self._subscribe_poll_events(eventsub)
+                await self._subscribe_extra_events(eventsub)
                 await eventsub.listen_stream_online(
                     self.user.id, self.on_stream_online
                 )
@@ -6554,6 +6794,68 @@ def update_point_reward(reward_id: str, reward_data: dict):
             f"Error updating point reward {reward_id}: {str(e)}", exc_info=True
         )
         return False
+
+
+def complete_point_redemption(reward_id: str, redemption_id: str) -> str:
+    """Mark a channel point redemption FULFILLED (call after its alert played).
+
+    Returns "ok", "not_connected", "not_manageable" (Twitch only lets the app that created a
+    reward update its redemptions, so rewards made on the Twitch dashboard can't be completed)
+    or "error". Problems are reported once per session; the alert queue is never blocked.
+    """
+    reward_id = str(reward_id or "").strip()
+    redemption_id = str(redemption_id or "").strip()
+    if not reward_id or not redemption_id:
+        return "error"
+    if not twitch_api or not twitch_api.is_connected:
+        return "not_connected"
+    url = (
+        "https://api.twitch.tv/helix/channel_points/custom_rewards/redemptions"
+        f"?broadcaster_id={twitch_api.user_id}&reward_id={reward_id}&id={redemption_id}"
+    )
+    try:
+        _run_twitch_coro_sync(twitch_api.generic_api_call(url, "PATCH", json_data={"status": "FULFILLED"}))
+        return "ok"
+    except TwitchPermissionError as e:
+        logger.info("Redemption %s can't be completed (reward not created by Mycelian): %s", redemption_id, e)
+        _notify_redemption_problem(
+            "This reward was made outside Mycelian (or with other Twitch app credentials), so Twitch only lets "
+            "its creator complete redemptions. They stay in your Twitch reward queue.",
+            title="Couldn't complete a channel point redemption",
+            hint="Recreate the reward in Alerts → Channel Points, or turn off “Complete the redemption after its "
+                 "alert plays” for it.",
+            dedupe_key=f"twitch:redemption_not_manageable:{reward_id}",
+            details=str(e),
+        )
+        return "not_manageable"
+    except Exception as e:
+        logger.warning("Completing redemption %s failed: %s", redemption_id, e)
+        _notify_redemption_problem(
+            "The alert played, but the redemption is still waiting in your Twitch reward queue.",
+            title="Couldn't complete a channel point redemption",
+            hint="Complete it from the Twitch reward queue. Mycelian tries again for the next redemption.",
+            dedupe_key="twitch:redemption_complete_failed",
+            details=f"{type(e).__name__}: {e}",
+        )
+        return "error"
+
+
+def _notify_redemption_problem(message: str, *, title: str, hint: str, dedupe_key: str, details: str) -> None:
+    try:
+        from .notification_engine import notify
+
+        notify(
+            message,
+            type="warning",
+            source="twitch",
+            title=title,
+            hint=hint,
+            details=details,
+            dedupe_key=dedupe_key,
+            dedupe_cooldown_sec=6 * 3600.0,
+        )
+    except Exception:
+        logger.debug("Could not show the redemption notice", exc_info=True)
 
 
 def delete_point_reward(reward_id: str):

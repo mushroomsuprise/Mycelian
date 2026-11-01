@@ -321,6 +321,62 @@ def _poll_payload(ended: bool) -> Dict[str, Any]:
     }
 
 
+def _prediction_payload(ended: bool) -> Dict[str, Any]:
+    """A sample prediction (no template name, so every Prediction widget in the preview paints it)."""
+    now = time.time()
+    names = ["Yes, first try", "No, it takes a few"]
+    points = [random.randint(2_000, 60_000) for _ in names]
+    users = [random.randint(3, 60) for _ in names]
+    total_points, total_users = sum(points), sum(users)
+    winner = 0 if points[0] >= points[1] else 1
+    outcomes = []
+    for i, (name, p, u) in enumerate(zip(names, points, users)):
+        won = ended and i == winner
+        outcomes.append({
+            "id": f"mock{i}", "name": name, "color": "blue" if i == 0 else "pink",
+            "users": u, "points": p,
+            "percent": round(p * 100 / total_points, 1) if total_points else 0,
+            "user_percent": round(u * 100 / total_users, 1) if total_users else 0,
+            "ratio": round(total_points / p, 2) if p else None,
+            "winner": won,
+            "top_predictors": [{"name": f"Viewer{i + 1}", "points_used": p // 4,
+                                "points_won": (round(p // 4 * total_points / p) if won else None)}],
+        })
+    return {
+        "status": "resolved" if ended else "active",
+        "title": "Will they beat the boss?",
+        "prediction_id": "mock",
+        "outcomes": outcomes,
+        "total_points": total_points,
+        "total_users": total_users,
+        "locks_at": None if ended else now + 75,
+        "locked_at": now - 30 if ended else None,
+        "ended_at": now if ended else None,
+        "server_now": now,
+        "remaining_seconds": None if ended else 75,
+        "winning_outcome_id": f"mock{winner}" if ended else None,
+    }
+
+
+def _twitch_goal_payload() -> Dict[str, Any]:
+    """A sample Twitch Creator Goal part way to its target."""
+    now = time.time()
+    target = random.choice([50, 100, 250, 500])
+    current = random.randint(1, target - 1)
+    return {
+        "id": "mock-goal",
+        "type": random.choice(["follower", "subscription"]),
+        "description": "Road to the next emote slot",
+        "current_amount": current,
+        "target_amount": target,
+        "percent": round(current * 100 / target, 1),
+        "is_achieved": False,
+        "status": "active",
+        "started_at": now - 3600,
+        "ended_at": None,
+    }
+
+
 def _giveaway_winner_payload(pools: Dict[str, Any]) -> Dict[str, Any]:
     names = list(pools["usernames"])
     if len(names) < 2:
@@ -494,6 +550,22 @@ _BUILDERS: Dict[str, Tuple[str, Any]] = {
     "poll_ended": (
         "poll_ended",
         lambda pools: _poll_payload(True),
+    ),
+    "twitch_goal_progress": (
+        "twitch_goal_progress",
+        lambda pools: _twitch_goal_payload(),
+    ),
+    "twitch_goal_sync": (
+        "twitch_goal_sync",
+        lambda pools: _twitch_goal_payload(),
+    ),
+    "prediction_state": (
+        "prediction_state",
+        lambda pools: _prediction_payload(False),
+    ),
+    "prediction_ended": (
+        "prediction_ended",
+        lambda pools: _prediction_payload(True),
     ),
     "streamer-info": (
         "streamer-info",

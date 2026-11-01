@@ -245,9 +245,67 @@ def process_alert(alert: AlertObj):
     """
     try:
         _process_alert(alert)
+        _after_alert_finished(alert)
     finally:
         _set_current_alert(None)
         _broadcast_queue_state()
+
+
+# Finish reasons that mean the alert really played (not skipped, aborted or superseded).
+_PLAYED_REASONS = frozenset({"all_holders_done", "no_ack_fallback"})
+
+
+def _finish_reason_of_current() -> str:
+    """How the alert process_alert just handled finished ("" when unknown)."""
+    info = current_alert_info()
+    if not info:
+        return ""
+    try:
+        from .alert_playback_session import get_session
+
+        session = get_session()
+    except Exception:
+        return ""
+    if session is None or session.seq != info.get("queue_seq") or not session.finished:
+        return ""
+    return str(session.finish_reason or "")
+
+
+def _after_alert_finished(alert: AlertObj) -> None:
+    """After a live channel-point alert played, mark its Twitch redemption FULFILLED.
+
+    Only for redemptions that arrived unfulfilled (rewards that skip the request queue are
+    fulfilled by Twitch already) and rewards with "Complete the redemption after its alert
+    plays" on. Runs on its own thread so a slow Twitch call never holds up the next alert.
+    """
+    try:
+        if str(getattr(alert, "alert_type", "") or "") != "point":
+            return
+        if getattr(alert, "is_test", False) or getattr(alert, "is_replay", False):
+            return
+        redemption_id = str(getattr(alert, "redemption_id", "") or "")
+        reward_id = str(getattr(alert, "twitch_reward_id", "") or "")
+        if not redemption_id or not reward_id:
+            return
+        if str(getattr(alert, "redemption_status", "") or "").lower() != "unfulfilled":
+            return
+        if not getattr(alert, "complete_redemption", True):
+            return
+        if _finish_reason_of_current() not in _PLAYED_REASONS:
+            return
+    except Exception:
+        logger.debug("Redemption completion check failed", exc_info=True)
+        return
+
+    def worker() -> None:
+        try:
+            from . import twitch
+
+            twitch.complete_point_redemption(reward_id, redemption_id)
+        except Exception:
+            logger.debug("Completing the redemption failed", exc_info=True)
+
+    threading.Thread(target=worker, name="CompleteRedemption", daemon=True).start()
 
 
 def _process_alert(alert: AlertObj):

@@ -1084,6 +1084,44 @@ WIDGET_CSS = """
 .spore-poll.is-style-cards .spore-poll-bar-fill { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: var(--sp-fill, 0%);
   border-radius: 0; background: linear-gradient(0deg, var(--sp-bar), var(--sp-bar2)); opacity: 0.85; }
 .spore-poll.is-style-cards .spore-poll-option.is-winner .spore-poll-bar-fill { background: var(--sp-win); }
+.spore-prediction {
+  --sp-track: rgba(255,255,255,0.15); --sp-win: #facc15; --sp-barh: 12px; --sp-radius: 12px;
+  display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; padding: 14px 16px; gap: 10px;
+}
+.spore-prediction.has-shadow { box-shadow: 0 10px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08); }
+.spore-pred-head { display: flex; align-items: center; gap: 0.5em; min-width: 0; }
+.spore-pred-head[hidden], .spore-pred-chip[hidden], .spore-pred-foot[hidden], .spore-pred-timer[hidden],
+.spore-pred-pct[hidden], .spore-pred-stats[hidden], .spore-pred-top[hidden] { display: none !important; }
+.spore-pred-title { flex: 1 1 auto; min-width: 0; font-weight: 800; font-size: 1.05em; line-height: 1.15; overflow-wrap: anywhere; }
+.spore-pred-title:empty { display: none; }
+.spore-pred-chip { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 0.4em; padding: 0.2em 0.65em; border-radius: 999px;
+  font-size: 0.62em; font-weight: 700; white-space: nowrap; background: rgba(255,255,255,0.1); font-variant-numeric: tabular-nums; }
+.spore-pred-chip.is-live::before { content: ''; width: 0.6em; height: 0.6em; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 0.2em rgba(34,197,94,0.3); }
+.spore-prediction.is-resolved .spore-pred-chip { background: var(--sp-win); color: #111827; }
+.spore-pred-timer { display: flex; flex-direction: column; margin-top: -4px; }
+.spore-pred-timer-track { height: 4px; border-radius: 2px; background: var(--sp-track); overflow: hidden; }
+.spore-pred-timer-fill { height: 100%; width: 0; border-radius: 2px; background: #22c55e; }
+.spore-pred-outcomes { display: flex; flex-direction: column; min-height: 0; }
+.spore-pred-outcome { --sp-pc: #387aff; position: relative; min-width: 0; transition: opacity 0.4s ease; }
+.spore-pred-row { display: flex; align-items: baseline; gap: 0.4em; min-width: 0; }
+.spore-pred-name { flex: 0 1 auto; min-width: 0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--sp-pc); }
+.spore-pred-pct { margin-left: auto; flex: none; font-weight: 800; font-variant-numeric: tabular-nums; }
+.spore-pred-bar { height: var(--sp-barh); margin-top: 0.3em; border-radius: var(--sp-radius); background: var(--sp-track); overflow: hidden; }
+.spore-pred-bar-fill { height: 100%; width: 0; border-radius: inherit; background: var(--sp-pc); }
+.spore-prediction.is-animated .spore-pred-bar-fill { transition: width 0.6s cubic-bezier(.2,.8,.2,1); }
+.spore-pred-stats { display: flex; flex-wrap: wrap; gap: 0.9em; margin-top: 0.25em; font-size: 0.66em; font-weight: 650; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.spore-pred-stat.is-points::after { content: ' pts'; opacity: 0.75; }
+.spore-pred-stat.is-users::after { content: ' users'; opacity: 0.75; }
+.spore-pred-top { margin-top: 0.15em; font-size: 0.62em; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spore-pred-foot { display: flex; justify-content: space-between; gap: 1em; font-size: 0.62em; font-weight: 600; opacity: 0.75; }
+.spore-pred-total { margin-left: auto; white-space: nowrap; }
+.spore-pred-outcome.is-winner .spore-pred-name { color: var(--sp-win); font-weight: 800; }
+.spore-pred-outcome.is-winner .spore-pred-name::before { content: '\\1F3C6  '; }
+.spore-pred-outcome.is-winner .spore-pred-bar-fill { background: var(--sp-win); }
+.spore-prediction.fx-glow .spore-pred-outcome.is-winner .spore-pred-bar-fill { box-shadow: 0 0 22px var(--sp-win); }
+.spore-prediction.fx-pulse .spore-pred-outcome.is-winner .spore-pred-bar-fill { animation: sporePollPulse 1.4s ease-in-out infinite; }
+.spore-prediction.is-resolved.is-dim-losers .spore-pred-outcome:not(.is-winner) { opacity: 0.45; }
+.spore-prediction.is-canceled .spore-pred-outcome { opacity: 0.55; }
 """.strip()
 
 
@@ -1096,7 +1134,7 @@ ACCENT_CSS = """
 """.strip()
 
 
-_WIDGET_TYPES = frozenset({"list", "wheel", "now_playing", "qr", "embed", "stat_card", "poll", "confetti"})
+_WIDGET_TYPES = frozenset({"list", "wheel", "now_playing", "qr", "embed", "stat_card", "poll", "prediction", "confetti"})
 
 
 def _elements_need_widget_css(elements: List[Dict[str, Any]]) -> bool:

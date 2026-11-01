@@ -293,7 +293,7 @@ def test_lifetime_values_formatting(ctx):
     assert values["giveaways.avg"] == "2.3" and values["polls.avg"] == "0.0"
     assert values["polls.most_votes"] == "Pizza (1,200)" and values["polls.most_wins"] == "—"
     assert values["chat.twitch"] == "0"
-    assert len(tab._lifetime_values({})) == 30
+    assert len(tab._lifetime_values({})) == 35
 
 
 def test_lifetime_section_shows_every_card(ctx):
@@ -644,3 +644,36 @@ def test_channel_name(ctx, twitch_name, streamer, expected):
 def test_channel_name_when_twitch_fails(ctx):
     ctx.twitch.get_twitch_connection_status = Mock(side_effect=RuntimeError("offline"))
     assert tabmod.StatisticsTab._channel_name() == "Streamy"
+
+
+def test_predictions_lifetime_card_and_leaderboard(ctx):
+    snap = {"status": "resolved", "title": "Boss fight", "total_points": 4200, "total_users": 9, "outcomes": [
+        {"name": "Win", "winner": True, "top_predictors": [{"name": "Ann", "points_won": 1500}, {"name": "Bo", "points_won": 300}]},
+        {"name": "Lose", "winner": False, "top_predictors": []}]}
+    ctx.mgr.record_prediction_finished(snap)
+    ctx.mgr.record_prediction_finished({"status": "canceled"})
+    ctx.mgr._flush_pending_events()
+    tab = tabmod.StatisticsTab()
+    values = tab._lifetime_values(ctx.mgr.get_all_statistics())
+    assert (values["predictions.paid"], values["predictions.canceled"], values["predictions.points"]) == ("1", "1", "4,200")
+    assert values["predictions.avg"] == "9.0" and values["predictions.pot"] == "4,200 · Boss fight"
+    assert [r["username"] for r in tab._prediction_winners()] == ["Ann", "Bo"]
+    tab.filters["hidden_viewers"] = ["ann"]
+    assert [r["username"] for r in tab._prediction_winners()] == ["Bo"]
+    tab.filters["hidden_viewers"] = []
+    tab.section = "lifetime"
+
+    async def check(user):
+        for text in ("Predictions", "Paid out", "Refunded", "4,200 · Boss fight", "Biggest winners", "Ann"):
+            await user.should_see(text)
+
+    run_tab(tab, check)
+
+
+def test_prediction_winners_without_events(ctx, monkeypatch):
+    tab = tabmod.StatisticsTab()
+    monkeypatch.setattr(type(tab.insights), "first_event_ts", lambda self: None)
+    assert tab._prediction_winners() == []
+    monkeypatch.setattr(type(tab.insights), "first_event_ts", lambda self: (_ for _ in ()).throw(RuntimeError("db")))
+    assert tab._prediction_winners() == []
+    assert tab._lifetime_values({})["predictions.pot"] == "—"

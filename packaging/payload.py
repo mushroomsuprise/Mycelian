@@ -39,11 +39,12 @@ TEMPLATE_STEMS = (
     "spotify",
     "trophies",
     "steam_achievements",
+    "predictions",
 )
 
 # Spore Studio sidecars shipped with their built-in templates (needed to open them in
 # Spore Studio and, for poll, to list the overlay in Chatbot -> Polls).
-SPORE_SIDECARS = ("bitcounter", "giveaway", "poll", "steam_achievements")
+SPORE_SIDECARS = ("bitcounter", "giveaway", "poll", "steam_achievements", "predictions")
 
 # Directories copied in full on every install (Inno ``ignoreversion``).
 ALWAYS_DIRS = (

@@ -269,6 +269,43 @@
             border_radius: 16,
             border_width: 0,
             border_color: "rgba(255,255,255,0.12)"
+        },
+        prediction: {
+            title: "",
+            show_timer: true,
+            show_timer_bar: true,
+            show_points: true,
+            show_users: true,
+            show_percent: true,
+            show_ratio: true,
+            show_top: false,
+            show_total: true,
+            foot_text: "",
+            locked_text: "Predictions locked",
+            won_text: "{winner} won!",
+            refund_text: "Refunded",
+            autohide_seconds: 60,
+            font_size: 20,
+            color: "#ffffff",
+            font_family: "Arial",
+            font_weight: "normal",
+            row_gap: 10,
+            background_color: "rgba(15,23,42,0.85)",
+            color_1: "#387aff",
+            color_2: "#f5009b",
+            extra_colors: "",
+            track_color: "rgba(255,255,255,0.15)",
+            winner_color: "#facc15",
+            bar_height: 12,
+            bar_radius: 12,
+            winner_effect: "glow",
+            dim_losers: true,
+            animate_bars: true,
+            panel_shadow: true,
+            padding: 16,
+            border_radius: 16,
+            border_width: 0,
+            border_color: "rgba(255,255,255,0.12)"
         }
     };
 
@@ -294,7 +331,8 @@
         qr: { w: 160, h: 160 },
         embed: { w: 480, h: 270 },
         stat_card: { w: 220, h: 72 },
-        poll: { w: 480, h: 640 }
+        poll: { w: 480, h: 640 },
+        prediction: { w: 500, h: 340 }
     };
 
     var TEXT_STYLE_SCHEMA = [
@@ -633,6 +671,79 @@
             { key: "colors", label: "Colors", type: "textarea",
               tooltip: "One color per line (or comma separated)" }
         ],
+        prediction: [
+            { key: "title", label: "Title", type: "text",
+              tooltip: "Heading at the top. Leave empty to show the prediction's question from Twitch." },
+            { key: "show_timer", label: "Show time left", type: "checkbox",
+              tooltip: "Show a Live chip with the time until predictions lock" },
+            { key: "show_timer_bar", label: "Show timer bar", type: "checkbox",
+              tooltip: "Show a bar that shrinks until predictions lock" },
+            { key: "show_percent", label: "Show percent", type: "checkbox",
+              tooltip: "Show each outcome's share of the channel points" },
+            { key: "show_points", label: "Show points", type: "checkbox",
+              tooltip: "Show the channel points on each outcome" },
+            { key: "show_users", label: "Show predictors", type: "checkbox",
+              tooltip: "Show how many viewers picked each outcome" },
+            { key: "show_ratio", label: "Show payout ratio", type: "checkbox",
+              tooltip: "Show the payout, for example 1:2.5 (points won for each point spent)" },
+            { key: "show_top", label: "Show top predictor", type: "checkbox",
+              tooltip: "Show the viewer who spent the most on each outcome (and what they won)" },
+            { key: "show_total", label: "Show totals", type: "checkbox",
+              tooltip: "Show the total points and predictors in the footer" },
+            { key: "foot_text", label: "Footer note", type: "text",
+              tooltip: "Small note under the outcomes. Leave empty to hide it." },
+            { key: "locked_text", label: "Locked text", type: "text",
+              tooltip: "Chip text once predictions are locked" },
+            { key: "won_text", label: "Winner text", type: "text",
+              tooltip: "Chip text after the result. {winner} is the winning outcome." },
+            { key: "refund_text", label: "Refund text", type: "text",
+              tooltip: "Chip text when the prediction is cancelled and points are refunded" },
+            { key: "autohide_seconds", label: "Hide after the result (seconds)", type: "number", min: 0, max: 86400,
+              tooltip: "After the result, stay up this many seconds, then hide. 0 leaves the result up." },
+            { key: "color_1", label: "First outcome color", type: "color",
+              tooltip: "Bar and name color of the first (blue) outcome" },
+            { key: "color_2", label: "Second outcome color", type: "color",
+              tooltip: "Bar and name color of the second (pink) outcome" },
+            { key: "extra_colors", label: "More outcome colors", type: "text",
+              tooltip: "Comma-separated colors for outcomes 3 to 10. Leave empty for the built-in set." },
+            { key: "winner_effect", label: "Winner effect", type: "select",
+              tooltip: "How the winning outcome stands out after the result",
+              options: ["glow", "pulse", "none"] },
+            { key: "dim_losers", label: "Dim other outcomes", type: "checkbox",
+              tooltip: "Fade the outcomes that lost after the result" },
+            { key: "animate_bars", label: "Animate bars", type: "checkbox",
+              tooltip: "Bars grow smoothly as points come in instead of jumping" },
+            { key: "bar_height", label: "Bar height (px)", type: "number", min: 0, max: 80,
+              tooltip: "Thickness of each outcome's bar" },
+            { key: "bar_radius", label: "Bar corner radius (px)", type: "number", min: 0, max: 80,
+              tooltip: "Rounds the bar ends" },
+            { key: "track_color", label: "Bar track", type: "color",
+              tooltip: "Color behind each bar" },
+            { key: "winner_color", label: "Winner color", type: "color",
+              tooltip: "Color of the winning outcome" },
+            { key: "font_size", label: "Size", type: "number",
+              tooltip: "Font size in pixels" },
+            { key: "color", label: "Color", type: "color",
+              tooltip: "Text color" },
+            { key: "font_family", label: "Font", type: "font",
+              tooltip: "Font family file or name" },
+            { key: "font_weight", label: "Bold", type: "bold",
+              tooltip: "Bold text" },
+            { key: "row_gap", label: "Row spacing (px)", type: "number",
+              tooltip: "Gap between outcomes" },
+            { key: "background_color", label: "Background", type: "color",
+              tooltip: "Fill behind the prediction" },
+            { key: "padding", label: "Padding (px)", type: "number", min: 0, max: 120,
+              tooltip: "Space between the panel edge and its contents" },
+            { key: "border_radius", label: "Corner radius (px)", type: "number", min: 0, max: 200,
+              tooltip: "Rounds the panel corners" },
+            { key: "border_width", label: "Border width (px)", type: "number", min: 0, max: 40,
+              tooltip: "Outline around the panel. 0 for none." },
+            { key: "border_color", label: "Border color", type: "color",
+              tooltip: "Color of the panel outline" },
+            { key: "panel_shadow", label: "Panel shadow", type: "checkbox",
+              tooltip: "Soft shadow under the panel" }
+        ],
         poll: [
             { key: "style", label: "Style", type: "select",
               tooltip: "Bars: name above a bar. Inside: thick bars with the labels inside. Cards: side-by-side tiles that fill from the bottom (best for 2-4 options).",
@@ -748,6 +859,7 @@
         qr: "QR code",
         stat_card: "Stat card",
         poll: "Poll",
+        prediction: "Prediction",
         text: "Text",
         timer: "Timer",
         video: "Video",
@@ -758,7 +870,7 @@
         { group: "Layout", types: ["container", "divider", "gradient", "shape"] },
         { group: "Media", types: ["audio", "embed", "image", "qr", "video"] },
         { group: "Text", types: ["text"] },
-        { group: "Widgets", types: ["confetti", "counter", "list", "poll", "progress_bar", "stat_card", "wheel"] }
+        { group: "Widgets", types: ["confetti", "counter", "list", "poll", "prediction", "progress_bar", "stat_card", "wheel"] }
     ];
     var stagePreviewIntervals = [];
 
@@ -2253,6 +2365,37 @@
                     bucket.page = ((bucket.page || 0) + 1) % bucket.pageCount;
                     paintPollPreview(pnode, el, bucket, true);
                 }, Math.max(1, Number((el.props || {}).rotator_seconds) || 5) * 1000));
+            } else if (el.type === "prediction") {
+                var dnode = document.querySelector(
+                    ".ss-element[data-spore-id=\"" + cssEscapeSs(el.id) + "\"]"
+                );
+                if (!dnode || !state.model) { return; }
+                var predTemplate = state.model.template_name;
+                var predBucket = pollPreviewBucket(el.id);
+                paintPredictionPreview(dnode, el, predBucket);
+                var applyPrediction = function (data) {
+                    if (!dnode.isConnected) { return; }
+                    predBucket.data = data || { status: "idle", outcomes: [] };
+                    if (data && data.server_now) {
+                        predBucket.skew = Number(data.server_now) - Date.now() / 1000;
+                    }
+                    var sig = JSON.stringify({ status: predBucket.data.status, outcomes: predBucket.data.outcomes });
+                    if (sig !== predBucket.signature) {
+                        predBucket.signature = sig;
+                        paintPredictionPreview(dnode, el, predBucket);
+                    }
+                };
+                var fetchPrediction = function () {
+                    fetch("/api/spore-studio/prediction-state/" + encodeURIComponent(predTemplate))
+                        .then(function (r) { return r.json(); })
+                        .then(applyPrediction)
+                        .catch(function () {});
+                };
+                fetchPrediction();
+                stagePreviewIntervals.push(setInterval(fetchPrediction, 1000));
+                stagePreviewIntervals.push(setInterval(function () {
+                    tickPredictionPreviewClock(dnode, predBucket);
+                }, 250));
             }
         });
     }
@@ -2576,6 +2719,7 @@
     var GRADIENT_COLOR_PROPS = {
         progress_bar: { track_color: true, fill_color: true },
         poll: { track_color: true },
+        prediction: { track_color: true },
         now_playing: { bar_color: true },
         list: { row_background: true },
         divider: { color: true }
@@ -4848,6 +4992,9 @@
         if (el.type === "poll") {
             paintPollPreview(node, el, pollPreviewBucket(el.id));
         }
+        if (el.type === "prediction") {
+            paintPredictionPreview(node, el, pollPreviewBucket(el.id));
+        }
     }
 
     /* A still scatter of pieces in the block's colors (bursts play in Preview and OBS). */
@@ -5150,6 +5297,161 @@
         }
     }
 
+    /* A sample shown on the canvas while no prediction runs for this template. */
+    var PREDICTION_PREVIEW_SAMPLE = {
+        status: "active", title: "Will they beat the boss?", total_points: 48200, total_users: 57,
+        outcomes: [
+            { id: "a", name: "Yes, first try", color: "blue", users: 34, points: 30100, percent: 62.4, ratio: 1.6,
+              top_predictors: [{ name: "Viewer1", points_used: 10000, points_won: null }] },
+            { id: "b", name: "No, it takes a few", color: "pink", users: 23, points: 18100, percent: 37.6, ratio: 2.66,
+              top_predictors: [{ name: "Viewer2", points_used: 5000, points_won: null }] }
+        ]
+    };
+
+    function predictionPreviewCompact(n) {
+        n = Number(n || 0);
+        if (Math.abs(n) >= 1e6) { return (Math.round(n / 1e5) / 10) + "M"; }
+        if (Math.abs(n) >= 1e4) { return (Math.round(n / 100) / 10) + "K"; }
+        return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+
+    function predictionPreviewRemaining(bucket) {
+        var data = bucket && bucket.data;
+        if (!data || data.status !== "active" || !data.locks_at) { return null; }
+        return Math.max(0, Number(data.locks_at) - (Date.now() / 1000 + (bucket.skew || 0)));
+    }
+
+    /* Mirrors the overlay runtime (sporePaintPrediction): same classes, so editor.css's
+       prediction rules (copied from behavior_blocks.WIDGET_CSS) give the same look. */
+    function paintPredictionPreview(node, el, bucket) {
+        var props = el.props || {};
+        bucket = bucket || pollPreviewBucket(el.id);
+        var live = bucket.data && bucket.data.status && bucket.data.status !== "idle" &&
+            Array.isArray(bucket.data.outcomes) && bucket.data.outcomes.length;
+        var data = live ? bucket.data : PREDICTION_PREVIEW_SAMPLE;
+        var status = String(data.status || "active");
+        var handle = node.querySelector(".ss-element__handle");
+        node.className = node.className.replace(/\b(spore-prediction|is-active|is-locked|is-resolved|is-canceled|is-dim-losers|has-shadow|is-animated|fx-\w+)\b/g, "").trim();
+        node.classList.add("spore-prediction", "is-" + status);
+        node.classList.toggle("is-dim-losers", pollPreviewOn(props.dim_losers, true));
+        node.classList.toggle("has-shadow", pollPreviewOn(props.panel_shadow, true));
+        var fx = props.winner_effect || "glow";
+        if (fx === "glow" || fx === "pulse") { node.classList.add("fx-" + fx); }
+        node.style.setProperty("--sp-track", props.track_color || "rgba(255,255,255,0.15)");
+        node.style.setProperty("--sp-win", props.winner_color || "#facc15");
+        node.style.setProperty("--sp-barh", (props.bar_height != null ? props.bar_height : 12) + "px");
+        node.style.setProperty("--sp-radius", (props.bar_radius != null ? props.bar_radius : 12) + "px");
+        node.style.display = "flex";
+        node.style.padding = props.padding != null && props.padding !== "" ? props.padding + "px" : "";
+        node.style.color = props.color || "#ffffff";
+        node.style.fontSize = (props.font_size || 20) + "px";
+        node.style.fontFamily = props.font_family || "Arial";
+        node.style.fontWeight = props.font_weight || "normal";
+        node.style.background = props.background_color || "rgba(15,23,42,0.85)";
+        node.style.borderRadius = (props.border_radius != null ? props.border_radius : 0) + "px";
+        node.style.border = Number(props.border_width) > 0 ? props.border_width + "px solid " + (props.border_color || "transparent") : "";
+        node.textContent = "";
+        if (handle) { node.appendChild(handle); }
+        var colors = [props.color_1 || "#387aff", props.color_2 || "#f5009b"].concat(
+            String(props.extra_colors || "").split(",").map(function (c) { return c.trim(); }).filter(Boolean));
+        if (colors.length < 3) { colors = colors.concat(["#22c55e", "#f59e0b", "#06b6d4", "#a855f7", "#ef4444", "#84cc16"]); }
+
+        var head = document.createElement("div");
+        head.className = "spore-pred-head";
+        var title = document.createElement("div");
+        title.className = "spore-pred-title";
+        title.textContent = props.title || data.title || "";
+        head.appendChild(title);
+        var chip = document.createElement("div");
+        chip.className = "spore-pred-chip";
+        var winnerName = "";
+        (data.outcomes || []).forEach(function (o) { if (o && (o.winner || o.id === data.winning_outcome_id)) { winnerName = o.name; } });
+        if (status === "active" && pollPreviewOn(props.show_timer, true)) {
+            var remain = predictionPreviewRemaining(bucket);
+            chip.textContent = live && remain != null ? pollPreviewClockText(remain) : "Live";
+            chip.classList.add("is-live");
+        } else if (status === "locked") {
+            chip.textContent = props.locked_text || "Predictions locked";
+        } else if (status === "resolved") {
+            chip.textContent = String(props.won_text || "{winner} won!").replace(/\{winner\}/g, winnerName);
+        } else if (status === "canceled") {
+            chip.textContent = props.refund_text || "Refunded";
+        }
+        chip.hidden = !chip.textContent;
+        head.appendChild(chip);
+        head.hidden = !title.textContent && chip.hidden;
+        node.appendChild(head);
+
+        var list = document.createElement("div");
+        list.className = "spore-pred-outcomes";
+        list.style.gap = (props.row_gap != null ? props.row_gap : 10) + "px";
+        (data.outcomes || []).forEach(function (o, i) {
+            var row = document.createElement("div");
+            row.className = "spore-pred-outcome" + (status === "resolved" && (o.winner || o.id === data.winning_outcome_id) ? " is-winner" : "");
+            var named = String(o.color || "").toLowerCase();
+            var c = i < 2 && (named === "blue" || named === "pink") ? (named === "blue" ? colors[0] : colors[1]) : colors[i % colors.length];
+            row.style.setProperty("--sp-pc", c);
+            var line = document.createElement("div");
+            line.className = "spore-pred-row";
+            var name = document.createElement("span");
+            name.className = "spore-pred-name";
+            name.textContent = o.name || "";
+            line.appendChild(name);
+            if (pollPreviewOn(props.show_percent, true)) {
+                var pct = document.createElement("span");
+                pct.className = "spore-pred-pct";
+                pct.textContent = Math.round(Number(o.percent || 0)) + "%";
+                line.appendChild(pct);
+            }
+            row.appendChild(line);
+            var track = document.createElement("div");
+            track.className = "spore-pred-bar";
+            var fill = document.createElement("div");
+            fill.className = "spore-pred-bar-fill";
+            fill.style.width = Math.max(0, Math.min(100, Number(o.percent || 0))) + "%";
+            track.appendChild(fill);
+            row.appendChild(track);
+            var bits = [];
+            if (pollPreviewOn(props.show_points, true)) { bits.push('<span class="spore-pred-stat is-points">' + predictionPreviewCompact(o.points) + "</span>"); }
+            if (pollPreviewOn(props.show_users, true)) { bits.push('<span class="spore-pred-stat is-users">' + predictionPreviewCompact(o.users) + "</span>"); }
+            if (pollPreviewOn(props.show_ratio, true)) { bits.push('<span class="spore-pred-stat is-ratio">1:' + (Number(o.ratio) > 0 ? Math.round(Number(o.ratio) * 100) / 100 : "–") + "</span>"); }
+            if (bits.length) {
+                var stats = document.createElement("div");
+                stats.className = "spore-pred-stats";
+                stats.innerHTML = bits.join("");
+                row.appendChild(stats);
+            }
+            var tp = Array.isArray(o.top_predictors) ? o.top_predictors[0] : null;
+            if (pollPreviewOn(props.show_top, false) && tp && tp.name) {
+                var top = document.createElement("div");
+                top.className = "spore-pred-top";
+                top.textContent = "Top: " + tp.name + " · " + predictionPreviewCompact(tp.points_used);
+                row.appendChild(top);
+            }
+            list.appendChild(row);
+        });
+        node.appendChild(list);
+        var totalText = pollPreviewOn(props.show_total, true)
+            ? predictionPreviewCompact(data.total_points) + " points · " + predictionPreviewCompact(data.total_users) + " predictors" : "";
+        if (props.foot_text || totalText) {
+            var foot = document.createElement("div");
+            foot.className = "spore-pred-foot";
+            foot.innerHTML = '<span class="spore-pred-foot-text"></span><span class="spore-pred-total"></span>';
+            foot.firstChild.textContent = props.foot_text || "";
+            foot.lastChild.textContent = totalText;
+            node.appendChild(foot);
+        }
+        node.title = live ? "Live prediction for this template." :
+            "Sample prediction. Start one in Chatbot → Predictions to see it live.";
+    }
+
+    function tickPredictionPreviewClock(node, bucket) {
+        var remain = predictionPreviewRemaining(bucket);
+        if (remain == null) { return; }
+        var chip = node && node.querySelector(".spore-pred-chip.is-live");
+        if (chip) { chip.textContent = pollPreviewClockText(remain); }
+    }
+
     function buildChoiceSelect(current, rows, onChange) {
         var sel = document.createElement("select");
         var found = false;
@@ -5375,7 +5677,7 @@
             disp.source.refresh_on = Array.isArray(d.refresh_on) ? d.refresh_on.slice() : [];
             return [normalizeFeed(disp)];
         }
-        if (type === "poll" || type === "now_playing") {
+        if (type === "poll" || type === "prediction" || type === "now_playing") {
             return [newFeedFor(el, {})];
         }
         return [];
@@ -6988,7 +7290,7 @@
                 node.appendChild(track);
             } else if (el.type === "list" || el.type === "wheel" || el.type === "now_playing" ||
                     el.type === "qr" || el.type === "embed" || el.type === "stat_card" || el.type === "confetti" ||
-                    el.type === "poll") {
+                    el.type === "poll" || el.type === "prediction") {
                 paintWidgetPreview(node, el);
             }
 
@@ -9641,7 +9943,7 @@
             }
             if (type === "wheel") { ensureWheelDefaults(el); }
             if (type === "stat_card") { ensureStatCardDefaults(el); }
-            if (type === "list" || type === "poll" || type === "now_playing" || type === "confetti") {
+            if (type === "list" || type === "poll" || type === "prediction" || type === "now_playing" || type === "confetti") {
                 el.data_feed = [newFeedFor(el, {})];
             } else if (type === "stat_card") {
                 el.data_feed = [newValueFeedFor(el, "set_value", el.stat_source, 1000)];

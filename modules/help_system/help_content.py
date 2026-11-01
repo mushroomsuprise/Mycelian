@@ -275,6 +275,14 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         keywords=['poll', 'polls', 'vote', 'votes', 'keyword', 'chatbot', 'banner', 'options', 'timer', 'overlay', 'startpoll'],
         related_topics=['chatbot_giveaways', 'chatbot_commands', 'spore_studio_widgets'],
     ),
+    'chatbot_predictions': HelpTopic(
+        id='chatbot_predictions',
+        title='Chatbot Predictions',
+        category=HelpCategory.CHATBOT,
+        summary='Twitch predictions with channel points, a live overlay and result announcements',
+        keywords=['prediction', 'predictions', 'bet', 'channel points', 'outcome', 'payout', 'refund', 'chatbot', 'overlay'],
+        related_topics=['chatbot_polls', 'chatbot_giveaways', 'spore_studio_widgets'],
+    ),
     'chatbot_variables': HelpTopic(
         id='chatbot_variables',
         title='Chatbot Variables',

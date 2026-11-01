@@ -74,6 +74,23 @@
         </div>
       </div>
       <div class="hm-cxe-pgroup">
+        <div class="hm-cxe-pgrouphead">{{brand:twitch}}Twitch</div>
+        <div class="hm-cxe-pgrid">
+          <div class="hm-cxe-popt"><b>Shoutout</b><span>Give a channel a Twitch shoutout</span></div>
+          <div class="hm-cxe-popt"><b>Start a raid</b><span>Raid another channel</span></div>
+          <div class="hm-cxe-popt"><b>Add stream marker</b><span>Mark this moment for highlights (you must be live)</span></div>
+          <div class="hm-cxe-popt"><b>Change stream title</b><span>Set a new stream title</span></div>
+          <div class="hm-cxe-popt"><b>Change category</b><span>Switch the stream category</span></div>
+          <div class="hm-cxe-popt"><b>Snooze next ad</b><span>Push the next scheduled ad back 5 minutes</span></div>
+          <div class="hm-cxe-popt"><b>Start a poll</b><span>Start an overlay's poll from Chatbot → Polls</span></div>
+          <div class="hm-cxe-popt"><b>End a poll</b><span>End an overlay's running poll</span></div>
+          <div class="hm-cxe-popt"><b>Start a prediction</b><span>Start an overlay's prediction from Chatbot → Predictions</span></div>
+          <div class="hm-cxe-popt"><b>Lock prediction bets</b><span>Stop taking bets on the running prediction</span></div>
+          <div class="hm-cxe-popt"><b>Pay out prediction</b><span>Pick the winning outcome of the running prediction</span></div>
+          <div class="hm-cxe-popt"><b>Cancel prediction</b><span>Cancel the running prediction and refund every bet</span></div>
+        </div>
+      </div>
+      <div class="hm-cxe-pgroup">
         <div class="hm-cxe-pgrouphead"><span class="hx-mi">notifications_active</span>Alerts &amp; overlays</div>
         <div class="hm-cxe-pgrid">
           <div class="hm-cxe-popt"><b>Play an alert</b><span>Play one of your Alerts tab alerts</span></div>
@@ -115,6 +132,7 @@
 <div class="hx-tabs">
   <div class="hx-tab-list">
     <button data-tab="chat" class="is-active">Chat &amp; social</button>
+    <button data-tab="twitch">Twitch</button>
     <button data-tab="overlay">Alerts &amp; overlays</button>
     <button data-tab="obs">OBS</button>
     <button data-tab="input">Input &amp; audio</button>
@@ -135,6 +153,25 @@
     </tbody>
     </table></div>
     <p>Greetings belong to the chatbot. See <a href="help:chatbot_greetings">Chatbot Greetings</a>.</p>
+  </div>
+
+  <div class="hx-tab-panel" data-panel="twitch">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Action</th><th>Settings</th><th>Notes</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Shoutout</strong></td><td><strong>Channel</strong> {{icon:data_object}} (<code>{username}</code>)</td><td>A Twitch shoutout. You must be live, and Twitch allows one every 2 minutes and one per channel each hour, so a shoutout it refuses shows as a failed action. Later actions can use <code>{action1.target_name}</code>, <code>{action1.target_url}</code>, <code>{action1.target_game}</code> and <code>{action1.target_title}</code> (with this action's number).</td></tr>
+    <tr><td><strong>Start a raid</strong></td><td><strong>Channel to raid</strong> {{icon:data_object}}</td><td>Starts the raid countdown on Twitch. Outputs <code>{actionN.target_name}</code> and <code>{actionN.target_url}</code>.</td></tr>
+    <tr><td><strong>Add stream marker</strong></td><td><strong>Description</strong> {{icon:data_object}}</td><td>Only while live. Outputs <code>{actionN.marker_time}</code>.</td></tr>
+    <tr><td><strong>Change stream title</strong></td><td><strong>New title</strong> {{icon:data_object}}</td><td>Up to 140 characters. Outputs <code>{actionN.new_title}</code>.</td></tr>
+    <tr><td><strong>Change category</strong></td><td><strong>Category</strong> {{icon:data_object}}</td><td>Uses the closest Twitch category match. Outputs <code>{actionN.new_game}</code>.</td></tr>
+    <tr><td><strong>Snooze next ad</strong></td><td>—</td><td>Pushes the next scheduled ad back 5 minutes. Outputs <code>{actionN.snooze_count}</code> (snoozes left).</td></tr>
+    <tr><td><strong>Start a poll</strong> / <strong>End a poll</strong></td><td><strong>Poll overlay</strong></td><td>Runs that overlay's poll as set up in <a href="help:chatbot_polls">Chatbot → Polls</a>. Ending a poll that isn't running is skipped, not reported.</td></tr>
+    <tr><td><strong>Start a prediction</strong></td><td><strong>Prediction overlay</strong></td><td>Starts that overlay's prediction as set up in <a href="help:chatbot_predictions">Chatbot → Predictions</a>.</td></tr>
+    <tr><td><strong>Lock prediction bets</strong> / <strong>Cancel prediction</strong></td><td>—</td><td>Act on the running prediction. Canceling refunds every bet.</td></tr>
+    <tr><td><strong>Pay out prediction</strong></td><td><strong>Winning outcome</strong> {{icon:data_object}}</td><td>The outcome's name, or its number (1 is the first outcome).</td></tr>
+    </tbody>
+    </table></div>
+    <p>These use your Twitch sign-in (Settings → Twitch). If one fails with <em>your Twitch sign-in doesn't allow this</em>, click <strong>Connect</strong> there to sign in again with the newest permissions.</p>
   </div>
 
   <div class="hx-tab-panel" data-panel="overlay">
@@ -249,7 +286,7 @@
 <tr><td><code>{amount:,}</code>, <code>{amount:.2f}</code></td><td>A formatted number: <code>1,234</code> or <code>12.50</code>.</td></tr>
 <tr><td><code>{message.word.2}</code></td><td>The 2nd word of the message.</td></tr>
 <tr><td><code>{message_after_conditions}</code>, <code>{message_after_word.1}</code>, <code>{message_after_from_word.2}</code></td><td>The message with the text matched by your Message conditions removed, its 1st word, or the rest from its 2nd word. See <a href="help:connector_conditions">Conditions</a>.</td></tr>
-<tr><td><code>{action1.item_name}</code>, <code>{action1.quantity}</code>…</td><td>Results of an earlier Game hook action. The <code>{ }</code> menu lists them under <em>Earlier actions</em>.</td></tr>
+<tr><td><code>{action1.item_name}</code>, <code>{action1.target_name}</code>…</td><td>Results of an earlier Game hook or Twitch action (shoutout, raid, marker, title, category, ad snooze). The <code>{ }</code> menu lists them under <em>Earlier actions</em>.</td></tr>
 </tbody>
 </table></div>
 

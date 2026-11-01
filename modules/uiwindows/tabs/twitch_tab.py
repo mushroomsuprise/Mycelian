@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple
 
-from nicegui import ui
-from ...notification_engine import notify, notify_progress
+from nicegui import run, ui
+from ... import twitch_goals
+from ...notification_engine import nav_spore_template, notify, notify_progress
 from ...ui_buttons import primary_button
 from ...ui_timer import layout_schedule
 from ... import dataobjects
@@ -430,6 +431,8 @@ class TwitchTab:
                     bool(self._app_settings_buffer.auto_raid_chat_shoutout),
                     lambda v: self._set_app_setting("auto_raid_chat_shoutout", v),
                 )
+            with section("flag", "Goals"):
+                self._build_goals_section()
             with section("menu_book", "Setup"):
                 self._steps = ui.html("", sanitize=False).classes("w-full")
         self._refresh_overview()
@@ -438,6 +441,62 @@ class TwitchTab:
             1.0, self._refresh_token_countdowns, active=True
         )
         self._refresh_status()
+
+    # ----- Twitch goals -----
+
+    def _build_goals_section(self) -> None:
+        """Active Creator Goals and one-click goal-bar overlays (Spore Studio) that follow them."""
+        self._goals_box = ui.element("div").classes("w-full flex flex-col gap-2")
+        with ui.element("div").classes("w-full flex items-center gap-2"):
+            types = {key: label for key, label in twitch_goals.GOAL_TYPES.items()}
+            self._goal_type = ui.select(types, value="follower").props("outlined dense options-dense").classes("grow").tooltip(
+                "The kind of Twitch goal the new overlay follows")
+            ui.button("Create overlay", icon="add_chart", on_click=lambda: self._create_goal_overlay(self._goal_type.value)).props(
+                "outline no-caps dense color=primary")
+            ui.button(icon="refresh", on_click=self._refresh_goals).props("flat round dense").tooltip("Check Twitch for goals")
+        hint("A goal overlay follows the goal of its type, so a new goal of that type shows up on it without changes. "
+             "Set goals up in your Twitch Creator Dashboard.")
+        self._render_goals()
+
+    def _render_goals(self, message: str = "") -> None:
+        box = getattr(self, "_goals_box", None)
+        if box is None or box.is_deleted:
+            return
+        box.clear()
+        goals = twitch_goals.active_goals()
+        scope = twitch_goals.scope_status()
+        with box:
+            if scope == "missing":
+                hint("Goal overlays need a permission your Twitch sign-in doesn't have yet. Click Connect on the main "
+                     "account to sign in again.", icon="lock", warn=True)
+            elif message:
+                hint(message, icon="warning", warn=True)
+            if not goals:
+                ui.label("No active goals on your channel." if scope == "ok" else "Goals show here once Twitch is connected.").classes(
+                    "text-sm opacity-70")
+            for goal in goals:
+                with ui.element("div").classes("w-full flex items-center gap-2"):
+                    ui.label(f"{goal['type_label']}: {goal['current_amount']:,} / {goal['target_amount']:,}").classes("font-semibold")
+                    if goal.get("description"):
+                        ui.label(goal["description"]).classes("text-sm opacity-70 grow truncate")
+                    else:
+                        ui.element("div").classes("grow")
+                    ui.button("Create overlay", icon="add_chart",
+                              on_click=lambda _e, g=goal: self._create_goal_overlay(g["type"], g.get("description") or "")).props(
+                        "flat no-caps dense color=primary")
+
+    async def _refresh_goals(self) -> None:
+        ok, message = await run.io_bound(twitch_goals.refresh_from_twitch)
+        self._render_goals("" if ok else message)
+
+    def _create_goal_overlay(self, goal_type: str, label: str = "") -> None:
+        ok, result = twitch_goals.create_goal_template(goal_type, label=label)
+        if ok:
+            notify(f"“{result}” follows your {twitch_goals.GOAL_TYPES.get(goal_type, 'Twitch')} goal. Add it to OBS from "
+                   "Settings → About, or change its look in Spore Studio.", type="success", source="twitch",
+                   title="Goal overlay created", actions=nav_spore_template(result))
+        else:
+            notify(result, type="warning", source="twitch", title="Couldn't create the goal overlay")
 
     # ----- helpers -----
     def _load_from_state(self) -> None:

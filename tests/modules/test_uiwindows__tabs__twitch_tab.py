@@ -731,3 +731,61 @@ def test_build_disconnected_without_creds(env, monkeypatch):
         assert env.state.saves == 1
 
     run_ui(build, check)
+
+
+# --------------------------------------------------------------------------- goals
+
+
+def test_goals_section_lists_goals_and_creates_overlays(env, monkeypatch):
+    from types import SimpleNamespace as NS
+
+    _patch_status(monkeypatch, _main_status(), {"status": "Connected", "is_valid": True, "user_name": "mybot"})
+    goal = {"id": "g1", "type": "follower", "type_label": "Followers", "description": "Road to 500",
+            "current_amount": 125, "target_amount": 500}
+    state = NS(goals=[goal], scope="ok", created=[], refresh=(True, ""), notes=[])
+    monkeypatch.setattr(tt.twitch_goals, "active_goals", lambda: list(state.goals))
+    monkeypatch.setattr(tt.twitch_goals, "scope_status", lambda: state.scope)
+    monkeypatch.setattr(tt.twitch_goals, "refresh_from_twitch", lambda: state.refresh)
+
+    def create(goal_type, label=""):
+        state.created.append((goal_type, label))
+        return (True, "twitch_goal_followers") if goal_type != "subscription" else (False, "nope")
+
+    monkeypatch.setattr(tt.twitch_goals, "create_goal_template", create)
+    monkeypatch.setattr(tt, "notify", lambda msg, **kw: state.notes.append((msg, kw)))
+
+    async def io_bound(fn, *a):
+        return fn(*a)
+
+    monkeypatch.setattr(tt, "run", NS(io_bound=io_bound))
+    holder = {}
+
+    def build():
+        holder["tab"] = tab = tt.TwitchTab()
+        tab.build(ui.column())
+
+    async def check(user):
+        await user.should_see("Followers: 125 / 500")
+        await user.should_see("Road to 500")
+        tab = holder["tab"]
+        tab._create_goal_overlay("follower", "Road to 500")
+        assert state.created[-1] == ("follower", "Road to 500")
+        assert state.notes[-1][1]["title"] == "Goal overlay created"
+        assert state.notes[-1][1]["actions"][0]["spore_template"] == "twitch_goal_followers"
+        tab._create_goal_overlay("subscription")
+        assert state.notes[-1] == ("nope", {"type": "warning", "source": "twitch", "title": "Couldn't create the goal overlay"})
+        state.goals = []
+        state.refresh = (False, "Couldn't read your Twitch goals: boom")
+        await tab._refresh_goals()
+        await user.should_see("Couldn't read your Twitch goals: boom")
+        await user.should_see("No active goals on your channel.")
+        state.scope = "missing"
+        tab._render_goals()
+        await user.should_see("Goal overlays need a permission")
+        state.scope = "offline"
+        tab._render_goals()
+        await user.should_see("Goals show here once Twitch is connected.")
+        tab._goals_box.delete()
+        tab._render_goals()  # deleted box: nothing to do
+
+    run_ui(build, check)

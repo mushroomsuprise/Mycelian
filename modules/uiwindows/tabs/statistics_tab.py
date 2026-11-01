@@ -69,6 +69,7 @@ LEADERBOARDS: Tuple[Tuple[str, str, Tuple[str, ...], str, str], ...] = (
     ("Longest watch streaks", "local_fire_department", ("watch_streak",), "max", "streams"),
     ("Raiders", "groups_2", ("raid",), "count", "raids"),
     ("Giveaway entries", "confirmation_number", ("giveaway_entry",), "count", "entries"),
+    ("Prediction winners", "insights", ("prediction_win",), "sum", "points won"),
     ("Bot command users", "terminal", ("chatbot_command",), "count", "uses"),
 )
 
@@ -1085,6 +1086,8 @@ class StatisticsTab:
         q = stats.get("quotes", {}) or {}
         gw = stats.get("giveaways", {}) or {}
         pl = stats.get("polls", {}) or {}
+        pr = stats.get("predictions", {}) or {}
+        pot = pr.get("biggest_pot") or {}
         ch = stats.get("chat", {}) or {}
         mv = pl.get("most_votes") or {}
         mw = pl.get("most_wins") or {}
@@ -1123,6 +1126,11 @@ class StatisticsTab:
             "polls.avg": f"{float(pl.get('average_votes_per_poll') or 0):.1f}",
             "polls.most_votes": f"{mv['name']} ({n(mv.get('count'))})" if mv.get("name") else "—",
             "polls.most_wins": f"{mw['name']} ({n(mw.get('count'))})" if mw.get("name") else "—",
+            "predictions.paid": n(pr.get("predictions_completed")),
+            "predictions.canceled": n(pr.get("predictions_canceled")),
+            "predictions.points": n(pr.get("total_points")),
+            "predictions.avg": f"{float(pr.get('average_predictors') or 0):.1f}",
+            "predictions.pot": f"{n(pot.get('points'))} · {pot.get('title') or 'untitled'}" if pot.get("points") else "—",
         }
 
     def _kv_grid(self, values: Dict[str, str], items: Sequence[Tuple[str, str]]) -> None:
@@ -1214,6 +1222,17 @@ class StatisticsTab:
                     ("polls.most_votes", "Most voted option"), ("polls.most_wins", "Most winning option"),
                 ))
 
+            with self._lifetime_card("Predictions", "insights", "Twitch predictions run from Mycelian or the dashboard"):
+                self._kv_grid(values, (
+                    ("predictions.paid", "Paid out"), ("predictions.canceled", "Refunded"),
+                    ("predictions.points", "Points bet"), ("predictions.avg", "Predictors per prediction"),
+                    ("predictions.pot", "Biggest pot"),
+                ))
+                winners = self._prediction_winners()
+                if winners:
+                    ui.label("Biggest winners").classes("mst-section-title mt-3 mb-1")
+                    self._ranked_list(winners, "points won")
+
         templates = stats.get("templates") or {}
         with_stats = {name: t.get("custom_stats") or {} for name, t in templates.items() if (t or {}).get("custom_stats")}
         if with_stats:
@@ -1227,6 +1246,18 @@ class StatisticsTab:
                                 self._lifetime_labels[f"tpl.{name}.{stat}"] = ui.label(
                                     f"{val:,}" if isinstance(val, (int, float)) else str(val)
                                 ).classes("mst-kv-value")
+
+    def _prediction_winners(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """All-time prediction winnings per viewer (from the event log)."""
+        try:
+            first = self.insights.first_event_ts()
+            if first is None:
+                return []
+            rng = preset_range("all", first_event_ts=first)
+            return self.insights.leaders(rng, ("prediction_win",), "sum", limit, exclude=self.hidden_viewers)
+        except Exception as e:
+            logger.debug("prediction winners unavailable: %s", e)
+            return []
 
     def _update_lifetime_labels(self) -> None:
         if not self._lifetime_labels:

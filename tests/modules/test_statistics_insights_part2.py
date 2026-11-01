@@ -77,7 +77,7 @@ def test_event_types_cover_every_recorded_event():
     expected = {
         "chat_message", "bit", "sub", "resub", "giftsub", "donation", "point_redeem", "follow", "raid",
         "watch_streak", "connector", "chatbot_command", "chatbot_event", "quote_redeem", "giveaway_entry",
-        "giveaway_win", "giveaway_draw_complete", "poll_complete", "poll_win",
+        "giveaway_win", "giveaway_draw_complete", "poll_complete", "poll_win", "prediction_complete", "prediction_win",
     }
     assert set(si.EVENT_TYPES) == expected
     assert all(k == v.key and v.label and v.icon for k, v in si.EVENT_TYPES.items())

@@ -74,6 +74,8 @@ STATS_VARIABLES = [
     _v("stats.giveaways.giveaways_completed", "Giveaways completed", "3", "Statistics"),
     _v("stats.polls.polls_completed", "Polls completed", "6", "Statistics"),
     _v("stats.polls.total_votes", "Poll votes", "180", "Statistics"),
+    _v("stats.predictions.predictions_completed", "Predictions paid out", "5", "Statistics"),
+    _v("stats.predictions.total_points", "Channel points bet on predictions", "240000", "Statistics"),
     _v("stats.chat.twitch_messages_received", "Twitch chat messages", "5400", "Statistics"),
     _v("stats.chat.total_messages", "Chat messages (all)", "6100", "Statistics"),
 ]
@@ -223,7 +225,7 @@ def command_variables(
 # Events
 # --------------------------------------------------------------------------
 
-_HYPE_WARNING = "Twitch may no longer send Hype Train events, so this might never fire."
+_HYPE_WARNING = "Twitch decides when a Hype Train starts, so this can go a long time without firing."
 _TIERS = {0: "Any tier", 1: "Tier 1", 2: "Tier 2", 3: "Tier 3"}
 _MATCH = {"exact": "Is exactly", "starts_with": "Starts with", "contains": "Contains"}
 

@@ -3105,6 +3105,329 @@
         sporePaintPoll(el, { status: 'idle', options: [] });
     }
 
+    /* Prediction widget: a Twitch prediction card. One row per outcome with a bar sized by
+       its share of the channel points, optional stats (points, predictors, share, payout
+       ratio, top predictor), a Live/countdown chip until it locks, then the result. */
+    var SPORE_PRED_PALETTE = ['#22c55e', '#f59e0b', '#06b6d4', '#a855f7', '#ef4444', '#84cc16', '#eab308', '#14b8a6'];
+
+    function sporePredChild(el, cls) {
+        return el.querySelector('.' + cls);
+    }
+
+    function sporePredCompact(n) {
+        n = Number(n || 0);
+        if (!isFinite(n)) { return '0'; }
+        var abs = Math.abs(n);
+        function trim(v) { return String(Math.round(v * 10) / 10).replace(/\.0$/, ''); }
+        if (abs >= 1e9) { return trim(n / 1e9) + 'B'; }
+        if (abs >= 1e6) { return trim(n / 1e6) + 'M'; }
+        if (abs >= 1e4) { return trim(n / 1e3) + 'K'; }
+        return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+
+    function sporePredConfig(el) {
+        var extra = String(sporeAttr(el, 'data-spore-pred-extra-colors', '') || '')
+            .split(',').map(function (c) { return c.trim(); }).filter(Boolean);
+        return {
+            title: sporeAttr(el, 'data-spore-pred-title', ''),
+            showTimer: sporeOn(el, 'data-spore-pred-timer', true),
+            showTimerBar: sporeOn(el, 'data-spore-pred-timer-bar', true),
+            showPoints: sporeOn(el, 'data-spore-pred-points', true),
+            showUsers: sporeOn(el, 'data-spore-pred-users', true),
+            showPercent: sporeOn(el, 'data-spore-pred-percent', true),
+            showRatio: sporeOn(el, 'data-spore-pred-ratio', true),
+            showTop: sporeOn(el, 'data-spore-pred-top', false),
+            showTotal: sporeOn(el, 'data-spore-pred-total', true),
+            footText: sporeAttr(el, 'data-spore-pred-foot-text', ''),
+            lockedText: sporeAttr(el, 'data-spore-pred-locked-text', 'Predictions locked'),
+            wonText: sporeAttr(el, 'data-spore-pred-won-text', '{winner} won!'),
+            refundText: sporeAttr(el, 'data-spore-pred-refund-text', 'Refunded'),
+            colors: [sporeAttr(el, 'data-spore-pred-color-1', '#387aff'), sporeAttr(el, 'data-spore-pred-color-2', '#f5009b')]
+                .concat(extra.length ? extra : SPORE_PRED_PALETTE),
+            track: sporeAttr(el, 'data-spore-pred-track', 'rgba(255,255,255,0.15)'),
+            winner: sporeAttr(el, 'data-spore-pred-winner', '#facc15'),
+            barHeight: parseFloat(sporeAttr(el, 'data-spore-pred-bar-height', '12')),
+            barRadius: parseFloat(sporeAttr(el, 'data-spore-pred-bar-radius', '12')),
+            gap: parseFloat(sporeAttr(el, 'data-spore-pred-gap', '10')),
+            winnerFx: String(sporeAttr(el, 'data-spore-pred-winner-fx', 'glow')).toLowerCase(),
+            dim: sporeOn(el, 'data-spore-pred-dim', true),
+            shadow: sporeOn(el, 'data-spore-pred-shadow', true),
+            animate: sporeOn(el, 'data-spore-pred-animate', true)
+        };
+    }
+
+    function sporePredColor(cfg, index, outcome) {
+        var name = String(outcome && outcome.color || '').toLowerCase();
+        if (index < 2 && (name === 'blue' || name === 'pink')) { return name === 'blue' ? cfg.colors[0] : cfg.colors[1]; }
+        return cfg.colors[index % cfg.colors.length] || cfg.colors[0];
+    }
+
+    function sporePredRemaining(el, data) {
+        if (!data || data.status !== 'active' || !data.locks_at) { return null; }
+        sporeNotePollClock(el, data);
+        var skew = el._sporePollSkew || 0;
+        return Math.max(0, Number(data.locks_at) - ((Date.now() / 1000) + skew));
+    }
+
+    function sporePredWinnerName(data) {
+        var outcomes = Array.isArray(data && data.outcomes) ? data.outcomes : [];
+        for (var i = 0; i < outcomes.length; i++) {
+            var o = outcomes[i] || {};
+            if (o.winner || (data.winning_outcome_id && String(o.id) === String(data.winning_outcome_id))) {
+                return String(o.name || '');
+            }
+        }
+        return '';
+    }
+
+    function sporeUpdatePredClock(el) {
+        var data = el._sporePredLast || {};
+        var cfg = el._sporePredCfg || sporePredConfig(el);
+        var chip = sporePredChild(el, 'spore-pred-chip');
+        var timer = sporePredChild(el, 'spore-pred-timer');
+        var remain = sporePredRemaining(el, data);
+        var status = String(data.status || 'idle');
+        if (chip) {
+            var text = '';
+            chip.classList.remove('is-live');
+            if (status === 'active' && cfg.showTimer) {
+                text = remain != null ? sporeFormatPollClock(remain) : 'Live';
+                chip.classList.add('is-live');
+            } else if (status === 'locked') {
+                text = cfg.lockedText;
+            } else if (status === 'resolved') {
+                text = String(cfg.wonText || '').replace(/\{winner\}/g, sporePredWinnerName(data));
+            } else if (status === 'canceled') {
+                text = cfg.refundText;
+            }
+            chip.hidden = !text;
+            if (chip.textContent !== text) { chip.textContent = text; }
+        }
+        var head = sporePredChild(el, 'spore-pred-head');
+        var title = sporePredChild(el, 'spore-pred-title');
+        if (head) { head.hidden = !(title && title.textContent) && !(chip && !chip.hidden); }
+        if (!timer) { return; }
+        var total = Number(el._sporePredWindow || 0);
+        if (status !== 'active' || remain == null || !cfg.showTimerBar || total <= 0) {
+            timer.hidden = true;
+            return;
+        }
+        timer.hidden = false;
+        var fill = timer.querySelector('.spore-pred-timer-fill');
+        if (fill) { fill.style.width = Math.max(0, Math.min(100, (remain / total) * 100)) + '%'; }
+    }
+
+    function sporeArmPredClock(el, data) {
+        var want = !!(data && data.status === 'active' && data.locks_at);
+        if (!want) {
+            if (el._sporePredClock) { clearInterval(el._sporePredClock); el._sporePredClock = null; }
+            return;
+        }
+        if (el._sporePredClock) { return; }
+        el._sporePredClock = setInterval(function () { sporeUpdatePredClock(el); }, 250);
+    }
+
+    function sporePredSetVisible(el, visible) {
+        if (visible) {
+            el.style.display = '';
+            if (el.getAttribute('data-spore-hidden') === 'true') {
+                el._sporePredStartHidden = true;
+                sporeFeedShow(el);
+            }
+            return;
+        }
+        if (el._sporePredStartHidden) {
+            if (el.getAttribute('data-spore-hidden') !== 'true') { sporeFeedHide(el); }
+        } else {
+            el.style.display = 'none';
+        }
+    }
+
+    function sporePredStatsHtml(cfg, outcome) {
+        var bits = [];
+        if (cfg.showPoints) { bits.push('<span class="spore-pred-stat is-points">' + sporePredCompact(outcome.points) + '</span>'); }
+        if (cfg.showUsers) { bits.push('<span class="spore-pred-stat is-users">' + sporePredCompact(outcome.users) + '</span>'); }
+        if (cfg.showRatio) {
+            var ratio = Number(outcome.ratio);
+            bits.push('<span class="spore-pred-stat is-ratio">1:' + (isFinite(ratio) && ratio > 0 ? (Math.round(ratio * 100) / 100) : '–') + '</span>');
+        }
+        return bits.join('');
+    }
+
+    function sporePredTopText(outcome) {
+        var top = Array.isArray(outcome.top_predictors) ? outcome.top_predictors[0] : null;
+        if (!top || !top.name) { return ''; }
+        var won = top.points_won != null && Number(top.points_won) > 0;
+        return 'Top: ' + String(top.name) + ' · ' + sporePredCompact(won ? top.points_won : top.points_used) + (won ? ' won' : '');
+    }
+
+    function sporePaintPrediction(el, data) {
+        if (!el) { return; }
+        data = data || {};
+        var status = String(data.status || 'idle');
+        var previous = el._sporePredLast || {};
+        el._sporePredLast = data;
+        if (status === 'active' && data.locks_at) {
+            /* Window length for the timer bar: from the first active payload of this prediction. */
+            if (previous.prediction_id !== data.prediction_id || !el._sporePredWindow) {
+                sporeNotePollClock(el, data);
+                var skewNow = (Date.now() / 1000) + (el._sporePollSkew || 0);
+                el._sporePredWindow = Math.max(1, Number(data.locks_at) - skewNow);
+            }
+        }
+        if (status === 'active' || status === 'locked') {
+            if (el._sporePredHide) { clearTimeout(el._sporePredHide); el._sporePredHide = null; el._sporePredHideAt = null; }
+        }
+        if (status === 'idle' || !Array.isArray(data.outcomes) || !data.outcomes.length) {
+            sporePredSetVisible(el, false);
+            sporeArmPredClock(el, null);
+            return;
+        }
+        var ended = status === 'resolved' || status === 'canceled';
+        var autohide = parseFloat(sporeAttr(el, 'data-spore-pred-autohide', '60'));
+        if (!isFinite(autohide) || autohide < 0) { autohide = 0; }
+        if (ended && autohide > 0) {
+            var endedAt = Number(data.ended_at || 0);
+            sporeNotePollClock(el, data);
+            var age = endedAt ? ((Date.now() / 1000) + (el._sporePollSkew || 0)) - endedAt : autohide;
+            if (age >= autohide) {
+                sporePredSetVisible(el, false);
+                sporeArmPredClock(el, null);
+                return;
+            }
+            sporePredSetVisible(el, true);
+            if (el._sporePredHideAt !== endedAt) {
+                if (el._sporePredHide) { clearTimeout(el._sporePredHide); }
+                el._sporePredHideAt = endedAt;
+                el._sporePredHide = setTimeout(function () { sporePredSetVisible(el, false); }, Math.max(0, (autohide - age) * 1000));
+            }
+        } else {
+            sporePredSetVisible(el, true);
+        }
+
+        var size = sporeAttr(el, 'data-spore-pred-font-size', '');
+        if (size) { el.style.fontSize = parseFloat(size) + 'px'; }
+        var color = sporeAttr(el, 'data-spore-pred-color', '');
+        if (color) { el.style.color = color; }
+        var weight = sporeAttr(el, 'data-spore-pred-weight', '');
+        if (weight) { el.style.fontWeight = weight; }
+        var bg = sporeAttr(el, 'data-spore-pred-bg', '');
+        if (bg) { el.style.background = bg; }
+
+        var cfg = sporePredConfig(el);
+        el._sporePredCfg = cfg;
+        var s = el.style;
+        s.setProperty('--sp-track', cfg.track);
+        s.setProperty('--sp-win', cfg.winner);
+        s.setProperty('--sp-barh', (isFinite(cfg.barHeight) && cfg.barHeight >= 0 ? cfg.barHeight : 12) + 'px');
+        s.setProperty('--sp-radius', (isFinite(cfg.barRadius) && cfg.barRadius >= 0 ? cfg.barRadius : 12) + 'px');
+        var cls = el.classList;
+        cls.toggle('is-animated', cfg.animate);
+        cls.toggle('is-dim-losers', cfg.dim);
+        cls.toggle('has-shadow', cfg.shadow);
+        cls.toggle('fx-glow', cfg.winnerFx === 'glow');
+        cls.toggle('fx-pulse', cfg.winnerFx === 'pulse');
+        ['active', 'locked', 'resolved', 'canceled'].forEach(function (name) { cls.toggle('is-' + name, status === name); });
+
+        var title = sporePredChild(el, 'spore-pred-title');
+        var titleText = cfg.title || String(data.title || '');
+        if (title && title.textContent !== titleText) { title.textContent = titleText; }
+
+        var host = sporePredChild(el, 'spore-pred-outcomes');
+        if (host) {
+            host.style.gap = (isFinite(cfg.gap) && cfg.gap >= 0 ? cfg.gap : 10) + 'px';
+            var outcomes = data.outcomes;
+            var key = outcomes.map(function (o) { return String(o && o.id); }).join('|');
+            if (host._sporePredKey !== key) {
+                host._sporePredKey = key;
+                host.innerHTML = outcomes.map(function () {
+                    return '<div class="spore-pred-outcome"><div class="spore-pred-row"><span class="spore-pred-name"></span>' +
+                        '<span class="spore-pred-pct"></span></div><div class="spore-pred-bar"><div class="spore-pred-bar-fill"></div></div>' +
+                        '<div class="spore-pred-stats"></div><div class="spore-pred-top"></div></div>';
+                }).join('');
+                if (cfg.animate) { void host.offsetWidth; }
+            }
+            var rows = host.querySelectorAll('.spore-pred-outcome');
+            outcomes.forEach(function (outcome, i) {
+                outcome = outcome || {};
+                var row = rows[i];
+                if (!row) { return; }
+                var winner = !!(outcome.winner || (data.winning_outcome_id && String(outcome.id) === String(data.winning_outcome_id)));
+                row.classList.toggle('is-winner', status === 'resolved' && winner);
+                row.style.setProperty('--sp-pc', sporePredColor(cfg, i, outcome));
+                var name = row.querySelector('.spore-pred-name');
+                if (name && name.textContent !== String(outcome.name || '')) { name.textContent = String(outcome.name || ''); }
+                var pct = row.querySelector('.spore-pred-pct');
+                var percent = Math.max(0, Math.min(100, Number(outcome.percent || 0)));
+                if (pct) {
+                    pct.hidden = !cfg.showPercent;
+                    pct.textContent = Math.round(percent) + '%';
+                }
+                var fill = row.querySelector('.spore-pred-bar-fill');
+                if (fill) { fill.style.width = percent + '%'; }
+                var stats = row.querySelector('.spore-pred-stats');
+                if (stats) {
+                    var html = sporePredStatsHtml(cfg, outcome);
+                    stats.hidden = !html;
+                    if (stats._sporeHtml !== html) { stats._sporeHtml = html; stats.innerHTML = html; }
+                }
+                var top = row.querySelector('.spore-pred-top');
+                if (top) {
+                    var topText = cfg.showTop ? sporePredTopText(outcome) : '';
+                    top.hidden = !topText;
+                    top.textContent = topText;
+                }
+            });
+        }
+
+        var foot = sporePredChild(el, 'spore-pred-foot');
+        if (foot) {
+            var note = sporePredChild(el, 'spore-pred-foot-text');
+            var right = sporePredChild(el, 'spore-pred-total');
+            var totalText = cfg.showTotal
+                ? sporePredCompact(data.total_points) + ' points · ' + sporePredCompact(data.total_users) +
+                  (Number(data.total_users) === 1 ? ' predictor' : ' predictors')
+                : '';
+            if (note) { note.textContent = cfg.footText; }
+            if (right) { right.textContent = totalText; }
+            foot.hidden = !cfg.footText && !totalText;
+        }
+        sporeUpdatePredClock(el);
+        sporeArmPredClock(el, data);
+    }
+
+    /* feedDriven: a Data feed repaints the widget, so only replay state on load and
+       announce the result here (the feed handles prediction_state / prediction_ended). */
+    function sporeBindPrediction(el, feedDriven) {
+        if (!el || el.getAttribute('data-spore-pred-bound') === '1') { return; }
+        el.setAttribute('data-spore-pred-bound', '1');
+        function onPayload(payload) {
+            payload = payload || {};
+            if (!sporePollIsMine(payload)) { return; }
+            sporePaintPrediction(el, payload);
+        }
+        if (typeof socket !== 'undefined' && socket && socket.on) {
+            if (!feedDriven) { socket.on('prediction_state', onPayload); }
+            socket.on('prediction_ended', function (payload) {
+                if (!feedDriven) { onPayload(payload); }
+                payload = payload || {};
+                if (!sporePollIsMine(payload)) { return; }
+                sporeEmitOutput('prediction_result', el.id, {
+                    winner: sporePredWinnerName(payload) || null,
+                    status: payload.status || '',
+                    total_points: payload.total_points || 0,
+                    outcomes: payload.outcomes || []
+                });
+            });
+            socket.on('prediction_sync', onPayload);
+            if (!window.__sporePredictionRequested && socket.emit) {
+                window.__sporePredictionRequested = true;
+                socket.emit('prediction_request_state', { template: sporePollTemplateName() });
+            }
+        }
+        sporePaintPrediction(el, { status: 'idle', outcomes: [] });
+    }
+
     /* Confetti block: a canvas the size of the block. Each burst adds pieces over the
        block's duration; several bursts can overlap. Draws with requestAnimationFrame when
        the browser runs it, otherwise with a timer. */
@@ -3299,6 +3622,10 @@
         var polls = document.querySelectorAll('[data-spore-type="poll"]');
         for (var pollIndex = 0; pollIndex < polls.length; pollIndex++) {
             sporeBindPoll(polls[pollIndex], sporeFeedDrives(polls[pollIndex].id, 'repaint'));
+        }
+        var predictions = document.querySelectorAll('[data-spore-type="prediction"]');
+        for (var predIndex = 0; predIndex < predictions.length; predIndex++) {
+            sporeBindPrediction(predictions[predIndex], sporeFeedDrives(predictions[predIndex].id, 'repaint'));
         }
         var embeds = document.querySelectorAll('[data-spore-type="embed"]');
         for (var e = 0; e < embeds.length; e++) { sporePaintEmbed(embeds[e]); }
@@ -3766,6 +4093,10 @@
                 if (raw && raw.template && sporePollTemplateName() && !sporePollIsMine(raw)) { return; }
                 sporePaintPoll(el, raw || {});
             }
+            else if (type === 'prediction') {
+                if (raw && raw.template && sporePollTemplateName() && !sporePollIsMine(raw)) { return; }
+                sporePaintPrediction(el, raw || {});
+            }
             else if (type === 'now_playing') { sporePaintNowPlaying(el, raw || {}); }
         },
         show: function (feed, el) { sporeFeedShow(el); },
@@ -3939,7 +4270,11 @@
 
     /* Feeds only hear events as they happen. For sources that can replay their current
        state, ask once on load (and after a reconnect) so a refreshed overlay is not blank. */
-    var SPORE_STATE_REQUESTS = { giveaway_: 'giveaway_request_state' };
+    var SPORE_STATE_REQUESTS = {
+        giveaway_: 'giveaway_request_state',
+        steam_: 'get_steam_data',
+        twitch_goal_: 'twitch_goal_request_state'
+    };
 
     function sporeRequestFeedState(feeds) {
         if (typeof socket === 'undefined' || !socket || !socket.emit) { return; }

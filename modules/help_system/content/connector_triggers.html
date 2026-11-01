@@ -85,7 +85,7 @@
       <span class="hm-btn hm-outline hm-dense"><span class="hx-mi">swap_horiz</span>Change</span>
       <span class="hm-marker" data-n="2"></span>
     </div>
-    <div class="hm-cxe-warn"><span class="hx-mi">warning_amber</span><span>Twitch may no longer send Hype Train events, so this might never fire.</span></div>
+    <div class="hm-cxe-warn"><span class="hx-mi">warning_amber</span><span>Hype Train events need a Twitch sign-in with the Hype Train permission, and Twitch decides when a train starts, so this can go a long time without firing.</span></div>
   </div>
   <figcaption><span>A picked trigger, with its warning line.</span></figcaption>
 </figure>
@@ -126,14 +126,26 @@
     <tr><td><strong>Chat message</strong></td><td>Username, Message, Is a moderator, Is a command, Command word, User ID</td><td><code>{username}</code> <code>{message}</code> <code>{command}</code> (word after <code>!</code>) <code>{is_command}</code> <code>{is_moderator}</code> <code>{badges}</code> <code>{emotes}</code> <code>{user_id}</code></td></tr>
     <tr><td><strong>Hype Train started</strong></td><td>Level, Points so far, Points for next level</td><td><code>{level}</code> <code>{total}</code> <code>{goal}</code> <code>{started_at}</code> <code>{expires_at}</code></td></tr>
     <tr><td><strong>Hype Train ended</strong></td><td>Level reached, Total points</td><td><code>{level}</code> <code>{total}</code> <code>{started_at}</code> <code>{ended_at}</code> <code>{cooldown_ends_at}</code></td></tr>
+    <tr><td><strong>Hype Train progress</strong></td><td>Level, Points toward this level, Points needed for this level, Total points so far, Train type, Shared train, Record level</td><td><code>{level}</code> <code>{progress}</code> <code>{goal}</code> <code>{total}</code> <code>{type}</code> <code>{is_shared_train}</code> <code>{all_time_high_level}</code></td></tr>
     <tr><td><strong>Stream went live</strong></td><td>Stream type</td><td><code>{stream_id}</code> <code>{stream_type}</code> <code>{started_at}</code></td></tr>
     <tr><td><strong>Stream ended</strong></td><td>—</td><td>—</td></tr>
+    <tr><td><strong>Poll started</strong></td><td>Question, Choices</td><td><code>{title}</code> <code>{choices}</code> <code>{total_votes}</code> <code>{poll_id}</code></td></tr>
+    <tr><td><strong>Poll ended</strong></td><td>Question, Winning choice, Votes for the winner, Total votes, How it ended</td><td><code>{title}</code> <code>{winner}</code> <code>{winner_votes}</code> <code>{total_votes}</code> <code>{choices}</code> <code>{status}</code> <code>{poll_id}</code></td></tr>
+    <tr><td><strong>Prediction started</strong></td><td>Question, Outcomes, Overlay</td><td><code>{title}</code> <code>{outcomes}</code> <code>{template}</code> <code>{prediction_id}</code></td></tr>
+    <tr><td><strong>Prediction locked</strong></td><td>Question, Points bet, Viewers who bet, Overlay</td><td><code>{title}</code> <code>{outcomes}</code> <code>{points}</code> <code>{users}</code> <code>{template}</code> <code>{prediction_id}</code></td></tr>
+    <tr><td><strong>Prediction ended</strong></td><td>Question, Winning outcome, How it ended, Points bet, Viewers who bet, Overlay</td><td><code>{title}</code> <code>{winner}</code> (empty when canceled) <code>{status}</code> (resolved or canceled) <code>{points}</code> <code>{users}</code> <code>{outcomes}</code> <code>{template}</code> <code>{prediction_id}</code></td></tr>
+    <tr><td><strong>Ad break started</strong></td><td>Ad length (seconds), Started automatically</td><td><code>{duration_seconds}</code> <code>{is_automatic}</code> <code>{requester}</code></td></tr>
+    <tr><td><strong>Title or category changed</strong></td><td>Stream title, Category, Previous category, Category changed, Stream language</td><td><code>{title}</code> <code>{category}</code> <code>{previous_category}</code> <code>{category_changed}</code> <code>{language}</code></td></tr>
+    <tr><td><strong>Shoutout received</strong></td><td>Channel that shouted you out, Their viewers</td><td><code>{username}</code> <code>{user_login}</code> <code>{viewer_count}</code></td></tr>
     </tbody>
     </table></div>
     <ul>
       <li>Sub tiers are <code>1</code>, <code>2</code> or <code>3</code>; Prime subs count as tier 1. A condition for Tier 3 is <em>Tier (1-3) is 3</em>.</li>
       <li><strong>Is a moderator</strong> is true for moderators and for you, the broadcaster.</li>
-      <li>The two Hype Train triggers show <em>May not fire</em> in the list: Twitch may no longer send these events.</li>
+      <li><strong>Hype Train started</strong> and <strong>ended</strong> show <em>May not fire</em> in the list: Twitch decides when a train starts, so they can go a long time without firing.</li>
+      <li><strong>Hype Train progress</strong> shows <em>Fires often</em>: it runs on every contribution. Add a condition such as <em>Level is 3</em>, or a cooldown, so it doesn't repeat.</li>
+      <li><strong>Poll</strong> triggers fire for Twitch polls, including chatbot polls with <em>Also run it on Twitch</em> on. <strong>Prediction</strong> triggers fire for every prediction, whether started from <a href="help:chatbot_predictions">Chatbot → Predictions</a>, a connector or the Twitch dashboard.</li>
+      <li><strong>Ad break started</strong> needs a Twitch sign-in with the ads permission; sign in again in Settings → Twitch if it never fires.</li>
     </ul>
   </div>
 

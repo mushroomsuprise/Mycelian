@@ -858,6 +858,49 @@
      ]
     }
    ],
+   "prediction": [
+    {
+     "default_enabled": true,
+     "description": "The winning outcome when the prediction is resolved (no winner when it is refunded).",
+     "event": "prediction_result",
+     "id": "result",
+     "label": "result",
+     "match_key": "elementId",
+     "only_when": "",
+     "payload": [
+      {
+       "key": "template",
+       "label": "Template name",
+       "type": "string"
+      },
+      {
+       "key": "elementId",
+       "label": "Block id",
+       "type": "string"
+      },
+      {
+       "key": "winner",
+       "label": "Winning outcome",
+       "type": "string"
+      },
+      {
+       "key": "status",
+       "label": "Status (resolved or canceled)",
+       "type": "string"
+      },
+      {
+       "key": "total_points",
+       "label": "Total points",
+       "type": "number"
+      },
+      {
+       "key": "outcomes",
+       "label": "Outcomes",
+       "type": "array"
+      }
+     ]
+    }
+   ],
    "progress_bar": [
     {
      "default_enabled": true,
@@ -1690,6 +1733,58 @@
      "delay_ms": 0
     }
    },
+   "prediction": {
+    "enabled": true,
+    "filters": {
+     "alert_type": "any",
+     "cooldown_ms": 0,
+     "dedupe_ms": 0,
+     "match": "all",
+     "max_per_minute": 0,
+     "rules": [],
+     "skip_first": 0,
+     "tier": "any",
+     "users_allow": "",
+     "users_block": ""
+    },
+    "id": "feed1",
+    "label": "",
+    "mapping": {
+     "decimals": "",
+     "fallback": "",
+     "prefix": "",
+     "split_field": "",
+     "suffix": "",
+     "template": "",
+     "text_field": "",
+     "value_field": ""
+    },
+    "source": {
+     "events": [
+      "prediction_state",
+      "prediction_ended"
+     ],
+     "kind": "event",
+     "refresh_ms": 0,
+     "refresh_on": [],
+     "template_output": {
+      "event": "",
+      "match": {},
+      "template": ""
+     },
+     "value": {
+      "kind": "data_source",
+      "source": ""
+     }
+    },
+    "target": {
+     "id": "repaint",
+     "options": {}
+    },
+    "timing": {
+     "delay_ms": 0
+    }
+   },
    "progress_bar": {
     "enabled": true,
     "filters": {
@@ -2117,6 +2212,10 @@
    "poll": [
     "poll_state",
     "poll_ended"
+   ],
+   "prediction": [
+    "prediction_state",
+    "prediction_ended"
    ]
   },
   "default_targets": {
@@ -2130,6 +2229,7 @@
    "marquee": "set_text",
    "now_playing": "repaint",
    "poll": "repaint",
+   "prediction": "repaint",
    "progress_bar": "set_value",
    "qr": "set_qr_text",
    "stat_card": "set_value",
@@ -2674,6 +2774,379 @@
    },
    {
     "alert_system": "either",
+    "description": "Fired when a Twitch prediction starts, gets channel points, locks or ends. Outcomes keep Twitch's order (blue first).",
+    "event": "prediction_state",
+    "label": "Prediction update",
+    "payload": [
+     {
+      "key": "template",
+      "label": "Template",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "idle",
+       "active",
+       "locked",
+       "resolved",
+       "canceled"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "title",
+      "label": "Question",
+      "type": "string"
+     },
+     {
+      "key": "outcomes",
+      "label": "Outcomes",
+      "type": "array"
+     },
+     {
+      "key": "total_points",
+      "label": "Total points",
+      "type": "number"
+     },
+     {
+      "key": "total_users",
+      "label": "Total predictors",
+      "type": "number"
+     },
+     {
+      "key": "remaining_seconds",
+      "label": "Seconds until it locks",
+      "type": "number"
+     },
+     {
+      "key": "winning_outcome_id",
+      "label": "Winning outcome id",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired when a Twitch prediction is resolved (status resolved, with a winner) or refunded (status canceled).",
+    "event": "prediction_ended",
+    "label": "Prediction ended",
+    "payload": [
+     {
+      "key": "template",
+      "label": "Template",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "resolved",
+       "canceled"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "title",
+      "label": "Question",
+      "type": "string"
+     },
+     {
+      "key": "outcomes",
+      "label": "Outcomes",
+      "type": "array"
+     },
+     {
+      "key": "total_points",
+      "label": "Total points",
+      "type": "number"
+     },
+     {
+      "key": "winning_outcome_id",
+      "label": "Winning outcome id",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired when a Creator Goal starts on your Twitch channel.",
+    "event": "twitch_goal_begin",
+    "label": "Twitch goal started",
+    "payload": [
+     {
+      "key": "id",
+      "label": "Goal id",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "follower",
+       "subscription",
+       "subscription_count",
+       "new_subscription",
+       "new_subscription_count"
+      ],
+      "key": "type",
+      "label": "Goal type",
+      "type": "string"
+     },
+     {
+      "key": "description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "current_amount",
+      "label": "Current amount",
+      "type": "number"
+     },
+     {
+      "key": "target_amount",
+      "label": "Target amount",
+      "type": "number"
+     },
+     {
+      "key": "percent",
+      "label": "Percent of target",
+      "type": "number"
+     },
+     {
+      "key": "is_achieved",
+      "label": "Achieved",
+      "type": "boolean"
+     },
+     {
+      "examples": [
+       "active",
+       "ended"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "started_at",
+      "label": "Started (unix time)",
+      "type": "number"
+     },
+     {
+      "key": "ended_at",
+      "label": "Ended (unix time)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired when a Twitch Creator Goal's current amount changes.",
+    "event": "twitch_goal_progress",
+    "label": "Twitch goal progress",
+    "payload": [
+     {
+      "key": "id",
+      "label": "Goal id",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "follower",
+       "subscription",
+       "subscription_count",
+       "new_subscription",
+       "new_subscription_count"
+      ],
+      "key": "type",
+      "label": "Goal type",
+      "type": "string"
+     },
+     {
+      "key": "description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "current_amount",
+      "label": "Current amount",
+      "type": "number"
+     },
+     {
+      "key": "target_amount",
+      "label": "Target amount",
+      "type": "number"
+     },
+     {
+      "key": "percent",
+      "label": "Percent of target",
+      "type": "number"
+     },
+     {
+      "key": "is_achieved",
+      "label": "Achieved",
+      "type": "boolean"
+     },
+     {
+      "examples": [
+       "active",
+       "ended"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "started_at",
+      "label": "Started (unix time)",
+      "type": "number"
+     },
+     {
+      "key": "ended_at",
+      "label": "Ended (unix time)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired when a Twitch Creator Goal ends (achieved or not).",
+    "event": "twitch_goal_end",
+    "label": "Twitch goal ended",
+    "payload": [
+     {
+      "key": "id",
+      "label": "Goal id",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "follower",
+       "subscription",
+       "subscription_count",
+       "new_subscription",
+       "new_subscription_count"
+      ],
+      "key": "type",
+      "label": "Goal type",
+      "type": "string"
+     },
+     {
+      "key": "description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "current_amount",
+      "label": "Current amount",
+      "type": "number"
+     },
+     {
+      "key": "target_amount",
+      "label": "Target amount",
+      "type": "number"
+     },
+     {
+      "key": "percent",
+      "label": "Percent of target",
+      "type": "number"
+     },
+     {
+      "key": "is_achieved",
+      "label": "Achieved",
+      "type": "boolean"
+     },
+     {
+      "examples": [
+       "active",
+       "ended"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "started_at",
+      "label": "Started (unix time)",
+      "type": "number"
+     },
+     {
+      "key": "ended_at",
+      "label": "Ended (unix time)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Sent to an overlay that asks for the current goals: one per active Twitch Creator Goal.",
+    "event": "twitch_goal_sync",
+    "label": "Twitch goal (current state)",
+    "payload": [
+     {
+      "key": "id",
+      "label": "Goal id",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "follower",
+       "subscription",
+       "subscription_count",
+       "new_subscription",
+       "new_subscription_count"
+      ],
+      "key": "type",
+      "label": "Goal type",
+      "type": "string"
+     },
+     {
+      "key": "description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "current_amount",
+      "label": "Current amount",
+      "type": "number"
+     },
+     {
+      "key": "target_amount",
+      "label": "Target amount",
+      "type": "number"
+     },
+     {
+      "key": "percent",
+      "label": "Percent of target",
+      "type": "number"
+     },
+     {
+      "key": "is_achieved",
+      "label": "Achieved",
+      "type": "boolean"
+     },
+     {
+      "examples": [
+       "active",
+       "ended"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "started_at",
+      "label": "Started (unix time)",
+      "type": "number"
+     },
+     {
+      "key": "ended_at",
+      "label": "Ended (unix time)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
     "description": "Fired when the Spotify track or playback position changes.",
     "event": "spotify_data_update",
     "label": "Now playing (Spotify)",
@@ -3052,6 +3525,48 @@
     ],
     "templates": [
      "poll"
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "The winning outcome when the prediction is resolved (no winner when it is refunded).",
+    "event": "prediction_result",
+    "label": "prediction1 result (predictions)",
+    "origin": "template",
+    "payload": [
+     {
+      "key": "template",
+      "label": "Template name",
+      "type": "string"
+     },
+     {
+      "key": "elementId",
+      "label": "Block id",
+      "type": "string"
+     },
+     {
+      "key": "winner",
+      "label": "Winning outcome",
+      "type": "string"
+     },
+     {
+      "key": "status",
+      "label": "Status (resolved or canceled)",
+      "type": "string"
+     },
+     {
+      "key": "total_points",
+      "label": "Total points",
+      "type": "number"
+     },
+     {
+      "key": "outcomes",
+      "label": "Outcomes",
+      "type": "array"
+     }
+    ],
+    "templates": [
+     "predictions"
     ]
    },
    {
@@ -5126,6 +5641,106 @@
      ]
     }
    ],
+   "prediction": [
+    {
+     "accepts": "item",
+     "description": "Repaints the prediction from a prediction-shaped payload.",
+     "id": "repaint",
+     "label": "Paint from the data",
+     "options": []
+    },
+    {
+     "accepts": "trigger",
+     "description": "",
+     "id": "show",
+     "label": "Show this block",
+     "options": []
+    },
+    {
+     "accepts": "trigger",
+     "description": "",
+     "id": "hide",
+     "label": "Hide this block",
+     "options": []
+    },
+    {
+     "accepts": "trigger",
+     "description": "",
+     "id": "toggle",
+     "label": "Toggle visibility",
+     "options": []
+    },
+    {
+     "accepts": "trigger",
+     "description": "Shows the block, then hides it again.",
+     "id": "show_for",
+     "label": "Show for a few seconds",
+     "options": [
+      {
+       "default": 5,
+       "key": "seconds",
+       "label": "Seconds",
+       "max": 600,
+       "min": 0.1,
+       "tooltip": "",
+       "type": "number"
+      }
+     ]
+    },
+    {
+     "accepts": "trigger",
+     "description": "Adds a class briefly. Try sporeShake or sporePop.",
+     "id": "flash_class",
+     "label": "Play a CSS animation class",
+     "options": [
+      {
+       "default": "sporePop",
+       "key": "class_name",
+       "label": "Class name",
+       "tooltip": "",
+       "type": "text"
+      },
+      {
+       "default": 420,
+       "key": "duration_ms",
+       "label": "Hold (ms)",
+       "max": 60000,
+       "min": 0,
+       "tooltip": "",
+       "type": "number"
+      }
+     ]
+    },
+    {
+     "accepts": "item",
+     "description": "Applies the mapped value (or a fixed value) to one style property.",
+     "id": "set_style",
+     "label": "Change a style property",
+     "options": [
+      {
+       "default": "background_color",
+       "key": "property",
+       "label": "Property",
+       "options": [
+        "background_color",
+        "color",
+        "border_color",
+        "opacity",
+        "font_size"
+       ],
+       "tooltip": "",
+       "type": "select"
+      },
+      {
+       "default": "",
+       "key": "fixed",
+       "label": "Fixed value",
+       "tooltip": "Leave blank to use the mapped value.",
+       "type": "text"
+      }
+     ]
+    }
+   ],
    "progress_bar": [
     {
      "accepts": "item",
@@ -6051,6 +6666,53 @@
      }
     ],
     "template": "poll"
+   },
+   {
+    "description": "The winning outcome when the prediction is resolved (no winner when it is refunded).",
+    "element_id": "prediction1",
+    "element_type": "prediction",
+    "event": "prediction_result",
+    "generated": true,
+    "id": "predictions:prediction1_result",
+    "label": "prediction1 result",
+    "match": {
+     "elementId": "prediction1"
+    },
+    "origin": "declared",
+    "output_id": "prediction1_result",
+    "payload": [
+     {
+      "key": "template",
+      "label": "Template name",
+      "type": "string"
+     },
+     {
+      "key": "elementId",
+      "label": "Block id",
+      "type": "string"
+     },
+     {
+      "key": "winner",
+      "label": "Winning outcome",
+      "type": "string"
+     },
+     {
+      "key": "status",
+      "label": "Status (resolved or canceled)",
+      "type": "string"
+     },
+     {
+      "key": "total_points",
+      "label": "Total points",
+      "type": "number"
+     },
+     {
+      "key": "outcomes",
+      "label": "Outcomes",
+      "type": "array"
+     }
+    ],
+    "template": "predictions"
    },
    {
     "description": "The option the roulette wheel landed on.",
@@ -7543,6 +8205,379 @@
    },
    {
     "alert_system": "either",
+    "description": "Fired when a Twitch prediction starts, gets channel points, locks or ends. Outcomes keep Twitch's order (blue first).",
+    "event": "prediction_state",
+    "label": "Prediction update",
+    "payload": [
+     {
+      "key": "template",
+      "label": "Template",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "idle",
+       "active",
+       "locked",
+       "resolved",
+       "canceled"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "title",
+      "label": "Question",
+      "type": "string"
+     },
+     {
+      "key": "outcomes",
+      "label": "Outcomes",
+      "type": "array"
+     },
+     {
+      "key": "total_points",
+      "label": "Total points",
+      "type": "number"
+     },
+     {
+      "key": "total_users",
+      "label": "Total predictors",
+      "type": "number"
+     },
+     {
+      "key": "remaining_seconds",
+      "label": "Seconds until it locks",
+      "type": "number"
+     },
+     {
+      "key": "winning_outcome_id",
+      "label": "Winning outcome id",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired when a Twitch prediction is resolved (status resolved, with a winner) or refunded (status canceled).",
+    "event": "prediction_ended",
+    "label": "Prediction ended",
+    "payload": [
+     {
+      "key": "template",
+      "label": "Template",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "resolved",
+       "canceled"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "title",
+      "label": "Question",
+      "type": "string"
+     },
+     {
+      "key": "outcomes",
+      "label": "Outcomes",
+      "type": "array"
+     },
+     {
+      "key": "total_points",
+      "label": "Total points",
+      "type": "number"
+     },
+     {
+      "key": "winning_outcome_id",
+      "label": "Winning outcome id",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired when a Creator Goal starts on your Twitch channel.",
+    "event": "twitch_goal_begin",
+    "label": "Twitch goal started",
+    "payload": [
+     {
+      "key": "id",
+      "label": "Goal id",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "follower",
+       "subscription",
+       "subscription_count",
+       "new_subscription",
+       "new_subscription_count"
+      ],
+      "key": "type",
+      "label": "Goal type",
+      "type": "string"
+     },
+     {
+      "key": "description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "current_amount",
+      "label": "Current amount",
+      "type": "number"
+     },
+     {
+      "key": "target_amount",
+      "label": "Target amount",
+      "type": "number"
+     },
+     {
+      "key": "percent",
+      "label": "Percent of target",
+      "type": "number"
+     },
+     {
+      "key": "is_achieved",
+      "label": "Achieved",
+      "type": "boolean"
+     },
+     {
+      "examples": [
+       "active",
+       "ended"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "started_at",
+      "label": "Started (unix time)",
+      "type": "number"
+     },
+     {
+      "key": "ended_at",
+      "label": "Ended (unix time)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired when a Twitch Creator Goal's current amount changes.",
+    "event": "twitch_goal_progress",
+    "label": "Twitch goal progress",
+    "payload": [
+     {
+      "key": "id",
+      "label": "Goal id",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "follower",
+       "subscription",
+       "subscription_count",
+       "new_subscription",
+       "new_subscription_count"
+      ],
+      "key": "type",
+      "label": "Goal type",
+      "type": "string"
+     },
+     {
+      "key": "description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "current_amount",
+      "label": "Current amount",
+      "type": "number"
+     },
+     {
+      "key": "target_amount",
+      "label": "Target amount",
+      "type": "number"
+     },
+     {
+      "key": "percent",
+      "label": "Percent of target",
+      "type": "number"
+     },
+     {
+      "key": "is_achieved",
+      "label": "Achieved",
+      "type": "boolean"
+     },
+     {
+      "examples": [
+       "active",
+       "ended"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "started_at",
+      "label": "Started (unix time)",
+      "type": "number"
+     },
+     {
+      "key": "ended_at",
+      "label": "Ended (unix time)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired when a Twitch Creator Goal ends (achieved or not).",
+    "event": "twitch_goal_end",
+    "label": "Twitch goal ended",
+    "payload": [
+     {
+      "key": "id",
+      "label": "Goal id",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "follower",
+       "subscription",
+       "subscription_count",
+       "new_subscription",
+       "new_subscription_count"
+      ],
+      "key": "type",
+      "label": "Goal type",
+      "type": "string"
+     },
+     {
+      "key": "description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "current_amount",
+      "label": "Current amount",
+      "type": "number"
+     },
+     {
+      "key": "target_amount",
+      "label": "Target amount",
+      "type": "number"
+     },
+     {
+      "key": "percent",
+      "label": "Percent of target",
+      "type": "number"
+     },
+     {
+      "key": "is_achieved",
+      "label": "Achieved",
+      "type": "boolean"
+     },
+     {
+      "examples": [
+       "active",
+       "ended"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "started_at",
+      "label": "Started (unix time)",
+      "type": "number"
+     },
+     {
+      "key": "ended_at",
+      "label": "Ended (unix time)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Sent to an overlay that asks for the current goals: one per active Twitch Creator Goal.",
+    "event": "twitch_goal_sync",
+    "label": "Twitch goal (current state)",
+    "payload": [
+     {
+      "key": "id",
+      "label": "Goal id",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "follower",
+       "subscription",
+       "subscription_count",
+       "new_subscription",
+       "new_subscription_count"
+      ],
+      "key": "type",
+      "label": "Goal type",
+      "type": "string"
+     },
+     {
+      "key": "description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "current_amount",
+      "label": "Current amount",
+      "type": "number"
+     },
+     {
+      "key": "target_amount",
+      "label": "Target amount",
+      "type": "number"
+     },
+     {
+      "key": "percent",
+      "label": "Percent of target",
+      "type": "number"
+     },
+     {
+      "key": "is_achieved",
+      "label": "Achieved",
+      "type": "boolean"
+     },
+     {
+      "examples": [
+       "active",
+       "ended"
+      ],
+      "key": "status",
+      "label": "Status",
+      "type": "string"
+     },
+     {
+      "key": "started_at",
+      "label": "Started (unix time)",
+      "type": "number"
+     },
+     {
+      "key": "ended_at",
+      "label": "Ended (unix time)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
     "description": "Fired when the Spotify track or playback position changes.",
     "event": "spotify_data_update",
     "label": "Now playing (Spotify)",
@@ -7921,6 +8956,48 @@
     ],
     "templates": [
      "poll"
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "The winning outcome when the prediction is resolved (no winner when it is refunded).",
+    "event": "prediction_result",
+    "label": "prediction1 result (predictions)",
+    "origin": "template",
+    "payload": [
+     {
+      "key": "template",
+      "label": "Template name",
+      "type": "string"
+     },
+     {
+      "key": "elementId",
+      "label": "Block id",
+      "type": "string"
+     },
+     {
+      "key": "winner",
+      "label": "Winning outcome",
+      "type": "string"
+     },
+     {
+      "key": "status",
+      "label": "Status (resolved or canceled)",
+      "type": "string"
+     },
+     {
+      "key": "total_points",
+      "label": "Total points",
+      "type": "number"
+     },
+     {
+      "key": "outcomes",
+      "label": "Outcomes",
+      "type": "array"
+     }
+    ],
+    "templates": [
+     "predictions"
     ]
    },
    {

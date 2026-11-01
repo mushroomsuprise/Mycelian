@@ -51,6 +51,8 @@ EVENT_TYPES: Dict[str, EventType] = {
         EventType("giveaway_draw_complete", "Giveaway draws", "casino"),
         EventType("poll_complete", "Polls finished", "ballot"),
         EventType("poll_win", "Poll wins", "how_to_vote"),
+        EventType("prediction_complete", "Predictions paid out", "insights", "points"),
+        EventType("prediction_win", "Prediction winnings", "emoji_events", "points won"),
     )
 }
 

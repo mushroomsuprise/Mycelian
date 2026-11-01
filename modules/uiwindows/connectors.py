@@ -829,6 +829,11 @@ _ACTION_ICONS = {
     "game_hook": "sports_esports",
 }
 _ACTION_BRANDS = {"send_discord_message": "discord", "obs_control": "obs"}
+_ACTION_BRANDS.update({t: "twitch" for t in (
+    "twitch_shoutout", "twitch_raid", "twitch_stream_marker", "twitch_set_title", "twitch_set_game", "twitch_snooze_ad",
+    "twitch_start_poll", "twitch_end_poll", "twitch_start_prediction", "twitch_lock_prediction",
+    "twitch_resolve_prediction", "twitch_cancel_prediction",
+)})
 
 
 def _icon_html(name: str) -> str:

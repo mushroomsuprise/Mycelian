@@ -80,7 +80,7 @@ def test_create_alert_settings_tab(env, monkeypatch):
         assert al._TAB_COUNT_LABELS["Subscriptions"].text == "2"  # + Resub Fallback
         assert al._TAB_COUNT_LABELS["Raids"].visible is False
         assert set(al._LAZY_ALERT_PANEL_BUILDERS) == {"Subscriptions", "Streaks", "Gift Subs", "Donations",
-                                                     "Raids", "Follows", "Channel Points"}
+                                                     "Raids", "Hype Train", "Follows", "Channel Points"}
         assert "alert_select" in env.el("bits")
         # recorded timers: the tab watcher, 3 points loaders, Bits init (+ panel timers)
         delays = [d for d, _fn, _kw in env.scheduled]

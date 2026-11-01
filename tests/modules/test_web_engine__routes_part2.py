@@ -550,6 +550,24 @@ def test_giveaway_and_poll_state(engine, sio, monkeypatch):
     assert call(sio, "poll_request_state", {}) == {}
 
 
+def test_prediction_state(engine, sio, monkeypatch):
+    import sys
+    import types
+
+    templates = []
+    fake = types.ModuleType("modules.prediction_manager")
+    fake.get_prediction_manager = lambda: SimpleNamespace(
+        get_overlay_state=lambda t: templates.append(t) or {"prediction": t})
+    monkeypatch.setitem(sys.modules, "modules.prediction_manager", fake)
+    assert call(sio, "prediction_request_state", {"template": " predictions "}) == {"prediction": "predictions"}
+    assert call(sio, "prediction_request_state", "junk") == {"prediction": ""}
+    flush(engine)
+    assert [(e["name"], e["args"][0]) for e in sio.get_received()] == [
+        ("prediction_sync", {"prediction": "predictions"}), ("prediction_sync", {"prediction": ""})]
+    fake.get_prediction_manager = _boom
+    assert call(sio, "prediction_request_state", {}) == {}
+
+
 # ------------------------------------------------------------------ Spotify
 
 

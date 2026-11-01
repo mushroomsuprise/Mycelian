@@ -519,6 +519,17 @@ def test_poll_state(client, monkeypatch):
     assert client.get("/api/spore-studio/poll-state/poll1").status_code == 500
 
 
+def test_prediction_state(client, monkeypatch):
+    import sys
+
+    fake = types.ModuleType("modules.prediction_manager")
+    fake.get_prediction_manager = lambda: types.SimpleNamespace(get_overlay_state=lambda name: {"template": name})
+    monkeypatch.setitem(sys.modules, "modules.prediction_manager", fake)
+    assert _json(client.get("/api/spore-studio/prediction-state/predictions")) == {"template": "predictions"}
+    fake.get_prediction_manager = mock.Mock(side_effect=RuntimeError)
+    assert client.get("/api/spore-studio/prediction-state/predictions").status_code == 500
+
+
 def test_model_route_adds_preview_mocks_for_spore_models(client, monkeypatch):
     import modules.spore_studio.preview_mocks as pmocks
     import modules.spore_studio.template_parser_back as tpb

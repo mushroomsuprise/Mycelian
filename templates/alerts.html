@@ -737,6 +737,8 @@
             hypeTrainStart: {{ TextHypeTrainStart | default('Hype Train started!') | tojson }},
             hypeTrainProgress: {{ TextHypeTrainProgress | default('Hype Train Level {hype_train_level}!') | tojson }},
             hypeTrainEnd: {{ TextHypeTrainEnd | default('Hype Train ended at Level {hype_train_level}!') | tojson }},
+            hypeTrainLevel: {{ TextHypeTrainLevel | default('Hype Train Level {hype_train_level}!') | tojson }},
+            hypeTrainRecord: {{ TextHypeTrainRecord | default('New Hype Train record: Level {hype_train_level}!') | tojson }},
             default: {{ TextDefault | default('triggered an alert!') | tojson }},
             anonymous: {{ TextAnonymous | default('Anonymous') | tojson }},
             unknownUser: {{ TextUnknownUser | default('Unknown User') | tojson }}
@@ -987,7 +989,8 @@
         streak: {{ EnableStreakAlerts | tojson }},
         hype_train_start: {{ EnableHypeTrainAlerts | tojson }},
         hype_train_progress: {{ EnableHypeTrainAlerts | tojson }},
-        hype_train_end: {{ EnableHypeTrainAlerts | tojson }}
+        hype_train_end: {{ EnableHypeTrainAlerts | tojson }},
+        hype_train_level: {{ EnableHypeTrainAlerts | tojson }}
         };
 
         // Handle resub alerts - they use the same toggle as sub alerts but are processed as 'resub' type
@@ -2885,6 +2888,11 @@
                 case 'hype_train_end':
                     template = alertTextTemplates.hypeTrainEnd;
                     break;
+                case 'hype_train_level':
+                    template = alertData.hype_train_record
+                        ? alertTextTemplates.hypeTrainRecord
+                        : alertTextTemplates.hypeTrainLevel;
+                    break;
                 default:
                     template = alertTextTemplates.default;
             }
@@ -3149,7 +3157,8 @@
                 'TextStreakPlural', 'TextGiftsub', 'TextGiftsubTier', 'TextGiftsubSingle',
                 'TextGiftsubSingleTier', 'TextBit', 'TextRaid',
                 'TextPoint', 'TextPointWithCost', 'TextDonation', 'TextHypeTrainStart',
-                'TextHypeTrainProgress', 'TextHypeTrainEnd', 'TextDefault', 'TextAnonymous',
+                'TextHypeTrainProgress', 'TextHypeTrainEnd', 'TextHypeTrainLevel', 'TextHypeTrainRecord',
+                'TextDefault', 'TextAnonymous',
                 'TextUnknownUser'
             ];
             var templateMap = {
@@ -3171,6 +3180,8 @@
                 TextHypeTrainStart: 'hypeTrainStart',
                 TextHypeTrainProgress: 'hypeTrainProgress',
                 TextHypeTrainEnd: 'hypeTrainEnd',
+                TextHypeTrainLevel: 'hypeTrainLevel',
+                TextHypeTrainRecord: 'hypeTrainRecord',
                 TextDefault: 'default',
                 TextAnonymous: 'anonymous',
                 TextUnknownUser: 'unknownUser'

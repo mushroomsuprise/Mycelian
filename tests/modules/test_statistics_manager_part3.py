@@ -763,7 +763,7 @@ def test_save_writes_a_snapshot_of_every_field(mgr, monkeypatch):
     assert captured["hype_trains"]["level_completions"] == {}
     assert captured["polls"]["options"] == {"ok": {"name": "ok", "votes": 0, "wins": 0}}
     assert set(captured) == {"alerts", "hype_trains", "connectors", "chatbot", "quotes", "giveaways", "polls",
-                             "chat", "templates", "session"}
+                             "predictions", "chat", "templates", "session"}
     assert captured["session"]["session_duration"] >= 0
     # The per-user maps went to user_lifetime instead.
     assert "user_stats" not in captured["alerts"] and "user_command_stats" not in captured["chatbot"]
@@ -1130,3 +1130,47 @@ def test_shutdown_statistics(monkeypatch, no_global, caplog):
     sm.shutdown_statistics()
     assert sm._statistics_manager is broken
     assert "Error during statistics manager shutdown" in caplog.text
+
+
+# --------------------------------------------------------------------------- predictions
+
+
+def test_record_prediction_finished(mgr, monkeypatch):
+    events = []
+    monkeypatch.setattr(mgr, "_record_event", lambda user, kind, amount=0, name="": events.append((user, kind, amount, name)))
+    snap = {"status": "resolved", "title": "Win?", "total_points": 5000, "total_users": 12, "outcomes": [
+        {"name": "Yes", "winner": True, "top_predictors": [{"name": "Ann", "points_won": 900}, {"name": "Bo", "points_won": 0},
+                                                           {"name": "", "points_won": 50}, "junk", {"name": "Cy", "points_won": "x"}]},
+        {"name": "No", "winner": False, "top_predictors": [{"name": "Dee", "points_won": 0}]}]}
+    mgr.record_prediction_finished(snap)
+    pred = mgr.data.predictions
+    assert (pred.predictions_completed, pred.total_points, pred.total_predictors) == (1, 5000, 12)
+    assert pred.biggest_pot == {"title": "Win?", "points": 5000, "winner": "Yes"}
+    assert events == [("Ann", "prediction_win", 900.0, "Win?"), (mgr._STATS_SYSTEM_USERNAME, "prediction_complete", 5000.0, "Win?")]
+    mgr.record_prediction_finished({**snap, "total_points": 100, "title": "Small"})
+    assert pred.biggest_pot["title"] == "Win?"  # still the biggest
+    mgr.record_prediction_finished({"status": "canceled"})
+    mgr.record_prediction_finished(None)
+    assert pred.predictions_canceled == 2
+    mgr.record_prediction_finished({"status": "resolved", "total_points": "lots", "outcomes": []})
+    assert pred.predictions_completed == 3
+    summary = mgr.get_all_statistics()["predictions"]
+    assert summary["predictions_completed"] == 3 and summary["average_predictors"] == pytest.approx(24 / 3)
+    mgr.reset_statistics("predictions")
+    assert mgr.data.predictions == sm.PredictionStatistics()
+
+
+def test_prediction_statistics_load(env, mgr):
+    set_lifetime(mgr, "predictions", {"predictions_completed": "2", "predictions_canceled": None, "total_points": 900,
+                                      "total_predictors": 7, "biggest_pot": {"title": "T", "points": "600", "winner": "Y"}})
+    _shutdown(mgr)
+    again = env.make()
+    pred = again.data.predictions
+    assert (pred.predictions_completed, pred.predictions_canceled, pred.total_points, pred.total_predictors) == (2, 0, 900, 7)
+    assert pred.biggest_pot == {"title": "T", "points": 600, "winner": "Y"}
+
+
+def test_prediction_statistics_load_drops_an_empty_pot(env, mgr):
+    set_lifetime(mgr, "predictions", {"biggest_pot": {"title": "T", "points": 0}})
+    _shutdown(mgr)
+    assert env.make().data.predictions.biggest_pot == {}

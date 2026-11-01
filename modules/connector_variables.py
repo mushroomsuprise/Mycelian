@@ -190,6 +190,71 @@ EVENT_VARIABLES: Dict[str, List[Dict[str, Any]]] = {
         _v("started_at", "Started at", "2026-03-14 19:30:00+00:00", "Stream", date=True),
     ],
     "twitch_stream_offline": [],
+    "twitch_hype_train_progress": [
+        _v("level", "Level", "2"),
+        _v("progress", "Points toward this level", "800"),
+        _v("goal", "Points needed for this level", "2000"),
+        _v("total", "Total points so far", "3200"),
+        _v("type", "Train type (regular, treasure, golden_kappa)", "regular"),
+        _v("is_shared_train", "Shared with other channels (true/false)", "false"),
+        _v("all_time_high_level", "Your record level", "5"),
+    ],
+    "twitch_poll_begin": [
+        _v("title", "Question", "Which game next?"),
+        _v("choices", "Choices (comma separated)", "Elden Ring, Celeste"),
+        _v("total_votes", "Votes so far", "0"),
+        _v("poll_id", "Poll ID", "ed961efd-8a3f-4cf5-a9d0-e616c590cd2a"),
+    ],
+    "twitch_poll_end": [
+        _v("title", "Question", "Which game next?"),
+        _v("winner", "Winning choice", "Celeste"),
+        _v("winner_votes", "Votes for the winner", "18"),
+        _v("total_votes", "Total votes", "30"),
+        _v("choices", "Choices (comma separated)", "Elden Ring, Celeste"),
+        _v("status", "How it ended (completed, terminated, archived)", "completed"),
+        _v("poll_id", "Poll ID", "ed961efd-8a3f-4cf5-a9d0-e616c590cd2a"),
+    ],
+    "twitch_prediction_begin": [
+        _v("title", "Question", "Will we beat the boss?"),
+        _v("outcomes", "Outcomes (comma separated)", "Yes, No"),
+        _v("template", "Overlay running it", "predictions"),
+        _v("prediction_id", "Prediction ID", "1243456"),
+    ],
+    "twitch_prediction_lock": [
+        _v("title", "Question", "Will we beat the boss?"),
+        _v("outcomes", "Outcomes (comma separated)", "Yes, No"),
+        _v("points", "Points bet", "12500"),
+        _v("users", "Viewers who bet", "24"),
+        _v("template", "Overlay running it", "predictions"),
+        _v("prediction_id", "Prediction ID", "1243456"),
+    ],
+    "twitch_prediction_end": [
+        _v("title", "Question", "Will we beat the boss?"),
+        _v("winner", "Winning outcome (empty when canceled)", "Yes"),
+        _v("status", "How it ended (resolved, canceled)", "resolved"),
+        _v("points", "Points bet", "12500"),
+        _v("users", "Viewers who bet", "24"),
+        _v("outcomes", "Outcomes (comma separated)", "Yes, No"),
+        _v("template", "Overlay running it", "predictions"),
+        _v("prediction_id", "Prediction ID", "1243456"),
+    ],
+    "twitch_ad_break_begin": [
+        _v("duration_seconds", "Ad length (seconds)", "90"),
+        _v("is_automatic", "Started by Twitch's ad schedule (true/false)", "true"),
+        _v("requester", "Who started it (empty when automatic)", "YourChannel"),
+    ],
+    "twitch_channel_update": [
+        _v("title", "Stream title", "Speedrunning all day!"),
+        _v("category", "Category", "Celeste"),
+        _v("previous_category", "Category before the change", "Just Chatting"),
+        _v("category_changed", "Category changed (true/false)", "true"),
+        _v("language", "Stream language", "en"),
+    ],
+    "twitch_shoutout_received": [
+        _v("username", "Channel that shouted you out", "FriendlyStreamer"),
+        _v("user_login", "Their login name", "friendlystreamer"),
+        _v("viewer_count", "Their viewers", "120"),
+    ],
     "youtube_chat_message": [_USER, _MESSAGE, _v("user_id", "Channel ID", "UCabc123")],
     "youtube_member": [
         _USER,
@@ -335,6 +400,60 @@ CONDITION_FIELDS: Dict[str, List[Dict[str, str]]] = {
     ],
     "twitch_stream_online": [_f("stream_type", "Stream type", "text")],
     "twitch_stream_offline": [],
+    "twitch_hype_train_progress": [
+        _f("level", "Level", "number"),
+        _f("progress", "Points toward this level", "number"),
+        _f("goal", "Points needed for this level", "number"),
+        _f("total", "Total points so far", "number"),
+        _f("type", "Train type", "text"),
+        _f("is_shared_train", "Shared train", "bool"),
+        _f("all_time_high_level", "Record level", "number"),
+    ],
+    "twitch_poll_begin": [
+        _f("title", "Question", "text"),
+        _f("choices", "Choices", "text"),
+    ],
+    "twitch_poll_end": [
+        _f("title", "Question", "text"),
+        _f("winner", "Winning choice", "text"),
+        _f("winner_votes", "Votes for the winner", "number"),
+        _f("total_votes", "Total votes", "number"),
+        _f("status", "How it ended", "text"),
+    ],
+    "twitch_prediction_begin": [
+        _f("title", "Question", "text"),
+        _f("outcomes", "Outcomes", "text"),
+        _f("template", "Overlay", "text"),
+    ],
+    "twitch_prediction_lock": [
+        _f("title", "Question", "text"),
+        _f("points", "Points bet", "number"),
+        _f("users", "Viewers who bet", "number"),
+        _f("template", "Overlay", "text"),
+    ],
+    "twitch_prediction_end": [
+        _f("title", "Question", "text"),
+        _f("winner", "Winning outcome", "text"),
+        _f("status", "How it ended", "text"),
+        _f("points", "Points bet", "number"),
+        _f("users", "Viewers who bet", "number"),
+        _f("template", "Overlay", "text"),
+    ],
+    "twitch_ad_break_begin": [
+        _f("duration_seconds", "Ad length (seconds)", "number"),
+        _f("is_automatic", "Started automatically", "bool"),
+    ],
+    "twitch_channel_update": [
+        _f("title", "Stream title", "text"),
+        _f("category", "Category", "text"),
+        _f("previous_category", "Previous category", "text"),
+        _f("category_changed", "Category changed", "bool"),
+        _f("language", "Stream language", "text"),
+    ],
+    "twitch_shoutout_received": [
+        _f("username", "Channel that shouted you out", "text"),
+        _f("viewer_count", "Their viewers", "number"),
+    ],
     "youtube_chat_message": [
         _f("username", "Username", "text"),
         _f("message", "Message", "text"),
@@ -431,10 +550,18 @@ OPERATORS: Dict[str, List[Tuple[str, str]]] = {
 # --------------------------------------------------------------------------
 # Triggers
 # --------------------------------------------------------------------------
-_HYPE_WARNING = "Twitch may no longer send Hype Train events, so this might never fire."
+_HYPE_WARNING = (
+    "Hype Train events need a Twitch sign-in with the Hype Train permission, and Twitch decides when a "
+    "train starts, so this can go a long time without firing."
+)
+_HYPE_PROGRESS_WARNING = (
+    "Fires on every contribution during a Hype Train, which can be many times a minute. Add a condition "
+    "(for example on Level) or a cooldown to avoid repeats."
+)
 
 
-def _t(value, label, group, hint, fires=True, warning=None) -> Dict[str, Any]:
+def _t(value, label, group, hint, fires=True, warning=None, badge=None) -> Dict[str, Any]:
+    """*badge* is the short tag the trigger list shows next to a warning (default "May not fire")."""
     return {
         "value": value,
         "label": label,
@@ -442,6 +569,7 @@ def _t(value, label, group, hint, fires=True, warning=None) -> Dict[str, Any]:
         "hint": hint,
         "fires": fires,
         "warning": warning,
+        "badge": badge,
     }
 
 
@@ -475,6 +603,42 @@ TRIGGERS: List[Dict[str, Any]] = [
     ),
     _t("twitch_stream_online", "Stream went live", "Twitch", "Your Twitch stream starts."),
     _t("twitch_stream_offline", "Stream ended", "Twitch", "Your Twitch stream ends."),
+    _t(
+        "twitch_hype_train_progress",
+        "Hype Train progress",
+        "Twitch",
+        "Someone adds to a running Hype Train.",
+        warning=_HYPE_PROGRESS_WARNING,
+        badge="Fires often",
+    ),
+    _t("twitch_poll_begin", "Poll started", "Twitch", "A Twitch poll starts in your channel."),
+    _t("twitch_poll_end", "Poll ended", "Twitch", "A Twitch poll ends; the winner is known."),
+    _t("twitch_prediction_begin", "Prediction started", "Twitch", "A prediction opens for bets."),
+    _t("twitch_prediction_lock", "Prediction locked", "Twitch", "A prediction stops taking bets."),
+    _t(
+        "twitch_prediction_end",
+        "Prediction ended",
+        "Twitch",
+        "A prediction pays out to the winning outcome, or is canceled and refunded.",
+    ),
+    _t(
+        "twitch_ad_break_begin",
+        "Ad break started",
+        "Twitch",
+        "An ad break starts, from your ad schedule or started by hand. Needs a Twitch sign-in with the ads permission.",
+    ),
+    _t(
+        "twitch_channel_update",
+        "Title or category changed",
+        "Twitch",
+        "Your stream title, category or language changes.",
+    ),
+    _t(
+        "twitch_shoutout_received",
+        "Shoutout received",
+        "Twitch",
+        "Another channel gives you a Twitch shoutout.",
+    ),
     _t("youtube_chat_message", "Chat message", "YouTube", "Someone chats in your live stream."),
     _t("youtube_member", "New member", "YouTube", "Someone becomes a channel member."),
     _t(
@@ -658,6 +822,67 @@ _SAMPLES: Dict[str, Dict[str, Any]] = {
         "started_at": _SAMPLE_UTC,
     },
     "twitch_stream_offline": {},
+    "twitch_hype_train_progress": {
+        "level": 2,
+        "progress": 800,
+        "goal": 2000,
+        "total": 3200,
+        "type": "regular",
+        "is_shared_train": False,
+        "all_time_high_level": 5,
+    },
+    "twitch_poll_begin": {
+        "title": "Which game next?",
+        "choices": "Elden Ring, Celeste",
+        "total_votes": 0,
+        "poll_id": "ed961efd-8a3f-4cf5-a9d0-e616c590cd2a",
+    },
+    "twitch_poll_end": {
+        "title": "Which game next?",
+        "winner": "Celeste",
+        "winner_votes": 18,
+        "total_votes": 30,
+        "choices": "Elden Ring, Celeste",
+        "status": "completed",
+        "poll_id": "ed961efd-8a3f-4cf5-a9d0-e616c590cd2a",
+    },
+    "twitch_prediction_begin": {
+        "title": "Will we beat the boss?",
+        "outcomes": "Yes, No",
+        "template": "predictions",
+        "prediction_id": "1243456",
+    },
+    "twitch_prediction_lock": {
+        "title": "Will we beat the boss?",
+        "outcomes": "Yes, No",
+        "points": 12500,
+        "users": 24,
+        "template": "predictions",
+        "prediction_id": "1243456",
+    },
+    "twitch_prediction_end": {
+        "title": "Will we beat the boss?",
+        "winner": "Yes",
+        "status": "resolved",
+        "points": 12500,
+        "users": 24,
+        "outcomes": "Yes, No",
+        "template": "predictions",
+        "prediction_id": "1243456",
+    },
+    "twitch_ad_break_begin": {"duration_seconds": 90, "is_automatic": True, "requester": ""},
+    "twitch_channel_update": {
+        "title": "Speedrunning all day!",
+        "category": "Celeste",
+        "previous_category": "Just Chatting",
+        "category_changed": True,
+        "language": "en",
+    },
+    "twitch_shoutout_received": {
+        "username": "FriendlyStreamer",
+        "user_login": "friendlystreamer",
+        "viewer_count": 120,
+    },
     "youtube_chat_message": {
         "username": "TestUser",
         "message": "Hello chat!",

@@ -27,7 +27,12 @@ TWITCH_VALIDATE_URL = "https://id.twitch.tv/oauth2/validate"
 
 # Scopes a token may lack and still connect: only the features that need them are switched off
 # (the app asks the user to sign in again for them). Every other requested scope stays required.
-OPTIONAL_SCOPES: FrozenSet[AuthScope] = frozenset({AuthScope.CHANNEL_MANAGE_POLLS})
+OPTIONAL_SCOPES: FrozenSet[AuthScope] = frozenset({
+    AuthScope.CHANNEL_MANAGE_POLLS,
+    AuthScope.CHANNEL_MANAGE_PREDICTIONS,
+    AuthScope.CHANNEL_READ_ADS,
+    AuthScope.CHANNEL_READ_GOALS,
+})
 
 # Scopes Twitch reported for each validated token (latest few tokens only).
 _token_scopes: Dict[str, FrozenSet[str]] = {}

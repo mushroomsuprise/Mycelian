@@ -10,7 +10,7 @@
 <section class="hx-guide" data-guide="alert_configuration_create" data-title="New alert">
   <div class="hx-step">
     <h3>Pick the alert type</h3>
-    <p>Open the <strong>Alerts</strong> tab and click a sub-tab: <strong>Bits</strong>, <strong>Subscriptions</strong>, <strong>Streaks</strong>, <strong>Gift Subs</strong>, <strong>Donations</strong>, <strong>Raids</strong>, <strong>Follows</strong> or <strong>Channel Points</strong>.</p>
+    <p>Open the <strong>Alerts</strong> tab and click a sub-tab: <strong>Bits</strong>, <strong>Subscriptions</strong>, <strong>Streaks</strong>, <strong>Gift Subs</strong>, <strong>Donations</strong>, <strong>Raids</strong>, <strong>Hype Train</strong>, <strong>Follows</strong> or <strong>Channel Points</strong>.</p>
   </div>
   <div class="hx-step">
     <h3>Click New alert</h3>
@@ -208,6 +208,7 @@
 <tr><td>Gift Subs</td><td>Number of gifts</td><td>1</td></tr>
 <tr><td>Donations</td><td>An amount in your alert currency (no unit shown)</td><td>5</td></tr>
 <tr><td>Raids</td><td>Number of viewers</td><td>10</td></tr>
+<tr><td>Hype Train</td><td>The train's level. <strong>New all-time high</strong> has no level: it plays instead of the level alert, once per train, when a train passes your channel's record.</td><td>1 (range 2-4)</td></tr>
 <tr><td>Follows</td><td>No amount. The header says <em>Plays for every new follower</em>.</td><td></td></tr>
 <tr><td>Channel Points</td><td>No amount. You pick a Twitch reward in the list.</td><td></td></tr>
 </tbody>
@@ -301,6 +302,7 @@
 <tr><td><strong>Limit per viewer</strong></td><td>Switch plus number: the most redemptions per viewer per stream.</td></tr>
 <tr><td><strong>Global cooldown</strong></td><td>Switch plus seconds between redemptions.</td></tr>
 <tr><td><strong>Skip request queue</strong></td><td>Skip the request queue and auto-fulfill redemptions.</td></tr>
+<tr><td><strong>Complete after the alert plays</strong></td><td>Saved in Mycelian, not on Twitch. When <strong>Skip request queue</strong> is off, Mycelian marks each redemption complete once its alert has played (not when it is skipped or a test). Twitch only lets the app that created a reward do this, so it works for rewards made in Mycelian, not ones made on the Twitch dashboard. On by default.</td></tr>
 </tbody>
 </table></div>
 

@@ -105,7 +105,7 @@
             "id": "EnableHypeTrainAlerts",
             "label": "Enable Hype Train Alerts",
             "value": true,
-            "description": "Show alerts for hype train events"
+            "description": "Show alerts for hype train events, including the level alerts set up in Alerts → Hype Train"
         },
         {
             "type": "separator",
@@ -289,6 +289,20 @@
             "label": "Hype train end header text",
             "value": "Hype Train ended at Level {hype_train_level}!",
             "description": "Header line when a hype train ends. Use {hype_train_level}."
+        },
+        {
+            "type": "text",
+            "id": "TextHypeTrainLevel",
+            "label": "Hype train level alert header text",
+            "value": "Hype Train Level {hype_train_level}!",
+            "description": "Header line for a Hype Train level alert (Alerts → Hype Train). Use {hype_train_level}."
+        },
+        {
+            "type": "text",
+            "id": "TextHypeTrainRecord",
+            "label": "Hype train all-time high header text",
+            "value": "New Hype Train record: Level {hype_train_level}!",
+            "description": "Header line for the \"New all-time high\" Hype Train alert. Use {hype_train_level}."
         },
         {
             "type": "text",

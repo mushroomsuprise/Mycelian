@@ -188,6 +188,15 @@ class TriggerType(Enum):
     TWITCH_HYPE_TRAIN_END = "twitch_hype_train_end"
     TWITCH_STREAM_ONLINE = "twitch_stream_online"
     TWITCH_STREAM_OFFLINE = "twitch_stream_offline"
+    TWITCH_HYPE_TRAIN_PROGRESS = "twitch_hype_train_progress"
+    TWITCH_POLL_BEGIN = "twitch_poll_begin"
+    TWITCH_POLL_END = "twitch_poll_end"
+    TWITCH_PREDICTION_BEGIN = "twitch_prediction_begin"
+    TWITCH_PREDICTION_LOCK = "twitch_prediction_lock"
+    TWITCH_PREDICTION_END = "twitch_prediction_end"
+    TWITCH_AD_BREAK_BEGIN = "twitch_ad_break_begin"
+    TWITCH_CHANNEL_UPDATE = "twitch_channel_update"
+    TWITCH_SHOUTOUT_RECEIVED = "twitch_shoutout_received"
 
     # YouTube Live Chat Triggers
     YOUTUBE_CHAT_MESSAGE = "youtube_chat_message"
@@ -258,6 +267,20 @@ class ActionType(Enum):
 
     # OBS Studio WebSocket controls
     OBS_CONTROL = "obs_control"
+
+    # Twitch channel tools
+    TWITCH_SHOUTOUT = "twitch_shoutout"
+    TWITCH_RAID = "twitch_raid"
+    TWITCH_STREAM_MARKER = "twitch_stream_marker"
+    TWITCH_SET_TITLE = "twitch_set_title"
+    TWITCH_SET_GAME = "twitch_set_game"
+    TWITCH_SNOOZE_AD = "twitch_snooze_ad"
+    TWITCH_START_POLL = "twitch_start_poll"
+    TWITCH_END_POLL = "twitch_end_poll"
+    TWITCH_START_PREDICTION = "twitch_start_prediction"
+    TWITCH_LOCK_PREDICTION = "twitch_lock_prediction"
+    TWITCH_RESOLVE_PREDICTION = "twitch_resolve_prediction"
+    TWITCH_CANCEL_PREDICTION = "twitch_cancel_prediction"
 
 
 @dataclass
