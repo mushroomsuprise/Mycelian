@@ -162,7 +162,7 @@ def test_merge_config():
 
 @pytest.mark.parametrize(
     "name,msg",
-    [(5, "must be a string"), ("   ", "cannot be empty"), ("a b", "may only contain"),
+    [(5, "must be a string"), ("   ", "cannot be empty"), ("a  b", "may only contain"), ("a!b", "may only contain"),
      ("_x", "cannot start with '_'"), ("API", "reserved"), ("default_assets", "reserved")],
 )
 def test_validate_name_rejects(sb, name, msg):
@@ -182,6 +182,7 @@ def test_validate_name_container_route(sb):
 
 def test_validate_name_ok(sb):
     assert sp._validate_name("  my-tpl_2 ") == "my-tpl_2"
+    assert sp._validate_name(" game roulette ") == "game roulette"
 
 
 def test_validate_legacy_name(sb):

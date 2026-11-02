@@ -359,7 +359,8 @@ def test_copy_template_files_minimal_without_progress(env, real_parser):
     write_template(env, "orig")
     cs._copy_template_files("orig", "copy", real_parser)
     assert (env.templates / "template_configs" / "copy.json").exists()
-    assert not (env.templates / "copy.html").exists() and not (env.assets / "copy").exists()
+    assert not (env.templates / "copy.html").exists()
+    assert (env.assets / "copy").is_dir() and not any((env.assets / "copy").iterdir())
 
 
 @pytest.mark.parametrize("content,msg", [(None, "No configuration file for 'orig'."), ("{bad", "Could not read 'orig'"),
@@ -595,12 +596,12 @@ def test_duplicate_action_guards(env, real_parser):
     tcp.mark_template_copy_idle()
     assert env.titles() == ["Save this template before duplicating", "A template copy or delete is already running"]
     env.notes.clear()
-    for raw in ("orig", "taken", "bad name", ""):
+    for raw in ("orig", "taken", "bad!name", ""):
         cs.duplicate_config_action("orig", raw, real_parser, None, None, Dlg())
     cs.duplicate_config_action("ghost", "fresh", real_parser, None, None, Dlg())
     assert [m for m, _ in env.notes] == [
         "Choose a different name for the copy.", "A template named 'taken' already exists.",
-        "Template name may only contain letters, numbers, '_' and '-'.", "Template name cannot be empty.",
+        "Template name may only contain letters, numbers, spaces, '_' and '-'.", "Template name cannot be empty.",
         "No configuration file for 'ghost'."]
     assert set(env.titles()) == {"Choose another name"} and env.threads == []
 

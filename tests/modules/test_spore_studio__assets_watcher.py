@@ -47,7 +47,9 @@ def test_classify(name, kind):
     assert aw._classify(name) == kind
 
 
-@pytest.mark.parametrize("bad", [None, 5, "", "../x", "a b", "a/b", "a.b"])
+@pytest.mark.parametrize(
+    "bad", [None, 5, "", "../x", "..", ".hidden", "a/b", "a\\b", " a", "a ", "a.", "a:b", "a\x00b"]
+)
 def test_validated_dir_rejects_bad_names(assets, bad):
     with pytest.raises(ValueError, match="Invalid template name"):
         aw._validated_template_assets_dir(bad)
@@ -60,8 +62,14 @@ def _symlink_or_skip(target, link):
         pytest.skip(f"cannot create symlinks here: {exc}")
 
 
-def test_validated_dir_ok(assets):
-    assert aw._validated_template_assets_dir("my_tpl-1") == os.path.realpath(str(assets / "my_tpl-1"))
+@pytest.mark.parametrize("good", ["my_tpl-1", "game roulette", "v1.2"])
+def test_validated_dir_ok(assets, good):
+    assert aw._validated_template_assets_dir(good) == os.path.realpath(str(assets / good))
+
+
+def test_request_snapshot_creates_folder_for_spaced_name(assets):
+    snap = aw.request_snapshot("game roulette")
+    assert (assets / "game roulette").is_dir() and snap["files"] == []
 
 
 def test_validated_dir_symlink_escape(assets, tmp_path):
@@ -245,7 +253,7 @@ def test_poll_once_nothing_watched(assets, monkeypatch):
 
 
 def test_poll_once_baseline_then_change(assets, monkeypatch):
-    monkeypatch.setattr(aw, "_watched_templates", lambda: ["tpl", "bad name"])
+    monkeypatch.setattr(aw, "_watched_templates", lambda: ["tpl", "bad/name"])
     sent = []
     monkeypatch.setattr(aw, "_broadcast_changes", lambda n, s: sent.append(n))
     (assets / "tpl").mkdir()
@@ -256,7 +264,7 @@ def test_poll_once_baseline_then_change(assets, monkeypatch):
     (assets / "tpl" / "x.png").write_bytes(b"1")
     aw._poll_once()
     assert sent == ["tpl"] and "x.png" in aw._known["tpl"]
-    assert "bad name" not in aw._known
+    assert "bad/name" not in aw._known
 
 
 def test_seed_baseline(assets, monkeypatch):

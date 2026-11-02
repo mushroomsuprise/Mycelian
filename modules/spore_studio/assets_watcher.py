@@ -38,7 +38,10 @@ from ..path_utils import get_assets_path, ensure_directory_exists
 
 logger = logging.getLogger(__name__)
 
-_TEMPLATE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+# One folder name under assets/. Matches what TemplateConfigParser accepts
+# (older and hand-made templates can have spaces or dots), minus characters
+# Windows can't put in a folder name.
+_TEMPLATE_NAME_RE = re.compile(r'^[^/\\<>:"|?*\x00-\x1f]+$')
 
 
 _POLL_INTERVAL_SECONDS = 1.5
@@ -71,8 +74,12 @@ def _classify(path: str) -> str:
 
 def _validated_template_assets_dir(template_name: str) -> str:
     """Return the realpath of ``assets/<name>`` if the name is safe, else raise."""
-    if not isinstance(template_name, str) or not _TEMPLATE_NAME_RE.fullmatch(
-        template_name
+    if (
+        not isinstance(template_name, str)
+        or not _TEMPLATE_NAME_RE.fullmatch(template_name)
+        or template_name != template_name.strip()
+        or template_name.startswith(".")
+        or template_name.endswith(".")
     ):
         raise ValueError("Invalid template name")
     root = os.path.realpath(get_assets_path())

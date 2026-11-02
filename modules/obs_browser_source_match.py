@@ -64,8 +64,8 @@ def browser_urls_same_template(left: Any, right: Any) -> bool:
     parsed_right = parse_browser_source_url(right)
     if parsed_left is None or parsed_right is None:
         return False
-    left_path = normalize_overlay_path(parsed_left.path or "/").lower()
-    right_path = normalize_overlay_path(parsed_right.path or "/").lower()
+    left_path = normalize_overlay_path(unquote(parsed_left.path or "/")).lower()
+    right_path = normalize_overlay_path(unquote(parsed_right.path or "/")).lower()
     if left_path != right_path:
         return False
     if _browser_url_port(parsed_left) != _browser_url_port(parsed_right):

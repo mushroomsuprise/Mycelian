@@ -59,7 +59,8 @@ _RESERVED_TEMPLATE_NAMES = {
     "_spore_studio_editor",
 }
 
-_TEMPLATE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+# Words of letters/digits/_/- separated by single spaces ("game roulette").
+_TEMPLATE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+(?: [A-Za-z0-9_-]+)*$")
 
 # Element ids become HTML ids, JSON config ids and Jinja / JavaScript names.
 _ELEMENT_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -154,8 +155,9 @@ def _validate_name(name: str) -> str:
     """
     Normalize and validate a template name.
 
-    Allowed characters: letters, digits, underscore, hyphen. Names must not
-    start with an underscore (those are reserved for boilerplate folders).
+    Allowed characters: letters, digits, underscore, hyphen, and single spaces
+    between words. Names must not start with an underscore (those are
+    reserved for boilerplate folders).
     """
     if not isinstance(name, str):
         raise SporeStudioError("Template name must be a string.")
@@ -164,7 +166,7 @@ def _validate_name(name: str) -> str:
         raise SporeStudioError("Template name cannot be empty.")
     if not _TEMPLATE_NAME_RE.match(cleaned):
         raise SporeStudioError(
-            "Template name may only contain letters, numbers, '_' and '-'."
+            "Template name may only contain letters, numbers, spaces, '_' and '-'."
         )
     if cleaned.startswith("_"):
         raise SporeStudioError("Template name cannot start with '_'.")

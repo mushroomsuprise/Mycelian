@@ -47,7 +47,7 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Set, Tuple
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 from . import alertutils, database_manager, statistics_manager
@@ -11725,7 +11725,7 @@ class WebEngine:
                         logger.debug(f"Skipping hidden template: {template_name}")
                         continue
 
-                url = f"{base_url}/{template_name}"
+                url = f"{base_url}/{quote(template_name)}"
                 urls.append(
                     {
                         "name": template_name,

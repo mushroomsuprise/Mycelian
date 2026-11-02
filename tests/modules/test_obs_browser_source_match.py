@@ -91,6 +91,7 @@ def test_is_local_overlay_host(host, local):
     ("", "http://localhost/ff7", False),
     ("http://localhost/ff7", None, False),
     ("/ff7", "/ff7", False),  # no host
+    ("http://127.0.0.1:5000/game%20roulette", "http://localhost:5000/game roulette", True),
 ])
 def test_browser_urls_same_template(a, b, same):
     assert m.browser_urls_same_template(a, b) is same

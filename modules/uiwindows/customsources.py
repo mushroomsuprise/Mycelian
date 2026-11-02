@@ -36,6 +36,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from urllib.parse import quote
 
 from nicegui import ui
 from nicegui.elements.mixins.text_element import TextElement
@@ -1144,7 +1145,7 @@ def _load_popout_preview(config_name: str, fd: dict) -> None:
     port = getattr(inst, "port", 5000) or 5000
     cache_bust = time.time()
     src = (
-        f"http://127.0.0.1:{port}/{route}"
+        f"http://127.0.0.1:{port}/{quote(route)}"
         f"?__preview_token={CUSTOM_SOURCES_PREVIEW_TOKEN}&_cb={cache_bust}"
     )
     dw, dh = _get_active_preview_size(fd)
@@ -1333,7 +1334,7 @@ def _sync_preview_iframe(
     port = getattr(inst, "port", 5000) or 5000
     cache_bust = time.time()
     src = (
-        f"http://127.0.0.1:{port}/{route}"
+        f"http://127.0.0.1:{port}/{quote(route)}"
         f"?__preview_token={CUSTOM_SOURCES_PREVIEW_TOKEN}&_cb={cache_bust}"
     )
     design_w, design_h = _get_active_preview_size(fd)
@@ -3844,6 +3845,11 @@ def _copy_template_files(
                 shutil.copy2(src_file, dest)
                 copied += 1
                 report("copying", copied, total)
+        elif not os.path.isdir(dst_assets):
+            # Source has no asset folder; give the copy an empty one so the
+            # Spore Studio Assets panel has somewhere to point.
+            os.makedirs(dst_assets)
+            made_assets = True
     except Exception as e:
         _cleanup_partial_copy(written, dst_assets, made_assets)
         raise SporeStudioError(f"Could not copy '{source_name}': {e}") from e
