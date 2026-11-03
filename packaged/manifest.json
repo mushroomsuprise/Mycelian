@@ -1,5 +1,5 @@
 {
-  "version": "1.14.0",
+  "version": "1.14.1",
   "files": [
     {
       "path": "README.md",
@@ -25,15 +25,15 @@
     {
       "path": "assets/default_assets/activity_feed.css",
       "install": "assets/default_assets/activity_feed.css",
-      "sha256": "8465a56838cc484ea80138389fe1328ca93fbde0aab5a11832be0021f2cdd848",
-      "size": 36377,
+      "sha256": "8451742832fef89827939bbada6e6125584431836df6543a197ef1e2ad04c104",
+      "size": 37719,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/activity_feed.js",
       "install": "assets/default_assets/activity_feed.js",
-      "sha256": "865d99d09f0ace065ef9941cb3d7e15d732f6b7ad671c45d629a771a0e9745d9",
-      "size": 63142,
+      "sha256": "1e061ecb13672f3889611533f54732d0804bd5bc6d0516faa5e83b773cec5b16",
+      "size": 64082,
       "action": "replace"
     },
     {
@@ -786,6 +786,13 @@
       "action": "replace"
     },
     {
+      "path": "assets/default_assets/images/steam_perfect.svg",
+      "install": "assets/default_assets/images/steam_perfect.svg",
+      "sha256": "40f660c7ba78ada9c180b875f0e9e1bb303305239d731c41a623556c8c753159",
+      "size": 678,
+      "action": "replace"
+    },
+    {
       "path": "assets/default_assets/mycelian_color_picker.css",
       "install": "assets/default_assets/mycelian_color_picker.css",
       "sha256": "350f03eddc6dd4a2cd50539cdb940af36e6f8f0e7dc88784f606dd827e76517a",
@@ -865,8 +872,8 @@
     {
       "path": "assets/default_assets/spore_studio/editor.css",
       "install": "assets/default_assets/spore_studio/editor.css",
-      "sha256": "ae0b4393b82b592a70ce32dbaf26671541ccd3f20aacaac9af9d500e30e98989",
-      "size": 71843,
+      "sha256": "36f966736905f0f94b656a0949510cf216a0bdebcfd093b6d28bce5889b0a43a",
+      "size": 75740,
       "action": "replace"
     },
     {
@@ -879,8 +886,8 @@
     {
       "path": "assets/default_assets/spore_studio/editor.js",
       "install": "assets/default_assets/spore_studio/editor.js",
-      "sha256": "0c7a8a95067ef31bf822517d7c46b4ce5fa7ee907cfa2de0cf97f5d74acfbce0",
-      "size": 513425,
+      "sha256": "7c91e4bcb5556b8a895d64878218e93c2711e54f175d7d94d595bbba7ce6c4fe",
+      "size": 531344,
       "action": "replace"
     },
     {
@@ -893,8 +900,8 @@
     {
       "path": "assets/default_assets/spore_studio/spore_ui.js",
       "install": "assets/default_assets/spore_studio/spore_ui.js",
-      "sha256": "64a2e8ff9b01eec707bdbf110368c5042f5c57822051d974d07152085ba382a2",
-      "size": 14498,
+      "sha256": "d610af45addc06a053464c2ed153703ad480fb13e0fb3cf619284a1d07962a11",
+      "size": 14609,
       "action": "replace"
     },
     {
@@ -1383,8 +1390,8 @@
     {
       "path": "templates/_boilerplates/spore_data_runtime.js",
       "install": "templates/_boilerplates/spore_data_runtime.js",
-      "sha256": "7f39d669370f48895ab8f6dda0eb8114930ac6e32c9667a57bb64f8cb3c40b5e",
-      "size": 161977,
+      "sha256": "fe33e36ac1e4506799a727c77d4cb866a704fb77f55933711b821312411c101e",
+      "size": 179049,
       "action": "replace"
     },
     {
@@ -1409,6 +1416,20 @@
       "action": "replace"
     },
     {
+      "path": "templates/_spore/predictions.spore.json",
+      "install": "templates/_spore/predictions.spore.json",
+      "sha256": "eaabfd38143093205cc33032aa632cb1fb49d89e17dc67db5d34794a93cd4ec6",
+      "size": 4244,
+      "action": "replace"
+    },
+    {
+      "path": "templates/_spore/steam_achievements.spore.json",
+      "install": "templates/_spore/steam_achievements.spore.json",
+      "sha256": "168ce30ed77a33fde9461c8c1958f18a0c0ff20c79a6af3910335bc34104d4f7",
+      "size": 17708,
+      "action": "replace"
+    },
+    {
       "path": "templates/activity_feed.html",
       "install": "templates/activity_feed.html",
       "sha256": "ac6eeac54053ce01e5e66ffc6c9d5afc84e136b3682d07531ac20d3c760fc8b3",
@@ -1418,8 +1439,8 @@
     {
       "path": "templates/alerts.html",
       "install": "templates/alerts.html",
-      "sha256": "99f2034fc107381bae7d36b6ed9e87b08a9e209fc42a83bc39c3e6f162ee4eb9",
-      "size": 134491,
+      "sha256": "b7ad4f264ff94bae03bf9dc1eef215cc1f9540155e479d96948613a95bf38918",
+      "size": 135215,
       "action": "replace"
     },
     {
@@ -1439,8 +1460,8 @@
     {
       "path": "templates/bitcounter.html",
       "install": "templates/bitcounter.html",
-      "sha256": "137f353279353de1c5a75c585b92bc0ebc279e7fc68bdf445bac63d3bcef4955",
-      "size": 50348,
+      "sha256": "b2ed7162b5d4e2e67ff0d1126eae01a3831e83264e51d9e24994c1f60a9928c9",
+      "size": 201184,
       "action": "replace"
     },
     {
@@ -1474,8 +1495,8 @@
     {
       "path": "templates/giveaway.html",
       "install": "templates/giveaway.html",
-      "sha256": "e3377874d7ff57728a5c7d9861db6afa2ed68657d82a11dcce8ab9757e1ab5ba",
-      "size": 214756,
+      "sha256": "4b77cf963a1942f6541616e50666f73aff3d033f4c6cd459b0d952dd36a662c5",
+      "size": 231828,
       "action": "replace"
     },
     {
@@ -1488,8 +1509,15 @@
     {
       "path": "templates/poll.html",
       "install": "templates/poll.html",
-      "sha256": "bd582ab1a070b2a1a9b5bc6cad4372b696a62b0a76ed85e0d55d9cda672e5838",
-      "size": 193079,
+      "sha256": "69e6c7f0714ef99f4e6c6dd2c2703a6cf124d1d91304060b4add378f98ef6ffb",
+      "size": 210151,
+      "action": "replace"
+    },
+    {
+      "path": "templates/predictions.html",
+      "install": "templates/predictions.html",
+      "sha256": "a3320a91cbf4c4893245aa3f7f8d20babf263df9bdae75983ce20402ba900e72",
+      "size": 217830,
       "action": "replace"
     },
     {
@@ -1514,6 +1542,13 @@
       "action": "replace"
     },
     {
+      "path": "templates/steam_achievements.html",
+      "install": "templates/steam_achievements.html",
+      "sha256": "def5cc5cc57d95380df07186a0ae3cd050314afae97792a088fe30e38c4b4156",
+      "size": 216442,
+      "action": "replace"
+    },
+    {
       "path": "templates/subbar.html",
       "install": "templates/subbar.html",
       "sha256": "5ef02f77d11039e992d8af644ff0c416c9ac00cc2f8ba4bb75cd758440c34648",
@@ -1530,8 +1565,8 @@
     {
       "path": "templates/template_configs/alerts.json",
       "install": "templates/template_configs/alerts.json",
-      "sha256": "8ca17dbdd8a1ad0a8b3577ca064c5d4533d3768900afa6ade00f56d5913bb2da",
-      "size": 57836,
+      "sha256": "5665a60fdb6d6c645e470414927cf9844165ecf64d911454c789481ed4d14be5",
+      "size": 58561,
       "action": "merge"
     },
     {
@@ -1605,6 +1640,13 @@
       "action": "merge"
     },
     {
+      "path": "templates/template_configs/predictions.json",
+      "install": "templates/template_configs/predictions.json",
+      "sha256": "dbc109aa9923e6068fa4529dbb8d7cb3f0acd07c4429f35a82a121d1832d769c",
+      "size": 12960,
+      "action": "merge"
+    },
+    {
       "path": "templates/template_configs/roulette.json",
       "install": "templates/template_configs/roulette.json",
       "sha256": "b7cbbf58eae86e1e08e6d99fcb1df11528a8be3a936d903f3adc56c56d14f0ea",
@@ -1623,6 +1665,13 @@
       "install": "templates/template_configs/spotify.json",
       "sha256": "1022a51c972fe08230488b5716fb6544f4f6931c086a6c60eab5796697423181",
       "size": 25011,
+      "action": "merge"
+    },
+    {
+      "path": "templates/template_configs/steam_achievements.json",
+      "install": "templates/template_configs/steam_achievements.json",
+      "sha256": "4ed157d7c362d0095ddc6535d204af647579c989dfda5dcd36b2a20fc3d1d04c",
+      "size": 15298,
       "action": "merge"
     },
     {
@@ -1796,8 +1845,8 @@
     {
       "path": "packaged/windows/Mycelian.exe",
       "install": "Mycelian.exe",
-      "sha256": "d6dcc8a1c23053e11ab529552162c6fa5cf64f3da0a9350e641525406020be02",
-      "size": 54117549,
+      "sha256": "308f3e64418eef75f6ba283003694fee4cabea9d16a788dce71d97c41bae4df8",
+      "size": 58148082,
       "action": "replace",
       "os": "windows"
     }
