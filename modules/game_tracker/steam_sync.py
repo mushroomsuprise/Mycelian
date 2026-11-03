@@ -18,12 +18,27 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .deltas import diff
 from .models import STEAM, UNLOCK, GameEvent, TrackedGame, TrackerSettings
+from . import covers
 from .store import GameTrackerStore
 
 logger = logging.getLogger(__name__)
 
 REQUEST_GAP_SEC = 1.0  # between per-game achievement requests
 BATCH_SAVE = 20
+
+
+STORE_DETAILS_URL = "https://store.steampowered.com/api/appdetails"
+
+
+def store_header_url(appid: Any) -> Optional[str]:
+    """The store's own header image URL for an app (newer games keep art at hashed addresses). No API key needed."""
+    import requests
+
+    r = requests.get(STORE_DETAILS_URL, params={"appids": str(appid), "filters": "basic"}, timeout=15)
+    r.raise_for_status()
+    entry = (r.json() or {}).get(str(appid)) or {}
+    url = str(((entry.get("data") or {}) if entry.get("success") else {}).get("header_image") or "")
+    return url if url.startswith("https://") else None
 
 
 def cover_url(appid: Any) -> str:
@@ -234,3 +249,6 @@ def name_unlocks(client, events: List[GameEvent], store: GameTrackerStore) -> No
 
 def cover_items(games: Iterable[TrackedGame]) -> List[Tuple[str, str, str]]:
     return [(STEAM, g.game_id, g.cover_url) for g in games if g.cover_url]
+
+
+covers.set_fallback(STEAM, store_header_url)

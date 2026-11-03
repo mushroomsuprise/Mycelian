@@ -2477,6 +2477,22 @@ def _revert_setting(element_id: str) -> None:
         _apply_filters()
 
 
+# Clients already listening for the split divider. Adding a page-level listener again on every
+# rebuild made NiceGUI re-render the whole page, which briefly closed and reopened open dialogs.
+_split_listener_clients: set = set()
+
+
+def _listen_for_split_once() -> None:
+    from nicegui import context
+
+    client = context.client
+    if client.id in _split_listener_clients:
+        return
+    _split_listener_clients.add(client.id)
+    client.layout.on("mycelian-cs-split", _on_split_moved)
+    client.on_delete(lambda: _split_listener_clients.discard(client.id))
+
+
 def _on_split_moved(e: Any) -> None:
     pct = clamp_split_editor_pct(getattr(e, "args", None))
     _custom_sources_ctx["split_pct"] = pct
@@ -2875,7 +2891,7 @@ def create_custom_sources_tab():
             {"config": None, "sections": [], "rows": {}, "changed": set(), "nav_html": None, "search": "", "changed_only": False}
         )
 
-        ui.on("mycelian-cs-split", _on_split_moved)
+        _listen_for_split_once()
         _bind_split_divider_js()
         _apply_inline_preview_visibility(bool(_pst_initial.get("show_inline_preview", True)), persist=False)
 

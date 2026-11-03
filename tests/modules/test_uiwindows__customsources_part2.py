@@ -588,3 +588,22 @@ def test_on_split_moved(env):
     assert env.saves[-1] == {"split_editor_pct": 60.0}
     cs._on_split_moved(object())
     assert cs._custom_sources_ctx["split_pct"] == 56.0
+
+
+def test_split_listener_is_added_once_per_page(monkeypatch):
+    """A second page-level listener makes NiceGUI re-render the page (open dialogs flicker)."""
+    monkeypatch.setattr(cs, "_split_listener_clients", set())
+
+    def build():
+        cs._listen_for_split_once()
+        cs._listen_for_split_once()
+
+    async def check(user):
+        from nicegui import helpers
+
+        wanted = helpers.event_type_to_camel_case("mycelian-cs-split")
+        listeners = [ln for ln in user.client.layout._event_listeners.values() if ln.type == wanted]
+        assert len(listeners) == 1
+        assert user.client.id in cs._split_listener_clients
+
+    run_ui(build, check)

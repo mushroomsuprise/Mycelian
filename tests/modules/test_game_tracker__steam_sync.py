@@ -158,3 +158,37 @@ def test_cover_items():
     from modules.game_tracker.models import TrackedGame
 
     assert steam_sync.cover_items([TrackedGame(platform=STEAM, game_id="1", cover_url="https://c")]) == [(STEAM, "1", "https://c")]
+
+
+def test_store_header_url(monkeypatch):
+    import requests
+
+    calls = []
+
+    class Resp:
+        def __init__(self, body):
+            self.body = body
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.body
+
+    bodies = {
+        "3527290": {"3527290": {"success": True, "data": {"header_image": "https://shared/3527290/abc/header.jpg?t=1"}}},
+        "9": {"9": {"success": False}},
+        "8": {"8": {"success": True, "data": {"header_image": "http://plain"}}},
+    }
+
+    def get(url, params, timeout):
+        calls.append((url, params, timeout))
+        return Resp(bodies[params["appids"]])
+
+    monkeypatch.setattr(requests, "get", get)
+    assert steam_sync.store_header_url(3527290) == "https://shared/3527290/abc/header.jpg?t=1"
+    assert steam_sync.store_header_url("9") is None and steam_sync.store_header_url("8") is None
+    assert calls[0] == (steam_sync.STORE_DETAILS_URL, {"appids": "3527290", "filters": "basic"}, 15)
+    from modules.game_tracker import covers
+
+    assert covers._fallbacks[STEAM] is steam_sync.store_header_url

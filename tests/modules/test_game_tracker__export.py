@@ -257,3 +257,19 @@ def test_steam_mark_keeps_its_holes():
     mark = brand_mark("steam", 240)
     # The centre of the big ring is cut out of the circle (even-odd fill).
     assert mark.getpixel((158, 89))[3] < 60 and mark.getpixel((40, 120))[3] > 200
+
+
+def test_fit_cover_never_stretches():
+    from PIL import Image
+
+    from modules.game_tracker.export import fit_cover
+
+    banner = Image.new("RGB", (460, 215), (255, 0, 0))  # a Steam header
+    out = fit_cover(banner, (600, 900))  # portrait spotlight box
+    assert out.size == (600, 900)
+    assert out.getpixel((300, 450)) == (255, 0, 0)  # the art, centred
+    assert out.getpixel((300, 20)) != (255, 0, 0)  # blurred, dimmed fill above it
+    band = [y for y in range(900) if out.getpixel((300, y)) == (255, 0, 0)]
+    assert abs(len(band) - round(215 * 600 / 460)) <= 2  # kept its shape
+    same_shape = fit_cover(Image.new("RGB", (320, 180), (0, 255, 0)), (160, 90))
+    assert same_shape.getpixel((5, 5)) == (0, 255, 0)  # 16:9 into 16:9 just fills

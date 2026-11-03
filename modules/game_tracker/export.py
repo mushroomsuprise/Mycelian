@@ -180,10 +180,26 @@ def _load_cover(game: TrackedGame) -> Optional[Image.Image]:
         return None
 
 
+def fit_cover(img: Image.Image, size: Tuple[int, int]) -> Image.Image:
+    """The whole cover scaled to fit ``size`` (never stretched or cropped), over a blurred, dimmed
+    copy of itself that fills the rest. A cover that already has the box's shape just fills it."""
+    w, h = size
+    src_ratio, box_ratio = img.width / max(1, img.height), w / max(1, h)
+    if abs(src_ratio - box_ratio) / box_ratio < 0.04:
+        return img.resize((w, h), Image.LANCZOS)
+    back = ImageOps.fit(img, (max(1, w // 4), max(1, h // 4)), Image.BILINEAR)
+    back = back.filter(ImageFilter.GaussianBlur(max(2, min(w, h) // 40))).resize((w, h), Image.BILINEAR)
+    back = Image.blend(back, Image.new("RGB", (w, h), (0, 0, 0)), 0.45)
+    scale = min(w / img.width, h / img.height)
+    fg = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
+    back.paste(fg, ((w - fg.width) // 2, (h - fg.height) // 2))
+    return back
+
+
 def _rounded_paste(cv: Canvas, img: Image.Image, box, radius: int) -> None:
     x0, y0, x1, y1 = [int(round(v)) for v in box]
     w, h = max(1, x1 - x0), max(1, y1 - y0)
-    fitted = ImageOps.fit(img, (w, h), Image.LANCZOS)
+    fitted = fit_cover(img, (w, h))
     mask = Image.new("L", (w, h), 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, w - 1, h - 1), radius=radius, fill=255)
     cv.img.paste(fitted, (x0, y0), mask)

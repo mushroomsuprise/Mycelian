@@ -65,7 +65,10 @@ GAMES_TRACKER_CSS = """
 .gtr-seg.is-full .q-btn { flex: 1 1 0; }
 .gtr-cover { position: relative; width: 60px; height: 60px; border-radius: 9px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: .95rem; color: #fff; box-shadow: 0 0 0 1px var(--color-border-subtle); }
-.gtr-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.gtr-cover-art { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; background: var(--color-bg-base); }
+.gtr-cover-art img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.gtr-cover-art img.bg { object-fit: cover; filter: blur(6px) brightness(.55); transform: scale(1.2); }
+.gtr-cover-art img.fg { object-fit: contain; }
 .gtr-cover.is-lg { width: 76px; height: 76px; font-size: 1.15rem; border-radius: 11px; }
 .gtr-pb { position: absolute; right: -5px; bottom: -5px; width: 21px; height: 21px; border-radius: 6px; display: flex; align-items: center;
   justify-content: center; background: var(--color-bg-elevated); box-shadow: 0 0 0 1px var(--color-border-default); }
@@ -245,7 +248,9 @@ def cover_src(platform: str, game_id: str) -> Optional[str]:
 
 def cover_html(game: TrackedGame, *, large: bool = False) -> str:
     src = cover_src(game.platform, game.game_id)
-    img = f'<img src="{esc(src)}" alt="" onerror="this.remove()">' if src else ""
+    # The art scales down to fit (never stretched or cropped); a blurred copy fills the rest of the tile.
+    img = (f'<span class="gtr-cover-art"><img class="bg" src="{esc(src)}" alt="" onerror="this.parentNode.remove()">'
+           f'<img class="fg" src="{esc(src)}" alt=""></span>') if src else ""
     badge = f'<span class="gtr-pb">{brand_svg("psn" if game.platform == PSN else "steam")}</span>'
     return (
         f'<div class="gtr-cover{" is-lg" if large else ""}" style="background:{cover_tone(game.key)}">'
@@ -719,6 +724,7 @@ class GamesTrackerTab:
                     ).classes("itg-ibtn").tooltip("Game settings")
 
     def _sync_now(self) -> None:
+        covers.forget_failures()  # covers that failed are tried again after this sync
         self.service.sync_now()
         notify("", type="info", source="game_tracker", title="Games Tracker sync started", hint="It runs in the background.")
         self._needs_refresh = True
@@ -984,8 +990,12 @@ class GamesTrackerTab:
 
     def _kv_html(self, g: TrackedGame) -> str:
         info = covers.cover_info(g.platform, g.game_id)
+        left = info["expires_at"] - time.time()
         if info["cached"]:
-            cover = f"Cached {ago(info['fetched_at'])} · refreshes in {max(1, round((info['expires_at'] - time.time()) / 86400))} days"
+            cover = f"Cached {ago(info['fetched_at'])} · refreshes in {max(1, round(left / 86400))} days"
+        elif info["fetched_at"]:
+            hours = max(1, round(left / 3600))
+            cover = f"Couldn't download · tries again in {hours} hour{'s' if hours != 1 else ''} (or click Sync now)"
         else:
             cover = "Not downloaded yet"
         last_sync = (self._status.get(g.platform) or {}).get("last_sync") or 0

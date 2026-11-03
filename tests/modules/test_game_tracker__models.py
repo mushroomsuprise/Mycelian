@@ -94,3 +94,12 @@ def test_settings_from_dict_clamps_and_cleans():
 def test_clean_milestones_rejects_non_lists():
     assert clean_milestones("50") == []
     assert clean_milestones({10, 10, 99}) == [10, 99]
+
+
+def test_cover_cache_defaults_to_30_days_and_old_default_moves_up():
+    assert TrackerSettings().cover_ttl_days == 30 and TrackerSettings().version == 2
+    old = TrackerSettings.from_dict({"cover_ttl_days": 7, "export": {"layout": "wide"}})  # saved before version 2
+    assert old.cover_ttl_days == 30 and old.version == 2
+    assert TrackerSettings.from_dict({"cover_ttl_days": 14}).cover_ttl_days == 14  # a choice is kept
+    assert TrackerSettings.from_dict({"cover_ttl_days": 7, "version": 2}).cover_ttl_days == 7  # chosen after the change
+    assert TrackerSettings.from_dict(old.to_dict()).cover_ttl_days == 30

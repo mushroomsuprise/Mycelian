@@ -184,6 +184,7 @@ class GameEvent:
 
 
 DEFAULT_MILESTONES = [25, 50, 75]
+SETTINGS_VERSION = 2  # 2: cover art kept 30 days by default (was 7)
 
 
 @dataclass
@@ -191,19 +192,24 @@ class TrackerSettings:
     psn_enabled: bool = True
     steam_enabled: bool = True
     sync_minutes: int = 10
-    cover_ttl_days: int = 7
+    cover_ttl_days: int = 30
     cover_missing_hours: int = 6
     milestones: List[int] = field(default_factory=lambda: list(DEFAULT_MILESTONES))
     record_stats: bool = True
     send_events: bool = True
     export: Dict[str, Any] = field(default_factory=dict)  # remembered export-image options
+    version: int = SETTINGS_VERSION
 
     @classmethod
     def from_dict(cls, raw: Optional[Dict[str, Any]]) -> "TrackerSettings":
         known = {f.name for f in fields(cls)}
-        s = cls(**{k: v for k, v in (raw or {}).items() if k in known})
+        raw = dict(raw or {})
+        if raw and _int(raw.get("version")) < 2 and _int(raw.get("cover_ttl_days")) == 7:
+            raw["cover_ttl_days"] = 30  # the old default, saved along with other settings: move it to the new one
+        raw["version"] = SETTINGS_VERSION
+        s = cls(**{k: v for k, v in raw.items() if k in known})
         s.sync_minutes = max(5, min(120, _int(s.sync_minutes) or 10))
-        s.cover_ttl_days = max(1, min(90, _int(s.cover_ttl_days) or 7))
+        s.cover_ttl_days = max(1, min(90, _int(s.cover_ttl_days) or 30))
         s.cover_missing_hours = max(1, min(72, _int(s.cover_missing_hours) or 6))
         s.milestones = clean_milestones(s.milestones)
         s.export = dict(s.export or {}) if isinstance(s.export, dict) else {}

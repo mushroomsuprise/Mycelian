@@ -169,7 +169,7 @@ def test_cover_src_registers_route_once(monkeypatch, tmp_path):
     assert url.startswith("/_mycelian_game_covers/psn_NPWR1_00.jpg?v=")
     tabmod.cover_src(PSN, "NPWR1_00")
     assert added == [("/_mycelian_game_covers", str(tmp_path))]
-    assert '<img src="/_mycelian_game_covers/psn_NPWR1_00.jpg' in tabmod.cover_html(psn_game(gid="NPWR1_00"))
+    assert '<img class="fg" src="/_mycelian_game_covers/psn_NPWR1_00.jpg' in tabmod.cover_html(psn_game(gid="NPWR1_00"))
 
 
 # --------------------------------------------------------------------------- registration
@@ -575,3 +575,24 @@ def test_trophy_icons_drawn_or_official(monkeypatch, tmp_path):
         assert tabmod.grades_html(psn_game()).count("<img") == 4
     finally:
         tabmod._official_trophies.cache_clear()
+
+
+def test_cover_html_fits_and_drawer_reports_failed_covers(env, monkeypatch):
+    monkeypatch.setattr(tabmod, "cover_src", lambda platform, gid: "/_mycelian_game_covers/x.jpg?v=1")
+    html = tabmod.cover_html(steam_game())
+    assert 'class="bg"' in html and 'class="fg"' in html
+    assert ".gtr-cover-art img.fg { object-fit: contain; }" in tabmod.GAMES_TRACKER_CSS
+    tab = tabmod.GamesTrackerTab()
+    now = time.time()
+    monkeypatch.setattr(tabmod.covers, "cover_info", lambda p, g: {"cached": False, "fetched_at": now - 60,
+                                                                  "expires_at": now + 5 * 3600, "ok": False})
+    assert "download · tries again in 5 hours (or click Sync now)" in tab._kv_html(steam_game())
+    monkeypatch.setattr(tabmod.covers, "cover_info", lambda p, g: {"cached": False, "fetched_at": 0, "expires_at": 0, "ok": False})
+    assert "Not downloaded yet" in tab._kv_html(steam_game())
+    monkeypatch.setattr(tabmod.covers, "cover_info", lambda p, g: {"cached": True, "fetched_at": now - 86400 * 2,
+                                                                  "expires_at": now + 86400 * 28, "ok": True})
+    assert "refreshes in 28 days" in tab._kv_html(steam_game())
+    forgot = []
+    monkeypatch.setattr(tabmod.covers, "forget_failures", lambda: forgot.append(1) or 0)
+    tab._sync_now()
+    assert forgot == [1]

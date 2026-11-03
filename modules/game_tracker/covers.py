@@ -28,19 +28,22 @@ DOWNLOAD_TIMEOUT_SEC = 15
 MAX_BYTES = 8 * 1024 * 1024
 _SAFE_ID_RE = re.compile(r"[^A-Za-z0-9_.-]")
 
-DEFAULT_TTL_SEC = 7 * 24 * 3600
+DEFAULT_TTL_SEC = 30 * 24 * 3600
 DEFAULT_MISSING_TTL_SEC = 6 * 3600
 
 _lock = threading.Lock()
 _index: Dict[str, Tuple[str, float, bool]] = {}  # key -> (source url, fetched at, ok)
 _loaded_from: Optional[str] = None
 _pending: set = set()
-_queue: "queue.Queue[Tuple[str, str]]" = queue.Queue()
+_queue: "queue.Queue[Tuple[str, str, str, str]]" = queue.Queue()
 _worker: Optional[threading.Thread] = None
 _ttl_sec = DEFAULT_TTL_SEC
 _missing_ttl_sec = DEFAULT_MISSING_TTL_SEC
 _listeners: List[Callable[[str], None]] = []
 _fetcher: Optional[Callable[[str], bytes]] = None  # tests swap this
+# platform -> fn(game_id) giving another URL to try when the usual one fails (Steam's newer
+# games keep their art at hashed addresses only the store API knows).
+_fallbacks: Dict[str, Callable[[str], Optional[str]]] = {}
 
 
 def cover_dir() -> str:
@@ -61,6 +64,13 @@ def set_ttl(days: float, missing_hours: float) -> None:
     global _ttl_sec, _missing_ttl_sec
     _ttl_sec = max(1, float(days)) * 24 * 3600
     _missing_ttl_sec = max(1, float(missing_hours)) * 3600
+
+
+def set_fallback(platform: str, fn: Optional[Callable[[str], Optional[str]]]) -> None:
+    if fn is None:
+        _fallbacks.pop(platform, None)
+    else:
+        _fallbacks[platform] = fn
 
 
 def add_listener(fn: Callable[[str], None]) -> None:
@@ -165,7 +175,7 @@ def request_covers(items: Iterable[Tuple[str, str, str]]) -> int:
             if entry and _fresh(entry, url, now) and (not entry[2] or os.path.isfile(cover_path(platform, game_id))):
                 continue
             _pending.add(key)
-            _queue.put((key, url))
+            _queue.put((key, url, platform, str(game_id)))
             queued += 1
     if queued:
         _ensure_worker()
@@ -208,9 +218,25 @@ def _to_jpeg(raw: bytes) -> bytes:
     return buf.getvalue()
 
 
-def _store_one(key: str, url: str) -> bool:
+def _fetch_jpeg(url: str, platform: str, game_id: str, key: str) -> bytes:
     try:
-        data = _to_jpeg(_download(url))
+        return _to_jpeg(_download(url))
+    except Exception as first:
+        fallback = _fallbacks.get(platform)
+        alt = None
+        if fallback is not None:
+            try:
+                alt = fallback(game_id)
+            except Exception as e:
+                logger.debug("Games Tracker: cover fallback lookup failed for %s: %s", key, e)
+        if not alt or alt == url or not str(alt).startswith("https://"):
+            raise first
+        return _to_jpeg(_download(alt))
+
+
+def _store_one(key: str, url: str, platform: str = "", game_id: str = "") -> bool:
+    try:
+        data = _fetch_jpeg(url, platform, game_id, key)
         directory = cover_dir()
         os.makedirs(directory, exist_ok=True)
         path = os.path.join(directory, key + ".jpg")
@@ -231,10 +257,10 @@ def _run() -> None:
     saved_at = time.monotonic()
     while True:
         try:
-            key, url = _queue.get(timeout=5)
+            key, url, platform, game_id = _queue.get(timeout=5)
         except queue.Empty:
             break
-        ok = _store_one(key, url)
+        ok = _store_one(key, url, platform, game_id)
         if _queue.empty() or time.monotonic() - saved_at > 5:
             _save_index()
             saved_at = time.monotonic()
@@ -258,6 +284,18 @@ def wait_idle(timeout: float = 10.0) -> bool:
             return True
         time.sleep(0.02)
     return False
+
+
+def forget_failures() -> int:
+    """Drop remembered failures so those covers are tried again on the next request (Sync now)."""
+    with _lock:
+        _load_locked()
+        failed = [k for k, (_u, _t, ok) in _index.items() if not ok]
+        for k in failed:
+            del _index[k]
+    if failed:
+        _save_index()
+    return len(failed)
 
 
 def clear_covers() -> int:

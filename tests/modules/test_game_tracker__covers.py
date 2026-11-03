@@ -117,3 +117,55 @@ def test_to_jpeg_keeps_small_images():
     out = covers._to_jpeg(_png(300, 200))
     with Image.open(io.BytesIO(out)) as im:
         assert im.size == (300, 200)
+
+
+def test_fallback_url_is_tried_when_the_usual_one_fails(cache):
+    asked = []
+
+    def fallback(game_id):
+        asked.append(game_id)
+        return "https://x/hashed/header.jpg"
+
+    previous = covers._fallbacks.get("steam")
+    covers.set_fallback("steam", fallback)
+    try:
+        covers.request_covers([("steam", "3527290", "https://x/fail/header.jpg")])
+        covers.wait_idle()
+    finally:
+        covers.set_fallback("steam", previous)
+    assert asked == ["3527290"] and covers.cached_cover("steam", "3527290")
+    assert cache == ["https://x/fail/header.jpg", "https://x/hashed/header.jpg"]
+    # The index keeps the game's own URL, so the next request sees a fresh cover.
+    assert covers.request_covers([("steam", "3527290", "https://x/fail/header.jpg")]) == 0
+
+
+@pytest.mark.parametrize("answer", [None, "https://x/fail/again.jpg", "http://insecure", RuntimeError("store down")])
+def test_failed_fallbacks_still_count_as_failures(cache, answer):
+    def fallback(game_id):
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    previous = covers._fallbacks.get("steam")
+    covers.set_fallback("steam", fallback)
+    try:
+        covers.request_covers([("steam", "1", "https://x/fail/a.jpg")])
+        covers.wait_idle()
+    finally:
+        covers.set_fallback("steam", previous)
+    assert covers.cached_cover("steam", "1") is None and covers.cover_info("steam", "1")["ok"] is False
+
+
+def test_forget_failures_lets_them_retry(cache):
+    covers.request_covers([("psn", "N", "https://x/fail.png"), ("psn", "OK", "https://x/a.png")])
+    covers.wait_idle()
+    assert covers.request_covers([("psn", "N", "https://x/fail.png")]) == 0
+    assert covers.forget_failures() == 1 and covers.forget_failures() == 0
+    assert covers.request_covers([("psn", "N", "https://x/fail.png"), ("psn", "OK", "https://x/a.png")]) == 1
+
+
+def test_default_ttl_is_30_days():
+    assert covers.DEFAULT_TTL_SEC == 30 * 24 * 3600
+    covers.set_fallback("psn", lambda gid: None)
+    covers.set_fallback("psn", None)
+    assert "psn" not in covers._fallbacks
