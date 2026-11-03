@@ -47,14 +47,26 @@
 <h3>Tracker options</h3>
 <p>Turn each platform on or off, choose whether changes count in Statistics and fire chatbot and connector events, and set the sync interval, how long cover art is kept (7 days by default; covers that failed are retried after 6 hours) and the progress milestones. <strong>Clear covers</strong> downloads all cover art again.</p>
 
-<h2>Export image</h2>
+<h2>Export</h2>
 
-<p><strong>Export image</strong> (or <strong>Export card</strong> in a game's settings) makes a PNG in your theme colors, like the Statistics highlights image:</p>
+<p><strong>Export</strong> in the tab header saves an image or a spreadsheet; pick one under <em>Format</em>. <strong>Export card</strong> in a game's settings goes straight to that game's image.</p>
+
+<h3>Image (PNG)</h3>
+<p>A picture in your theme colors, like the Statistics highlights image:</p>
 <ul>
   <li><strong>Library recap</strong>: headline tiles, a grid of games, the trophy cabinet and recent unlocks.</li>
   <li><strong>Game spotlight</strong>: one game's cover, progress, grade breakdown, trophy groups and recent unlocks.</li>
 </ul>
 <p>Pick a layout (Wide 16:9, Portrait 4:5 or Square 1:1), a title, platforms, a period, which sections and tiles to show, and how the grid picks games. Images are saved to the <code>exports</code> folder in the Mycelian data folder. Your choices are remembered.</p>
+
+<h3>Spreadsheet (XLSX)</h3>
+<p>Your library as an Excel workbook that also opens in Numbers, LibreOffice and Google Sheets:</p>
+<ul>
+  <li><strong>Games</strong>: one row per game with completion, earned and total, PlayStation trophies by grade, Steam playtime, last played and first seen dates, and the NPWR / App ID and NP Title ID. Numbers and dates are real values, and the header row has filters.</li>
+  <li><strong>Summary</strong>: the totals, the same ones as the overview.</li>
+  <li><strong>Unlock history</strong> (optional): every unlock, completion, new game and milestone since the first import, with grade and rarity.</li>
+</ul>
+<p>Choose the platforms and whether hidden games are listed (they get a <em>Hidden</em> column and are never counted in the summary). The file is saved to the same <code>exports</code> folder as <code>games_library_&lt;date&gt;.xlsx</code>.</p>
 
 <h2>Chatbot, connectors and overlays</h2>
 
@@ -65,6 +77,7 @@
 <tr><td>Anywhere in chat</td><td><code>{games.total}</code>, <code>{games.psn.platinums}</code>, <code>{games.steam.perfect}</code>, <code>{games.current.title}</code>, <code>{games.current.progress}</code> and more</td></tr>
 <tr><td>Connectors</td><td>The same four triggers, plus the <em>Game lookup</em> action for any game's progress</td></tr>
 <tr><td>Statistics</td><td>A Games Tracker card with trophies by grade, achievements, platinums, perfect games, games started and milestones</td></tr>
+<tr><td>HTTP API</td><td><code>/api/game-tracker/export.png</code> and <code>/api/game-tracker/export.xlsx</code> return the image or the spreadsheet with your saved options</td></tr>
 <tr><td>Overlays</td><td><code>game_tracker_event</code> for each change and <code>game_tracker_update</code> with the library totals</td></tr>
 </tbody>
 </table></div>

@@ -192,3 +192,23 @@ def test_export_png(client, tracker, monkeypatch):
     assert Image.open(io.BytesIO(res.data)).size == (1080, 1080)
     assert (seen[-1].layout, seen[-1].title, seen[-1].game_key, seen[-1].template) == ("square", "Override", "steam:440", "game")
     assert client.get("/api/game-tracker/export.png?template=game&game=psn:NPWR09999_00").status_code == 404
+
+
+def test_export_xlsx(client, tracker):
+    from openpyxl import load_workbook
+
+    tracker.service.settings.export = {"spreadsheet": {"include_history": False}}
+    res = client.get("/api/game-tracker/export.xlsx")
+    assert res.status_code == 200 and res.headers["Content-Type"].startswith("application/vnd.openxmlformats")
+    assert 'filename="games_library_' in res.headers["Content-Disposition"]
+    wb = load_workbook(io.BytesIO(res.data))
+    assert wb.sheetnames == ["Games", "Summary"]  # saved option: no history sheet
+    assert [r[0] for r in wb["Games"].iter_rows(min_row=2, values_only=True)] == ["Bravo", "Alpha"]
+    res = client.get("/api/game-tracker/export.xlsx?platform=psn&include_hidden=1&include_history=yes")
+    wb = load_workbook(io.BytesIO(res.data))
+    assert wb.sheetnames == ["Games", "Summary", "Unlock history"] and wb["Games"].max_row == 2
+    assert 'filename="games_psn_' in res.headers["Content-Disposition"]
+    hidden_only = client.get("/api/game-tracker/export.xlsx?platform=steam&include_hidden=true")
+    assert load_workbook(io.BytesIO(hidden_only.data))["Games"].max_row == 3
+    tracker.store.delete_game("psn", "NPWR00001_00")
+    assert client.get("/api/game-tracker/export.xlsx?platform=psn").status_code == 404

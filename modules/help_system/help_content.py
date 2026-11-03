@@ -578,7 +578,8 @@ HELP_TOPICS: Dict[str, HelpTopic] = {
         summary='Every PlayStation and Steam game you have played, with trophy and achievement progress, cover art, '
                 'per-game settings, export images, and events for Statistics, the chatbot and connectors.',
         keywords=['games tracker', 'trophies', 'achievements', 'platinum', 'npwr', 'np title id', 'game cache', 'cover art',
-                  'library', 'steam', 'psn', 'playstation', 'export image', 'milestone', 'baseline'],
+                  'library', 'steam', 'psn', 'playstation', 'export image', 'milestone', 'baseline', 'spreadsheet', 'xlsx',
+                  'excel', 'export'],
         related_topics=['integrations_psn', 'integrations_steam', 'settings_statistics', 'connector_triggers', 'game_hooks'],
     ),
     # =========================================

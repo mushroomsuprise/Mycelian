@@ -37,6 +37,7 @@ dependencies = [
     "obsws-python>=1.8.0",
     "discord-py>=2.7.1",
     "certifi>=2024.8.30",
+    "openpyxl>=3.1.5",
 ]
 
 [dependency-groups]

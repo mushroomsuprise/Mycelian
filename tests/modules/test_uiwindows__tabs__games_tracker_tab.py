@@ -501,3 +501,52 @@ def test_steam_private_and_unread_states():
     banner = tabmod.steam_private_banner([psn_game(), private])
     assert "Steam achievements are private" in banner and "Game details" in banner
     assert tabmod.steam_private_banner([psn_game(), unread]) == ""
+
+
+def test_export_dialog_spreadsheet_mode(env):
+    env.store.upsert_games([psn_game(), steam_game(), steam_game("12", "Secret", hidden=True)])
+    tabs: List[Any] = []
+
+    async def check(user):
+        tab = tabs[0]
+        await run_scheduled(env, "_refresh")
+        await user.should_see("Export")
+        tab.open_export()
+        assert tab._export_format == "image" and tab.ui_elements["exp_save_png"].visible
+        tab._set_export_format("spreadsheet")
+        await user.should_see("Unlock history sheet")
+        await user.should_not_see("Headline tiles")
+        assert tab.ui_elements["exp_save_xlsx"].visible and not tab.ui_elements["exp_save_png"].visible
+        assert not tab.ui_elements["exp_copy"].visible
+        await tab._render_preview(tab._export_render_seq)
+        content = tab.ui_elements["exp_img"].content
+        assert "<table>" in content and "Hades" in content and "Secret" not in content and "Unlock history" in content
+        assert tab.ui_elements["exp_size"].text.startswith("2 games · 0 history rows")
+        tab._set_sheet(include_hidden=True, include_history=False)
+        await tab._render_preview(tab._export_render_seq)
+        assert "Secret" in tab.ui_elements["exp_img"].content and "Unlock history" not in tab.ui_elements["exp_img"].content
+        await tab._save_spreadsheet()
+        path = env.notes[-1]["message"].removeprefix("Saved to ").rstrip(".")
+        assert env.notes[-1]["title"] == "Games spreadsheet saved" and path.endswith(".xlsx") and Path(path).is_file()
+        saved = env.store.load_settings().export
+        assert saved["format"] == "spreadsheet" and saved["spreadsheet"] == {"platform": "all", "include_hidden": True,
+                                                                            "include_history": False}
+        tab._close_export()
+        tab.open_export()  # remembered
+        assert tab._export_format == "spreadsheet" and tab._sheet_opts.include_hidden is True
+        tab.open_export(tab._games[0])  # Export card always opens the image
+        assert tab._export_format == "image" and tab._export_opts.template == "game"
+        tab._set_export_format("spreadsheet")
+        tab._set_sheet(platform="psn", include_hidden=False)
+        env.store.delete_game(PSN, "NPWR00001_00")
+        await tab._render_preview(tab._export_render_seq)
+        assert "No games to list" in tab.ui_elements["exp_img"].content
+        await tab._save_spreadsheet()
+        assert env.notes[-1]["title"] == "Nothing to export"
+
+    run_ui(build_into(tabs), check)
+
+
+def test_sheet_preview_html_escapes_and_counts():
+    html = tabmod.sheet_preview_html({"games": 5, "headers": ["Game"], "rows": [["<b>x</b>"]], "sheets": ["Games", "Summary"]})
+    assert "&lt;b&gt;x&lt;/b&gt;" in html and "+ 4 more rows" in html and 'class="is-on">Games' in html

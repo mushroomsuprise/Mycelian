@@ -6111,6 +6111,32 @@ class WebEngine:
                 logger.error("game tracker export: %s", e, exc_info=True)
                 return _bad("Couldn't draw the image", 500)
 
+        @self.app.route("/api/game-tracker/export.xlsx")
+        def game_tracker_export_xlsx():
+            try:
+                from .game_tracker.spreadsheet import XLSX_MIME, SpreadsheetOptions, export_filename, workbook_bytes
+
+                svc = _service()
+                raw = dict((svc.settings.export or {}).get("spreadsheet") or {})
+                args = request.args
+                if args.get("platform") is not None:
+                    raw["platform"] = args.get("platform")
+                for key in ("include_hidden", "include_history"):
+                    if args.get(key) is not None:
+                        raw[key] = str(args.get(key)).strip().lower() in ("1", "true", "yes", "on")
+                options = SpreadsheetOptions.from_dict(raw)
+                data = workbook_bytes(svc.store, options)
+                if data is None:
+                    return make_response(b"", 404)
+                resp = make_response(data)
+                resp.headers["Content-Type"] = XLSX_MIME
+                resp.headers["Content-Disposition"] = f'attachment; filename="{export_filename(options)}"'
+                resp.headers["Cache-Control"] = "no-store"
+                return resp
+            except Exception as e:
+                logger.error("game tracker spreadsheet export: %s", e, exc_info=True)
+                return _bad("Couldn't build the spreadsheet", 500)
+
     def register_routes(self):
         """Register dynamic routes based on HTML templates in the template directory"""
         logger.debug("Registering template routes...")

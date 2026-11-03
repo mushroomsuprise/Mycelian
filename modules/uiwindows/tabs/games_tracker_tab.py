@@ -130,6 +130,20 @@ GAMES_TRACKER_CSS = """
 .gtr-mfoot { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--color-border-subtle); background: var(--color-bg-surface); }
 .gtr-mfoot .q-btn { min-height: 30px; font-size: .78rem; }
 @media (max-width: 900px) { .gtr-mbody { grid-template-columns: 1fr; } .gtr-mopts { border-right: none; border-bottom: 1px solid var(--color-border-subtle); max-height: 45vh; } }
+.gtr-sheet { width: min(100%, 860px); border: 1px solid var(--color-border-default); border-radius: 8px; overflow: hidden;
+  background: var(--color-bg-elevated); box-shadow: 0 14px 34px rgba(0, 0, 0, .3); }
+.gtr-sheet-scroll { overflow: auto; max-height: 520px; }
+.gtr-sheet table { width: 100%; border-collapse: collapse; font-size: .76rem; font-variant-numeric: tabular-nums; }
+.gtr-sheet th { position: sticky; top: 0; text-align: left; padding: 7px 10px; font-weight: 700; color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-primary) 28%, var(--color-bg-surface)); white-space: nowrap; }
+.gtr-sheet td { padding: 6px 10px; color: var(--color-text-secondary); border-top: 1px solid var(--color-border-subtle); white-space: nowrap;
+  max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.gtr-sheet tr:nth-child(even) td { background: color-mix(in srgb, var(--color-text-primary) 3%, transparent); }
+.gtr-sheet-more { padding: 6px 10px; font-size: .72rem; color: var(--color-text-muted); border-top: 1px solid var(--color-border-subtle); }
+.gtr-sheet-tabs { display: flex; gap: 2px; padding: 0 8px; background: var(--color-bg-surface); border-top: 1px solid var(--color-border-subtle); }
+.gtr-sheet-tabs span { padding: 5px 12px; font-size: .7rem; color: var(--color-text-muted); }
+.gtr-sheet-tabs span.is-on { color: var(--color-text-primary); background: var(--color-bg-elevated); font-weight: 650;
+  box-shadow: 0 2px 0 var(--color-primary) inset; }
 .gtr-olabel { margin: 16px 0 6px; font-size: .66rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-muted); }
 .gtr-osub { margin: -2px 0 8px; font-size: .72rem; line-height: 1.35; color: var(--color-text-muted); }
 .gtr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -338,6 +352,17 @@ def steam_private_banner(games: Sequence[TrackedGame]) -> str:
     )
 
 
+def sheet_preview_html(data: Dict[str, Any]) -> str:
+    """The first rows of the Games sheet, drawn as a table in the export dialog."""
+    head = "".join(f"<th>{esc(h)}</th>" for h in data["headers"])
+    body = "".join("<tr>" + "".join(f"<td>{esc(c)}</td>" for c in row) + "</tr>" for row in data["rows"])
+    more = data["games"] - len(data["rows"])
+    foot = f'<div class="gtr-sheet-more">+ {more:,} more row{"s" if more != 1 else ""}</div>' if more > 0 else ""
+    tabs = "".join(f'<span class="{"is-on" if i == 0 else ""}">{esc(n)}</span>' for i, n in enumerate(data["sheets"]))
+    return (f'<div class="gtr-sheet"><div class="gtr-sheet-scroll"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
+            f'</div>{foot}<div class="gtr-sheet-tabs">{tabs}</div></div>')
+
+
 class GamesTrackerTab:
     name = "Games Tracker"
 
@@ -363,6 +388,8 @@ class GamesTrackerTab:
         self._drawer_game: Optional[TrackedGame] = None
         self._drawer_edits: Dict[str, Any] = {}
         self._export_opts: Any = None
+        self._export_format = "image"  # or "spreadsheet"
+        self._sheet_opts: Any = None
         self._export_render_seq = 0
 
     # ----- lifecycle -----
@@ -409,7 +436,7 @@ class GamesTrackerTab:
                     ui.html(f'{icon_html("insights")}Overview', sanitize=False).classes("itg-sec-head")
                     ui.element("div").classes("itg-spacer")
                     self.ui_elements["synced"] = ui.label("").classes("gtr-sub")
-                    self.ui_elements["export_btn"] = outline_button("Export image", self.open_export, icon="photo_camera")
+                    self.ui_elements["export_btn"] = outline_button("Export", self.open_export, icon="ios_share")
                     self.ui_elements["sync_btn"] = outline_button("Sync now", self._sync_now, icon="sync")
                 self.ui_elements["banner"] = ui.html("", sanitize=False).classes("w-full")
                 self.ui_elements["overview"] = ui.html("", sanitize=False).classes("w-full")
@@ -1004,11 +1031,12 @@ class GamesTrackerTab:
         with ui.dialog().props("full-width") as dialog:
             self.ui_elements["export"] = dialog
             with ui.element("div").classes("itg").style("width:100%;display:flex;justify-content:center"):
-                with ui.element("div").classes("gtr-modal").props('role=dialog aria-label="Export image"'):
+                with ui.element("div").classes("gtr-modal").props('role=dialog aria-label="Export"'):
                     with ui.element("div").classes("gtr-mhead"):
-                        ui.html(f'<span class="itg-tile">{icon_html("photo_camera")}</span>'
-                                '<span><div class="itg-title-name">Export image</div>'
-                                '<div class="itg-title-sub">A PNG of your library or one game. Colors follow your theme.</div></span>',
+                        ui.html(f'<span class="itg-tile">{icon_html("ios_share")}</span>'
+                                '<span><div class="itg-title-name">Export</div>'
+                                '<div class="itg-title-sub">A PNG image or an XLSX spreadsheet of your library. Images follow your theme.'
+                                '</div></span>',
                                 sanitize=False).classes("itg-title")
                         ui.element("div").classes("itg-spacer")
                         ui.button(icon="close", on_click=self._close_export).props('flat round dense aria-label="Close"').classes("itg-ibtn")
@@ -1022,16 +1050,22 @@ class GamesTrackerTab:
                         ui.element("div").classes("itg-spacer")
                         ui.button(icon="folder_open", on_click=self._open_exports_folder).props(
                             'flat round dense aria-label="Open the exports folder"').classes("itg-ibtn").tooltip("Open the exports folder")
-                        outline_button("Copy image", self._copy_export, icon="content_copy")
-                        primary_button("Save PNG", self._save_export, icon="download")
+                        self.ui_elements["exp_copy"] = outline_button("Copy image", self._copy_export, icon="content_copy")
+                        self.ui_elements["exp_save_png"] = primary_button("Save PNG", self._save_export, icon="download")
+                        self.ui_elements["exp_save_xlsx"] = primary_button("Save XLSX", self._save_spreadsheet, icon="download")
 
     def open_export(self, game: Optional[TrackedGame] = None) -> None:
         from ...game_tracker.export import ExportOptions
+        from ...game_tracker.spreadsheet import SpreadsheetOptions
 
-        opts = ExportOptions.from_dict(self.service.settings.export)
+        saved = dict(self.service.settings.export or {})
+        opts = ExportOptions.from_dict(saved)
+        self._sheet_opts = SpreadsheetOptions.from_dict(saved.get("spreadsheet"))
+        self._export_format = "spreadsheet" if saved.get("format") == "spreadsheet" else "image"
         if isinstance(game, TrackedGame):
             opts.template = "game"
             opts.game_key = game.key
+            self._export_format = "image"
             self.ui_elements["drawer"].close()
         self._export_opts = opts
         self._render_export_options()
@@ -1048,9 +1082,12 @@ class GamesTrackerTab:
             return
         try:
             s = self.service.settings
-            if s.export != self._export_opts.to_dict():
-                self.service.save_settings(TrackerSettings.from_dict({**s.to_dict(), "export": self._export_opts.to_dict()}))
-                self._loaded.export = self._export_opts.to_dict()
+            wanted = {**self._export_opts.to_dict(), "format": self._export_format}
+            if self._sheet_opts is not None:
+                wanted["spreadsheet"] = self._sheet_opts.to_dict()
+            if s.export != wanted:
+                self.service.save_settings(TrackerSettings.from_dict({**s.to_dict(), "export": wanted}))
+                self._loaded.export = wanted
         except Exception:
             logger.debug("Games Tracker: export options not saved", exc_info=True)
 
@@ -1095,7 +1132,17 @@ class GamesTrackerTab:
             current.remove(key) if key in current else current.append(key)
             self._set_export(rebuild=True, **{attr: current})
 
+        spreadsheet = self._export_format == "spreadsheet"
+        self.ui_elements["exp_copy"].set_visibility(not spreadsheet)
+        self.ui_elements["exp_save_png"].set_visibility(not spreadsheet)
+        self.ui_elements["exp_save_xlsx"].set_visibility(spreadsheet)
         with box:
+            label("Format")
+            seg([("image", "Image (PNG)", "image"), ("spreadsheet", "Spreadsheet (XLSX)", "table_view")], self._export_format,
+                self._set_export_format)
+            if spreadsheet:
+                self._build_spreadsheet_options(label, seg)
+                return
             label("Image")
             seg([(k, t, i) for k, t, i in ex.TEMPLATES], o.template,
                 lambda k: self._set_export(rebuild=True, template=k, hidden_sections=[], title=""))
@@ -1153,6 +1200,31 @@ class GamesTrackerTab:
         w, h = ex.LAYOUTS[o.layout]
         self.ui_elements["exp_size"].set_text(f"{w} × {h} PNG · preview updates as you change options")
 
+    def _set_export_format(self, fmt: str) -> None:
+        self._export_format = "spreadsheet" if fmt == "spreadsheet" else "image"
+        self.ui_elements["exp_img"].set_content("")
+        self._render_export_options()
+        self._schedule_preview()
+
+    def _set_sheet(self, **changes: Any) -> None:
+        for k, v in changes.items():
+            setattr(self._sheet_opts, k, v)
+        self._render_export_options()
+        self._schedule_preview()
+
+    def _build_spreadsheet_options(self, label, seg) -> None:
+        o = self._sheet_opts
+        label("Platforms")
+        seg([("all", "All", ""), (PSN, "PlayStation", ""), (STEAM, "Steam", "")], o.platform, lambda k: self._set_sheet(platform=k))
+        label("Include")
+        switch_row("Hidden games", "Listed with a Hidden column; never counted in the summary", o.include_hidden,
+                   lambda v: self._set_sheet(include_hidden=v))
+        switch_row("Unlock history sheet", "Every unlock, completion, new game and milestone since the first import",
+                   o.include_history, lambda v: self._set_sheet(include_history=v))
+        hint("Games lists every game with completion, trophies or achievements, playtime and dates. Summary has the totals. "
+             "Numbers and dates stay real values, so the file sorts and filters in Excel, Numbers, LibreOffice or Google Sheets.")
+        self.ui_elements["exp_size"].set_text("XLSX spreadsheet · preview shows the first rows of the Games sheet")
+
     def _toggle_pick(self, key: str, on: bool) -> None:
         picked = [k for k in self._export_opts.picked if k != key] + ([key] if on else [])
         self._set_export(picked=picked)
@@ -1180,6 +1252,9 @@ class GamesTrackerTab:
     async def _render_preview(self, seq: int) -> None:
         if seq != self._export_render_seq or self._export_opts is None:
             return
+        if self._export_format == "spreadsheet":
+            await self._render_sheet_preview(seq)
+            return
         try:
             data = await run.io_bound(self._render_export)
         except Exception as e:
@@ -1196,6 +1271,48 @@ class GamesTrackerTab:
             return
         self.ui_elements["exp_img"].set_content(
             f'<img alt="Export preview" src="data:image/jpeg;base64,{base64.b64encode(data).decode()}">')
+
+    async def _render_sheet_preview(self, seq: int) -> None:
+        from ...game_tracker.spreadsheet import SpreadsheetOptions, preview_rows
+
+        opts = SpreadsheetOptions.from_dict(self._sheet_opts.to_dict())
+        try:
+            data = await run.io_bound(preview_rows, self.service.store, opts)
+        except Exception as e:
+            logger.error("Games Tracker spreadsheet preview failed: %s", e, exc_info=True)
+            data = None
+        if seq != self._export_render_seq:
+            return
+        if not data or not data["games"]:
+            text = "No games to list with these options." if data else "Couldn't build the preview. Details are in the log."
+            self.ui_elements["exp_img"].set_content(f'<div class="itg-empty">{icon_html("table_view")} {esc(text)}</div>')
+            return
+        self.ui_elements["exp_img"].set_content(sheet_preview_html(data))
+        events = f" · {data['events']:,} history row{'s' if data['events'] != 1 else ''}" if "Unlock history" in data["sheets"] else ""
+        self.ui_elements["exp_size"].set_text(
+            f"{data['games']:,} game{'s' if data['games'] != 1 else ''}{events} · sheets: {', '.join(data['sheets'])}")
+
+    async def _save_spreadsheet(self) -> None:
+        from ...game_tracker.spreadsheet import SpreadsheetOptions, save_spreadsheet
+
+        self._remember_export()
+        opts = SpreadsheetOptions.from_dict(self._sheet_opts.to_dict())
+        try:
+            path = await run.io_bound(save_spreadsheet, self.service.store, opts)
+        except Exception as e:
+            logger.error("Games Tracker spreadsheet export failed: %s", e, exc_info=True)
+            notify("", type="error", source="game_tracker", title="Couldn't save the spreadsheet",
+                   hint="Check there's free space, the Mycelian data folder is writable and the file isn't open in Excel, then try again.",
+                   details=f"{type(e).__name__}: {e}")
+            return
+        if not path:
+            notify("Change the platforms or include hidden games so there's something to list.", type="info", source="game_tracker",
+                   title="Nothing to export")
+            return
+        self.ui_elements["exp_saved"].set_text(f"Saved to {path}")
+        notify(f"Saved to {path}.", type="success", source="game_tracker", title="Games spreadsheet saved",
+               actions=[{"kind": "call", "label": "Open folder", "icon": "folder_open", "fn": self._open_exports_folder},
+                        {"kind": "copy", "text": path, "label": "Copy path"}])
 
     async def _save_export(self) -> None:
         from ...game_tracker.export import ExportOptions, render_games_image, save_export_image
