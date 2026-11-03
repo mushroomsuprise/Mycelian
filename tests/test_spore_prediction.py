@@ -86,7 +86,7 @@ def test_prediction_and_goal_events_and_preview_mocks():
 
 
 def test_runtime_requests_goal_state_and_knows_the_prediction_widget():
-    runtime = (ROOT / "templates/_boilerplates/spore_data_runtime.js").read_text()
+    runtime = (ROOT / "templates/_boilerplates/spore_data_runtime.js").read_text(encoding="utf-8")
     assert "twitch_goal_: 'twitch_goal_request_state'" in runtime
     assert "function sporeBindPrediction" in runtime and "socket.emit('prediction_request_state'" in runtime
     assert "[data-spore-type=\"prediction\"]" in runtime
@@ -96,21 +96,21 @@ def test_shipped_templates_carry_the_current_runtime():
     from modules.spore_studio.spore_data_codegen import inject_data_runtime_block
 
     for name in ("bitcounter", "giveaway", "poll", "predictions", "steam_achievements", "subcounter"):
-        html = (ROOT / f"templates/{name}.html").read_text()
+        html = (ROOT / f"templates/{name}.html").read_text(encoding="utf-8")
         assert inject_data_runtime_block(html) == html, name
 
 
 def test_shipped_predictions_template_is_spore_and_wired():
-    sidecar = json.loads((ROOT / "templates/_spore/predictions.spore.json").read_text())
+    sidecar = json.loads((ROOT / "templates/_spore/predictions.spore.json").read_text(encoding="utf-8"))
     assert sidecar["template_name"] == "predictions" and sidecar["alert_system"] == "instant"
     (el,) = sidecar["elements"]
     assert el["type"] == "prediction" and el["start_hidden"] is True
     (feed,) = el["data_feed"]
     assert feed["target"]["id"] in dfr.target_ids_for("prediction")
     assert feed["source"]["events"] == ["prediction_state", "prediction_ended"]
-    html = (ROOT / "templates/predictions.html").read_text()
+    html = (ROOT / "templates/predictions.html").read_text(encoding="utf-8")
     assert 'data-spore-type="prediction"' in html and "SPORE_STUDIO:dom-begin" in html
-    config = json.loads((ROOT / "templates/template_configs/predictions.json").read_text())
+    config = json.loads((ROOT / "templates/template_configs/predictions.json").read_text(encoding="utf-8"))
     assert config.get("spore_studio") is True
     assert {"prediction1_title", "prediction1_color_1", "prediction1_autohide_seconds"} <= {e.get("id") for e in config["elements"]}
     assert {m["event"] for m in config["preview_mocks"]} >= {"prediction_state", "prediction_ended"}
@@ -128,11 +128,11 @@ def test_installer_payload_ships_the_predictions_template():
 
 
 def test_editor_and_css_know_the_prediction_widget():
-    editor = (ROOT / "assets/default_assets/spore_studio/editor.js").read_text()
+    editor = (ROOT / "assets/default_assets/spore_studio/editor.js").read_text(encoding="utf-8")
     for needle in ('prediction: "Prediction"', '"poll", "prediction", "progress_bar"', "function paintPredictionPreview",
                    "/api/spore-studio/prediction-state/"):
         assert needle in editor, needle
-    css = (ROOT / "assets/default_assets/spore_studio/editor.css").read_text()
+    css = (ROOT / "assets/default_assets/spore_studio/editor.css").read_text(encoding="utf-8")
     start = behavior_blocks.WIDGET_CSS.index(".spore-prediction {")
     assert behavior_blocks.WIDGET_CSS[start:] in css  # canvas copy stays in sync
-    assert "prediction: \"prediction\"" in (ROOT / "assets/default_assets/spore_studio/spore_ui.js").read_text()
+    assert "prediction: \"prediction\"" in (ROOT / "assets/default_assets/spore_studio/spore_ui.js").read_text(encoding="utf-8")
