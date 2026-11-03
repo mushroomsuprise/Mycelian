@@ -1,7 +1,7 @@
 # Copyright (c) 2024-2026 Mycelian
 # SPDX-License-Identifier: MIT
 """
-Twitch lookups for chatbot commands and events (no NiceGUI).
+Lookups for chatbot commands and events (no NiceGUI): Twitch, plus the Games Tracker library.
 
 Two modes, both using the live Twitch connection (broadcaster token; ids,
 client id, tokens and headers are filled in automatically):
@@ -338,6 +338,41 @@ LOOKUPS: List[Dict[str, Any]] = [
         "scopes": ["channel:manage:ads"],
         "token": "broadcaster",
     },
+    {
+        "id": "game_progress",
+        "label": "A game's progress",
+        "group": "Games",
+        "hint": "Finds a game in your Games Tracker library by name (typos are fine): whether you've played it, "
+                "its completion and trophies or achievements. Blank looks up your most recently played game.",
+        "target": None,
+        "text_arg": {"label": "Game name", "default": "{command_message}",
+                     "placeholder": "Game name, e.g. {command_message} (blank = last played)"},
+        "options": [
+            {
+                "key": "platform",
+                "label": "Platform",
+                "choices": {"any": "PlayStation or Steam", "psn": "PlayStation only", "steam": "Steam only"},
+                "default": "any",
+            }
+        ],
+        "variables": [
+            _var("game_played", "Played it (yes/no)", "yes"),
+            _var("game_title", "Game", "Elden Ring"),
+            _var("game_progress", "Completion (%)", "78"),
+            _var("game_trophies", "Trophies / achievements", "1 platinum, 3 gold, 9 silver, 22 bronze"),
+            _var("game_earned", "Trophies / achievements earned", "35"),
+            _var("game_total", "Trophies / achievements in total", "42"),
+            _var("game_completed", "Platinum / 100% (yes/no)", "no"),
+            _var("game_platform", "Platform", "PlayStation"),
+            _var("game_console", "Console", "PS5"),
+            _var("game_last_played", "Last played", "2 days ago"),
+            _var("game_playtime", "Playtime (Steam)", "142 hours"),
+            _var("game_query", "What the viewer typed", "elden ring"),
+        ],
+        "scopes": [],
+        "token": None,
+        "needs_twitch": False,
+    },
 ]
 
 ADVANCED_VARIABLES: List[Dict[str, Any]] = [
@@ -435,6 +470,8 @@ def lookup_available(lookup: Any) -> Tuple[bool, str]:
     entry = None if is_advanced else get_lookup(lookup_id)
     if entry is None and not is_advanced:
         return False, "Unknown lookup."
+    if entry is not None and entry.get("needs_twitch") is False:
+        return True, ""
     api = _api()
     if api is None or not getattr(api, "is_connected", False):
         return False, "Connect your Twitch account in Settings to use this."
@@ -796,6 +833,61 @@ async def _snooze_ad(config, context, kind, entry):
     return {"snooze_count": str(rows[0].get("snooze_count", 0) if rows else 0)}
 
 
+def _ago(ts: float) -> str:
+    if not ts:
+        return ""
+    moment = datetime.fromtimestamp(float(ts))
+    if (datetime.now() - moment).total_seconds() < 3600:
+        return "just now"
+    return friendly_duration(moment, max_units=1) + " ago"
+
+
+def game_lookup_variables(game: Any, query: str) -> Dict[str, Any]:
+    """Chat variables for one Games Tracker game (``None``: not in the library)."""
+    if game is None:
+        return {"game_played": "no", "game_title": query, "game_progress": "0", "game_trophies": "", "game_earned": "0",
+                "game_total": "0", "game_completed": "no", "game_platform": "", "game_console": "",
+                "game_last_played": "", "game_playtime": "", "game_query": query}
+    psn = game.platform == "psn"
+    if psn:
+        earned = game.earned or {}
+        parts = [f"{int(earned.get(g, 0) or 0)} {g}" for g in ("platinum", "gold", "silver", "bronze") if earned.get(g)]
+        trophies = ", ".join(parts) if parts else "no trophies yet"
+    elif game.defined_total:
+        trophies = f"{game.earned_total} of {game.defined_total} achievements"
+    else:
+        trophies = "no achievements"
+    hours = int(game.playtime_min or 0) / 60
+    playtime = "" if psn else (f"{hours:.0f} hour{'s' if round(hours) != 1 else ''}" if hours >= 1 else f"{game.playtime_min} minutes")
+    return {
+        "game_played": "yes",
+        "game_title": game.display_title,
+        "game_progress": str(int(game.progress or 0)),
+        "game_trophies": trophies,
+        "game_earned": str(game.earned_total),
+        "game_total": str(game.defined_total),
+        "game_completed": "yes" if game.is_complete else "no",
+        "game_platform": "PlayStation" if psn else "Steam",
+        "game_console": game.platform_label or ("PlayStation" if psn else "Steam"),
+        "game_last_played": _ago(game.last_played),
+        "game_playtime": playtime,
+        "game_query": query,
+    }
+
+
+async def _game_progress(config, context, kind, entry):
+    from .game_tracker.service import find_game
+
+    query = _text_arg(config, context, entry)
+    platform = str(config.get("platform") or "any").lower()
+    game = await asyncio.to_thread(find_game, query, "" if platform == "any" else platform)
+    variables = game_lookup_variables(game, query)
+    if game is None:
+        what = f"“{query}”" if query else "any game"
+        raise LookupFailure("not_played", f"No {what} in the Games Tracker library", variables)
+    return variables
+
+
 _IMPLEMENTATIONS = {
     "follow_age": _follow_age,
     "account_age": _account_age,
@@ -812,6 +904,7 @@ _IMPLEMENTATIONS = {
     "stream_marker": _stream_marker,
     "raid": _raid,
     "snooze_ad": _snooze_ad,
+    "game_progress": _game_progress,
 }
 
 

@@ -819,7 +819,7 @@ def test_catalog_consistency():
     assert not any(v["key"] == "username" for v in cv.EVENT_VARIABLES["hype_train_progress"])
     for lookup in lookups.LOOKUPS:
         assert lookup["id"] in lookups._IMPLEMENTATIONS
-        assert lookup["group"] in ("Viewers", "Your stream", "Other channels", "Do something")
+        assert lookup["group"] in ("Viewers", "Your stream", "Other channels", "Do something", "Games")
         assert not {"clips:edit", "moderator:read:chatters"} & set(lookup["scopes"])
         assert cv.lookup_variables({"id": lookup["id"]})
     keys = [v["key"] for v in cv.command_variables("counter", ["city"], {"id": "follow_age"})]

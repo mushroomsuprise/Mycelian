@@ -27,7 +27,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import subprocess
 import threading
 from dataclasses import dataclass, field, fields
@@ -3682,27 +3681,10 @@ _GAMES_HINT = "Check Settings → Games Tracker: the game must be in your PlaySt
 def find_tracked_game(query: str, platform: str = "", games: Optional[List[Any]] = None) -> Optional[Any]:
     """A Games Tracker game by name (case-insensitive), ``psn:<NPWR ID>`` / ``steam:<app ID>``,
     or, with no name, the most recently played one. ``platform`` ("psn" / "steam") narrows the search."""
-    if games is None:
-        from .game_tracker.service import get_service
+    from .game_tracker.service import find_game
 
-        games = get_service().store.list_games()
-    platform = str(platform or "").strip().lower()
-    if platform in ("psn", "steam"):
-        games = [g for g in games if g.platform == platform]
-    query = str(query or "").strip()
-    if ":" in query:
-        prefix, _, game_id = query.partition(":")
-        if prefix.strip().lower() in ("psn", "steam"):
-            wanted = (prefix.strip().lower(), game_id.strip().lower())
-            return next((g for g in games if (g.platform, str(g.game_id).lower()) == wanted), None)
-    by_recent = sorted(games, key=lambda g: g.last_played or 0, reverse=True)
-    if not query:
-        return next((g for g in by_recent if not g.hidden), None)
-    q = query.casefold()
-    exact = [g for g in by_recent if q in (g.display_title.casefold(), (g.title or "").casefold())]
-    if exact:
-        return exact[0]
-    return next((g for g in by_recent if q in g.display_title.casefold() or q in (g.title or "").casefold()), None)
+    # Named games may be hidden ones (a connector can ask for anything); a blank name means the last visible game.
+    return find_game(query, platform, games, include_hidden=bool(str(query or "").strip()))
 
 
 def _game_outputs(game: Any) -> Dict[str, Any]:

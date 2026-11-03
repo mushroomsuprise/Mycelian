@@ -44,7 +44,7 @@ _TIME_UNITS = {"sec": 1, "min": 60, "hr": 3600}
 _PERMISSIONS_FALLBACK = [("everyone", "Everyone"), ("subscriber", "Subscribers"), ("vip", "VIPs"), ("moderator", "Mods")]
 _PERMISSION_ICONS = {"everyone": "groups", "subscriber": "star", "vip": "diamond", "moderator": "shield"}
 _COMMAND_TYPES = (("basic", "chat", "Reply"), ("counter", "plus_one", "Counter"), ("reset", "restart_alt", "Reset a counter"))
-_LOOKUP_GROUP_ICONS = {"Viewers": "person", "Your stream": "live_tv", "Other channels": "switch_account", "Do something": "bolt"}
+_LOOKUP_GROUP_ICONS = {"Viewers": "person", "Your stream": "live_tv", "Other channels": "switch_account", "Do something": "bolt", "Games": "emoji_events"}
 _EVENT_GROUP_ICONS = {"Twitch": "twitch", "YouTube": "youtube", "Tips": "volunteer_activism", "Games": "emoji_events", "Time": "timer"}
 _HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 

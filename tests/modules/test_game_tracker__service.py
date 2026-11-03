@@ -188,3 +188,34 @@ def test_steam_client_holder_rebuilds_on_credential_change(monkeypatch):
     assert holder.get() is not first
     creds["api_key"] = ""
     assert holder.get() is None
+
+
+def test_find_game_matching_rules():
+    games = [
+        TrackedGame(platform=PSN, game_id="NPWR00001_00", title="ELDEN RING™", last_played=10),
+        TrackedGame(platform=PSN, game_id="NPWR00002_00", title="ELDEN RING NIGHTREIGN", last_played=20),
+        TrackedGame(platform=STEAM, game_id="1086940", title="Baldur's Gate 3", last_played=5),
+        TrackedGame(platform=STEAM, game_id="7", title="Hidden Thing", hidden=True, last_played=99),
+        TrackedGame(platform=STEAM, game_id="8", title="Ori", last_played=1),
+    ]
+    find = svc.find_game
+    assert find("elden ring", games=games).game_id == "NPWR00001_00"  # exact beats the newer prefix match
+    assert find("elden", games=games).game_id == "NPWR00002_00"  # prefix: most recently played first
+    assert find("EldenRing", games=games).game_id == "NPWR00001_00"
+    assert find("nightreign", games=games).game_id == "NPWR00002_00"  # a word inside the title
+    assert find("baldurs gate 3", games=games).game_id == "1086940"  # apostrophe dropped
+    assert find("baldurs gate3", games=games).game_id == "1086940"  # letters run together
+    assert find("baldur's gaet 3", games=games).game_id == "1086940"  # close spelling
+    assert find("ori", games=games).game_id == "8"
+    assert find("or", games=games).game_id == "8"  # the start of a title
+    assert find("ng", games=games) is None  # too short to match inside other words
+    assert find("halo", games=games) is None
+    assert find("hidden thing", games=games) is None
+    assert find("hidden thing", games=games, include_hidden=True).game_id == "7"
+    assert find("", games=games).game_id == "NPWR00002_00"
+    assert find("steam:1086940", games=games).title == "Baldur's Gate 3"
+    assert find("psn:npwr00001_00", games=games).game_id == "NPWR00001_00"
+    assert find("psn:NPWR09999_00", games=games) is None
+    assert find("elden", "steam", games) is None
+    assert find("", games=[]) is None
+    assert svc._norm("ELDEN RING™: Shadow’s Edge") == "elden ring shadows edge"

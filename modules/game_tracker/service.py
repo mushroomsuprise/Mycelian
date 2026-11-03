@@ -298,6 +298,71 @@ def summarize(games: List[TrackedGame]) -> Dict[str, Any]:
     }
 
 
+_TRADEMARKS = ("™", "®", "©")
+FUZZY_MIN_RATIO = 0.8
+
+
+def _norm(text: str) -> str:
+    """Casefolded words without ™/®/punctuation: "ELDEN RING™" and "elden ring" compare equal."""
+    s = str(text or "")
+    for ch in _TRADEMARKS:
+        s = s.replace(ch, "")
+    s = s.replace("’", "'").casefold()
+    return " ".join("".join(c if c.isalnum() else " " for c in s.replace("'", "")).split())
+
+
+def find_game(
+    query: str,
+    platform: str = "",
+    games: Optional[List[TrackedGame]] = None,
+    *,
+    include_hidden: bool = False,
+) -> Optional[TrackedGame]:
+    """A tracked game by name, ``psn:<NPWR ID>`` / ``steam:<app ID>``, or (blank) the most recently played.
+
+    Names match forgivingly, best first: the same words, the same letters ignoring spaces
+    ("eldenring"), the start of a title, a word run inside it, then close spellings. Ties go to the
+    most recently played. ``platform`` ("psn" / "steam") narrows the search.
+    """
+    from difflib import SequenceMatcher
+
+    if games is None:
+        games = get_service().store.list_games()
+    platform = str(platform or "").strip().lower()
+    if platform in (PSN, STEAM):
+        games = [g for g in games if g.platform == platform]
+    query = str(query or "").strip()
+    if ":" in query:
+        prefix, _, game_id = query.partition(":")
+        if prefix.strip().lower() in (PSN, STEAM):
+            wanted = (prefix.strip().lower(), game_id.strip().lower())
+            return next((g for g in games if (g.platform, str(g.game_id).lower()) == wanted), None)
+    pool = sorted((g for g in games if include_hidden or not g.hidden), key=lambda g: g.last_played or 0, reverse=True)
+    q = _norm(query)
+    if not q:
+        return pool[0] if pool else None
+    names = [(g, {_norm(g.display_title), _norm(g.title)} - {""}) for g in pool]
+    q_tight = q.replace(" ", "")
+    tests = (
+        lambda n: n == q,
+        lambda n: n.replace(" ", "") == q_tight,
+        lambda n: n.startswith(q),
+        lambda n: f" {q} " in f" {n} ",
+        lambda n: q_tight in n.replace(" ", "") and len(q_tight) >= 4,
+    )
+    for test in tests:
+        for g, ns in names:
+            if any(test(n) for n in ns):
+                return g
+    best, best_ratio = None, FUZZY_MIN_RATIO
+    for g, ns in names:
+        for n in ns:
+            ratio = SequenceMatcher(None, q, n).ratio()
+            if ratio > best_ratio:
+                best, best_ratio = g, ratio
+    return best
+
+
 def _default_psn_client():
     try:
         from ..psn_service import get_psn_client

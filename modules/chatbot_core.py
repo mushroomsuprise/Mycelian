@@ -920,8 +920,8 @@ def choose_lookup_outcome(lookup_vars: Optional[Dict[str, Any]], fallback_text: 
 
     * success -> normal reply;
     * failure (or follow_age: not following) with fallback text -> fallback;
-    * follow_age not following without fallback -> normal reply (its variables
-      say "not following");
+    * follow_age not following, or a game that isn't in the library, without
+      fallback -> normal reply (its variables say "not following" / ``game_played`` "no");
     * any other failure without fallback -> silent (nothing is posted).
     """
     if not lookup_vars:
@@ -930,7 +930,7 @@ def choose_lookup_outcome(lookup_vars: Optional[Dict[str, Any]], fallback_text: 
         return "normal"
     if str(fallback_text or "").strip():
         return "fallback"
-    if lookup_vars.get("lookup_reason") == "not_following":
+    if lookup_vars.get("lookup_reason") in ("not_following", "not_played"):
         return "normal"
     return "silent"
 

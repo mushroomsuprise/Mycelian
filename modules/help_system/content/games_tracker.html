@@ -69,4 +69,17 @@
 </tbody>
 </table></div>
 
+<h3>Chat commands for any game</h3>
+<p>In a chatbot command, add the <strong>A game's progress</strong> lookup (group <em>Games</em>). It searches your library for the text after the command, forgiving case, ™ symbols, missing spaces and small typos. Left blank, it uses your most recently played game. Hidden games are left out.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Command</th><th>Reply</th><th>Fallback text</th></tr></thead>
+<tbody>
+<tr><td><code>!progress</code></td><td><code>{game_title}: {game_progress}% ({game_trophies})</code></td><td><code>I haven't played {game_query} yet.</code></td></tr>
+<tr><td><code>!haveyouplayed</code></td><td><code>Yes! {game_title} on {game_console}, {game_progress}% done, last played {game_last_played}.</code></td><td><code>Nope, I haven't played {game_query}.</code></td></tr>
+</tbody>
+</table></div>
+
+<p>Other variables: <code>{game_played}</code> (yes/no), <code>{game_earned}</code>, <code>{game_total}</code>, <code>{game_completed}</code> (yes/no), <code>{game_platform}</code> and <code>{game_playtime}</code> (Steam). Without fallback text, a game that isn't in the library still posts the normal reply, with <code>{game_played}</code> set to <em>no</em>. The lookup's <em>Platform</em> option limits it to PlayStation or Steam.</p>
+
 <div class="hx-callout hx-note"><p>PlayStation trophy lists must be visible to the account Mycelian signs in with. Steam achievements need a public profile and game details.</p></div>
