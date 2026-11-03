@@ -1001,6 +1001,7 @@ class SettingsUI:
             from .tabs.database_tab import DatabaseTab
             from .tabs.discord_tab import DiscordTab
             from .tabs.game_hooks_tab import GameHooksTab
+            from .tabs.games_tracker_tab import GamesTrackerTab
             from .tabs.obs_tab import ObsTab
             from .tabs.psn_tab import PSNTab
             from .tabs.steam_tab import SteamTab
@@ -1037,6 +1038,8 @@ class SettingsUI:
                 obs_tab = ObsTab()
             with StartupTimer("settings_tab_objects_game_hooks"):
                 game_hooks_tab = GameHooksTab()
+            with StartupTimer("settings_tab_objects_games_tracker"):
+                games_tracker_tab = GamesTrackerTab()
             with StartupTimer("settings_tab_objects_database"):
                 database_tab = DatabaseTab()
             with StartupTimer("settings_tab_objects_statistics"):
@@ -1055,6 +1058,7 @@ class SettingsUI:
                 "Discord": discord_tab,
                 "OBS": obs_tab,
                 "Game Hooks": game_hooks_tab,
+                "Games Tracker": games_tracker_tab,
                 "Database": database_tab,
                 "Statistics": statistics_tab,
             }
@@ -1088,6 +1092,7 @@ class SettingsUI:
                         "StreamElements",
                         "Discord",
                         "Game Hooks",
+                        "Games Tracker",
                         "Database",
                         "Statistics",
                         "Theme",
@@ -1105,6 +1110,7 @@ class SettingsUI:
                         ui.tab("StreamElements", icon=service_tab_icon("streamelements"))
                         ui.tab("Discord", icon=service_tab_icon("discord"))
                         ui.tab("Game Hooks", icon="memory")
+                        ui.tab("Games Tracker", icon="emoji_events")
                         ui.tab("Database", icon="storage")
                         ui.tab("Statistics", icon="analytics")
                         ui.tab("Theme", icon="palette")
@@ -1196,6 +1202,10 @@ class SettingsUI:
                                         self._tabs_by_name["Game Hooks"].build(
                                             container
                                         )
+                                    elif tab_name == "Games Tracker":
+                                        self._tabs_by_name["Games Tracker"].build(
+                                            container
+                                        )
                                     elif tab_name == "Database":
                                         self._tabs_by_name["Database"].build(
                                             container
@@ -1243,6 +1253,7 @@ class SettingsUI:
                             "StreamElements",
                             "Discord",
                             "Game Hooks",
+                            "Games Tracker",
                             "Database",
                             "Statistics",
                             "Theme",

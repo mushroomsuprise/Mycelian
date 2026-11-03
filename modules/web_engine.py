@@ -803,6 +803,8 @@ _SAFE_EMIT_PRIORITY_EVENTS = frozenset(
         # Category/title changes are rare but overlays have no other way to learn
         # about them, so they must not be dropped by a saturated emit queue.
         "twitch_data_update",
+        # Games Tracker unlocks/completions are one-off moments overlays react to.
+        "game_tracker_event",
     }
 )
 
@@ -810,7 +812,7 @@ _SAFE_EMIT_PRIORITY_EVENTS = frozenset(
 # newer emit replaces the queued payload (same event + room) instead of queueing
 # again. On a healthy hub at most one is ever pending, so nothing changes; with
 # no drain, the 4 Hz game-hook tick can no longer fill the queue.
-_SAFE_EMIT_LATEST_WINS_EVENTS = frozenset({"game_hook_payload"})
+_SAFE_EMIT_LATEST_WINS_EVENTS = frozenset({"game_hook_payload", "game_tracker_update"})
 
 # What a producer does when its safe_emit queue is full (see _SafeEmitQueue.put).
 _EMIT_FULL_WAIT = "wait"
@@ -1970,6 +1972,8 @@ class WebEngine:
             except Exception as e:
                 logger.debug("factorio icon %s: %s", name, e)
                 return make_response(b"", 404)
+
+        self._register_game_tracker_routes()
 
         @self.app.route("/api/template-queue-metadata")
         def serve_template_queue_metadata():
@@ -5943,6 +5947,169 @@ class WebEngine:
             )
         except Exception as e:
             logger.debug("WebEngine give-up notification failed: %s", e)
+
+    def _register_game_tracker_routes(self):
+        """Games Tracker: library, edits, sync, cached covers and the export image."""
+        platforms = ("psn", "steam")
+
+        def _service():
+            from .game_tracker.service import get_service
+
+            return get_service()
+
+        def _bad(message: str, status: int = 400):
+            return {"error": message}, status
+
+        @self.app.route("/api/game-tracker/games")
+        def game_tracker_games():
+            try:
+                platform = (request.args.get("platform") or "").strip().lower()
+                if platform and platform not in platforms:
+                    return _bad("platform must be psn or steam")
+                q = (request.args.get("q") or "").strip().lower()
+                sort = (request.args.get("sort") or "recent").strip().lower()
+                include_hidden = (request.args.get("include_hidden") or "").strip().lower() in ("1", "true", "yes")
+                games = _service().store.list_games(platform or None)
+                if not include_hidden:
+                    games = [g for g in games if not g.hidden]
+                if q:
+                    games = [g for g in games if q in g.display_title.lower()]
+                if sort == "name":
+                    games.sort(key=lambda g: g.display_title.lower())
+                elif sort == "progress":
+                    games.sort(key=lambda g: (-g.progress, -g.last_played))
+                else:
+                    games.sort(key=lambda g: -g.last_played)
+                return {"games": [g.public() for g in games]}
+            except Exception as e:
+                logger.error("game tracker games: %s", e, exc_info=True)
+                return _bad("Couldn't read the games library", 500)
+
+        @self.app.route("/api/game-tracker/summary")
+        def game_tracker_summary():
+            try:
+                svc = _service()
+                return {"summary": svc.summary(), "status": svc.status()}
+            except Exception as e:
+                logger.error("game tracker summary: %s", e, exc_info=True)
+                return _bad("Couldn't read the games library", 500)
+
+        @self.app.route("/api/game-tracker/games/<platform>/<game_id>", methods=["GET", "PATCH", "DELETE"])
+        def game_tracker_game(platform: str, game_id: str):
+            platform = (platform or "").lower()
+            if platform not in platforms:
+                return _bad("platform must be psn or steam")
+            try:
+                svc = _service()
+                if request.method == "DELETE":
+                    if not svc.remove_game(platform, game_id):
+                        return _bad("Unknown game", 404)
+                    return {"ok": True}
+                if request.method == "PATCH":
+                    payload = request.get_json(silent=True)
+                    if not isinstance(payload, dict):
+                        return _bad("Send a JSON object")
+                    if svc.store.get_game(platform, game_id) is None:
+                        return _bad("Unknown game", 404)
+                    changes = {}
+                    if "title" in payload:
+                        changes["title"] = str(payload.get("title") or "")
+                    if "hidden" in payload:
+                        changes["hidden"] = bool(payload.get("hidden"))
+                    if platform == "psn":
+                        if "np_title_id" in payload:
+                            changes["np_title_id"] = str(payload.get("np_title_id") or "")
+                        if "np_communication_id" in payload:
+                            changes["np_communication_id"] = str(payload.get("np_communication_id") or "")
+                    game, error = svc.update_game(platform, game_id, **changes)
+                    if error or game is None:
+                        return _bad(error or "Couldn't save the game")
+                    return {"game": game.public()}
+                game = svc.store.get_game(platform, game_id)
+                if game is None:
+                    return _bad("Unknown game", 404)
+                unlocks = svc.store.recent_events(10, platform=platform, game_id=game.game_id, kinds=("unlock",))
+                return {"game": game.public(), "recent_unlocks": [e.fields_for_events() for e in unlocks]}
+            except Exception as e:
+                logger.error("game tracker game %s/%s: %s", platform, game_id, e, exc_info=True)
+                return _bad("Couldn't read the game", 500)
+
+        @self.app.route("/api/game-tracker/games/psn/<game_id>/resolve", methods=["POST"])
+        def game_tracker_resolve(game_id: str):
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict) or not str(payload.get("np_title_id") or "").strip():
+                return _bad("Send np_title_id")
+            try:
+                svc = _service()
+                if svc.store.get_game("psn", game_id) is None:
+                    return _bad("Unknown game", 404)
+                np_title_id = str(payload["np_title_id"]).strip().upper()
+                npwr = svc.resolve_npwr(np_title_id)
+                if not npwr:
+                    return _bad("PlayStation didn't return an NPWR ID for that title ID", 404)
+                game, error = svc.update_game("psn", game_id, np_title_id=np_title_id, np_communication_id=npwr)
+                if error or game is None:
+                    return _bad(error or "Couldn't save the game")
+                return {"game": game.public(), "np_communication_id": npwr}
+            except Exception as e:
+                logger.error("game tracker resolve %s: %s", game_id, e, exc_info=True)
+                return _bad("Couldn't resolve the NPWR ID", 500)
+
+        @self.app.route("/api/game-tracker/sync", methods=["POST"])
+        def game_tracker_sync():
+            payload = request.get_json(silent=True) or {}
+            platform = str(payload.get("platform") or "").strip().lower() if isinstance(payload, dict) else ""
+            if platform and platform not in platforms:
+                return _bad("platform must be psn or steam")
+            _service().sync_now(platform or None)
+            return {"ok": True, "platform": platform or "all"}, 202
+
+        @self.app.route("/api/game-tracker/cover/<platform>/<game_id>.jpg")
+        def game_tracker_cover(platform: str, game_id: str):
+            platform = (platform or "").lower()
+            if platform not in platforms:
+                return make_response(b"", 404)
+            try:
+                from .game_tracker.covers import cover_bytes
+
+                data = cover_bytes(platform, game_id)
+            except Exception as e:
+                logger.debug("game tracker cover %s/%s: %s", platform, game_id, e)
+                data = None
+            if not data:
+                return make_response(b"", 404)
+            resp = make_response(data)
+            resp.headers["Content-Type"] = "image/jpeg"
+            resp.headers["Cache-Control"] = "public, max-age=86400"
+            return resp
+
+        @self.app.route("/api/game-tracker/export.png")
+        def game_tracker_export():
+            try:
+                import io
+
+                from .game_tracker.export import ExportOptions, render_games_image
+
+                svc = _service()
+                raw = dict(svc.settings.export or {})
+                args = request.args
+                for key in ("template", "layout", "platform", "period", "title"):
+                    if args.get(key) is not None:
+                        raw[key] = args.get(key)
+                if args.get("game") is not None:
+                    raw["game_key"] = args.get("game")
+                image = render_games_image(ExportOptions.from_dict(raw), store=svc.store)
+                if image is None:
+                    return make_response(b"", 404)
+                buf = io.BytesIO()
+                image.convert("RGB").save(buf, "PNG")
+                resp = make_response(buf.getvalue())
+                resp.headers["Content-Type"] = "image/png"
+                resp.headers["Cache-Control"] = "no-store"
+                return resp
+            except Exception as e:
+                logger.error("game tracker export: %s", e, exc_info=True)
+                return _bad("Couldn't draw the image", 500)
 
     def register_routes(self):
         """Register dynamic routes based on HTML templates in the template directory"""

@@ -224,6 +224,12 @@ class TriggerType(Enum):
     OBS_RECORD_STATE = "obs_record_state"
     OBS_INPUT_MUTE = "obs_input_mute"
 
+    # Games Tracker (PSN / Steam library changes after the first import)
+    GAME_UNLOCK = "game_unlock"
+    GAME_COMPLETED = "game_completed"
+    GAME_STARTED = "game_started"
+    GAME_MILESTONE = "game_milestone"
+
     # Matches any connector-processed event type
     ANY = "any"
 
@@ -281,6 +287,9 @@ class ActionType(Enum):
     TWITCH_LOCK_PREDICTION = "twitch_lock_prediction"
     TWITCH_RESOLVE_PREDICTION = "twitch_resolve_prediction"
     TWITCH_CANCEL_PREDICTION = "twitch_cancel_prediction"
+
+    # Games Tracker
+    GAME_LOOKUP = "game_lookup"
 
 
 @dataclass

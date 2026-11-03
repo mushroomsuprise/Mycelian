@@ -81,7 +81,8 @@ def build_connector_placeholder_context(
     event_data: Dict[str, Any],
     trigger_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Merge event + trigger data, attach live ``hooks.ff7``, and map ``action_results`` to
+    """Merge event + trigger data, attach live ``hooks.ff7`` and the Games Tracker totals
+    (``games.trophies``, ``games.current.title``, ...), and map ``action_results`` to
     ``{action1.field}`` … (slot key ``\"1\"`` -> ``action1`` in the context). Internal keys
     ``action_results`` and ``action_index`` are not exposed as placeholders.
 
@@ -112,6 +113,14 @@ def build_connector_placeholder_context(
                 hooks_ctx[hook_id] = hsnap
         if hooks_ctx:
             ctx["hooks"] = hooks_ctx
+    except Exception:
+        pass
+    try:
+        from .game_tracker.service import get_service
+
+        games = get_service().summary()
+        if isinstance(games, dict):
+            ctx.setdefault("games", games)
     except Exception:
         pass
     return ctx

@@ -94,6 +94,48 @@ def get_statistics_value(stat_name: str) -> str:
         return "0"
 
 
+# {games.*} key -> path into GameTrackerService.summary()
+_GAMES_KEYS = {
+    "total": ("games",),
+    "completed": ("completed",),
+    "avg_completion": ("avg_completion",),
+    "psn.games": ("psn_games",),
+    "psn.platinums": ("platinums",),
+    "psn.trophies": ("trophies",),
+    "psn.bronze": ("trophies_by_grade", "bronze"),
+    "psn.silver": ("trophies_by_grade", "silver"),
+    "psn.gold": ("trophies_by_grade", "gold"),
+    "psn.platinum": ("trophies_by_grade", "platinum"),
+    "steam.games": ("steam_games",),
+    "steam.perfect": ("perfect",),
+    "steam.achievements": ("achievements",),
+    "current.title": ("current", "title"),
+    "current.platform": ("current", "platform_label"),
+    "current.progress": ("current", "progress"),
+    "current.earned": ("current", "earned"),
+    "current.total": ("current", "total"),
+}
+
+
+def get_games_value(games_var: str) -> Optional[str]:
+    """A Games Tracker total for ``{games.<key>}``; "" when there's no value yet, None for unknown keys."""
+    path = _GAMES_KEYS.get(str(games_var or "").lower())
+    if path is None:
+        return None
+    try:
+        from .game_tracker.service import get_service
+
+        current: Any = get_service().summary()
+        for part in path:
+            if not isinstance(current, dict) or part not in current:
+                return ""
+            current = current[part]
+        return "" if current is None else _stringify(current)
+    except Exception as e:
+        logger.debug("Games Tracker value %s unavailable: %s", games_var, e)
+        return ""
+
+
 def get_youtube_value(youtube_var: str) -> str:
     """Get a YouTube value by variable name"""
     try:
@@ -428,6 +470,9 @@ def lookup_template_value(key: str, context: Dict[str, Any], depth: int = 0) -> 
         return True, get_statistics_value(key[6:])
     if key.startswith("youtube."):
         return True, get_youtube_value(key[8:])
+    if key.startswith("games."):
+        value = get_games_value(key[6:])
+        return value is not None, value
     if key.startswith("quote."):
         value = get_quote_value(key[6:])
         return value is not None, value
@@ -533,6 +578,11 @@ class EventType(Enum):
     YOUTUBE_GIFT_MEMBERSHIP = "youtube_gift_membership"
     YOUTUBE_SUPERCHAT = "youtube_superchat"
     YOUTUBE_SUPERSTICKER = "youtube_supersticker"
+    # Games Tracker (PSN / Steam changes after the first import)
+    GAME_UNLOCK = "game_unlock"
+    GAME_COMPLETED = "game_completed"
+    GAME_STARTED = "game_started"
+    GAME_MILESTONE = "game_milestone"
 
 
 class ComparisonOperator(Enum):
@@ -1302,6 +1352,16 @@ def chat_text_matches(message: Any, pattern: Any, match_type: str) -> bool:
     return text == wanted
 
 
+GAME_PLATFORM_FILTERS = ("any", "psn", "steam")
+GAME_GRADE_FILTERS = ("any", "bronze", "silver", "gold", "platinum", "achievement")
+_GAME_EVENT_TYPES = {
+    EventType.GAME_UNLOCK,
+    EventType.GAME_COMPLETED,
+    EventType.GAME_STARTED,
+    EventType.GAME_MILESTONE,
+}
+
+
 class ChatEvent:
     """An automatic response to a Twitch / YouTube / tip / time event.
 
@@ -1356,6 +1416,12 @@ class ChatEvent:
         self.raid_viewer_count = _to_int(kwargs.get("raid_viewer_count", 0))
         self.raid_raider_name = str(kwargs.get("raid_raider_name", "") or "")
         self.channel_point_reward_name = str(kwargs.get("channel_point_reward_name", "") or "")
+        # Games Tracker events ("any" = no filter; milestone 0 = any)
+        platform = str(kwargs.get("game_platform", "any") or "any").lower()
+        self.game_platform = platform if platform in GAME_PLATFORM_FILTERS else "any"
+        grade = str(kwargs.get("game_unlock_grade", "any") or "any").lower()
+        self.game_unlock_grade = grade if grade in GAME_GRADE_FILTERS else "any"
+        self.game_milestone = _to_int(kwargs.get("game_milestone", 0))
 
     def repeats(self) -> bool:
         """True only for an enabled-or-not INTERVAL event with a positive interval."""
@@ -1418,6 +1484,16 @@ class ChatEvent:
                     for k in ("raider_name", "username", "user_login", "raider_login")
                 }
                 if wanted not in names:
+                    return False
+            return True
+        if etype in _GAME_EVENT_TYPES:
+            if self.game_platform != "any" and str(data.get("platform") or "").lower() != self.game_platform:
+                return False
+            if etype == EventType.GAME_UNLOCK and self.game_unlock_grade != "any":
+                if str(data.get("unlock_grade") or "").lower() != self.game_unlock_grade:
+                    return False
+            if etype == EventType.GAME_MILESTONE and self.game_milestone > 0:
+                if not _equals_number(data, "milestone", self.game_milestone):
                     return False
             return True
         if etype == EventType.CHANNEL_POINT_REDEMPTION:
@@ -1550,6 +1626,9 @@ class ChatEvent:
                 "raid_viewer_count": self.raid_viewer_count,
                 "raid_raider_name": self.raid_raider_name,
                 "channel_point_reward_name": self.channel_point_reward_name,
+                "game_platform": self.game_platform,
+                "game_unlock_grade": self.game_unlock_grade,
+                "game_milestone": self.game_milestone,
                 "argument_mappings": serialize_argument_mappings(self.argument_mappings),
                 "reply_targets": list(self.reply_targets),
                 "discord_channels": list(self.discord_channels or []),

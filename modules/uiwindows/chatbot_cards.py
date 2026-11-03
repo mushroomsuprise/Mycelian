@@ -51,7 +51,7 @@ CHATBOT_CARDS_CSS = """
 """
 
 _PERMISSION_LABELS = {"subscriber": "Subscribers", "vip": "VIPs", "moderator": "Mods only", "broadcaster": "Only you"}
-_EVENT_GROUP_GLYPH = {"Twitch": "twitch", "YouTube": "youtube", "Tips": "volunteer_activism", "Time": "timer"}
+_EVENT_GROUP_GLYPH = {"Twitch": "twitch", "YouTube": "youtube", "Tips": "volunteer_activism", "Games": "emoji_events", "Time": "timer"}
 
 
 def _icon(name: str) -> str:
@@ -221,6 +221,13 @@ def event_filter_text(event: Any) -> str:
         return f"Level {g('hype_train_level')}+"
     if et == "hype_train_end" and g("hype_train_end_level"):
         return f"Level {g('hype_train_end_level')}+"
+    if et in ("game_unlock", "game_completed", "game_started", "game_milestone"):
+        platform = {"psn": "PlayStation", "steam": "Steam"}.get(getattr(event, "game_platform", "any") or "any", "")
+        grade = getattr(event, "game_unlock_grade", "any") or "any"
+        parts = [platform,
+                 grade.capitalize() if et == "game_unlock" and grade != "any" else "",
+                 f"At {g('game_milestone')}%" if et == "game_milestone" and g("game_milestone") else ""]
+        return " · ".join(p for p in parts if p)
     if et in ("chat_message", "youtube_chat_message"):
         text = getattr(event, "chat_message_text", "") or ""
         if text:

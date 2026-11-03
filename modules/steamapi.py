@@ -382,6 +382,78 @@ class SteamClient:
             data.last_unlock = data.recent_unlocks[0]
         return new
 
+    # ----- library (Games Tracker) -----
+
+    def get_owned_games(self) -> list[dict[str, Any]]:
+        """Every game on the profile: appid, name, playtime (minutes), last played (epoch) and icon hash."""
+        steam_id = self.resolve_steam_id()
+        if not steam_id:
+            return []
+        _users, _apps, client = self._api()
+        body = client.request(
+            "get",
+            "/IPlayerService/GetOwnedGames/v1/",
+            params={"steamid": steam_id, "include_appinfo": 1, "include_played_free_games": 1},
+        )
+        games = (body.get("response") or {}).get("games") or []
+        out: list[dict[str, Any]] = []
+        for g in games:
+            try:
+                appid = int(g.get("appid"))
+            except (TypeError, ValueError):
+                continue
+            out.append({
+                "appid": appid,
+                "name": str(g.get("name") or ""),
+                "playtime_min": int(g.get("playtime_forever") or 0),
+                "last_played": int(g.get("rtime_last_played") or 0),
+                "icon_hash": str(g.get("img_icon_url") or ""),
+            })
+        return out
+
+    def get_game_achievements(self, appid: int) -> dict[str, Any]:
+        """One game's achievements for the tracked profile, without touching the live current-game state.
+
+        ``{"has_achievements": bool, "private": bool, "total": int, "unlocked": {api name: {...}}}``.
+        Games without stats come back with ``has_achievements`` False.
+        """
+        steam_id = self.resolve_steam_id()
+        if not steam_id:
+            return {"has_achievements": False, "private": False, "total": 0, "unlocked": {}}
+        _users, _apps, client = self._api()
+        try:
+            body = client.request(
+                "get",
+                "/ISteamUserStats/GetPlayerAchievements/v1/",
+                params={"appid": int(appid), "steamid": steam_id, "l": "english"},
+            )
+        except SteamAPIError as e:
+            text = str(e).lower()
+            if e.status in (400, 403) and "not public" in text:
+                return {"has_achievements": True, "private": True, "total": 0, "unlocked": {}}
+            if e.status in (400, 403, 500) and ("no stats" in text or "not found" in text or e.status == 500):
+                return {"has_achievements": False, "private": False, "total": 0, "unlocked": {}}
+            raise
+        stats = body.get("playerstats") or {}
+        entries = stats.get("achievements") or []
+        unlocked: dict[str, dict[str, Any]] = {}
+        for a in entries:
+            if not a.get("achieved"):
+                continue
+            api_name = str(a.get("apiname") or "")
+            if not api_name:
+                continue
+            unlocked[api_name] = {
+                "name": a.get("name") or api_name,
+                "description": a.get("description") or "",
+                "unlock_time": int(a.get("unlocktime") or 0),
+            }
+        return {"has_achievements": bool(entries), "private": False, "total": len(entries), "unlocked": unlocked}
+
+    def global_percents(self, appid: int) -> dict[str, float]:
+        """{api name: percent of players} for an app (cached)."""
+        return self._percents(int(appid))
+
 
 def public_payload(data: SteamData) -> dict[str, Any]:
     """JSON-safe Steam state for overlays (holds no secrets)."""

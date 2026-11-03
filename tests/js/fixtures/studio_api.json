@@ -3266,6 +3266,163 @@
    },
    {
     "alert_system": "either",
+    "description": "Fired for each change the Games Tracker finds after its first import: a trophy or achievement unlocked (kind unlock), a game completed (completed), a new game (started) or a completion milestone (milestone).",
+    "event": "game_tracker_event",
+    "label": "Games Tracker change",
+    "payload": [
+     {
+      "examples": [
+       "unlock",
+       "completed",
+       "started",
+       "milestone"
+      ],
+      "key": "kind",
+      "label": "What happened",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "psn",
+       "steam"
+      ],
+      "key": "platform",
+      "label": "Platform key",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "PlayStation",
+       "Steam"
+      ],
+      "key": "platform_name",
+      "label": "Platform",
+      "type": "string"
+     },
+     {
+      "key": "game_title",
+      "label": "Game",
+      "type": "string"
+     },
+     {
+      "key": "progress",
+      "label": "Completion (percent)",
+      "type": "number"
+     },
+     {
+      "key": "earned",
+      "label": "Trophies / achievements earned",
+      "type": "number"
+     },
+     {
+      "key": "total",
+      "label": "Trophies / achievements in the game",
+      "type": "number"
+     },
+     {
+      "key": "unlock_name",
+      "label": "Trophy / achievement name",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "bronze",
+       "silver",
+       "gold",
+       "platinum",
+       "achievement"
+      ],
+      "key": "unlock_grade",
+      "label": "Grade",
+      "type": "string"
+     },
+     {
+      "key": "unlock_description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "unlock_rarity",
+      "label": "Players who have it (percent)",
+      "type": "number"
+     },
+     {
+      "key": "unlock_icon",
+      "label": "Icon URL",
+      "type": "string"
+     },
+     {
+      "key": "milestone",
+      "label": "Milestone reached (percent)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired after each library sync or change with the tracker's totals and the most recently played game.",
+    "event": "game_tracker_update",
+    "label": "Games Tracker totals",
+    "payload": [
+     {
+      "key": "games",
+      "label": "Games tracked",
+      "type": "number"
+     },
+     {
+      "key": "psn_games",
+      "label": "PlayStation games",
+      "type": "number"
+     },
+     {
+      "key": "steam_games",
+      "label": "Steam games",
+      "type": "number"
+     },
+     {
+      "key": "platinums",
+      "label": "Platinum trophies",
+      "type": "number"
+     },
+     {
+      "key": "perfect",
+      "label": "Perfect Steam games",
+      "type": "number"
+     },
+     {
+      "key": "completed",
+      "label": "Games completed",
+      "type": "number"
+     },
+     {
+      "key": "trophies",
+      "label": "Trophies earned",
+      "type": "number"
+     },
+     {
+      "key": "achievements",
+      "label": "Steam achievements earned",
+      "type": "number"
+     },
+     {
+      "key": "avg_completion",
+      "label": "Average completion (percent)",
+      "type": "number"
+     },
+     {
+      "key": "current.title",
+      "label": "Latest game",
+      "type": "string"
+     },
+     {
+      "key": "current.progress",
+      "label": "Latest game completion (percent)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
     "description": "Broadcast when alert settings change. Bind to this if your overlay needs to reset state or reload assets.",
     "event": "refresh-alerts",
     "label": "Refresh alerts",
@@ -8692,6 +8849,163 @@
       "key": "game_name",
       "label": "Game name",
       "type": "string"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired for each change the Games Tracker finds after its first import: a trophy or achievement unlocked (kind unlock), a game completed (completed), a new game (started) or a completion milestone (milestone).",
+    "event": "game_tracker_event",
+    "label": "Games Tracker change",
+    "payload": [
+     {
+      "examples": [
+       "unlock",
+       "completed",
+       "started",
+       "milestone"
+      ],
+      "key": "kind",
+      "label": "What happened",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "psn",
+       "steam"
+      ],
+      "key": "platform",
+      "label": "Platform key",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "PlayStation",
+       "Steam"
+      ],
+      "key": "platform_name",
+      "label": "Platform",
+      "type": "string"
+     },
+     {
+      "key": "game_title",
+      "label": "Game",
+      "type": "string"
+     },
+     {
+      "key": "progress",
+      "label": "Completion (percent)",
+      "type": "number"
+     },
+     {
+      "key": "earned",
+      "label": "Trophies / achievements earned",
+      "type": "number"
+     },
+     {
+      "key": "total",
+      "label": "Trophies / achievements in the game",
+      "type": "number"
+     },
+     {
+      "key": "unlock_name",
+      "label": "Trophy / achievement name",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "bronze",
+       "silver",
+       "gold",
+       "platinum",
+       "achievement"
+      ],
+      "key": "unlock_grade",
+      "label": "Grade",
+      "type": "string"
+     },
+     {
+      "key": "unlock_description",
+      "label": "Description",
+      "type": "string"
+     },
+     {
+      "key": "unlock_rarity",
+      "label": "Players who have it (percent)",
+      "type": "number"
+     },
+     {
+      "key": "unlock_icon",
+      "label": "Icon URL",
+      "type": "string"
+     },
+     {
+      "key": "milestone",
+      "label": "Milestone reached (percent)",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired after each library sync or change with the tracker's totals and the most recently played game.",
+    "event": "game_tracker_update",
+    "label": "Games Tracker totals",
+    "payload": [
+     {
+      "key": "games",
+      "label": "Games tracked",
+      "type": "number"
+     },
+     {
+      "key": "psn_games",
+      "label": "PlayStation games",
+      "type": "number"
+     },
+     {
+      "key": "steam_games",
+      "label": "Steam games",
+      "type": "number"
+     },
+     {
+      "key": "platinums",
+      "label": "Platinum trophies",
+      "type": "number"
+     },
+     {
+      "key": "perfect",
+      "label": "Perfect Steam games",
+      "type": "number"
+     },
+     {
+      "key": "completed",
+      "label": "Games completed",
+      "type": "number"
+     },
+     {
+      "key": "trophies",
+      "label": "Trophies earned",
+      "type": "number"
+     },
+     {
+      "key": "achievements",
+      "label": "Steam achievements earned",
+      "type": "number"
+     },
+     {
+      "key": "avg_completion",
+      "label": "Average completion (percent)",
+      "type": "number"
+     },
+     {
+      "key": "current.title",
+      "label": "Latest game",
+      "type": "string"
+     },
+     {
+      "key": "current.progress",
+      "label": "Latest game completion (percent)",
+      "type": "number"
      }
     ]
    },

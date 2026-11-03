@@ -3672,6 +3672,80 @@ class TwitchCancelPredictionAction(BaseAction):
             return _manager_failed("The prediction wasn't canceled", str(e), _PREDICTION_HINT)
 
 
+# ---------------------------------------------------------------------------
+#  Games Tracker
+# ---------------------------------------------------------------------------
+
+_GAMES_HINT = "Check Settings → Games Tracker: the game must be in your PlayStation or Steam library there."
+
+
+def find_tracked_game(query: str, platform: str = "", games: Optional[List[Any]] = None) -> Optional[Any]:
+    """A Games Tracker game by name (case-insensitive), ``psn:<NPWR ID>`` / ``steam:<app ID>``,
+    or, with no name, the most recently played one. ``platform`` ("psn" / "steam") narrows the search."""
+    if games is None:
+        from .game_tracker.service import get_service
+
+        games = get_service().store.list_games()
+    platform = str(platform or "").strip().lower()
+    if platform in ("psn", "steam"):
+        games = [g for g in games if g.platform == platform]
+    query = str(query or "").strip()
+    if ":" in query:
+        prefix, _, game_id = query.partition(":")
+        if prefix.strip().lower() in ("psn", "steam"):
+            wanted = (prefix.strip().lower(), game_id.strip().lower())
+            return next((g for g in games if (g.platform, str(g.game_id).lower()) == wanted), None)
+    by_recent = sorted(games, key=lambda g: g.last_played or 0, reverse=True)
+    if not query:
+        return next((g for g in by_recent if not g.hidden), None)
+    q = query.casefold()
+    exact = [g for g in by_recent if q in (g.display_title.casefold(), (g.title or "").casefold())]
+    if exact:
+        return exact[0]
+    return next((g for g in by_recent if q in g.display_title.casefold() or q in (g.title or "").casefold()), None)
+
+
+def _game_outputs(game: Any) -> Dict[str, Any]:
+    import datetime as _dt
+
+    last = float(getattr(game, "last_played", 0) or 0)
+    return {
+        "title": game.display_title,
+        "platform": "PlayStation" if game.platform == "psn" else "Steam",
+        "progress": int(game.progress or 0),
+        "earned": int(game.earned_total),
+        "total": int(game.defined_total),
+        "completed": "yes" if game.is_complete else "no",
+        "last_played": _dt.datetime.fromtimestamp(last).strftime("%Y-%m-%d %H:%M") if last > 0 else "",
+    }
+
+
+@dataclass
+class GameLookupAction(BaseAction):
+    """Look up a Games Tracker game's progress and share it with later actions as {actionN.field}."""
+
+    game: str = ""  # name, psn:<NPWR ID>, steam:<app ID>; empty = most recently played
+    platform: str = ""  # "", "psn" or "steam"
+
+    def __post_init__(self):
+        self.action_type = ActionType.GAME_LOOKUP
+
+    async def execute(self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
+        try:
+            query = _render_text(self.game, trigger_data, event_data)
+            game = await asyncio.to_thread(find_tracked_game, query, self.platform)
+            if game is None:
+                what = f"“{query}”" if query else "a recently played game"
+                report_action_problem(f"The game lookup found no match for {what}", _GAMES_HINT)
+                return False
+            _store_outputs(trigger_data, _game_outputs(game))
+            return True
+        except Exception as e:
+            logger.error("Error executing game lookup action: %s", e, exc_info=True)
+            report_action_problem("The game lookup failed", _GAMES_HINT, f"{type(e).__name__}: {e}")
+            return False
+
+
 # Factory function for creating actions
 def create_action(
     action_type: ActionType, action_id: str, name: str, **kwargs
@@ -3707,6 +3781,7 @@ def create_action(
         ActionType.TWITCH_LOCK_PREDICTION: TwitchLockPredictionAction,
         ActionType.TWITCH_RESOLVE_PREDICTION: TwitchResolvePredictionAction,
         ActionType.TWITCH_CANCEL_PREDICTION: TwitchCancelPredictionAction,
+        ActionType.GAME_LOOKUP: GameLookupAction,
     }
 
     action_class = action_classes.get(action_type)

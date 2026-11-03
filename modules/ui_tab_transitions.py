@@ -35,6 +35,7 @@ SETTINGS_TAB_ORDER: List[str] = [
     "StreamElements",
     "Discord",
     "Game Hooks",
+    "Games Tracker",
     "Database",
     "Statistics",
     "Theme",

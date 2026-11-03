@@ -22,6 +22,7 @@ _SERVICE_INFO: Dict[str, Tuple[str, str, Optional[str], Optional[str]]] = {
     "spotify": ("Spotify", "spotify", "Spotify", None),
     "psn": ("PlayStation", "psn", "PSN", None),
     "steam": ("Steam", "steam", "Steam", None),
+    "game_tracker": ("The Games Tracker", "game_tracker", "Games Tracker", None),
     "youtube": ("YouTube", "youtube", "YouTube", None),
     "streamlabs": ("Streamlabs", "streamlabs", "Streamlabs", None),
     "streamelements": ("StreamElements", "streamelements", "StreamElements", None),

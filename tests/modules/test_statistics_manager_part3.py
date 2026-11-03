@@ -763,7 +763,7 @@ def test_save_writes_a_snapshot_of_every_field(mgr, monkeypatch):
     assert captured["hype_trains"]["level_completions"] == {}
     assert captured["polls"]["options"] == {"ok": {"name": "ok", "votes": 0, "wins": 0}}
     assert set(captured) == {"alerts", "hype_trains", "connectors", "chatbot", "quotes", "giveaways", "polls",
-                             "predictions", "chat", "templates", "session"}
+                             "predictions", "game_tracker", "chat", "templates", "session"}
     assert captured["session"]["session_duration"] >= 0
     # The per-user maps went to user_lifetime instead.
     assert "user_stats" not in captured["alerts"] and "user_command_stats" not in captured["chatbot"]

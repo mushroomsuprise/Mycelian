@@ -293,7 +293,7 @@ def test_lifetime_values_formatting(ctx):
     assert values["giveaways.avg"] == "2.3" and values["polls.avg"] == "0.0"
     assert values["polls.most_votes"] == "Pizza (1,200)" and values["polls.most_wins"] == "—"
     assert values["chat.twitch"] == "0"
-    assert len(tab._lifetime_values({})) == 35
+    assert len(tab._lifetime_values({})) == 45
 
 
 def test_lifetime_section_shows_every_card(ctx):

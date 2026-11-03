@@ -335,6 +335,14 @@ _add(ActionSpec("execute_command", "Run a command", "Files & web", "terminal", "
 ], warning="Runs programs on your computer. Only use commands you trust."))
 
 _add(ActionSpec("game_hook", "Game hook", "Games", "sports_esports", "Change values in a supported game (FF7)", custom=True))
+_add(ActionSpec("game_lookup", "Look up game progress", "Games", "emoji_events",
+                "Read a tracked game's completion for later actions (Games Tracker)", [
+    Field("game", "Game", variables=True, placeholder="{game_title}",
+          help="A game's name, or a variable such as {game_title}. Leave empty for the most recently played game. "
+               "Later actions can use {actionN.title}, {actionN.progress} and the other results."),
+    Field("platform", "Platform", "select", default="", options={"": "Any", "psn": "PlayStation", "steam": "Steam"},
+          width="half"),
+]))
 
 
 # Keys stored in the editor config that are not action kwargs.
@@ -608,6 +616,9 @@ def summarize(action_type: Optional[str], cfg: dict, render: Callable[[str], str
         return " · ".join(p for p in (op, _quote(render(detail), 40)) if p) or "Choose an OBS action"
     if action_type == "game_hook":
         return labels.get(c.get("operation", ""), c.get("operation", "")) or "Choose an operation"
+    if action_type == "game_lookup":
+        game = render(c.get("game") or "")
+        return f"Progress of {game}" if game else "Progress of the latest game"
     if action_type in ("twitch_shoutout", "twitch_raid"):
         verb = "Shoutout to" if action_type == "twitch_shoutout" else "Raid"
         return f"{verb} {render(c.get('target') or '')}".strip()

@@ -26,6 +26,7 @@ _SUB_TABS = (
     ("brand", "streamlabs", "Streamlabs"),
     ("brand", "streamelements", "StreamElements"),
     ("icon", "memory", "Game Hooks"),
+    ("icon", "emoji_events", "Games Tracker"),
     ("icon", "storage", "Database"),
     ("icon", "analytics", "Statistics"),
     ("icon", "palette", "Theme"),

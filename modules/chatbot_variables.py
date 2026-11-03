@@ -80,6 +80,24 @@ STATS_VARIABLES = [
     _v("stats.chat.total_messages", "Chat messages (all)", "6100", "Statistics"),
 ]
 
+GAMES_VARIABLES = [
+    _v("games.total", "Games tracked", "650", "Games"),
+    _v("games.completed", "Games completed", "34", "Games"),
+    _v("games.avg_completion", "Average completion (%)", "46", "Games"),
+    _v("games.psn.games", "PlayStation games", "412", "Games"),
+    _v("games.psn.platinums", "Platinums", "23", "Games"),
+    _v("games.psn.trophies", "Trophies earned", "4812", "Games"),
+    _v("games.psn.gold", "Gold trophies", "312", "Games"),
+    _v("games.steam.games", "Steam games played", "238", "Games"),
+    _v("games.steam.perfect", "Perfect Steam games", "11", "Games"),
+    _v("games.steam.achievements", "Steam achievements", "2904", "Games"),
+    _v("games.current.title", "Last played game", "Elden Ring", "Games"),
+    _v("games.current.platform", "Last played game: platform", "PS5", "Games"),
+    _v("games.current.progress", "Last played game: completion (%)", "78", "Games"),
+    _v("games.current.earned", "Last played game: trophies/achievements earned", "33", "Games"),
+    _v("games.current.total", "Last played game: trophies/achievements in total", "42", "Games"),
+]
+
 QUOTE_VARIABLES = [
     _v("quote.random.text", "Random quote: text", "Never give up!", "Quotes"),
     _v("quote.random.author", "Random quote: author", "Streamer", "Quotes"),
@@ -140,7 +158,7 @@ def youtube_variables() -> List[Dict[str, Any]]:
     return out
 
 
-COMMON_VARIABLES: List[Dict[str, Any]] = [*_BASICS, *STATS_VARIABLES, *QUOTE_VARIABLES]
+COMMON_VARIABLES: List[Dict[str, Any]] = [*_BASICS, *STATS_VARIABLES, *GAMES_VARIABLES, *QUOTE_VARIABLES]
 
 
 # --------------------------------------------------------------------------
@@ -247,6 +265,12 @@ def _e(value, label, group, hint, filters=None, warning=None):
             "warning": warning, "filters": filters or []}
 
 
+_GAME_PLATFORMS = {"any": "Any platform", "psn": "PlayStation", "steam": "Steam"}
+_GAME_GRADES = {"any": "Any", "bronze": "Bronze", "silver": "Silver", "gold": "Gold",
+                "platinum": "Platinum", "achievement": "Steam achievement"}
+_GAME_PLATFORM_FILTER = _f("game_platform", "Platform", "select", options=dict(_GAME_PLATFORMS), default="any")
+_GAMES_NOTE = "Games Tracker: only changes after each account's first import count."
+
 EVENTS: List[Dict[str, Any]] = [
     _e("follow", "New follower", "Twitch", "Someone follows your channel."),
     _e("subscription", "New subscriber", "Twitch", "Someone subscribes for the first time.",
@@ -284,6 +308,16 @@ EVENTS: List[Dict[str, Any]] = [
     _e("youtube_gift_membership", "Gifted memberships", "YouTube", "Someone gifts memberships."),
     _e("youtube_superchat", "Super Chat", "YouTube", "Someone sends a Super Chat."),
     _e("youtube_supersticker", "Super Sticker", "YouTube", "Someone sends a Super Sticker."),
+    _e("game_unlock", "Trophy / achievement", "Games", "A PSN trophy or Steam achievement unlocks. " + _GAMES_NOTE,
+       [_GAME_PLATFORM_FILTER,
+        _f("game_unlock_grade", "Grade", "select", options=dict(_GAME_GRADES), default="any")]),
+    _e("game_completed", "Game completed", "Games", "A platinum (PSN) or every achievement (Steam). " + _GAMES_NOTE,
+       [_GAME_PLATFORM_FILTER]),
+    _e("game_started", "New game started", "Games", "A game shows up in your library for the first time. " + _GAMES_NOTE,
+       [_GAME_PLATFORM_FILTER]),
+    _e("game_milestone", "Progress milestone", "Games", "A game passes one of your milestones (Settings → Games Tracker).",
+       [_GAME_PLATFORM_FILTER,
+        _f("game_milestone", "At", "number", unit="%", default=0, help="0 = any milestone")]),
     _e("interval", "Timer", "Time", "Posts again and again; the first post comes after one full interval.",
        [_f("interval", "Every", "duration", unit="seconds", default=600, help="At least 10 seconds")]),
     _e("specific_time", "At a time of day", "Time", "Posts once a day at this local time.",
@@ -300,6 +334,14 @@ _MSG = _v("message", "Their message", "Love the stream!", "Event")
 
 def _ev(*items):
     return [dict(i) for i in items]
+
+
+_G_TITLE = _v("game_title", "Game", "Elden Ring", "Event")
+_G_PLATFORM = _v("platform_name", "Platform", "PlayStation", "Event")
+_G_LABEL = _v("platform_label", "Console / store", "PS5", "Event")
+_G_PROGRESS = _v("progress", "Completion (%)", "78", "Event")
+_G_EARNED = _v("earned", "Trophies / achievements earned", "33", "Event")
+_G_TOTAL = _v("total", "Trophies / achievements in the game", "42", "Event")
 
 
 EVENT_VARIABLES: Dict[str, List[Dict[str, Any]]] = {
@@ -369,6 +411,20 @@ EVENT_VARIABLES: Dict[str, List[Dict[str, Any]]] = {
     "youtube_supersticker": _ev(
         _U, _v("amount", "Amount", "2", "Event"), _v("currency", "Currency", "USD", "Event"),
         _v("formatted_amount", "Amount with currency", "$2.00", "Event"), _MSG,
+    ),
+    "game_unlock": _ev(
+        _G_TITLE, _G_PLATFORM, _G_LABEL,
+        _v("unlock_name", "Trophy / achievement", "Legendary Armaments", "Event"),
+        _v("unlock_grade", "Grade (bronze … platinum, or achievement)", "gold", "Event"),
+        _v("unlock_description", "Description", "Acquire all legendary armaments", "Event"),
+        _v("unlock_rarity", "Players who have it (%)", "12.4", "Event"),
+        _G_PROGRESS, _G_EARNED, _G_TOTAL,
+    ),
+    "game_completed": _ev(_G_TITLE, _G_PLATFORM, _G_LABEL, _G_PROGRESS, _G_EARNED, _G_TOTAL),
+    "game_started": _ev(_G_TITLE, _G_PLATFORM, _G_LABEL, _G_PROGRESS, _G_EARNED, _G_TOTAL),
+    "game_milestone": _ev(
+        _G_TITLE, _G_PLATFORM, _G_LABEL, _v("milestone", "Milestone passed (%)", "50", "Event"),
+        _G_PROGRESS, _G_EARNED, _G_TOTAL,
     ),
     "interval": [],
     "specific_time": [],
@@ -508,12 +564,52 @@ def sample_data(kind: str, event_type: Any = None, item: Any = None) -> Dict[str
         return {**base, "source": "youtube", "amount": amount, "currency": "USD",
                 "formatted_amount": f"${amount:,.2f}", "display_amount": f"${amount:,.2f}",
                 "message": "Great stream!", "donation_message": "Great stream!"}
+    if value in ("game_unlock", "game_completed", "game_started", "game_milestone"):
+        return _game_sample(value, item)
     if value == "interval":
         return {"username": "System", "timestamp": time.time(), "source": "interval"}
     if value == "specific_time":
         return {"username": "System", "timestamp": time.time(), "source": "specific_time",
                 "scheduled_time": _attr(item, "specific_time", "") or "18:00"}
     return dict(base)
+
+
+def _game_sample(value: str, item: Any) -> Dict[str, Any]:
+    """Games Tracker payload (GameEvent.fields_for_events shape) that passes the item's filters."""
+    platform = str(_attr(item, "game_platform", "any") or "any")
+    grade = str(_attr(item, "game_unlock_grade", "any") or "any")
+    steam = platform == "steam" or (platform == "any" and grade == "achievement")
+    if steam:
+        grade = "achievement"
+    elif grade in ("any", "achievement"):
+        grade = "gold"
+    try:
+        milestone = int(_attr(item, "game_milestone", 0) or 0) or 50
+    except (TypeError, ValueError):
+        milestone = 50
+    data = {
+        "username": "System",
+        "timestamp": time.time(),
+        "source": "game_tracker",
+        "kind": value[len("game_"):],
+        "platform": "steam" if steam else "psn",
+        "platform_name": "Steam" if steam else "PlayStation",
+        "platform_label": "Steam" if steam else "PS5",
+        "game_id": "1086940" if steam else "NPWR22810_00",
+        "game_title": "Baldur's Gate 3" if steam else "Elden Ring",
+        "progress": 100 if value == "game_completed" else milestone if value == "game_milestone" else 78,
+        "earned": 33,
+        "total": 42,
+        "unlock_name": "", "unlock_grade": "", "unlock_description": "", "unlock_rarity": "", "unlock_icon": "",
+        "milestone": "",
+    }
+    if value == "game_unlock":
+        data.update({"unlock_name": "Descent from Avernus" if steam else "Legendary Armaments",
+                     "unlock_grade": grade, "unlock_description": "Reach the Upper City" if steam
+                     else "Acquire all legendary armaments", "unlock_rarity": 12.4})
+    if value == "game_milestone":
+        data["milestone"] = milestone
+    return data
 
 
 def _as_item(kind: str, event_type: Any, item: Any) -> Any:

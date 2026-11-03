@@ -553,6 +553,13 @@ if __name__ == "__main__":
             service_manager.register("spotify", _start_spotify, priority=5)
             service_manager.register("psn", _start_psn, priority=6)
             service_manager.register("steam", _start_steam, priority=6)
+
+            def _start_game_tracker():
+                from modules.game_tracker.service import start_game_tracker
+
+                start_game_tracker()
+
+            service_manager.register("game_tracker", _start_game_tracker, priority=7)
             service_manager.register("youtube", _start_youtube, priority=7)
             service_manager.register("streamlabs", _start_streamlabs, priority=8)
             service_manager.register("streamelements", _start_streamelements, priority=8)

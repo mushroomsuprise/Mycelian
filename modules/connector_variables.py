@@ -80,7 +80,14 @@ ALWAYS_VARIABLES: List[Dict[str, Any]] = [
         "there",
         "Message helpers",
         pattern=True,
-    ),
+    ),    _v("games.current.title", "Most recently played game", "Elden Ring", "Games Tracker"),
+    _v("games.current.progress", "Its completion (percent)", "78", "Games Tracker"),
+    _v("games.games", "Games tracked", "650", "Games Tracker"),
+    _v("games.trophies", "PlayStation trophies earned", "4812", "Games Tracker"),
+    _v("games.platinums", "Platinum trophies", "23", "Games Tracker"),
+    _v("games.achievements", "Steam achievements earned", "2904", "Games Tracker"),
+    _v("games.perfect", "Perfect Steam games", "11", "Games Tracker"),
+    _v("games.avg_completion", "Average completion (percent)", "46", "Games Tracker"),
 ]
 
 # --------------------------------------------------------------------------
@@ -95,6 +102,23 @@ _SUPER = [
     _v("currency", "Currency", "USD"),
     _v("display_amount", "Amount as shown by YouTube", "$5.00"),
     _MESSAGE,
+]
+_GAME = [
+    _v("game_title", "Game", "Elden Ring"),
+    _v("platform_name", "Platform (PlayStation or Steam)", "PlayStation"),
+    _v("platform", "Platform key (psn or steam)", "psn"),
+    _v("platform_label", "System (PS5, PS4, Steam...)", "PS5"),
+    _v("progress", "Completion (percent)", "78"),
+    _v("earned", "Trophies / achievements earned", "33"),
+    _v("total", "Trophies / achievements in the game", "42"),
+    _v("game_id", "Game ID (NPWR... or Steam app ID)", "NPWR22810_00"),
+]
+_GAME_UNLOCK = [
+    _v("unlock_name", "Trophy / achievement name", "Legendary Armaments"),
+    _v("unlock_grade", "Grade (bronze, silver, gold, platinum or achievement)", "gold"),
+    _v("unlock_description", "Description", "Acquire all legendary armaments"),
+    _v("unlock_rarity", "Players who have it (percent)", "12.4"),
+    _v("unlock_icon", "Icon URL", "https://image.api.playstation.com/trophy.png"),
 ]
 _OBS_OUTPUT = [
     _v("output_active", "Is active (true/false)", "true"),
@@ -316,6 +340,10 @@ EVENT_VARIABLES: Dict[str, List[Dict[str, Any]]] = {
         _v("input_name", "Audio source", "Mic/Aux"),
         _v("input_muted", "Is muted (true/false)", "true"),
     ],
+    "game_unlock": _GAME_UNLOCK + _GAME,
+    "game_completed": list(_GAME),
+    "game_started": list(_GAME),
+    "game_milestone": [_v("milestone", "Milestone reached (percent)", "50")] + _GAME,
     "any": [
         _v("event_type", "Event type", "twitch_chat_message"),
         _v("username", "Username (when the event has one)", "TestUser"),
@@ -339,6 +367,14 @@ _SUPER_FIELDS = [
     _f("username", "Username", "text"),
     _f("message", "Message", "text"),
     _f("display_amount", "Amount as shown", "text"),
+]
+_GAME_FIELDS = [
+    _f("game_title", "Game", "text"),
+    _f("platform", "Platform (psn or steam)", "text"),
+    _f("platform_label", "System (PS5, PS4, Steam...)", "text"),
+    _f("progress", "Completion (percent)", "number"),
+    _f("earned", "Trophies / achievements earned", "number"),
+    _f("total", "Trophies / achievements in the game", "number"),
 ]
 _OBS_OUTPUT_FIELDS = [
     _f("output_active", "Is active", "bool"),
@@ -503,6 +539,14 @@ CONDITION_FIELDS: Dict[str, List[Dict[str, str]]] = {
         _f("input_name", "Audio source", "text"),
         _f("input_muted", "Is muted", "bool"),
     ],
+    "game_unlock": [
+        _f("unlock_name", "Trophy / achievement", "text"),
+        _f("unlock_grade", "Grade", "text"),
+        _f("unlock_rarity", "Players who have it (percent)", "number"),
+    ] + _GAME_FIELDS,
+    "game_completed": list(_GAME_FIELDS),
+    "game_started": list(_GAME_FIELDS),
+    "game_milestone": [_f("milestone", "Milestone (percent)", "number")] + _GAME_FIELDS,
 }
 
 
@@ -665,6 +709,25 @@ TRIGGERS: List[Dict[str, Any]] = [
     _t("obs_stream_state", "Streaming started or stopped", "OBS", "OBS starts or stops streaming."),
     _t("obs_record_state", "Recording started or stopped", "OBS", "OBS starts or stops recording."),
     _t("obs_input_mute", "Audio source muted or unmuted", "OBS", "An OBS audio source is muted or unmuted."),
+    _t(
+        "game_unlock",
+        "Trophy or achievement unlocked",
+        "Games",
+        "You earn a PlayStation trophy or a Steam achievement (Games Tracker).",
+    ),
+    _t(
+        "game_completed",
+        "Game completed",
+        "Games",
+        "You earn a platinum, or every achievement in a Steam game.",
+    ),
+    _t("game_started", "New game started", "Games", "A game shows up in your PlayStation or Steam library."),
+    _t(
+        "game_milestone",
+        "Completion milestone",
+        "Games",
+        "A game's completion passes one of the Games Tracker milestones (25, 50, 75% by default).",
+    ),
     _t("hotkey", "Hotkey", "Controls", "You press a key combination anywhere on this computer."),
     _t("streamdeck", "Stream Deck button", "Controls", "You press this connector's Stream Deck button."),
     _t(
@@ -949,6 +1012,59 @@ _SAMPLES: Dict[str, Dict[str, Any]] = {
         "output_state": "OBS_WEBSOCKET_OUTPUT_STARTED",
     },
     "obs_input_mute": {"input_name": "Mic/Aux", "input_muted": True},
+    "game_unlock": {
+        "kind": "unlock",
+        "platform": "psn",
+        "platform_name": "PlayStation",
+        "platform_label": "PS5",
+        "game_id": "NPWR22810_00",
+        "game_title": "Elden Ring",
+        "progress": 78,
+        "earned": 33,
+        "total": 42,
+        "unlock_name": "Legendary Armaments",
+        "unlock_grade": "gold",
+        "unlock_description": "Acquire all legendary armaments",
+        "unlock_rarity": 12.4,
+        "unlock_icon": "",
+        "milestone": "",
+    },
+    "game_completed": {
+        "kind": "completed",
+        "platform": "psn",
+        "platform_name": "PlayStation",
+        "platform_label": "PS5",
+        "game_id": "NPWR39127_00",
+        "game_title": "Astro Bot",
+        "progress": 100,
+        "earned": 50,
+        "total": 50,
+        "milestone": "",
+    },
+    "game_started": {
+        "kind": "started",
+        "platform": "steam",
+        "platform_name": "Steam",
+        "platform_label": "Steam",
+        "game_id": "1145360",
+        "game_title": "Hades",
+        "progress": 0,
+        "earned": 0,
+        "total": 49,
+        "milestone": "",
+    },
+    "game_milestone": {
+        "kind": "milestone",
+        "platform": "psn",
+        "platform_name": "PlayStation",
+        "platform_label": "PS5",
+        "game_id": "NPWR22810_00",
+        "game_title": "Elden Ring",
+        "progress": 52,
+        "earned": 22,
+        "total": 42,
+        "milestone": 50,
+    },
 }
 
 
@@ -1019,6 +1135,24 @@ def sample_event(trigger_type: Any, trigger: Any = None) -> Dict[str, Any]:
     elif value == "webhook":
         payload = {k: v for k, v in data.items() if k in ("username", "message", "amount")}
         data["payload"] = payload
+    elif value.startswith("game_"):
+        # Match the trigger's own filters so a test run fires.
+        platform = str(_trigger_value(trigger, "platform", "") or "").lower()
+        if platform in ("psn", "steam") and platform != data.get("platform"):
+            steam = platform == "steam"
+            data.update({"platform": platform, "platform_name": "Steam" if steam else "PlayStation",
+                         "platform_label": "Steam" if steam else "PS5"})
+            if steam and data.get("unlock_grade") not in (None, ""):
+                data["unlock_grade"] = "achievement"
+        grade = str(_trigger_value(trigger, "grade", "") or "").lower()
+        if value == "game_unlock" and grade not in ("", "any"):
+            data["unlock_grade"] = grade
+        milestone = _trigger_value(trigger, "milestone", 0)
+        if value == "game_milestone" and milestone:
+            try:
+                data["milestone"] = int(float(milestone))
+            except (TypeError, ValueError):
+                pass
     return data
 
 
@@ -1053,7 +1187,23 @@ def example_context(
     )
     for key, item in clock_variables().items():
         ctx.setdefault(key, item)
+    ctx.setdefault("games", _sample_games())
     return ctx
+
+
+def _sample_games() -> Dict[str, Any]:
+    """Example ``{games.*}`` values for the preview (dotted keys in ALWAYS_VARIABLES)."""
+    out: Dict[str, Any] = {}
+    for item in ALWAYS_VARIABLES:
+        key = item["key"]
+        if not key.startswith("games."):
+            continue
+        node = out
+        parts = key.split(".")[1:]
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = item["example"]
+    return out
 
 
 def _condition_parts(condition: Any) -> Tuple[str, str, Any, str]:

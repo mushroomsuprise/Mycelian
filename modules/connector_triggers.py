@@ -700,6 +700,95 @@ class ObsInputMuteTrigger(BaseTrigger):
         return self.evaluate_conditions(event_data)
 
 
+
+def _platform_matches(wanted: str, event_data: Dict[str, Any]) -> bool:
+    wanted = str(wanted or "").strip().lower()
+    return wanted in ("", "any") or str(event_data.get("platform") or "").lower() == wanted
+
+
+@dataclass
+class GameUnlockTrigger(BaseTrigger):
+    """A trophy or achievement is unlocked (Games Tracker)."""
+
+    platform: str = ""  # "" any, "psn" or "steam"
+    grade: str = ""  # "" any, bronze / silver / gold / platinum, or "achievement" (Steam)
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.GAME_UNLOCK
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "game_unlock":
+            return False
+        if not _platform_matches(self.platform, event_data):
+            return False
+        grade = str(self.grade or "").strip().lower()
+        if grade not in ("", "any") and str(event_data.get("unlock_grade") or "").lower() != grade:
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class GameCompletedTrigger(BaseTrigger):
+    """A game is completed: platinum (PSN) or every achievement (Steam)."""
+
+    platform: str = ""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.GAME_COMPLETED
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "game_completed":
+            return False
+        if not _platform_matches(self.platform, event_data):
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class GameStartedTrigger(BaseTrigger):
+    """A game shows up in the library for the first time."""
+
+    platform: str = ""
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.GAME_STARTED
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "game_started":
+            return False
+        if not _platform_matches(self.platform, event_data):
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class GameMilestoneTrigger(BaseTrigger):
+    """A game's completion crosses one of the tracker's milestones (25 / 50 / 75%)."""
+
+    platform: str = ""
+    milestone: int = 0  # 0 = any milestone
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.GAME_MILESTONE
+        try:
+            self.milestone = max(0, int(float(self.milestone or 0)))
+        except (TypeError, ValueError):
+            self.milestone = 0
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        if event_data.get("event_type") != "game_milestone":
+            return False
+        if not _platform_matches(self.platform, event_data):
+            return False
+        if self.milestone:
+            try:
+                if int(float(event_data.get("milestone") or 0)) != self.milestone:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return self.evaluate_conditions(event_data)
+
+
 CONNECTOR_EVENT_TYPES = frozenset(
     {
         "twitch_bits",
@@ -739,6 +828,10 @@ CONNECTOR_EVENT_TYPES = frozenset(
         "obs_stream_state",
         "obs_record_state",
         "obs_input_mute",
+        "game_unlock",
+        "game_completed",
+        "game_started",
+        "game_milestone",
     }
 )
 
@@ -804,6 +897,10 @@ def create_trigger(
         TriggerType.OBS_STREAM_STATE: ObsStreamStateTrigger,
         TriggerType.OBS_RECORD_STATE: ObsRecordStateTrigger,
         TriggerType.OBS_INPUT_MUTE: ObsInputMuteTrigger,
+        TriggerType.GAME_UNLOCK: GameUnlockTrigger,
+        TriggerType.GAME_COMPLETED: GameCompletedTrigger,
+        TriggerType.GAME_STARTED: GameStartedTrigger,
+        TriggerType.GAME_MILESTONE: GameMilestoneTrigger,
         TriggerType.ANY: AnyTrigger,
     }
 

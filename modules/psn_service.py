@@ -432,6 +432,10 @@ def psn_data_update_loop():
                     np_communication_id = (
                         title_result.get("np_communication_id") or np_communication_id
                     )
+                    # Games Tracker: queue only; its own thread compares and stores.
+                    from .game_tracker.service import observe_psn_title
+
+                    observe_psn_title({**title_result, "np_title_id": np_title_id})
                     psn_client_instance.psn_data.current_game_mismatch = None
                     # Persist / refresh mapping for this title without wiping trophy_groups
                     if np_communication_id:

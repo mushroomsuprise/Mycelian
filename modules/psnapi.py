@@ -569,6 +569,25 @@ def _update_psn_game_cache(
         return None
 
 
+def store_psn_game_cache_in_db(game_data: dict) -> bool:
+    """Write one whole cached game document (stamps ``last_updated``). Does not require a PSNClient."""
+    np_communication_id = (game_data or {}).get("np_communication_id")
+    if not np_communication_id:
+        logger.error("Cannot store game data: missing np_communication_id")
+        return False
+    try:
+        game_data["last_updated"] = datetime.now().isoformat()
+        result = database_manager.set_data(f"{PSN_GAME_DATA_PATH}/{np_communication_id}", game_data)
+        if result:
+            with _game_cache_index_lock:
+                if _game_cache_index_loaded:
+                    _index_game_cache_doc(game_data)
+        return bool(result)
+    except Exception as e:
+        logger.error(f"Error storing game data for {np_communication_id}: {e}")
+        return False
+
+
 def delete_psn_game_cache_in_db(np_communication_id: str) -> bool:
     """Delete one cached game path. See PSNClient.delete_game_cache_entry."""
     if not np_communication_id:

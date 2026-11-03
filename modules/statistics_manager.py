@@ -313,6 +313,28 @@ class PredictionStatistics:
 
 
 @dataclass
+class GameTrackerStatistics:
+    """Lifetime Games Tracker changes (only those after each account's silent first import)."""
+
+    trophies_bronze: int = 0
+    trophies_silver: int = 0
+    trophies_gold: int = 0
+    trophies_platinum: int = 0
+    steam_achievements: int = 0
+    platinums: int = 0  # PSN lists completed with a platinum (or 100% on lists without one)
+    perfect_games: int = 0  # Steam games with every achievement
+    completed_games: int = 0
+    games_started: int = 0
+    milestones: int = 0
+
+
+_GAME_TRACKER_FIELDS = (
+    "trophies_bronze", "trophies_silver", "trophies_gold", "trophies_platinum", "steam_achievements",
+    "platinums", "perfect_games", "completed_games", "games_started", "milestones",
+)
+
+
+@dataclass
 class UserChatStatistics:
     """Per-user statistics for chat messages"""
 
@@ -364,6 +386,7 @@ class StatisticsData:
     giveaways: GiveawayStatistics = field(default_factory=GiveawayStatistics)
     polls: PollStatistics = field(default_factory=PollStatistics)
     predictions: PredictionStatistics = field(default_factory=PredictionStatistics)
+    game_tracker: GameTrackerStatistics = field(default_factory=GameTrackerStatistics)
     chat: ChatStatistics = field(default_factory=ChatStatistics)
     templates: Dict[str, TemplateStatistics] = field(
         default_factory=dict
@@ -949,7 +972,8 @@ class StatisticsManager:
             event_type: Type of event (bit, sub, resub, giftsub, donation, point_redeem, follow,
                 raid, watch_streak, connector, chatbot_command, chatbot_event, quote_redeem,
                 chat_message, giveaway_entry, giveaway_win, giveaway_draw_complete,
-                poll_complete, poll_win, prediction_complete, prediction_win).
+                poll_complete, poll_win, prediction_complete, prediction_win, game_unlock,
+                game_completed, game_started, game_milestone).
             amount: Numeric amount (bits, gift quantity, points, etc.).
             alert_name: Name of the alert that was triggered.
         """
@@ -2730,6 +2754,14 @@ class StatisticsManager:
                         "winner": str(pot.get("winner") or ""),
                     } if isinstance(pot, dict) and pot.get("points") else {}
 
+                if "game_tracker" in data_dict and isinstance(data_dict["game_tracker"], dict):
+                    gtd = data_dict["game_tracker"]
+                    for name in _GAME_TRACKER_FIELDS:
+                        try:
+                            setattr(self.data.game_tracker, name, int(gtd.get(name, 0) or 0))
+                        except (TypeError, ValueError):
+                            setattr(self.data.game_tracker, name, 0)
+
                 if "chat" in data_dict:
                     chat_dict = data_dict["chat"]
                     self._take_user_map(chat_dict, "user_stats", "chat.user_stats")
@@ -2958,6 +2990,7 @@ class StatisticsManager:
                         "total_predictors": self.data.predictions.total_predictors,
                         "biggest_pot": dict(self.data.predictions.biggest_pot or {}),
                     },
+                    "game_tracker": {name: getattr(self.data.game_tracker, name) for name in _GAME_TRACKER_FIELDS},
                     "chat": {
                         "twitch_messages_received": self.data.chat.twitch_messages_received,
                         "total_messages": self.data.chat.total_messages,
@@ -3714,6 +3747,38 @@ class StatisticsManager:
         return {"name": best_name, "keyword": best_keyword, "count": best_count}
 
     @_stats_data_locked
+    def record_game_event(self, event: Any) -> None:
+        """Count one Games Tracker change (a ``modules.game_tracker.models.GameEvent``).
+
+        Unlocks count by trophy grade (Steam achievements on their own), completions as a
+        platinum (PSN) or perfect game (Steam), plus new games and progress milestones. Each
+        one is also a timestamped ``game_*`` event for the date-range views.
+        """
+        kind = str(getattr(event, "kind", "") or "")
+        platform = str(getattr(event, "platform", "") or "")
+        title = str(getattr(event, "game_title", "") or "")
+        gt = self.data.game_tracker
+        if kind == "unlock":
+            grade = str(getattr(event, "unlock_grade", "") or "")
+            if grade in ("bronze", "silver", "gold", "platinum"):
+                setattr(gt, f"trophies_{grade}", getattr(gt, f"trophies_{grade}") + 1)
+            else:
+                gt.steam_achievements += 1
+        elif kind == "completed":
+            if platform == "steam":
+                gt.perfect_games += 1
+            else:
+                gt.platinums += 1
+            gt.completed_games += 1
+        elif kind == "started":
+            gt.games_started += 1
+        elif kind == "milestone":
+            gt.milestones += 1
+        else:
+            return
+        self._record_event(self._STATS_SYSTEM_USERNAME, f"game_{kind}", 1.0, title)
+
+    @_stats_data_locked
     def record_prediction_finished(self, snapshot: Optional[Dict[str, Any]] = None) -> None:
         """Count one ended Twitch prediction (a prediction_manager snapshot).
 
@@ -4147,6 +4212,13 @@ class StatisticsManager:
                 ),
                 "biggest_pot": dict(self.data.predictions.biggest_pot or {}),
             },
+            "game_tracker": {
+                **{name: getattr(self.data.game_tracker, name) for name in _GAME_TRACKER_FIELDS},
+                "trophies": (
+                    self.data.game_tracker.trophies_bronze + self.data.game_tracker.trophies_silver
+                    + self.data.game_tracker.trophies_gold + self.data.game_tracker.trophies_platinum
+                ),
+            },
             "chat": {
                 "twitch_messages_received": self.data.chat.twitch_messages_received,
                 "total_messages": self.data.chat.total_messages,
@@ -4217,6 +4289,9 @@ class StatisticsManager:
         elif category == "predictions":
             self.data.predictions = PredictionStatistics()
             logger.info("Prediction statistics reset")
+        elif category == "game_tracker":
+            self.data.game_tracker = GameTrackerStatistics()
+            logger.info("Games Tracker statistics reset")
         elif category == "chat":
             self.data.chat = ChatStatistics()
             logger.info("Chat statistics reset")

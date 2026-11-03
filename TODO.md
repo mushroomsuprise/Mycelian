@@ -69,3 +69,9 @@ Kik Integration:
     [] - Add as a send target to the chatbot
     [] - Add Kik specific badging to activity feeds
     [] - Add secondary credentials system for Kik to have a "chatbot", similar to the Twitch system
+
+Game Tracker:
+    [] - Create a whole new tab for the game tracker in Settings (Place just to the right of Game Hooks). Display each game in a similar fashion to the Game Hooks tab, but provide trophy/acheivement stats, platform icon, and a settings option (at least for PSN titles to adjust game title and/or NPWRID like what is availabe on the game cache tab)
+    [] - Have the PSN API load in the data of all games played into the game cache, resolve NPWR ID's, store progress, expose values to Stastitics (only deltas after initial load, do not bomb the stats with the initial load). Expose to the chatbot command/events engine, and to the connectors system. Move the PSN Game cache setup to the new Games Tracker tab, with all options to adjust
+    [] - Repeat above, but for Steam games (will need to get API details).
+    [] - Get game cover art pics via the services, and cache them with a TTL

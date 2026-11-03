@@ -737,8 +737,8 @@ def get_integration() -> ConnectorIntegration:
 # ---------------------------------------------------------------------------
 
 
-def emit_twitch_event(event_type: str, fields: Optional[Dict[str, Any]] = None) -> None:
-    """Send a Twitch connector event (e.g. ``"twitch_ad_break_begin"``) with flat *fields*.
+def emit_event(source: str, event_type: str, fields: Optional[Dict[str, Any]] = None) -> None:
+    """Send a connector event (e.g. ``"game_unlock"`` from ``"game_tracker"``) with flat *fields*.
 
     Safe from any thread or event loop; never raises; does nothing while connectors aren't running.
     """
@@ -747,11 +747,16 @@ def emit_twitch_event(event_type: str, fields: Optional[Dict[str, Any]] = None) 
         if not getattr(manager, "is_running", False):
             return
         event_data: Dict[str, Any] = dict(fields or {})
-        event_data.update({"event_type": str(event_type), "timestamp": time.time(), "source": "twitch"})
+        event_data.update({"event_type": str(event_type), "timestamp": time.time(), "source": str(source)})
         if not manager._schedule_event_on_connector_loop(event_data):
             logger.debug("Connector loop not ready, dropping %s", event_type)
     except Exception:
         logger.debug("Could not send connector event %s", event_type, exc_info=True)
+
+
+def emit_twitch_event(event_type: str, fields: Optional[Dict[str, Any]] = None) -> None:
+    """Send a Twitch connector event (e.g. ``"twitch_ad_break_begin"``) with flat *fields*."""
+    emit_event("twitch", event_type, fields)
 
 
 _PREDICTION_EVENTS = {

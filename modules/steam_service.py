@@ -99,6 +99,12 @@ def _poll_once(client: SteamClient, state: dict) -> None:
         try:
             for achievement in client.refresh_achievements():
                 _emit("steam_achievement_unlocked", achievement)
+            data = client.steam_data
+            if data.has_achievements and not data.achievements_private:
+                # Games Tracker: queue only; its own thread compares and stores.
+                from .game_tracker.service import observe_steam_game
+
+                observe_steam_game(game, data.current_game_name or "", data.current_game_achievements)
         except SteamKeyError:
             raise
         except SteamAPIError as e:

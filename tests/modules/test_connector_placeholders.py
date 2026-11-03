@@ -74,6 +74,9 @@ def test_build_context_merges_and_maps_action_results(monkeypatch):
 def test_build_context_without_hooks(monkeypatch):
     fake_game_hooks(monkeypatch, registry={"registered_hook_ids": lambda: []})
     fake_hooks_service(monkeypatch, {})
+    from modules.game_tracker import service as gt_service
+
+    monkeypatch.setattr(gt_service, "get_service", lambda: (_ for _ in ()).throw(RuntimeError("no tracker")))
     ctx = cp.build_connector_placeholder_context(None, None)
     assert "hooks" not in ctx and set(ctx) == {"time", "date", "datetime"}
     monkeypatch.setitem(sys.modules, "modules.game_hooks_service", None)

@@ -1136,7 +1136,7 @@ def test_shutdown_application_order(orchestration):
     steps = {c[0]: c for c in orchestration.calls if isinstance(c, tuple)}
     assert steps["pywebview"][1] is sh._close_native_window and steps["pywebview"][2] == 5.0
     assert steps["statistics"][1] is sh._save_statistics and steps["statistics"][2] == 8.0
-    assert steps["parallel"][1] == ["youtube", "spotify", "discord", "psn", "steam", "twitch", "chatbot"]
+    assert steps["parallel"][1] == ["youtube", "spotify", "discord", "psn", "steam", "game_tracker", "twitch", "chatbot"]
     assert steps["parallel"][2] == sh._SHUTDOWN_INTEGRATION_PARALLEL_TIMEOUT
     assert orchestration.exits == []
     assert sh.is_shutdown_in_progress() is True

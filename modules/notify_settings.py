@@ -54,6 +54,7 @@ SOURCES: Tuple[Tuple[str, str, str], ...] = (
     ("streamlabs", "Streamlabs", "volunteer_activism"),
     ("streamelements", "StreamElements", "volunteer_activism"),
     ("game_hooks", "Game Hooks", "videogame_asset"),
+    ("game_tracker", "Games Tracker", "emoji_events"),
     ("files", "Files", "folder"),
     ("help", "Help", "help"),
 )

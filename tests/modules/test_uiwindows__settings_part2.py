@@ -35,6 +35,7 @@ TAB_MODULES = {
     "database_tab": ("DatabaseTab", "Database"),
     "discord_tab": ("DiscordTab", "Discord"),
     "game_hooks_tab": ("GameHooksTab", "Game Hooks"),
+    "games_tracker_tab": ("GamesTrackerTab", "Games Tracker"),
     "obs_tab": ("ObsTab", "OBS"),
     "psn_tab": ("PSNTab", "PSN"),
     "steam_tab": ("SteamTab", "Steam"),
@@ -258,7 +259,7 @@ def test_tab_change_event_lazy_loads(shell):
 
 
 @pytest.mark.parametrize("label", ["Theme", "PSN", "Steam", "Spotify", "YouTube", "Streamlabs", "StreamElements", "Discord",
-                                   "Game Hooks", "Database"])
+                                   "Game Hooks", "Games Tracker", "Database"])
 def test_every_lazy_tab_builds(shell, label):
     async def check(user):
         shell.ui._load_settings_tab_content(label)

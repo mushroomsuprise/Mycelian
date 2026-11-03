@@ -1,7 +1,7 @@
 # Copyright (c) 2024-2026 Mycelian
 # SPDX-License-Identifier: MIT
 """Tests for modules/uiwindows/tabs/psn_tab.py (Settings → PSN): helpers, status, settings save, the
-game cache editor and the built UI. The NPSSO sign-in flow is in test_uiwindows__tabs__psn_tab_part2.py."""
+Games Tracker link (the game cache moved there), the built UI and the NPSSO sign-in flow."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ if str(TESTS) not in sys.path:
     sys.path.insert(0, str(TESTS))
 
 import asyncio  # noqa: E402
-import contextlib  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 from typing import Any, Dict, List  # noqa: E402
 
@@ -55,23 +54,6 @@ class FakeState:
     def save_changes(self):
         self.saves += 1
         return self.save_ok
-
-
-class FakeDBM:
-    def __init__(self) -> None:
-        self.problem: Any = None
-        self.quiet = 0
-
-    @contextlib.contextmanager
-    def quiet_notifications(self):
-        self.quiet += 1
-        yield
-
-    def clear_last_write_problem(self):
-        pass
-
-    def last_write_problem(self):
-        return self.problem
 
 
 class FakeWork:
@@ -113,25 +95,12 @@ class FakeButton:
         return self
 
 
-def games():
-    return [
-        {"np_communication_id": "NPWR10_00", "trophy_name": "Game 10", "presence_name": "Game Ten",
-         "platform": "PS5", "np_title_id": "PPSA10"},
-        {"np_communication_id": "NPWR2_00", "trophy_name": "Game 2", "platform": "PS4",
-         "cover_art_url": "https://img/2.png", "last_updated": "2026-01-01"},
-        {"np_communication_id": "NPWR3_00", "presence_name": "Astro"},
-    ]
-
-
 @pytest.fixture
 def env(monkeypatch):
     st = FakeState()
-    dbm = FakeDBM()
     notes: List[dict] = []
     scheduled: List[Any] = []
     progress: List[FakeWork] = []
-    cache = {"docs": games(), "load_error": None, "update_ok": True, "delete_ok": True,
-             "updates": [], "deletes": [], "update_error": None}
     service = SimpleNamespace(display=("Not Connected", "N/A", "text-theme-error"), changes=0, change_error=None)
 
     def display():
@@ -147,7 +116,6 @@ def env(monkeypatch):
     monkeypatch.setattr(help_render, "_shared_stylesheets", set())
     monkeypatch.setattr(tabmod, "state_manager", st)
     monkeypatch.setattr(dataobjects, "state_manager", st)
-    monkeypatch.setattr(tabmod, "_dbm", dbm)
     monkeypatch.setattr(tabmod, "notify", lambda message, **kw: notes.append({"message": message, **kw}))
 
     def notify_progress(title, **kw):
@@ -167,31 +135,6 @@ def env(monkeypatch):
 
     monkeypatch.setattr(tabmod, "layout_schedule", schedule)
 
-    def load():
-        if cache["load_error"]:
-            raise cache["load_error"]
-        return [dict(d) for d in cache["docs"]]
-
-    def update(cid, upd):
-        if cache["update_error"]:
-            raise cache["update_error"]
-        cache["updates"].append((cid, dict(upd)))
-        if cache["update_ok"]:
-            for d in cache["docs"]:
-                if d["np_communication_id"] == cid:
-                    d.update(upd)
-        return cache["update_ok"]
-
-    def delete(cid):
-        cache["deletes"].append(cid)
-        if cache["delete_ok"]:
-            cache["docs"] = [d for d in cache["docs"] if d["np_communication_id"] != cid]
-        return cache["delete_ok"]
-
-    monkeypatch.setattr(tabmod, "load_all_psn_game_cache_docs_from_db", load)
-    monkeypatch.setattr(tabmod, "update_psn_game_cache_in_db", update)
-    monkeypatch.setattr(tabmod, "delete_psn_game_cache_in_db", delete)
-
     async def io_bound(fn, *a):
         return fn(*a)
 
@@ -209,8 +152,11 @@ def env(monkeypatch):
 
     monkeypatch.setattr(bt, "create", create)
     monkeypatch.setattr("modules.help_system.contextual_help.help_button", lambda **kw: ui.button("Help"))
-    return SimpleNamespace(state=st, dbm=dbm, notes=notes, scheduled=scheduled, progress=progress, cache=cache,
-                           service=service, tasks=tasks, mp=monkeypatch)
+    nav: List[str] = []
+    monkeypatch.setattr("modules.help_system.contextual_help.navigate_to_settings_subtab",
+                        lambda name, *a, **kw: nav.append(name))
+    return SimpleNamespace(state=st, notes=notes, scheduled=scheduled, progress=progress, service=service,
+                           tasks=tasks, nav=nav, mp=monkeypatch)
 
 
 def titles(env):
@@ -227,63 +173,13 @@ class Val:
         self.value = value
 
 
-def tab_with_cache_fields(env):
-    tab = tabmod.PSNTab()
-    tab._load_from_state()
-    tab.ui_elements["cache_presence_name"] = Val()
-    tab.ui_elements["cache_np_title_id"] = Val()
-    tab.ui_elements["cache_save_btn"] = FakeButton()
-    tab._load_cached_games()
-    tab._reindex_cache()
-    return tab
-
-
 # --------------------------------------------------------------------------- module helpers
-
-
-def test_cache_write_ok_and_failures(env):
-    assert tabmod._cache_write(lambda *a: True, "x") == (True, "")
-    assert env.dbm.quiet == 1
-    assert tabmod._cache_write(lambda *a: False) == (False, "Not written (the cached game couldn't be found or read).")
-    env.dbm.problem = ("HTTP 500", "server")
-    assert tabmod._cache_write(lambda: 0) == (False, "HTTP 500 - server")
-    env.dbm.problem = ("Timeout", "")
-    assert tabmod._cache_write(lambda: None) == (False, "Timeout")
-
-
-def test_notify_cache_write_failed(env):
-    tabmod._notify_cache_write_failed("T", "")
-    tabmod._notify_cache_write_failed("T2", "d")
-    assert env.notes[0]["details"] is None and env.notes[1]["details"] == "d"
-    assert env.notes[0]["type"] == "error" and env.notes[0]["actions"] == tabmod.nav_actions_settings("Database")
 
 
 def test_npsso_trace_prints(capsys):
     tabmod._npsso_trace("hello")
     out = capsys.readouterr().out
     assert "[NPSSO_TRACE]" in out and "hello" in out and "thread=" in out
-
-
-@pytest.mark.parametrize("game,name", [
-    ({"trophy_name": "T", "presence_name": "P"}, "T"),
-    ({"presence_name": "P", "np_communication_id": "N"}, "P"),
-    ({"np_communication_id": "N"}, "N"),
-    ({}, "Unknown"),
-])
-def test_game_name(game, name):
-    assert tabmod._game_name(game) == name
-
-
-def test_game_sort_key_natural_order():
-    names = ["Game 10", "game 2", "Alpha", "Game 1b"]
-    ordered = sorted(({"trophy_name": n} for n in names), key=tabmod._game_sort_key)
-    assert [g["trophy_name"] for g in ordered] == ["Alpha", "Game 1b", "game 2", "Game 10"]
-
-
-def test_game_search_key():
-    g = {"trophy_name": "T", "presence_name": None, "platform": "PS5", "np_communication_id": "NPWR1",
-         "np_title_id": "PPSA1"}
-    assert tabmod._game_search_key(g) == "t ps5 npwr1 ppsa1"
 
 
 @pytest.mark.parametrize(
@@ -301,6 +197,11 @@ def test_str_from_value_event(event, expected):
     assert tabmod.PSNTab._str_from_value_event(event) == expected
 
 
+def test_open_games_tracker_navigates(env):
+    tabmod._open_games_tracker()
+    assert env.nav == ["Games Tracker"]
+
+
 # --------------------------------------------------------------------------- enter / exit / load / set
 
 
@@ -308,7 +209,7 @@ def test_on_enter_exit(env):
     tab = tabmod.PSNTab()
     tab.on_enter()
     tab.on_exit()
-    assert [t.interval for t in env.scheduled] == [0.05, 0.2]
+    assert [t.interval for t in env.scheduled] == [0.05]
     st, mm = SimpleNamespace(active=False), SimpleNamespace(active=False)
     active = []
     tab._status_timer, tab._mismatch_timer = st, mm
@@ -386,41 +287,27 @@ def test_save_no_buffer_or_failed_save(env):
     assert env.tasks == []
 
 
-def test_save_includes_pending_game_edit(env):
-    tab = tab_with_cache_fields(env)
-    tab._on_game_selected("NPWR2_00")
-    tab.ui_elements["cache_presence_name"].value = "Renamed"
-    tab._on_cache_field_changed()
-    assert tab._game_cache_dirty is True
-    tab.save()
-    assert env.cache["updates"] == [("NPWR2_00", {"presence_name": "Renamed"})]
-    run_tasks(env)
-
-
-def test_discard_restores_inputs_and_game_fields(env):
+def test_discard_restores_inputs(env):
     env.state.settings = PSNSettingsData(npsso_code="tok", psn_username="")
-    tab = tab_with_cache_fields(env)
+    tab = tabmod.PSNTab()
+    tab._load_from_state()
     tab.ui_elements["npsso_code"] = Val("changed")
     tab.ui_elements["psn_username"] = Val("x")
-    tab._field_snapshot = {}
-    tab._on_game_selected("NPWR10_00")
-    tab.ui_elements["cache_presence_name"].value = "edited"
-    tab._on_cache_field_changed()
+    tab.ui_elements["not_a_setting"] = Val("kept")
     tab.dirty = True
     tab.discard()
     assert tab.ui_elements["npsso_code"].value == "tok" and tab.ui_elements["psn_username"].value == ""
-    assert tab.ui_elements["cache_presence_name"].value == "Game Ten"
-    assert tab._field_snapshot == {"cache_presence_name": "Game Ten", "cache_np_title_id": "PPSA10"}
-    assert tab.dirty is False and tab._game_cache_dirty is False
-    assert tab.ui_elements["cache_save_btn"].enabled is False
-    assert tab._suppress_dirty is False
+    assert tab.ui_elements["not_a_setting"].value == "kept"
+    assert tab.dirty is False and tab._suppress_dirty is False
 
 
-def test_mark_clean_without_button(env):
+def test_mark_clean_and_has_unsaved_changes(env):
     tab = tabmod.PSNTab()
-    tab.dirty = tab._game_cache_dirty = True
+    assert tab.has_unsaved_changes() is False
+    tab.dirty = True
+    assert tab.has_unsaved_changes() is True
     tab.mark_clean()
-    assert not tab.has_unsaved_changes()
+    assert tab.dirty is False and tab.has_unsaved_changes() is False
 
 
 # --------------------------------------------------------------------------- status
@@ -568,10 +455,13 @@ def test_check_mismatch(env):
     env.state.live = live
     tab._check_mismatch()
     assert tab._banner.visible is True
-    assert "Odd &lt;Game&gt;" in tab._banner.content and "scrollIntoView" not in tab._banner.content
-    tab._cache_section = SimpleNamespace(html_id="c42")
+    assert "Odd &lt;Game&gt;" in tab._banner.content
+    assert "Fix it in Games Tracker" in tab._banner.content
+    assert 'data-open-games-tracker="1"' in tab._banner.content
+    assert "scrollIntoView" not in tab._banner.content
+    env.state.live = PSNData()
     tab._check_mismatch()
-    assert "document.getElementById(&#x27;c42&#x27;)" in tab._banner.content
+    assert tab._banner.visible is False
 
 
 def test_check_mismatch_error_swallowed(env):
@@ -580,196 +470,6 @@ def test_check_mismatch_error_swallowed(env):
     env.state.get_live_psn_data = lambda: (_ for _ in ()).throw(RuntimeError("x"))
     tab._check_mismatch()
     assert tab._banner.visible is None
-
-
-# --------------------------------------------------------------------------- game cache logic
-
-
-def test_fetch_cached_games_error_notifies(env):
-    env.cache["load_error"] = RuntimeError("db")
-    assert tabmod.PSNTab._fetch_cached_games() == []
-    n = env.notes[0]
-    assert n["title"] == "Couldn't load the PSN game cache" and n["dedupe_key"] == "psn:cache_load"
-
-
-def test_reindex_sorted(env):
-    tab = tab_with_cache_fields(env)
-    assert [g["np_communication_id"] for g, _ in tab._cache_index] == ["NPWR3_00", "NPWR2_00", "NPWR10_00"]
-
-
-def test_update_cache_head_and_rebuild_without_ui(env):
-    tab = tabmod.PSNTab()
-    tab._update_cache_head(1, None)
-    tab._rebuild_cache_list()
-    tab._highlight_selected()
-    tab._show_details(True)
-
-
-def test_on_cache_search_debounces(env):
-    tab = tabmod.PSNTab()
-    applied = []
-    env.mp.setattr(tab, "_apply_cache_filter", lambda text: applied.append(text))
-    tab._on_cache_search(SimpleNamespace(value="ab"))
-    first = env.scheduled[-1]
-    tab._on_cache_search(SimpleNamespace(value=None))
-    assert first.cancelled is True
-    env.scheduled[-1].cb()
-    assert applied == [""]
-    tab._cache_filter_timer = SimpleNamespace(cancel=lambda: (_ for _ in ()).throw(RuntimeError("gone")))
-    tab._on_cache_search(SimpleNamespace(value="x"))
-    assert env.scheduled[-1].interval == 0.25
-
-
-def test_apply_cache_filter(env):
-    tab = tabmod.PSNTab()
-    rebuilt = []
-    env.mp.setattr(tab, "_rebuild_cache_list", lambda: rebuilt.append(tab._cache_filter))
-    tab._cache_filter_timer = object()
-    tab._apply_cache_filter("  ")
-    assert rebuilt == [] and tab._cache_filter_timer is None
-    tab._apply_cache_filter(" astro ")
-    assert rebuilt == ["astro"]
-    tab._apply_cache_filter("astro")
-    assert rebuilt == ["astro"]
-
-
-def test_game_selection_and_edits(env):
-    tab = tab_with_cache_fields(env)
-    tab._field_snapshot = {}
-    tab._on_game_selected("missing")
-    assert tab._selected_game is None
-    tab._on_game_selected("NPWR10_00")
-    assert tab._selected_game["presence_name"] == "Game Ten"
-    assert tab.ui_elements["cache_presence_name"].value == "Game Ten"
-    assert tab.ui_elements["cache_np_title_id"].value == "PPSA10"
-    assert tab._game_cache_dirty is False and tab.ui_elements["cache_save_btn"].enabled is False
-    assert tab._cache_edits() == {}
-    tab.ui_elements["cache_np_title_id"].value = "PPSA99"
-    tab._on_cache_field_changed()
-    assert tab._game_cache_dirty is True and tab.ui_elements["cache_save_btn"].enabled is True
-    assert tab._cache_edits() == {"np_title_id": "PPSA99"}
-    tab.ui_elements["cache_np_title_id"].value = "PPSA10"
-    tab._on_cache_field_changed()
-    assert tab._game_cache_dirty is False and tab.ui_elements["cache_save_btn"].enabled is False
-    tab._on_game_selected("")
-    assert tab._selected_game is None
-
-
-def test_cache_field_change_ignored_while_populating(env):
-    tab = tab_with_cache_fields(env)
-    tab._populating_game = True
-    tab._game_cache_dirty = True
-    tab._on_cache_field_changed()
-    assert tab._game_cache_dirty is True
-    tab._populating_game = False
-    tab._suppress_dirty = True
-    tab._on_cache_field_changed()
-    assert tab._game_cache_dirty is True
-
-
-def test_cache_edits_without_selection_or_fields(env):
-    tab = tabmod.PSNTab()
-    assert tab._cache_edits() == {}
-    tab._selected_game = {"presence_name": "x"}
-    assert tab._cache_edits() == {}
-    tab._populate_game_details()  # no ui elements: still fine
-    tab._selected_game = None
-    tab._populate_game_details()
-    tab._adopt_cache_field_snapshot()
-
-
-def test_on_cache_field_changed_without_button(env):
-    tab = tabmod.PSNTab()
-    tab._on_cache_field_changed()
-    assert tab._game_cache_dirty is False
-
-
-def test_save_game_cache_guards(env):
-    tab = tab_with_cache_fields(env)
-    tab._save_game_cache()
-    assert titles(env) == ["Pick a game from the list first"]
-    tab._selected_game = {"presence_name": "x"}
-    tab._save_game_cache()
-    assert titles(env)[-1] == "That cache entry can't be edited"
-    tab._selected_game = {"np_communication_id": "NPWR2_00"}
-    tab._save_game_cache()  # nothing changed
-    assert env.cache["updates"] == []
-
-
-def test_save_game_cache_success(env):
-    tab = tab_with_cache_fields(env)
-    tab._on_game_selected("NPWR2_00")
-    tab.ui_elements["cache_presence_name"].value = "Two"
-    tab._on_cache_field_changed()
-    tab._save_game_cache()
-    assert env.cache["updates"] == [("NPWR2_00", {"presence_name": "Two"})]
-    assert titles(env) == ["Saved changes to the game"]
-    assert tab._game_cache_dirty is False and tab._selected_game["presence_name"] == "Two"
-    assert tab.ui_elements["cache_save_btn"].enabled is False
-
-
-def test_save_game_cache_failure_and_exception(env):
-    tab = tab_with_cache_fields(env)
-    tab._on_game_selected("NPWR10_00")
-    tab.ui_elements["cache_presence_name"].value = "New"
-    env.cache["update_ok"] = False
-    env.dbm.problem = ("HTTP 503", "")
-    tab._save_game_cache()
-    assert titles(env) == ["Couldn't save changes to Game Ten"] and env.notes[0]["details"] == "HTTP 503"
-    env.cache["update_error"] = RuntimeError("boom")
-    tab._save_game_cache()
-    assert env.notes[-1]["details"] == "RuntimeError: boom"
-
-
-def test_save_game_cache_title_name_fallback(env):
-    tab = tab_with_cache_fields(env)
-    tab._selected_game = {"np_communication_id": "NPWR2_00", "title_name": "TN"}
-    tab.ui_elements["cache_presence_name"].value = "P"
-    tab._save_game_cache()
-    assert titles(env) == ["Saved changes to TN"]
-
-
-def test_remove_cache_chip(env):
-    tab = tab_with_cache_fields(env)
-    tab._on_remove_cache_chip("")
-    assert env.cache["deletes"] == []
-    tab._on_game_selected("NPWR2_00")
-    tab._on_remove_cache_chip("NPWR10_00")
-    assert tab._selected_game["np_communication_id"] == "NPWR2_00"
-    tab._on_remove_cache_chip("NPWR2_00")
-    assert tab._selected_game is None
-    assert [g["np_communication_id"] for g in tab._cached_games] == ["NPWR3_00"]
-    env.cache["delete_ok"] = False
-    tab._on_remove_cache_chip("NPWR3_00")
-    assert titles(env) == ["Couldn't remove that game from the cache"]
-
-
-def test_refresh_game_cache_keeps_unsaved_edits(env):
-    tab = tab_with_cache_fields(env)
-    tab._on_game_selected("NPWR10_00")
-    tab.ui_elements["cache_presence_name"].value = "unsaved"
-    tab._on_cache_field_changed()
-    env.cache["docs"][0]["trophy_name"] = "Game 10 (new)"
-    tab.refresh_game_cache()
-    assert tab.ui_elements["cache_presence_name"].value == "unsaved" and tab._game_cache_dirty is True
-    tab._game_cache_dirty = False
-    tab.refresh_game_cache()
-    assert tab.ui_elements["cache_presence_name"].value == "Game Ten"
-
-
-def test_refresh_game_cache_async(env):
-    tab = tab_with_cache_fields(env)
-    env.cache["docs"] = env.cache["docs"][:1]
-    asyncio.run(tab._refresh_game_cache_async())
-    assert len(tab._cached_games) == 1
-
-
-def test_refresh_game_cache_async_none(env):
-    tab = tabmod.PSNTab()
-    tab._cached_games = [{"x": 1}]
-    env.mp.setattr(tabmod.PSNTab, "_fetch_cached_games", staticmethod(lambda: None))
-    asyncio.run(tab._refresh_game_cache_async())
-    assert tab._cached_games == [{"x": 1}]
 
 
 # --------------------------------------------------------------------------- built UI
@@ -795,15 +495,13 @@ def build_into(holder):
 
 
 def test_build_not_connected(env):
-    env.cache["docs"] = []
     tabs: List[Any] = []
 
     async def check(user):
         tab = tabs[0]
         await user.should_see("Trophies, presence and the current game for overlays")
         await user.should_see("Connect to PSN to sign in")
-        await user.should_see("No cached games yet. Play a game to fill the cache.")
-        await user.should_see("Pick a game from the list to see and edit its details.")
+        await user.should_see("The game cache now lives in Games Tracker")
         assert tab._fold.expansion.value is True
         assert tab.connect_button.text == "Connect to PSN"
         intervals = sorted(t.interval for t in env.scheduled)
@@ -817,75 +515,25 @@ def test_build_not_connected(env):
     run_ui(build_into(tabs), check)
 
 
-def test_build_connected_cache_browse_and_edit(env):
+def test_build_games_tracker_link(env):
     env.state.settings = PSNSettingsData(npsso_code="tok", psn_username="")
     env.service.display = ("Connected as me", "me (own account)", "text-theme-success")
-    env.state.live = PSNData(online_id="me", current_game_name="Game Ten")
+    env.state.live = PSNData(online_id="me", current_game_name="Astro")
     tabs: List[Any] = []
 
     async def check(user):
         tab = tabs[0]
-        await user.should_see("Game 10")
-        await user.should_see("Astro")
+        await user.should_see("Game cache")
+        await user.should_see("The game cache now lives in Games Tracker")
+        await user.should_see("Open Games Tracker")
         assert tab._fold.expansion.value is False
         assert tab.connect_button.text == "Sign in again"
-        assert set(tab._cache_rows) == {"NPWR10_00", "NPWR2_00", "NPWR3_00"}
-        # select a game by clicking its row
-        click_el(user, tab._cache_rows["NPWR10_00"])
-        assert tab._selected_game["np_communication_id"] == "NPWR10_00"
-        assert "is-active" in tab._cache_rows["NPWR10_00"].classes
-        assert tab.ui_elements["game_details_container"].visible is True
-        assert tab.ui_elements["cache_presence_name"].value == "Game Ten"
-        # edit and save via the Save game button
-        tab.ui_elements["cache_presence_name"].value = "Game Ten Renamed"
-        assert tab._game_cache_dirty is True and tab.ui_elements["cache_save_btn"].enabled
-        user.find("Save game").click()
-        assert env.cache["updates"] == [("NPWR10_00", {"presence_name": "Game Ten Renamed"})]
-        # search filters (debounced timer driven by hand)
-        search = next(iter(user.find(ui.input).elements))
-        for el in user.find(ui.input).elements:
-            if el.props.get("placeholder") == "Search cached games":
-                search = el
-        search.value = "ps4"
-        env.scheduled[-1].cb()
-        assert set(tab._cache_rows) == {"NPWR2_00"}
-        assert tab._cache_head.content.endswith("1 of 3 games</span>")
-        search.value = "zzz"
-        env.scheduled[-1].cb()
-        await user.should_see("No cached games match “zzz”.")
-        search.value = ""
-        env.scheduled[-1].cb()
-        # remove a row with its close button
-        close = [b for b in user.find(ui.button).elements if b.props.get("icon") == "close"]
-        row_for_astro = tab._cache_rows["NPWR3_00"]
-        btn = next(b for b in close if b.parent_slot.parent is row_for_astro)
-        click_el(user, btn, "click.stop")
-        assert env.cache["deletes"] == ["NPWR3_00"] and "NPWR3_00" not in tab._cache_rows
-
-    run_ui(build_into(tabs), check)
-
-
-def test_build_list_limit_footer(env, monkeypatch):
-    monkeypatch.setattr(tabmod, "_CACHE_LIST_LIMIT", 2)
-    env.cache["docs"] = games() + [{"trophy_name": "No id"}]
-    tabs: List[Any] = []
-
-    async def check(user):
-        tab = tabs[0]
-        await user.should_see("Showing 2 of 4 — type to narrow the list")
-        assert len(tab._cache_rows) == 2
-
-    run_ui(build_into(tabs), check)
-
-
-def test_build_row_without_id_is_not_clickable(env):
-    env.cache["docs"] = [{"trophy_name": "No id game", "platform": " PS5 "}]
-    tabs: List[Any] = []
-
-    async def check(user):
-        await user.should_see("No id game")
-        assert tabs[0]._cache_rows == {}
-        assert tabs[0]._cache_head.content.endswith("1 game</span>")
+        assert not hasattr(tab, "_cache_rows") and "cache_save_btn" not in tab.ui_elements
+        user.find("Open Games Tracker").click()
+        assert env.nav == ["Games Tracker"]
+        # The mismatch banner's link: a click on the banner (its js_handler only forwards link clicks).
+        click_el(user, tab._banner)
+        assert env.nav == ["Games Tracker", "Games Tracker"]
 
     run_ui(build_into(tabs), check)
 
@@ -920,6 +568,8 @@ def test_build_mismatch_banner_and_status_error(env):
         tab = tabs[0]
         tab._check_mismatch()
         assert tab._banner.visible is True and "Weird Game" in tab._banner.content
+        assert "Fix it in Games Tracker" in tab._banner.content
+        assert "data-open-games-tracker" in tab._banner.content
         assert "Token Expired" in tab._card._top
         assert tab.connect_button.text == "Sign in again"
 

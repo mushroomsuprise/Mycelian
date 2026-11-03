@@ -51,17 +51,26 @@ ACTION_OUTPUTS: Dict[str, tuple] = {
     "twitch_set_title": (("new_title", "new title"),),
     "twitch_set_game": (("new_game", "new category"),),
     "twitch_snooze_ad": (("snooze_count", "snoozes left"),),
+    "game_lookup": (("title", "game"), ("platform", "platform"), ("progress", "completion %"), ("earned", "earned"),
+                    ("total", "total"), ("completed", "completed (yes/no)"), ("last_played", "last played")),
 }
 
 _TRIGGER_BRANDS = (("twitch_", "twitch"), ("youtube_", "youtube"), ("obs_", "obs"))
 _TRIGGER_ICONS = {
     "donation": "volunteer_activism", "timer": "timer", "schedule": "event", "hotkey": "keyboard",
     "streamdeck": "grid_view", "webhook": "webhook", "any": "all_inclusive",
+    "game_unlock": "military_tech", "game_completed": "workspace_premium", "game_started": "sports_esports",
+    "game_milestone": "flag",
 }
 _GROUP_GLYPHS = {
     "Twitch": "twitch", "YouTube": "youtube", "Tips": "volunteer_activism", "OBS": "obs",
-    "Controls": "keyboard", "Time": "timer", "Other": "webhook",
+    "Controls": "keyboard", "Time": "timer", "Games": "emoji_events", "Other": "webhook",
 }
+# Games Tracker trigger filters (stored on the trigger; "" means any).
+_GAME_TRIGGERS = ("game_unlock", "game_completed", "game_started", "game_milestone")
+_GAME_PLATFORMS = {"": "Any platform", "psn": "PlayStation", "steam": "Steam"}
+_GAME_GRADES = {"": "Any grade", "bronze": "Bronze", "silver": "Silver", "gold": "Gold", "platinum": "Platinum",
+                "achievement": "Steam achievement"}
 _DAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _TIME_UNITS = {"sec": 1, "min": 60, "hr": 3600}
 _HHMM = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
@@ -199,6 +208,12 @@ def state_from_connector(connector: Optional[Connector], connector_id: Optional[
         trigger_cfg["days_of_week"] = [int(d) for d in (getattr(trig, "days_of_week", None) or [])]
     elif tt == "webhook":
         trigger_cfg["secret_key"] = str(getattr(trig, "secret_key", "") or "")
+    elif tt in _GAME_TRIGGERS:
+        trigger_cfg["platform"] = str(getattr(trig, "platform", "") or "")
+        if tt == "game_unlock":
+            trigger_cfg["grade"] = str(getattr(trig, "grade", "") or "")
+        if tt == "game_milestone":
+            trigger_cfg["milestone"] = int(getattr(trig, "milestone", 0) or 0)
     conditions = []
     for cond in getattr(trig, "conditions", None) or []:
         op = getattr(cond, "operator", None)
@@ -334,6 +349,12 @@ def build_connector(state: EditorState, existing: Optional[Connector] = None) ->
         trigger_kwargs["secret_key"] = str(tcfg.get("secret_key") or "")
     elif tt == TriggerType.STREAMDECK:
         trigger_kwargs["connector_id"] = state.connector_id
+    elif tt.value in _GAME_TRIGGERS:
+        trigger_kwargs["platform"] = str(tcfg.get("platform") or "")
+        if tt == TriggerType.GAME_UNLOCK:
+            trigger_kwargs["grade"] = str(tcfg.get("grade") or "")
+        if tt == TriggerType.GAME_MILESTONE:
+            trigger_kwargs["milestone"] = max(0, int(_as_float(tcfg.get("milestone"), 0)))
     trigger_id = getattr(old_trigger, "trigger_id", None) or str(uuid.uuid4())
     trigger = connector_triggers.create_trigger(tt, trigger_id, f"{state.name} Trigger", **trigger_kwargs)
 
@@ -889,6 +910,38 @@ class ConnectorEditor:
         _html(f'<div class="ce-note">{_ic("info")}<span>Send a POST with a JSON body (or a GET with query parameters) to this URL. '
               'Each field becomes a variable, so <code>{"amount": 5}</code> gives you <code>{amount}</code>. Keep the key private; '
               'the URL only works on this computer\'s network.</span></div>', "")
+
+    def _trigger_settings_game(self, tcfg: dict, *, grade: bool = False, milestone: bool = False) -> None:
+        with ui.element("div").classes("ce-trig-settings"):
+            ui.label("Platform").classes("ce-f-label")
+            ui.select(_GAME_PLATFORMS, value=tcfg.get("platform") or "",
+                      on_change=lambda e: self._set_trigger("platform", e.value or "")).props(
+                "outlined dense options-dense").style("width: 160px")
+            if grade:
+                ui.label("Grade").classes("ce-f-label")
+                ui.select(_GAME_GRADES, value=tcfg.get("grade") or "",
+                          on_change=lambda e: self._set_trigger("grade", e.value or "")).props(
+                    "outlined dense options-dense").style("width: 180px")
+            if milestone:
+                ui.label("Milestone").classes("ce-f-label")
+                ui.number(value=tcfg.get("milestone") or None, min=0, max=99, step=1, format="%g", placeholder="Any",
+                          on_change=lambda e: self._set_trigger("milestone", int(_as_float(e.value, 0)))).props(
+                    "outlined dense").style("width: 90px")
+                ui.label("%").classes("ce-unit")
+        _html(f'<div class="ce-note">{_ic("info")}<span>Only changes after the Games Tracker\'s first import count. '
+              'Milestones and sync timing are set in Settings → Games Tracker.</span></div>', "")
+
+    def _trigger_settings_game_unlock(self, tcfg: dict) -> None:
+        self._trigger_settings_game(tcfg, grade=True)
+
+    def _trigger_settings_game_completed(self, tcfg: dict) -> None:
+        self._trigger_settings_game(tcfg)
+
+    def _trigger_settings_game_started(self, tcfg: dict) -> None:
+        self._trigger_settings_game(tcfg)
+
+    def _trigger_settings_game_milestone(self, tcfg: dict) -> None:
+        self._trigger_settings_game(tcfg, milestone=True)
 
     def _trigger_settings_streamdeck(self, _tcfg: dict) -> None:
         _html(f'<div class="ce-note">{_ic("info")}<span>In the Stream Deck app, add the Mycelian <b>Connector</b> action and pick '

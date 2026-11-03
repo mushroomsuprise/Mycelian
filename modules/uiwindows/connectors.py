@@ -810,6 +810,10 @@ _TRIGGER_ICONS = {
     TriggerType.STREAMDECK: "grid_view",
     TriggerType.WEBHOOK: "webhook",
     TriggerType.ANY: "all_inclusive",
+    TriggerType.GAME_UNLOCK: "military_tech",
+    TriggerType.GAME_COMPLETED: "workspace_premium",
+    TriggerType.GAME_STARTED: "sports_esports",
+    TriggerType.GAME_MILESTONE: "flag",
 }
 _ACTION_ICONS = {
     "template_control": "widgets",
@@ -827,6 +831,7 @@ _ACTION_ICONS = {
     "key_press": "keyboard",
     "audio_control": "volume_up",
     "game_hook": "sports_esports",
+    "game_lookup": "emoji_events",
 }
 _ACTION_BRANDS = {"send_discord_message": "discord", "obs_control": "obs"}
 _ACTION_BRANDS.update({t: "twitch" for t in (

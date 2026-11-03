@@ -79,6 +79,10 @@ _TRIGGER_EVENT_BY_CLASS = {
     "ObsStreamStateTrigger": "obs_stream_state",
     "ObsRecordStateTrigger": "obs_record_state",
     "ObsInputMuteTrigger": "obs_input_mute",
+    "GameUnlockTrigger": "game_unlock",
+    "GameCompletedTrigger": "game_completed",
+    "GameStartedTrigger": "game_started",
+    "GameMilestoneTrigger": "game_milestone",
     "AnyTrigger": None,
 }
 

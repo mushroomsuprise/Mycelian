@@ -35,7 +35,7 @@ def test_every_trigger_has_variables_fields_and_a_firing_sample():
     assert len(values) == len(set(values))
     assert set(values) == {t.value for t in TriggerType}
     for t in cv.TRIGGERS:
-        assert t["group"] in {"Twitch", "YouTube", "Tips", "OBS", "Controls", "Time", "Other"}
+        assert t["group"] in {"Twitch", "YouTube", "Tips", "OBS", "Games", "Controls", "Time", "Other"}
         assert t["fires"] is True and t["label"] and t["hint"]
         value = t["value"]
         assert value in cv.EVENT_VARIABLES and value in cv.CONDITION_FIELDS
@@ -63,7 +63,7 @@ def test_any_fields_are_union_plus_event_type():
 
 def test_always_variables_and_formats():
     groups = {v["group"] for v in cv.ALWAYS_VARIABLES}
-    assert groups == {"Connector", "Time", "Message helpers"}
+    assert groups == {"Connector", "Time", "Message helpers", "Games Tracker"}
     keys = {v["key"] for v in cv.ALWAYS_VARIABLES}
     assert {"connector_name", "trigger_count", "time", "date", "datetime"} <= keys
     dated = {v["key"] for v in cv.ALWAYS_VARIABLES if v.get("date")}

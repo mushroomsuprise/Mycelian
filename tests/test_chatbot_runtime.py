@@ -810,7 +810,7 @@ def test_catalog_consistency():
     assert set(cv.EVENT_VARIABLES) == values
     probe = ChatEvent()
     for entry in cv.EVENTS:
-        assert entry["group"] in ("Twitch", "YouTube", "Tips", "Time")
+        assert entry["group"] in ("Twitch", "YouTube", "Tips", "Time", "Games")
         for spec in entry["filters"]:
             assert hasattr(probe, spec["key"]), spec["key"]
             assert spec["kind"] in ("number", "text", "select", "time", "duration", "match")

@@ -1,0 +1,72 @@
+<p class="hx-lead">The Games Tracker keeps every PlayStation and Steam game you have played, with trophy and achievement progress and cover art. Changes after the first import reach Statistics, chatbot events and connectors.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Games Tracker</span></span></span>
+  <span>{{icon:link}} Uses the accounts from <a href="help:integrations_psn">PSN</a> and <a href="help:integrations_steam">Steam</a></span>
+</div>
+
+<h2>What it tracks</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Platform</th><th>Which games</th><th>Progress</th></tr></thead>
+<tbody>
+<tr><td>{{brand:psn}} PlayStation</td><td>Every title with a trophy list on the account set in Settings → PSN</td><td>Trophies by grade (platinum, gold, silver, bronze) and PlayStation's own completion percentage</td></tr>
+<tr><td>Steam</td><td>Games on the profile set in Settings → Steam that have playtime</td><td>Achievements unlocked out of the game's total</td></tr>
+</tbody>
+</table></div>
+
+<p>Syncing runs on its own background threads, so the app stays responsive. The library is read again every few minutes (10 by default), and the game you're playing updates within a minute through the PSN and Steam connections.</p>
+
+<h2>The first import is silent</h2>
+
+<p>The first sync for an account reads your whole library without counting anything, so years of trophies don't flood Statistics or chat. From then on, each change is an event:</p>
+
+<ul>
+  <li><strong>Unlock</strong>: a trophy or achievement was earned. PlayStation unlocks carry the grade.</li>
+  <li><strong>Completed</strong>: a platinum, or every Steam achievement (a perfect game).</li>
+  <li><strong>Started</strong>: a game showed up in the library for the first time.</li>
+  <li><strong>Milestone</strong>: a game crossed one of your progress milestones (25, 50 and 75% by default).</li>
+</ul>
+
+<p>Connecting a different account starts a new silent import for that platform. <strong>Reset baseline</strong> under <em>Tracker options</em> does the same for the current accounts.</p>
+
+<h2>The Games Tracker tab</h2>
+
+<h3>Overview and library</h3>
+<p>The header pills show each platform's state: game count, <em>importing n / total</em> during a sync, or <em>not connected</em>. <strong>Sync now</strong> reads both libraries again. Below the overview, search, filter (<em>All</em>, <em>PlayStation</em>, <em>Steam</em>), status (<em>In progress</em>, <em>Completed</em>, <em>Hidden</em>) and sort the cards. Each card shows the cover, platform, completion and trophy counts.</p>
+
+<h3>Game settings</h3>
+<p>The {{icon:settings}} button on a card opens its settings:</p>
+<ul>
+  <li><strong>Display title</strong>: what overlays, chat and connectors show.</li>
+  <li><strong>NPWR ID</strong> and <strong>NP Title ID</strong> (PlayStation): which trophy list the game's presence maps to. <strong>Re-resolve NPWR from Title ID</strong> asks PlayStation for the right NPWR ID. This replaces the game cache that used to be on the PSN tab.</li>
+  <li><strong>Hide from tracker</strong>: the game keeps syncing but leaves the grid and the totals.</li>
+  <li><strong>Remove from cache</strong>: forgets the game until the next sync finds it again.</li>
+</ul>
+
+<h3>Tracker options</h3>
+<p>Turn each platform on or off, choose whether changes count in Statistics and fire chatbot and connector events, and set the sync interval, how long cover art is kept (7 days by default; covers that failed are retried after 6 hours) and the progress milestones. <strong>Clear covers</strong> downloads all cover art again.</p>
+
+<h2>Export image</h2>
+
+<p><strong>Export image</strong> (or <strong>Export card</strong> in a game's settings) makes a PNG in your theme colors, like the Statistics highlights image:</p>
+<ul>
+  <li><strong>Library recap</strong>: headline tiles, a grid of games, the trophy cabinet and recent unlocks.</li>
+  <li><strong>Game spotlight</strong>: one game's cover, progress, grade breakdown, trophy groups and recent unlocks.</li>
+</ul>
+<p>Pick a layout (Wide 16:9, Portrait 4:5 or Square 1:1), a title, platforms, a period, which sections and tiles to show, and how the grid picks games. Images are saved to the <code>exports</code> folder in the Mycelian data folder. Your choices are remembered.</p>
+
+<h2>Chatbot, connectors and overlays</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Where</th><th>What you get</th></tr></thead>
+<tbody>
+<tr><td>Chatbot events</td><td><em>Game unlock</em>, <em>Game completed</em>, <em>Game started</em>, <em>Game milestone</em>, with platform, grade and milestone filters and variables such as <code>{game_title}</code>, <code>{unlock_name}</code> and <code>{progress}</code></td></tr>
+<tr><td>Anywhere in chat</td><td><code>{games.total}</code>, <code>{games.psn.platinums}</code>, <code>{games.steam.perfect}</code>, <code>{games.current.title}</code>, <code>{games.current.progress}</code> and more</td></tr>
+<tr><td>Connectors</td><td>The same four triggers, plus the <em>Game lookup</em> action for any game's progress</td></tr>
+<tr><td>Statistics</td><td>A Games Tracker card with trophies by grade, achievements, platinums, perfect games, games started and milestones</td></tr>
+<tr><td>Overlays</td><td><code>game_tracker_event</code> for each change and <code>game_tracker_update</code> with the library totals</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-note"><p>PlayStation trophy lists must be visible to the account Mycelian signs in with. Steam achievements need a public profile and game details.</p></div>

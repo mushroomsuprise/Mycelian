@@ -260,6 +260,12 @@ def _stop_steam() -> None:
     steam_service.stop_steam_data_updater_thread(join_timeout=_SHUTDOWN_JOIN_TIMEOUT)
 
 
+def _stop_game_tracker() -> None:
+    from .game_tracker.service import stop_game_tracker
+
+    stop_game_tracker(join_timeout=_SHUTDOWN_JOIN_TIMEOUT)
+
+
 def _stop_twitch() -> None:
     from . import twitch
     from .twitch_oauth import stop_active_oauth
@@ -806,6 +812,7 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
                 ("discord", _stop_discord),
                 ("psn", _stop_psn),
                 ("steam", _stop_steam),
+                ("game_tracker", _stop_game_tracker),
                 ("twitch", _stop_twitch),
                 ("chatbot", _stop_chatbot),
             ],

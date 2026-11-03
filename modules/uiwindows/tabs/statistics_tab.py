@@ -1087,6 +1087,7 @@ class StatisticsTab:
         gw = stats.get("giveaways", {}) or {}
         pl = stats.get("polls", {}) or {}
         pr = stats.get("predictions", {}) or {}
+        gt = stats.get("game_tracker", {}) or {}
         pot = pr.get("biggest_pot") or {}
         ch = stats.get("chat", {}) or {}
         mv = pl.get("most_votes") or {}
@@ -1131,6 +1132,16 @@ class StatisticsTab:
             "predictions.points": n(pr.get("total_points")),
             "predictions.avg": f"{float(pr.get('average_predictors') or 0):.1f}",
             "predictions.pot": f"{n(pot.get('points'))} · {pot.get('title') or 'untitled'}" if pot.get("points") else "—",
+            "games.trophies": n(gt.get("trophies")),
+            "games.platinum": n(gt.get("trophies_platinum")),
+            "games.gold": n(gt.get("trophies_gold")),
+            "games.silver": n(gt.get("trophies_silver")),
+            "games.bronze": n(gt.get("trophies_bronze")),
+            "games.achievements": n(gt.get("steam_achievements")),
+            "games.platinums": n(gt.get("platinums")),
+            "games.perfect": n(gt.get("perfect_games")),
+            "games.started": n(gt.get("games_started")),
+            "games.milestones": n(gt.get("milestones")),
         }
 
     def _kv_grid(self, values: Dict[str, str], items: Sequence[Tuple[str, str]]) -> None:
@@ -1232,6 +1243,15 @@ class StatisticsTab:
                 if winners:
                     ui.label("Biggest winners").classes("mst-section-title mt-3 mb-1")
                     self._ranked_list(winners, "points won")
+
+            with self._lifetime_card("Games Tracker", "emoji_events", "PlayStation and Steam progress since each account's first import"):
+                self._kv_grid(values, (
+                    ("games.trophies", "Trophies earned"), ("games.platinum", "Platinum trophies"),
+                    ("games.gold", "Gold"), ("games.silver", "Silver"), ("games.bronze", "Bronze"),
+                    ("games.achievements", "Steam achievements"), ("games.platinums", "Lists completed (PSN)"),
+                    ("games.perfect", "Perfect games (Steam)"), ("games.started", "New games started"),
+                    ("games.milestones", "Progress milestones"),
+                ))
 
         templates = stats.get("templates") or {}
         with_stats = {name: t.get("custom_stats") or {} for name, t in templates.items() if (t or {}).get("custom_stats")}
