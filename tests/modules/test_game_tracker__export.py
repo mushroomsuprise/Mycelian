@@ -224,3 +224,36 @@ def test_library_renders_with_one_platinum_among_many_bronzes(tmp_path):
     ])
     for layout in ("wide", "portrait"):
         assert _render(lopsided, layout=layout) is not None
+
+
+def test_svg_path_parser_handles_relative_curves_and_subpaths():
+    from modules.game_tracker.export import svg_path_subpaths
+
+    subs = svg_path_subpaths("M0 0h10v10H0z m2 2l2 0 0 2-2 0z M20 20c1 0 2 1 2 2s-1 2-2 2z")
+    assert len(subs) == 3
+    assert subs[0][:4] == [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+    assert subs[1][:4] == [(2.0, 2.0), (4.0, 2.0), (4.0, 4.0), (2.0, 4.0)]  # m after z is relative to the start
+    assert subs[2][-1] == pytest.approx((20.0, 24.0))  # s mirrors the last control point
+    assert svg_path_subpaths("") == [] and svg_path_subpaths("M0 0 L1 1z") == []
+
+
+@pytest.mark.parametrize("platform,rgb", [("psn", (0, 112, 204)), ("steam", (102, 192, 244))])
+def test_brand_marks_are_the_real_logos(platform, rgb):
+    from modules.game_tracker.export import brand_mark
+
+    mark = brand_mark(platform, 96)
+    assert mark.size == (96, 96) and mark.mode == "RGBA"
+    alpha = mark.getchannel("A")
+    opaque = sum(1 for a in alpha.getdata() if a > 200)
+    assert 1500 < opaque < 96 * 96 * 0.8  # a shape, not a filled square
+    px = next(mark.getpixel((x, y)) for y in range(96) for x in range(96) if mark.getpixel((x, y))[3] == 255)
+    assert px[:3] == rgb
+    assert brand_mark(platform, 96) is mark  # cached
+
+
+def test_steam_mark_keeps_its_holes():
+    from modules.game_tracker.export import brand_mark
+
+    mark = brand_mark("steam", 240)
+    # The centre of the big ring is cut out of the circle (even-odd fill).
+    assert mark.getpixel((158, 89))[3] < 60 and mark.getpixel((40, 120))[3] > 200

@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from PIL import Image, ImageDraw, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 
 from ..statistics_export import BOLD, DISPLAY, REGULAR, Canvas, Palette, _compact
 from . import covers
@@ -200,16 +200,142 @@ def _cover(cv: Canvas, box, game: TrackedGame, radius: int, initials_size: int) 
     cv.text((cx, cy), _initials(game.display_title), DISPLAY(initials_size), WHITE, anchor="mm")
 
 
+_PATH_TOKEN_RE = re.compile(r"[MmLlHhVvCcSsZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+_CURVE_STEPS = 16
+
+
+def svg_path_subpaths(d: str) -> List[List[Tuple[float, float]]]:
+    """Flatten an SVG path (M L H V C S Z, absolute and relative) into point lists, one per subpath."""
+    tokens = _PATH_TOKEN_RE.findall(d or "")
+    subpaths: List[List[Tuple[float, float]]] = []
+    pts: List[Tuple[float, float]] = []
+    x = y = sx = sy = 0.0
+    ctrl: Optional[Tuple[float, float]] = None  # last cubic control point, for S
+    cmd = ""
+    i = 0
+
+    def nums(n: int) -> List[float]:
+        nonlocal i
+        out = [float(t) for t in tokens[i:i + n]]
+        i += n
+        return out
+
+    def cubic(p1, p2, p3) -> None:
+        x0, y0 = x, y
+        for k in range(1, _CURVE_STEPS + 1):
+            t = k / _CURVE_STEPS
+            mt = 1 - t
+            pts.append((mt ** 3 * x0 + 3 * mt * mt * t * p1[0] + 3 * mt * t * t * p2[0] + t ** 3 * p3[0],
+                        mt ** 3 * y0 + 3 * mt * mt * t * p1[1] + 3 * mt * t * t * p2[1] + t ** 3 * p3[1]))
+
+    while i < len(tokens):
+        if tokens[i].isalpha():
+            cmd = tokens[i]
+            i += 1
+            if cmd in "Zz":
+                if pts:
+                    subpaths.append(pts)
+                pts, x, y, ctrl = [], sx, sy, None
+                continue
+        elif not cmd or cmd in "Zz":
+            i += 1  # stray number
+            continue
+        rel = cmd.islower()
+        c = cmd.upper()
+        if c == "M":
+            dx, dy = nums(2)
+            if pts:
+                subpaths.append(pts)
+            x, y = (x + dx, y + dy) if rel else (dx, dy)
+            sx, sy, pts, ctrl = x, y, [(x, y)], None
+            cmd = "l" if rel else "L"  # extra pairs after M are line-tos
+        elif c == "L":
+            dx, dy = nums(2)
+            x, y = (x + dx, y + dy) if rel else (dx, dy)
+            pts.append((x, y))
+            ctrl = None
+        elif c == "H":
+            (v,) = nums(1)
+            x = x + v if rel else v
+            pts.append((x, y))
+            ctrl = None
+        elif c == "V":
+            (v,) = nums(1)
+            y = y + v if rel else v
+            pts.append((x, y))
+            ctrl = None
+        elif c == "C":
+            a = nums(6)
+            if rel:
+                a = [a[0] + x, a[1] + y, a[2] + x, a[3] + y, a[4] + x, a[5] + y]
+            cubic((a[0], a[1]), (a[2], a[3]), (a[4], a[5]))
+            ctrl, (x, y) = (a[2], a[3]), (a[4], a[5])
+        elif c == "S":
+            a = nums(4)
+            if rel:
+                a = [a[0] + x, a[1] + y, a[2] + x, a[3] + y]
+            p1 = (2 * x - ctrl[0], 2 * y - ctrl[1]) if ctrl else (x, y)
+            cubic(p1, (a[0], a[1]), (a[2], a[3]))
+            ctrl, (x, y) = (a[0], a[1]), (a[2], a[3])
+    if pts:
+        subpaths.append(pts)
+    return [p for p in subpaths if len(p) >= 3]
+
+
+_mark_cache: Dict[Tuple[str, int], Optional[Image.Image]] = {}
+
+
+def brand_mark(platform: str, size: int) -> Optional[Image.Image]:
+    """The real PlayStation / Steam logo (from the app's brand SVGs) as an RGBA image ``size`` px square."""
+    key = (platform, int(size))
+    if key in _mark_cache:
+        return _mark_cache[key]
+    mark = None
+    try:
+        from ..uiwindows.service_brand_icons import SERVICE_BRAND_SVG
+
+        svg = SERVICE_BRAND_SVG.get("psn" if platform == PSN else "steam", "")
+        d = re.search(r'\sd="([^"]+)"', svg)
+        fill = re.search(r'fill="#([0-9A-Fa-f]{6})"', svg)
+        box = re.search(r'viewBox="[\d.\s-]+?\s([\d.]+)\s([\d.]+)"', svg)
+        if d and fill:
+            view = float(box.group(1)) if box else 24.0
+            big = max(8, int(size)) * 4  # draw large, shrink for smooth edges
+            scale = big / view
+            mask = Image.new("L", (big, big), 0)
+            for sub in svg_path_subpaths(d.group(1)):
+                layer = Image.new("L", (big, big), 0)
+                ImageDraw.Draw(layer).polygon([(px * scale, py * scale) for px, py in sub], fill=255)
+                # Even-odd fill: a subpath inside another one (Steam's rings) cuts a hole.
+                mask = ImageChops.logical_xor(mask.convert("1"), layer.convert("1")).convert("L")
+            rgb = tuple(int(fill.group(1)[j:j + 2], 16) for j in (0, 2, 4))
+            # Shrink only the coverage mask, then paint the exact brand colour through it.
+            mark = Image.new("RGBA", (int(size), int(size)), (*rgb, 0))
+            mark.putalpha(mask.resize((int(size), int(size)), Image.LANCZOS))
+    except Exception as e:
+        logger.debug("Games Tracker export: brand mark unavailable for %s: %s", platform, e)
+    _mark_cache[key] = mark
+    return mark
+
+
 def _badge(cv: Canvas, box, platform: str) -> None:
+    """A small tile with the platform's real logo (a plain tile if the logo can't be drawn)."""
     x0, y0, x1, y1 = box
-    cv.draw.rounded_rectangle(box, radius=max(4, int((x1 - x0) * 0.26)), fill=BRAND_RGB.get(platform, (60, 60, 70)))
-    cx, cy, s = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0)
-    if platform == PSN:
-        cv.text((cx, cy + 1), "PS", BOLD(max(8, int(s * 0.46))), WHITE, anchor="mm")
+    s = int(x1 - x0)
+    cv.draw.rounded_rectangle(box, radius=max(4, int(s * 0.26)), fill=cv.pal.raised,
+                              outline=_mix_rgb(cv.pal.raised, cv.pal.text, 0.18), width=1)
+    mark = brand_mark(platform, max(8, int(s * 0.66)))
+    if mark is not None:
+        ox = int(x0 + (s - mark.width) / 2)
+        oy = int(y0 + (int(y1 - y0) - mark.height) / 2)
+        cv.img.paste(mark, (ox, oy), mark)
+        cv.draw = ImageDraw.Draw(cv.img)
     else:
-        r1, r2 = s * 0.30, s * 0.13
-        cv.draw.ellipse((cx - r1, cy - r1, cx + r1, cy + r1), outline=(102, 192, 244), width=max(2, int(s * 0.08)))
-        cv.draw.ellipse((cx - r2, cy - r2, cx + r2, cy + r2), fill=(102, 192, 244))
+        cv.draw.rounded_rectangle(box, radius=max(4, int(s * 0.26)), fill=BRAND_RGB.get(platform, (60, 60, 70)))
+
+
+def _mix_rgb(a, b, t: float):
+    return tuple(int(a[k] + (b[k] - a[k]) * t) for k in range(3))
 
 
 def _bar(cv: Canvas, box, pct: float, color) -> None:

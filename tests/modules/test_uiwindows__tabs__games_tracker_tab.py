@@ -124,7 +124,7 @@ def test_filter_games():
 def test_card_parts():
     p = tabmod.card_parts(psn_game(title="<b>X</b>"), now=NOW)
     assert "&lt;b&gt;X&lt;/b&gt;" in p["top"] and "<b>X" not in p["top"]
-    assert "8 / 17 trophies" == p["detail"] and "gtr-g-p" in p["foot"] and p["cls"] == "itg-hook gtr-card"
+    assert "8 / 17 trophies" == p["detail"] and 'id="gtr-tg-platinum"' in p["foot"] and p["cls"] == "itg-hook gtr-card"
     assert "Played 1 hour ago" in p["top"] and 'width:40%' in p["top"]
     s = tabmod.card_parts(steam_game(hidden=True), now=NOW)
     assert "Perfect" in s["top"] and "Hidden" in s["top"] and "is-success" in s["cls"] and "is-hidden" in s["cls"]
@@ -152,7 +152,7 @@ def test_overview_status_and_deltas():
 
 def test_css_uses_theme_tokens_except_grade_colours():
     hexes = set(re.findall(r"#[0-9a-fA-F]{3,6}\b", tabmod.GAMES_TRACKER_CSS))
-    assert hexes == {"#c27c46", "#a9b4bf", "#e0b13f", "#8fb4e0", "#fff"}
+    assert hexes == {"#fff"}
     assert "rgb(" not in tabmod.GAMES_TRACKER_CSS.replace("rgba(0, 0, 0", "")
 
 
@@ -550,3 +550,28 @@ def test_export_dialog_spreadsheet_mode(env):
 def test_sheet_preview_html_escapes_and_counts():
     html = tabmod.sheet_preview_html({"games": 5, "headers": ["Game"], "rows": [["<b>x</b>"]], "sheets": ["Games", "Summary"]})
     assert "&lt;b&gt;x&lt;/b&gt;" in html and "+ 4 more rows" in html and 'class="is-on">Games' in html
+
+
+def test_trophy_icons_drawn_or_official(monkeypatch, tmp_path):
+    from PIL import Image
+
+    tabmod._official_trophies.cache_clear()
+    monkeypatch.setattr("modules.path_utils.get_assets_path", lambda rel: str(tmp_path / rel))
+    for grade in ("bronze", "silver", "gold", "platinum"):
+        svg = tabmod.trophy_icon(grade)
+        assert svg.startswith('<svg class="gtr-trophy"') and f'id="gtr-tg-{grade}"' in svg
+        assert tabmod._TROPHY_TONES[grade][1] in svg
+    assert 'id="gtr-tg-bronze"' in tabmod.trophy_icon("nope")
+    (tmp_path / "trophies").mkdir()
+    Image.new("RGBA", (500, 500), (200, 200, 255, 255)).save(tmp_path / "trophies" / "platinum.png")
+    tabmod._official_trophies.cache_clear()
+    assert tabmod.trophy_icon("platinum").startswith("<svg")  # one file alone isn't a set
+    for grade in ("bronze", "silver", "gold"):
+        Image.new("RGBA", (256, 256), (180, 120, 60, 255)).save(tmp_path / "trophies" / f"{grade}.png")
+    tabmod._official_trophies.cache_clear()
+    try:
+        icon = tabmod.trophy_icon("gold")
+        assert icon.startswith('<img class="gtr-trophy" src="data:image/png;base64,')
+        assert tabmod.grades_html(psn_game()).count("<img") == 4
+    finally:
+        tabmod._official_trophies.cache_clear()

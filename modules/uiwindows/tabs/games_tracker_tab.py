@@ -10,6 +10,7 @@ import io
 import logging
 import os
 import time
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Sequence
 
 from nicegui import run, ui
@@ -43,7 +44,6 @@ _media_route_dir: Optional[str] = None
 
 # Trophy grade colours are fixed (they mean the grade, like brand colours mean the service).
 GAMES_TRACKER_CSS = """
-.gtr-g-b { --g: #c27c46; } .gtr-g-s { --g: #a9b4bf; } .gtr-g-g { --g: #e0b13f; } .gtr-g-p { --g: #8fb4e0; }
 .gtr-bar-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .gtr-bar-row .itg-sec-head { margin-bottom: 0; }
 .gtr-bar-row .q-btn { min-height: 30px; font-size: .78rem; }
@@ -78,7 +78,8 @@ GAMES_TRACKER_CSS = """
 .gtr-pct small { font-size: .66rem; font-weight: 600; color: var(--color-text-muted); margin-left: 1px; }
 .gtr-grades { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 0; font-variant-numeric: tabular-nums; }
 .gtr-grade { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; font-weight: 600; color: var(--color-text-secondary); }
-.gtr-grade i { width: 9px; height: 9px; border-radius: 50%; background: var(--g); box-shadow: 0 0 0 1px color-mix(in srgb, var(--g) 50%, transparent); }
+.gtr-grade .gtr-trophy { width: 17px; height: 17px; flex: 0 0 auto; object-fit: contain; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .35)); }
+.gtr-boxes .k .gtr-trophy { width: 15px; height: 15px; }
 .gtr-grade .itg-icon { font-size: 15px; color: var(--color-text-muted); }
 .gtr-mini.itg-pill { height: 20px; padding: 0 7px; font-size: .64rem; }
 .itg-hook.is-hidden .itg-hook-top { opacity: .5; }
@@ -155,7 +156,7 @@ GAMES_TRACKER_CSS = """
 """
 
 _COVER_TONES = ("#5b4a2e", "#7a2e2e", "#2d5a8c", "#4a3a5c", "#3a5560", "#2e5a46", "#2e4a6b", "#6b4a2e", "#5c5a2e", "#3d2b2b")
-_GRADE_ORDER = (("platinum", "Platinum", "gtr-g-p"), ("gold", "Gold", "gtr-g-g"), ("silver", "Silver", "gtr-g-s"), ("bronze", "Bronze", "gtr-g-b"))
+_GRADE_ORDER = (("platinum", "Platinum"), ("gold", "Gold"), ("silver", "Silver"), ("bronze", "Bronze"))
 STATUS_OPTIONS = {"all": "All games", "progress": "In progress", "done": "Completed", "hidden": "Hidden"}
 SORT_OPTIONS = {"recent": "Recently played", "progress": "Most complete", "name": "Name A–Z"}
 PLATFORM_FILTERS = (("all", "All"), (PSN, "PlayStation"), (STEAM, "Steam"))
@@ -252,10 +253,72 @@ def cover_html(game: TrackedGame, *, large: bool = False) -> str:
     )
 
 
+# Trophy cups: (light, mid, dark) per grade. Official grade art, if you add it, replaces these (see trophy_icon).
+_TROPHY_TONES = {
+    "bronze": ("#F2C29A", "#C47A45", "#6E3C1C"),
+    "silver": ("#FFFFFF", "#BAC4CD", "#68737E"),
+    "gold": ("#FFF1B0", "#E2B23A", "#83600E"),
+    "platinum": ("#EEF8FF", "#9CC7F0", "#466FA6"),
+}
+_OFFICIAL_TROPHY_FILES = "trophies/{grade}.png"
+
+
+def _trophy_svg(grade: str) -> str:
+    grade = grade if grade in _TROPHY_TONES else "bronze"
+    light, mid, dark = _TROPHY_TONES[grade]
+    gid = f"gtr-tg-{grade}"
+    fill = f"url(#{gid})"
+    return (
+        f'<svg class="gtr-trophy" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="{gid}" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0" stop-color="{light}"/><stop offset=".55" stop-color="{mid}"/><stop offset="1" stop-color="{dark}"/>'
+        "</linearGradient></defs>"
+        f'<path d="M7.2 5.2H4.4v1.3c0 2.1 1.4 3.6 3.4 4" fill="none" stroke="{fill}" stroke-width="1.6" stroke-linecap="round"/>'
+        f'<path d="M16.8 5.2h2.8v1.3c0 2.1-1.4 3.6-3.4 4" fill="none" stroke="{fill}" stroke-width="1.6" stroke-linecap="round"/>'
+        f'<path d="M6.8 3h10.4v4.2c0 3.3-2 5.7-4.4 6.3V16h2.6l.9 2.2H7.7l.9-2.2h2.6v-2.5C8.8 12.9 6.8 10.5 6.8 7.2V3z" fill="{fill}" '
+        f'stroke="{dark}" stroke-width=".6" stroke-linejoin="round"/>'
+        f'<rect x="6.2" y="18.6" width="11.6" height="2.6" rx=".9" fill="{fill}" stroke="{dark}" stroke-width=".6"/>'
+        '<path d="M9.1 4.6v2.5c0 1.8.8 3.2 2 4" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width=".9" stroke-linecap="round"/>'
+        "</svg>"
+    )
+
+
+@lru_cache(maxsize=1)
+def _official_trophies() -> Optional[Dict[str, str]]:
+    """Data URIs of assets/trophies/{bronze,silver,gold,platinum}.png when all four are there (else None)."""
+    try:
+        from PIL import Image
+
+        from ...path_utils import get_assets_path
+
+        out = {}
+        for grade in ("bronze", "silver", "gold", "platinum"):
+            path = get_assets_path(_OFFICIAL_TROPHY_FILES.format(grade=grade))
+            if not os.path.isfile(path):
+                return None
+            with Image.open(path) as im:
+                im = im.convert("RGBA")
+                im.thumbnail((48, 48))
+                buf = io.BytesIO()
+                im.save(buf, "PNG")
+            out[grade] = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+        return out
+    except Exception as e:
+        logger.debug("Games Tracker: official trophy art not used: %s", e)
+        return None
+
+
+def trophy_icon(grade: str) -> str:
+    """A trophy icon for a grade: the official art when installed, else a drawn trophy cup."""
+    official = _official_trophies()
+    if official and grade in official:
+        return f'<img class="gtr-trophy" src="{official[grade]}" alt="">'
+    return _trophy_svg(grade)
+
+
 def grades_html(game: TrackedGame) -> str:
     earned = grade_counts(game.earned)
     return '<div class="gtr-grades">' + "".join(
-        f'<span class="gtr-grade {cls}" title="{label}"><i></i>{earned[g]}</span>' for g, label, cls in _GRADE_ORDER
+        f'<span class="gtr-grade" title="{label}">{trophy_icon(g)}{earned[g]}</span>' for g, label in _GRADE_ORDER
     ) + "</div>"
 
 
@@ -892,8 +955,8 @@ class GamesTrackerTab:
         if psn:
             earned, defined = grade_counts(g.earned), grade_counts(g.defined)
             boxes = "".join(
-                f'<div><div class="k gtr-grade {cls}"><i></i>{label}</div><div class="v">{earned[k]} <small>/ {defined[k]}</small></div></div>'
-                for k, label, cls in _GRADE_ORDER
+                f'<div><div class="k gtr-grade">{trophy_icon(k)}{label}</div><div class="v">{earned[k]} <small>/ {defined[k]}</small></div></div>'
+                for k, label in _GRADE_ORDER
             )
             return head + f'<div class="gtr-boxes">{boxes}</div>'
         hours = g.playtime_min / 60
@@ -913,7 +976,7 @@ class GamesTrackerTab:
             return '<div class="itg-list"><div class="itg-empty">Nothing new since the first import.</div></div>'
         rows = []
         for e in events:
-            mark = (f'<span class="gtr-grade gtr-g-{e.unlock_grade[:1]}"><i></i></span>' if g.platform == PSN
+            mark = (f'<span class="gtr-grade">{trophy_icon(e.unlock_grade)}</span>' if g.platform == PSN
                     else icon_html("military_tech"))
             rows.append(f'<div class="itg-li">{mark}<span class="itg-li-main">{esc(e.unlock_name or e.unlock_grade.title())}</span>'
                         f'<span class="itg-li-muted">{esc(ago(e.ts))}</span></div>')
