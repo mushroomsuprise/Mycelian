@@ -280,6 +280,16 @@ def test_widget_html_variants():
     assert "gp-widget-title" not in plain
 
 
+def test_twitch_polls_hide_keywords():
+    style = dict(pm._WIDGET_STYLE_DEFAULTS)
+    snap = {"options": [{"name": "A", "keyword": "#a", "votes": 1, "percent": 100}]}
+    assert "gp-widget-kw" in cp.widget_html(snap, style)
+    assert "gp-widget-kw" not in cp.widget_html(snap, style, twitch=True), "set to run on Twitch"
+    assert "gp-widget-kw" not in cp.widget_html(dict(snap, twitch_poll=True), style), "running on Twitch"
+    assert "<code>#a</code>" in cp.bars_html(snap, style, live=True)
+    assert "<code>" not in cp.bars_html(dict(snap, twitch_poll=True), style, live=True)
+
+
 def test_warn_option(env):
     cp._warn_option(None)
     assert env.notes[-1] == ("", {"type": "warning", "source": "chatbot", "title": "Poll option not changed",

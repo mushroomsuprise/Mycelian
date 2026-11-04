@@ -368,6 +368,8 @@ def container_source_record(model: Dict[str, Any], base_url: str) -> Dict[str, A
         "description": f"Container combining {count} {noun}: {listed}",
         "template_count": count,
         "templates": templates,
+        "width": model.get("width"),
+        "height": model.get("height"),
     }
 
 

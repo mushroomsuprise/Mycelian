@@ -86,6 +86,7 @@ def bars_html(snapshot: Dict[str, Any], style: Dict[str, Any], live: bool) -> st
         return '<div class="gp-hint">No options yet.</div>'
     top = max((int(o.get("votes") or 0) for o in options), default=0)
     bar, win = esc(style.get("bar_color")), esc(style.get("winner_color"))
+    keywords = not snapshot.get("twitch_poll")  # Twitch polls don't use chat keywords
     rows = []
     for row in options:
         votes = int(row.get("votes") or 0)
@@ -94,7 +95,7 @@ def bars_html(snapshot: Dict[str, Any], style: Dict[str, Any], live: bool) -> st
         winner = bool(row.get("winner")) or (live and leading)
         fill = win if row.get("winner") else bar
         rows.append(
-            f'<div><div class="gp-bar-top">{"🏆 " if winner else ""}{esc(row.get("name"))}<code>{esc(row.get("keyword"))}</code>'
+            f'<div><div class="gp-bar-top">{"🏆 " if winner else ""}{esc(row.get("name"))}{f"<code>{esc(row.get('keyword'))}</code>" if keywords else ""}'
             f'<span><b>{votes:,}</b> · {float(row.get("percent") or 0):g}%</span></div>'
             f'<div class="gp-bar-track" style="background:color-mix(in srgb, {bar} 16%, transparent)">'
             f'<div class="gp-bar-fill" style="width:{width:.2f}%;background:{fill}"></div></div></div>'
@@ -102,8 +103,12 @@ def bars_html(snapshot: Dict[str, Any], style: Dict[str, Any], live: bool) -> st
     return '<div class="gp-bars">' + "".join(rows) + "</div>"
 
 
-def widget_html(snapshot: Dict[str, Any], style: Dict[str, Any]) -> str:
-    """A small stand-in for the Spore Studio Poll widget (title, keyword chips, bars) in its own colours."""
+def widget_html(snapshot: Dict[str, Any], style: Dict[str, Any], twitch: bool = False) -> str:
+    """A small stand-in for the Spore Studio Poll widget (title, keyword chips, bars) in its own colours.
+
+    ``twitch``: the poll is set to run on Twitch, where the overlay hides the keyword chips.
+    """
+    keywords = style.get("show_keywords", True) and not (twitch or snapshot.get("twitch_poll"))
     options = list(snapshot.get("options") or [])
     if not options:
         options = [{"name": "Option 1", "votes": 0, "percent": 0}, {"name": "Option 2", "votes": 0, "percent": 0}]
@@ -123,7 +128,7 @@ def widget_html(snapshot: Dict[str, Any], style: Dict[str, Any]) -> str:
         if style.get("show_percent", True):
             numbers.append(f"{float(row.get('percent') or 0):g}%")
         chip = (f'<span class="gp-widget-kw">{esc(row.get("keyword"))}</span>'
-                if style.get("show_keywords", True) and row.get("keyword") else "")
+                if keywords and row.get("keyword") else "")
         parts.append(
             f'<div class="gp-widget-row"><div class="gp-widget-top"><span>{esc(row.get("name"))}{chip}</span><span>{" · ".join(numbers)}</span></div>'
             f'<div class="gp-widget-track" style="background:{esc(style.get("track_color"))}">'
@@ -355,7 +360,7 @@ class PollsPanel:
             return
         self._update_hero(manager.get_config(self.template), snapshot)
         self._set_html(self.live_bars, "bars", bars_html(snapshot, self._style, live=True))
-        self._set_html(self.widget, "widget", widget_html(snapshot, self._style))
+        self._set_html(self.widget, "widget", widget_html(snapshot, self._style, self._on_twitch()))
 
     # -- options / results ---------------------------------------------------------
 
@@ -703,7 +708,7 @@ class PollsPanel:
         _head, body = card("Overlay", "cast", "Spore Studio")
         with body:
             self.widget = ui.html("", sanitize=False)
-            self._set_html(self.widget, "widget", widget_html(snapshot, info["style"]))
+            self._set_html(self.widget, "widget", widget_html(snapshot, info["style"], self._on_twitch()))
             widget_id = info.get("id") or "poll"
             extra = f" (and {info['count'] - 1} more)" if info.get("count", 0) > 1 else ""
             raw_html(f'<div class="gp-row"><span>Poll widget <b>{esc(widget_id)}</b>{esc(extra)} in the <b>{esc(self.template)}</b> template. '
@@ -712,7 +717,11 @@ class PollsPanel:
 
     def _refresh_widget(self) -> None:
         snapshot = get_poll_manager().get_overlay_state(self.template)
-        self._set_html(self.widget, "widget", widget_html(snapshot, self._style))
+        self._set_html(self.widget, "widget", widget_html(snapshot, self._style, self._on_twitch()))
+
+    def _on_twitch(self) -> bool:
+        """The selected poll is set to run on Twitch."""
+        return bool(get_poll_manager().get_config(self.template).get("twitch_poll"))
 
     def _open_spore(self) -> None:
         open_in_spore_studio(self.template)

@@ -688,6 +688,22 @@ test("an open poll paints options, timer chip, bar and footer; votes update in p
     assert.deepEqual(el.querySelectorAll(".spore-poll-name").map((n) => n.textContent), ["Green"]);
 });
 
+test("a poll running on Twitch hides the #keywords and the footer note", () => {
+    const s = setup({ html: pollHtml('data-spore-poll-foot-text="Type a keyword in chat to vote" data-spore-poll-total="false"') });
+    const el = s.doc.getElementById("pl");
+    el._rect = { width: 400, height: 300 };
+    s.I.sporeBindPoll(el, false);
+    const open = { template: "poll", status: "open", total_votes: 10, options: OPTS };
+    s.socket._recv("poll_state", Object.assign({}, open, { twitch_poll: true }));
+    assert.equal(el.querySelectorAll(".spore-poll-kw").length, 0);
+    assert.equal(el.querySelector(".spore-poll-foot-text").textContent, "");
+    assert.equal(el.querySelector(".spore-poll-foot").hidden, true);
+    s.socket._recv("poll_state", open);
+    assert.equal(el.querySelector(".spore-poll-kw").textContent, "r", "a chat poll shows them again");
+    assert.equal(el.querySelector(".spore-poll-foot-text").textContent, "Type a keyword in chat to vote");
+    assert.equal(el.querySelector(".spore-poll-foot").hidden, false);
+});
+
 test("ended polls: winner-only, chip text, autohide after the winner shows, poll_result output", () => {
     const s = setup({ html: pollHtml('data-spore-poll-winner-mode="winner_only" data-spore-poll-autohide="5"') });
     const el = s.doc.getElementById("pl");

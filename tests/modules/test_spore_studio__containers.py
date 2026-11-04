@@ -278,6 +278,7 @@ def test_container_source_record():
     rec = c.container_source_record(m, "http://h:5000/")
     assert rec["url"] == "http://h:5000/scene"
     assert rec["description"] == "Container combining 1 template: t_a"
+    assert (rec["width"], rec["height"]) == (m["width"], m["height"])
     m2 = c.normalize_container(_base())
     rec2 = c.container_source_record(m2, None)
     assert rec2["url"] == "/scene" and rec2["description"].endswith("0 templates: none")

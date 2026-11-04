@@ -700,6 +700,29 @@ def test_add_to_obs_submit_success(obs, shell):
     run_ui(_open_dialog(shell, obs), check)
 
 
+def test_obs_source_size(monkeypatch):
+    from modules.spore_studio import template_parser_back as pb
+
+    monkeypatch.setattr(pb, "design_size", lambda name: (460, 480) if name == "poll" else None)
+    assert st.obs_source_size({"name": "poll", "type": "template"}) == (460, 480)
+    assert st.obs_source_size({"name": "plain_html"}) == (1920, 1080)
+    assert st.obs_source_size({"name": "scene", "type": "container", "width": 1280, "height": 720}) == (1280, 720)
+    assert st.obs_source_size({"name": "scene", "type": "container", "width": 0}) == (1920, 1080)
+    assert st.obs_source_size({"name": "scene", "type": "container", "width": "x", "height": 1}) == (1920, 1080)
+
+
+def test_add_to_obs_dialog_uses_the_canvas_size(obs, shell, monkeypatch):
+    from modules.spore_studio import template_parser_back as pb
+
+    monkeypatch.setattr(pb, "design_size", lambda name: (460, 480))
+
+    async def check(user):
+        assert _el(user, ui.number, "Width").value == 460
+        assert _el(user, ui.number, "Height").value == 480
+
+    run_ui(_open_dialog(shell, obs, url_info={"title": "Poll", "name": "poll", "url": "http://x/poll"}), check)
+
+
 @pytest.mark.parametrize("result,details", [((False, "name taken"), "name taken"), ((False, ""), "Unknown error"),
                                             (RuntimeError("socket"), "socket"), (RuntimeError(""), "Could not add the browser source")])
 def test_add_to_obs_submit_failure_reenables(obs, shell, result, details):

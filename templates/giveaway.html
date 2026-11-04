@@ -3181,6 +3181,11 @@
         if (bg) { el.style.background = bg; }
 
         var cfg = sporePollConfig(el);
+        if (data.twitch_poll) {
+            /* Votes come from the Twitch poll, so chat keywords and "type a keyword" don't apply. */
+            cfg.showKeywords = false;
+            cfg.footText = '';
+        }
         sporePollApplyLook(el, cfg, status);
         var options = Array.isArray(data.options) ? data.options.slice() : [];
         var winnerMode = sporeAttr(el, 'data-spore-poll-winner-mode', 'highlight');

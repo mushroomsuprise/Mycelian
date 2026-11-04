@@ -169,6 +169,24 @@ CSS = """
 }
 """
 
+OBS_DEFAULT_SOURCE_SIZE = (1920, 1080)
+
+
+def obs_source_size(url_info: dict) -> tuple:
+    """Browser source size for Add to OBS: the Spore Studio canvas (or container) size, else 1920 x 1080."""
+    try:
+        if url_info.get("type") == "container":
+            width, height = int(url_info.get("width") or 0), int(url_info.get("height") or 0)
+            size = (width, height) if width > 0 and height > 0 else None
+        else:
+            from ..spore_studio.template_parser_back import design_size
+
+            size = design_size(str(url_info.get("name") or ""))
+    except Exception as e:
+        logger.debug("Could not read the canvas size for %s: %s", url_info.get("name"), e)
+        size = None
+    return size or OBS_DEFAULT_SOURCE_SIZE
+
 
 class SettingsUI:
     """Settings UI component for managing application settings and Twitch data."""
@@ -424,11 +442,12 @@ class SettingsUI:
             name_input.on_value_change(_sync_name_note)
             _sync_name_note()
 
+            source_width, source_height = obs_source_size(url_info)
             with ui.row().classes("w-full gap-2 mb-2"):
                 width_input = form_number(
                     tooltip="Browser source width",
                     label="Width",
-                    value=1920,
+                    value=source_width,
                     min=1,
                     step=1,
                     classes="flex-1",
@@ -436,7 +455,7 @@ class SettingsUI:
                 height_input = form_number(
                     tooltip="Browser source height",
                     label="Height",
-                    value=1080,
+                    value=source_height,
                     min=1,
                     step=1,
                     classes="flex-1",

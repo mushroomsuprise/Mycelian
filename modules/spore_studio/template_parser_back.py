@@ -18,7 +18,7 @@ import glob
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from .template_codegen import _sanitize_streamdeck_options, extract_user_js
 from .template_reverse_parser import (
@@ -231,6 +231,23 @@ def load_sidecar(template_name: str) -> Optional[Dict[str, Any]]:
     except (OSError, json.JSONDecodeError) as e:
         logger.warning("Spore sidecar at %s could not be loaded: %s", path, e)
     return None
+
+
+def design_size(template_name: str) -> Optional[Tuple[int, int]]:
+    """Canvas ``(width, height)`` of a Spore Studio template, or None for other templates."""
+    if not template_name:
+        return None
+    model = load_sidecar(template_name)
+    design = (model or {}).get("design")
+    if not isinstance(design, dict):
+        return None
+    try:
+        width, height = int(float(design.get("width"))), int(float(design.get("height")))
+    except (TypeError, ValueError):
+        return None
+    if width < 1 or height < 1:
+        return None
+    return width, height
 
 
 def save_sidecar(template_name: str, model: Dict[str, Any]) -> bool:

@@ -248,6 +248,19 @@ def test_load_sidecar(sb, caplog):
     assert pb.load_sidecar("old") == {"v": 1}
 
 
+def test_design_size(sb):
+    assert pb.design_size("") is None
+    assert pb.design_size("none") is None
+    sb.write_sidecar("poll", {"design": {"width": 460, "height": "480"}})
+    assert pb.design_size("poll") == (460, 480)
+    sb.write_sidecar("nodesign", {"elements": []})
+    assert pb.design_size("nodesign") is None
+    sb.write_sidecar("junk", {"design": {"width": "wide", "height": 10}})
+    assert pb.design_size("junk") is None
+    sb.write_sidecar("zero", {"design": {"width": 0, "height": 10}})
+    assert pb.design_size("zero") is None
+
+
 def test_save_sidecar(sb):
     assert pb.save_sidecar("a", {"name": "é"}) is True
     assert json.loads(sb.sidecar("a").read_text(encoding="utf-8")) == {"name": "é"}
