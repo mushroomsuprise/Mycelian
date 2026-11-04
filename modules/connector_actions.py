@@ -30,7 +30,7 @@ import os
 import subprocess
 import threading
 from dataclasses import dataclass, field, fields
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from .connector_core import (
     ActionType,
@@ -3687,11 +3687,13 @@ def find_tracked_game(query: str, platform: str = "", games: Optional[List[Any]]
     return find_game(query, platform, games, include_hidden=bool(str(query or "").strip()))
 
 
-def _game_outputs(game: Any) -> Dict[str, Any]:
+def _game_outputs(game: Any, goals: Sequence[Any] = ()) -> Dict[str, Any]:
     import datetime as _dt
 
+    from .chatbot_lookups import game_goal_variables
+
     last = float(getattr(game, "last_played", 0) or 0)
-    return {
+    out = {
         "title": game.display_title,
         "platform": "PlayStation" if game.platform == "psn" else "Steam",
         "progress": int(game.progress or 0),
@@ -3700,6 +3702,16 @@ def _game_outputs(game: Any) -> Dict[str, Any]:
         "completed": "yes" if game.is_complete else "no",
         "last_played": _dt.datetime.fromtimestamp(last).strftime("%Y-%m-%d %H:%M") if last > 0 else "",
     }
+    # goals, goals_done, goal_next, goal_1_name ... (the chat lookup's game_* names without the prefix)
+    out.update({k[len("game_"):]: v for k, v in game_goal_variables(game, goals).items()})
+    return out
+
+
+def _tracked_game_with_goals(query: str, platform: str) -> Tuple[Optional[Any], List[Any]]:
+    from .game_tracker.service import goals_of
+
+    game = find_tracked_game(query, platform)
+    return game, goals_of(game)
 
 
 @dataclass
@@ -3715,16 +3727,72 @@ class GameLookupAction(BaseAction):
     async def execute(self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
         try:
             query = _render_text(self.game, trigger_data, event_data)
-            game = await asyncio.to_thread(find_tracked_game, query, self.platform)
+            game, goals = await asyncio.to_thread(_tracked_game_with_goals, query, self.platform)
             if game is None:
                 what = f"“{query}”" if query else "a recently played game"
                 report_action_problem(f"The game lookup found no match for {what}", _GAMES_HINT)
                 return False
-            _store_outputs(trigger_data, _game_outputs(game))
+            _store_outputs(trigger_data, _game_outputs(game, goals))
             return True
         except Exception as e:
             logger.error("Error executing game lookup action: %s", e, exc_info=True)
             report_action_problem("The game lookup failed", _GAMES_HINT, f"{type(e).__name__}: {e}")
+            return False
+
+
+GOAL_OPERATIONS = ("add", "subtract", "set", "complete", "reset")
+
+
+@dataclass
+class GameGoalUpdateAction(BaseAction):
+    """Change a manual Games Tracker goal (count up / down / set / done / reset) and share the result as {actionN.field}."""
+
+    game: str = ""  # name, psn:<NPWR ID>, steam:<app ID>; empty = most recently played
+    platform: str = ""  # "", "psn" or "steam"
+    goal: str = ""  # goal name or ID; empty = the game's first open manual goal
+    operation: str = "add"
+    amount: str = "1"  # may hold placeholders
+
+    def __post_init__(self):
+        self.action_type = ActionType.GAME_GOAL_UPDATE
+        if self.operation not in GOAL_OPERATIONS:
+            self.operation = "add"
+
+    async def execute(self, trigger_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
+        from .game_tracker.goals import goal_public, goals_summary
+        from .game_tracker.service import get_service
+
+        try:
+            query = _render_text(self.game, trigger_data, event_data)
+            goal_ref = _render_text(self.goal, trigger_data, event_data)
+            raw_amount = _render_text(str(self.amount if self.amount not in (None, "") else "1"), trigger_data, event_data)
+            try:
+                amount = int(float(str(raw_amount).strip() or 1))
+            except ValueError:
+                report_action_problem(f"“{raw_amount}” isn't a number for the goal update", _GAMES_HINT)
+                return False
+            svc = get_service()
+            goal, game, error = await asyncio.to_thread(svc.adjust_goal, query, self.platform, goal_ref, self.operation, amount)
+            if goal is None or game is None:
+                report_action_problem(error or "The goal update found nothing to change", _GAMES_HINT)
+                return False
+            goals = await asyncio.to_thread(svc.goals_for, game.platform, game.game_id)
+            row = goal_public(goal, game)
+            summary = goals_summary(goals, game)
+            _store_outputs(trigger_data, {
+                "game_title": game.display_title,
+                "goal_name": row["name"],
+                "goal_current": row["current"],
+                "goal_target": row["target"],
+                "goal_progress": row["progress"],
+                "goal_completed": "yes" if row["completed"] else "no",
+                "goals_done": summary["goals_done"],
+                "goals_total": summary["goals_total"],
+            })
+            return True
+        except Exception as e:
+            logger.error("Error executing game goal update action: %s", e, exc_info=True)
+            report_action_problem("The goal update failed", _GAMES_HINT, f"{type(e).__name__}: {e}")
             return False
 
 
@@ -3764,6 +3832,7 @@ def create_action(
         ActionType.TWITCH_RESOLVE_PREDICTION: TwitchResolvePredictionAction,
         ActionType.TWITCH_CANCEL_PREDICTION: TwitchCancelPredictionAction,
         ActionType.GAME_LOOKUP: GameLookupAction,
+        ActionType.GAME_GOAL_UPDATE: GameGoalUpdateAction,
     }
 
     action_class = action_classes.get(action_type)

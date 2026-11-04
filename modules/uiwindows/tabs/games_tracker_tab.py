@@ -16,6 +16,9 @@ from typing import Any, Dict, List, Optional, Sequence
 from nicegui import run, ui
 
 from ...game_tracker import covers
+from ...game_tracker import goals as goal_kinds
+from ...game_tracker.goals import GameGoal
+from ...game_tracker.speedrun import TIMING_LABELS, speedruns_public
 from ...game_tracker.models import PSN, STEAM, GameEvent, TrackedGame, TrackerSettings, clean_milestones, grade_counts
 from ...game_tracker.service import get_service
 from ...notification_engine import nav_actions_settings, notify
@@ -26,6 +29,7 @@ from .integration_ui import (
     brand_svg,
     esc,
     field,
+    field_label,
     fields,
     hint,
     icon_html,
@@ -123,6 +127,53 @@ GAMES_TRACKER_CSS = """
 .gtr-minibar { width: 70px; height: 4px; border-radius: 999px; background: var(--color-bg-surface); overflow: hidden; flex: 0 0 auto; }
 .gtr-minibar > span { display: block; height: 100%; background: var(--color-primary); }
 .gtr-mono .q-field__native { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
+/* Goals */
+.gtr-goals { display: flex; flex-direction: column; gap: 4px; margin-top: 9px; }
+.gtr-goal { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: .72rem; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.gtr-goal .itg-icon { font-size: 14px; color: var(--color-text-muted); flex: 0 0 auto; }
+.gtr-goal .n { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gtr-goal .c { flex: 0 0 auto; color: var(--color-text-muted); font-size: .66rem; }
+.gtr-goal .p { flex: 0 0 auto; min-width: 32px; text-align: right; font-weight: 650; }
+.gtr-goal .gtr-minibar { width: 56px; }
+.gtr-goal.is-done .itg-icon, .gtr-goal.is-done .p { color: var(--color-success); }
+.gtr-goal.is-done .gtr-minibar > span, .gtr-dgoal.is-done .gtr-minibar > span { background: var(--color-success); }
+.gtr-srs { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; }
+.gtr-sr { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: .72rem; color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums; }
+.gtr-sr .itg-icon { font-size: 14px; color: var(--color-text-muted); flex: 0 0 auto; }
+.gtr-sr .c { font-weight: 650; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gtr-sr .b { white-space: nowrap; }
+.gtr-sr .b b { color: var(--color-text-primary); }
+.gtr-sr .r { margin-left: auto; color: var(--color-text-muted); font-size: .66rem; white-space: nowrap; }
+.gtr-sr-err .itg-icon { color: var(--color-warning); }
+.gtr-dsr { display: flex; flex-direction: column; gap: 4px; padding: 8px 9px; border-radius: 8px; background: var(--color-bg-base);
+  border: 1px solid var(--color-border-subtle); margin-bottom: 6px; }
+.gtr-dsr-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.gtr-dsr-top .gtr-sr { flex: 1 1 auto; margin: 0; }
+.gtr-dsr-top .q-btn { min-height: 26px; min-width: 26px; }
+.gtr-dsr-file { display: flex; gap: 8px; align-items: center; font-size: .66rem; color: var(--color-text-muted); min-width: 0; }
+.gtr-dsr-file .p { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
+.gtr-dsr-file .e { color: var(--color-warning); }
+.gtr-goal-more { font-size: .66rem; color: var(--color-text-muted); padding-left: 21px; }
+.gtr-dgoal { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 8px; background: var(--color-bg-base);
+  border: 1px solid var(--color-border-subtle); margin-bottom: 6px; }
+.gtr-dgoal .gtr-goal { flex: 1 1 auto; }
+.gtr-dgoal .q-btn { min-height: 26px; min-width: 26px; }
+.gtr-dgoal.is-done { border-color: color-mix(in srgb, var(--color-success) 40%, transparent); }
+.gtr-goalform { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 10px; border-radius: 8px; border: 1px dashed var(--color-border-default); }
+.gtr-goalform .gtr-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gtr-goalform .gtr-row > * { flex: 1 1 140px; min-width: 0; }
+.gtr-goalform-title { font-size: .8rem; font-weight: 700; color: var(--color-text-primary); }
+/* Drag the drawer's left edge to resize it (sized by mycelianGtrDrawerResize). */
+.gtr-drawer { position: relative; }
+.gtr-dresize { position: absolute; left: -4px; top: 0; bottom: 0; width: 9px; z-index: 5; cursor: col-resize; }
+.gtr-dresize::after { content: ''; position: absolute; left: 3px; top: 0; bottom: 0; width: 3px; border-radius: 2px;
+  background: transparent; transition: background .15s ease; }
+.gtr-dresize:hover::after, .gtr-dresize.is-dragging::after { background: var(--color-primary); }
+.gtr-pick-item { display: flex; align-items: center; gap: 8px; }
+.gtr-pick-item img { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; }
+.gtr-pick-item .e { margin-left: auto; font-size: .66rem; color: var(--color-success); }
 /* Export dialog */
 .gtr-modal { width: min(1280px, calc(100vw - 32px)); max-width: none !important; margin: 0 auto; height: min(880px, calc(100vh - 32px)); display: flex; flex-direction: column;
   padding: 0 !important; background: var(--color-bg-elevated); border: 1px solid var(--color-border-default); border-radius: 14px; overflow: hidden; }
@@ -160,9 +211,26 @@ GAMES_TRACKER_CSS = """
 
 _COVER_TONES = ("#5b4a2e", "#7a2e2e", "#2d5a8c", "#4a3a5c", "#3a5560", "#2e5a46", "#2e4a6b", "#6b4a2e", "#5c5a2e", "#3d2b2b")
 _GRADE_ORDER = (("platinum", "Platinum"), ("gold", "Gold"), ("silver", "Silver"), ("bronze", "Bronze"))
-STATUS_OPTIONS = {"all": "All games", "progress": "In progress", "done": "Completed", "hidden": "Hidden"}
-SORT_OPTIONS = {"recent": "Recently played", "progress": "Most complete", "name": "Name A–Z"}
+STATUS_OPTIONS = {"all": "All games", "progress": "In progress", "not_started": "Not started", "done": "Completed",
+                  "goals": "Has goals", "no_goals": "No goals", "hidden": "Hidden"}
+SORT_OPTIONS = {"recent": "Recently played", "progress": "Most complete", "least": "Least complete", "name": "Name A–Z",
+                "name_desc": "Name Z–A", "earned": "Most trophies / achievements", "playtime": "Most playtime",
+                "added": "Recently added"}
+BACKLOG_STATUS_OPTIONS = {"all": "All goals", "active": "Goals open", "complete": "Goals complete"}
+BACKLOG_SORT_OPTIONS = {"closest": "Closest to done", "least": "Least progress", "recent": "Recently played", "name": "Name A–Z",
+                        "most_goals": "Most goals", "newest": "Newest goal"}
 PLATFORM_FILTERS = (("all", "All"), (PSN, "PlayStation"), (STEAM, "Steam"))
+CARD_GOAL_ROWS = 3
+CARD_SPEEDRUN_ROWS = 2
+GOAL_TYPE_OPTIONS = {
+    goal_kinds.MANUAL: "Manual (count it yourself)",
+    goal_kinds.COMPLETE: "Platinum / 100%",
+    goal_kinds.COUNT: "Trophies / achievements",
+    goal_kinds.PERCENT: "Completion %",
+    goal_kinds.UNLOCK: "Specific trophy / achievement",
+}
+_GRADE_OPTIONS = {"": "Any grade", "bronze": "Bronze", "silver": "Silver", "gold": "Gold", "platinum": "Platinum"}
+_TARGET_LABELS = {goal_kinds.MANUAL: "Count to reach", goal_kinds.COUNT: "How many", goal_kinds.PERCENT: "Percent"}
 
 
 # ----- pure helpers (tested directly) -----
@@ -195,31 +263,105 @@ def cover_tone(key: str) -> str:
     return _COVER_TONES[sum(ord(c) for c in key) % len(_COVER_TONES)]
 
 
-def filter_games(games: Sequence[TrackedGame], *, q: str = "", platform: str = "all", status: str = "all", sort: str = "recent") -> List[TrackedGame]:
+def _matches(g: TrackedGame, q: str, platform: str) -> bool:
+    if platform != "all" and g.platform != platform:
+        return False
+    return not q or q in g.display_title.casefold() or q in g.title.casefold() or q == g.game_id.casefold()
+
+
+def filter_games(
+    games: Sequence[TrackedGame],
+    *,
+    q: str = "",
+    platform: str = "all",
+    status: str = "all",
+    sort: str = "recent",
+    goals: Optional[Dict[str, List[GameGoal]]] = None,
+    exclude_goal_games: bool = False,
+) -> List[TrackedGame]:
+    """The Library list. ``goals`` (by game key) drives the goal filters; ``exclude_goal_games`` leaves out games that
+    have goals (they're in the Backlog section then), except under the Hidden filter."""
     q = (q or "").strip().casefold()
+    goals = goals or {}
     out = []
     for g in games:
-        if platform != "all" and g.platform != platform:
+        if not _matches(g, q, platform):
             continue
-        if q and q not in g.display_title.casefold() and q not in g.title.casefold() and q != g.game_id.casefold():
-            continue
+        has_goals = bool(goals.get(g.key))
         if status == "hidden":
             if not g.hidden:
                 continue
         elif g.hidden:
             continue
+        elif exclude_goal_games and has_goals:
+            continue
         elif status == "progress" and g.is_complete:
+            continue
+        elif status == "not_started" and g.earned_total > 0:
             continue
         elif status == "done" and not g.is_complete:
             continue
+        elif status == "goals" and not has_goals:
+            continue
+        elif status == "no_goals" and has_goals:
+            continue
         out.append(g)
+    name = lambda g: g.display_title.casefold()  # noqa: E731
     if sort == "name":
-        out.sort(key=lambda g: g.display_title.casefold())
+        out.sort(key=name)
+    elif sort == "name_desc":
+        out.sort(key=name, reverse=True)
     elif sort == "progress":
-        out.sort(key=lambda g: (-g.progress, g.display_title.casefold()))
+        out.sort(key=lambda g: (-g.progress, name(g)))
+    elif sort == "least":
+        out.sort(key=lambda g: (g.progress, name(g)))
+    elif sort == "earned":
+        out.sort(key=lambda g: (-g.earned_total, name(g)))
+    elif sort == "playtime":
+        out.sort(key=lambda g: (-g.playtime_min, -g.last_played))
+    elif sort == "added":
+        out.sort(key=lambda g: (-g.first_seen, name(g)))
     else:
         out.sort(key=lambda g: -g.last_played)
     return out
+
+
+def filter_backlog(
+    games: Sequence[TrackedGame],
+    goals: Dict[str, List[GameGoal]],
+    *,
+    q: str = "",
+    platform: str = "all",
+    status: str = "all",
+    sort: str = "closest",
+) -> List[TrackedGame]:
+    """The Backlog list: visible games that have goals, filtered by whether their goals are all done."""
+    q = (q or "").strip().casefold()
+    rows = []
+    for g in games:
+        game_goals = goals.get(g.key) or []
+        if not game_goals or g.hidden or not _matches(g, q, platform):
+            continue
+        summary = goal_kinds.goals_summary(game_goals, g)
+        if status == "active" and summary["goals_complete"]:
+            continue
+        if status == "complete" and not summary["goals_complete"]:
+            continue
+        rows.append((g, summary, max(x.created_at for x in game_goals)))
+    name = lambda r: r[0].display_title.casefold()  # noqa: E731
+    if sort == "least":
+        rows.sort(key=lambda r: (r[1]["goals_progress"], name(r)))
+    elif sort == "recent":
+        rows.sort(key=lambda r: -r[0].last_played)
+    elif sort == "name":
+        rows.sort(key=name)
+    elif sort == "most_goals":
+        rows.sort(key=lambda r: (-r[1]["goals_total"], name(r)))
+    elif sort == "newest":
+        rows.sort(key=lambda r: -r[2])
+    else:  # closest to done: open sets first, then the furthest along
+        rows.sort(key=lambda r: (r[1]["goals_complete"], -r[1]["goals_progress"], name(r)))
+    return [r[0] for r in rows]
 
 
 def cover_src(platform: str, game_id: str) -> Optional[str]:
@@ -327,18 +469,85 @@ def grades_html(game: TrackedGame) -> str:
     ) + "</div>"
 
 
-def card_parts(game: TrackedGame, now: Optional[float] = None) -> Dict[str, str]:
+def goal_rows_html(rows: Sequence[Dict[str, Any]], limit: Optional[int] = None) -> str:
+    """Goal rows (name, bar, percent) from ``goals.goal_public`` dicts; ``limit`` adds "+N more goals"."""
+    shown = list(rows if limit is None else rows[:limit])
+    body = "".join(
+        f'<div class="gtr-goal{" is-done" if r["completed"] else ""}">'
+        f'{icon_html("check_circle" if r["completed"] else ("flag" if r["auto"] else "radio_button_unchecked"))}'
+        f'<span class="n" title="{esc(r["name"])}">{esc(r["name"])}</span>'
+        f'<span class="c">{esc(_goal_count(r))}</span>'
+        f'<span class="gtr-minibar"><span style="width:{r["progress"]}%"></span></span>'
+        f'<span class="p">{r["progress"]}%</span></div>'
+        for r in shown
+    )
+    more = len(rows) - len(shown)
+    if more > 0:
+        body += f'<div class="gtr-goal-more">+{more} more goal{"s" if more != 1 else ""}</div>'
+    return f'<div class="gtr-goals">{body}</div>'
+
+
+def achievement_options(items: Sequence[Dict[str, Any]]) -> Dict[str, str]:
+    """Picker options for a "specific trophy / achievement" goal: ``{id: "Name · Gold · earned"}``."""
+    out = {}
+    for a in items:
+        grade = str(a.get("grade") or "")
+        parts = [str(a.get("name") or a.get("id"))]
+        if grade and grade != "achievement":
+            parts.append(grade.title())
+        if a.get("earned"):
+            parts.append("earned")
+        out[str(a["id"])] = " · ".join(parts)
+    return out
+
+
+def _goal_count(r: Dict[str, Any]) -> str:
+    if r["kind"] in (goal_kinds.MANUAL, goal_kinds.COUNT):
+        return f'{r["current"]:,} / {r["target"]:,}'
+    if r["kind"] == goal_kinds.PERCENT:
+        return f'{r["current"]}% / {r["target"]}%'
+    return ""
+
+
+def speedrun_rows_html(rows: Sequence[Dict[str, Any]], limit: Optional[int] = None) -> str:
+    """One line per split file (``speedrun.speedruns_public`` rows): category, personal best, attempts."""
+    shown = list(rows if limit is None else rows[:limit])
+    body = ""
+    for r in shown:
+        if r.get("read"):
+            best = f'PB <b>{esc(r["pb"])}</b>' if r.get("pb") else "No finished run yet"
+            runs = f'{r["attempts"]:,} attempt{"s" if r["attempts"] != 1 else ""} · {r["finished"]:,} finished'
+        else:
+            best, runs = "Not read yet", ""
+        warn = f'<span class="gtr-sr-err" title="{esc(r["error"])}">{icon_html("error_outline")}</span>' if r.get("error") else ""
+        body += (f'<div class="gtr-sr">{icon_html("timer")}<span class="c" title="{esc(r["file"])}">{esc(r["category"])}</span>'
+                 f'<span class="b">{best}</span><span class="r">{runs}</span>{warn}</div>')
+    more = len(rows) - len(shown)
+    if more > 0:
+        body += f'<div class="gtr-goal-more">+{more} more categor{"ies" if more != 1 else "y"}</div>'
+    return f'<div class="gtr-srs">{body}</div>' if body else ""
+
+
+def card_parts(game: TrackedGame, now: Optional[float] = None, goals: Sequence[GameGoal] = (),
+               speedruns: Sequence[Dict[str, Any]] = ()) -> Dict[str, str]:
     """(top HTML, footer HTML, footer detail, card classes) for one game card."""
     done = game.is_complete
+    summary = goal_kinds.goals_summary(goals, game) if goals else None
     chips = f'<span class="itg-os-chip">{esc(game.platform_label or ("Steam" if game.platform == STEAM else "PlayStation"))}</span>'
     if done:
         chips += f'<span class="itg-pill is-ok gtr-mini">{icon_html("workspace_premium")}{"Platinum" if game.platform == PSN else "Perfect"}</span>'
+    if summary and summary["goals_complete"]:
+        chips += f'<span class="itg-pill is-ok gtr-mini">{icon_html("flag")}Goals done</span>'
+    elif summary:
+        chips += f'<span class="itg-os-chip">{summary["goals_done"]} / {summary["goals_total"]} goals</span>'
     if game.hidden:
         chips += '<span class="itg-os-chip">Hidden</span>'
     chips += f'<span class="gtr-sub">Played {esc(ago(game.last_played, now))}</span>'
     top = (
         f'{cover_html(game)}<div class="gtr-text"><div class="itg-hook-name">{esc(game.display_title)}</div>'
-        f'<div class="itg-os">{chips}</div><div class="gtr-bar"><span style="width:{game.progress}%"></span></div></div>'
+        f'<div class="itg-os">{chips}</div><div class="gtr-bar"><span style="width:{game.progress}%"></span></div>'
+        f'{goal_rows_html(summary["goals"], CARD_GOAL_ROWS) if summary else ""}'
+        f'{speedrun_rows_html(speedruns, CARD_SPEEDRUN_ROWS)}</div>'
         f'<div class="gtr-pct">{game.progress}<small>%</small></div>'
     )
     if game.platform == PSN:
@@ -431,6 +640,91 @@ def sheet_preview_html(data: Dict[str, Any]) -> str:
             f'</div>{foot}<div class="gtr-sheet-tabs">{tabs}</div></div>')
 
 
+DRAWER_MIN_WIDTH = 380
+DRAWER_MAX_WIDTH = 1400
+DRAWER_DEFAULT_WIDTH = 460
+_DRAWER_WIDTH_EVENT = "mycelian-gtr-drawer-width"
+
+# Drag the drawer's left edge (.gtr-dresize) to resize it; the width is reported once on release.
+_DRAWER_RESIZE_JS = r"""
+(function () {
+  if (window.mycelianGtrDrawerResize) { return; }
+  window.mycelianGtrDrawerResize = true;
+  var drag = null;
+  document.addEventListener("mousedown", function (ev) {
+    var handle = ev.button === 0 && ev.target && ev.target.closest ? ev.target.closest(".gtr-dresize") : null;
+    var aside = handle ? handle.closest(".gtr-drawer") : null;
+    if (!aside) { return; }
+    drag = { aside: aside, handle: handle, x: ev.clientX, w: aside.getBoundingClientRect().width, last: null };
+    handle.classList.add("is-dragging");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    ev.preventDefault();
+    ev.stopPropagation();
+  }, true);
+  document.addEventListener("mousemove", function (ev) {
+    if (!drag) { return; }
+    var max = Math.min(__MAX__, window.innerWidth - 40);
+    var w = Math.round(Math.max(__MIN__, Math.min(max, drag.w + (drag.x - ev.clientX))));
+    drag.aside.style.width = w + "px";
+    drag.last = w;
+  });
+  document.addEventListener("mouseup", function () {
+    if (!drag) { return; }
+    drag.handle.classList.remove("is-dragging");
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    if (drag.last !== null && typeof emitEvent === "function") { emitEvent("__EVENT__", drag.last); }
+    drag = null;
+  });
+})();
+""".replace("__MIN__", str(DRAWER_MIN_WIDTH)).replace("__MAX__", str(DRAWER_MAX_WIDTH)).replace("__EVENT__", _DRAWER_WIDTH_EVENT)
+
+# Clients already listening for the drawer width (one page-level listener each; adding it again
+# on every rebuild makes NiceGUI re-render the page, as customsources found with its splitter).
+_drawer_width_clients: set = set()
+
+
+def clamp_drawer_width(value: Any) -> int:
+    try:
+        width = int(float(value))
+    except (TypeError, ValueError):
+        return DRAWER_DEFAULT_WIDTH
+    return max(DRAWER_MIN_WIDTH, min(DRAWER_MAX_WIDTH, width))
+
+
+def save_drawer_width(value: Any) -> int:
+    """Remember the drawer width in the tracker settings (``view.drawer_width``)."""
+    width = clamp_drawer_width(value)
+    service = get_service()
+    s = service.settings
+    if s.view.get("drawer_width") != width:
+        service.save_settings(TrackerSettings.from_dict({**s.to_dict(), "view": {**s.view, "drawer_width": width}}))
+    return width
+
+
+def _on_drawer_width(e: Any) -> None:
+    try:
+        save_drawer_width(getattr(e, "args", None))
+    except Exception:
+        logger.debug("Games Tracker: drawer width not saved", exc_info=True)
+
+
+def _install_drawer_resize() -> None:
+    """Load the resize script into the page and listen for the width once per client."""
+    try:
+        from nicegui import context
+
+        client = context.client
+        if client.id not in _drawer_width_clients:
+            _drawer_width_clients.add(client.id)
+            client.layout.on(_DRAWER_WIDTH_EVENT, _on_drawer_width)
+            client.on_delete(lambda: _drawer_width_clients.discard(client.id))
+        ui.run_javascript(_DRAWER_RESIZE_JS)
+    except Exception:
+        logger.debug("Games Tracker: drawer resize unavailable", exc_info=True)
+
+
 class GamesTrackerTab:
     name = "Games Tracker"
 
@@ -444,11 +738,15 @@ class GamesTrackerTab:
         self._summary: Dict[str, Any] = {}
         self._status: Dict[str, Dict[str, Any]] = {}
         self._deltas: Dict[str, int] = {}
-        self._q = ""
-        self._platform = "all"
-        self._status_filter = "all"
-        self._sort = "recent"
+        self._goals: Dict[str, List[GameGoal]] = {}
+        self._speedruns: Dict[str, List[Dict[str, Any]]] = {}  # game key -> speedrun.speedruns_public rows
+        self._views: Dict[str, Dict[str, str]] = {
+            "library": {"q": "", "platform": "all", "status": "all", "sort": "recent"},
+            "backlog": {"q": "", "platform": "all", "status": "all", "sort": "closest"},
+        }
         self._limit = PAGE_SIZE
+        self._goal_form: Dict[str, Any] = {}
+        self._achievements: List[Dict[str, Any]] = []
         self._timer: Optional[Any] = None
         self._needs_refresh = True
         self._refreshing = False
@@ -472,6 +770,7 @@ class GamesTrackerTab:
     def _settings_dict(self, s: TrackerSettings) -> Dict[str, Any]:
         d = s.to_dict()
         d.pop("export", None)
+        d.pop("view", None)
         return d
 
     def _update_dirty(self) -> None:
@@ -486,6 +785,7 @@ class GamesTrackerTab:
         self._loaded = self.service.settings
         self._buffer = TrackerSettings.from_dict(self._loaded.to_dict())
         self.dirty = False
+        self._restore_views(self._loaded.view)
         self._page = page = IntegrationPage(
             parent_container,
             "games_tracker",
@@ -509,9 +809,14 @@ class GamesTrackerTab:
                 self.ui_elements["banner"] = ui.html("", sanitize=False).classes("w-full")
                 self.ui_elements["overview"] = ui.html("", sanitize=False).classes("w-full")
                 self.ui_elements["empty"] = ui.element("div").classes("w-full")
+            self.ui_elements["backlog"] = backlog = section("flag", "Backlog")
+            with backlog:
+                self._build_toolbar("backlog")
+                self.ui_elements["bl_grid"] = ui.element("div").classes("itg-hooks")
+                self.ui_elements["bl_none"] = ui.label("").classes("gtr-none")
             self.ui_elements["library"] = lib = section("sports_esports", "Library")
             with lib:
-                self._build_toolbar()
+                self._build_toolbar("library")
                 self.ui_elements["grid"] = ui.element("div").classes("itg-hooks")
                 self.ui_elements["none"] = ui.label("No games match these filters.").classes("gtr-none")
                 with ui.element("div").classes("gtr-more") as more:
@@ -550,6 +855,8 @@ class GamesTrackerTab:
         svc = self.service
         return {
             "games": svc.store.list_games(),
+            "goals": svc.goals_by_game(),
+            "speedruns": {k: speedruns_public(v) for k, v in svc.speedruns_by_game().items()},
             "summary": svc.summary(),
             "status": svc.status(),
             "deltas": week_deltas(svc.store.event_counts(since=time.time() - 7 * 86400)),
@@ -576,6 +883,8 @@ class GamesTrackerTab:
             if not data:
                 return
             self._games = data["games"]
+            self._goals = data.get("goals") or {}
+            self._speedruns = data.get("speedruns") or {}
             self._summary = data["summary"]
             self._status = data["status"]
             self._deltas = data["deltas"]
@@ -602,6 +911,9 @@ class GamesTrackerTab:
             with empty:
                 self._build_empty()
         self.ui_elements["library"].set_visibility(has_games)
+        backlog = self.ui_elements.get("backlog")
+        if backlog is not None:
+            backlog.set_visibility(has_games and self._loaded.backlog_section)
 
     def _banner_html(self) -> str:
         return self._import_banner() + steam_private_banner(self._games)
@@ -644,51 +956,90 @@ class GamesTrackerTab:
 
     # ----- library -----
 
-    def _build_toolbar(self) -> None:
+    def _build_toolbar(self, which: str = "library") -> None:
+        backlog = which == "backlog"
+        view = self._views[which]
+        statuses, sorts = (BACKLOG_STATUS_OPTIONS, BACKLOG_SORT_OPTIONS) if backlog else (STATUS_OPTIONS, SORT_OPTIONS)
+        what = "Search the backlog" if backlog else "Search games"
         with ui.element("div").classes("gtr-tools"):
-            search = ui.input(placeholder="Search games", on_change=lambda e: self._set_filter(q=e.value or "")).props(
-                'outlined dense clearable debounce=250 aria-label="Search games"'
+            search = ui.input(placeholder=what, value=view["q"], on_change=lambda e: self._set_filter(which, q=e.value or "")).props(
+                f'outlined dense clearable debounce=250 aria-label="{what}"'
             ).classes("gtr-search")
             with search.add_slot("prepend"):
                 ui.icon("search").classes("text-[18px]")
             with ui.element("div").classes("gtr-seg").props('role=group aria-label="Platform"'):
-                self.ui_elements["plat_btns"] = {
-                    key: ui.button(label, on_click=lambda k=key: self._set_filter(platform=k)).props("flat no-caps dense")
+                self.ui_elements["bl_plat_btns" if backlog else "plat_btns"] = {
+                    key: ui.button(label, on_click=lambda k=key: self._set_filter(which, platform=k)).props("flat no-caps dense")
                     for key, label in PLATFORM_FILTERS
                 }
-            ui.select(STATUS_OPTIONS, value="all", on_change=lambda e: self._set_filter(status=e.value)).props(
+            ui.select(statuses, value=view["status"], on_change=lambda e: self._set_filter(which, status=e.value)).props(
                 'outlined dense options-dense aria-label="Status"'
             ).classes("gtr-select")
-            ui.select(SORT_OPTIONS, value="recent", on_change=lambda e: self._set_filter(sort=e.value)).props(
+            ui.select(sorts, value=view["sort"], on_change=lambda e: self._set_filter(which, sort=e.value)).props(
                 'outlined dense options-dense aria-label="Sort"'
             ).classes("gtr-select")
-        self._paint_platform_buttons()
+        self._paint_platform_buttons(which)
 
-    def _paint_platform_buttons(self) -> None:
-        for key, btn in (self.ui_elements.get("plat_btns") or {}).items():
-            on = key == self._platform
+    def _paint_platform_buttons(self, which: str = "library") -> None:
+        current = self._views[which]["platform"]
+        for key, btn in (self.ui_elements.get("bl_plat_btns" if which == "backlog" else "plat_btns") or {}).items():
+            on = key == current
             btn.classes(add="is-on") if on else btn.classes(remove="is-on")
             btn.props(f"aria-pressed={'true' if on else 'false'}")
 
-    def _set_filter(self, **changes: Any) -> None:
-        if "q" in changes:
-            self._q = changes["q"]
+    def _restore_views(self, saved: Dict[str, Any]) -> None:
+        """The filters and sorts of the last session (the search box always starts empty)."""
+        for which, opts in (("library", (STATUS_OPTIONS, SORT_OPTIONS)), ("backlog", (BACKLOG_STATUS_OPTIONS, BACKLOG_SORT_OPTIONS))):
+            raw = (saved or {}).get(which) or {}
+            view = self._views[which]
+            if raw.get("platform") in dict(PLATFORM_FILTERS):
+                view["platform"] = raw["platform"]
+            if raw.get("status") in opts[0]:
+                view["status"] = raw["status"]
+            if raw.get("sort") in opts[1]:
+                view["sort"] = raw["sort"]
+
+    def _remember_views(self) -> None:
+        try:
+            s = self.service.settings
+            # Merge: the view dict also holds the drawer width.
+            wanted = {**s.view, **{w: {k: v for k, v in view.items() if k != "q"} for w, view in self._views.items()}}
+            if s.view != wanted:
+                self.service.save_settings(TrackerSettings.from_dict({**s.to_dict(), "view": wanted}))
+                self._loaded.view = wanted
+        except Exception:
+            logger.debug("Games Tracker: list filters not saved", exc_info=True)
+
+    def _set_filter(self, which: str = "library", **changes: Any) -> None:
+        view = self._views[which]
+        defaults = {"platform": "all", "status": "all", "sort": "closest" if which == "backlog" else "recent"}
+        for key in ("q", "platform", "status", "sort"):
+            if key in changes:
+                view[key] = changes[key] or defaults.get(key, "")
         if "platform" in changes:
-            self._platform = changes["platform"]
-            self._paint_platform_buttons()
-        if "status" in changes:
-            self._status_filter = changes["status"] or "all"
-        if "sort" in changes:
-            self._sort = changes["sort"] or "recent"
-        self._limit = PAGE_SIZE
+            self._paint_platform_buttons(which)
+        if any(k in changes for k in ("platform", "status", "sort")):
+            self._remember_views()
+        if which == "library":
+            self._limit = PAGE_SIZE
         self._render_grid()
 
     def _show_more(self) -> None:
         self._limit += PAGE_SIZE
         self._render_grid()
 
+    @property
+    def _backlog_on(self) -> bool:
+        return bool(self._loaded.backlog_section)
+
     def visible_games(self) -> List[TrackedGame]:
-        return filter_games(self._games, q=self._q, platform=self._platform, status=self._status_filter, sort=self._sort)
+        v = self._views["library"]
+        return filter_games(self._games, q=v["q"], platform=v["platform"], status=v["status"], sort=v["sort"],
+                            goals=self._goals, exclude_goal_games=self._backlog_on)
+
+    def visible_backlog(self) -> List[TrackedGame]:
+        v = self._views["backlog"]
+        return filter_backlog(self._games, self._goals, q=v["q"], platform=v["platform"], status=v["status"], sort=v["sort"])
 
     def _render_grid(self) -> None:
         grid = self.ui_elements.get("grid")
@@ -705,14 +1056,40 @@ class GamesTrackerTab:
         remaining = len(games) - len(shown)
         self.ui_elements["more"].set_visibility(remaining > 0)
         self.ui_elements["more_btn"].set_text(f"Show more ({min(PAGE_SIZE, remaining)})")
-        lib = self.ui_elements.get("library")
-        if lib is not None:
-            heads = [c for c in lib.default_slot.children if "itg-sec-head" in c.classes]
-            if heads:
-                heads[0].set_content(f'{icon_html("sports_esports")}Library<span class="itg-sec-right">Showing {len(shown):,} of {len(games):,}</span>')
+        self._set_head("library", "sports_esports", "Library", f"Showing {len(shown):,} of {len(games):,}")
+        self._render_backlog(now)
+
+    def _render_backlog(self, now: float) -> None:
+        grid = self.ui_elements.get("bl_grid")
+        if grid is None:
+            return
+        grid.clear()
+        backlog = self.ui_elements.get("backlog")
+        if backlog is not None:
+            backlog.set_visibility(bool(self._games) and self._backlog_on)
+        if not self._backlog_on:
+            return
+        games = self.visible_backlog()
+        with grid:
+            for g in games:
+                self._build_card(g, now)
+        total = sum(1 for g in self._games if self._goals.get(g.key) and not g.hidden)
+        none = self.ui_elements["bl_none"]
+        none.set_text("No games in the backlog match these filters." if total else
+                      "No goals yet. Open a game's settings (the gear on its card) and add a goal to put it here.")
+        none.set_visibility(not games)
+        self._set_head("backlog", "flag", "Backlog", f"{len(games):,} of {total:,} game{'s' if total != 1 else ''}")
+
+    def _set_head(self, key: str, icon: str, title: str, right: str) -> None:
+        sec = self.ui_elements.get(key)
+        if sec is None:
+            return
+        heads = [c for c in sec.default_slot.children if "itg-sec-head" in c.classes]
+        if heads:
+            heads[0].set_content(f'{icon_html(icon)}{esc(title)}<span class="itg-sec-right">{esc(right)}</span>')
 
     def _build_card(self, game: TrackedGame, now: float) -> None:
-        parts = card_parts(game, now)
+        parts = card_parts(game, now, self._goals.get(game.key) or (), self._speedruns.get(game.key) or ())
         with ui.element("div").classes(parts["cls"]):
             ui.html(parts["top"], sanitize=False).classes("itg-hook-top")
             with ui.element("div").classes("itg-hook-state"):
@@ -752,6 +1129,9 @@ class GamesTrackerTab:
                         self.ui_elements["opt_events"] = switch_row(
                             "Send chatbot and connector events", "Game unlock, completed, started and milestone triggers",
                             b.send_events, lambda v: self._set_opt(send_events=v))
+                        self.ui_elements["opt_backlog"] = switch_row(
+                            "Keep games with goals in a Backlog section", "Off: they stay in the library with everything else",
+                            b.backlog_section, lambda v: self._set_opt(backlog_section=v))
                     with ui.element("div"):
                         with fields():
                             self.ui_elements["opt_sync"] = self._number("Library sync", b.sync_minutes, "minutes", 5, 120, "sync_minutes")
@@ -827,10 +1207,12 @@ class GamesTrackerTab:
 
     def save(self) -> None:
         try:
-            buf = TrackerSettings.from_dict({**self._buffer.to_dict(), "export": self.service.settings.export})
+            current = self.service.settings
+            buf = TrackerSettings.from_dict({**self._buffer.to_dict(), "export": current.export, "view": current.view})
             self._loaded = self.service.save_settings(buf)
             self._buffer = TrackerSettings.from_dict(self._loaded.to_dict())
             self.dirty = False
+            self._render_grid()
             notify("", type="success", source="game_tracker", title="Games Tracker settings saved")
         except Exception as e:
             logger.error("Games Tracker settings save failed: %s", e, exc_info=True)
@@ -842,7 +1224,8 @@ class GamesTrackerTab:
         self.dirty = False
         b = self._buffer
         for key, value in (("opt_psn", b.psn_enabled), ("opt_steam", b.steam_enabled), ("opt_stats", b.record_stats),
-                           ("opt_events", b.send_events), ("opt_sync", b.sync_minutes), ("opt_ttl", b.cover_ttl_days),
+                           ("opt_events", b.send_events), ("opt_backlog", b.backlog_section),
+                           ("opt_sync", b.sync_minutes), ("opt_ttl", b.cover_ttl_days),
                            ("opt_missing", b.cover_missing_hours)):
             el = self.ui_elements.get(key)
             if el is not None:
@@ -893,8 +1276,12 @@ class GamesTrackerTab:
         self._drawer_edits = {}
         body = self.ui_elements["drawer_body"]
         body.clear()
+        body.style(f"width:{clamp_drawer_width(self.service.settings.view.get('drawer_width'))}px")
         with body:
+            ui.element("div").classes("gtr-dresize").props('role=separator aria-orientation=vertical aria-label="Resize"').tooltip(
+                "Drag to resize")
             self._build_drawer_content(game)
+        _install_drawer_resize()
         self.ui_elements["drawer"].open()
         if game.platform == PSN:
             layout_schedule(0.05, lambda g=game: self._load_groups(g), once=True)
@@ -916,6 +1303,14 @@ class GamesTrackerTab:
         with ui.element("div").classes("gtr-dbody"):
             with section("trending_up", "Progress", esc(f"{g.earned_total} of {g.defined_total} {'trophies' if psn else 'achievements'}")):
                 ui.html(self._progress_html(g), sanitize=False).classes("w-full")
+            with section("flag", "Goals"):
+                self.ui_elements["d_goals"] = ui.element("div").classes("w-full")
+                self._render_drawer_goals(self._goals.get(g.key) or [])
+                self._build_goal_form(g)
+            with section("timer", "Speedrun info"):
+                self.ui_elements["d_speedruns"] = ui.element("div").classes("w-full")
+                self._render_drawer_speedruns(self._speedruns.get(g.key) or [])
+                self._build_speedrun_form(g)
             if psn:
                 with section("account_tree", "Trophy groups"):
                     self.ui_elements["groups"] = ui.html('<div class="itg-empty">Loading…</div>', sanitize=False).classes("w-full")
@@ -952,6 +1347,361 @@ class GamesTrackerTab:
             outline_button("Close", self.ui_elements["drawer"].close)
             self.ui_elements["d_save"] = primary_button("Save", self._save_drawer, icon="check")
             self.ui_elements["d_save"].props("disable")
+
+    # ----- drawer: speedrun info (LiveSplit split files) -----
+
+    def _render_drawer_speedruns(self, rows: Sequence[Dict[str, Any]]) -> None:
+        box = self.ui_elements.get("d_speedruns")
+        if box is None or self._drawer_game is None:
+            return
+        box.clear()
+        with box:
+            if not rows:
+                ui.html('<div class="itg-list"><div class="itg-empty">No split files yet. Add a LiveSplit file (.lss) for each '
+                        "category you run: its attempts and personal best show here and on the Game panel, and update "
+                        "whenever LiveSplit saves.</div></div>", sanitize=False).classes("w-full")
+            for n, r in enumerate(rows):
+                with ui.element("div").classes("gtr-dsr"):
+                    with ui.element("div").classes("gtr-dsr-top"):
+                        ui.html(speedrun_rows_html([r]), sanitize=False).style("flex:1 1 auto;min-width:0")
+                        self._goal_btn("edit", f"Edit {r['category']}", lambda row=r: self._edit_speedrun_dialog(row))
+                        self._goal_btn("arrow_upward", "Move up", lambda lid=r["id"]: self._speedrun_op("move", lid, -1), disabled=n == 0)
+                        self._goal_btn("arrow_downward", "Move down", lambda lid=r["id"]: self._speedrun_op("move", lid, 1),
+                                       disabled=n == len(rows) - 1)
+                        self._goal_btn("link_off", f"Remove {r['category']}", lambda lid=r["id"]: self._speedrun_op("remove", lid))
+                    if r.get("error"):
+                        status = f'<span class="e">{esc(r["error"])}</span>'
+                    elif r.get("read"):
+                        status = f'Read {esc(ago(r["read_at"]))} · {esc(TIMING_LABELS.get(r["timing"], r["timing"]))}'
+                    else:
+                        status = "Waiting to read"
+                    ui.html(f'<div class="gtr-dsr-file">{icon_html("description")}<span class="p" title="{esc(r["file"])}">'
+                            f'{esc(r["file_name"])}</span><span>{status}</span></div>', sanitize=False).classes("w-full")
+
+    def _build_speedrun_form(self, g: TrackedGame) -> None:
+        with ui.element("div").classes("gtr-goalform"):
+            ui.html("Add a split file", sanitize=False).classes("gtr-goalform-title")
+            with ui.element("div"):
+                field_label("Category", "Shown with the times, for example Any% or 100%. Leave empty to use the category saved in the file.")
+                self.ui_elements["sr_category"] = ui.input(placeholder="From the file (e.g. Any%)").props("outlined dense").classes("w-full")
+            with ui.row().classes("justify-end w-full"):
+                primary_button("Choose split file…", self._pick_split_file, icon="folder_open")
+            hint("Mycelian only reads the file, without locking it, so LiveSplit can keep it open and save it as usual.")
+
+    def _split_file_start(self) -> Optional[str]:
+        g = self._drawer_game
+        rows = (self._speedruns.get(g.key) if g else None) or [r for rows in self._speedruns.values() for r in rows]
+        return os.path.dirname(rows[0]["file"]) if rows else None
+
+    def _pick_split_file(self, *, link_id: str = "") -> None:
+        from ..file_picker import open_file_picker
+
+        g = self._drawer_game
+        if g is None:
+            return
+
+        def picked(result: Any) -> None:
+            path = str(result.path)
+            category = "" if link_id else str(self.ui_elements["sr_category"].value or "")
+            layout_schedule(0.01, lambda: self._link_split_file(path, category, link_id), once=True)
+
+        open_file_picker(title="Choose a LiveSplit split file", subtitle=f"Speedrun info for {g.display_title}",
+                         extensions=(".lss",), on_pick=picked, scope="system", icon="timer", start=self._split_file_start(),
+                         confirm_label="Use this file")
+
+    async def _link_split_file(self, path: str, category: str = "", link_id: str = "") -> None:
+        g = self._drawer_game
+        if g is None:
+            return
+        if link_id:
+            link, error = await run.io_bound(lambda: self.service.update_speedrun(link_id, path=path))
+        else:
+            link, error = await run.io_bound(lambda: self.service.add_speedrun_file(g.platform, g.game_id, path, category))
+        if error or link is None:
+            notify(error or "Couldn't use that file.", type="warning", source="game_tracker", title="Couldn't link the split file")
+            return
+        el = self.ui_elements.get("sr_category")
+        if el is not None and not link_id:
+            el.value = ""
+        if link.error:
+            notify(link.error, type="warning", source="game_tracker", title="Linked, but couldn't read it yet",
+                   hint="Mycelian tries again whenever the file changes.")
+        await self._reload_drawer_speedruns()
+
+    async def _speedrun_op(self, op: str, link_id: str, arg: Any = None) -> None:
+        if op == "move":
+            await run.io_bound(self.service.move_speedrun, link_id, arg)
+        elif op == "remove":
+            await run.io_bound(self.service.remove_speedrun, link_id)
+        await self._reload_drawer_speedruns()
+
+    async def _reload_drawer_speedruns(self) -> None:
+        g = self._drawer_game
+        if g is None:
+            return
+        rows = speedruns_public(await run.io_bound(self.service.speedruns_for, g.platform, g.game_id))
+        if rows:
+            self._speedruns[g.key] = rows
+        else:
+            self._speedruns.pop(g.key, None)
+        if self._drawer_game is g:
+            self._render_drawer_speedruns(rows)
+        self._needs_refresh = True
+
+    def _edit_speedrun_dialog(self, row: Dict[str, Any]) -> None:
+        values: Dict[str, Any] = {"category": row["category"] if row.get("category_set") else "", "timing": row["timing_choice"]}
+        with self._dialog_parent(), ui.dialog() as dialog, ui.card().classes("itg-dialog"):
+            ui.html(f'{icon_html("timer")}Edit split file', sanitize=False).classes("itg-dialog-title")
+            with ui.element("div").classes("w-full"):
+                field_label("Category")
+                ui.input(value=values["category"], placeholder=row.get("file_category") or "Any%",
+                         on_change=lambda e: values.update(category=e.value or "")).props("outlined dense").classes("w-full")
+            with ui.element("div").classes("w-full"):
+                field_label("Times", "Automatic uses real time, or game time when the file has no real times.")
+                ui.select(dict(TIMING_LABELS), value=values["timing"],
+                          on_change=lambda e: values.update(timing=e.value)).props("outlined dense options-dense").classes("w-full")
+            ui.html(f'<div class="gtr-dsr-file">{icon_html("description")}<span class="p" title="{esc(row["file"])}">'
+                    f'{esc(row["file"])}</span></div>', sanitize=False).classes("w-full")
+            with ui.element("div").classes("itg-actions-end"):
+                outline_button("Change file…", lambda: (dialog.close(), self._pick_split_file(link_id=row["id"])), icon="folder_open")
+                outline_button("Cancel", dialog.close)
+
+                async def _save() -> None:
+                    dialog.close()
+                    _link, error = await run.io_bound(lambda: self.service.update_speedrun(row["id"], **values))
+                    if error:
+                        notify(error, type="warning", source="game_tracker", title="Couldn't save the split file")
+                    await self._reload_drawer_speedruns()
+
+                primary_button("Save", _save, icon="check")
+        dialog.open()
+
+    # ----- drawer: goals -----
+
+    def _render_drawer_goals(self, goals: Sequence[GameGoal]) -> None:
+        box = self.ui_elements.get("d_goals")
+        g = self._drawer_game
+        if box is None or g is None:
+            return
+        box.clear()
+        ordered = goal_kinds.sorted_goals(goals)
+        with box:
+            if not ordered:
+                ui.html('<div class="itg-list"><div class="itg-empty">No goals yet. Add one below: a goal of your own that you '
+                        "count yourself, or one that follows this game's trophies or achievements.</div></div>",
+                        sanitize=False).classes("w-full")
+            for n, goal in enumerate(ordered):
+                row = goal_kinds.goal_public(goal, g)
+                with ui.element("div").classes("gtr-dgoal" + (" is-done" if row["completed"] else "")):
+                    ui.html(goal_rows_html([row]), sanitize=False).style("flex:1 1 auto;min-width:0")
+                    if goal.kind == goal_kinds.MANUAL:
+                        self._goal_btn("remove", f"Count down {row['name']}", lambda gid=goal.id: self._goal_op("adjust", gid, "subtract"))
+                        self._goal_btn("add", f"Count up {row['name']}", lambda gid=goal.id: self._goal_op("adjust", gid, "add"))
+                    self._goal_btn("edit", f"Edit {row['name']}", lambda gl=goal: self._edit_goal_dialog(gl))
+                    self._goal_btn("arrow_upward", "Move up", lambda gid=goal.id: self._goal_op("move", gid, -1), disabled=n == 0)
+                    self._goal_btn("arrow_downward", "Move down", lambda gid=goal.id: self._goal_op("move", gid, 1),
+                                   disabled=n == len(ordered) - 1)
+                    self._goal_btn("delete", f"Delete {row['name']}", lambda gid=goal.id: self._goal_op("remove", gid))
+
+    @staticmethod
+    def _goal_btn(icon: str, label: str, handler: Any, disabled: bool = False) -> Any:
+        btn = ui.button(icon=icon, on_click=handler).props(f'flat round dense size=sm aria-label="{esc(label)}"').classes("itg-ibtn")
+        btn.tooltip(label)
+        if disabled:
+            btn.props("disable")
+        return btn
+
+    async def _goal_op(self, op: str, goal_id: str, arg: Any = None) -> None:
+        svc = self.service
+        error = ""
+        if op == "adjust":
+            _goal, error = await run.io_bound(svc.adjust_goal_by_id, goal_id, arg, 1)
+        elif op == "move":
+            await run.io_bound(svc.move_goal, goal_id, arg)
+        elif op == "remove":
+            error = "" if await run.io_bound(svc.remove_goal, goal_id) else "That goal no longer exists."
+        else:
+            return
+        if error:
+            notify(error, type="warning", source="game_tracker", title="Couldn't change the goal")
+        await self._reload_drawer_goals()
+
+    async def _reload_drawer_goals(self) -> None:
+        g = self._drawer_game
+        if g is None:
+            return
+        goals = await run.io_bound(self.service.goals_for, g.platform, g.game_id)
+        self._goals[g.key] = goals
+        if not goals:
+            self._goals.pop(g.key, None)
+        if self._drawer_game is g:
+            self._render_drawer_goals(goals)
+        self._needs_refresh = True
+
+    def _build_goal_form(self, g: TrackedGame) -> None:
+        psn = g.platform == PSN
+        self._goal_form = {"kind": goal_kinds.MANUAL, "name": "", "target": 1, "grade": "", "unlock": ""}
+        self._achievements = []
+        # Labels sit above the controls (field_label), like every other field in the tab.
+        with ui.element("div").classes("gtr-goalform"):
+            ui.html("Add a goal", sanitize=False).classes("gtr-goalform-title")
+            with ui.element("div"):
+                field_label("Type")
+                self.ui_elements["gf_kind"] = ui.select(GOAL_TYPE_OPTIONS, value=goal_kinds.MANUAL,
+                                                        on_change=lambda e: self._set_goal_form(kind=e.value)).props(
+                    "outlined dense options-dense").classes("w-full")
+            with ui.element("div").classes("gtr-row"):
+                with ui.element("div"):
+                    field_label("Goal name")
+                    self.ui_elements["gf_name"] = ui.input(placeholder="Get all endings",
+                                                           on_change=lambda e: self._set_goal_form(name=e.value or "")).props(
+                        "outlined dense").classes("w-full")
+                with ui.element("div") as target_box:
+                    self.ui_elements["gf_target_label"] = field_label(_TARGET_LABELS[goal_kinds.MANUAL])
+                    self.ui_elements["gf_target"] = ui.number(value=1, min=1, max=goal_kinds.MAX_TARGET, step=1, format="%d",
+                                                              on_change=lambda e: self._set_goal_form(target=e.value)).props(
+                        "outlined dense").classes("w-full")
+                self.ui_elements["gf_target_box"] = target_box
+                with ui.element("div") as grade_box:
+                    field_label("Grade")
+                    self.ui_elements["gf_grade"] = ui.select(_GRADE_OPTIONS, value="",
+                                                             on_change=lambda e: self._set_goal_form(grade=e.value or "")).props(
+                        "outlined dense options-dense").classes("w-full")
+                self.ui_elements["gf_grade_box"] = grade_box
+            with ui.element("div") as unlock_box:
+                field_label("Trophy" if psn else "Achievement")
+                self.ui_elements["gf_unlock"] = ui.select({}, with_input=True,
+                                                          on_change=lambda e: self._set_goal_form(unlock=e.value or "")).props(
+                    "outlined dense options-dense use-input input-debounce=0").classes("w-full")
+            self.ui_elements["gf_unlock_box"] = unlock_box
+            self.ui_elements["gf_hint"] = ui.label("").classes("gtr-sub").style("white-space:normal")
+            with ui.row().classes("justify-end w-full"):
+                self.ui_elements["gf_add"] = primary_button("Add goal", self._add_goal, icon="add")
+        self._paint_goal_form()
+
+    def _set_goal_form(self, **changes: Any) -> None:
+        kind_changed = "kind" in changes and changes["kind"] != self._goal_form.get("kind")
+        self._goal_form.update(changes)
+        if kind_changed:
+            defaults = {goal_kinds.MANUAL: 1, goal_kinds.COUNT: 10, goal_kinds.PERCENT: 50}
+            self._goal_form["target"] = defaults.get(self._goal_form["kind"], 1)
+            el = self.ui_elements.get("gf_target")
+            if el is not None:
+                el.value = self._goal_form["target"]
+            if self._goal_form["kind"] == goal_kinds.UNLOCK and not self._achievements:
+                layout_schedule(0.01, self._load_achievements, once=True)
+        self._paint_goal_form()
+
+    def _paint_goal_form(self) -> None:
+        g = self._drawer_game
+        if g is None or "gf_kind" not in self.ui_elements:
+            return
+        kind = self._goal_form.get("kind")
+        psn = g.platform == PSN
+        self.ui_elements["gf_target_box"].set_visibility(kind in _TARGET_LABELS)
+        self.ui_elements["gf_target_label"].set_content(esc(_TARGET_LABELS.get(kind, "")))
+        self.ui_elements["gf_grade_box"].set_visibility(kind == goal_kinds.COUNT and psn)
+        self.ui_elements["gf_unlock_box"].set_visibility(kind == goal_kinds.UNLOCK)
+        self.ui_elements["gf_name"].props(f'placeholder="{esc(self._default_goal_name())}"')
+        hints = {
+            goal_kinds.MANUAL: "You count this one yourself with the + and − buttons (or a connector). A count of 1 is a simple checkbox.",
+            goal_kinds.COMPLETE: "Done when you earn the platinum." if psn else "Done when every achievement is unlocked.",
+            goal_kinds.COUNT: "Counts trophies earned in this game, of one grade if you pick it." if psn
+            else "Counts achievements unlocked in this game.",
+            goal_kinds.PERCENT: "Done when the game's completion reaches this percent.",
+            goal_kinds.UNLOCK: "Done when this one unlocks. The name is optional: the trophy's name is used.",
+        }
+        self.ui_elements["gf_hint"].set_text(hints.get(kind, ""))
+        ready = kind != goal_kinds.UNLOCK or bool(self._goal_form.get("unlock"))
+        add = self.ui_elements["gf_add"]
+        add.props(remove="disable") if ready else add.props("disable")
+
+    def _default_goal_name(self) -> str:
+        g = self._drawer_game
+        f = self._goal_form
+        if f.get("kind") == goal_kinds.MANUAL:
+            return "Get all endings"
+        picked = next((a for a in self._achievements if a["id"] == f.get("unlock")), None)
+        probe = goal_kinds.GameGoal(platform=g.platform if g else "", kind=f.get("kind") or goal_kinds.MANUAL,
+                                    target=f.get("target") or 1, grade=f.get("grade") or "",
+                                    unlock_name=picked["name"] if picked else "")
+        return goal_kinds.default_name(goal_kinds.clean_goal(probe))
+
+    async def _load_achievements(self) -> None:
+        g = self._drawer_game
+        el = self.ui_elements.get("gf_unlock")
+        if g is None or el is None:
+            return
+        el.props('hint="Loading…"')
+        items = await run.io_bound(self.service.achievement_list, g.platform, g.game_id)
+        if self._drawer_game is not g:
+            return
+        if items is None:
+            el.props(f'hint="Couldn\'t load the list. Check {"PSN" if g.platform == PSN else "Steam"} is connected."')
+            return
+        self._achievements = items
+        el.set_options(achievement_options(items))
+        el.props(f'hint="{len(items):,} to pick from"' if items else 'hint="This game has none."')
+
+    async def _add_goal(self) -> None:
+        g = self._drawer_game
+        if g is None:
+            return
+        f = dict(self._goal_form)
+        values: Dict[str, Any] = {"kind": f["kind"], "name": (f.get("name") or "").strip(), "target": f.get("target") or 1,
+                                  "grade": f.get("grade") or ""}
+        if f["kind"] == goal_kinds.MANUAL and not values["name"]:
+            notify("Type what the goal is, for example Get all endings.", type="info", source="game_tracker", title="Name the goal")
+            return
+        if f["kind"] == goal_kinds.UNLOCK:
+            picked = next((a for a in self._achievements if a["id"] == f.get("unlock")), None)
+            if picked is None:
+                return
+            values.update(unlock_id=picked["id"], unlock_name=picked["name"], unlock_icon=picked.get("icon") or "",
+                          unlocked=bool(picked.get("earned")))
+        goal, error = await run.io_bound(lambda: self.service.add_goal(g.platform, g.game_id, **values))
+        if error or goal is None:
+            notify(error or "That game is no longer in the tracker.", type="warning", source="game_tracker", title="Couldn't add the goal")
+            return
+        for key in ("gf_name",):
+            el = self.ui_elements.get(key)
+            if el is not None:
+                el.value = ""
+        self._goal_form["name"] = ""
+        await self._reload_drawer_goals()
+
+    def _edit_goal_dialog(self, goal: GameGoal) -> None:
+        values = {"name": goal.name, "target": goal.target, "current": goal.current}
+        counted = goal.kind in (goal_kinds.MANUAL, goal_kinds.COUNT, goal_kinds.PERCENT)
+        with self._dialog_parent(), ui.dialog() as dialog, ui.card().classes("itg-dialog"):
+            ui.html(f'{icon_html("flag")}Edit goal', sanitize=False).classes("itg-dialog-title")
+            with ui.element("div").classes("w-full"):
+                field_label("Goal name")
+                ui.input(value=goal.name, placeholder=goal_kinds.default_name(goal),
+                         on_change=lambda e: values.update(name=e.value or "")).props("outlined dense").classes("w-full")
+            if counted:
+                with fields():
+                    with ui.element("div"):
+                        field_label("Percent" if goal.kind == goal_kinds.PERCENT else "Target")
+                        ui.number(value=goal.target, min=1, step=1, format="%d",
+                                  on_change=lambda e: values.update(target=e.value)).props("outlined dense").classes("w-full")
+                    if goal.kind == goal_kinds.MANUAL:
+                        with ui.element("div"):
+                            field_label("Done so far")
+                            ui.number(value=goal.current, min=0, step=1, format="%d",
+                                      on_change=lambda e: values.update(current=e.value)).props("outlined dense").classes("w-full")
+            with ui.element("div").classes("itg-actions-end"):
+                outline_button("Cancel", dialog.close)
+
+                async def _save() -> None:
+                    dialog.close()
+                    _goal, error = await run.io_bound(lambda: self.service.update_goal(goal.id, **values))
+                    if error:
+                        notify(error, type="warning", source="game_tracker", title="Couldn't save the goal")
+                    await self._reload_drawer_goals()
+
+                primary_button("Save", _save, icon="check")
+        dialog.open()
 
     def _progress_html(self, g: TrackedGame) -> str:
         psn = g.platform == PSN

@@ -81,4 +81,5 @@ def test_overlay_sink_emits_when_web_engine_is_up(monkeypatch):
 def test_event_type_names():
     assert dispatch_mod.EVENT_TYPES == {
         "unlock": "game_unlock", "completed": "game_completed", "started": "game_started", "milestone": "game_milestone",
+        "goal_progress": "game_goal_progress", "goal_completed": "game_goal_completed",
     }

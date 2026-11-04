@@ -3656,6 +3656,73 @@ class WebEngine:
                     {"Content-Type": "application/json"},
                 )
 
+        @self.app.route("/api/streamdeck/get_game_goals", methods=["GET"])
+        def streamdeck_get_game_goals():
+            """Games with manual goals, and those goals, for the Game Goal action's dropdowns.
+
+            ``?goalId=`` returns just that goal (the key polls it to keep its title current).
+            """
+            try:
+                from .game_tracker.goals import MANUAL, goal_public
+                from .game_tracker.service import get_service
+
+                svc = get_service()
+                wanted = (request.args.get("goalId") or "").strip()
+                games = []
+                for key, goals in svc.goals_by_game().items():
+                    platform, _, game_id = key.partition(":")
+                    game = svc.store.get_game(platform, game_id)
+                    rows = [goal_public(g, game) for g in goals if g.kind == MANUAL and (not wanted or g.id == wanted)]
+                    if game is None or not rows:
+                        continue
+                    games.append({
+                        "key": key,
+                        "title": game.display_title,
+                        "platform_label": game.platform_label or ("Steam" if platform == "steam" else "PlayStation"),
+                        "goals": [{k: r[k] for k in ("id", "name", "current", "target", "progress", "completed")} for r in rows],
+                    })
+                games.sort(key=lambda g: g["title"].lower())
+                if wanted and not games:
+                    return {"success": False, "games": [], "message": "Goal not found"}, 404
+                return {"success": True, "games": games}, 200
+            except Exception as e:
+                logger.error("Stream Deck: Error loading game goals: %s", e, exc_info=True)
+                return {"success": False, "games": [], "message": "Failed to load game goals"}, 500
+
+        @self.app.route("/api/streamdeck/adjust_goal", methods=["POST"])
+        def streamdeck_adjust_goal():
+            """Count a manual Games Tracker goal up or down: ``{goalId, operation: add|subtract, amount}``."""
+            try:
+                from .game_tracker.goals import goal_public
+                from .game_tracker.service import get_service
+
+                data = request.get_json(silent=True) or {}
+                goal_id = str(data.get("goalId") or data.get("goal_id") or "").strip()
+                operation = str(data.get("operation") or "add").strip().lower()
+                if not goal_id:
+                    return {"success": False, "message": "goalId is required"}, 400
+                if operation not in ("add", "subtract"):
+                    return {"success": False, "message": "operation must be add or subtract"}, 400
+                try:
+                    amount = max(1, int(float(data.get("amount") or 1)))
+                except (TypeError, ValueError):
+                    return {"success": False, "message": "amount must be a number"}, 400
+                svc = get_service()
+                goal, error = svc.adjust_goal_by_id(goal_id, operation, amount)
+                if goal is None:
+                    status = 404 if "no longer exists" in error else 400
+                    return {"success": False, "message": error or "Couldn't change the goal"}, status
+                game = svc.store.get_game(goal.platform, goal.game_id)
+                row = goal_public(goal, game)
+                return {
+                    "success": True,
+                    "game_title": game.display_title if game else "",
+                    "goal": {k: row[k] for k in ("id", "name", "current", "target", "progress", "completed")},
+                }, 200
+            except Exception as e:
+                logger.error("Stream Deck: Error adjusting goal: %s", e, exc_info=True)
+                return {"success": False, "message": "Failed to change the goal"}, 500
+
         @self.app.route("/api/streamdeck/trigger_connector", methods=["POST"])
         def streamdeck_trigger_connector():
             """Queue a Stream Deck connector trigger (returns after enqueue)."""
@@ -5980,10 +6047,33 @@ class WebEngine:
                     games.sort(key=lambda g: (-g.progress, -g.last_played))
                 else:
                     games.sort(key=lambda g: -g.last_played)
-                return {"games": [g.public() for g in games]}
+                from .game_tracker.speedrun import speedruns_public
+
+                goals = _service().goals_by_game()
+                runs = _service().speedruns_by_game()
+                rows = []
+                for g in games:
+                    row = g.public()
+                    mine = goals.get(g.key) or []
+                    row["key"] = g.key
+                    row["goals_total"] = len(mine)
+                    row["goals_done"] = sum(1 for x in mine if x.completed_at)
+                    row["speedruns"] = speedruns_public(runs.get(g.key, []))
+                    rows.append(row)
+                return {"games": rows}
             except Exception as e:
                 logger.error("game tracker games: %s", e, exc_info=True)
                 return _bad("Couldn't read the games library", 500)
+
+        @self.app.route("/api/game-tracker/backlog")
+        def game_tracker_backlog():
+            """Every game with goals, with its goals (open sets first, then the furthest along)."""
+            try:
+                include_hidden = (request.args.get("include_hidden") or "").strip().lower() in ("1", "true", "yes")
+                return {"games": _service().backlog(include_hidden=include_hidden)}
+            except Exception as e:
+                logger.error("game tracker backlog: %s", e, exc_info=True)
+                return _bad("Couldn't read the backlog", 500)
 
         @self.app.route("/api/game-tracker/summary")
         def game_tracker_summary():
@@ -6029,7 +6119,9 @@ class WebEngine:
                 if game is None:
                     return _bad("Unknown game", 404)
                 unlocks = svc.store.recent_events(10, platform=platform, game_id=game.game_id, kinds=("unlock",))
-                return {"game": game.public(), "recent_unlocks": [e.fields_for_events() for e in unlocks]}
+                payload = svc.game_payload_for(game.key) or {}
+                return {"game": game.public(), "goals": payload.get("goals", []),
+                        "recent_unlocks": [e.fields_for_events() for e in unlocks]}
             except Exception as e:
                 logger.error("game tracker game %s/%s: %s", platform, game_id, e, exc_info=True)
                 return _bad("Couldn't read the game", 500)
@@ -8141,6 +8233,29 @@ class WebEngine:
             except Exception as e:
                 logger.debug("giveaway_request_state failed: %s", e)
                 return {}
+
+        @self.socketio.on("game_tracker_request_games")
+        def handle_game_tracker_request_games(data=None):
+            """Send the asking overlay its games (with goals) as one game_tracker_games.
+
+            ``data``: ``{"mode": "selected" | "backlog" | "current", "keys": ["psn:NPWR..._00", "steam:<app ID>"]}``.
+            """
+            client_sid = request.sid
+            try:
+                from .game_tracker.service import get_service
+
+                data = data if isinstance(data, dict) else {}
+                mode = str(data.get("mode") or "selected").lower()
+                keys = data.get("keys") or []
+                if isinstance(keys, str):
+                    keys = keys.replace("\n", ",").split(",")
+                keys = [str(k).strip() for k in keys if str(k).strip()][:50]
+                games = get_service().games_payload(mode, keys)
+                self.safe_emit("game_tracker_games", {"mode": mode, "keys": keys, "games": games}, to=client_sid)
+                return True
+            except Exception as e:
+                logger.debug("game_tracker_request_games failed: %s", e)
+                return False
 
         @self.socketio.on("twitch_goal_request_state")
         def handle_twitch_goal_request_state(data=None):

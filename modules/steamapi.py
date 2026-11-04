@@ -450,6 +450,30 @@ class SteamClient:
             }
         return {"has_achievements": bool(entries), "private": False, "total": len(entries), "unlocked": unlocked}
 
+    def achievement_list(self, appid: int) -> list[dict[str, Any]]:
+        """Every achievement of a game in schema order, for picking a Games Tracker goal:
+        ``id`` (API name), ``name``, ``description``, ``icon``, ``grade`` ("achievement"), ``earned``."""
+        appid = int(appid)
+        schema = self._schema(appid)
+        if not schema:
+            return []
+        try:
+            earned = set(self.get_game_achievements(appid).get("unlocked") or {})
+        except SteamAPIError as e:
+            logger.debug("Steam achievements for %s unavailable: %s", appid, e)
+            earned = set()
+        return [
+            {
+                "id": api_name,
+                "name": meta.get("displayName") or api_name,
+                "description": meta.get("description") or "",
+                "icon": _icon_url(appid, meta.get("icon")),
+                "grade": "achievement",
+                "earned": api_name in earned,
+            }
+            for api_name, meta in schema.items()
+        ]
+
     def global_percents(self, appid: int) -> dict[str, float]:
         """{api name: percent of players} for an app (cached)."""
         return self._percents(int(appid))

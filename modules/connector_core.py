@@ -229,6 +229,8 @@ class TriggerType(Enum):
     GAME_COMPLETED = "game_completed"
     GAME_STARTED = "game_started"
     GAME_MILESTONE = "game_milestone"
+    GAME_GOAL_PROGRESS = "game_goal_progress"
+    GAME_GOAL_COMPLETED = "game_goal_completed"
 
     # Matches any connector-processed event type
     ANY = "any"
@@ -290,6 +292,7 @@ class ActionType(Enum):
 
     # Games Tracker
     GAME_LOOKUP = "game_lookup"
+    GAME_GOAL_UPDATE = "game_goal_update"
 
 
 @dataclass

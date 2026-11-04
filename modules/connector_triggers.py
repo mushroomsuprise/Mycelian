@@ -789,6 +789,47 @@ class GameMilestoneTrigger(BaseTrigger):
         return self.evaluate_conditions(event_data)
 
 
+@dataclass
+class _GameGoalTrigger(BaseTrigger):
+    platform: str = ""  # "" any, "psn" or "steam"
+    game: str = ""  # part of the game's name; "" any
+    goal: str = ""  # part of the goal's name; "" any
+    goal_kind: str = ""  # "" any, "manual", "auto" or a goal kind (complete / count / percent / unlock)
+
+    _EVENT = ""
+
+    def should_trigger(self, event_data: Dict[str, Any]) -> bool:
+        from .chatbot_core import game_goal_matches
+
+        if event_data.get("event_type") != self._EVENT:
+            return False
+        if not _platform_matches(self.platform, event_data):
+            return False
+        if not game_goal_matches(event_data, self.game, self.goal_kind or "any", self.goal):
+            return False
+        return self.evaluate_conditions(event_data)
+
+
+@dataclass
+class GameGoalProgressTrigger(_GameGoalTrigger):
+    """A game goal moves: a manual count changes, or progress counts toward an automatic goal."""
+
+    _EVENT = "game_goal_progress"
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.GAME_GOAL_PROGRESS
+
+
+@dataclass
+class GameGoalCompletedTrigger(_GameGoalTrigger):
+    """A game goal is done."""
+
+    _EVENT = "game_goal_completed"
+
+    def __post_init__(self):
+        self.trigger_type = TriggerType.GAME_GOAL_COMPLETED
+
+
 CONNECTOR_EVENT_TYPES = frozenset(
     {
         "twitch_bits",
@@ -832,6 +873,8 @@ CONNECTOR_EVENT_TYPES = frozenset(
         "game_completed",
         "game_started",
         "game_milestone",
+        "game_goal_progress",
+        "game_goal_completed",
     }
 )
 
@@ -901,6 +944,8 @@ def create_trigger(
         TriggerType.GAME_COMPLETED: GameCompletedTrigger,
         TriggerType.GAME_STARTED: GameStartedTrigger,
         TriggerType.GAME_MILESTONE: GameMilestoneTrigger,
+        TriggerType.GAME_GOAL_PROGRESS: GameGoalProgressTrigger,
+        TriggerType.GAME_GOAL_COMPLETED: GameGoalCompletedTrigger,
         TriggerType.ANY: AnyTrigger,
     }
 

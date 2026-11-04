@@ -96,6 +96,12 @@ GAMES_VARIABLES = [
     _v("games.current.progress", "Last played game: completion (%)", "78", "Games"),
     _v("games.current.earned", "Last played game: trophies/achievements earned", "33", "Games"),
     _v("games.current.total", "Last played game: trophies/achievements in total", "42", "Games"),
+    _v("games.backlog.count", "Backlog: games with goals", "6", "Games"),
+    _v("games.backlog.active", "Backlog: games with goals still open", "4", "Games"),
+    _v("games.backlog.complete", "Backlog: games with every goal done", "2", "Games"),
+    _v("games.goals.total", "Goals set", "15", "Games"),
+    _v("games.goals.done", "Goals done", "9", "Games"),
+    _v("games.goals.active", "Goals still open", "6", "Games"),
 ]
 
 QUOTE_VARIABLES = [
@@ -270,6 +276,14 @@ _GAME_GRADES = {"any": "Any", "bronze": "Bronze", "silver": "Silver", "gold": "G
                 "platinum": "Platinum", "achievement": "Steam achievement"}
 _GAME_PLATFORM_FILTER = _f("game_platform", "Platform", "select", options=dict(_GAME_PLATFORMS), default="any")
 _GAMES_NOTE = "Games Tracker: only changes after each account's first import count."
+_GOAL_KINDS = {"any": "Any goal", "manual": "Manual goals", "auto": "Automatic goals", "complete": "Platinum / 100%",
+               "count": "Trophies / achievements count", "percent": "Completion %", "unlock": "Specific trophy / achievement"}
+_GOAL_FILTERS = [
+    _GAME_PLATFORM_FILTER,
+    _f("game_goal_game", "Game", "text", default="", help="Part of the game's name; empty = any game"),
+    _f("game_goal_name", "Goal", "text", default="", help="Part of the goal's name; empty = any goal"),
+    _f("game_goal_kind", "Type", "select", options=dict(_GOAL_KINDS), default="any"),
+]
 
 EVENTS: List[Dict[str, Any]] = [
     _e("follow", "New follower", "Twitch", "Someone follows your channel."),
@@ -318,6 +332,11 @@ EVENTS: List[Dict[str, Any]] = [
     _e("game_milestone", "Progress milestone", "Games", "A game passes one of your milestones (Settings → Games Tracker).",
        [_GAME_PLATFORM_FILTER,
         _f("game_milestone", "At", "number", unit="%", default=0, help="0 = any milestone")]),
+    _e("game_goal_progress", "Goal progress", "Games",
+       "A game goal moves (a manual count changes, or a trophy / achievement / percent counts toward it). Settings → Games Tracker.",
+       list(_GOAL_FILTERS)),
+    _e("game_goal_completed", "Goal completed", "Games",
+       "A game goal is done. {all_goals_done} is true when it was the game's last open goal.", list(_GOAL_FILTERS)),
     _e("interval", "Timer", "Time", "Posts again and again; the first post comes after one full interval.",
        [_f("interval", "Every", "duration", unit="seconds", default=600, help="At least 10 seconds")]),
     _e("specific_time", "At a time of day", "Time", "Posts once a day at this local time.",
@@ -342,6 +361,20 @@ _G_LABEL = _v("platform_label", "Console / store", "PS5", "Event")
 _G_PROGRESS = _v("progress", "Completion (%)", "78", "Event")
 _G_EARNED = _v("earned", "Trophies / achievements earned", "33", "Event")
 _G_TOTAL = _v("total", "Trophies / achievements in the game", "42", "Event")
+_G_GOAL = (
+    _G_TITLE, _G_PLATFORM, _G_LABEL,
+    _v("goal_name", "Goal", "Get all endings", "Event"),
+    _v("goal_type", "Goal type (manual, complete, count, percent or unlock)", "manual", "Event"),
+    _v("goal_current", "Goal: done so far", "3", "Event"),
+    _v("goal_target", "Goal: target", "5", "Event"),
+    _v("goal_progress", "Goal: percent done", "60", "Event"),
+    _v("goal_completed", "Goal is done (true/false)", "false", "Event"),
+    _v("goals_done", "Goals done in this game", "1", "Event"),
+    _v("goals_total", "Goals in this game", "3", "Event"),
+    _v("goals_remaining", "Goals still open in this game", "2", "Event"),
+    _v("all_goals_done", "Every goal of this game done (true/false)", "false", "Event"),
+    _G_PROGRESS,
+)
 
 
 EVENT_VARIABLES: Dict[str, List[Dict[str, Any]]] = {
@@ -426,6 +459,8 @@ EVENT_VARIABLES: Dict[str, List[Dict[str, Any]]] = {
         _G_TITLE, _G_PLATFORM, _G_LABEL, _v("milestone", "Milestone passed (%)", "50", "Event"),
         _G_PROGRESS, _G_EARNED, _G_TOTAL,
     ),
+    "game_goal_progress": _ev(*_G_GOAL),
+    "game_goal_completed": _ev(*_G_GOAL),
     "interval": [],
     "specific_time": [],
 }
@@ -566,6 +601,8 @@ def sample_data(kind: str, event_type: Any = None, item: Any = None) -> Dict[str
                 "message": "Great stream!", "donation_message": "Great stream!"}
     if value in ("game_unlock", "game_completed", "game_started", "game_milestone"):
         return _game_sample(value, item)
+    if value in ("game_goal_progress", "game_goal_completed"):
+        return _goal_sample(value, item)
     if value == "interval":
         return {"username": "System", "timestamp": time.time(), "source": "interval"}
     if value == "specific_time":
@@ -609,6 +646,40 @@ def _game_sample(value: str, item: Any) -> Dict[str, Any]:
                      else "Acquire all legendary armaments", "unlock_rarity": 12.4})
     if value == "game_milestone":
         data["milestone"] = milestone
+    return data
+
+
+def _goal_sample(value: str, item: Any) -> Dict[str, Any]:
+    """A goal event payload that passes the item's filters."""
+    platform = str(_attr(item, "game_platform", "any") or "any")
+    steam = platform == "steam"
+    kind = str(_attr(item, "game_goal_kind", "any") or "any")
+    kind = "count" if kind == "auto" else "manual" if kind == "any" else kind
+    title = str(_attr(item, "game_goal_game", "") or "").strip() or ("Baldur's Gate 3" if steam else "Elden Ring")
+    goal = str(_attr(item, "game_goal_name", "") or "").strip() or {
+        "manual": "Get all endings", "complete": "Platinum" if not steam else "All achievements",
+        "count": "10 Gold trophies" if not steam else "25 achievements", "percent": "Reach 75%",
+        "unlock": "Legendary Armaments"}.get(kind, "Get all endings")
+    done = value == "game_goal_completed"
+    current, target = {"manual": (3, 5), "complete": (78, 100), "count": (7, 10), "percent": (60, 75), "unlock": (0, 1)}.get(kind, (3, 5))
+    if done:
+        current = target
+    data = _game_sample("game_started", {"game_platform": platform})
+    data.update({
+        "kind": value[len("game_"):],
+        "game_title": title,
+        "goal_id": "a1b2c3d4e5",
+        "goal_name": goal,
+        "goal_type": kind,
+        "goal_current": current,
+        "goal_target": target,
+        "goal_progress": 100 if done else current * 100 // target,
+        "goal_completed": done,
+        "goals_done": 2 if done else 1,
+        "goals_total": 3,
+        "goals_remaining": 1 if done else 2,
+        "all_goals_done": False,
+    })
     return data
 
 

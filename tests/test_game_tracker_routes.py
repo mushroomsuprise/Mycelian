@@ -212,3 +212,63 @@ def test_export_xlsx(client, tracker):
     assert load_workbook(io.BytesIO(hidden_only.data))["Games"].max_row == 3
     tracker.store.delete_game("psn", "NPWR00001_00")
     assert client.get("/api/game-tracker/export.xlsx?platform=psn").status_code == 404
+
+
+def test_games_rows_and_detail_carry_goals(client, tracker):
+    tracker.service.add_goal("steam", "440", kind="manual", name="Every class", target=9)
+    rows = {g["key"]: g for g in client.get("/api/game-tracker/games").get_json()["games"]}
+    assert (rows["steam:440"]["goals_total"], rows["steam:440"]["goals_done"]) == (1, 0)
+    assert rows["psn:NPWR00001_00"]["goals_total"] == 0
+    body = client.get("/api/game-tracker/games/steam/440").get_json()
+    assert [g["name"] for g in body["goals"]] == ["Every class"]
+
+
+def test_backlog_route(client, tracker):
+    assert client.get("/api/game-tracker/backlog").get_json()["games"] == []
+    tracker.service.add_goal("psn", "NPWR00001_00", kind="percent", target=50)
+    tracker.service.add_goal("steam", "441", kind="manual", name="Hidden one")
+    games = client.get("/api/game-tracker/backlog").get_json()["games"]
+    assert [g["key"] for g in games] == ["psn:NPWR00001_00"]
+    assert games[0]["goals"][0]["name"] == "Reach 50%"
+    assert len(client.get("/api/game-tracker/backlog?include_hidden=1").get_json()["games"]) == 2
+
+
+def test_game_panel_socket_request(client, tracker, monkeypatch):
+    sent = []
+    monkeypatch.setattr(WE, "safe_emit", lambda self, event, data=None, to=None: sent.append((event, data, to)) or True)
+    sio = client.application.extensions["socketio"]
+    sc = sio.test_client(client.application, flask_test_client=client)
+    sc.emit("game_tracker_request_games", {"mode": "selected", "keys": ["steam:440", "psn:nope", "psn:NPWR00001_00"]})
+    sc.emit("game_tracker_request_games", {"mode": "current", "keys": "steam:440, psn:NPWR00001_00"})
+    (first, second) = [s for s in sent if s[0] == "game_tracker_games"]
+    assert [g["key"] for g in first[1]["games"]] == ["steam:440", "psn:NPWR00001_00"] and first[2]
+    assert second[1]["mode"] == "current" and second[1]["keys"] == ["steam:440", "psn:NPWR00001_00"]
+    assert [g["key"] for g in second[1]["games"]] == ["steam:440"]  # the last played visible game
+    sc.disconnect()
+
+
+def test_streamdeck_game_goals_and_adjust(client, tracker):
+    endings, _ = tracker.service.add_goal("steam", "440", kind="manual", name="Every class", target=3)
+    tracker.service.add_goal("steam", "440", kind="percent", target=90)  # automatic goals aren't listed
+    tracker.service.add_goal("psn", "NPWR00001_00", kind="complete")
+    body = client.get("/api/streamdeck/get_game_goals").get_json()
+    assert body["success"] and [g["key"] for g in body["games"]] == ["steam:440"]
+    (goal,) = body["games"][0]["goals"]
+    assert (goal["id"], goal["name"], goal["current"], goal["target"]) == (endings.id, "Every class", 0, 3)
+    one = client.get(f"/api/streamdeck/get_game_goals?goalId={endings.id}").get_json()
+    assert one["games"][0]["goals"][0]["id"] == endings.id
+    assert client.get("/api/streamdeck/get_game_goals?goalId=nope").status_code == 404
+
+    res = client.post("/api/streamdeck/adjust_goal", json={"goalId": endings.id, "operation": "add", "amount": 2}).get_json()
+    assert res["success"] and res["goal"]["current"] == 2 and res["game_title"] == "Bravo"
+    res = client.post("/api/streamdeck/adjust_goal", json={"goalId": endings.id, "operation": "add"}).get_json()
+    assert res["goal"]["completed"] is True and res["goal"]["progress"] == 100
+    res = client.post("/api/streamdeck/adjust_goal", json={"goalId": endings.id, "operation": "subtract", "amount": "1"}).get_json()
+    assert res["goal"]["current"] == 2
+
+    assert client.post("/api/streamdeck/adjust_goal", json={}).status_code == 400
+    assert client.post("/api/streamdeck/adjust_goal", json={"goalId": endings.id, "operation": "explode"}).status_code == 400
+    assert client.post("/api/streamdeck/adjust_goal", json={"goalId": endings.id, "amount": "lots"}).status_code == 400
+    assert client.post("/api/streamdeck/adjust_goal", json={"goalId": "nope"}).status_code == 404
+    auto = tracker.service.goals_for("steam", "440")[1]
+    assert client.post("/api/streamdeck/adjust_goal", json={"goalId": auto.id}).status_code == 400

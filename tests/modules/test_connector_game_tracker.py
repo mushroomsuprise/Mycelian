@@ -178,7 +178,8 @@ def test_game_lookup_spec_and_outputs():
     assert schemas.summarize("game_lookup", {"game": "Hades"}) == "Progress of Hades"
     assert schemas.summarize("game_lookup", {}) == "Progress of the latest game"
     assert {k for k, _ in ACTION_OUTPUTS["game_lookup"]} == {
-        "title", "platform", "progress", "earned", "total", "completed", "last_played"}
+        "title", "platform", "progress", "earned", "total", "completed", "last_played",
+        "goals", "goals_done", "goals_total", "goal_next", "goal_next_progress", "goal_1_name", "goal_1_progress"}
 
 
 # --------------------------------------------------------------------------- placeholders

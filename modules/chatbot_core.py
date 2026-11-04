@@ -114,6 +114,12 @@ _GAMES_KEYS = {
     "current.progress": ("current", "progress"),
     "current.earned": ("current", "earned"),
     "current.total": ("current", "total"),
+    "backlog.count": ("backlog",),
+    "backlog.active": ("backlog_active",),
+    "backlog.complete": ("backlog_complete",),
+    "goals.total": ("goals_total",),
+    "goals.done": ("goals_done",),
+    "goals.active": ("goals_active",),
 }
 
 
@@ -583,6 +589,8 @@ class EventType(Enum):
     GAME_COMPLETED = "game_completed"
     GAME_STARTED = "game_started"
     GAME_MILESTONE = "game_milestone"
+    GAME_GOAL_PROGRESS = "game_goal_progress"
+    GAME_GOAL_COMPLETED = "game_goal_completed"
 
 
 class ComparisonOperator(Enum):
@@ -1354,12 +1362,36 @@ def chat_text_matches(message: Any, pattern: Any, match_type: str) -> bool:
 
 GAME_PLATFORM_FILTERS = ("any", "psn", "steam")
 GAME_GRADE_FILTERS = ("any", "bronze", "silver", "gold", "platinum", "achievement")
+# "auto" = any goal that follows the game's progress; the rest are goal kinds (modules.game_tracker.goals)
+GAME_GOAL_KIND_FILTERS = ("any", "manual", "auto", "complete", "count", "percent", "unlock")
+_GAME_GOAL_EVENT_TYPES = {EventType.GAME_GOAL_PROGRESS, EventType.GAME_GOAL_COMPLETED}
 _GAME_EVENT_TYPES = {
     EventType.GAME_UNLOCK,
     EventType.GAME_COMPLETED,
     EventType.GAME_STARTED,
     EventType.GAME_MILESTONE,
+    *_GAME_GOAL_EVENT_TYPES,
 }
+
+
+def game_goal_matches(data: Dict[str, Any], game: str = "", kind: str = "any", goal: str = "") -> bool:
+    """Goal event filters shared by chat events and connectors: the game's name contains ``game``, the goal's
+    kind is ``kind`` ("auto" = any automatic kind) and its name contains ``goal`` (blank / "any" = no filter)."""
+
+    def norm(text: Any) -> str:
+        return " ".join("".join(c if c.isalnum() else " " for c in str(text or "").casefold()).split())
+
+    game_q = norm(game)
+    if game_q and game_q not in norm(data.get("game_title")) and game_q != norm(data.get("game_id")):
+        return False
+    goal_q = norm(goal)
+    if goal_q and goal_q not in norm(data.get("goal_name")):
+        return False
+    kind = str(kind or "any").lower()
+    actual = str(data.get("goal_type") or "").lower()
+    if kind == "auto":
+        return actual not in ("", "manual")
+    return kind in ("", "any") or actual == kind
 
 
 class ChatEvent:
@@ -1422,6 +1454,10 @@ class ChatEvent:
         grade = str(kwargs.get("game_unlock_grade", "any") or "any").lower()
         self.game_unlock_grade = grade if grade in GAME_GRADE_FILTERS else "any"
         self.game_milestone = _to_int(kwargs.get("game_milestone", 0))
+        self.game_goal_game = str(kwargs.get("game_goal_game", "") or "")
+        self.game_goal_name = str(kwargs.get("game_goal_name", "") or "")
+        goal_kind = str(kwargs.get("game_goal_kind", "any") or "any").lower()
+        self.game_goal_kind = goal_kind if goal_kind in GAME_GOAL_KIND_FILTERS else "any"
 
     def repeats(self) -> bool:
         """True only for an enabled-or-not INTERVAL event with a positive interval."""
@@ -1495,6 +1531,8 @@ class ChatEvent:
             if etype == EventType.GAME_MILESTONE and self.game_milestone > 0:
                 if not _equals_number(data, "milestone", self.game_milestone):
                     return False
+            if etype in _GAME_GOAL_EVENT_TYPES:
+                return game_goal_matches(data, self.game_goal_game, self.game_goal_kind, self.game_goal_name)
             return True
         if etype == EventType.CHANNEL_POINT_REDEMPTION:
             wanted = self.channel_point_reward_name.strip().casefold()
@@ -1629,6 +1667,9 @@ class ChatEvent:
                 "game_platform": self.game_platform,
                 "game_unlock_grade": self.game_unlock_grade,
                 "game_milestone": self.game_milestone,
+                "game_goal_game": self.game_goal_game,
+                "game_goal_name": self.game_goal_name,
+                "game_goal_kind": self.game_goal_kind,
                 "argument_mappings": serialize_argument_mappings(self.argument_mappings),
                 "reply_targets": list(self.reply_targets),
                 "discord_channels": list(self.discord_channels or []),

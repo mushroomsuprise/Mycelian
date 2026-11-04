@@ -804,6 +804,8 @@ test("fonts: resolve names to files, preview families and @font-face injection",
     assert.equal(s.$$("style[id^=ss-face-]").length, 1);
     assert.equal(E.editorFontFamilyForPreview("Bebas.ttf", { id: "x", source_settings_expose: { font_family: false } }), '"ss-editor-font-Bebas_ttf"');
     assert.equal(E.editorFontFamilyForPreview("Arial", null), "Arial");
+    // An exposed system font has no file to alias, so it stays by name (as the template writes it).
+    assert.equal(E.editorFontFamilyForPreview("Arial", { id: "gp", props: {} }), "Arial");
     assert.equal(E.editorFontFamilyForPreview("", el), "");
     E.ensureEditorFontFaceLoaded("x", "font.css");
 });

@@ -299,34 +299,46 @@ def name_unlocks(client, events: List[GameEvent]) -> None:
 
 def _earned_trophies(client, comm_id: str, label: str) -> List[Dict[str, Any]]:
     """Earned trophies of one list, newest first."""
+    out = trophy_list(client, comm_id, label, earned_only=True) or []
+    out.sort(key=lambda t: t["earned_at"], reverse=True)
+    return out
+
+
+def trophy_list(client, comm_id: str, label: str, *, earned_only: bool = False) -> Optional[List[Dict[str, Any]]]:
+    """Every trophy of one list in game order (``id``, ``name``, ``description``, ``icon``, ``grade``, ``rarity``,
+    ``earned``, ``earned_at``); only the earned ones with ``earned_only``. None when PSN can't be reached."""
+    if client is None or not getattr(client, "api", None):
+        return None
     try:
         from ..psnapi import presence_format_to_platform_type
 
         account_id = client.get_trophy_target_account_id()
         if not account_id:
-            return []
+            return None
         user = client.api.user(account_id=account_id)
         platform = presence_format_to_platform_type((label or "PS5").replace(" ", "").replace("PC", "PSPC"))
         out = []
         for t in user.trophies(np_communication_id=comm_id, platform=platform, include_progress=True, trophy_group_id="all"):
-            if not getattr(t, "earned", False):
+            earned = bool(getattr(t, "earned", False))
+            if earned_only and not earned:
                 continue
             ttype = getattr(t, "trophy_type", None)
             grade = str(getattr(ttype, "value", ttype) or "").lower()
             rate = getattr(t, "trophy_earn_rate", None)
             out.append({
+                "id": str(getattr(t, "trophy_id", "") if getattr(t, "trophy_id", None) is not None else ""),
                 "name": getattr(t, "trophy_name", None) or "",
                 "description": getattr(t, "trophy_detail", None) or "",
                 "icon": getattr(t, "trophy_icon_url", None) or "",
                 "grade": grade,
                 "rarity": float(rate) if rate is not None else None,
+                "earned": earned,
                 "earned_at": _ts(getattr(t, "earned_date_time", None)),
             })
-        out.sort(key=lambda t: t["earned_at"], reverse=True)
         return out
     except Exception as e:
-        logger.debug("Games Tracker: couldn't name trophies for %s: %s", comm_id, e)
-        return []
+        logger.debug("Games Tracker: couldn't read trophies for %s: %s", comm_id, e)
+        return None
 
 
 # ----- edits from the tab / API -----

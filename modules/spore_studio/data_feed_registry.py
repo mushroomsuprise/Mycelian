@@ -287,6 +287,10 @@ BLOCK_TARGETS: Dict[str, List[Dict[str, Any]]] = {
     "now_playing": [
         _target("repaint", "Paint from the data", "Repaints from a now-playing-shaped payload."),
     ],
+    "game_panel": [
+        _target("repaint", "Paint from the data",
+                "Updates the panel from a Games Tracker game (game_tracker_game) or a list of games (game_tracker_games)."),
+    ],
 }
 
 # Which target each block uses when a feed does not name one.
@@ -308,6 +312,7 @@ DEFAULT_TARGET: Dict[str, str] = {
     "poll": "repaint",
     "prediction": "repaint",
     "now_playing": "repaint",
+    "game_panel": "repaint",
     "confetti": "confetti_burst",
 }
 
@@ -317,11 +322,12 @@ DEFAULT_SOURCE_EVENTS: Dict[str, List[str]] = {
     "prediction": ["prediction_state", "prediction_ended"],
     "confetti": ["giveaway_winner"],
     "now_playing": ["spotify_data_update"],
+    "game_panel": ["game_tracker_game"],
 }
 
 BLOCK_TYPES = (
     "audio", "clock", "confetti", "container", "counter", "data_display", "divider", "embed",
-    "gradient", "image", "list", "marquee", "now_playing", "poll", "prediction", "progress_bar",
+    "game_panel", "gradient", "image", "list", "marquee", "now_playing", "poll", "prediction", "progress_bar",
     "qr", "shape", "stat_card", "text", "timer", "video", "wheel",
 )
 

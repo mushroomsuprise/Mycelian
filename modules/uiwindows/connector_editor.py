@@ -52,7 +52,13 @@ ACTION_OUTPUTS: Dict[str, tuple] = {
     "twitch_set_game": (("new_game", "new category"),),
     "twitch_snooze_ad": (("snooze_count", "snoozes left"),),
     "game_lookup": (("title", "game"), ("platform", "platform"), ("progress", "completion %"), ("earned", "earned"),
-                    ("total", "total"), ("completed", "completed (yes/no)"), ("last_played", "last played")),
+                    ("total", "total"), ("completed", "completed (yes/no)"), ("last_played", "last played"),
+                    ("goals", "goals with progress"), ("goals_done", "goals done"), ("goals_total", "goals set"),
+                    ("goal_next", "next goal"), ("goal_next_progress", "next goal %"), ("goal_1_name", "goal 1 name"),
+                    ("goal_1_progress", "goal 1 %")),
+    "game_goal_update": (("goal_name", "goal"), ("goal_current", "done so far"), ("goal_target", "target"),
+                         ("goal_progress", "goal %"), ("goal_completed", "goal done (yes/no)"), ("game_title", "game"),
+                         ("goals_done", "goals done"), ("goals_total", "goals set")),
 }
 
 _TRIGGER_BRANDS = (("twitch_", "twitch"), ("youtube_", "youtube"), ("obs_", "obs"))
@@ -60,14 +66,17 @@ _TRIGGER_ICONS = {
     "donation": "volunteer_activism", "timer": "timer", "schedule": "event", "hotkey": "keyboard",
     "streamdeck": "grid_view", "webhook": "webhook", "any": "all_inclusive",
     "game_unlock": "military_tech", "game_completed": "workspace_premium", "game_started": "sports_esports",
-    "game_milestone": "flag",
+    "game_milestone": "flag", "game_goal_progress": "outlined_flag", "game_goal_completed": "flag_circle",
 }
 _GROUP_GLYPHS = {
     "Twitch": "twitch", "YouTube": "youtube", "Tips": "volunteer_activism", "OBS": "obs",
     "Controls": "keyboard", "Time": "timer", "Games": "emoji_events", "Other": "webhook",
 }
 # Games Tracker trigger filters (stored on the trigger; "" means any).
-_GAME_TRIGGERS = ("game_unlock", "game_completed", "game_started", "game_milestone")
+_GAME_TRIGGERS = ("game_unlock", "game_completed", "game_started", "game_milestone", "game_goal_progress", "game_goal_completed")
+_GOAL_TRIGGERS = ("game_goal_progress", "game_goal_completed")
+_GOAL_KINDS = {"": "Any goal", "manual": "Manual goals", "auto": "Automatic goals", "complete": "Platinum / 100%",
+               "count": "Trophies / achievements count", "percent": "Completion %", "unlock": "Specific trophy / achievement"}
 _GAME_PLATFORMS = {"": "Any platform", "psn": "PlayStation", "steam": "Steam"}
 _GAME_GRADES = {"": "Any grade", "bronze": "Bronze", "silver": "Silver", "gold": "Gold", "platinum": "Platinum",
                 "achievement": "Steam achievement"}
@@ -214,6 +223,9 @@ def state_from_connector(connector: Optional[Connector], connector_id: Optional[
             trigger_cfg["grade"] = str(getattr(trig, "grade", "") or "")
         if tt == "game_milestone":
             trigger_cfg["milestone"] = int(getattr(trig, "milestone", 0) or 0)
+        if tt in _GOAL_TRIGGERS:
+            for key in ("game", "goal", "goal_kind"):
+                trigger_cfg[key] = str(getattr(trig, key, "") or "")
     conditions = []
     for cond in getattr(trig, "conditions", None) or []:
         op = getattr(cond, "operator", None)
@@ -355,6 +367,9 @@ def build_connector(state: EditorState, existing: Optional[Connector] = None) ->
             trigger_kwargs["grade"] = str(tcfg.get("grade") or "")
         if tt == TriggerType.GAME_MILESTONE:
             trigger_kwargs["milestone"] = max(0, int(_as_float(tcfg.get("milestone"), 0)))
+        if tt.value in _GOAL_TRIGGERS:
+            for key in ("game", "goal", "goal_kind"):
+                trigger_kwargs[key] = str(tcfg.get(key) or "").strip()
     trigger_id = getattr(old_trigger, "trigger_id", None) or str(uuid.uuid4())
     trigger = connector_triggers.create_trigger(tt, trigger_id, f"{state.name} Trigger", **trigger_kwargs)
 
@@ -911,7 +926,7 @@ class ConnectorEditor:
               'Each field becomes a variable, so <code>{"amount": 5}</code> gives you <code>{amount}</code>. Keep the key private; '
               'the URL only works on this computer\'s network.</span></div>', "")
 
-    def _trigger_settings_game(self, tcfg: dict, *, grade: bool = False, milestone: bool = False) -> None:
+    def _trigger_settings_game(self, tcfg: dict, *, grade: bool = False, milestone: bool = False, goal: bool = False) -> None:
         with ui.element("div").classes("ce-trig-settings"):
             ui.label("Platform").classes("ce-f-label")
             ui.select(_GAME_PLATFORMS, value=tcfg.get("platform") or "",
@@ -928,6 +943,21 @@ class ConnectorEditor:
                           on_change=lambda e: self._set_trigger("milestone", int(_as_float(e.value, 0)))).props(
                     "outlined dense").style("width: 90px")
                 ui.label("%").classes("ce-unit")
+            if goal:
+                ui.label("Game").classes("ce-f-label")
+                ui.input(value=tcfg.get("game") or "", placeholder="Any game",
+                         on_change=lambda e: self._set_trigger("game", e.value or "")).props("outlined dense").style("width: 180px")
+                ui.label("Goal").classes("ce-f-label")
+                ui.input(value=tcfg.get("goal") or "", placeholder="Any goal",
+                         on_change=lambda e: self._set_trigger("goal", e.value or "")).props("outlined dense").style("width: 180px")
+                ui.label("Type").classes("ce-f-label")
+                ui.select(_GOAL_KINDS, value=tcfg.get("goal_kind") or "",
+                          on_change=lambda e: self._set_trigger("goal_kind", e.value or "")).props(
+                    "outlined dense options-dense").style("width: 200px")
+        if goal:
+            _html(f'<div class="ce-note">{_ic("info")}<span>Game and goal match part of the name, ignoring case. Goals are set from '
+                  "a game's settings in Settings → Games Tracker.</span></div>", "")
+            return
         _html(f'<div class="ce-note">{_ic("info")}<span>Only changes after the Games Tracker\'s first import count. '
               'Milestones and sync timing are set in Settings → Games Tracker.</span></div>', "")
 
@@ -942,6 +972,12 @@ class ConnectorEditor:
 
     def _trigger_settings_game_milestone(self, tcfg: dict) -> None:
         self._trigger_settings_game(tcfg, milestone=True)
+
+    def _trigger_settings_game_goal_progress(self, tcfg: dict) -> None:
+        self._trigger_settings_game(tcfg, goal=True)
+
+    def _trigger_settings_game_goal_completed(self, tcfg: dict) -> None:
+        self._trigger_settings_game(tcfg, goal=True)
 
     def _trigger_settings_streamdeck(self, _tcfg: dict) -> None:
         _html(f'<div class="ce-note">{_ic("info")}<span>In the Stream Deck app, add the Mycelian <b>Connector</b> action and pick '

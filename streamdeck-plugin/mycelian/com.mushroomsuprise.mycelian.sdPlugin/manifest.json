@@ -1,6 +1,6 @@
 {
 	"Name": "Mycelian",
-	"Version": "1.0.0.0",
+	"Version": "1.1.0.0",
 	"Author": "mushroomsuprise",
 	"Actions": [
 		{
@@ -32,6 +32,23 @@
 				{
 					"Image": "imgs/actions/connector/key",
 					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Game Goal",
+			"UUID": "com.mushroomsuprise.mycelian.gamegoal",
+			"Icon": "imgs/actions/gamegoal/icon",
+			"Tooltip": "Counts a Games Tracker goal up or down. The key shows the goal's progress.",
+			"PropertyInspectorPath": "ui/game-goal.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/gamegoal/key",
+					"TitleAlignment": "bottom",
+					"FontSize": 11
 				}
 			]
 		},

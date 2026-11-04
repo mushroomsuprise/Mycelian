@@ -112,15 +112,89 @@ test("apiUrl joins host, port and path", { skip }, () => {
 
 /* ---------------------------------------------------------------- plugin entry */
 
-test("plugin.ts registers the three actions, sets trace logging and connects", { skip }, () => {
+test("plugin.ts registers the four actions, sets trace logging and connects", { skip }, () => {
     const { registered, streamdeck } = load("plugin");
     assert.deepEqual(registered.map((a) => a.constructor.manifestUUID), [
         "com.mushroomsuprise.mycelian.togglealerts",
         "com.mushroomsuprise.mycelian.templateaction",
         "com.mushroomsuprise.mycelian.connector",
+        "com.mushroomsuprise.mycelian.gamegoal",
     ]);
     assert.equal(streamdeck.default.logger.level, "trace");
     assert.equal(streamdeck.default.connected, 1);
+});
+
+/* ---------------------------------------------------------------- game goal action */
+
+function gameGoal(fetchRoutes) {
+    const r = load("actions/game-goal", { fetch: makeFetch(fetchRoutes || []) });
+    return { ...r, action: new r.exports.GameGoalAction() };
+}
+
+function goalAction(settings) {
+    const a = fakeAction(settings);
+    a.id = "key-1";
+    a.alerts = 0;
+    a.oks = 0;
+    a.showAlert = function () { this.alerts++; return Promise.resolve(); };
+    a.showOk = function () { this.oks++; return Promise.resolve(); };
+    return a;
+}
+
+const GOAL = { id: "g1", name: "Get all endings", current: 2, target: 5, progress: 40, completed: false };
+
+test("game goal: NOT SET without a goal, and a press then does nothing but alert", { skip }, async () => {
+    const { action, fetch } = gameGoal();
+    const a = goalAction();
+    await action.onWillAppear(ev(a, {}));
+    await action.onKeyDown(ev(a, {}));
+    assert.deepEqual(a.titles, ["GOAL\nNOT SET", "GOAL\nNOT SET"]);
+    assert.equal(a.alerts, 1);
+    assert.equal(fetch.calls.length, 0);
+});
+
+test("game goal: shows the goal's count and keeps it current", { skip }, async () => {
+    const { action, fetch, clock } = gameGoal([["/api/streamdeck/get_game_goals", { success: true, games: [{ goals: [GOAL] }] }]]);
+    const a = goalAction({ goalId: "g1" });
+    await action.onWillAppear(ev(a, { goalId: "g1", operation: "subtract", amount: "2", serverUrl: "10.0.0.2:6000" }));
+    assert.equal(fetch.calls[0].url, "http://10.0.0.2:6000/api/streamdeck/get_game_goals?goalId=g1");
+    assert.deepEqual(a.titles, ["Get all e…\n2/5\n−2"]);
+    fetch.routes[0][1] = { success: true, games: [{ goals: [{ ...GOAL, current: 5, completed: true }] }] };
+    clock.tick(15000);
+    await flush();
+    assert.equal(a.titles.at(-1), "Get all e…\n✓ 5/5\n+1");
+    action.onWillDisappear(ev(a, {}));
+    const n = fetch.calls.length;
+    clock.tick(60000);
+    await flush();
+    assert.equal(fetch.calls.length, n, "no more refreshes once the key is gone");
+});
+
+test("game goal: a press posts the change and shows the new count", { skip }, async () => {
+    const { action, fetch } = gameGoal([["/api/streamdeck/adjust_goal", { success: true, goal: { ...GOAL, current: 5, completed: true } }]]);
+    const a = goalAction();
+    await action.onKeyDown(ev(a, { goalId: "g1", operation: "add", amount: "3" }));
+    assert.equal(fetch.calls[0].url, "http://127.0.0.1:5000/api/streamdeck/adjust_goal");
+    assert.deepEqual(JSON.parse(fetch.calls[0].body), { goalId: "g1", operation: "add", amount: 3 });
+    assert.equal(a.titles[0], "Get all e…\n✓ 5/5\n+3");
+    assert.equal(a.oks, 1, "a finished goal flashes OK");
+    await action.onKeyDown(ev(a, { goalId: "g1", amount: "nonsense" }));
+    assert.deepEqual(JSON.parse(fetch.calls[1].body), { goalId: "g1", operation: "add", amount: 1 });
+});
+
+test("game goal: errors and removed goals", { skip }, async () => {
+    const { action, fetch } = gameGoal([["/api/streamdeck/adjust_goal", { status: 400, body: { success: false, message: "auto" } }],
+        ["/api/streamdeck/get_game_goals", { status: 404, body: { success: false, games: [] } }]]);
+    const a = goalAction();
+    await action.onKeyDown(ev(a, { goalId: "g1" }));
+    assert.deepEqual(a.titles, ["GOAL\nERROR"]);
+    assert.equal(a.alerts, 1);
+    await action.onDidReceiveSettings(ev(a, { goalId: "g1", goalName: "Get all endings" }));
+    assert.equal(a.titles.at(-1), "Get all e…\nGONE");
+    fetch.routes.length = 0;
+    fetch.on("/api/streamdeck/get_game_goals", new Error("offline"));
+    await action.onDidReceiveSettings(ev(a, { goalId: "g1", goalName: "Endings", operation: "subtract" }));
+    assert.equal(a.titles.at(-1), "Endings\n−1", "offline: the saved name and what a press does");
 });
 
 /* ---------------------------------------------------------------- connector action */
@@ -412,13 +486,15 @@ test("built bin/plugin.js bundles every action UUID from the sources", () => {
         const m = /UUID:\s*"([^"]+)"/.exec(fs.readFileSync(path.join(SRC, "actions", f), "utf8"));
         if (m) { uuids.push(m[1]); }
     }
-    assert.equal(uuids.length, 3);
+    assert.equal(uuids.length, 4);
     for (const dir of [path.join(PLUGIN, "com.mushroomsuprise.mycelian.sdPlugin"), path.join(ROOT, "sd_plugin", "com.mushroomsuprise.mycelian.sdPlugin")]) {
         const bundle = fs.readFileSync(path.join(dir, "bin", "plugin.js"), "utf8");
         for (const u of uuids) { assert.ok(bundle.includes(u), dir + " lacks " + u); }
         assert.ok(bundle.includes("/api/streamdeck/toggle_alerts"));
         assert.ok(bundle.includes("/api/streamdeck/trigger_connector"));
         assert.ok(bundle.includes("/api/streamdeck/template_action"));
+        assert.ok(bundle.includes("/api/streamdeck/adjust_goal"));
+        assert.ok(bundle.includes("/api/streamdeck/get_game_goals"));
         assert.match(bundle, /^import /, "ES module bundle (bin/package.json says type: module)");
         assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "bin", "package.json"), "utf8")).type, "module");
     }

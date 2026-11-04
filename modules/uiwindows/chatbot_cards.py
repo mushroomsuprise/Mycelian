@@ -228,6 +228,14 @@ def event_filter_text(event: Any) -> str:
                  grade.capitalize() if et == "game_unlock" and grade != "any" else "",
                  f"At {g('game_milestone')}%" if et == "game_milestone" and g("game_milestone") else ""]
         return " · ".join(p for p in parts if p)
+    if et in ("game_goal_progress", "game_goal_completed"):
+        platform = {"psn": "PlayStation", "steam": "Steam"}.get(getattr(event, "game_platform", "any") or "any", "")
+        kind = getattr(event, "game_goal_kind", "any") or "any"
+        game = (getattr(event, "game_goal_game", "") or "").strip()
+        goal = (getattr(event, "game_goal_name", "") or "").strip()
+        parts = [f"“{game}”" if game else "", f"Goal “{goal}”" if goal else "", platform,
+                 {"manual": "Manual", "auto": "Automatic"}.get(kind, "") if kind != "any" else ""]
+        return " · ".join(p for p in parts if p)
     if et in ("chat_message", "youtube_chat_message"):
         text = getattr(event, "chat_message_text", "") or ""
         if text:

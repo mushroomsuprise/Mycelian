@@ -814,6 +814,8 @@ _TRIGGER_ICONS = {
     TriggerType.GAME_COMPLETED: "workspace_premium",
     TriggerType.GAME_STARTED: "sports_esports",
     TriggerType.GAME_MILESTONE: "flag",
+    TriggerType.GAME_GOAL_PROGRESS: "outlined_flag",
+    TriggerType.GAME_GOAL_COMPLETED: "flag_circle",
 }
 _ACTION_ICONS = {
     "template_control": "widgets",
@@ -832,6 +834,7 @@ _ACTION_ICONS = {
     "audio_control": "volume_up",
     "game_hook": "sports_esports",
     "game_lookup": "emoji_events",
+    "game_goal_update": "flag",
 }
 _ACTION_BRANDS = {"send_discord_message": "discord", "obs_control": "obs"}
 _ACTION_BRANDS.update({t: "twitch" for t in (

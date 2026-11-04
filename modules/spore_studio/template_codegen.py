@@ -1045,6 +1045,34 @@ def _render_widget_element(
             + "</div></div>"
         )
 
+    if etype == "game_panel":
+        keys = props.get("game_keys") or ""
+        if isinstance(keys, (list, tuple)):
+            keys = ",".join(str(k) for k in keys)
+        return (
+            open_tag
+            + 'data-spore-type="game_panel" '
+            + f'data-spore-game-source="{_widget_jinja(eid, "game_source", str(props.get("game_source") or "selected"))}" '
+            + f'data-spore-game-keys="{_widget_jinja(eid, "game_keys", str(keys))}" '
+            + f'data-spore-game-rotate-seconds="{_widget_jinja(eid, "rotate_seconds", _num_or(props.get("rotate_seconds"), 10))}" '
+            + f'data-spore-game-rotate-anim="{_widget_jinja(eid, "rotate_animation", str(props.get("rotate_animation") or "fade"))}" '
+            + f'data-spore-game-cover="{_widget_jinja(eid, "show_cover", _on_attr(props, "show_cover"))}" '
+            + f'data-spore-game-trophies="{_widget_jinja(eid, "show_trophies", _on_attr(props, "show_trophies"))}" '
+            + f'data-spore-game-goals="{_widget_jinja(eid, "show_goals", _on_attr(props, "show_goals"))}" '
+            + f'data-spore-game-played="{_widget_jinja(eid, "show_last_played", _on_attr(props, "show_last_played"))}" '
+            + f'data-spore-game-dots="{_widget_jinja(eid, "show_dots", _on_attr(props, "show_dots"))}" '
+            + f'data-spore-game-auto="{_widget_jinja(eid, "auto_size", _on_attr(props, "auto_size"))}" '
+            + f'data-spore-game-speedrun="{_widget_jinja(eid, "show_speedrun", _on_attr(props, "show_speedrun"))}" '
+            + f'data-spore-game-max-goals="{_widget_jinja(eid, "max_goals", _num_or(props.get("max_goals"), 4))}" '
+            + f'data-spore-game-title-color="{_widget_jinja(eid, "title_color", str(props.get("title_color") or "#ffffff"))}" '
+            + f'data-spore-game-muted="{_widget_jinja(eid, "muted_color", str(props.get("muted_color") or "#94a3b8"))}" '
+            + f'data-spore-game-bar="{_widget_jinja(eid, "bar_color", str(props.get("bar_color") or "#a855f7"))}" '
+            + f'data-spore-game-goal-bar="{_widget_jinja(eid, "goal_bar_color", str(props.get("goal_bar_color") or "#38bdf8"))}" '
+            + f'data-spore-game-done="{_widget_jinja(eid, "done_color", str(props.get("done_color") or "#22c55e"))}">'
+            + '<div class="spore-gp-host"><div class="spore-gp-empty">Loading games…</div></div>'
+            + "</div>"
+        )
+
     if etype == "qr":
         return (
             open_tag
@@ -2486,6 +2514,25 @@ _WIDGET_CONFIG_FIELDS: Dict[str, List[Tuple[Any, ...]]] = {
     "qr": [
         ("text", "text"),
         ("foreground", "color"),
+    ],
+    "game_panel": [
+        ("game_source", "select", ["selected", "backlog", "current"]),
+        ("game_keys", "text"),
+        ("rotate_seconds", "number"),
+        ("rotate_animation", "select", ["fade", "slide_horizontal", "slide_vertical", "none"]),
+        ("show_cover", "checkbox"),
+        ("show_trophies", "checkbox"),
+        ("show_goals", "checkbox"),
+        ("show_speedrun", "checkbox"),
+        ("show_last_played", "checkbox"),
+        ("show_dots", "checkbox"),
+        ("auto_size", "checkbox"),
+        ("max_goals", "number"),
+        ("title_color", "color"),
+        ("muted_color", "color"),
+        ("bar_color", "color"),
+        ("goal_bar_color", "color"),
+        ("done_color", "color"),
     ],
     "embed": [
         ("url", "text"),

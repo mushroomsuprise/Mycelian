@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+
+<head lang="en">
+    <title>Game Goal Settings</title>
+    <meta charset="utf-8" />
+    <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+    <style>
+        .section {
+            margin-bottom: 16px;
+        }
+
+        .config-field {
+            margin-bottom: 10px;
+        }
+
+        .config-field label {
+            display: block;
+            font-size: 12px;
+            margin-bottom: 3px;
+            font-weight: bold;
+        }
+
+        .config-field select {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .refresh-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-top: 6px;
+        }
+
+        .refresh-button:hover {
+            background: #0056b3;
+        }
+
+        .refresh-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .status-message {
+            font-size: 12px;
+            margin-top: 6px;
+        }
+
+        .status-message.info {
+            color: #6c757d;
+        }
+
+        .status-message.success {
+            color: #28a745;
+        }
+
+        .status-message.error {
+            color: #dc3545;
+        }
+
+        .help-text {
+            font-size: 11px;
+            color: #666;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+
+<body>
+    <sdpi-item style="display: none;">
+        <sdpi-textfield setting="gameKey" id="gameKeySetting"></sdpi-textfield>
+        <sdpi-textfield setting="gameTitle" id="gameTitleSetting"></sdpi-textfield>
+        <sdpi-textfield setting="goalId" id="goalIdSetting"></sdpi-textfield>
+        <sdpi-textfield setting="goalName" id="goalNameSetting"></sdpi-textfield>
+    </sdpi-item>
+
+    <sdpi-item label="Connection" class="section">
+        <sdpi-textfield setting="serverUrl" label="Mycelian server" placeholder="127.0.0.1:5000" default="127.0.0.1:5000"></sdpi-textfield>
+        <button type="button" class="refresh-button" id="test-connection">Test</button>
+        <div id="connection-status" class="status-message"></div>
+    </sdpi-item>
+
+    <sdpi-item label="Game" class="section">
+        <div class="config-field">
+            <select id="game-select" disabled>
+                <option value="">Loading games...</option>
+            </select>
+        </div>
+    </sdpi-item>
+
+    <sdpi-item label="Goal" class="section">
+        <div class="config-field">
+            <select id="goal-select" disabled>
+                <option value="">Pick a game first</option>
+            </select>
+            <button type="button" class="refresh-button" id="refresh-goals">Refresh</button>
+        </div>
+        <div id="goal-error" class="status-message error" style="display: none;"></div>
+    </sdpi-item>
+
+    <sdpi-item label="Press to">
+        <sdpi-select setting="operation" default="add">
+            <option value="add">Add</option>
+            <option value="subtract">Subtract</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item label="By">
+        <sdpi-textfield setting="amount" default="1" pattern="[0-9]+" placeholder="1"></sdpi-textfield>
+    </sdpi-item>
+
+    <sdpi-item label="About" class="section">
+        <sdpi-text>
+            Only manual goals are listed: the ones you count yourself. Add them to a game in Mycelian under
+            Settings → Games Tracker (the gear on the game's card). The key shows the goal and its count.
+        </sdpi-text>
+    </sdpi-item>
+
+    <script>
+        let currentSettings = { serverUrl: '127.0.0.1:5000' };
+        let availableGames = [];
+
+        const gameSelect = document.getElementById('game-select');
+        const goalSelect = document.getElementById('goal-select');
+        const connectionStatus = document.getElementById('connection-status');
+        const goalError = document.getElementById('goal-error');
+        const refreshBtn = document.getElementById('refresh-goals');
+        const testConnectionBtn = document.getElementById('test-connection');
+
+        document.addEventListener('DOMContentLoaded', function () {
+            setupEventListeners();
+            readSettingsFromComponents();
+            loadGames();
+        });
+
+        function setupEventListeners() {
+            const serverUrlField = document.querySelector('[setting="serverUrl"]');
+            if (serverUrlField) {
+                serverUrlField.addEventListener('change', function () {
+                    currentSettings.serverUrl = this.value;
+                    loadGames();
+                });
+            }
+
+            gameSelect.addEventListener('change', function () {
+                const option = this.options[this.selectedIndex];
+                currentSettings.gameKey = this.value || '';
+                currentSettings.gameTitle = option && this.value ? option.dataset.title : '';
+                currentSettings.goalId = '';
+                currentSettings.goalName = '';
+                populateGoalSelect();
+                saveSettings();
+            });
+
+            goalSelect.addEventListener('change', function () {
+                const option = this.options[this.selectedIndex];
+                currentSettings.goalId = this.value || '';
+                currentSettings.goalName = option && this.value ? option.dataset.name : '';
+                saveSettings();
+            });
+
+            refreshBtn.addEventListener('click', loadGames);
+            testConnectionBtn.addEventListener('click', testServerConnection);
+        }
+
+        function settingField(id) {
+            return document.getElementById(id);
+        }
+
+        function readSettingsFromComponents() {
+            const serverUrlField = document.querySelector('[setting="serverUrl"]');
+            if (serverUrlField && serverUrlField.value) {
+                currentSettings.serverUrl = serverUrlField.value;
+            }
+            [['gameKey', 'gameKeySetting'], ['gameTitle', 'gameTitleSetting'], ['goalId', 'goalIdSetting'],
+             ['goalName', 'goalNameSetting']].forEach(function (pair) {
+                const field = settingField(pair[1]);
+                if (field && field.value) {
+                    currentSettings[pair[0]] = field.value;
+                }
+            });
+        }
+
+        function saveSettings() {
+            [['gameKey', 'gameKeySetting'], ['gameTitle', 'gameTitleSetting'], ['goalId', 'goalIdSetting'],
+             ['goalName', 'goalNameSetting']].forEach(function (pair) {
+                const field = settingField(pair[1]);
+                if (field) {
+                    field.value = currentSettings[pair[0]] || '';
+                }
+            });
+        }
+
+        function parseServerUrl(serverUrl) {
+            const parts = serverUrl.split(':');
+            if (parts.length === 2) {
+                return { host: parts[0], port: parseInt(parts[1], 10) };
+            }
+            return { host: parts[0], port: 5000 };
+        }
+
+        function serverBase() {
+            const serverUrlField = document.querySelector('[setting="serverUrl"]');
+            const serverUrl = (serverUrlField && serverUrlField.value) || currentSettings.serverUrl || '127.0.0.1:5000';
+            const { host, port } = parseServerUrl(serverUrl);
+            return `http://${host}:${port}`;
+        }
+
+        function showConnectionStatus(message, type) {
+            connectionStatus.textContent = message;
+            connectionStatus.className = 'status-message ' + type;
+        }
+
+        function showGoalError(message) {
+            goalError.textContent = message;
+            goalError.style.display = message ? 'block' : 'none';
+        }
+
+        async function testServerConnection() {
+            showConnectionStatus('Testing connection...', 'info');
+            try {
+                const response = await fetch(serverBase() + '/api/streamdeck/check_connection');
+                const result = await response.json();
+                if (result.success) {
+                    showConnectionStatus('Connected to Mycelian', 'success');
+                    loadGames();
+                } else {
+                    showConnectionStatus('Connection failed', 'error');
+                }
+            } catch (error) {
+                showConnectionStatus('Connection failed — is Mycelian running?', 'error');
+            }
+        }
+
+        async function loadGames() {
+            gameSelect.disabled = true;
+            goalSelect.disabled = true;
+            refreshBtn.disabled = true;
+            try {
+                const response = await fetch(serverBase() + '/api/streamdeck/get_game_goals');
+                const result = await response.json();
+                if (!result.success || !Array.isArray(result.games)) {
+                    throw new Error(result.message || 'Failed to load games');
+                }
+                availableGames = result.games;
+                showGoalError(availableGames.length ? '' :
+                    'No manual goals yet. Add one to a game in Mycelian (Settings → Games Tracker), then press Refresh.');
+                populateGameSelect();
+            } catch (error) {
+                availableGames = [];
+                gameSelect.innerHTML = '<option value="">Connection failed</option>';
+                goalSelect.innerHTML = '<option value="">—</option>';
+                showGoalError('Couldn\'t load games — check the server connection.');
+            } finally {
+                gameSelect.disabled = false;
+                goalSelect.disabled = false;
+                refreshBtn.disabled = false;
+            }
+        }
+
+        function populateGameSelect() {
+            gameSelect.innerHTML = '<option value="">Select a game...</option>';
+            availableGames.forEach(function (game) {
+                const option = document.createElement('option');
+                option.value = game.key;
+                option.textContent = game.title + ' (' + game.platform_label + ')';
+                option.dataset.title = game.title;
+                gameSelect.appendChild(option);
+            });
+            if (currentSettings.gameKey && availableGames.some(function (g) { return g.key === currentSettings.gameKey; })) {
+                gameSelect.value = currentSettings.gameKey;
+            }
+            populateGoalSelect();
+        }
+
+        function populateGoalSelect() {
+            const game = availableGames.find(function (g) { return g.key === currentSettings.gameKey; });
+            if (!game) {
+                goalSelect.innerHTML = '<option value="">Pick a game first</option>';
+                return;
+            }
+            goalSelect.innerHTML = '<option value="">Select a goal...</option>';
+            game.goals.forEach(function (goal) {
+                const option = document.createElement('option');
+                option.value = goal.id;
+                option.textContent = goal.name + ' (' + goal.current + ' / ' + goal.target + ')';
+                option.dataset.name = goal.name;
+                goalSelect.appendChild(option);
+            });
+            if (currentSettings.goalId && game.goals.some(function (g) { return g.id === currentSettings.goalId; })) {
+                goalSelect.value = currentSettings.goalId;
+            }
+        }
+
+        if (typeof $SD !== 'undefined' && typeof $SD.on === 'function') {
+            $SD.on('didReceiveSettings', function (settings) {
+                const newSettings = settings || {};
+                if (!newSettings.serverUrl) {
+                    newSettings.serverUrl = '127.0.0.1:5000';
+                }
+                currentSettings = newSettings;
+                readSettingsFromComponents();
+                if (availableGames.length === 0) {
+                    loadGames();
+                } else {
+                    populateGameSelect();
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

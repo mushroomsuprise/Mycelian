@@ -21,6 +21,8 @@ EVENT_TYPES = {
     "completed": "game_completed",
     "started": "game_started",
     "milestone": "game_milestone",
+    "goal_progress": "game_goal_progress",
+    "goal_completed": "game_goal_completed",
 }
 CONNECTOR_SOURCE = "game_tracker"
 

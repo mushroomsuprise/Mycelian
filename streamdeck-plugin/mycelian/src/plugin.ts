@@ -3,6 +3,7 @@
 import streamDeck, { LogLevel } from "@elgato/streamdeck";
 
 import { ConnectorAction } from "./actions/connector-action";
+import { GameGoalAction } from "./actions/game-goal";
 import { TemplateAction } from "./actions/template-action";
 import { ToggleAlerts } from "./actions/toggle-alerts";
 
@@ -17,6 +18,9 @@ streamDeck.actions.registerAction(new TemplateAction());
 
 // Register the connector action.
 streamDeck.actions.registerAction(new ConnectorAction());
+
+// Register the game goal action (count a Games Tracker goal up or down).
+streamDeck.actions.registerAction(new GameGoalAction());
 
 // Finally, connect to the Stream Deck.
 streamDeck.connect();

@@ -194,6 +194,30 @@
             color: "#ffffff",
             background_color: "rgba(15,23,42,0.85)"
         },
+        game_panel: {
+            game_source: "selected",
+            game_keys: "",
+            rotate_seconds: 10,
+            rotate_animation: "fade",
+            show_cover: true,
+            show_trophies: true,
+            show_goals: true,
+            show_speedrun: true,
+            show_last_played: true,
+            show_dots: true,
+            auto_size: true,
+            max_goals: 4,
+            title_color: "#ffffff",
+            muted_color: "#94a3b8",
+            bar_color: "#a855f7",
+            goal_bar_color: "#38bdf8",
+            done_color: "#22c55e",
+            font_size: 18,
+            font_family: "Arial",
+            color: "#ffffff",
+            background_color: "rgba(15,23,42,0.85)",
+            border_radius: 12
+        },
         qr: {
             text: "https://",
             foreground: "#000000",
@@ -328,6 +352,7 @@
         list: { w: 280, h: 180 },
         wheel: { w: 220, h: 220 },
         now_playing: { w: 360, h: 84 },
+        game_panel: { w: 440, h: 190 },
         qr: { w: 160, h: 160 },
         embed: { w: 480, h: 270 },
         stat_card: { w: 220, h: 72 },
@@ -579,6 +604,42 @@
               tooltip: "Filename in the roulette assets folder. The default is click.mp3." },
             { key: "background_color", label: "Background", type: "color",
               tooltip: "Fill behind the wheel" }
+        ],
+        game_panel: [
+            { key: "game_source", label: "Show", type: "select",
+              tooltip: "selected: the games you pick below, in that order. backlog: every game with goals. " +
+                       "current: the game you played last.",
+              options: ["selected", "backlog", "current"] },
+            { key: "game_keys", label: "Games", type: "game_picker",
+              tooltip: "Pick one game, or several to rotate between them. They show in the order you pick them." },
+            { key: "rotate_seconds", label: "Rotate every (s)", type: "number", min: 2, step: 1,
+              tooltip: "Seconds each game stays up when the panel shows more than one" },
+            { key: "rotate_animation", label: "Rotate animation", type: "select",
+              tooltip: "How the next game comes in",
+              options: ["fade", "slide_horizontal", "slide_vertical", "none"] },
+            { key: "show_cover", label: "Show cover", type: "checkbox", tooltip: "Show the game's cover art" },
+            { key: "show_trophies", label: "Show trophies", type: "checkbox",
+              tooltip: "PlayStation trophy counts by grade, or Steam achievements unlocked" },
+            { key: "show_goals", label: "Show goals", type: "checkbox", tooltip: "Show the game's goals with their bars" },
+            { key: "show_speedrun", label: "Show speedrun info", type: "checkbox",
+              tooltip: "A line per LiveSplit category: personal best and attempts (set in Settings → Games Tracker)" },
+            { key: "max_goals", label: "Goals shown", type: "number", min: 0, step: 1,
+              tooltip: "Most goals listed at once. The rest show as \"+N more goals\"." },
+            { key: "show_last_played", label: "Show last played", type: "checkbox", tooltip: "\"Played 2 days ago\"" },
+            { key: "show_dots", label: "Show page dots", type: "checkbox", tooltip: "Dots under the card while it rotates" },
+            { key: "auto_size", label: "Auto size", type: "checkbox",
+              tooltip: "Grow everything to fill the block. Fewer rows shown (goals, trophies) means bigger text. Off: uses Size." },
+            { key: "title_color", label: "Title color", type: "color", tooltip: "Color of the game's name" },
+            { key: "muted_color", label: "Detail color", type: "color", tooltip: "Color of the chips, counts and labels" },
+            { key: "bar_color", label: "Completion color", type: "color", tooltip: "Color of the game's completion bar" },
+            { key: "goal_bar_color", label: "Goal color", type: "color", tooltip: "Color of open goal bars" },
+            { key: "done_color", label: "Done color", type: "color", tooltip: "Color of finished goals and the Platinum chip" },
+            { key: "font_size", label: "Size", type: "number",
+              tooltip: "Title font size in pixels when Auto size is off. Everything else scales with it." },
+            { key: "font_family", label: "Font", type: "font", tooltip: "Font for the whole panel" },
+            { key: "color", label: "Text color", type: "color", tooltip: "Base text color" },
+            { key: "background_color", label: "Background", type: "color", tooltip: "Fill behind the card" },
+            { key: "border_radius", label: "Corner radius", type: "number", tooltip: "Rounded corners in pixels" }
         ],
         now_playing: [
             { key: "layout", label: "Layout", type: "select",
@@ -856,6 +917,7 @@
         embed: "Embed",
         list: "List",
         now_playing: "Now playing",
+        game_panel: "Game panel",
         qr: "QR code",
         stat_card: "Stat card",
         poll: "Poll",
@@ -866,7 +928,7 @@
         wheel: "Wheel"
     };
     var BLOCK_PALETTE = [
-        { group: "Data", types: ["clock", "data_display", "marquee", "now_playing", "timer"] },
+        { group: "Data", types: ["clock", "data_display", "game_panel", "marquee", "now_playing", "timer"] },
         { group: "Layout", types: ["container", "divider", "gradient", "shape"] },
         { group: "Media", types: ["audio", "embed", "image", "qr", "video"] },
         { group: "Text", types: ["text"] },
@@ -2721,6 +2783,7 @@
         poll: { track_color: true },
         prediction: { track_color: true },
         now_playing: { bar_color: true },
+        game_panel: { bar_color: true, goal_bar_color: true },
         list: { row_background: true },
         divider: { color: true }
     };
@@ -2893,7 +2956,8 @@
         var v = String(fontValue || "").trim();
         if (!v) { return ""; }
         var filename = resolveFontFilenameFromValue(v);
-        if (el && fontExposedInSourceSettings(el)) {
+        // Like the template: only a font file gets the per-element family; a system font (Arial) stays by name.
+        if (el && fontExposedInSourceSettings(el) && /\.(ttf|otf|woff2?)$/i.test(filename)) {
             var fam = "spore-el-" + slugifyElementIdForFont(el.id);
             ensureEditorFontFaceLoaded(fam, filename);
             return '"' + fam + '"';
@@ -4752,6 +4816,126 @@
         node.title = "Preview shows sample rows. Live rows appear in your overlay.";
     }
 
+    /* Games Tracker games for the Game panel picker and preview (loaded once per editor session). */
+    var trackerGamesCache = null;
+    var trackerGamesWaiting = [];
+
+    function loadTrackerGames(done) {
+        if (trackerGamesCache) { done(trackerGamesCache); return; }
+        trackerGamesWaiting.push(done);
+        if (trackerGamesWaiting.length > 1) { return; }
+        var finish = function (games) {
+            trackerGamesCache = games;
+            var waiting = trackerGamesWaiting.slice();
+            trackerGamesWaiting = [];
+            waiting.forEach(function (fn) { fn(games); });
+        };
+        fetch("/api/game-tracker/games?include_hidden=1")
+            .then(function (r) { return r.ok ? r.json() : { games: [] }; })
+            .then(function (data) { finish((data && data.games) || []); })
+            .catch(function () { finish([]); });
+    }
+
+    var trackerBacklogCache = null;
+    var trackerBacklogLoading = false;
+
+    /* Games with goals, shaped like the overlay's payloads (loaded once per editor session). */
+    function loadTrackerBacklog(done) {
+        if (trackerBacklogCache) { done(trackerBacklogCache); return; }
+        if (trackerBacklogLoading) { return; }
+        trackerBacklogLoading = true;
+        fetch("/api/game-tracker/backlog?include_hidden=1")
+            .then(function (r) { return r.ok ? r.json() : { games: [] }; })
+            .then(function (data) { trackerBacklogCache = (data && data.games) || []; done(trackerBacklogCache); })
+            .catch(function () { trackerBacklogCache = []; done(trackerBacklogCache); });
+    }
+
+    /* A tracker game as the overlay gets it: the backlog payload (with goals) or the library row. */
+    function gamePanelPayload(key) {
+        var withGoals = (trackerBacklogCache || []).filter(function (g) { return g.key === key; })[0];
+        if (withGoals) { return withGoals; }
+        var row = (trackerGamesCache || []).filter(function (g) { return g.key === key; })[0];
+        if (!row) { return null; }
+        var out = {};
+        Object.keys(row).forEach(function (k) { out[k] = row[k]; });
+        out.cover = "/api/game-tracker/cover/" + row.platform + "/" + row.id + ".jpg";
+        out.goals = [];
+        out.speedruns = row.speedruns || [];
+        out.goals_total = 0;
+        out.goals_done = 0;
+        return out;
+    }
+
+    var GAME_PANEL_SAMPLE = {
+        key: "psn:sample", platform: "psn", title: "Elden Ring", platform_label: "PS5", progress: 78, earned: 33, total: 42,
+        completed: false, last_played: 0, grades_earned: { platinum: 0, gold: 3, silver: 8, bronze: 22 },
+        goals: [
+            { kind: "manual", name: "Get all endings", current: 2, target: 3, progress: 66, completed: false },
+            { kind: "complete", name: "Platinum", current: 78, target: 100, progress: 78, completed: false },
+            { kind: "unlock", name: "Beat Malenia", current: 1, target: 1, progress: 100, completed: true }
+        ],
+        goals_total: 3, goals_done: 1, goals_complete: false,
+        speedruns: [
+            { category: "Any%", pb: "1:23:45.67", attempts: 312, finished: 41, read: true },
+            { category: "All Remembrances", pb: "3:02:11.40", attempts: 58, finished: 9, read: true }
+        ]
+    };
+
+    /* What the overlay would show right now: real games once the tracker lists have loaded, else a sample. */
+    function gamePanelPreviewGames(cfg) {
+        if (!trackerGamesCache || !trackerBacklogCache) {
+            var redraw = function () { if (trackerGamesCache && trackerBacklogCache) { renderStage(); } };
+            loadTrackerGames(redraw);
+            loadTrackerBacklog(redraw);
+            return [GAME_PANEL_SAMPLE];
+        }
+        var games;
+        if (cfg.source === "backlog") {
+            games = trackerBacklogCache.filter(function (g) { return !g.hidden; });
+        } else if (cfg.source === "current") {
+            var latest = trackerGamesCache.filter(function (g) { return !g.hidden; })
+                .sort(function (a, b) { return (Number(b.last_played) || 0) - (Number(a.last_played) || 0); })[0];
+            games = latest ? [gamePanelPayload(latest.key)] : [];
+        } else {
+            games = cfg.keys.map(gamePanelPayload).filter(Boolean);
+        }
+        return games.length ? games : [GAME_PANEL_SAMPLE];
+    }
+
+    /* Drawn by game_panel.js, the same code the overlay uses, so the preview matches the output. */
+    function paintGamePanelPreview(node, el) {
+        var GP = window.SporeGamePanel;
+        if (!GP) {
+            node.textContent = "Game panel";
+            return;
+        }
+        GP.ensureStyles(document);
+        var props = el.props || {};
+        var cfg = GP.config(function (key) { return props[key]; });
+        node.style.padding = "0";
+        node.style.display = "block";
+        node.style.overflow = "hidden";
+        var panel = document.createElement("div");
+        panel.className = "spore-game_panel";
+        panel.style.width = "100%";
+        panel.style.height = "100%";
+        GP.applyColors(panel, cfg);
+        var host = document.createElement("div");
+        host.className = "spore-gp-host";
+        panel.appendChild(host);
+        node.appendChild(panel);
+        var games = gamePanelPreviewGames(cfg);
+        var page = document.createElement("div");
+        page.className = "spore-gp-page";
+        page.innerHTML = GP.pageHtml(games[0], cfg, cfg.showDots ? { count: games.length, index: 0 } : null);
+        host.appendChild(page);
+        /* The node is placed on the stage after painting; size it once it has a box. */
+        setTimeout(function () { if (panel.isConnected) { GP.fit(panel, host, games, cfg); } }, 0);
+        node.title = games[0] === GAME_PANEL_SAMPLE
+            ? "Preview shows a sample game. Your games appear once the Games Tracker has some."
+            : "Preview of the first game. The overlay rotates through them and stays live.";
+    }
+
     function paintNowPlayingPreview(node, el) {
         var props = el.props || {};
         var on = function (key) { return props[key] !== false; };
@@ -4952,6 +5136,10 @@
         }
         if (el.type === "now_playing") {
             paintNowPlayingPreview(node, el);
+            return;
+        }
+        if (el.type === "game_panel") {
+            paintGamePanelPreview(node, el);
             return;
         }
         if (el.type === "qr") {
@@ -5757,6 +5945,97 @@
             var n = Number(v);
             onChange(isNaN(n) ? 0 : Math.max(min != null ? min : 0, n));
         }), tip);
+    }
+
+    /* Game panel: pick Games Tracker games (a comma list of "psn:NPWR..." / "steam:<app ID>" keys).
+       Checked games keep the order they were picked in; that's the rotation order. */
+    function buildGamePicker(value, onChange) {
+        var selected = String(value || "").split(",").map(function (k) { return k.trim(); }).filter(Boolean);
+        var wrap = document.createElement("div");
+        wrap.className = "ss-game-picker";
+        var search = document.createElement("input");
+        search.type = "text";
+        search.placeholder = "Search games";
+        wrap.appendChild(search);
+        var goalsOnly = buildToggle(false, function () { render(); });
+        var goalsRow = document.createElement("div");
+        goalsRow.className = "ss-form-row ss-form-row--inline";
+        goalsRow.appendChild(goalsOnly.wrap);
+        var goalsLbl = document.createElement("label");
+        goalsLbl.textContent = "Only games with goals";
+        goalsRow.appendChild(goalsLbl);
+        wrap.appendChild(goalsRow);
+        var order = document.createElement("div");
+        order.className = "ss-game-picker__order";
+        order.style.cssText = "font-size:11px;opacity:.8;margin:4px 0;";
+        wrap.appendChild(order);
+        var box = document.createElement("div");
+        box.className = "ss-feed__checks";
+        box.style.maxHeight = "220px";
+        box.style.overflowY = "auto";
+        box.textContent = "Loading games\u2026";
+        wrap.appendChild(box);
+        var games = [];
+
+        function commit() {
+            onChange(selected.join(","));
+            paintOrder();
+        }
+
+        function paintOrder() {
+            if (!selected.length) {
+                order.textContent = "No game picked yet.";
+                return;
+            }
+            var names = selected.map(function (key) {
+                var g = games.filter(function (x) { return x.key === key; })[0];
+                return g ? g.title : key;
+            });
+            order.textContent = (selected.length > 1 ? "Rotates: " : "Shows: ") + names.join(" \u2192 ");
+        }
+
+        function render() {
+            box.textContent = "";
+            var q = String(search.value || "").trim().toLowerCase();
+            var rows = games.filter(function (g) {
+                if (goalsOnly.input.checked && !(Number(g.goals_total) > 0)) { return false; }
+                return !q || String(g.title || "").toLowerCase().indexOf(q) !== -1;
+            });
+            rows.sort(function (a, b) {
+                var sa = selected.indexOf(a.key), sb = selected.indexOf(b.key);
+                if ((sa >= 0) !== (sb >= 0)) { return sa >= 0 ? -1 : 1; }
+                if (sa >= 0) { return sa - sb; }
+                return (Number(b.last_played) || 0) - (Number(a.last_played) || 0);
+            });
+            if (!rows.length) {
+                box.textContent = games.length ? "No games match." : "No games in the Games Tracker yet.";
+                return;
+            }
+            rows.slice(0, 200).forEach(function (g) {
+                var toggle = buildToggle(selected.indexOf(g.key) !== -1, function (checked) {
+                    var at = selected.indexOf(g.key);
+                    if (checked && at < 0) { selected.push(g.key); }
+                    if (!checked && at >= 0) { selected.splice(at, 1); }
+                    commit();
+                });
+                var row = document.createElement("div");
+                row.className = "ss-form-row ss-form-row--inline";
+                row.appendChild(toggle.wrap);
+                var lbl = document.createElement("label");
+                var goals = Number(g.goals_total) > 0 ? " \u00b7 " + g.goals_done + "/" + g.goals_total + " goals" : "";
+                lbl.textContent = g.title + " (" + (g.platform_label || g.platform) + ")" + goals;
+                row.appendChild(lbl);
+                box.appendChild(row);
+            });
+        }
+
+        search.addEventListener("input", render);
+        loadTrackerGames(function (list) {
+            games = list || [];
+            paintOrder();
+            render();
+        });
+        return wrap;
     }
 
     function buildFeedEventChecklist(selected, onChange) {
@@ -7288,7 +7567,7 @@
                 fill.style.width = pct + "%";
                 track.appendChild(fill);
                 node.appendChild(track);
-            } else if (el.type === "list" || el.type === "wheel" || el.type === "now_playing" ||
+            } else if (el.type === "list" || el.type === "wheel" || el.type === "now_playing" || el.type === "game_panel" ||
                     el.type === "qr" || el.type === "embed" || el.type === "stat_card" || el.type === "confetti" ||
                     el.type === "poll" || el.type === "prediction") {
                 paintWidgetPreview(node, el);
@@ -8039,6 +8318,10 @@
         if (el.type === "image" && imageSrcMode === "from_counter" && entry.key === "src") {
             return;
         }
+        if (el.type === "game_panel" && entry.key === "game_keys" &&
+                ((el.props && el.props.game_source) || "selected") !== "selected") {
+            return;
+        }
         var current = el.props && el.props[entry.key];
         var tip = entry.tooltip || "";
 
@@ -8066,6 +8349,16 @@
                 propChange(function () {});
             }, { allowGradient: colorPropAllowsGradient(el, entry.key, current), title: entry.label });
             host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, colorCtrl, tip));
+            return;
+        }
+
+        if (entry.type === "game_picker") {
+            var picker = buildGamePicker(current || "", function (v) {
+                el.props = el.props || {};
+                el.props[entry.key] = v;
+                propChange(function () {});
+            });
+            host.appendChild(formRowPropWithExpose(el, entry.key, entry.label, picker, tip));
             return;
         }
 
@@ -8147,6 +8440,10 @@
             propChange(function () {});
             if (el.type === "clock" && entry.key === "timezone") {
                 // The offset field only exists while timezone is "offset".
+                renderProperties();
+            }
+            if (el.type === "game_panel" && entry.key === "game_source") {
+                // The game picker only exists while the panel shows chosen games.
                 renderProperties();
             }
         });

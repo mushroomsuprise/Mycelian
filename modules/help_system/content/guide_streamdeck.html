@@ -105,6 +105,7 @@
     <tr><td><strong>Toggle Alerts</strong></td><td>Pauses or resumes alert playback. The key shows <code>ACTIVE</code> or <code>PAUSED</code> and stays in sync with the app.</td></tr>
     <tr><td><strong>Connector</strong></td><td>Runs a Mycelian connector that uses the <strong>Stream Deck</strong> trigger. The key shows the connector's name.</td></tr>
     <tr><td><strong>Template Action</strong></td><td>Runs a Stream Deck action defined in a Spore Studio template, with optional parameters. The key shows template and action.</td></tr>
+    <tr><td><strong>Game Goal</strong></td><td>Counts a manual Games Tracker goal up or down. Pick the game, the goal, <em>Add</em> or <em>Subtract</em>, and by how much. The key shows the goal's name, its count (for example <code>2/5</code>) and what a press does, and keeps up when the goal changes elsewhere. Use two keys for +1 and −1.</td></tr>
     </tbody>
     </table></div>
   </div>
@@ -192,6 +193,8 @@ toggle_logo</span>
 <tr><td><code>TGL ALERTS</code> / <code>ERROR</code></td><td>Toggle Alerts key</td><td>Mycelian cannot be reached. The key keeps retrying</td></tr>
 <tr><td><code>NOT SET</code> or <code>TEMPLATE</code> / <code>NOT SET</code></td><td>Connector or Template Action key</td><td>No connector, or no template and action, picked yet</td></tr>
 <tr><td><code>ERROR</code> or <code>TEMPLATE</code> / <code>ERROR</code></td><td>Connector or Template Action key</td><td>The press did not reach Mycelian, or Mycelian rejected it</td></tr>
+<tr><td><code>GOAL</code> / <code>NOT SET</code> or <code>GOAL</code> / <code>ERROR</code></td><td>Game Goal key</td><td>No goal picked yet, or the press did not reach Mycelian</td></tr>
+<tr><td>The goal's name / <code>GONE</code></td><td>Game Goal key</td><td>The goal (or its game) was removed in Mycelian. Pick another goal</td></tr>
 <tr><td><span class="hx-badge hx-warn">Stream Deck not detected</span></td><td>App Settings</td><td>The Stream Deck plugins folder does not exist yet. Open the Stream Deck app once</td></tr>
 <tr><td><span class="hx-badge hx-info">Not installed</span></td><td>App Settings</td><td>Click <strong>Install Plugin</strong></td></tr>
 <tr><td><span class="hx-badge hx-ok">Installed</span></td><td>App Settings</td><td>Plugin is in place. A line <em>New version available: v…</em> means Mycelian has a newer copy; click <strong>Reinstall Plugin</strong></td></tr>
@@ -228,6 +231,11 @@ toggle_logo</span>
 <details class="hx-details">
   <summary>The Connector list is empty</summary>
   <p>Only connectors with the <strong>Stream Deck</strong> trigger are listed. Create or edit one in <strong>Connectors</strong>, save it, then click <strong>Refresh</strong> in the key settings.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The Game Goal list is empty</summary>
+  <p>Only manual goals are listed (the ones you count yourself). Add one to a game in <strong>Settings → Games Tracker</strong> (the {{icon:settings}} on the game's card), then click <strong>Refresh</strong> in the key settings. Automatic goals, like the platinum, follow the game and can't be counted by hand.</p>
 </details>
 
 <details class="hx-details">

@@ -66,14 +66,15 @@
         info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
         queue: '<path d="M4 6h16M4 12h16M4 18h10"/><path d="m18 16 2 2-2 2"/>',
         drag: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
-        link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
+        link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+        gamepad: '<path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/><path d="M17.3 5H6.7a4 4 0 0 0-4 3.6L2 15a3 3 0 0 0 5.2 2.1L9 15h6l1.8 2.1A3 3 0 0 0 22 15l-.7-6.4a4 4 0 0 0-4-3.6Z"/>'
     };
 
     var TYPE_ICONS = {
         text: "type", image: "image", video: "film", audio: "volume", container: "box", shape: "square", divider: "minus",
         gradient: "blend", marquee: "marquee", clock: "clock", timer: "timer", list: "list", wheel: "wheel",
         now_playing: "music", qr: "qr", embed: "globe", stat_card: "badge", poll: "poll", prediction: "prediction", confetti: "party",
-        counter: "hash", progress_bar: "progress", data_display: "braces"
+        counter: "hash", progress_bar: "progress", data_display: "braces", game_panel: "gamepad"
     };
 
     function icon(name, extraClass) {

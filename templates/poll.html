@@ -2457,6 +2457,200 @@
         }
     }
 
+    /* ----- Game panel (Games Tracker) -----
+       Shows one game card at a time like the Games Tracker tab: cover, title, completion bar,
+       trophies or achievements and the game's goals. With several games it rotates. It asks for
+       its games on load (game_tracker_request_games) and updates in place from game_tracker_game.
+       The card itself (styles, markup, auto size) comes from game_panel.js, which the editor's
+       preview uses too; it is loaded here on first use. */
+
+    var SPORE_GP_SCRIPT = '/assets/default_assets/spore_studio/game_panel.js';
+
+    function sporeGamePanelLib(done) {
+        if (window.SporeGamePanel) { done(window.SporeGamePanel); return; }
+        var waiting = window.__sporeGamePanelWaiting = window.__sporeGamePanelWaiting || [];
+        waiting.push(done);
+        if (waiting.length > 1 || !document.createElement) { return; }
+        var tag = document.createElement('script');
+        tag.src = SPORE_GP_SCRIPT;
+        tag.onload = function () {
+            var list = (window.__sporeGamePanelWaiting || []).slice();
+            window.__sporeGamePanelWaiting = [];
+            list.forEach(function (fn) { if (window.SporeGamePanel) { fn(window.SporeGamePanel); } });
+        };
+        (document.head || document.body).appendChild(tag);
+    }
+
+    function sporeGamePanelConfig(el) {
+        var attrs = {
+            game_source: 'data-spore-game-source', game_keys: 'data-spore-game-keys',
+            rotate_seconds: 'data-spore-game-rotate-seconds', rotate_animation: 'data-spore-game-rotate-anim',
+            show_cover: 'data-spore-game-cover', show_trophies: 'data-spore-game-trophies', show_goals: 'data-spore-game-goals',
+            show_last_played: 'data-spore-game-played', show_dots: 'data-spore-game-dots', auto_size: 'data-spore-game-auto',
+            show_speedrun: 'data-spore-game-speedrun',
+            max_goals: 'data-spore-game-max-goals', title_color: 'data-spore-game-title-color', muted_color: 'data-spore-game-muted',
+            bar_color: 'data-spore-game-bar', goal_bar_color: 'data-spore-game-goal-bar', done_color: 'data-spore-game-done'
+        };
+        return window.SporeGamePanel.config(function (key) {
+            return attrs[key] ? sporeAttr(el, attrs[key], undefined) : undefined;
+        });
+    }
+
+    function sporePaintGamePanel(el, fromRotator) {
+        var GP = window.SporeGamePanel;
+        var host = el.querySelector('.spore-gp-host');
+        if (!host || !GP) { return; }
+        var cfg = sporeGamePanelConfig(el);
+        GP.applyColors(el, cfg);
+        var games = el._sporeGames || [];
+        if (!games.length) {
+            var empty = el._sporeGamesLoaded
+                ? (cfg.source === 'backlog' ? 'No games with goals yet' : cfg.source === 'current' ? 'No recent game' : 'No game selected')
+                : 'Loading games…';
+            host.innerHTML = '<div class="spore-gp-empty">' + empty + '</div>';
+            GP.fit(el, host, [], cfg);
+            sporeArmGameRotator(el, 0, cfg);
+            return;
+        }
+        var index = (el._sporeGameIndex || 0) % games.length;
+        el._sporeGameIndex = index;
+        /* Size by the fullest card so the text doesn't jump as the panel rotates. */
+        var sizeKey = games.map(function (g) { return g.key + ':' + GP.weight(g, cfg); }).join('|') + '|' + el.clientWidth + 'x' + el.clientHeight;
+        if (el._sporeGpSizeKey !== sizeKey) {
+            el._sporeGpSizeKey = sizeKey;
+            GP.fit(el, host, games, cfg);
+        }
+        var anim = fromRotator ? cfg.anim : 'none';
+        var previous = host.querySelector('.spore-gp-page:not(.is-exiting)');
+        host.querySelectorAll('.spore-gp-page.is-exiting').forEach(function (n) { n.remove(); });
+        var page = document.createElement('div');
+        page.className = 'spore-gp-page';
+        page.setAttribute('data-game-key', games[index].key || '');
+        page.innerHTML = GP.pageHtml(games[index], cfg, cfg.showDots ? { count: games.length, index: index } : null);
+        Array.prototype.slice.call(host.childNodes).forEach(function (n) { if (n !== previous) { host.removeChild(n); } });
+        if (previous && anim !== 'none') {
+            previous.classList.add('is-exiting', 'is-exit-' + anim);
+            previous.style.animationDuration = '0.4s';
+            setTimeout(function () { if (previous.parentNode) { previous.parentNode.removeChild(previous); } }, 450);
+            page.classList.add('is-' + anim);
+            page.style.animationDuration = '0.4s';
+        } else if (previous) {
+            host.removeChild(previous);
+        }
+        host.appendChild(page);
+        sporeArmGameRotator(el, games.length, cfg);
+    }
+
+    function sporeArmGameRotator(el, count, cfg) {
+        var key = count > 1 ? (count + ':' + cfg.seconds) : '';
+        if (el._sporeGameRotKey === key) { return; }
+        if (el._sporeGameRotTimer) {
+            clearInterval(el._sporeGameRotTimer);
+            el._sporeGameRotTimer = null;
+        }
+        el._sporeGameRotKey = key;
+        if (!key) { return; }
+        el._sporeGameRotTimer = setInterval(function () {
+            var games = el._sporeGames || [];
+            if (games.length < 2) { return; }
+            el._sporeGameIndex = ((el._sporeGameIndex || 0) + 1) % games.length;
+            sporePaintGamePanel(el, true);
+        }, cfg.seconds * 1000);
+    }
+
+    /* The panel's games, in its order: the chosen keys, every game with goals, or the last played. */
+    function sporeGamePanelSet(el, games) {
+        var cfg = sporeGamePanelConfig(el);
+        games = (games || []).filter(function (g) { return g && g.key; });
+        if (cfg.source === 'selected' && cfg.keys.length) {
+            var byKey = {};
+            games.forEach(function (g) { byKey[g.key] = g; });
+            games = cfg.keys.map(function (k) { return byKey[k]; }).filter(Boolean);
+        }
+        var current = (el._sporeGames || [])[el._sporeGameIndex || 0];
+        el._sporeGames = games;
+        el._sporeGamesLoaded = true;
+        var keep = current ? games.map(function (g) { return g.key; }).indexOf(current.key) : -1;
+        el._sporeGameIndex = keep >= 0 ? keep : 0;
+        sporePaintGamePanel(el, false);
+    }
+
+    /* One game changed. Repaint only when it is (or now belongs) on this panel. */
+    function sporeGamePanelUpdate(el, game) {
+        if (!game || !game.key) { return; }
+        var cfg = sporeGamePanelConfig(el);
+        var games = (el._sporeGames || []).slice();
+        var at = games.map(function (g) { return g.key; }).indexOf(game.key);
+        if (cfg.source === 'selected') {
+            if (cfg.keys.indexOf(game.key) < 0) { return; }
+            if (at < 0) { sporeGamePanelRequest(el); return; }
+            games[at] = game;
+        } else if (cfg.source === 'backlog') {
+            var belongs = Number(game.goals_total) > 0 && !game.hidden;
+            if (at >= 0 && belongs) { games[at] = game; }
+            else if (at >= 0) { games.splice(at, 1); }
+            else if (belongs) { games.push(game); }
+            else { return; }
+        } else {
+            var shown = games[0];
+            if (shown && shown.key !== game.key && Number(game.last_played || 0) <= Number(shown.last_played || 0)) { return; }
+            games = [game];
+        }
+        el._sporeGames = games;
+        el._sporeGamesLoaded = true;
+        if ((el._sporeGameIndex || 0) >= games.length) { el._sporeGameIndex = 0; }
+        sporePaintGamePanel(el, false);
+    }
+
+    function sporeGamePanelRequest(el) {
+        if (typeof socket === 'undefined' || !socket || !socket.emit) { return; }
+        var cfg = sporeGamePanelConfig(el);
+        socket.emit('game_tracker_request_games', { mode: cfg.source, keys: cfg.keys, element: el.id });
+    }
+
+    function sporeBindGamePanels(panels, feedDriven) {
+        if (!panels.length) { return; }
+        sporeGamePanelLib(function () { sporeBindGamePanelsNow(panels, feedDriven); });
+    }
+
+    function sporeBindGamePanelsNow(panels, feedDriven) {
+        for (var i = 0; i < panels.length; i++) { sporePaintGamePanel(panels[i], false); }
+        if (typeof socket === 'undefined' || !socket || !socket.on) { return; }
+        var asking = function () { for (var j = 0; j < panels.length; j++) { sporeGamePanelRequest(panels[j]); } };
+        socket.on('game_tracker_games', function (data) {
+            data = data || {};
+            for (var j = 0; j < panels.length; j++) {
+                var cfg = sporeGamePanelConfig(panels[j]);
+                /* Each panel asked with its own mode and keys; take the reply that matches them. */
+                if (String(data.mode || 'selected') !== cfg.source) { continue; }
+                if (cfg.source === 'selected' && (data.keys || []).join(',') !== cfg.keys.join(',')) { continue; }
+                sporeGamePanelSet(panels[j], data.games || []);
+            }
+        });
+        if (!feedDriven) {
+            socket.on('game_tracker_game', function (game) {
+                for (var j = 0; j < panels.length; j++) { sporeGamePanelUpdate(panels[j], game); }
+            });
+        }
+        asking();
+        socket.on('connect', asking);
+        /* An OBS source resized after load: fit again. */
+        if (window.addEventListener) {
+            window.addEventListener('resize', function () {
+                for (var k = 0; k < panels.length; k++) { sporePaintGamePanel(panels[k], false); }
+            });
+        }
+    }
+
+    /* A Data feed's repaint: a game_tracker_game payload (one game) or a game_tracker_games reply. */
+    function sporeGamePanelRepaint(el, raw) {
+        raw = raw || {};
+        sporeGamePanelLib(function () {
+            if (Array.isArray(raw.games)) { sporeGamePanelSet(el, raw.games); }
+            else if (raw.key) { sporeGamePanelUpdate(el, raw); }
+        });
+    }
+
     function sporePaintQr(el) {
         var host = el.querySelector('.spore-qr-host');
         if (!host) { return; }
@@ -3617,6 +3811,12 @@
             });
         }
         for (var p2 = 0; p2 < playing.length; p2++) { sporePaintNowPlaying(playing[p2], {}); }
+        var gamePanels = document.querySelectorAll('[data-spore-type="game_panel"]');
+        var gamePanelFeeds = false;
+        for (var gp = 0; gp < gamePanels.length; gp++) {
+            if (sporeFeedDrives(gamePanels[gp].id, 'repaint')) { gamePanelFeeds = true; }
+        }
+        sporeBindGamePanels(Array.prototype.slice.call(gamePanels), gamePanelFeeds);
         var qrs = document.querySelectorAll('[data-spore-type="qr"]');
         for (var q = 0; q < qrs.length; q++) { sporePaintQr(qrs[q]); }
         var polls = document.querySelectorAll('[data-spore-type="poll"]');
@@ -4098,6 +4298,7 @@
                 sporePaintPrediction(el, raw || {});
             }
             else if (type === 'now_playing') { sporePaintNowPlaying(el, raw || {}); }
+            else if (type === 'game_panel') { sporeGamePanelRepaint(el, raw); }
         },
         show: function (feed, el) { sporeFeedShow(el); },
         hide: function (feed, el) { sporeFeedHide(el); },
@@ -4512,6 +4713,9 @@
     window.sporeFeedFire = sporeFeedFire;
     window.sporeEmitOutput = sporeEmitOutput;
     window.sporePaintQr = sporePaintQr;
+    window.sporePaintGamePanel = sporePaintGamePanel;
+    window.sporeGamePanelSet = sporeGamePanelSet;
+    window.sporeGamePanelUpdate = sporeGamePanelUpdate;
 
     window.sporePatchSetText = sporePatchSetText;
     window.sporeInitClocks = sporeInitClocks;

@@ -596,3 +596,219 @@ def test_cover_html_fits_and_drawer_reports_failed_covers(env, monkeypatch):
     monkeypatch.setattr(tabmod.covers, "forget_failures", lambda: forgot.append(1) or 0)
     tab._sync_now()
     assert forgot == [1]
+
+
+# --------------------------------------------------------------------------- goals and the backlog
+
+
+def _goals(*pairs):
+    from modules.game_tracker.goals import GameGoal
+
+    return [GameGoal.from_dict(dict(platform=p, game_id=gid, **kw)) for p, gid, kw in pairs]
+
+
+def test_filter_games_goal_statuses_and_new_sorts():
+    games = [psn_game(), steam_game(), steam_game("11", "Balatro", progress=0, unlocked_ids=[], total_achievements=3,
+                                                   playtime_min=900, first_seen=NOW, last_played=NOW)]
+    goals = {"psn:NPWR00001_00": _goals((PSN, "NPWR00001_00", {"kind": "manual", "name": "X"}))}
+    assert [g.title for g in tabmod.filter_games(games, status="goals", goals=goals)] == ["ELDEN RING"]
+    assert [g.title for g in tabmod.filter_games(games, status="no_goals", goals=goals)] == ["Balatro", "Hades"]
+    assert [g.title for g in tabmod.filter_games(games, exclude_goal_games=True, goals=goals)] == ["Balatro", "Hades"]
+    assert [g.title for g in tabmod.filter_games(games, status="not_started")] == ["Balatro"]
+    assert [g.title for g in tabmod.filter_games(games, sort="least")] == ["Balatro", "ELDEN RING", "Hades"]
+    assert [g.title for g in tabmod.filter_games(games, sort="name_desc")] == ["Hades", "ELDEN RING", "Balatro"]
+    assert [g.title for g in tabmod.filter_games(games, sort="playtime")][0] == "Balatro"
+    assert [g.title for g in tabmod.filter_games(games, sort="added")][0] == "Balatro"
+    assert [g.title for g in tabmod.filter_games(games, sort="earned")][0] == "ELDEN RING"
+
+
+def test_filter_backlog():
+    games = [psn_game(), steam_game(), steam_game("11", "Balatro", hidden=True)]
+    goals = {
+        "psn:NPWR00001_00": _goals((PSN, "NPWR00001_00", {"kind": "manual", "name": "A", "target": 4, "current": 1})),
+        "steam:10": _goals((STEAM, "10", {"kind": "complete"}), (STEAM, "10", {"kind": "manual", "name": "B", "order": 1})),
+        "steam:11": _goals((STEAM, "11", {"kind": "manual", "name": "Hidden"})),
+    }
+    assert [g.title for g in tabmod.filter_backlog(games, goals)] == ["Hades", "ELDEN RING"]  # 50% before 25%
+    assert [g.title for g in tabmod.filter_backlog(games, goals, sort="least")] == ["ELDEN RING", "Hades"]
+    assert [g.title for g in tabmod.filter_backlog(games, goals, sort="most_goals")] == ["Hades", "ELDEN RING"]
+    goals["psn:NPWR00001_00"][0].current = 4
+    assert [g.title for g in tabmod.filter_backlog(games, goals, status="complete")] == ["ELDEN RING"]
+    assert [g.title for g in tabmod.filter_backlog(games, goals, status="active", platform=STEAM)] == ["Hades"]
+    assert tabmod.filter_backlog(games, goals, q="zzz") == []
+
+
+def test_card_parts_with_goals_and_achievement_options():
+    goals = _goals((PSN, "NPWR00001_00", {"kind": "manual", "name": "<i>Endings</i>", "target": 3, "current": 1}),
+                   (PSN, "NPWR00001_00", {"kind": "count", "target": 5, "order": 1}),
+                   (PSN, "NPWR00001_00", {"kind": "percent", "target": 90, "order": 2}),
+                   (PSN, "NPWR00001_00", {"kind": "complete", "order": 3}))
+    p = tabmod.card_parts(psn_game(), now=NOW, goals=goals)
+    assert "&lt;i&gt;Endings&lt;/i&gt;" in p["top"] and "1 / 3" in p["top"] and "+1 more goal" in p["top"]
+    assert "1 / 4 goals" in p["top"]
+    assert "gtr-goals" not in tabmod.card_parts(psn_game(), now=NOW)["top"]
+    assert tabmod.achievement_options([{"id": "7", "name": "Elden Lord", "grade": "gold", "earned": True},
+                                       {"id": "A", "name": "First", "grade": "achievement"}]) == {
+        "7": "Elden Lord · Gold · earned", "A": "First"}
+
+
+def test_backlog_section_splits_the_library(env):
+    env.store.upsert_games([psn_game(), steam_game()])
+    env.service.add_goal(PSN, "NPWR00001_00", kind="manual", name="Get all endings", target=3)
+    tabs: List[Any] = []
+
+    async def check(user):
+        tab = tabs[0]
+        await run_scheduled(env, "_refresh")
+        assert tab.ui_elements["backlog"].visible
+        assert [g.title for g in tab.visible_backlog()] == ["ELDEN RING"]
+        assert [g.title for g in tab.visible_games()] == ["Hades"]
+        await user.should_see("Get all endings")
+        tab._set_filter("backlog", status="complete")
+        assert tab.visible_backlog() == [] and tab.ui_elements["bl_none"].visible
+        assert env.store.load_settings().view["backlog"]["status"] == "complete"  # remembered right away
+        assert tab.dirty is False
+        tab._set_opt(backlog_section=False)
+        tab.save()
+        assert tab.ui_elements["backlog"].visible is False
+        assert [g.title for g in tab.visible_games()] == ["ELDEN RING", "Hades"]
+        assert env.store.load_settings().view["backlog"]["status"] == "complete"  # Save kept the remembered filters
+
+    run_ui(build_into(tabs), check)
+
+
+def test_drawer_goals_add_count_move_edit_delete(env):
+    env.store.upsert_games([psn_game()])
+    tabs: List[Any] = []
+
+    async def check(user):
+        tab = tabs[0]
+        await run_scheduled(env, "_refresh")
+        tab.open_drawer(tab._games[0])
+        await user.should_see("No goals yet")
+        await tab._add_goal()  # a manual goal needs a name
+        assert env.notes[-1]["title"] == "Name the goal"
+        tab._set_goal_form(name="Get all endings", target=2)
+        await tab._add_goal()
+        tab._set_goal_form(kind="percent")
+        assert tab._goal_form["target"] == 50
+        await tab._add_goal()
+        goals = env.service.goals_for(PSN, "NPWR00001_00")
+        assert [g.kind for g in goals] == ["manual", "percent"]
+        await user.should_see("Get all endings")
+        await tab._goal_op("adjust", goals[0].id, "add")
+        await tab._goal_op("adjust", goals[1].id, "add")
+        assert env.notes[-1]["title"] == "Couldn't change the goal"
+        assert env.service.goals_for(PSN, "NPWR00001_00")[0].current == 1
+        await tab._goal_op("move", goals[1].id, -1)
+        assert [g.kind for g in env.service.goals_for(PSN, "NPWR00001_00")] == ["percent", "manual"]
+        tab._edit_goal_dialog(goals[0])
+        await user.should_see("Edit goal")
+        await tab._goal_op("remove", goals[1].id)
+        assert [g.kind for g in env.service.goals_for(PSN, "NPWR00001_00")] == ["manual"]
+        assert tab._needs_refresh
+
+    run_ui(build_into(tabs), check)
+
+
+def test_drawer_unlock_goal_picker(env, monkeypatch):
+    env.store.upsert_games([psn_game()])
+    monkeypatch.setattr(env.service, "achievement_list", lambda p, gid: [
+        {"id": "7", "name": "Elden Lord", "grade": "gold", "icon": "i.png", "earned": False}])
+    tabs: List[Any] = []
+
+    async def check(user):
+        tab = tabs[0]
+        await run_scheduled(env, "_refresh")
+        tab.open_drawer(tab._games[0])
+        tab._set_goal_form(kind="unlock")
+        assert "disable" in tab.ui_elements["gf_add"].props
+        await tab._load_achievements()
+        assert tab.ui_elements["gf_unlock"].options == {"7": "Elden Lord · Gold"}
+        tab._set_goal_form(unlock="7")
+        await tab._add_goal()
+        (goal,) = env.service.goals_for(PSN, "NPWR00001_00")
+        assert (goal.kind, goal.unlock_id, goal.unlock_name, goal.unlock_icon) == ("unlock", "7", "Elden Lord", "i.png")
+
+    run_ui(build_into(tabs), check)
+
+
+def test_drawer_width_is_clamped_saved_and_applied(env):
+    assert tabmod.clamp_drawer_width(None) == tabmod.DRAWER_DEFAULT_WIDTH
+    assert tabmod.clamp_drawer_width("12") == tabmod.DRAWER_MIN_WIDTH
+    assert tabmod.clamp_drawer_width(99999) == tabmod.DRAWER_MAX_WIDTH
+    tabmod._on_drawer_width(SimpleNamespace(args=612.4))
+    assert env.store.load_settings().view["drawer_width"] == 612
+    assert "__MIN__" not in tabmod._DRAWER_RESIZE_JS and "mycelian-gtr-drawer-width" in tabmod._DRAWER_RESIZE_JS
+    env.store.upsert_games([psn_game()])
+    tabs: List[Any] = []
+
+    async def check(user):
+        tab = tabs[0]
+        await run_scheduled(env, "_refresh")
+        tab._set_filter("library", sort="name")  # remembering list filters keeps the width
+        assert env.store.load_settings().view["drawer_width"] == 612
+        tab.open_drawer(tab._games[0])
+        assert tab.ui_elements["drawer_body"]._style.get("width") == "612px"
+        assert any("gtr-dresize" in c.classes for c in tab.ui_elements["drawer_body"].default_slot.children)
+        await user.should_see("Goal name")
+
+    run_ui(build_into(tabs), check)
+
+
+# --------------------------------------------------------------------------- speedrun info
+
+
+SPLITS = ('<?xml version="1.0" encoding="UTF-8"?><Run version="1.7.0"><GameName>Elden Ring</GameName>'
+          '<CategoryName>{cat}</CategoryName><AttemptCount>72</AttemptCount><AttemptHistory>'
+          '<Attempt id="1"><RealTime>01:36:25.5516722</RealTime></Attempt><Attempt id="2" /></AttemptHistory>'
+          '<Segments><Segment><Name>End</Name><SplitTimes><SplitTime name="Personal Best"><RealTime>01:36:25.5516722</RealTime>'
+          '</SplitTime></SplitTimes></Segment></Segments></Run>')
+
+
+def test_speedrun_rows_html():
+    rows = [{"id": "a", "category": "<Any%>", "pb": "1:36:25.55", "attempts": 72, "finished": 8, "read": True, "error": "",
+             "file": "C:/x.lss"},
+            {"id": "b", "category": "100%", "pb": "", "attempts": 3, "finished": 0, "read": True, "error": "Bad file", "file": "y"},
+            {"id": "c", "category": "Low%", "pb": "", "attempts": 0, "finished": 0, "read": False, "error": "", "file": "z"}]
+    html = tabmod.speedrun_rows_html(rows, 2)
+    assert "&lt;Any%&gt;" in html and "1:36:25.55" in html and "72 attempts · 8 finished" in html
+    assert "No finished run yet" in html and 'title="Bad file"' in html and "+1 more category" in html
+    assert "Not read yet" in tabmod.speedrun_rows_html(rows[2:])
+    assert tabmod.speedrun_rows_html([]) == ""
+    assert "1:36:25.55" in tabmod.card_parts(psn_game(), now=NOW, speedruns=rows[:1])["top"]
+
+
+def test_drawer_links_split_files_with_categories(env, tmp_path):
+    env.store.upsert_games([psn_game()])
+    any_pct = tmp_path / "any.lss"
+    any_pct.write_text(SPLITS.format(cat="PC Any% 30FPS"), encoding="utf-8")
+    hundred = tmp_path / "100.lss"
+    hundred.write_text(SPLITS.format(cat="100%"), encoding="utf-8")
+    tabs: List[Any] = []
+
+    async def check(user):
+        tab = tabs[0]
+        await run_scheduled(env, "_refresh")
+        tab.open_drawer(tab._games[0])
+        await user.should_see("Speedrun info")
+        await user.should_see("No split files yet")
+        await tab._link_split_file(str(any_pct))  # blank category: the file's own
+        tab.ui_elements["sr_category"].value = "Hundo"
+        await tab._link_split_file(str(hundred), "Hundo")
+        assert tab.ui_elements["sr_category"].value == ""
+        await user.should_see("PC Any% 30FPS")
+        await user.should_see("1:36:25.55")
+        rows = tab._speedruns[tab._games[0].key]
+        assert [r["category"] for r in rows] == ["PC Any% 30FPS", "Hundo"]
+        await tab._link_split_file(str(any_pct))
+        assert env.notes[-1]["title"] == "Couldn't link the split file"
+        await tab._speedrun_op("move", rows[1]["id"], -1)
+        assert [r["category"] for r in tab._speedruns[tab._games[0].key]] == ["Hundo", "PC Any% 30FPS"]
+        tab._edit_speedrun_dialog(rows[0])
+        await user.should_see("Edit split file")
+        await tab._speedrun_op("remove", rows[0]["id"])
+        await tab._speedrun_op("remove", rows[1]["id"])
+        assert tab.ui_elements["d_speedruns"] is not None and tab.service.speedruns_for(PSN, "NPWR00001_00") == []
+
+    run_ui(build_into(tabs), check)

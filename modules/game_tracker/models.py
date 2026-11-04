@@ -20,7 +20,9 @@ UNLOCK = "unlock"
 COMPLETED = "completed"
 STARTED = "started"
 MILESTONE = "milestone"
-EVENT_KINDS = (UNLOCK, COMPLETED, STARTED, MILESTONE)
+GOAL_PROGRESS = "goal_progress"
+GOAL_COMPLETED = "goal_completed"
+EVENT_KINDS = (UNLOCK, COMPLETED, STARTED, MILESTONE, GOAL_PROGRESS, GOAL_COMPLETED)
 
 
 def _int(value: Any) -> int:
@@ -156,6 +158,15 @@ class GameEvent:
     unlock_rarity: Optional[float] = None  # percent of players
     unlock_icon: str = ""
     milestone: Optional[int] = None
+    # goal_progress / goal_completed only
+    goal_id: str = ""
+    goal_name: str = ""
+    goal_kind: str = ""
+    goal_current: int = 0
+    goal_target: int = 0
+    goal_progress: int = 0
+    goals_done: int = 0
+    goals_total: int = 0
     ts: float = field(default_factory=time.time)
 
     def fields_for_events(self) -> Dict[str, Any]:
@@ -176,6 +187,17 @@ class GameEvent:
             "unlock_rarity": "" if self.unlock_rarity is None else self.unlock_rarity,
             "unlock_icon": self.unlock_icon,
             "milestone": "" if self.milestone is None else self.milestone,
+            "goal_id": self.goal_id,
+            "goal_name": self.goal_name,
+            "goal_type": self.goal_kind,
+            "goal_current": self.goal_current,
+            "goal_target": self.goal_target,
+            "goal_progress": self.goal_progress,
+            "goal_completed": self.goal_target > 0 and self.goal_current >= self.goal_target,
+            "goals_done": self.goals_done,
+            "goals_total": self.goals_total,
+            "goals_remaining": max(0, self.goals_total - self.goals_done),
+            "all_goals_done": self.goals_total > 0 and self.goals_done >= self.goals_total,
             "timestamp": self.ts,
         }
 
@@ -198,6 +220,8 @@ class TrackerSettings:
     record_stats: bool = True
     send_events: bool = True
     export: Dict[str, Any] = field(default_factory=dict)  # remembered export-image options
+    backlog_section: bool = True  # games with goals get their own Backlog section above the library
+    view: Dict[str, Any] = field(default_factory=dict)  # remembered filter and sort of the Backlog and Library lists
     version: int = SETTINGS_VERSION
 
     @classmethod
@@ -213,6 +237,8 @@ class TrackerSettings:
         s.cover_missing_hours = max(1, min(72, _int(s.cover_missing_hours) or 6))
         s.milestones = clean_milestones(s.milestones)
         s.export = dict(s.export or {}) if isinstance(s.export, dict) else {}
+        s.view = dict(s.view or {}) if isinstance(s.view, dict) else {}
+        s.backlog_section = bool(s.backlog_section)
         return s
 
     def to_dict(self) -> Dict[str, Any]:

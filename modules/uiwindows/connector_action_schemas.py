@@ -343,6 +343,21 @@ _add(ActionSpec("game_lookup", "Look up game progress", "Games", "emoji_events",
     Field("platform", "Platform", "select", default="", options={"": "Any", "psn": "PlayStation", "steam": "Steam"},
           width="half"),
 ]))
+_GOAL_OPS = {"add": "Count up", "subtract": "Count down", "set": "Set the count to", "complete": "Mark done", "reset": "Reset to 0"}
+_add(ActionSpec("game_goal_update", "Update game goal", "Games", "flag",
+                "Count a manual goal up or down, or mark it done (Games Tracker)", [
+    Field("game", "Game", variables=True, placeholder="Elden Ring",
+          help="A game's name, or a variable such as {command_message}. Leave empty for the most recently played game."),
+    Field("platform", "Platform", "select", default="", options={"": "Any", "psn": "PlayStation", "steam": "Steam"},
+          width="half"),
+    Field("goal", "Goal", variables=True, placeholder="Get all endings",
+          help="The goal's name (part of it is enough). Leave empty for the game's first open manual goal. "
+               "Only manual goals change; automatic goals follow the game. Later actions can use {actionN.goal_current} "
+               "and the other results."),
+    Field("operation", "Change", "select", default="add", options=_GOAL_OPS, width="half", rerender=True),
+    Field("amount", "By", variables=True, default="1", width="third", placeholder="1",
+          show=lambda c: c.get("operation", "add") in ("add", "subtract", "set")),
+]))
 
 
 # Keys stored in the editor config that are not action kwargs.
@@ -619,6 +634,13 @@ def summarize(action_type: Optional[str], cfg: dict, render: Callable[[str], str
     if action_type == "game_lookup":
         game = render(c.get("game") or "")
         return f"Progress of {game}" if game else "Progress of the latest game"
+    if action_type == "game_goal_update":
+        op = c.get("operation") or "add"
+        goal = render(c.get("goal") or "") or "next manual goal"
+        game = render(c.get("game") or "") or "latest game"
+        amount = render(str(c.get("amount") or "1"))
+        verb = {"add": f"+{amount}", "subtract": f"−{amount}", "set": f"= {amount}", "complete": "done", "reset": "reset"}.get(op, op)
+        return f"{goal} ({game}) {verb}"
     if action_type in ("twitch_shoutout", "twitch_raid"):
         verb = "Shoutout to" if action_type == "twitch_shoutout" else "Raid"
         return f"{verb} {render(c.get('target') or '')}".strip()

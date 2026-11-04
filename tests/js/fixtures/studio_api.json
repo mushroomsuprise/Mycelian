@@ -1422,6 +1422,57 @@
      "delay_ms": 0
     }
    },
+   "game_panel": {
+    "enabled": true,
+    "filters": {
+     "alert_type": "any",
+     "cooldown_ms": 0,
+     "dedupe_ms": 0,
+     "match": "all",
+     "max_per_minute": 0,
+     "rules": [],
+     "skip_first": 0,
+     "tier": "any",
+     "users_allow": "",
+     "users_block": ""
+    },
+    "id": "feed1",
+    "label": "",
+    "mapping": {
+     "decimals": "",
+     "fallback": "",
+     "prefix": "",
+     "split_field": "",
+     "suffix": "",
+     "template": "",
+     "text_field": "",
+     "value_field": ""
+    },
+    "source": {
+     "events": [
+      "game_tracker_game"
+     ],
+     "kind": "event",
+     "refresh_ms": 0,
+     "refresh_on": [],
+     "template_output": {
+      "event": "",
+      "match": {},
+      "template": ""
+     },
+     "value": {
+      "kind": "data_source",
+      "source": ""
+     }
+    },
+    "target": {
+     "id": "repaint",
+     "options": {}
+    },
+    "timing": {
+     "delay_ms": 0
+    }
+   },
    "gradient": {
     "enabled": true,
     "filters": {
@@ -2206,6 +2257,9 @@
    "confetti": [
     "giveaway_winner"
    ],
+   "game_panel": [
+    "game_tracker_game"
+   ],
    "now_playing": [
     "spotify_data_update"
    ],
@@ -2224,6 +2278,7 @@
    "counter": "counter_increment",
    "data_display": "set_text",
    "embed": "set_embed_url",
+   "game_panel": "repaint",
    "image": "set_src",
    "list": "list_add",
    "marquee": "set_text",
@@ -3266,7 +3321,7 @@
    },
    {
     "alert_system": "either",
-    "description": "Fired for each change the Games Tracker finds after its first import: a trophy or achievement unlocked (kind unlock), a game completed (completed), a new game (started) or a completion milestone (milestone).",
+    "description": "Fired for each change the Games Tracker finds after its first import: a trophy or achievement unlocked (kind unlock), a game completed (completed), a new game (started), a completion milestone (milestone), or a game goal that moved (goal_progress) or got done (goal_completed).",
     "event": "game_tracker_event",
     "label": "Games Tracker change",
     "payload": [
@@ -3275,7 +3330,9 @@
        "unlock",
        "completed",
        "started",
-       "milestone"
+       "milestone",
+       "goal_progress",
+       "goal_completed"
       ],
       "key": "kind",
       "label": "What happened",
@@ -3355,6 +3412,167 @@
       "key": "milestone",
       "label": "Milestone reached (percent)",
       "type": "number"
+     },
+     {
+      "key": "goal_name",
+      "label": "Goal",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "manual",
+       "complete",
+       "count",
+       "percent",
+       "unlock"
+      ],
+      "key": "goal_type",
+      "label": "Goal type",
+      "type": "string"
+     },
+     {
+      "key": "goal_current",
+      "label": "Goal: done so far",
+      "type": "number"
+     },
+     {
+      "key": "goal_target",
+      "label": "Goal: target",
+      "type": "number"
+     },
+     {
+      "key": "goal_progress",
+      "label": "Goal: percent done",
+      "type": "number"
+     },
+     {
+      "key": "goals_done",
+      "label": "Goals done in this game",
+      "type": "number"
+     },
+     {
+      "key": "goals_total",
+      "label": "Goals in this game",
+      "type": "number"
+     },
+     {
+      "key": "all_goals_done",
+      "label": "Every goal of this game done",
+      "type": "boolean"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired with one game whenever its progress or goals change (and when it's edited). The Game panel block listens to this to stay live.",
+    "event": "game_tracker_game",
+    "label": "Games Tracker game",
+    "payload": [
+     {
+      "key": "key",
+      "label": "Game key (psn:<NPWR ID> or steam:<app ID>)",
+      "type": "string"
+     },
+     {
+      "key": "title",
+      "label": "Game",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "psn",
+       "steam"
+      ],
+      "key": "platform",
+      "label": "Platform key",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "PS5",
+       "Steam"
+      ],
+      "key": "platform_label",
+      "label": "System",
+      "type": "string"
+     },
+     {
+      "key": "progress",
+      "label": "Completion (percent)",
+      "type": "number"
+     },
+     {
+      "key": "earned",
+      "label": "Trophies / achievements earned",
+      "type": "number"
+     },
+     {
+      "key": "total",
+      "label": "Trophies / achievements in the game",
+      "type": "number"
+     },
+     {
+      "key": "completed",
+      "label": "Platinum / 100%",
+      "type": "boolean"
+     },
+     {
+      "key": "cover",
+      "label": "Cover image URL",
+      "type": "string"
+     },
+     {
+      "key": "goals_total",
+      "label": "Goals",
+      "type": "number"
+     },
+     {
+      "key": "goals_done",
+      "label": "Goals done",
+      "type": "number"
+     },
+     {
+      "key": "goals_progress",
+      "label": "Goals: average percent done",
+      "type": "number"
+     },
+     {
+      "key": "next_goal.name",
+      "label": "Next goal",
+      "type": "string"
+     },
+     {
+      "key": "next_goal.progress",
+      "label": "Next goal: percent done",
+      "type": "number"
+     },
+     {
+      "key": "speedruns",
+      "label": "Speedrun info (one row per LiveSplit category: category, pb, attempts, finished)",
+      "type": "array"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "The reply to a Game panel's request (game_tracker_request_games): the chosen games, every game with goals, or the last played game, each with its goals.",
+    "event": "game_tracker_games",
+    "label": "Games Tracker games (reply)",
+    "payload": [
+     {
+      "examples": [
+       "selected",
+       "backlog",
+       "current"
+      ],
+      "key": "mode",
+      "label": "Which games",
+      "type": "string"
+     },
+     {
+      "key": "games",
+      "label": "Games",
+      "type": "array"
      }
     ]
    },
@@ -3417,6 +3635,26 @@
      {
       "key": "current.progress",
       "label": "Latest game completion (percent)",
+      "type": "number"
+     },
+     {
+      "key": "backlog",
+      "label": "Backlog: games with goals",
+      "type": "number"
+     },
+     {
+      "key": "backlog_active",
+      "label": "Backlog: games with goals still open",
+      "type": "number"
+     },
+     {
+      "key": "goals_total",
+      "label": "Goals set",
+      "type": "number"
+     },
+     {
+      "key": "goals_done",
+      "label": "Goals done",
       "type": "number"
      }
     ]
@@ -5089,6 +5327,106 @@
      "description": "Loads the mapped text as the page URL.",
      "id": "set_embed_url",
      "label": "Set the page URL",
+     "options": []
+    },
+    {
+     "accepts": "trigger",
+     "description": "",
+     "id": "show",
+     "label": "Show this block",
+     "options": []
+    },
+    {
+     "accepts": "trigger",
+     "description": "",
+     "id": "hide",
+     "label": "Hide this block",
+     "options": []
+    },
+    {
+     "accepts": "trigger",
+     "description": "",
+     "id": "toggle",
+     "label": "Toggle visibility",
+     "options": []
+    },
+    {
+     "accepts": "trigger",
+     "description": "Shows the block, then hides it again.",
+     "id": "show_for",
+     "label": "Show for a few seconds",
+     "options": [
+      {
+       "default": 5,
+       "key": "seconds",
+       "label": "Seconds",
+       "max": 600,
+       "min": 0.1,
+       "tooltip": "",
+       "type": "number"
+      }
+     ]
+    },
+    {
+     "accepts": "trigger",
+     "description": "Adds a class briefly. Try sporeShake or sporePop.",
+     "id": "flash_class",
+     "label": "Play a CSS animation class",
+     "options": [
+      {
+       "default": "sporePop",
+       "key": "class_name",
+       "label": "Class name",
+       "tooltip": "",
+       "type": "text"
+      },
+      {
+       "default": 420,
+       "key": "duration_ms",
+       "label": "Hold (ms)",
+       "max": 60000,
+       "min": 0,
+       "tooltip": "",
+       "type": "number"
+      }
+     ]
+    },
+    {
+     "accepts": "item",
+     "description": "Applies the mapped value (or a fixed value) to one style property.",
+     "id": "set_style",
+     "label": "Change a style property",
+     "options": [
+      {
+       "default": "background_color",
+       "key": "property",
+       "label": "Property",
+       "options": [
+        "background_color",
+        "color",
+        "border_color",
+        "opacity",
+        "font_size"
+       ],
+       "tooltip": "",
+       "type": "select"
+      },
+      {
+       "default": "",
+       "key": "fixed",
+       "label": "Fixed value",
+       "tooltip": "Leave blank to use the mapped value.",
+       "type": "text"
+      }
+     ]
+    }
+   ],
+   "game_panel": [
+    {
+     "accepts": "item",
+     "description": "Updates the panel from a Games Tracker game (game_tracker_game) or a list of games (game_tracker_games).",
+     "id": "repaint",
+     "label": "Paint from the data",
      "options": []
     },
     {
@@ -8854,7 +9192,7 @@
    },
    {
     "alert_system": "either",
-    "description": "Fired for each change the Games Tracker finds after its first import: a trophy or achievement unlocked (kind unlock), a game completed (completed), a new game (started) or a completion milestone (milestone).",
+    "description": "Fired for each change the Games Tracker finds after its first import: a trophy or achievement unlocked (kind unlock), a game completed (completed), a new game (started), a completion milestone (milestone), or a game goal that moved (goal_progress) or got done (goal_completed).",
     "event": "game_tracker_event",
     "label": "Games Tracker change",
     "payload": [
@@ -8863,7 +9201,9 @@
        "unlock",
        "completed",
        "started",
-       "milestone"
+       "milestone",
+       "goal_progress",
+       "goal_completed"
       ],
       "key": "kind",
       "label": "What happened",
@@ -8943,6 +9283,167 @@
       "key": "milestone",
       "label": "Milestone reached (percent)",
       "type": "number"
+     },
+     {
+      "key": "goal_name",
+      "label": "Goal",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "manual",
+       "complete",
+       "count",
+       "percent",
+       "unlock"
+      ],
+      "key": "goal_type",
+      "label": "Goal type",
+      "type": "string"
+     },
+     {
+      "key": "goal_current",
+      "label": "Goal: done so far",
+      "type": "number"
+     },
+     {
+      "key": "goal_target",
+      "label": "Goal: target",
+      "type": "number"
+     },
+     {
+      "key": "goal_progress",
+      "label": "Goal: percent done",
+      "type": "number"
+     },
+     {
+      "key": "goals_done",
+      "label": "Goals done in this game",
+      "type": "number"
+     },
+     {
+      "key": "goals_total",
+      "label": "Goals in this game",
+      "type": "number"
+     },
+     {
+      "key": "all_goals_done",
+      "label": "Every goal of this game done",
+      "type": "boolean"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "Fired with one game whenever its progress or goals change (and when it's edited). The Game panel block listens to this to stay live.",
+    "event": "game_tracker_game",
+    "label": "Games Tracker game",
+    "payload": [
+     {
+      "key": "key",
+      "label": "Game key (psn:<NPWR ID> or steam:<app ID>)",
+      "type": "string"
+     },
+     {
+      "key": "title",
+      "label": "Game",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "psn",
+       "steam"
+      ],
+      "key": "platform",
+      "label": "Platform key",
+      "type": "string"
+     },
+     {
+      "examples": [
+       "PS5",
+       "Steam"
+      ],
+      "key": "platform_label",
+      "label": "System",
+      "type": "string"
+     },
+     {
+      "key": "progress",
+      "label": "Completion (percent)",
+      "type": "number"
+     },
+     {
+      "key": "earned",
+      "label": "Trophies / achievements earned",
+      "type": "number"
+     },
+     {
+      "key": "total",
+      "label": "Trophies / achievements in the game",
+      "type": "number"
+     },
+     {
+      "key": "completed",
+      "label": "Platinum / 100%",
+      "type": "boolean"
+     },
+     {
+      "key": "cover",
+      "label": "Cover image URL",
+      "type": "string"
+     },
+     {
+      "key": "goals_total",
+      "label": "Goals",
+      "type": "number"
+     },
+     {
+      "key": "goals_done",
+      "label": "Goals done",
+      "type": "number"
+     },
+     {
+      "key": "goals_progress",
+      "label": "Goals: average percent done",
+      "type": "number"
+     },
+     {
+      "key": "next_goal.name",
+      "label": "Next goal",
+      "type": "string"
+     },
+     {
+      "key": "next_goal.progress",
+      "label": "Next goal: percent done",
+      "type": "number"
+     },
+     {
+      "key": "speedruns",
+      "label": "Speedrun info (one row per LiveSplit category: category, pb, attempts, finished)",
+      "type": "array"
+     }
+    ]
+   },
+   {
+    "alert_system": "either",
+    "description": "The reply to a Game panel's request (game_tracker_request_games): the chosen games, every game with goals, or the last played game, each with its goals.",
+    "event": "game_tracker_games",
+    "label": "Games Tracker games (reply)",
+    "payload": [
+     {
+      "examples": [
+       "selected",
+       "backlog",
+       "current"
+      ],
+      "key": "mode",
+      "label": "Which games",
+      "type": "string"
+     },
+     {
+      "key": "games",
+      "label": "Games",
+      "type": "array"
      }
     ]
    },
@@ -9005,6 +9506,26 @@
      {
       "key": "current.progress",
       "label": "Latest game completion (percent)",
+      "type": "number"
+     },
+     {
+      "key": "backlog",
+      "label": "Backlog: games with goals",
+      "type": "number"
+     },
+     {
+      "key": "backlog_active",
+      "label": "Backlog: games with goals still open",
+      "type": "number"
+     },
+     {
+      "key": "goals_total",
+      "label": "Goals set",
+      "type": "number"
+     },
+     {
+      "key": "goals_done",
+      "label": "Goals done",
       "type": "number"
      }
     ]

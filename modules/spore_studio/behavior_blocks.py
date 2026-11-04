@@ -1134,7 +1134,8 @@ ACCENT_CSS = """
 """.strip()
 
 
-_WIDGET_TYPES = frozenset({"list", "wheel", "now_playing", "qr", "embed", "stat_card", "poll", "prediction", "confetti"})
+_WIDGET_TYPES = frozenset({"list", "wheel", "now_playing", "qr", "embed", "stat_card", "poll", "prediction", "confetti",
+                           "game_panel"})
 
 
 def _elements_need_widget_css(elements: List[Dict[str, Any]]) -> bool:

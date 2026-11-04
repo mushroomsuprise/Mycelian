@@ -35,7 +35,7 @@ import re
 import sys
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import parse_qsl, quote, urlsplit
 
 from .chatbot_core import (
@@ -368,6 +368,17 @@ LOOKUPS: List[Dict[str, Any]] = [
             _var("game_last_played", "Last played", "2 days ago"),
             _var("game_playtime", "Playtime (Steam)", "142 hours"),
             _var("game_query", "What the viewer typed", "elden ring"),
+            _var("game_goals", "Goals, with progress", "Get all endings 2/5 (40%), Platinum (78%)"),
+            _var("game_goals_done", "Goals done", "1"),
+            _var("game_goals_total", "Goals set", "3"),
+            _var("game_goals_progress", "Goals: average percent done", "59"),
+            _var("game_goal_next", "Next goal (furthest along, not done)", "Platinum"),
+            _var("game_goal_next_progress", "Next goal: percent done", "78"),
+            dict(_var("game_goal_1_name", "Goal N: name (change 1 to any number)", "Get all endings"), pattern=True),
+            dict(_var("game_goal_1_progress", "Goal N: percent done", "40"), pattern=True),
+            dict(_var("game_goal_1_current", "Goal N: done so far", "2"), pattern=True),
+            dict(_var("game_goal_1_target", "Goal N: target", "5"), pattern=True),
+            dict(_var("game_goal_1_done", "Goal N: done (yes/no)", "no"), pattern=True),
         ],
         "scopes": [],
         "token": None,
@@ -842,12 +853,40 @@ def _ago(ts: float) -> str:
     return friendly_duration(moment, max_units=1) + " ago"
 
 
-def game_lookup_variables(game: Any, query: str) -> Dict[str, Any]:
+GAME_GOAL_SLOTS = 10  # {game_goal_1_name} … {game_goal_10_name}
+
+
+def game_goal_variables(game: Any, goals: Sequence[Any]) -> Dict[str, Any]:
+    """``game_goals`` / ``game_goal_N_*`` chat variables for one game's goals (empty values without goals)."""
+    from .game_tracker.goals import goals_summary, goals_text
+
+    s = goals_summary(goals or [], game)
+    rows = s["goals"]
+    nxt = s["next_goal"] or {}
+    out: Dict[str, Any] = {
+        "game_goals": goals_text(rows) if rows else "no goals",
+        "game_goals_done": str(s["goals_done"]),
+        "game_goals_total": str(s["goals_total"]),
+        "game_goals_progress": str(s["goals_progress"]),
+        "game_goal_next": str(nxt.get("name") or ""),
+        "game_goal_next_progress": str(nxt.get("progress", "")),
+    }
+    for n in range(1, GAME_GOAL_SLOTS + 1):
+        r = rows[n - 1] if n <= len(rows) else None
+        out[f"game_goal_{n}_name"] = r["name"] if r else ""
+        out[f"game_goal_{n}_progress"] = str(r["progress"]) if r else ""
+        out[f"game_goal_{n}_current"] = str(r["current"]) if r else ""
+        out[f"game_goal_{n}_target"] = str(r["target"]) if r else ""
+        out[f"game_goal_{n}_done"] = ("yes" if r["completed"] else "no") if r else ""
+    return out
+
+
+def game_lookup_variables(game: Any, query: str, goals: Sequence[Any] = ()) -> Dict[str, Any]:
     """Chat variables for one Games Tracker game (``None``: not in the library)."""
     if game is None:
         return {"game_played": "no", "game_title": query, "game_progress": "0", "game_trophies": "", "game_earned": "0",
                 "game_total": "0", "game_completed": "no", "game_platform": "", "game_console": "",
-                "game_last_played": "", "game_playtime": "", "game_query": query}
+                "game_last_played": "", "game_playtime": "", "game_query": query, **game_goal_variables(None, [])}
     psn = game.platform == "psn"
     if psn:
         earned = game.earned or {}
@@ -872,16 +911,22 @@ def game_lookup_variables(game: Any, query: str) -> Dict[str, Any]:
         "game_last_played": _ago(game.last_played),
         "game_playtime": playtime,
         "game_query": query,
+        **game_goal_variables(game, goals),
     }
 
 
-async def _game_progress(config, context, kind, entry):
-    from .game_tracker.service import find_game
+def _find_game_with_goals(query: str, platform: str) -> Tuple[Any, List[Any]]:
+    from .game_tracker.service import find_game, goals_of
 
+    game = find_game(query, platform)
+    return game, goals_of(game)
+
+
+async def _game_progress(config, context, kind, entry):
     query = _text_arg(config, context, entry)
     platform = str(config.get("platform") or "any").lower()
-    game = await asyncio.to_thread(find_game, query, "" if platform == "any" else platform)
-    variables = game_lookup_variables(game, query)
+    game, goals = await asyncio.to_thread(_find_game_with_goals, query, "" if platform == "any" else platform)
+    variables = game_lookup_variables(game, query, goals)
     if game is None:
         what = f"“{query}”" if query else "any game"
         raise LookupFailure("not_played", f"No {what} in the Games Tracker library", variables)

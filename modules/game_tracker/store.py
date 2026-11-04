@@ -18,6 +18,8 @@ import threading
 import time
 from typing import Any, Dict, Iterable, List, Optional
 
+from .goals import GameGoal, sorted_goals
+from .speedrun import SpeedrunLink, sorted_links
 from .models import GameEvent, TrackedGame, TrackerSettings
 
 logger = logging.getLogger(__name__)
@@ -83,6 +85,30 @@ class GameTrackerStore:
                 )
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
                 conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS goals (
+                        id TEXT PRIMARY KEY,
+                        platform TEXT NOT NULL,
+                        game_id TEXT NOT NULL,
+                        data TEXT NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                    """
+                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_goals_game ON goals(platform, game_id)")
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS speedruns (
+                        id TEXT PRIMARY KEY,
+                        platform TEXT NOT NULL,
+                        game_id TEXT NOT NULL,
+                        data TEXT NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                    """
+                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_speedruns_game ON speedruns(platform, game_id)")
                 conn.commit()
             finally:
                 conn.close()
@@ -142,11 +168,14 @@ class GameTrackerStore:
                 conn.close()
         return len(rows)
 
-    def delete_game(self, platform: str, game_id: str) -> bool:
+    def delete_game(self, platform: str, game_id: str, *, keep_goals: bool = False) -> bool:
         with self._lock:
             conn = self._connect()
             try:
                 cur = conn.execute("DELETE FROM games WHERE platform = ? AND game_id = ?", (platform, str(game_id)))
+                if not keep_goals:
+                    conn.execute("DELETE FROM goals WHERE platform = ? AND game_id = ?", (platform, str(game_id)))
+                    conn.execute("DELETE FROM speedruns WHERE platform = ? AND game_id = ?", (platform, str(game_id)))
                 conn.commit()
                 return cur.rowcount > 0
             finally:
@@ -163,23 +192,165 @@ class GameTrackerStore:
                 return None
             game.game_id = new_id
             self.upsert_games([game])
-            self.delete_game(platform, old_id)
+            self.delete_game(platform, old_id, keep_goals=True)
             conn = self._connect()
             try:
                 conn.execute("UPDATE events SET game_id = ? WHERE platform = ? AND game_id = ?", (new_id, platform, old_id))
                 conn.commit()
             finally:
                 conn.close()
+            goals = self.list_goals(platform, old_id)
+            for goal in goals:
+                goal.game_id = new_id
+            self.upsert_goals(goals)
+            for link in self.list_speedruns(platform, old_id):
+                link.game_id = new_id
+                self.upsert_speedrun(link)
             return game
 
     def clear_platform(self, platform: str) -> None:
-        """Forget a platform's games and history (another account was connected)."""
+        """Forget a platform's games and history (another account was connected).
+
+        Goals stay: they belong to the game IDs and come back when the same games import again."""
         with self._lock:
             conn = self._connect()
             try:
                 conn.execute("DELETE FROM games WHERE platform = ?", (platform,))
                 conn.execute("DELETE FROM events WHERE platform = ?", (platform,))
                 conn.commit()
+            finally:
+                conn.close()
+
+    # ----- goals -----
+
+    def list_goals(self, platform: Optional[str] = None, game_id: Optional[str] = None) -> List[GameGoal]:
+        sql, args = "SELECT data FROM goals", []
+        if platform:
+            sql += " WHERE platform = ?"
+            args.append(platform)
+            if game_id is not None:
+                sql += " AND game_id = ?"
+                args.append(str(game_id))
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(sql, args).fetchall()
+            finally:
+                conn.close()
+        out: List[GameGoal] = []
+        for (raw,) in rows:
+            try:
+                out.append(GameGoal.from_dict(json.loads(raw)))
+            except Exception as e:
+                logger.debug("Games Tracker: skipped an unreadable goal row: %s", e)
+        return sorted_goals(out)
+
+    def goals_by_game(self, platform: Optional[str] = None) -> Dict[str, List[GameGoal]]:
+        """``{"psn:NPWR..." : [goals in order]}`` for every game that has goals."""
+        out: Dict[str, List[GameGoal]] = {}
+        for goal in self.list_goals(platform):
+            out.setdefault(goal.key, []).append(goal)
+        return out
+
+    def get_goal(self, goal_id: str) -> Optional[GameGoal]:
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute("SELECT data FROM goals WHERE id = ?", (str(goal_id),)).fetchone()
+            finally:
+                conn.close()
+        return GameGoal.from_dict(json.loads(row[0])) if row else None
+
+    def upsert_goals(self, goals: Iterable[GameGoal]) -> int:
+        now = time.time()
+        rows = [(g.id, g.platform, str(g.game_id), json.dumps(g.to_dict(), separators=(",", ":")), now) for g in goals]
+        if not rows:
+            return 0
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.executemany(
+                    "INSERT INTO goals (id, platform, game_id, data, updated_at) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(id) DO UPDATE SET platform = excluded.platform, game_id = excluded.game_id, "
+                    "data = excluded.data, updated_at = excluded.updated_at",
+                    rows,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return len(rows)
+
+    def delete_goal(self, goal_id: str) -> bool:
+        with self._lock:
+            conn = self._connect()
+            try:
+                cur = conn.execute("DELETE FROM goals WHERE id = ?", (str(goal_id),))
+                conn.commit()
+                return cur.rowcount > 0
+            finally:
+                conn.close()
+
+    # ----- speedrun links (LiveSplit split files, one row per file) -----
+
+    def list_speedruns(self, platform: Optional[str] = None, game_id: Optional[str] = None) -> List[SpeedrunLink]:
+        sql, args = "SELECT data FROM speedruns", []
+        if platform:
+            sql += " WHERE platform = ?"
+            args.append(platform)
+            if game_id is not None:
+                sql += " AND game_id = ?"
+                args.append(str(game_id))
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(sql, args).fetchall()
+            finally:
+                conn.close()
+        out = []
+        for (raw,) in rows:
+            try:
+                out.append(SpeedrunLink.from_dict(json.loads(raw)))
+            except Exception as e:
+                logger.debug("Games Tracker: skipped an unreadable speedrun row: %s", e)
+        return sorted_links(out)
+
+    def speedruns_by_game(self) -> Dict[str, List[SpeedrunLink]]:
+        """``{"psn:NPWR..." : [split files in order]}`` for every game that has any."""
+        out: Dict[str, List[SpeedrunLink]] = {}
+        for link in self.list_speedruns():
+            out.setdefault(link.key, []).append(link)
+        return out
+
+    def get_speedrun(self, link_id: str) -> Optional[SpeedrunLink]:
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute("SELECT data FROM speedruns WHERE id = ?", (str(link_id),)).fetchone()
+            finally:
+                conn.close()
+        return SpeedrunLink.from_dict(json.loads(row[0])) if row else None
+
+    def upsert_speedrun(self, link: SpeedrunLink) -> None:
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "INSERT INTO speedruns (id, platform, game_id, data, updated_at) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(id) DO UPDATE SET platform = excluded.platform, game_id = excluded.game_id, "
+                    "data = excluded.data, updated_at = excluded.updated_at",
+                    (link.id, link.platform, str(link.game_id), json.dumps(link.to_dict(), separators=(",", ":")), time.time()),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    def delete_speedrun(self, link_id: str) -> bool:
+        with self._lock:
+            conn = self._connect()
+            try:
+                cur = conn.execute("DELETE FROM speedruns WHERE id = ?", (str(link_id),))
+                conn.commit()
+                return cur.rowcount > 0
             finally:
                 conn.close()
 

@@ -386,12 +386,12 @@ _EVENTS: List[Dict[str, Any]] = [
         "alert_system": "either",
         "description": (
             "Fired for each change the Games Tracker finds after its first import: a trophy or achievement "
-            "unlocked (kind unlock), a game completed (completed), a new game (started) or a completion "
-            "milestone (milestone)."
+            "unlocked (kind unlock), a game completed (completed), a new game (started), a completion "
+            "milestone (milestone), or a game goal that moved (goal_progress) or got done (goal_completed)."
         ),
         "payload": [
             {"key": "kind", "label": "What happened", "type": "string",
-             "examples": ["unlock", "completed", "started", "milestone"]},
+             "examples": ["unlock", "completed", "started", "milestone", "goal_progress", "goal_completed"]},
             {"key": "platform", "label": "Platform key", "type": "string", "examples": ["psn", "steam"]},
             {"key": "platform_name", "label": "Platform", "type": "string", "examples": ["PlayStation", "Steam"]},
             {"key": "game_title", "label": "Game", "type": "string"},
@@ -405,6 +405,55 @@ _EVENTS: List[Dict[str, Any]] = [
             {"key": "unlock_rarity", "label": "Players who have it (percent)", "type": "number"},
             {"key": "unlock_icon", "label": "Icon URL", "type": "string"},
             {"key": "milestone", "label": "Milestone reached (percent)", "type": "number"},
+            {"key": "goal_name", "label": "Goal", "type": "string"},
+            {"key": "goal_type", "label": "Goal type", "type": "string",
+             "examples": ["manual", "complete", "count", "percent", "unlock"]},
+            {"key": "goal_current", "label": "Goal: done so far", "type": "number"},
+            {"key": "goal_target", "label": "Goal: target", "type": "number"},
+            {"key": "goal_progress", "label": "Goal: percent done", "type": "number"},
+            {"key": "goals_done", "label": "Goals done in this game", "type": "number"},
+            {"key": "goals_total", "label": "Goals in this game", "type": "number"},
+            {"key": "all_goals_done", "label": "Every goal of this game done", "type": "boolean"},
+        ],
+    },
+    {
+        "event": "game_tracker_game",
+        "label": "Games Tracker game",
+        "alert_system": "either",
+        "description": (
+            "Fired with one game whenever its progress or goals change (and when it's edited). The Game panel "
+            "block listens to this to stay live."
+        ),
+        "payload": [
+            {"key": "key", "label": "Game key (psn:<NPWR ID> or steam:<app ID>)", "type": "string"},
+            {"key": "title", "label": "Game", "type": "string"},
+            {"key": "platform", "label": "Platform key", "type": "string", "examples": ["psn", "steam"]},
+            {"key": "platform_label", "label": "System", "type": "string", "examples": ["PS5", "Steam"]},
+            {"key": "progress", "label": "Completion (percent)", "type": "number"},
+            {"key": "earned", "label": "Trophies / achievements earned", "type": "number"},
+            {"key": "total", "label": "Trophies / achievements in the game", "type": "number"},
+            {"key": "completed", "label": "Platinum / 100%", "type": "boolean"},
+            {"key": "cover", "label": "Cover image URL", "type": "string"},
+            {"key": "goals_total", "label": "Goals", "type": "number"},
+            {"key": "goals_done", "label": "Goals done", "type": "number"},
+            {"key": "goals_progress", "label": "Goals: average percent done", "type": "number"},
+            {"key": "next_goal.name", "label": "Next goal", "type": "string"},
+            {"key": "next_goal.progress", "label": "Next goal: percent done", "type": "number"},
+            {"key": "speedruns", "label": "Speedrun info (one row per LiveSplit category: category, pb, attempts, finished)",
+             "type": "array"},
+        ],
+    },
+    {
+        "event": "game_tracker_games",
+        "label": "Games Tracker games (reply)",
+        "alert_system": "either",
+        "description": (
+            "The reply to a Game panel's request (game_tracker_request_games): the chosen games, every game "
+            "with goals, or the last played game, each with its goals."
+        ),
+        "payload": [
+            {"key": "mode", "label": "Which games", "type": "string", "examples": ["selected", "backlog", "current"]},
+            {"key": "games", "label": "Games", "type": "array"},
         ],
     },
     {
@@ -424,6 +473,10 @@ _EVENTS: List[Dict[str, Any]] = [
             {"key": "avg_completion", "label": "Average completion (percent)", "type": "number"},
             {"key": "current.title", "label": "Latest game", "type": "string"},
             {"key": "current.progress", "label": "Latest game completion (percent)", "type": "number"},
+            {"key": "backlog", "label": "Backlog: games with goals", "type": "number"},
+            {"key": "backlog_active", "label": "Backlog: games with goals still open", "type": "number"},
+            {"key": "goals_total", "label": "Goals set", "type": "number"},
+            {"key": "goals_done", "label": "Goals done", "type": "number"},
         ],
     },
     {

@@ -88,6 +88,11 @@ ALWAYS_VARIABLES: List[Dict[str, Any]] = [
     _v("games.achievements", "Steam achievements earned", "2904", "Games Tracker"),
     _v("games.perfect", "Perfect Steam games", "11", "Games Tracker"),
     _v("games.avg_completion", "Average completion (percent)", "46", "Games Tracker"),
+    _v("games.backlog", "Backlog: games with goals", "6", "Games Tracker"),
+    _v("games.backlog_active", "Backlog: games with goals still open", "4", "Games Tracker"),
+    _v("games.goals_total", "Goals set", "15", "Games Tracker"),
+    _v("games.goals_done", "Goals done", "9", "Games Tracker"),
+    _v("games.goals_active", "Goals still open", "6", "Games Tracker"),
 ]
 
 # --------------------------------------------------------------------------
@@ -119,6 +124,19 @@ _GAME_UNLOCK = [
     _v("unlock_description", "Description", "Acquire all legendary armaments"),
     _v("unlock_rarity", "Players who have it (percent)", "12.4"),
     _v("unlock_icon", "Icon URL", "https://image.api.playstation.com/trophy.png"),
+]
+_GAME_GOAL = [
+    _v("goal_name", "Goal", "Get all endings"),
+    _v("goal_type", "Goal type (manual, complete, count, percent or unlock)", "manual"),
+    _v("goal_current", "Goal: done so far", "3"),
+    _v("goal_target", "Goal: target", "5"),
+    _v("goal_progress", "Goal: percent done", "60"),
+    _v("goal_completed", "Goal is done (true/false)", "false"),
+    _v("goals_done", "Goals done in this game", "1"),
+    _v("goals_total", "Goals in this game", "3"),
+    _v("goals_remaining", "Goals still open in this game", "2"),
+    _v("all_goals_done", "Every goal of this game done (true/false)", "false"),
+    _v("goal_id", "Goal ID", "a1b2c3d4e5"),
 ]
 _OBS_OUTPUT = [
     _v("output_active", "Is active (true/false)", "true"),
@@ -344,6 +362,8 @@ EVENT_VARIABLES: Dict[str, List[Dict[str, Any]]] = {
     "game_completed": list(_GAME),
     "game_started": list(_GAME),
     "game_milestone": [_v("milestone", "Milestone reached (percent)", "50")] + _GAME,
+    "game_goal_progress": _GAME_GOAL + _GAME,
+    "game_goal_completed": _GAME_GOAL + _GAME,
     "any": [
         _v("event_type", "Event type", "twitch_chat_message"),
         _v("username", "Username (when the event has one)", "TestUser"),
@@ -375,6 +395,16 @@ _GAME_FIELDS = [
     _f("progress", "Completion (percent)", "number"),
     _f("earned", "Trophies / achievements earned", "number"),
     _f("total", "Trophies / achievements in the game", "number"),
+]
+_GAME_GOAL_FIELDS = [
+    _f("goal_name", "Goal", "text"),
+    _f("goal_type", "Goal type (manual, complete, count, percent or unlock)", "text"),
+    _f("goal_current", "Goal: done so far", "number"),
+    _f("goal_target", "Goal: target", "number"),
+    _f("goal_progress", "Goal: percent done", "number"),
+    _f("goals_done", "Goals done in this game", "number"),
+    _f("goals_remaining", "Goals still open in this game", "number"),
+    _f("all_goals_done", "Every goal of this game done", "bool"),
 ]
 _OBS_OUTPUT_FIELDS = [
     _f("output_active", "Is active", "bool"),
@@ -547,6 +577,8 @@ CONDITION_FIELDS: Dict[str, List[Dict[str, str]]] = {
     "game_completed": list(_GAME_FIELDS),
     "game_started": list(_GAME_FIELDS),
     "game_milestone": [_f("milestone", "Milestone (percent)", "number")] + _GAME_FIELDS,
+    "game_goal_progress": _GAME_GOAL_FIELDS + _GAME_FIELDS,
+    "game_goal_completed": _GAME_GOAL_FIELDS + _GAME_FIELDS,
 }
 
 
@@ -727,6 +759,18 @@ TRIGGERS: List[Dict[str, Any]] = [
         "Completion milestone",
         "Games",
         "A game's completion passes one of the Games Tracker milestones (25, 50, 75% by default).",
+    ),
+    _t(
+        "game_goal_progress",
+        "Goal progress",
+        "Games",
+        "A game goal moves: a manual count changes, or a trophy, achievement or percent counts toward it.",
+    ),
+    _t(
+        "game_goal_completed",
+        "Goal completed",
+        "Games",
+        "A game goal is done. {all_goals_done} is true when it was the game's last open goal.",
     ),
     _t("hotkey", "Hotkey", "Controls", "You press a key combination anywhere on this computer."),
     _t("streamdeck", "Stream Deck button", "Controls", "You press this connector's Stream Deck button."),
@@ -1065,6 +1109,52 @@ _SAMPLES: Dict[str, Dict[str, Any]] = {
         "total": 42,
         "milestone": 50,
     },
+    "game_goal_progress": {
+        "kind": "goal_progress",
+        "platform": "psn",
+        "platform_name": "PlayStation",
+        "platform_label": "PS5",
+        "game_id": "NPWR22810_00",
+        "game_title": "Elden Ring",
+        "progress": 78,
+        "earned": 33,
+        "total": 42,
+        "milestone": "",
+        "goal_id": "a1b2c3d4e5",
+        "goal_name": "Get all endings",
+        "goal_type": "manual",
+        "goal_current": 3,
+        "goal_target": 5,
+        "goal_progress": 60,
+        "goal_completed": False,
+        "goals_done": 1,
+        "goals_total": 3,
+        "goals_remaining": 2,
+        "all_goals_done": False,
+    },
+    "game_goal_completed": {
+        "kind": "goal_completed",
+        "platform": "psn",
+        "platform_name": "PlayStation",
+        "platform_label": "PS5",
+        "game_id": "NPWR22810_00",
+        "game_title": "Elden Ring",
+        "progress": 78,
+        "earned": 33,
+        "total": 42,
+        "milestone": "",
+        "goal_id": "a1b2c3d4e5",
+        "goal_name": "Get all endings",
+        "goal_type": "manual",
+        "goal_current": 5,
+        "goal_target": 5,
+        "goal_progress": 100,
+        "goal_completed": True,
+        "goals_done": 2,
+        "goals_total": 3,
+        "goals_remaining": 1,
+        "all_goals_done": False,
+    },
 }
 
 
@@ -1147,6 +1237,16 @@ def sample_event(trigger_type: Any, trigger: Any = None) -> Dict[str, Any]:
         grade = str(_trigger_value(trigger, "grade", "") or "").lower()
         if value == "game_unlock" and grade not in ("", "any"):
             data["unlock_grade"] = grade
+        if value in ("game_goal_progress", "game_goal_completed"):
+            game = str(_trigger_value(trigger, "game", "") or "").strip()
+            goal = str(_trigger_value(trigger, "goal", "") or "").strip()
+            kind = str(_trigger_value(trigger, "goal_kind", "") or "").lower()
+            if game:
+                data["game_title"] = game
+            if goal:
+                data["goal_name"] = goal
+            if kind not in ("", "any"):
+                data["goal_type"] = "count" if kind == "auto" else kind
         milestone = _trigger_value(trigger, "milestone", 0)
         if value == "game_milestone" and milestone:
             try:

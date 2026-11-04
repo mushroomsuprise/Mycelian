@@ -83,6 +83,8 @@ _TRIGGER_EVENT_BY_CLASS = {
     "GameCompletedTrigger": "game_completed",
     "GameStartedTrigger": "game_started",
     "GameMilestoneTrigger": "game_milestone",
+    "GameGoalProgressTrigger": "game_goal_progress",
+    "GameGoalCompletedTrigger": "game_goal_completed",
     "AnyTrigger": None,
 }
 
