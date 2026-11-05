@@ -1,5 +1,5 @@
 {
-  "version": "1.14.1",
+  "version": "1.14.2",
   "files": [
     {
       "path": "README.md",
@@ -879,15 +879,22 @@
     {
       "path": "assets/default_assets/spore_studio/editor.html",
       "install": "assets/default_assets/spore_studio/editor.html",
-      "sha256": "9ca9f6fb8649f97a4aa37e1976ecb93575c4b1c4fa18f503c214788c49628893",
-      "size": 29262,
+      "sha256": "cc1402c31702370968195f83e53f125dea1714ef0f487f37fab65d5f1e98302c",
+      "size": 29340,
       "action": "replace"
     },
     {
       "path": "assets/default_assets/spore_studio/editor.js",
       "install": "assets/default_assets/spore_studio/editor.js",
-      "sha256": "7c91e4bcb5556b8a895d64878218e93c2711e54f175d7d94d595bbba7ce6c4fe",
-      "size": 531344,
+      "sha256": "777830c35bbf5e67358bd2c11cdd5f4ee29c0b56a318bc8cf3fb2a528b1dc0f4",
+      "size": 546772,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/spore_studio/game_panel.js",
+      "install": "assets/default_assets/spore_studio/game_panel.js",
+      "sha256": "e2cbf1cb7105744a4746b1da7991fb47d695a0a444e8b407c547dba02355b722",
+      "size": 19788,
       "action": "replace"
     },
     {
@@ -900,8 +907,8 @@
     {
       "path": "assets/default_assets/spore_studio/spore_ui.js",
       "install": "assets/default_assets/spore_studio/spore_ui.js",
-      "sha256": "d610af45addc06a053464c2ed153703ad480fb13e0fb3cf619284a1d07962a11",
-      "size": 14609,
+      "sha256": "a95886d9f3c926f231993ca6f46a0aa75fcdc8eaa9395a8f6449605084362769",
+      "size": 14816,
       "action": "replace"
     },
     {
@@ -1173,8 +1180,8 @@
     {
       "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js",
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/bin/plugin.js",
-      "sha256": "aa2c7c575b85b67954e7d94724783cc734498dbd0eb370f4a33c7d0f51aa3a5f",
-      "size": 81491,
+      "sha256": "22b81a1ce2df2ef7503a98dd302bca7048ef15d580f7e222fc3cbda27f836fcb",
+      "size": 84013,
       "action": "replace"
     },
     {
@@ -1238,6 +1245,34 @@
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/counter/key@2x.png",
       "sha256": "e986ce70635d1a7462645c8b0c5fe34e4ed74b75ac25652f7db3842797b12d52",
       "size": 1709,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/gamegoal/icon.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/gamegoal/icon.png",
+      "sha256": "69d40eb5ad2a6f00a8c3f4bca1bbdc78babed0ddabeed63a959fa1076c6a0e8e",
+      "size": 378,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/gamegoal/icon@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/gamegoal/icon@2x.png",
+      "sha256": "23e746987508d7b5e0f32e4a2bb67d98dee8c6ecf17be3e2b0912105665bfc5c",
+      "size": 660,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/gamegoal/key.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/gamegoal/key.png",
+      "sha256": "6fc644cfca41caee0be9d5054437184980067b1074502d9fb835155924727332",
+      "size": 893,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/gamegoal/key@2x.png",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/imgs/actions/gamegoal/key@2x.png",
+      "sha256": "40ae45e1e93350caaafed97cfd3e79e4afa11dd05ecf918fc3466c081a54c34c",
+      "size": 1656,
       "action": "replace"
     },
     {
@@ -1327,8 +1362,8 @@
     {
       "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/manifest.json",
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/manifest.json",
-      "sha256": "06554c6f85c7a3abdb599caae91e2f9261d56607dd4cb2a612ba0d4525862128",
-      "size": 1913,
+      "sha256": "f57a734264fad576fb4ed2240dabd854f1009526c20c4460e6e3241e37ef69f1",
+      "size": 2347,
       "action": "replace"
     },
     {
@@ -1336,6 +1371,13 @@
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/connector-action.html",
       "sha256": "b964b494cc3a34662e0c261bb86a9b7fdeb0868b71d78adb08d8e21d45932225",
       "size": 12499,
+      "action": "replace"
+    },
+    {
+      "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/game-goal.html",
+      "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/game-goal.html",
+      "sha256": "f5af3546655d4158dc96b36bf474d6107f87450e5101d59cb3625f3fd80cd3ca",
+      "size": 12124,
       "action": "replace"
     },
     {
@@ -1390,8 +1432,8 @@
     {
       "path": "templates/_boilerplates/spore_data_runtime.js",
       "install": "templates/_boilerplates/spore_data_runtime.js",
-      "sha256": "fe33e36ac1e4506799a727c77d4cb866a704fb77f55933711b821312411c101e",
-      "size": 179049,
+      "sha256": "0c04ee7065413fd08a0908d28f15841f662c5b968eea0b0259b2cc2e71faa3e3",
+      "size": 189721,
       "action": "replace"
     },
     {
@@ -1460,8 +1502,8 @@
     {
       "path": "templates/bitcounter.html",
       "install": "templates/bitcounter.html",
-      "sha256": "b2ed7162b5d4e2e67ff0d1126eae01a3831e83264e51d9e24994c1f60a9928c9",
-      "size": 201184,
+      "sha256": "0f029d899ed4079261c3f90f5e4174b994bed1d25727b2687f91c147c5fb1973",
+      "size": 211856,
       "action": "replace"
     },
     {
@@ -1495,8 +1537,8 @@
     {
       "path": "templates/giveaway.html",
       "install": "templates/giveaway.html",
-      "sha256": "4b77cf963a1942f6541616e50666f73aff3d033f4c6cd459b0d952dd36a662c5",
-      "size": 231828,
+      "sha256": "fa1a322f87359d31d39dd3c7ae74f222f513b83229391671a0d1f087a59ea6c3",
+      "size": 242500,
       "action": "replace"
     },
     {
@@ -1509,15 +1551,15 @@
     {
       "path": "templates/poll.html",
       "install": "templates/poll.html",
-      "sha256": "69e6c7f0714ef99f4e6c6dd2c2703a6cf124d1d91304060b4add378f98ef6ffb",
-      "size": 210151,
+      "sha256": "23620ba400acd0095cea3a5c1370b51c3b7f49b6a8c83a6019644efc811db14b",
+      "size": 220823,
       "action": "replace"
     },
     {
       "path": "templates/predictions.html",
       "install": "templates/predictions.html",
-      "sha256": "a3320a91cbf4c4893245aa3f7f8d20babf263df9bdae75983ce20402ba900e72",
-      "size": 217830,
+      "sha256": "4b9c838693d726dcb46be9ddf2debac4128eb168932b086a2f0c5d0ed65c2007",
+      "size": 228502,
       "action": "replace"
     },
     {
@@ -1544,8 +1586,8 @@
     {
       "path": "templates/steam_achievements.html",
       "install": "templates/steam_achievements.html",
-      "sha256": "def5cc5cc57d95380df07186a0ae3cd050314afae97792a088fe30e38c4b4156",
-      "size": 216442,
+      "sha256": "7e5f3c123440fa7506c225693c5176d1860d9e6fbf5c9f1b9a6c88aa8728700a",
+      "size": 227114,
       "action": "replace"
     },
     {
@@ -1845,8 +1887,8 @@
     {
       "path": "packaged/windows/Mycelian.exe",
       "install": "Mycelian.exe",
-      "sha256": "308f3e64418eef75f6ba283003694fee4cabea9d16a788dce71d97c41bae4df8",
-      "size": 58148082,
+      "sha256": "d18133658c0cbf27de23181315c7a6545c2f831512da62a7f326649561d6bdf1",
+      "size": 58959993,
       "action": "replace",
       "os": "windows"
     }
