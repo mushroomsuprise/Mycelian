@@ -260,6 +260,13 @@ async def apply_user_authentication(
             granted = token_scopes(auth_token)
         if granted is not None:
             usable = [s for s in usable if s not in OPTIONAL_SCOPES or s.value in granted]
+        else:
+            # Validation failed (usually an expired access token about to be
+            # refreshed), so we can't tell which optional scopes it carries.
+            # Asking twitchAPI for them anyway makes it raise MissingScopeException
+            # after its own refresh; require only the core scopes instead. The
+            # optional features re-check token_scopes once the new token validates.
+            usable = [s for s in usable if s not in OPTIONAL_SCOPES]
     await twitch.set_user_authentication(auth_token, usable, refresh_token)
 
 

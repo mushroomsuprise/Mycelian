@@ -1188,6 +1188,11 @@ def _notify_control_not_sent(template_name, action, reason: str, details: str = 
 
 def send_websocket_event(template_name, action, data):
     """Send websocket event to overlay clients (same delivery path as OBS dock relay)."""
+    if not str(action or "").strip():
+        # A control with no "action" in its template config would emit
+        # "<template>_", which the overlay never listens for.
+        logger.debug("Skipping control event for %s: element has no action", template_name)
+        return
     event_name = f"{template_name}_{action}"
     try:
         engine = web_engine.web_engine_instance

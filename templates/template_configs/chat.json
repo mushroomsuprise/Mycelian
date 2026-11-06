@@ -34,7 +34,7 @@
             "type": "textarea",
             "id": "RandomFontList",
             "label": "Random Font List",
-            "value": "Roboto-Regular.ttf\nRoboto-Bold.ttf\nRoboto-Italic.ttf\nOpen-Sans-Regular.ttf\nMontserrat-Regular.ttf",
+            "value": "Roboto-Regular.ttf\nRoboto-Bold.ttf\nRoboto-Italic.ttf",
             "description": "List of font files to randomly choose from (one per line, must be in /assets/default_assets/fonts/ directory)"
         },
         {

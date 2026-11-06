@@ -169,6 +169,41 @@ def _suppress_esm_warning(window) -> None:
                 handlers.remove(handler)
 
 
+def _guard_nicegui_bind_drop(window) -> None:
+    """Swap NiceGUI's ``bind_drop`` loaded-handler for one that tolerates a dead DOM.
+
+    ``bind_drop`` reads ``window.dom.document`` on every ``loaded`` event. On
+    ``about:blank`` (minimize parks the window there) and while WebView2 tears the
+    window down, the DOM query returns nothing and pywebview logs
+    ``'NoneType' object is not iterable`` with a traceback. The app does not use
+    native file drops (connectors use a plain DOM listener), so a failure here is
+    harmless and only worth a debug line.
+    """
+    try:
+        handlers = window.events.loaded._items
+    except Exception:
+        return
+    for handler in list(handlers):
+        if getattr(handler, "__name__", "") != "bind_drop":
+            continue
+        if not str(getattr(handler, "__module__", "")).startswith("nicegui"):
+            continue
+
+        def safe_bind_drop(_orig=handler) -> None:
+            try:
+                _orig()
+            except Exception as e:
+                logger.debug("native_window_bridge: bind_drop skipped: %s", e)
+
+        safe_bind_drop.__name__ = "mycelian_safe_bind_drop"
+        try:
+            # Replace in place: pywebview runs loaded handlers in list order on one
+            # thread, so this takes effect for the handler that runs next.
+            handlers[handlers.index(handler)] = safe_bind_drop
+        except ValueError:
+            pass
+
+
 # ----- Help window -----
 #
 # The help docs open in a second native window owned by this same webview process, so
@@ -401,6 +436,13 @@ def _attach_tray_hooks(window) -> None:
                     _event_name,
                     e,
                 )
+
+    # Registered here, before NiceGUI's _open_window adds bind_drop, so it runs
+    # first on every loaded event and can wrap bind_drop before it fires.
+    try:
+        window.events.loaded += lambda: _guard_nicegui_bind_drop(window)
+    except Exception as e:
+        logger.debug("native_window_bridge: could not attach bind_drop guard: %s", e)
 
     _send_native_event("mycelian_window_ready", url=_app_url)
 

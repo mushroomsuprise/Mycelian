@@ -1009,6 +1009,22 @@ def get_data_files():
         data_files.append((str(factorio_mod), "factorio_mod"))
         print(f"Including Factorio companion mod: {factorio_mod}")
 
+    # Packages that read their own dist-info at import time. steam_web_api's
+    # _version.py swallows the PackageNotFoundError and leaves __version__
+    # undefined, so `import steam_web_api` fails in the frozen build unless the
+    # python-steam-api metadata ships with it.
+    try:
+        from PyInstaller.utils.hooks import copy_metadata
+
+        for dist_name in ("python-steam-api",):
+            try:
+                data_files.extend(copy_metadata(dist_name))
+                print(f"Including package metadata: {dist_name}")
+            except Exception as exc:
+                print(f"Warning: could not include metadata for {dist_name}: {exc}")
+    except ImportError:
+        print("Warning: PyInstaller hooks unavailable; skipping package metadata")
+
     return data_files
 
 

@@ -397,6 +397,15 @@ def _force_application_exit():
     """
     try:
         try:
+            # Let a relaunch (update helper, user) start at once instead of
+            # finding this exiting copy still holding the single-instance lock.
+            from .single_instance import release as _release_single_instance
+
+            _release_single_instance()
+        except Exception as e:
+            logger.debug(f"Could not release single-instance lock: {e}")
+
+        try:
             from .shutdown import reap_child_process_trees
 
             reap_child_process_trees()

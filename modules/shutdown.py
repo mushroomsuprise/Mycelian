@@ -710,12 +710,22 @@ def _signal_native_shutdown() -> None:
 
 
 def _hard_exit_after_native_close() -> None:
-    """Worker thread: force-exit after the native window closes.
+    """Worker thread: shut down and exit after the native window closes.
 
     Must not run on the event loop. NiceGUI 3.13 dropped ``core.stop_and_exit``.
     Setting ``Server.should_exit`` starts uvicorn's connection drain, which can hang
     forever on a ghost Windows connection (NiceGUI #5443), so hard-exit instead.
+
+    Runs the full ``shutdown_application`` first (bounded by its 20 s watchdog) so
+    statistics and registered flushes are saved; it ends in ``os._exit``. If another
+    teardown is already running, its armed watchdog guarantees the exit.
     """
+    try:
+        if is_shutdown_in_progress():
+            return
+        shutdown_application(reason="native_window_closed", force=True)
+    except Exception:
+        logger.error("Native close shutdown failed; forcing exit", exc_info=True)
     try:
         from .updater import _force_application_exit
 
@@ -733,6 +743,104 @@ def _start_native_close_hard_exit() -> None:
     threading.Thread(
         target=_hard_exit_after_native_close,
         name="mycelian-window-closed-exit",
+        daemon=True,
+    ).start()
+
+
+# After the webview process dies, how long the normal exit paths get before the
+# watchdog forces a shutdown, and the last-resort hard exit after that.
+_WINDOW_PROCESS_EXIT_GRACE_SEC = 10.0
+_WINDOW_PROCESS_FORCE_EXIT_SEC = 45.0
+_WINDOW_PROCESS_FIND_TIMEOUT_SEC = 180.0
+_window_watchdog_started = False
+# Set once the webview process has been seen, so "not found" afterwards means gone.
+_webview_process_seen = False
+_WEBVIEW_PROCESS_TARGETS = frozenset({"_open_window", "_open_window_with_mycelian_env"})
+
+
+def _find_webview_process():
+    """The NiceGUI native-mode webview child process, if it is still running."""
+    global _webview_process_seen
+    import multiprocessing
+
+    for proc in multiprocessing.active_children():
+        target = getattr(proc, "_target", None)
+        if getattr(target, "__name__", "") in _WEBVIEW_PROCESS_TARGETS:
+            _webview_process_seen = True
+            return proc
+    return None
+
+
+def _native_window_process_watchdog() -> None:
+    """Exit the app when the webview process is gone, without the asyncio loop.
+
+    Both normal exit paths after the window closes (the ``closed`` native event and
+    NiceGUI's ``check_shutdown``) are dispatched through the NiceGUI asyncio loop.
+    When that loop is stalled the window can die while the main process lives on
+    with no window: the user sees Mycelian "still running" and has to end it in
+    Task Manager. This thread only polls the child process.
+    """
+    deadline = time.monotonic() + _WINDOW_PROCESS_FIND_TIMEOUT_SEC
+    proc = None
+    while proc is None:
+        if is_shutdown_in_progress():
+            return
+        try:
+            proc = _find_webview_process()
+        except Exception:
+            proc = None
+        if proc is None:
+            if time.monotonic() > deadline:
+                logger.debug("Window watchdog: webview process not found; not watching")
+                return
+            time.sleep(0.5)
+
+    while True:
+        if is_shutdown_in_progress():
+            return
+        try:
+            alive = proc.is_alive()
+        except Exception:
+            alive = False
+        if not alive:
+            break
+        time.sleep(1.0)
+
+    logger.warning(
+        "Window watchdog: webview process exited (exitcode=%s); waiting %.0fs for "
+        "normal shutdown",
+        getattr(proc, "exitcode", None),
+        _WINDOW_PROCESS_EXIT_GRACE_SEC,
+    )
+    time.sleep(_WINDOW_PROCESS_EXIT_GRACE_SEC)
+    if not is_shutdown_in_progress() and not _native_close_exit_started:
+        logger.error(
+            "Window watchdog: main process still running %.0fs after the window "
+            "closed; shutting down",
+            _WINDOW_PROCESS_EXIT_GRACE_SEC,
+        )
+        _start_native_close_hard_exit()
+    time.sleep(_WINDOW_PROCESS_FORCE_EXIT_SEC)
+    logger.error(
+        "Window watchdog: process still alive %.0fs after shutdown began; forcing exit",
+        _WINDOW_PROCESS_FORCE_EXIT_SEC,
+    )
+    try:
+        reap_child_process_trees()
+    except Exception:
+        pass
+    os._exit(0)
+
+
+def start_native_window_process_watchdog() -> None:
+    global _window_watchdog_started
+    with _shutdown_lock:
+        if _window_watchdog_started:
+            return
+        _window_watchdog_started = True
+    threading.Thread(
+        target=_native_window_process_watchdog,
+        name="mycelian-window-watchdog",
         daemon=True,
     ).start()
 
@@ -755,6 +863,7 @@ def register_native_window_close_handler() -> None:
 
     event_manager.on("closed", _on_native_closed)
     _native_close_registered = True
+    start_native_window_process_watchdog()
     logger.debug("Registered native window closed shutdown handler")
 
 

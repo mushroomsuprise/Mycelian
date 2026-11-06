@@ -5537,13 +5537,20 @@
                         chatLog('FFZ poll interval eased to', ffzPollDelay);
                     }
                 } else {
-                    ffzPollSuccessStreak = 0;
+                    // Network error or bad status: back off like a rate limit so an
+                    // offline machine doesn't retry FFZ every ~1 s.
+                    noteFfzPollFailure();
                 }
                 scheduleFfzPoll(ffzPollDelay);
             }, function () {
-                ffzPollSuccessStreak = 0;
+                noteFfzPollFailure();
                 scheduleFfzPoll(ffzPollDelay);
             });
+        }
+
+        function noteFfzPollFailure() {
+            ffzPollSuccessStreak = 0;
+            ffzPollDelay = Math.min(FFZ_POLL_MAX_MS, Math.max(FFZ_POLL_BASE_MS, ffzPollDelay) * 2);
         }
 
         // url -> { text, signature }: raw body last applied and the list signature it
@@ -5553,6 +5560,7 @@
 
         function fetchFfzJson(url) {
             return fetch(url).then(function (response) {
+                fetchFfzJson.errorLogged = false;
                 if (response.status === 429) return { rateLimited: true };
                 if (response.status === 404) return { ok: true, missing: true };
                 if (!response.ok) return { ok: false, status: response.status };
@@ -5562,7 +5570,11 @@
                     return { ok: true, url: url, raw: text, data: JSON.parse(text) };
                 });
             }).catch(function (error) {
-                console.error('Error fetching FFZ emotes:', error);
+                // Once per failure streak: offline, this fires on every poll.
+                if (!fetchFfzJson.errorLogged) {
+                    fetchFfzJson.errorLogged = true;
+                    console.error('Error fetching FFZ emotes:', error);
+                }
                 return { ok: false, error: true };
             });
         }

@@ -268,6 +268,27 @@ def test_optional_poll_scope_does_not_block_sign_in(monkeypatch):
     assert seen["scopes"] == scopes
 
 
+def test_unvalidated_token_requires_only_core_scopes(monkeypatch):
+    """An expired token can't be validated; asking twitchAPI for optional scopes then
+    raised MissingScopeException after its own refresh ("missing scope channel:read:ads")."""
+    from twitchAPI.type import AuthScope
+
+    seen = {}
+
+    class FakeTwitch:
+        async def set_user_authentication(self, token, scopes, refresh):
+            seen["scopes"] = list(scopes)
+
+    async def failed_validate(token, expected_client_id=None):
+        return twitch_token_auth.ValidateResult(ok=False, outcome="invalid_token")
+
+    monkeypatch.setattr(twitch_token_auth, "validate_access_token", failed_validate)
+    scopes = [AuthScope.CHAT_READ, AuthScope.CHANNEL_READ_ADS, AuthScope.CHANNEL_MANAGE_POLLS]
+    twitch_token_auth._token_scopes.clear()
+    asyncio.run(twitch_token_auth.apply_user_authentication(FakeTwitch(), "expired", "r", scopes))
+    assert seen["scopes"] == [AuthScope.CHAT_READ]
+
+
 # --------------------------------------------------------------------------- layout
 
 

@@ -878,6 +878,11 @@
 
         function sendWebSocketEvent(templateName, action, data, options) {
             options = options || {};
+            if (!action) {
+                // A control with no "action" in its template config would send
+                // "<template>_", which no overlay listens for.
+                return;
+            }
             var silent = !!options.silent || !!SILENT_RELAY_ACTIONS[action];
             const eventName = `${templateName}_${action}`;
 

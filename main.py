@@ -352,6 +352,14 @@ if __name__ == "__main__":
             os.chdir(exe_dir)
             logger.info(f"Running as executable, set working directory to: {exe_dir}")
 
+        # One Mycelian at a time: a second launch shows the running copy's window
+        # and exits, or replaces a copy that has stopped responding (which used to
+        # need Task Manager, and fought the new copy over the overlay port).
+        from modules.single_instance import ensure_single_instance
+
+        if not ensure_single_instance():
+            sys.exit(0)
+
         # =========================================
         # Phase 1: Critical Path (Blocking)
         # =========================================

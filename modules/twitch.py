@@ -6479,6 +6479,8 @@ def clear_channel_points_icon_cache(broadcaster_id: Optional[str] = None) -> Non
 
 async def _helix_fallback_channel_points_icon() -> Optional[dict[str, str]]:
     """Fallback icon from Helix custom rewards default_image when GQL is unavailable."""
+    if not twitch_api or not twitch_api.is_connected:
+        return None
     rewards, status = await _fetch_channel_point_rewards_async()
     if status != "ok" or not rewards:
         return None
@@ -6626,7 +6628,9 @@ async def _fetch_channel_point_rewards_async():
         return (None, "not_unlocked")
 
     if not twitch_api or not twitch_api.is_connected:
-        logger.error("Twitch API not connected")
+        # Callers get the status; overlays ask for this on every connect while
+        # Twitch auth is still pending, so an ERROR here floods the log.
+        logger.debug("Channel point rewards requested while Twitch API not connected")
         return (None, "not_connected")
 
     # Held across an await, so never block on it: a second caller on the same
@@ -6705,7 +6709,7 @@ def get_point_reward_by_id(reward_id: str):
     """Get a specific point reward by ID from Twitch API"""
     try:
         if not twitch_api or not twitch_api.is_connected:
-            logger.error("Twitch API not connected")
+            logger.debug("Point reward %s requested while Twitch API not connected", reward_id)
             return None
 
         # Validate reward_id
@@ -6796,6 +6800,12 @@ def update_point_reward(reward_id: str, reward_data: dict):
         return False
 
 
+# Rewards Twitch refused to let this client manage (403). Twitch only lets the app
+# that created a reward update its redemptions, so once a reward is refused every
+# later PATCH for it would fail the same way; skip them for the rest of the session.
+_unmanageable_reward_ids: set[str] = set()
+
+
 def complete_point_redemption(reward_id: str, redemption_id: str) -> str:
     """Mark a channel point redemption FULFILLED (call after its alert played).
 
@@ -6807,6 +6817,8 @@ def complete_point_redemption(reward_id: str, redemption_id: str) -> str:
     redemption_id = str(redemption_id or "").strip()
     if not reward_id or not redemption_id:
         return "error"
+    if reward_id in _unmanageable_reward_ids:
+        return "not_manageable"
     if not twitch_api or not twitch_api.is_connected:
         return "not_connected"
     url = (
@@ -6817,6 +6829,7 @@ def complete_point_redemption(reward_id: str, redemption_id: str) -> str:
         _run_twitch_coro_sync(twitch_api.generic_api_call(url, "PATCH", json_data={"status": "FULFILLED"}))
         return "ok"
     except TwitchPermissionError as e:
+        _unmanageable_reward_ids.add(reward_id)
         logger.info("Redemption %s can't be completed (reward not created by Mycelian): %s", redemption_id, e)
         _notify_redemption_problem(
             "This reward was made outside Mycelian (or with other Twitch app credentials), so Twitch only lets "
@@ -6984,10 +6997,24 @@ def initialize() -> None:
 
 
 def _run_twitch_init() -> None:
-    """Run Twitch API init and signal staging completion for chatbot ordering."""
+    """Run Twitch API init and signal staging completion for chatbot ordering.
+
+    The first staging counts as a reconnect in progress: otherwise the
+    connection monitor (or any other reconnect() caller) sees Twitch as
+    disconnected while this pass is still refreshing tokens, starts a second
+    intialize_twitch_api() alongside it, and the two overwrite each other's
+    Twitch client and EventSub socket ("Existing tokens failed validation").
+    """
+    api = twitch_api
+    if api is not None:
+        with api._reconnect_lock:
+            api._reconnect_in_progress = True
     try:
         asyncio.run(twitch_api.intialize_twitch_api())
     finally:
+        if api is not None:
+            with api._reconnect_lock:
+                api._reconnect_in_progress = False
         _staging_complete.set()
 
 
@@ -7240,6 +7267,11 @@ def is_twitch_disconnected_for_monitor() -> bool:
 def attempt_auto_reconnect() -> bool:
     """Monitor-driven Twitch reconnect entry point."""
     if not twitch_has_tokens_configured():
+        return False
+    if not _staging_complete.is_set():
+        # The startup staging pass is still running; a monitor reconnect now
+        # would race it (see _run_twitch_init).
+        logger.debug("Skipping Twitch auto-reconnect; startup staging still running")
         return False
     api = twitch_api
     if api is None:

@@ -3885,6 +3885,9 @@ class WebEngine:
         # Thread for running the server
         self.server_thread = None
         self._known_server_threads: List[threading.Thread] = []
+        # Server threads that already failed a join: their hub is frozen and a
+        # thread can't be killed, so later restarts don't wait on them again.
+        self._abandoned_server_threads: List[threading.Thread] = []
         self._cached_listener: Any = None
         self._listener_cache_lock = threading.Lock()
         self.is_running = False
@@ -3896,6 +3899,10 @@ class WebEngine:
         self._restart_lock = threading.Lock()
         self._last_restart_ts = 0.0
         self._restart_attempts = 0
+        # When the last restart "succeeded". A server that freezes again soon
+        # after a successful restart keeps its attempt count, so a hub that
+        # re-freezes every cycle reaches the give-up notice instead of looping.
+        self._last_restart_success_ts = 0.0
         self._supervisor_thread: Optional[threading.Thread] = None
         self._restart_giveup_notified = False
         self._restart_in_progress = False
@@ -4259,7 +4266,9 @@ class WebEngine:
             if not self._twitch_api_worker_started:
                 return
         try:
-            self._twitch_api_queue.put(None)
+            # put_nowait: a full queue (worker stuck) must not hang the caller,
+            # which is often the restart thread.
+            self._twitch_api_queue.put_nowait(None)
         except Exception as e:
             logger.debug("Could not enqueue Twitch API worker shutdown: %s", e)
 
@@ -5366,6 +5375,7 @@ class WebEngine:
     _SUPERVISOR_POLL_SEC = 15.0
     _FREEZE_RESTART_THRESHOLD_SEC = 60.0
     _MAX_RESTART_ATTEMPTS = 5
+    _RESTART_FLAP_WINDOW_SEC = 300.0
 
     def start_supervisor(self) -> None:
         """Start the native supervisor that keeps the overlay server alive.
@@ -5494,26 +5504,62 @@ class WebEngine:
                 self._cached_listener = None
 
     def _prune_known_server_threads(self) -> None:
+        abandoned = getattr(self, "_abandoned_server_threads", None) or []
         self._known_server_threads = [
-            t for t in self._known_server_threads if t is not None and t.is_alive()
+            t
+            for t in self._known_server_threads
+            if t is not None and t.is_alive() and t not in abandoned
         ]
+        if abandoned:
+            self._abandoned_server_threads = [t for t in abandoned if t.is_alive()]
 
     def _join_known_server_threads(self, join_timeout: float) -> None:
-        """Join every WebEngine thread this instance has started."""
+        """Join every WebEngine thread this instance has started.
+
+        A thread that already failed one join has a frozen hub and can't be
+        stopped from outside, so it is abandoned instead of being waited on again
+        by every later restart.
+        """
+        abandoned = getattr(self, "_abandoned_server_threads", None)
+        if abandoned is None:
+            abandoned = self._abandoned_server_threads = []
         threads = list(self._known_server_threads)
         if self.server_thread is not None and self.server_thread not in threads:
             threads.append(self.server_thread)
         for thread in threads:
-            if thread is None or not thread.is_alive():
+            if thread is None or not thread.is_alive() or thread in abandoned:
                 continue
             thread.join(timeout=join_timeout)
             if thread.is_alive():
                 logger.warning(
-                    "WebEngine thread %s did not exit within %.0fs",
+                    "WebEngine thread %s did not exit within %.0fs; abandoning it",
                     thread.name,
                     join_timeout,
                 )
+                abandoned.append(thread)
         self._prune_known_server_threads()
+
+    def _reset_client_tracking(self) -> None:
+        """Forget socket clients of a stopped server.
+
+        Clients of a frozen hub never run their disconnect handlers, so without
+        this the connected count only grows across restarts (22 -> 44 -> 68 ...)
+        as OBS sources reconnect to the new server.
+        """
+        try:
+            with self._socket_connected_lock:
+                self._socket_connected_count = 0
+                if getattr(self, "_overlay_hello_routes", None) is not None:
+                    self._overlay_hello_routes = {}
+        except Exception as e:
+            logger.debug("WebEngine client tracking reset failed: %s", e)
+
+    def _port_held_by_this_process(self) -> bool:
+        """True when netstat/lsof says this very process owns the port listener."""
+        try:
+            return self._extract_listening_pid() == os.getpid()
+        except Exception:
+            return False
 
     def _wait_for_port_free(self, timeout: float = 20.0) -> bool:
         deadline = time.time() + timeout
@@ -5596,22 +5642,27 @@ class WebEngine:
         """Allow terminate only for this process or a leftover Mycelian overlay.
 
         Never treat macOS Control Center / AirPlay (ControlCe) or other foreign
-        apps as safe to kill — even if they hold port 5000.
+        apps as safe to kill — even if they hold port 5000. A /api/health answer
+        is not proof either: it may come from another, healthy Mycelian
+        instance, which must never be killed by this one.
         """
         if pid == os.getpid():
-            return True
-        # A live Mycelian /api/health response means our overlay still owns the port.
-        if self._probe_health_endpoint():
             return True
         cmdline = _process_cmdline(pid)
         if _cmdline_looks_like_mycelian(cmdline):
             return True
         return False
 
-    def _try_terminate_stale_port_holder(self) -> bool:
+    def _try_terminate_stale_port_holder(
+        self, *, allow_other_process: bool = False
+    ) -> bool:
         """Terminate a leftover Mycelian process still holding our port after stop.
 
         Foreign holders (e.g. macOS AirPlay Receiver / ControlCe) are never killed.
+        Another Mycelian process is only killed when *allow_other_process* is set,
+        which only startup does (this process then holds the single-instance
+        lock, so any other Mycelian on the port is a stale leftover). During
+        runtime restarts another Mycelian on the port is a live instance.
         """
         pid = self._extract_listening_pid()
         if pid is None:
@@ -5630,6 +5681,14 @@ class WebEngine:
             self._close_listener()
             self._join_known_server_threads(join_timeout=5.0)
             return not self._port_is_open()
+        if not allow_other_process:
+            logger.warning(
+                "Port %s held by another process %s; not terminating it during "
+                "a restart",
+                self.port,
+                pid,
+            )
+            return False
         if not self._is_own_overlay_pid(pid):
             logger.warning(
                 "Port %s held by foreign process %s; will not terminate it",
@@ -5657,7 +5716,8 @@ class WebEngine:
                     startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
                     taskkill_kwargs["startupinfo"] = startupinfo
                 result = subprocess.run(
-                    ["taskkill", "/PID", str(pid), "/F"],
+                    # /T: also end the stale instance's children (webview, tray).
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
                     capture_output=True,
                     text=True,
                     timeout=5.0,
@@ -5718,19 +5778,27 @@ class WebEngine:
         if not self._port_is_open():
             return
 
-        if self._probe_health_endpoint():
+        # A hung earlier Mycelian (e.g. one whose window died while its overlay
+        # hub was frozen) holds the port but no longer answers /api/health, so
+        # identify it by PID/command line as well, not only by health.
+        holder_pid = self._extract_listening_pid()
+        leftover_mycelian = (
+            holder_pid is not None
+            and holder_pid != os.getpid()
+            and _cmdline_looks_like_mycelian(_process_cmdline(holder_pid))
+        )
+        if leftover_mycelian or self._probe_health_endpoint():
             logger.warning(
-                "Port %s still serves Mycelian /api/health before startup; "
-                "attempting release",
+                "Port %s is held by a leftover Mycelian process (pid=%s) before "
+                "startup; attempting release",
                 self.port,
+                holder_pid,
             )
-            self._prepare_port_for_restart()
-            if self._port_is_open():
-                self._try_terminate_stale_port_holder()
-                for delay in (0.5, 1.0):
-                    if not self._port_is_open():
-                        return
-                    time.sleep(delay)
+            self._try_terminate_stale_port_holder(allow_other_process=True)
+            for delay in (0.5, 1.0, 2.0, 4.0):
+                if not self._port_is_open():
+                    return
+                time.sleep(delay)
         else:
             self._log_port_holder_hint()
             logger.warning(
@@ -5838,6 +5906,35 @@ class WebEngine:
             with self._restart_lock:
                 self._foreign_port_wait_active = False
 
+    def _release_own_listener_or_give_up(self) -> Optional[bool]:
+        """Handle the port still being held by *this* process after a stop.
+
+        Returns None when another process (or nobody) holds the port, True when
+        our own stale listener was released, and False when it could not be:
+        a frozen hub's listener can't be freed from outside, so further restarts
+        are pointless and the user is told to restart Mycelian. Without this the
+        app called its own frozen listener a "foreign holder" and waited forever.
+        """
+        if not self._port_is_open() or not self._port_held_by_this_process():
+            return None
+        if self._try_terminate_stale_port_holder() and not self._port_is_open():
+            return True
+        logger.error(
+            "WebEngine restart: port %s is still held by this process's frozen "
+            "overlay server; Mycelian must be restarted to recover",
+            self.port,
+        )
+        self._last_run_error = (
+            f"port {self.port} held by this process's frozen overlay server"
+        )
+        with self._restart_lock:
+            self._restart_attempts = self._MAX_RESTART_ATTEMPTS
+            notify = not self._restart_giveup_notified
+            self._restart_giveup_notified = True
+        if notify:
+            self._notify_restart_giveup()
+        return False
+
     def _do_restart(self, reason: str, attempt: int) -> None:
         logger.error("WebEngine auto-restart (attempt %s): %s", attempt, reason)
         self._restart_in_progress = True
@@ -5855,8 +5952,11 @@ class WebEngine:
                 self._template_control_emit_worker_started = False
             self._last_gevent_heartbeat = None
             self._server_started_at = None
+            self._reset_client_tracking()
 
             self._prepare_port_for_restart()
+            if self._release_own_listener_or_give_up() is False:
+                return
 
             # Foreign holder still on the port: do not burn remaining restart
             # attempts; hand off to the wait/retry loop instead.
@@ -5882,6 +5982,8 @@ class WebEngine:
                 )
                 time.sleep(bind_backoff)
                 self._prepare_port_for_restart()
+                if self._release_own_listener_or_give_up() is False:
+                    return
 
             if self._port_is_open() and not self._probe_health_endpoint():
                 logger.error(
@@ -5930,13 +6032,31 @@ class WebEngine:
             if recovered:
                 logger.warning("WebEngine auto-restart succeeded (attempt %s)", attempt)
                 with self._restart_lock:
-                    self._restart_attempts = 0
-                    self._restart_giveup_notified = False
+                    now = time.time()
+                    flapping = (
+                        self._last_restart_success_ts > 0
+                        and now - self._last_restart_success_ts
+                        < self._RESTART_FLAP_WINDOW_SEC
+                    )
+                    self._last_restart_success_ts = now
+                    if not flapping:
+                        self._restart_attempts = 0
+                        self._restart_giveup_notified = False
+                if flapping:
+                    logger.warning(
+                        "WebEngine restarted again within %.0fs of the last restart; "
+                        "keeping attempt count %s of %s",
+                        self._RESTART_FLAP_WINDOW_SEC,
+                        attempt,
+                        self._MAX_RESTART_ATTEMPTS,
+                    )
                 self._last_run_error = None
             else:
                 logger.error(
                     "WebEngine auto-restart did not recover (attempt %s)", attempt
                 )
+                if self._release_own_listener_or_give_up() is False:
+                    return
                 if self._port_is_open() and not self._probe_health_endpoint():
                     self._log_port_holder_hint()
                     with self._restart_lock:

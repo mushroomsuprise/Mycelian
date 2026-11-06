@@ -534,12 +534,21 @@
                     } else {
                         console.warn('No spotify config found in response');
                     }
+                    loadTemplateConfig.failureLogged = false;
                 } else {
-                    console.error('Failed to load template configs:', response.status);
+                    reportConfigLoadFailure('Failed to load template configs:', response.status);
                 }
             } catch (error) {
-                console.error('Error loading template config:', error);
+                reportConfigLoadFailure('Error loading template config:', error);
             }
+        }
+
+        // The config reloads every 30 s; while the overlay server is down log the
+        // first failure only, not one error per retry.
+        function reportConfigLoadFailure(message, detail) {
+            if (loadTemplateConfig.failureLogged) return;
+            loadTemplateConfig.failureLogged = true;
+            console.error(message, detail);
         }
 
         // No initial data requests - backend will push data automatically
