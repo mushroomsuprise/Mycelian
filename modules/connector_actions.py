@@ -3675,7 +3675,7 @@ class TwitchCancelPredictionAction(BaseAction):
 #  Games Tracker
 # ---------------------------------------------------------------------------
 
-_GAMES_HINT = "Check Settings → Games Tracker: the game must be in your PlayStation or Steam library there."
+_GAMES_HINT = "Check the Games Tracker tab: the game must be in your PlayStation or Steam library there."
 
 
 def find_tracked_game(query: str, platform: str = "", games: Optional[List[Any]] = None) -> Optional[Any]:

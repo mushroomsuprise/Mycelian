@@ -1020,7 +1020,7 @@ class SettingsUI:
             from .tabs.database_tab import DatabaseTab
             from .tabs.discord_tab import DiscordTab
             from .tabs.game_hooks_tab import GameHooksTab
-            from .tabs.games_tracker_tab import GamesTrackerTab
+            from .tabs.games_tracker_settings_tab import GamesTrackerSettingsTab
             from .tabs.obs_tab import ObsTab
             from .tabs.psn_tab import PSNTab
             from .tabs.steam_tab import SteamTab
@@ -1058,7 +1058,7 @@ class SettingsUI:
             with StartupTimer("settings_tab_objects_game_hooks"):
                 game_hooks_tab = GameHooksTab()
             with StartupTimer("settings_tab_objects_games_tracker"):
-                games_tracker_tab = GamesTrackerTab()
+                games_tracker_tab = GamesTrackerSettingsTab()
             with StartupTimer("settings_tab_objects_database"):
                 database_tab = DatabaseTab()
             with StartupTimer("settings_tab_objects_statistics"):

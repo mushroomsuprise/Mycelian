@@ -32,7 +32,7 @@ class _BadProps:
 
 
 def test_order_constants_are_unique_and_complete():
-    assert len(set(tt.MAIN_TAB_ORDER)) == len(tt.MAIN_TAB_ORDER) == 8
+    assert len(set(tt.MAIN_TAB_ORDER)) == len(tt.MAIN_TAB_ORDER) == 9
     assert tt.MAIN_TAB_ORDER[0] == "Activity Feed" and tt.MAIN_TAB_ORDER[-1] == "Settings"
     assert len(set(tt.SETTINGS_TAB_ORDER)) == len(tt.SETTINGS_TAB_ORDER)
     assert tt.SETTINGS_TAB_ORDER[0] == "Twitch" and tt.SETTINGS_TAB_ORDER[-1] == "About"

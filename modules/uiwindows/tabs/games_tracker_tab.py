@@ -1,6 +1,6 @@
 # Copyright (c) 2024-2026 Mycelian
 # SPDX-License-Identifier: MIT
-"""Settings tab: Games Tracker (PSN and Steam libraries, trophy/achievement progress, export image)."""
+"""Games Tracker main tab page (PSN and Steam libraries, trophy/achievement progress, export image)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from ...game_tracker import covers
 from ...game_tracker import goals as goal_kinds
 from ...game_tracker.goals import GameGoal
 from ...game_tracker.speedrun import TIMING_LABELS, speedruns_public
-from ...game_tracker.models import PSN, STEAM, GameEvent, TrackedGame, TrackerSettings, clean_milestones, grade_counts
+from ...game_tracker.models import PSN, STEAM, GameEvent, TrackedGame, TrackerSettings, grade_counts
 from ...game_tracker.service import get_service
 from ...notification_engine import nav_actions_settings, notify
 from ...ui_buttons import outline_button, primary_button
@@ -35,7 +35,6 @@ from .integration_ui import (
     icon_html,
     section,
     switch_row,
-    tool_row,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,8 +97,6 @@ GAMES_TRACKER_CSS = """
 .gtr-empty > .itg-icon { font-size: 46px; color: var(--color-text-muted); opacity: .7; }
 .gtr-empty .t { font-size: 1rem; font-weight: 650; color: var(--color-text-secondary); }
 .gtr-empty .s { font-size: .78rem; color: var(--color-text-muted); max-width: 420px; line-height: 1.45; }
-.gtr-optgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
-@media (max-width: 900px) { .gtr-optgrid { grid-template-columns: 1fr; } }
 .gtr-unit { display: flex; align-items: center; gap: 8px; font-size: .74rem; color: var(--color-text-muted); }
 .gtr-num { width: 96px; }
 .gtr-token { display: inline-flex; align-items: center; gap: 2px; height: 26px; padding: 0 2px 0 9px; border-radius: 6px; font-size: .74rem;
@@ -729,11 +726,8 @@ class GamesTrackerTab:
     name = "Games Tracker"
 
     def __init__(self) -> None:
-        self.dirty: bool = False
         self.ui_elements: Dict[str, Any] = {}
         self._page: Optional[IntegrationPage] = None
-        self._loaded: TrackerSettings = TrackerSettings()
-        self._buffer: TrackerSettings = TrackerSettings()
         self._games: List[TrackedGame] = []
         self._summary: Dict[str, Any] = {}
         self._status: Dict[str, Dict[str, Any]] = {}
@@ -765,16 +759,8 @@ class GamesTrackerTab:
         return get_service()
 
     def has_unsaved_changes(self) -> bool:
-        return self.dirty
-
-    def _settings_dict(self, s: TrackerSettings) -> Dict[str, Any]:
-        d = s.to_dict()
-        d.pop("export", None)
-        d.pop("view", None)
-        return d
-
-    def _update_dirty(self) -> None:
-        self.dirty = self._settings_dict(self._buffer) != self._settings_dict(self._loaded)
+        """The options are saved in Settings → Games Tracker; per-game edits save in their drawer."""
+        return False
 
     def build(self, parent_container) -> None:
         from ...help_system.help_render import inject_page_stylesheet, promote_color_importance, scope_selectors
@@ -782,19 +768,13 @@ class GamesTrackerTab:
 
         inject_page_stylesheet(_HOOKS_STYLE_ID, promote_color_importance(scope_selectors(GAME_HOOKS_CSS, ".itg")))
         inject_page_stylesheet(_STYLE_ID, promote_color_importance(scope_selectors(GAMES_TRACKER_CSS, ".itg")))
-        self._loaded = self.service.settings
-        self._buffer = TrackerSettings.from_dict(self._loaded.to_dict())
-        self.dirty = False
-        self._restore_views(self._loaded.view)
+        self._restore_views(self.service.settings.view)
         self._page = page = IntegrationPage(
             parent_container,
             "games_tracker",
             "Games Tracker",
             "PlayStation and Steam libraries, trophies and achievements",
             icon="emoji_events",
-            on_save=self.save,
-            on_discard=self.discard,
-            is_dirty=lambda: self.dirty,
             help_topic="games_tracker",
             help_tooltip="How the Games Tracker works",
         )
@@ -806,6 +786,7 @@ class GamesTrackerTab:
                     self.ui_elements["synced"] = ui.label("").classes("gtr-sub")
                     self.ui_elements["export_btn"] = outline_button("Export", self.open_export, icon="ios_share")
                     self.ui_elements["sync_btn"] = outline_button("Sync now", self._sync_now, icon="sync")
+                    self.ui_elements["options_btn"] = outline_button("Options", self._open_options, icon="tune")
                 self.ui_elements["banner"] = ui.html("", sanitize=False).classes("w-full")
                 self.ui_elements["overview"] = ui.html("", sanitize=False).classes("w-full")
                 self.ui_elements["empty"] = ui.element("div").classes("w-full")
@@ -822,7 +803,6 @@ class GamesTrackerTab:
                 with ui.element("div").classes("gtr-more") as more:
                     self.ui_elements["more_btn"] = outline_button("Show more", self._show_more, icon="expand_more")
                 self.ui_elements["more"] = more
-            self._build_options()
         self._build_drawer()
         self._build_export_dialog()
         self.service.add_listener(self._mark_changed)
@@ -913,7 +893,7 @@ class GamesTrackerTab:
         self.ui_elements["library"].set_visibility(has_games)
         backlog = self.ui_elements.get("backlog")
         if backlog is not None:
-            backlog.set_visibility(has_games and self._loaded.backlog_section)
+            backlog.set_visibility(has_games and self._backlog_on)
 
     def _banner_html(self) -> str:
         return self._import_banner() + steam_private_banner(self._games)
@@ -947,6 +927,12 @@ class GamesTrackerTab:
             with ui.row().classes("gap-2 mt-2"):
                 outline_button("Set up PSN", lambda: self._goto("PSN"))
                 outline_button("Set up Steam", lambda: self._goto("Steam"))
+
+    @staticmethod
+    def _open_options() -> None:
+        from ...help_system.contextual_help import navigate_to_settings_subtab
+
+        navigate_to_settings_subtab("Games Tracker")
 
     @staticmethod
     def _goto(subtab: str) -> None:
@@ -1006,7 +992,6 @@ class GamesTrackerTab:
             wanted = {**s.view, **{w: {k: v for k, v in view.items() if k != "q"} for w, view in self._views.items()}}
             if s.view != wanted:
                 self.service.save_settings(TrackerSettings.from_dict({**s.to_dict(), "view": wanted}))
-                self._loaded.view = wanted
         except Exception:
             logger.debug("Games Tracker: list filters not saved", exc_info=True)
 
@@ -1030,7 +1015,7 @@ class GamesTrackerTab:
 
     @property
     def _backlog_on(self) -> bool:
-        return bool(self._loaded.backlog_section)
+        return bool(self.service.settings.backlog_section)
 
     def visible_games(self) -> List[TrackedGame]:
         v = self._views["library"]
@@ -1106,162 +1091,9 @@ class GamesTrackerTab:
         notify("", type="info", source="game_tracker", title="Games Tracker sync started", hint="It runs in the background.")
         self._needs_refresh = True
 
-    # ----- options -----
-
-    def _build_options(self) -> None:
-        b = self._buffer
-        exp = ui.expansion().classes("itg-fold").props("dense")
-        with exp.add_slot("header"):
-            self.ui_elements["opts_head"] = ui.html(self._options_head(), sanitize=False).classes("itg-fold-head")
-        with exp:
-            with ui.element("div").classes("itg-fold-body"):
-                with ui.element("div").classes("gtr-optgrid"):
-                    with ui.element("div"):
-                        self.ui_elements["opt_psn"] = switch_row(
-                            "Track PlayStation library", "Imports every title that has a trophy list and resolves its NPWR ID",
-                            b.psn_enabled, lambda v: self._set_opt(psn_enabled=v))
-                        self.ui_elements["opt_steam"] = switch_row(
-                            "Track Steam library", "Games you have played (playtime above zero)",
-                            b.steam_enabled, lambda v: self._set_opt(steam_enabled=v))
-                        self.ui_elements["opt_stats"] = switch_row(
-                            "Count changes in Statistics", "Unlocks, platinums, 100% games, new games and milestones after the first import",
-                            b.record_stats, lambda v: self._set_opt(record_stats=v))
-                        self.ui_elements["opt_events"] = switch_row(
-                            "Send chatbot and connector events", "Game unlock, completed, started and milestone triggers",
-                            b.send_events, lambda v: self._set_opt(send_events=v))
-                        self.ui_elements["opt_backlog"] = switch_row(
-                            "Keep games with goals in a Backlog section", "Off: they stay in the library with everything else",
-                            b.backlog_section, lambda v: self._set_opt(backlog_section=v))
-                    with ui.element("div"):
-                        with fields():
-                            self.ui_elements["opt_sync"] = self._number("Library sync", b.sync_minutes, "minutes", 5, 120, "sync_minutes")
-                            self.ui_elements["opt_ttl"] = self._number("Cover art cache", b.cover_ttl_days, "days", 1, 90, "cover_ttl_days")
-                        with fields():
-                            self.ui_elements["opt_missing"] = self._number(
-                                "Retry missing covers", b.cover_missing_hours, "hours", 1, 72, "cover_missing_hours")
-                            with ui.element("div"):
-                                ui.html("Progress milestones", sanitize=False).classes("itg-field-label")
-                                self.ui_elements["milestones"] = ui.element("div").classes("gtr-tokens")
-                        hint("The first import of each account is silent. Only changes after it count toward Statistics, chatbot events and "
-                             "connectors. Switching account starts a new silent import.")
-                with ui.element("div").classes("mt-3"):
-                    with tool_row("image", "Cover art cache", "Covers are kept on disk. Clearing re-downloads them in the background."):
-                        outline_button("Clear covers", self._clear_covers, icon="delete_sweep")
-                    with tool_row("restart_alt", "Reset baseline", "Treat current progress as the new starting point. Nothing already earned gets counted."):
-                        ui.button("Reset baseline", icon="restart_alt", on_click=self._confirm_reset).props("outline no-caps dense").classes("gtr-danger")
-        self._render_milestones()
-
-    def _options_head(self) -> str:
-        b = self._buffer
-        ms = " / ".join(str(m) for m in b.milestones) or "none"
-        return (
-            f'{icon_html("tune")}<span class="itg-fold-title">Tracker options</span>'
-            f'<span class="gtr-sub">Sync every {b.sync_minutes} min · covers kept {b.cover_ttl_days} days · milestones {esc(ms)}%</span>'
-        )
-
-    def _number(self, label: str, value: int, unit: str, lo: int, hi: int, key: str) -> Any:
-        with ui.element("div"):
-            ui.html(esc(label), sanitize=False).classes("itg-field-label")
-            with ui.element("div").classes("gtr-unit"):
-                num = ui.number(value=value, min=lo, max=hi, step=1, format="%d").props("outlined dense").classes("gtr-num")
-                num.on_value_change(lambda e, k=key, lo=lo, hi=hi: self._set_opt(**{k: max(lo, min(hi, int(e.value or lo)))}))
-                ui.label(unit)
-        return num
-
-    def _render_milestones(self) -> None:
-        box = self.ui_elements.get("milestones")
-        if box is None:
-            return
-        box.clear()
-        with box:
-            for m in self._buffer.milestones:
-                with ui.element("span").classes("gtr-token"):
-                    ui.label(f"{m}%")
-                    ui.button(icon="close", on_click=lambda m=m: self._remove_milestone(m)).props(
-                        f'flat round dense size=xs aria-label="Remove {m}%"').classes("itg-ibtn")
-            add = ui.number(placeholder="Add %", min=1, max=99, step=1, format="%d").props("outlined dense").classes("gtr-num")
-            add.on("keydown.enter", lambda _e, a=add: self._add_milestone(a.value))
-            add.on("blur", lambda _e, a=add: self._add_milestone(a.value))
-
-    def _add_milestone(self, value: Any) -> None:
-        try:
-            n = int(value)
-        except (TypeError, ValueError):
-            return
-        if n in self._buffer.milestones or not 1 <= n <= 99:
-            return
-        self._set_opt(milestones=clean_milestones(self._buffer.milestones + [n]))
-        self._render_milestones()
-
-    def _remove_milestone(self, value: int) -> None:
-        self._set_opt(milestones=[m for m in self._buffer.milestones if m != value])
-        self._render_milestones()
-
-    def _set_opt(self, **changes: Any) -> None:
-        for k, v in changes.items():
-            setattr(self._buffer, k, v)
-        self._update_dirty()
-        head = self.ui_elements.get("opts_head")
-        if head is not None:
-            head.set_content(self._options_head())
-
-    def save(self) -> None:
-        try:
-            current = self.service.settings
-            buf = TrackerSettings.from_dict({**self._buffer.to_dict(), "export": current.export, "view": current.view})
-            self._loaded = self.service.save_settings(buf)
-            self._buffer = TrackerSettings.from_dict(self._loaded.to_dict())
-            self.dirty = False
-            self._render_grid()
-            notify("", type="success", source="game_tracker", title="Games Tracker settings saved")
-        except Exception as e:
-            logger.error("Games Tracker settings save failed: %s", e, exc_info=True)
-            notify("", type="error", source="game_tracker", title="Couldn't save the Games Tracker settings",
-                   hint="Check the Mycelian data folder is writable, then try again.", details=f"{type(e).__name__}: {e}")
-
-    def discard(self) -> None:
-        self._buffer = TrackerSettings.from_dict(self._loaded.to_dict())
-        self.dirty = False
-        b = self._buffer
-        for key, value in (("opt_psn", b.psn_enabled), ("opt_steam", b.steam_enabled), ("opt_stats", b.record_stats),
-                           ("opt_events", b.send_events), ("opt_backlog", b.backlog_section),
-                           ("opt_sync", b.sync_minutes), ("opt_ttl", b.cover_ttl_days),
-                           ("opt_missing", b.cover_missing_hours)):
-            el = self.ui_elements.get(key)
-            if el is not None:
-                el.value = value
-        self._buffer = TrackerSettings.from_dict(self._loaded.to_dict())  # the value setters above re-ran _set_opt
-        self.dirty = False
-        self._render_milestones()
-        head = self.ui_elements.get("opts_head")
-        if head is not None:
-            head.set_content(self._options_head())
-
-    async def _clear_covers(self) -> None:
-        removed = await run.io_bound(covers.clear_covers)
-        self.service.sync_now()
-        notify(f"{removed:,} cover{'s' if removed != 1 else ''} removed. They download again in the background.", type="success",
-               source="game_tracker", title="Cover art cleared")
-        self._needs_refresh = True
-
     def _dialog_parent(self) -> Any:
         """Small dialogs live in the page (also when opened from code, outside a click handler)."""
         return self._page.root if self._page is not None else contextlib.nullcontext()
-
-    def _confirm_reset(self) -> None:
-        with self._dialog_parent(), ui.dialog() as dialog, ui.card().classes("itg-dialog is-danger"):
-            ui.html(f'{icon_html("restart_alt")}Reset the baseline?', sanitize=False).classes("itg-dialog-title")
-            ui.label("The next sync reads every game silently and treats that as the new starting point. Trophies and achievements "
-                     "already earned won't reach Statistics, chat or connectors.").classes("itg-dialog-sub")
-            with ui.element("div").classes("itg-actions-end"):
-                outline_button("Cancel", dialog.close)
-                ui.button("Reset baseline", on_click=lambda: (self._reset_baseline(), dialog.close())).props("unelevated no-caps color=negative")
-        dialog.open()
-
-    def _reset_baseline(self) -> None:
-        self.service.reset_baseline()
-        self.service.sync_now()
-        notify("", type="success", source="game_tracker", title="Baseline reset", hint="The next sync sets the new starting point.")
 
     # ----- drawer -----
 
@@ -1910,7 +1742,6 @@ class GamesTrackerTab:
                 wanted["spreadsheet"] = self._sheet_opts.to_dict()
             if s.export != wanted:
                 self.service.save_settings(TrackerSettings.from_dict({**s.to_dict(), "export": wanted}))
-                self._loaded.export = wanted
         except Exception:
             logger.debug("Games Tracker: export options not saved", exc_info=True)
 

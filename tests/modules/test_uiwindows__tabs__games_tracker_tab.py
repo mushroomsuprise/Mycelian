@@ -1,6 +1,6 @@
 # Copyright (c) 2024-2026 Mycelian
 # SPDX-License-Identifier: MIT
-"""Settings → Games Tracker: helpers, the built tab, filters, options, the game drawer and the export dialog."""
+"""Games Tracker main tab: helpers, the built tab, filters, the game drawer and the export dialog."""
 
 from __future__ import annotations
 
@@ -175,18 +175,26 @@ def test_cover_src_registers_route_once(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- registration
 
 
-def test_tab_is_registered_after_game_hooks():
+def test_tab_is_a_main_tab_before_settings():
     from modules import notify_settings, ui_tab_transitions
+    from modules.uiwindows import tab_visibility
     from modules.uiwindows.tabs import theme_mock
 
-    order = ui_tab_transitions.SETTINGS_TAB_ORDER
-    assert order[order.index("Game Hooks") + 1] == "Games Tracker"
+    order = ui_tab_transitions.MAIN_TAB_ORDER
+    assert order[order.index("Games Tracker") + 1] == "Settings"
+    assert theme_mock._MAIN_TABS[-2:] == ("Games Tracker", "Settings")
+    assert "Games Tracker" in tab_visibility._MAIN_TAB_LABELS
+    assert "game_tracker" in notify_settings.SOURCE_IDS
+    main = (ROOT / "modules" / "mainuiwindow.py").read_text()
+    assert main.index('ui.tab("Spore Studio")') < main.index('ui.tab("Games Tracker")') < main.index('ui.tab("Settings")')
+    # Its options are a Settings sub-tab right after Game Hooks.
+    sub = ui_tab_transitions.SETTINGS_TAB_ORDER
+    assert sub[sub.index("Game Hooks") + 1] == "Games Tracker"
     labels = [t[-1] for t in theme_mock._SUB_TABS]
     assert labels[labels.index("Game Hooks") + 1] == "Games Tracker"
-    assert "game_tracker" in notify_settings.SOURCE_IDS
     src = (ROOT / "modules" / "uiwindows" / "settings.py").read_text()
     assert src.index('ui.tab("Game Hooks"') < src.index('ui.tab("Games Tracker", icon="emoji_events")') < src.index('ui.tab("Database"')
-    assert '"Games Tracker": games_tracker_tab' in src
+    assert '"Games Tracker": games_tracker_tab' in src and "GamesTrackerSettingsTab()" in src
     from modules.help_system.help_content import HELP_TOPICS
 
     assert "games_tracker" in HELP_TOPICS
@@ -254,45 +262,21 @@ def test_tick_refreshes_when_the_service_changes(env):
     run_ui(build_into(tabs), check)
 
 
-def test_options_dirty_save_and_discard(env):
+def test_sync_now_and_options_button(env, monkeypatch):
+    nav: List[str] = []
+    monkeypatch.setattr("modules.help_system.contextual_help.navigate_to_settings_subtab", lambda name, **kw: nav.append(name))
     tabs: List[Any] = []
 
     async def check(user):
         tab = tabs[0]
         assert tab.has_unsaved_changes() is False
-        tab._set_opt(sync_minutes=30, steam_enabled=False)
-        tab._add_milestone(10)
-        tab._add_milestone(10)  # already there
-        tab._add_milestone("x")
-        tab._remove_milestone(75)
-        assert tab.dirty and tab._buffer.milestones == [10, 25, 50]
-        assert "Sync every 30 min" in tab.ui_elements["opts_head"].content
-        tab.save()
-        saved = env.store.load_settings()
-        assert saved.sync_minutes == 30 and saved.steam_enabled is False and saved.milestones == [10, 25, 50]
-        assert tab.dirty is False and env.notes[-1]["title"] == "Games Tracker settings saved"
-        tab._set_opt(record_stats=False)
-        tab.discard()
-        assert tab.dirty is False and tab._buffer.record_stats is True
-
-    run_ui(build_into(tabs), check)
-
-
-def test_clear_covers_and_reset_baseline(env, monkeypatch):
-    monkeypatch.setattr(tabmod.covers, "clear_covers", lambda: 3)
-    env.store.upsert_games([psn_game()])
-    tabs: List[Any] = []
-
-    async def check(user):
-        tab = tabs[0]
-        await tab._clear_covers()
-        assert env.notes[-1]["title"] == "Cover art cleared" and "3 covers" in env.notes[-1]["message"]
-        tab._reset_baseline()
-        assert env.store.get_game(PSN, "NPWR00001_00").baselined is False
-        tab._confirm_reset()
-        await user.should_see("Reset the baseline?")
+        assert tab._page.save_button is None and tab._page.discard_button is None  # options save in Settings
+        await user.should_not_see("Tracker options")
         tab._sync_now()
         assert env.notes[-1]["title"] == "Games Tracker sync started"
+        tab.ui_elements["options_btn"].run_method("click")
+        tab._open_options()
+        assert nav == ["Games Tracker"]
 
     run_ui(build_into(tabs), check)
 
@@ -490,7 +474,6 @@ def test_lifecycle_without_a_page(env):
     tab.on_exit()
     assert tab.has_unsaved_changes() is False and tab.drawer_changes() == {}
     assert tab.service is env.service
-    assert isinstance(tab._settings_dict(TrackerSettings()), dict) and "export" not in tab._settings_dict(TrackerSettings())
 
 
 def test_steam_private_and_unread_states():
@@ -667,12 +650,13 @@ def test_backlog_section_splits_the_library(env):
         tab._set_filter("backlog", status="complete")
         assert tab.visible_backlog() == [] and tab.ui_elements["bl_none"].visible
         assert env.store.load_settings().view["backlog"]["status"] == "complete"  # remembered right away
-        assert tab.dirty is False
-        tab._set_opt(backlog_section=False)
-        tab.save()
+        # Turned off in Settings → Games Tracker: the next refresh puts them back in the library.
+        current = env.service.settings
+        env.service.save_settings(TrackerSettings.from_dict({**current.to_dict(), "backlog_section": False}))
+        tab._needs_refresh = True
+        await tab._refresh()
         assert tab.ui_elements["backlog"].visible is False
         assert [g.title for g in tab.visible_games()] == ["ELDEN RING", "Hades"]
-        assert env.store.load_settings().view["backlog"]["status"] == "complete"  # Save kept the remembered filters
 
     run_ui(build_into(tabs), check)
 

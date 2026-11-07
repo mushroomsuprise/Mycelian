@@ -120,7 +120,7 @@
     <sdpi-item label="About" class="section">
         <sdpi-text>
             Only manual goals are listed: the ones you count yourself. Add them to a game in Mycelian under
-            Settings → Games Tracker (the gear on the game's card). The key shows the goal and its count.
+            the Games Tracker tab (the gear on the game's card). The key shows the goal and its count.
         </sdpi-text>
     </sdpi-item>
 
@@ -252,7 +252,7 @@
                 }
                 availableGames = result.games;
                 showGoalError(availableGames.length ? '' :
-                    'No manual goals yet. Add one to a game in Mycelian (Settings → Games Tracker), then press Refresh.');
+                    'No manual goals yet. Add one to a game in Mycelian (Games Tracker tab), then press Refresh.');
                 populateGameSelect();
             } catch (error) {
                 availableGames = [];

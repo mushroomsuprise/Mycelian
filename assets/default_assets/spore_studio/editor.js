@@ -622,7 +622,7 @@
               tooltip: "PlayStation trophy counts by grade, or Steam achievements unlocked" },
             { key: "show_goals", label: "Show goals", type: "checkbox", tooltip: "Show the game's goals with their bars" },
             { key: "show_speedrun", label: "Show speedrun info", type: "checkbox",
-              tooltip: "A line per LiveSplit category: personal best and attempts (set in Settings → Games Tracker)" },
+              tooltip: "A line per LiveSplit category: personal best and attempts (set in the Games Tracker tab)" },
             { key: "max_goals", label: "Goals shown", type: "number", min: 0, step: 1,
               tooltip: "Most goals listed at once. The rest show as \"+N more goals\"." },
             { key: "show_last_played", label: "Show last played", type: "checkbox", tooltip: "\"Played 2 days ago\"" },

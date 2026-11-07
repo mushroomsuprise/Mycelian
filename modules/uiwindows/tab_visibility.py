@@ -25,6 +25,7 @@ _MAIN_TAB_LABELS = frozenset(
         "Connectors",
         "Chatbot",
         "Spore Studio",
+        "Games Tracker",
         "Settings",
     }
 )

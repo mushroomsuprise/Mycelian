@@ -715,7 +715,7 @@ class PSNTab:
             logger.debug(f"Error checking mismatch: {str(e)}")
 
     def _build_game_cache_link(self) -> None:
-        """The game cache moved to Settings → Games Tracker; this points there."""
+        """The game cache moved to the Games Tracker tab; this points there."""
         with section("storage", "Game cache"):
             with tool_row(
                 "emoji_events",
@@ -730,6 +730,6 @@ class PSNTab:
 
 
 def _open_games_tracker() -> None:
-    from ...help_system.contextual_help import navigate_to_settings_subtab
+    from ...help_system.contextual_help import navigate_to_main_tab
 
-    navigate_to_settings_subtab("Games Tracker")
+    navigate_to_main_tab("Games Tracker")

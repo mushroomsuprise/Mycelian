@@ -20,6 +20,7 @@ MAIN_TAB_ORDER: List[str] = [
     "Connectors",
     "Chatbot",
     "Spore Studio",
+    "Games Tracker",
     "Settings",
 ]
 

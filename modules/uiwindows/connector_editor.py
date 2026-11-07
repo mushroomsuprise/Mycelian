@@ -956,7 +956,7 @@ class ConnectorEditor:
                     "outlined dense options-dense").style("width: 200px")
         if goal:
             _html(f'<div class="ce-note">{_ic("info")}<span>Game and goal match part of the name, ignoring case. Goals are set from '
-                  "a game's settings in Settings → Games Tracker.</span></div>", "")
+                  "a game's settings in the Games Tracker tab.</span></div>", "")
             return
         _html(f'<div class="ce-note">{_ic("info")}<span>Only changes after the Games Tracker\'s first import count. '
               'Milestones and sync timing are set in Settings → Games Tracker.</span></div>', "")

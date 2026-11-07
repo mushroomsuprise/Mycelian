@@ -13,7 +13,7 @@ from typing import Optional
 
 from ..service_brand_icons import SERVICE_BRAND_SVG
 
-_MAIN_TABS = ("Activity Feed", "Alerts", "Source Settings", "Source Controls", "Connectors", "Chatbot", "Spore Studio", "Settings")
+_MAIN_TABS = ("Activity Feed", "Alerts", "Source Settings", "Source Controls", "Connectors", "Chatbot", "Spore Studio", "Games Tracker", "Settings")
 
 # Same order and icons as the real Settings sub-tab bar.
 _SUB_TABS = (

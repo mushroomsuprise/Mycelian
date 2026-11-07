@@ -333,7 +333,7 @@ EVENTS: List[Dict[str, Any]] = [
        [_GAME_PLATFORM_FILTER,
         _f("game_milestone", "At", "number", unit="%", default=0, help="0 = any milestone")]),
     _e("game_goal_progress", "Goal progress", "Games",
-       "A game goal moves (a manual count changes, or a trophy / achievement / percent counts toward it). Settings → Games Tracker.",
+       "A game goal moves (a manual count changes, or a trophy / achievement / percent counts toward it). Set goals in the Games Tracker tab.",
        list(_GOAL_FILTERS)),
     _e("game_goal_completed", "Goal completed", "Games",
        "A game goal is done. {all_goals_done} is true when it was the game's last open goal.", list(_GOAL_FILTERS)),

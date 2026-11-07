@@ -33,7 +33,7 @@ from modules.help_system import contextual_help as ch
 from modules.uiwindows import settings as st
 from ui_sim import run_ui
 
-LAZY = ["Alerts", "Source Settings", "Source Controls", "Connectors", "Chatbot", "Spore Studio", "Settings"]
+LAZY = ["Alerts", "Source Settings", "Source Controls", "Connectors", "Chatbot", "Spore Studio", "Games Tracker", "Settings"]
 
 
 class FakeSettingsUI:
@@ -104,6 +104,9 @@ def shell(monkeypatch):
     fake_module("connectors", create_connectors_tab=builder("Connectors"))
     fake_module("chatbot", create_chatbot_tab=builder("Chatbot"))
     fake_module("spore_studio", create_spore_studio_tab=builder("Spore Studio"))
+    fake_module("games_tracker", create_games_tracker_tab=builder("Games Tracker"),
+                pause_games_tracker=lambda: log.append("pause games"),
+                resume_games_tracker=lambda: log.append("resume games"))
     fake_module("customsources", create_custom_sources_tab=builder("Source Settings"),
                 source_settings_is_dirty=lambda: env.source_dirty,
                 save_open_source_settings=lambda: log.append("save source") or env.source_save_ok,
@@ -281,6 +284,19 @@ def test_switch_lazy_loads_and_remembers(shell):
         assert shell.log.count("build Connectors") == 1
         set_main(user, tabs, "Connectors")
         assert shell.log.count("build Connectors") == 1
+
+    run_ui(mw.create_ui_elements, check)
+
+
+def test_games_tracker_pauses_and_resumes(shell):
+    async def check(user):
+        tabs = tabs_el(user)
+        set_main(user, tabs, "Games Tracker")
+        assert "build Games Tracker" in shell.log and "resume games" in shell.log
+        assert ("last_main_tab", "Games Tracker") in shell.remembered
+        set_main(user, tabs, "Chatbot")
+        assert "pause games" in shell.log
+        assert shell.log.count("build Games Tracker") == 1
 
     run_ui(mw.create_ui_elements, check)
 
@@ -603,6 +619,24 @@ def test_preload_builds_main_tabs_then_settings_subtabs(shell, preload):
         assert "preload Settings" in log and "pause settings" in log
         assert log.count("preload settings subtab") == 2
         assert preload.time.t >= 1000.0 + mw._LAZY_PRELOAD_DELAY_SEC
+
+    run_ui(build, check)
+
+
+def test_preload_pauses_games_tracker_unless_showing(shell, preload):
+    lazy = {"Games Tracker": Panel("Games Tracker", shell.log)}
+    build, _ = _start_preload(shell, lazy)
+
+    async def check(user):
+        preload.captured[0].target()
+        assert "preload Games Tracker" in shell.log and "pause games" in shell.log
+        shell.log.clear()
+        lazy["Games Tracker"].loaded = False
+        preload.captured.clear()
+        with user:
+            START_PRELOAD(lazy, SimpleNamespace(value="Games Tracker"))
+        preload.captured[0].target()
+        assert "preload Games Tracker" in shell.log and "pause games" not in shell.log
 
     run_ui(build, check)
 

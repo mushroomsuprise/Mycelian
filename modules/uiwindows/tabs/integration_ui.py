@@ -414,7 +414,8 @@ class IntegrationPage:
     """Header + two-column body for one integration tab.
 
     ``is_dirty`` is polled to show the "Unsaved changes" tag and enable Discard, so tabs
-    only need to keep their own dirty flag up to date.
+    only need to keep their own dirty flag up to date. Pages with nothing to save leave
+    out ``on_save`` (no Save / Discard buttons, no poll).
     """
 
     def __init__(
@@ -424,9 +425,9 @@ class IntegrationPage:
         title: str,
         subtitle: str,
         *,
-        on_save: Callable[[], Any],
-        on_discard: Callable[[], Any],
-        is_dirty: Callable[[], bool],
+        on_save: Optional[Callable[[], Any]] = None,
+        on_discard: Optional[Callable[[], Any]] = None,
+        is_dirty: Callable[[], bool] = lambda: False,
         help_topic: str = "",
         help_tooltip: str = "",
         icon: str = "",
@@ -437,6 +438,10 @@ class IntegrationPage:
         self._is_dirty = is_dirty
         self._last_dirty: Optional[bool] = None
         self._status_html = ""
+        self._dirty_tag: Any = None
+        self.discard_button: Any = None
+        self.save_button: Any = None
+        self._timer: Any = None
         with parent:
             self.root = ui.element("div").classes("itg").style(f"--brand:{BRAND_COLORS.get(key, 'var(--color-primary)')}")
             with self.root:
@@ -454,16 +459,19 @@ class IntegrationPage:
                             sanitize=False,
                         ).classes("itg-title")
                         self._pills = ui.html("", sanitize=False).classes("itg-pills")
-                        self._dirty_tag = ui.html("", sanitize=False)
+                        if on_save is not None:
+                            self._dirty_tag = ui.html("", sanitize=False)
                         ui.element("div").classes("itg-spacer")
                         if help_topic:
                             from ...help_system.contextual_help import help_button
 
                             help_button(topic_id=help_topic, tooltip=help_tooltip or f"{title} setup help", size="sm")
-                        self.discard_button = outline_button("Discard", on_discard).props("dense").classes("px-3")
-                        self.save_button = primary_button("Save", on_save, icon="check").props("dense").classes("px-4")
+                        if on_save is not None:
+                            self.discard_button = outline_button("Discard", on_discard).props("dense").classes("px-3")
+                            self.save_button = primary_button("Save", on_save, icon="check").props("dense").classes("px-4")
                     self.body = ui.element("div").classes("itg-body")
-            self._timer = ui.timer(0.5, self.refresh_dirty)
+            if on_save is not None:
+                self._timer = ui.timer(0.5, self.refresh_dirty)
         self.refresh_dirty()
 
     def column(self) -> Any:
@@ -482,6 +490,8 @@ class IntegrationPage:
             self._pills.set_content(content)
 
     def refresh_dirty(self) -> None:
+        if self._dirty_tag is None:
+            return
         try:
             dirty = bool(self._is_dirty())
         except Exception:
@@ -497,7 +507,8 @@ class IntegrationPage:
 
     def set_active(self, active: bool) -> None:
         """Pause the dirty poll while the tab is hidden."""
-        self._timer.active = active
+        if self._timer is not None:
+            self._timer.active = active
 
 
 def tool_row(icon: str, title: str, sub: str) -> Any:

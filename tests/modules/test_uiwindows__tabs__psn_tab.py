@@ -153,7 +153,7 @@ def env(monkeypatch):
     monkeypatch.setattr(bt, "create", create)
     monkeypatch.setattr("modules.help_system.contextual_help.help_button", lambda **kw: ui.button("Help"))
     nav: List[str] = []
-    monkeypatch.setattr("modules.help_system.contextual_help.navigate_to_settings_subtab",
+    monkeypatch.setattr("modules.help_system.contextual_help.navigate_to_main_tab",
                         lambda name, *a, **kw: nav.append(name))
     return SimpleNamespace(state=st, notes=notes, scheduled=scheduled, progress=progress, service=service,
                            tasks=tasks, nav=nav, mp=monkeypatch)

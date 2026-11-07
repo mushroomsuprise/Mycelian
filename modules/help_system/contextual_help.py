@@ -242,6 +242,7 @@ def get_help_target_for_tab(main_tab: str, sub_tab: Optional[str] = None) -> Opt
         "Connectors": "connectors_intro",
         "Chatbot": "chatbot_commands",
         "Spore Studio": "spore_studio_overview",
+        "Games Tracker": "games_tracker",
         "Settings": "settings",
     }
 

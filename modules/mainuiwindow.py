@@ -968,6 +968,7 @@ _MAIN_TAB_PRELOAD_ORDER = (
     "Connectors",
     "Chatbot",
     "Spore Studio",
+    "Games Tracker",
     "Settings",
 )
 
@@ -1055,16 +1056,21 @@ def _start_lazy_tab_preload(lazy_tabs: dict, tabs) -> None:
 
             def _build(panel=panel, name=name) -> None:
                 panel.ensure_loaded()
-                if name != "Settings" or not panel.loaded:
+                if name not in ("Settings", "Games Tracker") or not panel.loaded:
                     return
-                if _tab_label(tabs.value) == "Settings":
+                if _tab_label(tabs.value) == name:
                     return
                 try:
-                    from .uiwindows.settings import settings_ui
+                    if name == "Settings":
+                        from .uiwindows.settings import settings_ui
 
-                    settings_ui.pause_background_work()
+                        settings_ui.pause_background_work()
+                    else:
+                        from .uiwindows.games_tracker import pause_games_tracker
+
+                        pause_games_tracker()
                 except Exception as exc:
-                    logger.debug("Could not pause Settings polls after preload: %s", exc)
+                    logger.debug("Could not pause %s timers after preload: %s", name, exc)
 
             logger.info("Preloading main tab %s", name)
             if not _run_on_layout(_build):
@@ -1226,6 +1232,7 @@ def create_ui_elements():
                         connectors_tab = ui.tab("Connectors")
                         chatbot_tab = ui.tab("Chatbot")
                         spore_studio_tab = ui.tab("Spore Studio")
+                        games_tracker_tab = ui.tab("Games Tracker")
                         settings_tab = ui.tab("Settings")
 
                 main_tabs_by_label = {
@@ -1237,6 +1244,7 @@ def create_ui_elements():
                     "Chatbot": chatbot_tab,
                     "Settings": settings_tab,
                     "Spore Studio": spore_studio_tab,
+                    "Games Tracker": games_tracker_tab,
                 }
                 register_main_tabs(main_tabs_by_label)
                 try:
@@ -1306,6 +1314,11 @@ def create_ui_elements():
 
                         create_settings_tab()
 
+                    def build_games_tracker_tab():
+                        from .uiwindows.games_tracker import create_games_tracker_tab
+
+                        create_games_tracker_tab()
+
                     def build_spore_studio_tab():
                         from .uiwindows.spore_studio import create_spore_studio_tab
 
@@ -1331,6 +1344,7 @@ def create_ui_elements():
                         ("Connectors", build_connectors_tab, connectors_tab),
                         ("Chatbot", build_chatbot_tab, chatbot_tab),
                         ("Spore Studio", build_spore_studio_tab, spore_studio_tab),
+                        ("Games Tracker", build_games_tracker_tab, games_tracker_tab),
                         ("Settings", build_settings_tab, settings_tab),
                     ]
 
@@ -1364,6 +1378,7 @@ def create_ui_elements():
                         id(connectors_tab): "Connectors",
                         id(chatbot_tab): "Chatbot",
                         id(spore_studio_tab): "Spore Studio",
+                        id(games_tracker_tab): "Games Tracker",
                         id(settings_tab): "Settings",
                     }
                     return known.get(id(tab), "")
@@ -1469,6 +1484,18 @@ def create_ui_elements():
                             settings_ui.pause_background_work()
                         elif arriving == "Settings":
                             settings_ui.resume_background_work()
+                    except Exception:
+                        pass
+                    try:
+                        from .uiwindows.games_tracker import (
+                            pause_games_tracker,
+                            resume_games_tracker,
+                        )
+
+                        if leaving == "Games Tracker" and arriving != "Games Tracker":
+                            pause_games_tracker()
+                        elif arriving == "Games Tracker" and leaving != "Games Tracker":
+                            resume_games_tracker()
                     except Exception:
                         pass
                     previous_tab = tabs.value

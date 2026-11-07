@@ -35,7 +35,7 @@ TAB_MODULES = {
     "database_tab": ("DatabaseTab", "Database"),
     "discord_tab": ("DiscordTab", "Discord"),
     "game_hooks_tab": ("GameHooksTab", "Game Hooks"),
-    "games_tracker_tab": ("GamesTrackerTab", "Games Tracker"),
+    "games_tracker_settings_tab": ("GamesTrackerSettingsTab", "Games Tracker"),
     "obs_tab": ("ObsTab", "OBS"),
     "psn_tab": ("PSNTab", "PSN"),
     "steam_tab": ("SteamTab", "Steam"),
