@@ -100,3 +100,16 @@ def test_change_gate_sends_changes_and_a_heartbeat():
     assert gate.should_send({"x": object()}, now=92) is True  # unhashable payloads always go
     gate.reset()
     assert gate.should_send({"a": 2}, now=93) is True
+
+
+def test_timeline_buckets_requests_per_minute():
+    now = datetime(2026, 11, 7, 15, 30, 20).timestamp()
+    api_usage.record("PSN", "/a", 200, now=now - 5)  # the current minute
+    api_usage.record("PSN", "/a", 429, now=now - 15)
+    api_usage.record("PSN", "/a", 200, now=now - 60)  # the minute before
+    api_usage.record("PSN", "/a", 200, now=now - 3700)  # older than the window
+    data = api_usage.timeline(["PSN", "Steam"], minutes=60, now=now)
+    assert len(data["labels"]) == 60 and data["labels"][-1] == "15:30" and data["labels"][0] == "14:31"
+    assert data["counts"]["PSN"][-1] == 2 and data["limited"]["PSN"][-1] == 1
+    assert data["counts"]["PSN"][-2] == 1 and sum(data["counts"]["PSN"]) == 3
+    assert data["counts"]["Steam"] == [0] * 60

@@ -14,7 +14,7 @@ from __future__ import annotations
 import html
 import re
 import webbrowser
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from nicegui import ui
 
@@ -734,18 +734,43 @@ def usage_html(platforms: Sequence[str]) -> str:
 
 
 class UsageRow:
-    """A muted line with the API request counts; call ``refresh()`` from the tab's status timer."""
+    """The API request counts as a muted line plus a live graph of requests per minute over the
+    last hour; call ``refresh()`` from the tab's status timer."""
 
-    def __init__(self, platforms: Sequence[str]) -> None:
+    def __init__(self, platforms: Sequence[str], *, chart: bool = True) -> None:
         self.platforms = tuple(platforms)
         self._html = usage_html(self.platforms)
         self.element = ui.html(self._html, sanitize=False).classes("w-full")
+        self.chart: Any = None
+        self._chart_sig: Any = None
+        if chart:
+            names = " and ".join(self.platforms)
+            self.chart = (
+                ui.echart(self._chart_options())
+                .classes("itg-usage-chart w-full")
+                .style("height: 150px")
+                .props(f'role=img aria-label="{esc(names)} API requests per minute, last hour"')
+            )
+
+    def _chart_options(self) -> Dict[str, Any]:
+        from ...api_usage import timeline
+        from .api_usage_chart import chart_colors, usage_columns
+
+        data = timeline(self.platforms)
+        self._chart_sig = (data["labels"][-1], tuple(tuple(data["counts"][p]) for p in self.platforms),
+                           tuple(tuple(data["limited"][p]) for p in self.platforms))
+        return usage_columns(data, self.platforms, chart_colors())
 
     def refresh(self) -> None:
         html = usage_html(self.platforms)
         if html != self._html:
             self._html = html
             self.element.set_content(html)
+        if self.chart is not None:
+            sig = self._chart_sig
+            options = self._chart_options()
+            if self._chart_sig != sig:  # a new request or a new minute: redraw (one push)
+                self.chart._props["options"] = options
 
 
 def hint(text: str, icon: str = "info", *, link_label: str = "", url: str = "", warn: bool = False) -> Any:

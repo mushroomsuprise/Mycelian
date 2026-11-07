@@ -93,6 +93,36 @@ def snapshot(platform: str, *, now: Optional[float] = None) -> Dict[str, Any]:
             "endpoints": dict(endpoints.most_common())}
 
 
+def timeline(platforms, *, minutes: int = 60, now: Optional[float] = None) -> Dict[str, Any]:
+    """Requests per minute for the last ``minutes`` minutes (oldest first, the current minute last):
+    ``{"labels": ["14:05", ...], "starts": [epoch, ...], "counts": {platform: [n, ...]},
+    "limited": {platform: [429s, ...]}}``."""
+    t = time.time() if now is None else now
+    end = (int(t // 60) + 1) * 60.0
+    start = end - minutes * 60.0
+    starts = [start + i * 60.0 for i in range(minutes)]
+    out: Dict[str, Any] = {
+        "labels": [datetime.fromtimestamp(s).strftime("%H:%M") for s in starts],
+        "starts": starts,
+        "counts": {},
+        "limited": {},
+    }
+    for platform in platforms:
+        counts, limited = [0] * minutes, [0] * minutes
+        with _lock:
+            q = _entries.get(platform)
+            items = list(q) if q else []
+        for ts, _ep, status in items:
+            i = int((ts - start) // 60)
+            if 0 <= i < minutes:
+                counts[i] += 1
+                if status == 429:
+                    limited[i] += 1
+        out["counts"][platform] = counts
+        out["limited"][platform] = limited
+    return out
+
+
 def summary_text(platform: str, *, now: Optional[float] = None) -> str:
     s = snapshot(platform, now=now)
     text = f"API calls: {s['hour']:,} last hour · {s['today']:,} today"
