@@ -23,6 +23,14 @@ from modules import psn_service as ps  # noqa: E402
 from modules.psn_data import PSNData, PSNGameMismatch  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _fresh_broadcast_gate():
+    """Broadcasts go out only on a change: every test starts with nothing sent yet."""
+    ps._broadcast_gate.reset()
+    yield
+    ps._broadcast_gate.reset()
+
+
 # --------------------------------------------------------------------------- shared fakes
 
 

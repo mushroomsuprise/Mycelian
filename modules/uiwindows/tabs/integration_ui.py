@@ -719,6 +719,35 @@ def steps(items: Iterable[Tuple[str, bool]]) -> Any:
     return ui.html(steps_html(items), sanitize=False).classes("w-full")
 
 
+def usage_html(platforms: Sequence[str]) -> str:
+    """'API requests: …' for one or more platforms (see modules.api_usage), styled like ``hint``."""
+    from ...api_usage import snapshot
+
+    parts = []
+    for platform in platforms:
+        s = snapshot(platform)
+        text = f"{s['hour']:,} in the last hour · {s['today']:,} today"
+        if s["rate_limited_hour"]:
+            text += f" · {s['rate_limited_hour']:,} rate-limited"
+        parts.append(f"{esc(platform)} {esc(text)}" if len(platforms) > 1 else esc(text))
+    return f'<div class="itg-hint">{icon_html("insights")}<span>API requests: {"; ".join(parts)}</span></div>'
+
+
+class UsageRow:
+    """A muted line with the API request counts; call ``refresh()`` from the tab's status timer."""
+
+    def __init__(self, platforms: Sequence[str]) -> None:
+        self.platforms = tuple(platforms)
+        self._html = usage_html(self.platforms)
+        self.element = ui.html(self._html, sanitize=False).classes("w-full")
+
+    def refresh(self) -> None:
+        html = usage_html(self.platforms)
+        if html != self._html:
+            self._html = html
+            self.element.set_content(html)
+
+
 def hint(text: str, icon: str = "info", *, link_label: str = "", url: str = "", warn: bool = False) -> Any:
     """Muted note with an icon; optional trailing link to an external page."""
     box = ui.element("div").classes("itg-hint" + (" is-warn" if warn else ""))

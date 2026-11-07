@@ -30,6 +30,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
+from . import api_usage
 from .dataobjects import PSNSettingsData  # PSNSettingsData for type hint
 from .dataobjects import state_manager
 
@@ -51,10 +52,33 @@ stop_psn_thread_event = threading.Event()
 
 # Updater cadence — budgeted against PSNAWP's default 1 HTTP request / 3s limiter
 SLEEP_PRESENCE = 6  # Presence poll interval (also used when idle / no game)
-TROPHY_TITLE_REFRESH_SEC = 18  # trophy_titles_for_title while same game
+TROPHY_TITLE_REFRESH_SEC = 12  # trophy_titles_for_title while same game
 OVERALL_SUMMARY_SEC = 120  # Account-wide trophy_summary
 # Skip trophy_groups_summary API when cached group structure is fresher than this
 TROPHY_GROUPS_CACHE_TTL_SEC = 24 * 60 * 60
+# A failed groups fetch is not retried for this long (it used to retry every presence cycle).
+TROPHY_GROUPS_RETRY_SEC = 30 * 60
+# A presence title with no trophy list (Netflix, a demo): the title lookup is retried after
+# NO_TROPHIES_TITLE_RETRY_SEC and the bulk library fallback after NO_TROPHIES_BULK_RETRY_SEC.
+NO_TROPHIES_TITLE_RETRY_SEC = 10 * 60
+NO_TROPHIES_BULK_RETRY_SEC = 24 * 60 * 60
+
+# psn_data_update goes out when the payload changes, plus a heartbeat (see api_usage.ChangeGate).
+_broadcast_gate = api_usage.ChangeGate(heartbeat=60.0)
+
+# np_communication_id -> when its groups fetch last failed
+_groups_failed_at: dict[str, float] = {}
+# np_title_id -> when it last resolved to nothing (no title result, no fallback match)
+_unresolved_at: dict[str, float] = {}
+# np_title_id -> when the bulk fallback last ran for it
+_bulk_tried_at: dict[str, float] = {}
+
+
+def _recent(stamps: dict[str, float], key: str | None, within: float, now: float | None = None) -> bool:
+    if not key:
+        return False
+    at = stamps.get(key)
+    return at is not None and (time.time() if now is None else now) - at < within
 
 # Back-compat aliases (older code / mental model)
 SLEEP_NO_GAME = SLEEP_PRESENCE
@@ -319,6 +343,11 @@ def psn_data_update_loop():
 
             # --- Presence (every cycle) ---
             presence_result = psn_client_instance.get_presence()
+            if not presence_result and _psn_rate_limited():
+                # PSN asked us to slow down: keep showing the last state, wait the pause out.
+                state_manager.set_live_psn_data(psn_client_instance.psn_data)
+                stop_psn_thread_event.wait(max(SLEEP_PRESENCE, _psn_rate_limit_remaining()))
+                continue
             if not presence_result:
                 logger.debug("No presence data available")
                 tracked_np_title_id = None
@@ -417,6 +446,12 @@ def psn_data_update_loop():
             need_title = force_title_refresh or (
                 now - last_title_trophy_at >= TROPHY_TITLE_REFRESH_SEC
             )
+            if (
+                need_title
+                and not np_communication_id
+                and _recent(_unresolved_at, np_title_id, NO_TROPHIES_TITLE_RETRY_SEC)
+            ):
+                need_title = False  # known to have no trophy list: don't ask every cycle
             title_result = None
             if need_title:
                 logger.debug(
@@ -474,18 +509,22 @@ def psn_data_update_loop():
                                 "trophy_groups_updated_at"
                             ):
                                 mapping_updates.pop("has_trophy_groups", None)
-                            # Update from the doc just read and reuse what was written,
-                            # instead of reading the same doc twice more.
-                            written = psn_client_instance.update_game_cache_entry_from(
-                                np_communication_id, mapping_updates, existing
-                            )
-                            cached_game = (
-                                written
-                                or psn_client_instance.get_cached_game_data(
-                                    np_communication_id
+                            if all(existing.get(k) == v for k, v in mapping_updates.items()):
+                                # Same mapping as stored: no write every title refresh.
+                                cached_game = existing
+                            else:
+                                # Update from the doc just read and reuse what was written,
+                                # instead of reading the same doc twice more.
+                                written = psn_client_instance.update_game_cache_entry_from(
+                                    np_communication_id, mapping_updates, existing
                                 )
-                                or existing
-                            )
+                                cached_game = (
+                                    written
+                                    or psn_client_instance.get_cached_game_data(
+                                        np_communication_id
+                                    )
+                                    or existing
+                                )
                         else:
                             store_entry = {
                                 "np_communication_id": np_communication_id,
@@ -510,19 +549,30 @@ def psn_data_update_loop():
                         stop_psn_thread_event.wait(SLEEP_PRESENCE)
                         continue
 
-                    # Cache miss fallback: bulk list only if targeted lookup failed
-                    if not np_communication_id:
-                        logger.info(
-                            "Cache MISS / targeted title lookup failed for '%s' — trying bulk fallback",
-                            presence_game_name,
-                        )
-                        np_communication_id = _resolve_game_via_bulk_fallback(
+                    # Cache miss fallback: the Games Tracker library first (local), then the
+                    # bulk list (at most once a day per title), only if the targeted lookup failed.
+                    if not np_communication_id and not _psn_rate_limited():
+                        np_communication_id = _resolve_game_from_tracker(
                             presence_game_name, np_title_id, platform
                         )
+                        if not np_communication_id and not _recent(
+                            _bulk_tried_at, np_title_id, NO_TROPHIES_BULK_RETRY_SEC
+                        ):
+                            logger.info(
+                                "Cache MISS / targeted title lookup failed for '%s' — trying bulk fallback",
+                                presence_game_name,
+                            )
+                            _bulk_tried_at[np_title_id] = time.time()
+                            np_communication_id = _resolve_game_via_bulk_fallback(
+                                presence_game_name, np_title_id, platform
+                            )
                         if np_communication_id:
+                            _unresolved_at.pop(np_title_id, None)
                             cached_game = psn_client_instance.get_cached_game_data(
                                 np_communication_id
                             )
+                        else:
+                            _unresolved_at[np_title_id] = time.time()
 
             # --- Group trophies: only when cache structure missing or older than 24h ---
             if np_communication_id and (
@@ -533,8 +583,11 @@ def psn_data_update_loop():
                     np_communication_id
                 )
 
-            should_refresh_groups = bool(np_communication_id) and (
-                not _trophy_groups_cache_is_fresh(cached_game)
+            should_refresh_groups = (
+                bool(np_communication_id)
+                and not _trophy_groups_cache_is_fresh(cached_game)
+                and not _recent(_groups_failed_at, np_communication_id, TROPHY_GROUPS_RETRY_SEC)
+                and not _psn_rate_limited()
             )
             if should_refresh_groups:
                 logger.debug(
@@ -546,6 +599,7 @@ def psn_data_update_loop():
                     np_communication_id=np_communication_id, platform=platform
                 )
                 if groups_result:
+                    _groups_failed_at.pop(np_communication_id, None)
                     groups_list = groups_result.get("trophy_groups") or []
                     groups_updated_at = datetime.now().isoformat()
                     cache_updates = {
@@ -590,8 +644,12 @@ def psn_data_update_loop():
                     )
                 else:
                     logger.warning(
-                        "Failed to fetch group trophies for %s", presence_game_name
+                        "Failed to fetch group trophies for %s; retrying in %d min",
+                        presence_game_name,
+                        TROPHY_GROUPS_RETRY_SEC // 60,
                     )
+                    if not _psn_rate_limited():
+                        _groups_failed_at[np_communication_id] = time.time()
                     if getattr(
                         psn_client_instance, "is_auth_expired", lambda: False
                     )():
@@ -638,6 +696,70 @@ def psn_data_update_loop():
         stop_psn_thread_event.wait(sleep_time)
 
     logger.info("=== PSN DATA UPDATER THREAD FINISHED ===")
+
+
+def _psn_rate_limited() -> bool:
+    client = psn_client_instance
+    return bool(client is not None and getattr(client, "rate_limited", lambda: False)())
+
+
+def _psn_rate_limit_remaining() -> float:
+    limit = getattr(psn_client_instance, "rate_limit", None)
+    return float(limit.remaining()) if limit is not None else 0.0
+
+
+def _resolve_game_from_tracker(
+    presence_game_name: str, np_title_id: str, platform: str
+) -> str | None:
+    """NPWR ID for a presence title from the Games Tracker library (no request), stored in the
+    PSN game cache like the bulk fallback does. None when the library has no match."""
+    try:
+        from .game_tracker.models import PSN
+        from .game_tracker.service import get_service
+
+        store = get_service().store
+        if store.baseline(PSN) is None:
+            return None  # the library isn't imported yet
+        games = [g for g in store.list_games(PSN)]
+    except Exception:
+        logger.debug("Games Tracker library unavailable for PSN lookup", exc_info=True)
+        return None
+    match = next((g for g in games if np_title_id and g.np_title_id == np_title_id), None)
+    if match is None:
+        key = normalize_game_name_key(presence_game_name)
+        match = next(
+            (g for g in games if g.title and normalize_game_name_key(g.title) == key), None
+        )
+    if match is None:
+        candidates = [
+            {"np_communication_id": g.game_id, "name": g.title, "platform": g.platform_label}
+            for g in games
+            if g.title
+        ]
+        hit = find_best_fuzzy_game_name_match(
+            presence_game_name, candidates, platform=platform, name_fields=("name",)
+        )
+        match = next((g for g in games if hit and g.game_id == hit.get("np_communication_id")), None)
+    if match is None or psn_client_instance is None:
+        return None
+    psn_client_instance.store_game_data(
+        {
+            "np_communication_id": match.game_id,
+            "np_title_id": np_title_id,
+            "presence_name": presence_game_name,
+            "trophy_name": match.title or presence_game_name,
+            "cover_art_url": match.cover_url or None,
+            "platform": match.platform_label or platform,
+            "trophy_groups": [],
+            "last_updated": datetime.now().isoformat(),
+        }
+    )
+    psn_client_instance.psn_data.current_game_np_comm_id = match.game_id
+    psn_client_instance.psn_data.current_game_mismatch = None
+    logger.info(
+        "Resolved %r from the Games Tracker library: %s", presence_game_name, match.game_id
+    )
+    return match.game_id
 
 
 def _resolve_game_via_bulk_fallback(
@@ -779,11 +901,13 @@ def _update_and_broadcast():
         ):
             psn_data_dict = _public_psn_payload(psn_client_instance.psn_data)
 
-            # Emit the updated data to all connected clients
-            web_engine.web_engine_instance.safe_emit("psn_data_update", psn_data_dict)
-            logger.debug(
-                f"Broadcasted PSN data update to WebSocket clients: {psn_client_instance.psn_data.current_game_name}"
-            )
+            # Emit to all connected clients when something changed (or the heartbeat is due);
+            # pages also ask with get_psn_data on their own timer.
+            if _broadcast_gate.should_send(psn_data_dict):
+                web_engine.web_engine_instance.safe_emit("psn_data_update", psn_data_dict)
+                logger.debug(
+                    f"Broadcasted PSN data update to WebSocket clients: {psn_client_instance.psn_data.current_game_name}"
+                )
 
             # Handle mismatch notification with throttling
             mismatch = psn_client_instance.psn_data.current_game_mismatch

@@ -7,7 +7,9 @@ profile, current game and achievements, and Socket.IO broadcasts for overlays:
 * ``steam_data_update``: the full public state (``steamapi.public_payload``).
 * ``steam_achievement_unlocked``: one achievement dict per new unlock.
 
-Budget: Steam allows 100,000 Web API calls a day; this uses a few thousand.
+Budget: Steam allows 100,000 Web API calls a day. This polls the profile every 15 s and, in a game, its
+achievements every 15 s (about 8 calls a minute); schemas and percentages come from the Games Tracker
+catalog. ``modules.api_usage`` counts the calls.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import threading
 import time
 from typing import Optional
 
+from . import api_usage
 from .dataobjects import state_manager
 from .steam_data import SteamData
 from .steamapi import (
@@ -24,9 +27,11 @@ from .steamapi import (
     SteamClient,
     SteamConnectionError,
     SteamKeyError,
+    SteamRateLimited,
     public_payload,
     redact_key,
 )
+from . import steamapi
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +41,7 @@ stop_steam_thread_event = threading.Event()
 _steam_init_lock = threading.Lock()
 
 SUMMARY_SEC = 15  # Profile and current game
-ACHIEVEMENTS_SEC = 30  # Current game's achievements (and right away when the game changes)
+ACHIEVEMENTS_SEC = 15  # Current game's achievements (and right away when the game changes)
 LEVEL_SEC = 3600  # Steam level
 RETRY_SEC = 60  # Reconnect attempts while disconnected
 
@@ -52,12 +57,19 @@ def _emit(event: str, payload: dict) -> None:
         logger.debug("Steam broadcast of %s failed: %s", event, e)
 
 
+# steam_data_update goes out when the payload changes, plus a heartbeat; pages also ask with
+# get_steam_data on their own timer.
+_broadcast_gate = api_usage.ChangeGate(heartbeat=60.0)
+
+
 def _update_and_broadcast() -> None:
     client = steam_client_instance
     if client is None:
         return
     state_manager.set_live_steam_data(client.steam_data)
-    _emit("steam_data_update", public_payload(client.steam_data))
+    payload = public_payload(client.steam_data)
+    if _broadcast_gate.should_send(payload):
+        _emit("steam_data_update", payload)
 
 
 def _initialize_steam_module_impl() -> None:
@@ -128,6 +140,10 @@ def steam_data_update_loop() -> None:
                     wait = RETRY_SEC
             else:
                 _poll_once(client, state)
+        except SteamRateLimited as e:
+            # Steam asked us to slow down: wait the pause out (nothing is sent meanwhile).
+            logger.debug("Steam poll paused: %s", e)
+            wait = max(SUMMARY_SEC, steamapi.rate_limit.remaining())
         except SteamKeyError as e:
             logger.warning("Steam refused the API key: %s", e)
             client.connected = False

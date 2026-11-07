@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 START_DELAY_SEC = 8.0  # let the app and the platform clients settle first
 RETRY_SEC = 120.0  # after a sync that couldn't reach the platform
 SUMMARY_TTL_SEC = 5.0
+CHECKED_EARNED = "checked_earned"  # TrackedGame.extra: earned total when its trophy goals were last read
 
 
 class GameTrackerService:
@@ -54,7 +55,6 @@ class GameTrackerService:
         self._listeners: List[Callable[[], None]] = []
         self._summary: Optional[Tuple[float, Dict[str, Any]]] = None
         self._settings: Optional[TrackerSettings] = None
-        self._psn_checked: Dict[str, int] = {}  # game key -> earned total when its trophy goals were last read
         self._speedruns = SpeedrunWatcher(lambda: self.store.list_speedruns(), lambda link: self.store.upsert_speedrun(link),
                                           self._notify)
 
@@ -145,20 +145,22 @@ class GameTrackerService:
                 if kind == "observe":
                     self._observe(platform, payload, settings)
                 elif kind == "sync" or time.time() >= next_sync:
-                    ok = self._sync(platform, settings)
+                    # "sync" is Sync now / the API / a reset: read everything, not just what changed.
+                    ok = self._sync(platform, settings, full=kind == "sync")
                     next_sync = time.time() + (settings.sync_minutes * 60 if ok else RETRY_SEC)
             except Exception as e:
                 logger.warning("Games Tracker: %s worker error: %s", platform, e, exc_info=True)
                 self._set_status(platform, state="error", message=str(e)[:200])
                 next_sync = time.time() + RETRY_SEC
 
-    def _sync(self, platform: str, settings: TrackerSettings) -> bool:
+    def _sync(self, platform: str, settings: TrackerSettings, *, full: bool = False) -> bool:
         first = self.store.baseline(platform) is None
+        version = self.store.version
         self._set_status(platform, state="syncing", done=0, total=0, first_import=first, message="")
         progress = lambda done, total: self._set_status(platform, done=done, total=total)  # noqa: E731
         if platform == PSN:
             client = self._psn_client_fn()
-            events = psn_sync.sync_library(client, self.store, settings, progress=progress) if client else None
+            events = psn_sync.sync_library(client, self.store, settings, progress=progress, full=full) if client else None
         else:
             client = self._steam_client_fn()
             events = (
@@ -169,15 +171,18 @@ class GameTrackerService:
         if events is None:
             self._set_status(platform, state="waiting", message="Not connected" if client is None else "Couldn't reach the service")
             return False
+        self._set_status(platform, state="idle", last_sync=time.time(), first_import=False, message="")
+        if self.store.version == version and not events:
+            return True  # nothing new: no goal pass, no overlay or tab update
         goal_events, goal_keys = self._evaluate_goals(platform, emit=not first, client=client)
         dispatch(list(events) + goal_events, settings, self.store)
-        self._set_status(platform, state="idle", last_sync=time.time(), first_import=False, message="")
         self._after_change(platform, _event_keys(events) | goal_keys)
         return True
 
     def _observe(self, platform: str, payload: Any, settings: TrackerSettings) -> None:
         if self.store.baseline(platform) is None:
             return
+        version = self.store.version
         if platform == PSN:
             client = self._psn_client_fn()
             events = psn_sync.observe_title(client, self.store, settings, payload)
@@ -188,10 +193,19 @@ class GameTrackerService:
             account = client.resolve_steam_id() if client else ""
             events = steam_sync.observe_game(self.store, settings, account or "", appid, name, achievements)
             keys = {f"{STEAM}:{appid}"}
+        if self.store.version == version and not events:
+            return  # the same counts as last time: nothing to tell anyone
         goal_events, goal_keys = self._evaluate_goals(platform, emit=True, client=client)
         if events or goal_events:
             dispatch(list(events) + goal_events, settings, self.store)
         self._after_change(platform, keys | _event_keys(events) | goal_keys)
+
+    def refresh_covers(self) -> None:
+        """Queue every game's cover again (after Clear covers). No PSN / Steam library read needed:
+        the cover addresses are in the store."""
+        for platform in PLATFORMS:
+            games = self.store.list_games(platform)
+            covers.request_covers(psn_sync.cover_items(games) if platform == PSN else steam_sync.cover_items(games))
 
     def _after_change(self, platform: str, keys: Iterable[str] = ()) -> None:
         games = self.store.list_games(platform)
@@ -252,12 +266,15 @@ class GameTrackerService:
     def _refresh_psn_unlocks(self, client: Any, game: TrackedGame, goals: List[GameGoal]) -> List[GameGoal]:
         """PSN only keeps trophy counts: read the earned list when a game with open trophy goals earns something."""
         pending = [g for g in goals if g.kind == goal_kinds.UNLOCK and g.unlock_id and not g.unlocked]
-        if not pending or client is None or self._psn_checked.get(game.key) == game.earned_total:
+        # The earned total last read is kept on the game, so a restart doesn't read every list again.
+        if not pending or client is None or game.extra.get(CHECKED_EARNED) == game.earned_total:
             return []
-        trophies = psn_sync.trophy_list(client, game.game_id, game.platform_label, earned_only=True)
+        trophies = psn_sync.trophy_list(client, game.game_id, game.platform_label, earned_only=True,
+                                        defined=game.defined, store=self.store)
         if trophies is None:
             return []
-        self._psn_checked[game.key] = game.earned_total
+        game.extra[CHECKED_EARNED] = game.earned_total
+        self.store.upsert_games([game])
         earned = {str(t["id"]) for t in trophies}
         found = [g for g in pending if g.unlock_id in earned]
         for g in found:
@@ -476,12 +493,15 @@ class GameTrackerService:
         if game is None:
             return None
         if platform == PSN:
-            return psn_sync.trophy_list(self._psn_client_fn(), game.game_id, game.platform_label)
+            return psn_sync.trophy_list(self._psn_client_fn(), game.game_id, game.platform_label,
+                                        defined=game.defined, store=self.store)
         client = self._steam_client_fn()
         if client is None:
             return None
         try:
-            return client.achievement_list(int(game.game_id))
+            # The stored unlocks are what the picker needs: no player request.
+            earned = game.unlocked_ids if game.baselined else None
+            return client.achievement_list(int(game.game_id), earned=earned)
         except Exception as e:
             logger.debug("Games Tracker: Steam achievement list for %s failed: %s", game_id, e)
             return None
@@ -551,7 +571,8 @@ class GameTrackerService:
         game = self.store.get_game(PSN, game_id)
         if game is None:
             return None
-        return psn_sync.group_progress(self._psn_client_fn(), game.game_id, game.platform_label)
+        return psn_sync.group_progress(self._psn_client_fn(), game.game_id, game.platform_label,
+                                       defined=game.defined, store=self.store)
 
     def reset_baseline(self, platform: Optional[str] = None) -> None:
         for p in [platform] if platform else PLATFORMS:
@@ -719,7 +740,9 @@ def _default_psn_client():
 
 
 class _SteamClientHolder:
-    """The tracker's own SteamClient (own HTTP session), rebuilt when the saved key or profile changes."""
+    """The Steam client for library syncs: the live poller's client when it uses the saved key and
+    profile (one HTTP session, one schema / percentage cache), else a client of our own, rebuilt
+    when the saved key or profile changes."""
 
     def __init__(self):
         self._client = None
@@ -737,6 +760,14 @@ class _SteamClientHolder:
         if not key or not profile:
             self._client = None
             return None
+        try:
+            from ..steam_service import get_steam_client
+
+            live = get_steam_client()
+        except Exception:
+            live = None
+        if live is not None and live.api_key == key and live.profile == profile:
+            return live
         if self._client is None or self._for != (key, profile):
             self._client = SteamClient(key, profile)
             self._for = (key, profile)

@@ -20,6 +20,14 @@ from modules.steam_data import SteamData  # noqa: E402
 from modules.steamapi import SteamAPIError, SteamConnectionError, SteamKeyError  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _fresh_broadcast_gate():
+    """Broadcasts go out only on a change: every test starts with nothing sent yet."""
+    svc._broadcast_gate.reset()
+    yield
+    svc._broadcast_gate.reset()
+
+
 class FakeState:
     def __init__(self, key="k" * 32, profile="me"):
         self.settings = SimpleNamespace(api_key=key, steam_profile=profile)
@@ -309,3 +317,33 @@ def test_emit_uses_the_web_engine(monkeypatch):
 def test_update_and_broadcast_without_a_client(env):
     svc._update_and_broadcast()
     assert env.emitted == []
+
+
+def test_loop_waits_out_a_rate_limit(env, monkeypatch):
+    from modules import api_usage, steamapi
+    from modules.steamapi import SteamRateLimited
+
+    limit = api_usage.Backoff()
+    limit.hit(now=None)  # 60 s pause from now
+    monkeypatch.setattr(steamapi, "rate_limit", limit)
+    client = FakeClient("k", "me")
+    client.connected = True
+    client.summary_error = SteamRateLimited("paused", 429)
+    svc.steam_client_instance = client
+    waits = []
+    monkeypatch.setattr(svc.stop_steam_thread_event, "wait", lambda t: (waits.append(t), svc.stop_steam_thread_event.set()))
+    svc.steam_data_update_loop()
+    svc.stop_steam_thread_event.clear()
+    assert client.connected is True  # a pause is not a disconnect
+    assert 59 <= waits[0] <= 60
+
+
+def test_broadcast_only_on_change(env):
+    client = FakeClient("k", "me")
+    svc.steam_client_instance = client
+    svc._update_and_broadcast()
+    svc._update_and_broadcast()
+    assert [e for e, _ in env.emitted] == ["steam_data_update"]  # same payload: sent once
+    client.steam_data.persona_name = "New name"
+    svc._update_and_broadcast()
+    assert [e for e, _ in env.emitted] == ["steam_data_update", "steam_data_update"]

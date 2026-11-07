@@ -23,6 +23,7 @@ from steam_web_api.constants import API_BASE_URL
 from steam_web_api.users import Users
 from steam_web_api.utils import buildUrlWithParams
 
+from . import api_usage
 from .steam_data import SteamData
 
 logger = logging.getLogger(__name__)
@@ -40,8 +41,10 @@ PERSONA_STATES = {
     6: "Looking to play",
 }
 RECENT_UNLOCKS_MAX = 10
-SCHEMA_TTL_SEC = 12 * 3600.0
-GLOBAL_PERCENT_TTL_SEC = 6 * 3600.0
+# Kept in the Games Tracker catalog (game_tracker.db), so they survive restarts.
+SCHEMA_TTL_SEC = 30 * 86400.0  # re-read sooner when the player's list has a different size
+GLOBAL_PERCENT_TTL_SEC = 7 * 86400.0
+FAILED_PERCENT_RETRY_SEC = 6 * 3600.0  # memory only: a failed percentage read
 
 _STEAMID64_RE = re.compile(r"^7656119\d{10}$")
 _PROFILE_URL_RE = re.compile(r"steamcommunity\.com/(profiles|id)/([^/?#\s]+)", re.IGNORECASE)
@@ -65,6 +68,14 @@ class SteamConnectionError(SteamAPIError):
     """Steam could not be reached."""
 
 
+class SteamRateLimited(SteamAPIError):
+    """Steam answered 429 (or we are still waiting out an earlier 429); nothing was sent."""
+
+
+# One pause shared by every Steam client: a 429 holds back the poller and the library sync alike.
+rate_limit = api_usage.Backoff(base=60.0, cap=900.0)
+
+
 def redact_key(text: str, key: str) -> str:
     """Hide the API key wherever it appears (URLs in error messages)."""
     text = str(text or "")
@@ -82,15 +93,26 @@ class _TimeoutClient(Client):
         self._session.headers.update({"Accept": "application/json"})
 
     def request(self, method: str, url: str, data: Any = None, params: dict | None = None, headers: dict | None = None):
+        if rate_limit.active():
+            raise SteamRateLimited(f"Steam rate limit: waiting {rate_limit.remaining():.0f} s", 429)
         request_url = buildUrlWithParams(API_BASE_URL + url, self.key, params or {})
+        endpoint = api_usage.endpoint_name(url)
         try:
             result = self._session.request(method, request_url, headers=headers or None, timeout=REQUEST_TIMEOUT)
         except requests.RequestException as e:
+            api_usage.record("Steam", endpoint, None)
             raise SteamConnectionError(redact_key(f"{type(e).__name__}: {e}", self.key)) from None
+        api_usage.record("Steam", endpoint, result.status_code)
         try:
             body = result.json()
         except ValueError:
             body = None
+        if result.status_code == 429:
+            wait = rate_limit.hit(result.headers.get("Retry-After"))
+            logger.warning("Steam rate limit (429) on %s; pausing Steam requests for %.0f s", endpoint, wait)
+            raise SteamRateLimited(f"429 Too Many Requests: paused {wait:.0f} s", 429, body)
+        if result.status_code < 400:
+            rate_limit.ok()
         if result.status_code >= 400:
             message = f"{result.status_code} {result.reason}"
             error = body.get("playerstats", {}).get("error") if isinstance(body, dict) else None
@@ -140,6 +162,26 @@ def _icon_url(appid: int, icon: str | None) -> str | None:
     return f"{ACHIEVEMENT_ICON_BASE}/{appid}/{icon}.jpg"
 
 
+def _catalog(kind: str, appid: int) -> tuple[dict, float] | None:
+    """(data, fetched_at) from the Games Tracker catalog, or None (never raises)."""
+    try:
+        from .game_tracker import catalog
+
+        return catalog.steam_schema(appid) if kind == "steam_schema" else catalog.steam_percents(appid)
+    except Exception:
+        logger.debug("Steam catalog read failed for %s %s", kind, appid, exc_info=True)
+        return None
+
+
+def _catalog_save(fn: str, appid: int, data: dict) -> None:
+    try:
+        from .game_tracker import catalog
+
+        getattr(catalog, fn)(appid, data)
+    except Exception:
+        logger.debug("Steam catalog write failed for %s", appid, exc_info=True)
+
+
 def _percent(value: Any) -> float | None:
     try:
         return round(float(value), 1)
@@ -167,6 +209,8 @@ class SteamClient:
         self._global_percents: dict[int, tuple[dict[str, float], float]] = {}
         # appid -> api names already unlocked (the first load sets the baseline)
         self._known_unlocked: dict[int, set[str]] = {}
+        # appid -> the player's achievement count the schema was last re-read for
+        self._schema_rechecked: dict[int, int] = {}
 
     # ----- setup -----
 
@@ -288,29 +332,45 @@ class SteamClient:
 
     # ----- achievements -----
 
-    def _schema(self, appid: int) -> dict[str, dict]:
+    def _schema(self, appid: int, *, refresh: bool = False) -> dict[str, dict]:
+        """Achievement definitions by API name: memory, then the catalog, then Steam (one request)."""
+        now = time.time()
         cached = self._schemas.get(appid)
-        if cached and time.time() - cached[1] < SCHEMA_TTL_SEC:
+        if not refresh and cached and now - cached[1] < SCHEMA_TTL_SEC:
             return cached[0]
+        if not refresh:
+            stored = _catalog("steam_schema", appid)
+            if stored is not None and now - stored[1] < SCHEMA_TTL_SEC:
+                self._schemas[appid] = stored
+                return stored[0]
         _users, _apps, client = self._api()
         body = client.request("get", "/ISteamUserStats/GetSchemaForGame/v2/", params={"appid": appid, "l": "english"})
         game = body.get("game") or {}
-        if not self.steam_data.current_game_name and game.get("gameName"):
+        if appid == self.steam_data.current_game_appid and not self.steam_data.current_game_name and game.get("gameName"):
             self.steam_data.current_game_name = game["gameName"]
         entries = ((game.get("availableGameStats") or {}).get("achievements")) or []
         schema = {str(a.get("name")): a for a in entries if a.get("name")}
         self._schemas[appid] = (schema, time.time())
+        _catalog_save("save_steam_schema", appid, schema)
         return schema
 
     def _percents(self, appid: int) -> dict[str, float]:
+        now = time.time()
         cached = self._global_percents.get(appid)
-        if cached and time.time() - cached[1] < GLOBAL_PERCENT_TTL_SEC:
+        if cached and now - cached[1] < (GLOBAL_PERCENT_TTL_SEC if cached[0] else FAILED_PERCENT_RETRY_SEC):
             return cached[0]
+        stored = _catalog("steam_percents", appid)
+        if stored is not None and now - stored[1] < GLOBAL_PERCENT_TTL_SEC:
+            self._global_percents[appid] = stored
+            return stored[0]
         _users, _apps, client = self._api()
         try:
             body = client.request("get", "/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/", params={"gameid": appid})
             entries = (body.get("achievementpercentages") or {}).get("achievements") or []
             percents = {str(a.get("name")): p for a in entries if (p := _percent(a.get("percent"))) is not None}
+            _catalog_save("save_steam_percents", appid, percents)
+        except SteamRateLimited:
+            raise  # not cached: try again once the pause is over
         except SteamAPIError as e:
             logger.debug("Steam global achievement percentages unavailable for %s: %s", appid, e)
             percents = {}
@@ -344,6 +404,10 @@ class SteamClient:
             raise
         data.achievements_private = False
         player = {str(a.get("apiname")): a for a in ((body.get("playerstats") or {}).get("achievements") or [])}
+        if player and len(player) != len(schema) and self._schema_rechecked.get(appid) != len(player):
+            # The game gained (or lost) achievements since the schema was read: read it again, once.
+            self._schema_rechecked[appid] = len(player)
+            schema = self._schema(appid, refresh=True) or schema
         percents = self._percents(appid)
 
         merged: list[dict[str, Any]] = []
@@ -450,18 +514,23 @@ class SteamClient:
             }
         return {"has_achievements": bool(entries), "private": False, "total": len(entries), "unlocked": unlocked}
 
-    def achievement_list(self, appid: int) -> list[dict[str, Any]]:
+    def achievement_list(self, appid: int, earned: Any = None) -> list[dict[str, Any]]:
         """Every achievement of a game in schema order, for picking a Games Tracker goal:
-        ``id`` (API name), ``name``, ``description``, ``icon``, ``grade`` ("achievement"), ``earned``."""
+        ``id`` (API name), ``name``, ``description``, ``icon``, ``grade`` ("achievement"), ``earned``.
+
+        Pass ``earned`` (API names, e.g. the tracker's stored unlocks) to skip the player request."""
         appid = int(appid)
         schema = self._schema(appid)
         if not schema:
             return []
-        try:
-            earned = set(self.get_game_achievements(appid).get("unlocked") or {})
-        except SteamAPIError as e:
-            logger.debug("Steam achievements for %s unavailable: %s", appid, e)
-            earned = set()
+        if earned is not None:
+            earned = set(earned)
+        else:
+            try:
+                earned = set(self.get_game_achievements(appid).get("unlocked") or {})
+            except SteamAPIError as e:
+                logger.debug("Steam achievements for %s unavailable: %s", appid, e)
+                earned = set()
         return [
             {
                 "id": api_name,

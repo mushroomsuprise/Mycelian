@@ -23,9 +23,10 @@ ME = "76561198000000001"
 
 
 class Resp:
-    def __init__(self, status=200, body=None, text=None, reason="OK"):
+    def __init__(self, status=200, body=None, text=None, reason="OK", headers=None):
         self.status_code = status
         self.reason = reason
+        self.headers = dict(headers or {})
         self._body = body
         self.text = text if text is not None else ("" if body is None else json.dumps(body))
 
@@ -54,6 +55,16 @@ class FakeSession:
                     raise answer
                 return answer(params) if callable(answer) else answer
         return Resp(404, {"error": "no route"}, reason="Not Found")
+
+
+@pytest.fixture(autouse=True)
+def fresh_catalog(tmp_path):
+    """Schemas and percentages are kept in the Games Tracker catalog: a new one per test."""
+    from modules.game_tracker import store as gstore
+
+    gstore.set_store(gstore.GameTrackerStore(db_path=str(tmp_path / "gt.db")))
+    yield
+    gstore.set_store(None)
 
 
 def player(**over):
@@ -271,6 +282,9 @@ def test_private_games_games_without_achievements_and_errors():
     with pytest.raises(steamapi.SteamAPIError):
         c.refresh_achievements()
 
+    from modules.game_tracker.store import get_store
+
+    get_store().catalog_delete("steam_schema")  # the catalog would otherwise share the schema read above
     c, _ = in_game({"/GetSchemaForGame/v2/": Resp(200, {"game": {}})}, {"u": {}})
     assert c.refresh_achievements() == [] and c.steam_data.has_achievements is False
 
@@ -310,3 +324,97 @@ def test_public_payload_is_plain_json():
     payload = steamapi.public_payload(SteamData(persona_name="x", achievement_counts={"unlocked": 1, "total": 2}))
     assert payload["persona_name"] == "x" and json.loads(json.dumps(payload)) == payload
     assert "api_key" not in payload
+
+
+# --------------------------------------------------------------------------- rate limits and usage
+
+
+@pytest.fixture
+def fresh_limit(monkeypatch):
+    from modules import api_usage
+
+    api_usage.reset()
+    limit = api_usage.Backoff(base=60, cap=900)
+    monkeypatch.setattr(steamapi, "rate_limit", limit)
+    yield limit
+    api_usage.reset()
+
+
+def test_429_pauses_every_request_and_is_counted(fresh_limit):
+    from modules import api_usage
+
+    c, session = make({"/GetPlayerSummaries/v2/": Resp(429, None, text="slow down", reason="Too Many Requests",
+                                                       headers={"Retry-After": "30"})})
+    _users, _apps, client = c._api()
+    with pytest.raises(steamapi.SteamRateLimited):
+        client.request("get", "/ISteamUser/GetPlayerSummaries/v2/")
+    assert fresh_limit.active() and 29 <= fresh_limit.remaining() <= 30
+    with pytest.raises(steamapi.SteamRateLimited):
+        client.request("get", "/ISteamUser/GetPlayerSummaries/v2/")
+    assert len(session.calls) == 1  # the second one never left
+    snap = api_usage.snapshot("Steam")
+    assert snap["hour"] == 1 and snap["rate_limited_hour"] == 1
+    assert snap["endpoints"] == {"/ISteamUser/GetPlayerSummaries/v2": 1}
+
+
+def test_success_resets_the_backoff_and_network_errors_count(fresh_limit):
+    from modules import api_usage
+
+    c, session = make({"/GetSteamLevel/v1/": Resp(200, {"response": {"player_level": 3}}),
+                       "/GetSchemaForGame/v2/": requests.ConnectionError("down")})
+    fresh_limit.hit(now=0)  # an old pause, long over
+    _users, _apps, client = c._api()
+    client.request("get", "/IPlayerService/GetSteamLevel/v1/")
+    assert fresh_limit._delay == 0
+    with pytest.raises(steamapi.SteamConnectionError):
+        client.request("get", "/ISteamUserStats/GetSchemaForGame/v2/")
+    assert api_usage.snapshot("Steam")["errors_hour"] == 1
+
+
+def test_rate_limited_percentages_are_not_cached(fresh_limit):
+    c, session = make({"/GetGlobalAchievementPercentagesForApp/v2/": Resp(429, None, reason="Too Many Requests")})
+    with pytest.raises(steamapi.SteamRateLimited):
+        c._percents(620)
+    assert 620 not in c._global_percents
+
+
+
+# --------------------------------------------------------------------------- catalog: read once, survive restarts
+
+
+def test_schema_and_percentages_survive_a_new_client():
+    c, session = in_game({}, {"u": {"ACH_A": 100}})
+    c.refresh_achievements()
+    fresh, session2 = in_game({}, {"u": {"ACH_A": 100}})  # e.g. after a restart
+    fresh.refresh_achievements()
+    paths = [p for p, _ in session2.calls]
+    assert "/ISteamUserStats/GetSchemaForGame/v2/" not in paths
+    assert "/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/" not in paths
+    assert "/ISteamUserStats/GetPlayerAchievements/v1/" in paths  # the player's half is always read
+
+
+def test_schema_is_reread_once_when_the_game_gains_achievements():
+    bigger = Resp(200, {"playerstats": {"steamID": ME, "success": True, "achievements": [
+        {"apiname": n, "achieved": 0, "unlocktime": 0} for n in ("ACH_A", "ACH_B", "ACH_C", "ACH_D")]}})
+    c, session = in_game({"/GetPlayerAchievements/v1/": bigger}, {"u": {}})
+    c.refresh_achievements()
+    c.refresh_achievements()
+    c.refresh_achievements()
+    schema_reads = [p for p, _ in session.calls].count("/ISteamUserStats/GetSchemaForGame/v2/")
+    assert schema_reads == 2  # the first read, then once more for the new size, not every poll
+
+
+def test_failed_percentages_are_not_saved():
+    c, session = in_game({"/GetGlobalAchievementPercentagesForApp/v2/": Resp(500, None, text="x", reason="Error")}, {"u": {}})
+    c.refresh_achievements()
+    from modules.game_tracker import catalog
+
+    assert catalog.steam_percents(620) is None
+
+
+def test_achievement_list_with_known_unlocks_makes_no_player_request():
+    c, session = make({"/GetSchemaForGame/v2/": Resp(200, SCHEMA)})
+    out = c.achievement_list(620, earned=["ACH_B"])
+    assert [(a["id"], a["earned"]) for a in out] == [("ACH_A", False), ("ACH_B", True), ("ACH_C", False)]
+    assert [p for p, _ in session.calls] == ["/ISteamUserStats/GetSchemaForGame/v2/"]
+    assert c.achievement_list(620, earned=[]) and len(session.calls) == 1  # schema from memory

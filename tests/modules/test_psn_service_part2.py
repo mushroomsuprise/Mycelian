@@ -22,6 +22,14 @@ from modules import psn_service as ps  # noqa: E402
 from modules.psn_data import PSNData  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _fresh_broadcast_gate():
+    """Broadcasts go out only on a change: every test starts with nothing sent yet."""
+    ps._broadcast_gate.reset()
+    yield
+    ps._broadcast_gate.reset()
+
+
 class FakeState:
     def __init__(self):
         self.set_calls = []
@@ -169,8 +177,16 @@ class LoopClient:
         return self.resolved
 
 
+@pytest.fixture(autouse=True)
+def fresh_failure_caches(monkeypatch):
+    monkeypatch.setattr(ps, "_groups_failed_at", {})
+    monkeypatch.setattr(ps, "_unresolved_at", {})
+    monkeypatch.setattr(ps, "_bulk_tried_at", {})
+
+
 @pytest.fixture
 def loop(monkeypatch):
+    monkeypatch.setattr(ps, "_resolve_game_from_tracker", lambda *a: None)
     state = FakeState()
     monkeypatch.setattr(ps, "state_manager", state)
     monkeypatch.setattr(ps, "_mismatch_notification_times", {})
@@ -491,9 +507,9 @@ def test_loop_same_game_skips_title_refresh_until_due(loop, monkeypatch):
     c.title_result = title_res()
 
     def tick(n):
-        loop.clock["t"] += 6
+        loop.clock["t"] += 5
 
-    loop.run(3, on_wait=tick)  # t=0, 6, 12 -> title only at first
+    loop.run(3, on_wait=tick)  # t=0, 5, 10 -> title only at first (refresh every 12 s)
     assert c.names().count("title") == 1
     loop.clock["t"] += ps.TROPHY_TITLE_REFRESH_SEC
     c.calls.clear()
@@ -618,3 +634,124 @@ def test_bulk_empty_games_with_resolution(bulk):
     bulk.all_games = {}
     bulk.resolved = "NPWR3"
     assert ps._resolve_game_via_bulk_fallback("Returnal", "PPSA1", "PS5") == "NPWR3"
+
+
+# --------------------------------------------------------------------------- failure caches, tracker lookup, rate limit
+
+
+def test_loop_groups_failure_is_not_retried_for_30_minutes(loop):
+    c = loop.client
+    c.by_title["PPSA1_00"] = {"np_communication_id": "NPWR1_00"}
+    c.cache["NPWR1_00"] = {"np_communication_id": "NPWR1_00"}  # no groups yet: due
+    c.title_result = title_res()
+    c.groups_result = None  # fails
+
+    def tick(n):
+        loop.clock["t"] += 6
+
+    loop.run(3, on_wait=tick)
+    assert c.names().count("groups") == 1  # not every 6 s
+    loop.clock["t"] += ps.TROPHY_GROUPS_RETRY_SEC
+    c.calls.clear()
+    loop.run(1)
+    assert c.names().count("groups") == 1
+
+
+def test_loop_title_without_trophies_is_not_looked_up_every_cycle(loop, monkeypatch):
+    c = loop.client
+    c.title_result = None
+    bulk = []
+    monkeypatch.setattr(ps, "_resolve_game_via_bulk_fallback", lambda *a: bulk.append(a) or None)
+
+    def tick(n):
+        loop.clock["t"] += ps.TROPHY_TITLE_REFRESH_SEC
+
+    loop.run(3, on_wait=tick)
+    assert c.names().count("title") == 1 and len(bulk) == 1
+    loop.clock["t"] += ps.NO_TROPHIES_TITLE_RETRY_SEC
+    c.calls.clear()
+    loop.run(1)
+    assert c.names().count("title") == 1 and len(bulk) == 1  # title retried; the bulk list waits a day
+    loop.clock["t"] += ps.NO_TROPHIES_BULK_RETRY_SEC
+    c.calls.clear()
+    loop.run(1)
+    assert len(bulk) == 2
+
+
+def test_loop_uses_the_tracker_library_before_the_bulk_list(loop, monkeypatch):
+    c = loop.client
+    c.title_result = None
+    monkeypatch.setattr(ps, "_resolve_game_from_tracker", lambda *a: "NPWR7_00")
+    monkeypatch.setattr(ps, "_resolve_game_via_bulk_fallback", lambda *a: pytest.fail("bulk list not needed"))
+    loop.run(1)
+    assert ps._unresolved_at == {}
+
+
+def test_loop_keeps_the_game_during_a_rate_limit(loop, monkeypatch):
+    c = loop.client
+    c.psn_data.current_game_name = "Returnal"
+    c.presence = None
+    c.rate_limited = lambda: True
+    c.rate_limit = SimpleNamespace(remaining=lambda: 120.0)
+    ev = loop.run(1)
+    assert c.psn_data.current_game_name == "Returnal"  # not cleared by the pause
+    assert "summary" not in c.names()
+    assert ev.waits == [120.0]
+
+
+@pytest.fixture
+def tracker(monkeypatch, tmp_path):
+    from modules.game_tracker import service as gsvc
+    from modules.game_tracker.models import PSN, TrackedGame
+    from modules.game_tracker.store import GameTrackerStore
+
+    store = GameTrackerStore(db_path=str(tmp_path / "gt.db"))
+    gsvc.set_service(gsvc.GameTrackerService(store, psn_client_fn=lambda: None, steam_client_fn=lambda: None))
+    store.upsert_games([
+        TrackedGame(platform=PSN, game_id="NPWR1_00", title="Returnal", platform_label="PS5", cover_url="r.png"),
+        TrackedGame(platform=PSN, game_id="NPWR2_00", title="Astro Bot", platform_label="PS5", np_title_id="PPSA9_00"),
+    ])
+    yield store
+    gsvc.set_service(None)
+
+
+def test_tracker_lookup_needs_an_imported_library(bulk, tracker):
+    assert ps._resolve_game_from_tracker("Returnal", "PPSA1_00", "PS5") is None
+    assert "store" not in bulk.names()
+
+
+def test_tracker_lookup_by_title_id_name_and_fuzzy(bulk, tracker):
+    from modules.game_tracker.models import PSN
+
+    tracker.set_baseline(PSN, "acct")
+    assert ps._resolve_game_from_tracker("Something Else", "PPSA9_00", "PS5") == "NPWR2_00"  # NP Title ID wins
+    assert ps._resolve_game_from_tracker("RETURNAL", "PPSA1_00", "PS5") == "NPWR1_00"
+    stored = [c for c in bulk.calls if c[0] == "store"][-1][1]
+    assert stored["np_title_id"] == "PPSA1_00" and stored["cover_art_url"] == "r.png" and stored["trophy_name"] == "Returnal"
+    assert bulk.psn_data.current_game_np_comm_id == "NPWR1_00"
+    assert ps._resolve_game_from_tracker("Astro Bott", "PPSA7_00", "PS5") == "NPWR2_00"  # close spelling
+    assert ps._resolve_game_from_tracker("Netflix", "CUSA0_00", "PS5") is None
+
+
+def test_tracker_lookup_survives_a_broken_service(bulk, monkeypatch):
+    from modules.game_tracker import service as gsvc
+
+    monkeypatch.setattr(gsvc, "get_service", lambda: (_ for _ in ()).throw(RuntimeError("x")))
+    assert ps._resolve_game_from_tracker("Returnal", "PPSA1_00", "PS5") is None
+
+
+def test_loop_doesnt_rewrite_an_unchanged_cache_entry(loop):
+    c = loop.client
+    doc = {"np_communication_id": "NPWR1_00", "np_title_id": "PPSA1_00", "presence_name": "Returnal",
+           "trophy_name": "Returnal Trophies", "cover_art_url": "icon.png", "platform": "PS5",
+           "trophy_groups": [{"a": 1}], "trophy_groups_updated_at": fresh_iso()}
+    c.by_title["PPSA1_00"] = doc
+    c.cache["NPWR1_00"] = doc
+    c.title_result = title_res()
+    loop.run(1)
+    assert "title" in c.names() and "update_from" not in c.names()
+    c.title_result = title_res(title_name="Returnal (renamed)")
+    c.calls.clear()
+    loop.clock["t"] += ps.TROPHY_TITLE_REFRESH_SEC
+    loop.run(1)
+    assert "update_from" in c.names()

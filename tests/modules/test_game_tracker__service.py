@@ -181,6 +181,9 @@ def test_steam_client_holder_rebuilds_on_credential_change(monkeypatch):
             return creds[name]
 
     monkeypatch.setattr(dataobjects.state_manager, "get_steam_settings_data", lambda: S())
+    from modules import steam_service
+
+    monkeypatch.setattr(steam_service, "steam_client_instance", None)
     holder = svc._SteamClientHolder()
     first = holder.get()
     assert first is not None and holder.get() is first
@@ -188,6 +191,22 @@ def test_steam_client_holder_rebuilds_on_credential_change(monkeypatch):
     assert holder.get() is not first
     creds["api_key"] = ""
     assert holder.get() is None
+
+
+def test_steam_client_holder_shares_the_live_poller_client(monkeypatch):
+    from types import SimpleNamespace
+
+    from modules import dataobjects, steam_service
+
+    creds = SimpleNamespace(api_key="k", steam_profile="p")
+    monkeypatch.setattr(dataobjects.state_manager, "get_steam_settings_data", lambda: creds)
+    live = SimpleNamespace(api_key="k", profile="p")
+    monkeypatch.setattr(steam_service, "steam_client_instance", live)
+    holder = svc._SteamClientHolder()
+    assert holder.get() is live  # one session, one schema / percentage cache
+    live.profile = "other"  # the poller hasn't caught up with new settings: use our own
+    own = holder.get()
+    assert own is not live and own.profile == "p"
 
 
 def test_find_game_matching_rules():
@@ -219,3 +238,102 @@ def test_find_game_matching_rules():
     assert find("elden", "steam", games) is None
     assert find("", games=[]) is None
     assert svc._norm("ELDEN RING™: Shadow’s Edge") == "elden ring shadows edge"
+
+
+def test_steam_goal_picker_uses_the_stored_unlocks(tmp_path):
+    seen = []
+
+    class Steam:
+        def achievement_list(self, appid, earned=None):
+            seen.append((appid, earned))
+            return []
+
+    store = GameTrackerStore(db_path=str(tmp_path / "gt.db"))
+    store.upsert_games([TrackedGame(platform=STEAM, game_id="620", title="Portal 2", unlocked_ids=["A"], baselined=True),
+                        TrackedGame(platform=STEAM, game_id="400", title="Portal", baselined=False)])
+    service = svc.GameTrackerService(store, psn_client_fn=lambda: None, steam_client_fn=Steam)
+    assert service.achievement_list(STEAM, "620") == []
+    assert service.achievement_list(STEAM, "400") == []
+    assert seen == [(620, ["A"]), (400, None)]  # never read yet: ask Steam
+
+
+def _psn_game(**kw):
+    # As a library sync stores it.
+    base = dict(platform=PSN, game_id="NPWR00001_00", title="A", platform_label="PS5", earned={"bronze": 1},
+                defined={"bronze": 10}, progress=10, baselined=True, first_seen=1.0, extra={"has_trophy_groups": False})
+    base.update(kw)
+    return TrackedGame(**base)
+
+
+class _Psn:
+    api = object()
+
+    def is_connected(self):
+        return True
+
+    def get_trophy_target_account_id(self):
+        return "acct"
+
+    def get_earned_trophies(self, comm_id, label):
+        return None  # unlock names unavailable: the events still go out
+
+
+def test_an_unchanged_observe_tells_no_one(tmp_path, monkeypatch):
+    from modules import psnapi
+
+    monkeypatch.setattr(psnapi, "cached_game_docs_by_comm_id", lambda: {"NPWR00001_00": {"np_communication_id": "NPWR00001_00"}})
+    store = GameTrackerStore(db_path=str(tmp_path / "gt.db"))
+    store.set_baseline(PSN, "acct")
+    store.upsert_games([_psn_game(last_played=time.time())])
+    service = svc.GameTrackerService(store, psn_client_fn=_Psn, steam_client_fn=lambda: None)
+    notified, goal_passes = [], []
+    monkeypatch.setattr(service, "_notify", lambda keys=(): notified.append(set(keys)))
+    real_eval = service._evaluate_goals
+    monkeypatch.setattr(service, "_evaluate_goals", lambda *a, **k: goal_passes.append(1) or real_eval(*a, **k))
+    same = {"np_communication_id": "NPWR00001_00", "title_name": "A", "earned_trophies": {"bronze": 1},
+            "defined_trophies": {"bronze": 10}, "progress": 10, "platform": "PS5"}
+    version = store.version
+    service._observe(PSN, same, service.settings)
+    assert notified == [] and goal_passes == [] and store.version == version  # no write, no push
+    service._observe(PSN, {**same, "earned_trophies": {"bronze": 2}, "progress": 20}, service.settings)
+    assert notified == [{"psn:NPWR00001_00"}] and goal_passes == [1]
+
+
+def test_last_played_alone_is_written_every_few_minutes(tmp_path, monkeypatch):
+    from modules import psnapi
+    from modules.game_tracker import models, psn_sync
+
+    monkeypatch.setattr(psnapi, "cached_game_docs_by_comm_id", lambda: {"NPWR00001_00": {"np_communication_id": "NPWR00001_00"}})
+    store = GameTrackerStore(db_path=str(tmp_path / "gt.db"))
+    store.set_baseline(PSN, "acct")
+    stale = time.time() - models.LAST_PLAYED_WRITE_SEC - 1
+    store.upsert_games([_psn_game(last_played=stale)])
+    same = {"np_communication_id": "NPWR00001_00", "title_name": "A", "earned_trophies": {"bronze": 1},
+            "defined_trophies": {"bronze": 10}, "progress": 10, "platform": "PS5"}
+    assert psn_sync.observe_title(_Psn(), store, TrackerSettings(), same) == []
+    assert store.get_game(PSN, "NPWR00001_00").last_played > stale
+
+
+def test_a_sync_with_nothing_new_skips_goals_and_pushes(tmp_path, monkeypatch):
+    from modules.game_tracker import psn_sync
+
+    store = GameTrackerStore(db_path=str(tmp_path / "gt.db"))
+    service = svc.GameTrackerService(store, psn_client_fn=_Psn, steam_client_fn=lambda: None)
+    monkeypatch.setattr(psn_sync, "sync_library", lambda *a, **k: [])
+    notified = []
+    monkeypatch.setattr(service, "_notify", lambda keys=(): notified.append(keys))
+    monkeypatch.setattr(service, "_evaluate_goals", lambda *a, **k: pytest.fail("no goal pass needed"))
+    assert service._sync(PSN, service.settings) is True
+    assert notified == [] and service.status()[PSN]["state"] == "idle"
+
+
+def test_full_flag_only_for_explicit_syncs(tmp_path, monkeypatch):
+    from modules.game_tracker import psn_sync
+
+    store = GameTrackerStore(db_path=str(tmp_path / "gt.db"))
+    service = svc.GameTrackerService(store, psn_client_fn=_Psn, steam_client_fn=lambda: None)
+    seen = []
+    monkeypatch.setattr(psn_sync, "sync_library", lambda *a, **k: seen.append(k.get("full")) or [])
+    service._sync(PSN, service.settings)
+    service._sync(PSN, service.settings, full=True)
+    assert seen == [False, True]

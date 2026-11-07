@@ -35,6 +35,7 @@ from .integration_ui import (
     section,
     set_connect_style,
     tool_row,
+    UsageRow,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ class PSNTab:
         self._page: Optional[IntegrationPage] = None
         self._card: Optional[AccountCard] = None
         self._fold: Any = None
+        self._usage: Any = None
         self._banner: Any = None
 
     def on_enter(self) -> None:
@@ -164,6 +166,7 @@ class PSNTab:
                         on_change=lambda e: self._set("psn_username", self._str_from_value_event(e)),
                     )
                 hint("You can only track your own profile, or friends who are online.")
+                self._usage = UsageRow(["PSN"])
 
         with page.wide():
             self._build_game_cache_link()
@@ -674,6 +677,8 @@ class PSNTab:
             self._connected = pill_kind in ("ok", "warn")
             if self._page is not None:
                 self._page.set_status([(pill_kind, pill_text)])
+            if self._usage is not None:
+                self._usage.refresh()
             if self._card is not None:
                 photo = None
                 if self._connected:

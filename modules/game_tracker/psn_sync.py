@@ -2,10 +2,13 @@
 # SPDX-License-Identifier: MIT
 """PlayStation library sync for the Games Tracker.
 
-``sync_library`` reads every trophy list on the account (one paged request), keeps the
-tracker store and the PSN game cache in step, and returns the changes since the last
-read. ``observe_title`` does the same for the one game the presence loop just refreshed.
-Both run on the tracker's PSN worker thread, never on the presence loop or the UI.
+``sync_library`` reads the account's trophy lists, keeps the tracker store and the PSN game
+cache in step, and returns the changes since the last read. PSN lists titles most recently
+updated first, so a routine sync reads one small page and stops after a run of unchanged
+titles (usually one request); the whole list is read on the first import, on **Sync now**
+and every ``FULL_SYNC_SEC``. ``observe_title`` does the same for the one game the presence
+loop just refreshed. Both run on the tracker's PSN worker thread, never on the presence
+loop or the UI.
 """
 
 from __future__ import annotations
@@ -16,14 +19,19 @@ import time
 from datetime import datetime
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from . import catalog
 from .deltas import diff
-from .models import GRADES, PSN, UNLOCK, GameEvent, TrackedGame, TrackerSettings, grade_counts
+from .models import GRADES, PSN, UNLOCK, GameEvent, TrackedGame, TrackerSettings, game_changed, grade_counts
 from .store import GameTrackerStore
 
 logger = logging.getLogger(__name__)
 
 NPWR_RE = re.compile(r"^NPWR\d{5}_\d{2}$")
-PAGE_SIZE = 800
+PAGE_SIZE = 800  # full listing
+INCREMENTAL_PAGE_SIZE = 50  # routine sync: newest first, one page is usually enough
+UNCHANGED_RUN_STOP = 5  # stop reading after this many unchanged titles in a row
+FULL_SYNC_SEC = 6 * 3600.0
+SYNC_META_KEY = "psn_sync"  # store meta: {"full_at": epoch of the last full listing}
 MAX_NAMED_GAMES_PER_SYNC = 10  # per-game trophy lookups to name unlocks (rate budget)
 _PLATFORM_ORDER = ("PS5", "PS4", "PS3", "PSVITA", "PSPC")
 
@@ -60,22 +68,31 @@ def _ts(value: Any) -> float:
         return 0.0
 
 
-def fetch_titles(client) -> Optional[List[Dict[str, Any]]]:
-    """Every trophy list on the tracked account, or None when PSN can't be read right now."""
+def fetch_titles(
+    client,
+    *,
+    page_size: int = PAGE_SIZE,
+    stop: Optional[Callable[[Dict[str, Any]], bool]] = None,
+) -> Optional[List[Dict[str, Any]]]:
+    """The tracked account's trophy lists, newest first, or None when PSN can't be read right now.
+
+    Every list by default; with ``stop`` reading ends (no further page requested) as soon as it
+    returns True for a title."""
     if client is None or not getattr(client, "api", None) or not client.is_connected():
         return None
     account_id = client.get_trophy_target_account_id()
     if not account_id:
         return None
     try:
-        user = client.api.user(account_id=account_id)
+        user = client.user_for(account_id)
         titles: Dict[str, Dict[str, Any]] = {}
-        # limit=None: psnawp pages through the whole list itself (PAGE_SIZE titles per request).
-        for t in user.trophy_titles(limit=None, page_size=PAGE_SIZE):
+        # limit=None: psnawp pages through the list itself, ``page_size`` titles per request,
+        # and only asks for the next page when it's needed.
+        for t in user.trophy_titles(limit=None, page_size=page_size):
             comm_id = getattr(t, "np_communication_id", None)
             if not comm_id:
                 continue
-            titles[str(comm_id)] = {
+            titles[str(comm_id)] = entry = {
                 "np_communication_id": str(comm_id),
                 "name": getattr(t, "title_name", None) or "",
                 "platform": platform_label(getattr(t, "title_platform", None)),
@@ -86,6 +103,8 @@ def fetch_titles(client) -> Optional[List[Dict[str, Any]]]:
                 "last_updated": _ts(getattr(t, "last_updated_datetime", None)),
                 "has_trophy_groups": bool(getattr(t, "has_trophy_groups", False)),
             }
+            if stop is not None and stop(entry):
+                break
         return list(titles.values())
     except Exception as e:
         logger.warning("Games Tracker: couldn't read the PlayStation trophy list: %s", e)
@@ -140,20 +159,14 @@ def merge(old: Optional[TrackedGame], new: TrackedGame, cache_doc: Optional[dict
 
 
 def _changed(old: Optional[TrackedGame], new: TrackedGame) -> bool:
-    if old is None:
-        return True
-    a, b = old.to_dict(), new.to_dict()
-    for k in ("updated_at",):
-        a.pop(k, None)
-        b.pop(k, None)
-    return a != b
+    return game_changed(old, new)
 
 
 def _cache_docs() -> Dict[str, dict]:
     try:
-        from ..psnapi import load_all_psn_game_cache_docs_from_db
+        from ..psnapi import cached_game_docs_by_comm_id
 
-        return {str(d.get("np_communication_id")): d for d in load_all_psn_game_cache_docs_from_db() if d.get("np_communication_id")}
+        return cached_game_docs_by_comm_id()
     except Exception as e:
         logger.debug("Games Tracker: PSN game cache unavailable: %s", e)
         return {}
@@ -201,43 +214,81 @@ def _baseline(store: GameTrackerStore, account: str) -> bool:
     return True
 
 
+def _unchanged(old: Optional[TrackedGame], title: Dict[str, Any]) -> bool:
+    """True when a listed title matches what the store already has (nothing earned, nothing added)."""
+    if old is None or not old.baselined:
+        return False
+    progress = title.get("progress")
+    return (
+        grade_counts(title.get("earned")) == grade_counts(old.earned)
+        and grade_counts(title.get("defined")) == grade_counts(old.defined)
+        and (progress is None or int(progress) == old.progress)
+    )
+
+
 def sync_library(
     client,
     store: GameTrackerStore,
     settings: TrackerSettings,
     *,
     progress: Optional[Callable[[int, int], None]] = None,
+    full: bool = False,
 ) -> Optional[List[GameEvent]]:
-    """Read the whole library. Returns the changes (empty on the first import), or None when PSN was unavailable."""
-    titles = fetch_titles(client)
-    if titles is None:
+    """Read the library (the recently updated part, or all of it with ``full`` / when a full read is due).
+    Returns the changes (empty on the first import), or None when PSN was unavailable."""
+    if client is None or not getattr(client, "api", None) or not client.is_connected():
         return None
     account = str(client.get_trophy_target_account_id() or "")
+    if not account:
+        return None
     baseline_done = _baseline(store, account)
     stored = store.games_by_id(PSN)
+    meta = store.get_meta(SYNC_META_KEY, {}) or {}
+    full = full or not baseline_done or time.time() - float(meta.get("full_at") or 0) >= FULL_SYNC_SEC
+    if full:
+        titles = fetch_titles(client)
+    else:
+        run = [0]
+
+        def stop(title: Dict[str, Any]) -> bool:
+            run[0] = run[0] + 1 if _unchanged(stored.get(title["np_communication_id"]), title) else 0
+            return run[0] >= UNCHANGED_RUN_STOP
+
+        titles = fetch_titles(client, page_size=INCREMENTAL_PAGE_SIZE, stop=stop)
+    if titles is None:
+        return None
     docs = _cache_docs()
     events: List[GameEvent] = []
     changed: List[TrackedGame] = []
     total = len(titles)
     for i, title in enumerate(titles, 1):
-        new = title_to_game(title)
-        if not new.game_id:
-            continue
-        old = stored.get(new.game_id)
-        _ensure_cache_doc(new, docs)
-        new = merge(old, new, docs.get(new.game_id))
-        events.extend(diff(old, new, baseline_done=baseline_done, milestones=settings.milestones))
-        if _changed(old, new):
-            changed.append(new)
-        if len(changed) >= 50:
-            store.upsert_games(changed)
-            changed = []
+        comm_id = str(title.get("np_communication_id") or "")
+        old = stored.get(comm_id)
+        # Nothing new on a title the store and the PSN cache already have: skip the merge.
+        skip = (
+            old is not None
+            and comm_id in docs
+            and _unchanged(old, title)
+            and float(title.get("last_updated") or 0) <= old.last_played
+        )
+        if comm_id and not skip:
+            new = title_to_game(title)
+            _ensure_cache_doc(new, docs)
+            new = merge(old, new, docs.get(new.game_id))
+            events.extend(diff(old, new, baseline_done=baseline_done, milestones=settings.milestones))
+            if _changed(old, new):
+                changed.append(new)
+            if len(changed) >= 50:
+                store.upsert_games(changed)
+                changed = []
         if progress and (i % 25 == 0 or i == total):
             progress(i, total)
     store.upsert_games(changed)
     if not baseline_done and account:
         store.set_baseline(PSN, account)
-    name_unlocks(client, events)
+    if full:
+        store.set_meta(SYNC_META_KEY, {**meta, "full_at": time.time()})
+    name_unlocks(client, events, store)
     return events
 
 
@@ -254,27 +305,19 @@ def observe_title(client, store: GameTrackerStore, settings: TrackerSettings, ti
     new.np_title_id = str(title_result.get("np_title_id") or "")
     new.last_played = time.time()
     old = store.get_game(PSN, comm_id)
-    docs = _cache_docs() if old is None else {}
+    docs = _cache_docs()  # the in-memory index: no DB read per observe
     if old is None:
         _ensure_cache_doc(new, docs)
-    else:
-        try:
-            from ..psnapi import get_psn_game_cache_by_comm_id
-
-            doc = get_psn_game_cache_by_comm_id(comm_id)
-            if doc:
-                docs[comm_id] = doc
-        except Exception:
-            pass
     new = merge(old, new, docs.get(comm_id))
     events = diff(old, new, baseline_done=True, milestones=settings.milestones)
-    if _changed(old, new):
+    # Nothing earned: the row (and everyone listening) is left alone; last_played catches up every few minutes.
+    if game_changed(old, new, ignore_last_played=True):
         store.upsert_games([new])
-    name_unlocks(client, events)
+    name_unlocks(client, events, store)
     return events
 
 
-def name_unlocks(client, events: List[GameEvent]) -> None:
+def name_unlocks(client, events: List[GameEvent], store: Optional[GameTrackerStore] = None) -> None:
     """Fill in the trophy name, description, rarity and icon of unlock events (the newest earned of each grade)."""
     by_game: Dict[str, List[GameEvent]] = {}
     for e in events:
@@ -283,7 +326,9 @@ def name_unlocks(client, events: List[GameEvent]) -> None:
     if not by_game or client is None or not getattr(client, "api", None):
         return
     for comm_id in list(by_game)[:MAX_NAMED_GAMES_PER_SYNC]:
-        trophies = _earned_trophies(client, comm_id, by_game[comm_id][0].platform_label)
+        game = store.get_game(PSN, comm_id) if store is not None else None
+        trophies = _earned_trophies(client, comm_id, by_game[comm_id][0].platform_label,
+                                    defined=game.defined if game else None, store=store)
         if not trophies:
             continue
         for grade in GRADES:
@@ -297,48 +342,54 @@ def name_unlocks(client, events: List[GameEvent]) -> None:
                 event.unlock_icon = trophy["icon"]
 
 
-def _earned_trophies(client, comm_id: str, label: str) -> List[Dict[str, Any]]:
+def _earned_trophies(client, comm_id: str, label: str, *, defined: Any = None,
+                     store: Optional[GameTrackerStore] = None) -> List[Dict[str, Any]]:
     """Earned trophies of one list, newest first."""
-    out = trophy_list(client, comm_id, label, earned_only=True) or []
+    out = trophy_list(client, comm_id, label, earned_only=True, defined=defined, store=store) or []
     out.sort(key=lambda t: t["earned_at"], reverse=True)
     return out
 
 
-def trophy_list(client, comm_id: str, label: str, *, earned_only: bool = False) -> Optional[List[Dict[str, Any]]]:
+def trophy_list(client, comm_id: str, label: str, *, earned_only: bool = False, defined: Any = None,
+                store: Optional[GameTrackerStore] = None) -> Optional[List[Dict[str, Any]]]:
     """Every trophy of one list in game order (``id``, ``name``, ``description``, ``icon``, ``grade``, ``rarity``,
-    ``earned``, ``earned_at``); only the earned ones with ``earned_only``. None when PSN can't be reached."""
+    ``earned``, ``earned_at``); only the earned ones with ``earned_only``. None when PSN can't be reached.
+
+    One request per 200 trophies: the account's earned half. Names, details and icons come from
+    the catalog (read from PSN once per list, again when ``defined`` shows new trophies)."""
     if client is None or not getattr(client, "api", None):
         return None
-    try:
-        from ..psnapi import presence_format_to_platform_type
-
-        account_id = client.get_trophy_target_account_id()
-        if not account_id:
-            return None
-        user = client.api.user(account_id=account_id)
-        platform = presence_format_to_platform_type((label or "PS5").replace(" ", "").replace("PC", "PSPC"))
-        out = []
-        for t in user.trophies(np_communication_id=comm_id, platform=platform, include_progress=True, trophy_group_id="all"):
-            earned = bool(getattr(t, "earned", False))
-            if earned_only and not earned:
-                continue
-            ttype = getattr(t, "trophy_type", None)
-            grade = str(getattr(ttype, "value", ttype) or "").lower()
-            rate = getattr(t, "trophy_earn_rate", None)
-            out.append({
-                "id": str(getattr(t, "trophy_id", "") if getattr(t, "trophy_id", None) is not None else ""),
-                "name": getattr(t, "trophy_name", None) or "",
-                "description": getattr(t, "trophy_detail", None) or "",
-                "icon": getattr(t, "trophy_icon_url", None) or "",
-                "grade": grade,
-                "rarity": float(rate) if rate is not None else None,
-                "earned": earned,
-                "earned_at": _ts(getattr(t, "earned_date_time", None)),
-            })
-        return out
-    except Exception as e:
-        logger.debug("Games Tracker: couldn't read trophies for %s: %s", comm_id, e)
+    earned = client.get_earned_trophies(comm_id, label)
+    if earned is None:
         return None
+    defs = catalog.psn_definitions(client, comm_id, label, defined, store=store)
+    if defs is None:
+        return None
+    known = {d["id"] for d in defs}
+    if any(tid not in known for tid in earned):
+        # Trophies the cached list doesn't have (a DLC landed): read the definitions again.
+        try:
+            (store or catalog._store()).catalog_delete(catalog.PSN_DEFS, comm_id)
+        except Exception:
+            pass
+        defs = catalog.psn_definitions(client, comm_id, label, None, store=store) or defs
+    out = []
+    for d in defs:
+        e = earned.get(d["id"]) or {}
+        is_earned = bool(e.get("earned"))
+        if earned_only and not is_earned:
+            continue
+        out.append({
+            "id": d["id"],
+            "name": d.get("name") or "",
+            "description": d.get("description") or "",
+            "icon": d.get("icon") or "",
+            "grade": d.get("grade") or "",
+            "rarity": e.get("rarity"),
+            "earned": is_earned,
+            "earned_at": float(e.get("earned_at") or 0.0),
+        })
+    return out
 
 
 # ----- edits from the tab / API -----
@@ -408,39 +459,35 @@ GROUPS_TTL_SEC = 600
 _groups_cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 
 
-def group_progress(client, comm_id: str, label: str) -> Optional[List[Dict[str, Any]]]:
-    """Per-group progress (base game and DLC) for the drawer: one request, cached ten minutes."""
+def group_progress(client, comm_id: str, label: str, *, defined: Any = None,
+                   store: Optional[GameTrackerStore] = None) -> Optional[List[Dict[str, Any]]]:
+    """Per-group progress (base game and DLC) for the drawer: one request (the account's earned
+    counts; group names and totals come from the catalog), cached ten minutes."""
     cached = _groups_cache.get(comm_id)
     if cached and time.time() - cached[0] < GROUPS_TTL_SEC:
         return cached[1]
     if client is None or not getattr(client, "api", None) or not client.is_connected():
         return None
-    try:
-        from ..psnapi import presence_format_to_platform_type
-
-        account_id = client.get_trophy_target_account_id()
-        if not account_id:
-            return None
-        platform = presence_format_to_platform_type((label or "PS5").replace(" ", "").replace("PC", "PSPC"))
-        summary = client.api.user(account_id=account_id).trophy_groups_summary(
-            np_communication_id=comm_id, platform=platform, include_progress=True
-        )
-        groups = []
-        for g in getattr(summary, "trophy_groups", None) or []:
-            earned = sum(_trophy_set(getattr(g, "earned_trophies", None)).values())
-            defined = sum(_trophy_set(getattr(g, "defined_trophies", None)).values())
-            groups.append({
-                "id": getattr(g, "trophy_group_id", "") or "",
-                "name": getattr(g, "trophy_group_name", None) or ("Base game" if getattr(g, "trophy_group_id", "") == "default" else "DLC"),
-                "earned": earned,
-                "defined": defined,
-                "progress": int(getattr(g, "progress", None) or (round(earned * 100 / defined) if defined else 0)),
-            })
-        _groups_cache[comm_id] = (time.time(), groups)
-        return groups
-    except Exception as e:
-        logger.debug("Games Tracker: trophy groups unavailable for %s: %s", comm_id, e)
+    earned = client.get_earned_trophy_groups(comm_id, label)
+    if earned is None:
         return None
+    defs = catalog.psn_groups(client, comm_id, label, defined, store=store)
+    if defs is None:
+        return None
+    groups = []
+    for g in defs:
+        e = earned.get(g["id"]) or {}
+        got = sum((e.get("earned") or {}).values())
+        total = sum((g.get("defined") or {}).values())
+        groups.append({
+            "id": g["id"],
+            "name": g.get("name") or ("Base game" if g["id"] == "default" else "DLC"),
+            "earned": got,
+            "defined": total,
+            "progress": int(e.get("progress") or (round(got * 100 / total) if total else 0)),
+        })
+    _groups_cache[comm_id] = (time.time(), groups)
+    return groups
 
 
 def remove_game(store: GameTrackerStore, game_id: str, *, from_cache: bool = True) -> bool:

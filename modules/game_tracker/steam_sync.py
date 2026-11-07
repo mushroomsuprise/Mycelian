@@ -4,8 +4,10 @@
 
 Only games with playtime are tracked. The first sweep reads every played game's
 achievements, one request at a time (``REQUEST_GAP_SEC`` apart); later sweeps re-read only
-games whose playtime or last-played time moved. ``observe_game`` takes the achievement list
-``steam_service`` already loaded for the game being played, so unlocks show up within a poll.
+games whose playtime or last-played time moved, skipping the game the live poller is
+watching (``observe_game`` already has its list) and retrying private or failed reads only
+every ``RETRY_READ_SEC``. ``observe_game`` takes the achievement list ``steam_service``
+already loaded for the game being played, so unlocks show up within a poll.
 All of it runs on the tracker's Steam worker thread.
 """
 
@@ -17,7 +19,7 @@ import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .deltas import diff
-from .models import STEAM, UNLOCK, GameEvent, TrackedGame, TrackerSettings
+from .models import STEAM, UNLOCK, GameEvent, TrackedGame, TrackerSettings, game_changed
 from . import covers
 from .store import GameTrackerStore
 
@@ -25,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 REQUEST_GAP_SEC = 1.0  # between per-game achievement requests
 BATCH_SAVE = 20
+RETRY_READ_SEC = 6 * 3600.0  # a private game or a failed read is tried again after this
+PRIVATE_AT = "private_checked_at"  # TrackedGame.extra
+FAILED_AT = "read_failed_at"  # TrackedGame.extra
 
 
 STORE_DETAILS_URL = "https://store.steampowered.com/api/appdetails"
@@ -91,12 +96,29 @@ def _baseline(store: GameTrackerStore, account: str) -> bool:
     return True
 
 
-def _needs_achievements(old: Optional[TrackedGame], owned: Dict[str, Any]) -> bool:
-    if old is None or not old.baselined:
+def _needs_achievements(old: Optional[TrackedGame], owned: Dict[str, Any], *, live_appid: Optional[int] = None,
+                        now: Optional[float] = None) -> bool:
+    now = time.time() if now is None else now
+    if old is None:
         return True
+    if not old.baselined:
+        return now - float(old.extra.get(FAILED_AT) or 0) >= RETRY_READ_SEC
     if old.extra.get("private"):
-        return True
+        return now - float(old.extra.get(PRIVATE_AT) or 0) >= RETRY_READ_SEC
+    if live_appid is not None and int(owned["appid"]) == live_appid:
+        return False  # the live poller reads it every few seconds (observe_game)
     return int(owned["last_played"] or 0) > int(old.last_played or 0) or int(owned["playtime_min"]) > old.playtime_min
+
+
+def _live_appid(client) -> Optional[int]:
+    """The game the live poller is watching achievements for, when ``client`` is the poller's client."""
+    data = getattr(client, "steam_data", None)
+    if data is None or not getattr(client, "connected", False):
+        return None
+    appid = getattr(data, "current_game_appid", None)
+    if appid and getattr(data, "has_achievements", False) and not getattr(data, "achievements_private", False):
+        return int(appid)
+    return None
 
 
 def sync_library(
@@ -108,7 +130,7 @@ def sync_library(
     progress: Optional[Callable[[int, int], None]] = None,
 ) -> Optional[List[GameEvent]]:
     """Read the played games. Returns the changes (empty during the first import), or None when Steam was unavailable."""
-    from ..steamapi import SteamAPIError, SteamConnectionError, SteamKeyError
+    from ..steamapi import SteamAPIError, SteamConnectionError, SteamKeyError, SteamRateLimited
 
     if client is None:
         return None
@@ -131,6 +153,8 @@ def sync_library(
     pending: List[TrackedGame] = []
     total = len(played)
     private = False
+    limited = False
+    live_appid = _live_appid(client)
     for i, owned_game in enumerate(played, 1):
         if stop_event is not None and stop_event.is_set():
             break
@@ -146,34 +170,48 @@ def sync_library(
             last_played=float(owned_game["last_played"] or 0),
         )
         new = _merge(old, new)
-        if not private and _needs_achievements(old, owned_game):
+        if not private and _needs_achievements(old, owned_game, live_appid=live_appid):
             try:
                 ach = client.get_game_achievements(int(appid))
                 private = bool(ach.get("private"))
                 _with_achievements(new, ach)
+                new.extra.pop(FAILED_AT, None)
+                if private:
+                    new.extra[PRIVATE_AT] = time.time()
                 # A game first seen after the import is new play (every unlock counts); a game whose
                 # earlier read failed (``old.baselined`` False) is read silently.
                 events.extend(diff(old, new, baseline_done=baseline_done, milestones=settings.milestones))
                 new.baselined = True
             except (SteamKeyError, SteamConnectionError):
                 raise
+            except SteamRateLimited as e:
+                # Stop this sweep; games not read yet keep their last values until the next one.
+                logger.info("Games Tracker: Steam rate limit, stopping this sync: %s", e)
+                _keep_achievements(old, new)
+                limited = True
             except SteamAPIError as e:
                 logger.debug("Games Tracker: achievements unavailable for %s: %s", appid, e)
                 _keep_achievements(old, new)
+                if not new.baselined:
+                    new.extra[FAILED_AT] = time.time()
+            if limited:
+                pending.append(new)
+                break
             if stop_event is not None:
                 stop_event.wait(REQUEST_GAP_SEC)
             else:
                 time.sleep(REQUEST_GAP_SEC)
         else:
             _keep_achievements(old, new)
-        pending.append(new)
+        if game_changed(old, new):
+            pending.append(new)
         if len(pending) >= BATCH_SAVE:
             store.upsert_games(pending)
             pending = []
         if progress:
             progress(i, total)
     store.upsert_games(pending)
-    if not baseline_done and not (stop_event is not None and stop_event.is_set()):
+    if not baseline_done and not limited and not (stop_event is not None and stop_event.is_set()):
         store.set_baseline(STEAM, steam_id)
     name_unlocks(client, events, store)
     return events
@@ -211,7 +249,9 @@ def observe_game(store: GameTrackerStore, settings: TrackerSettings, account: st
     icons = {str(a.get("api_name")): a.get("icon_url") or "" for a in achievements or []}
     events = diff(old, new, baseline_done=True, milestones=settings.milestones)
     new.baselined = True
-    store.upsert_games([new])
+    # Nothing unlocked: leave the row alone (last_played catches up every few minutes).
+    if game_changed(old, new, ignore_last_played=True):
+        store.upsert_games([new])
     _fill_names(events, new, rarity, icons)
     return events
 

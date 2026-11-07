@@ -9,7 +9,7 @@ import pytest
 from modules.game_tracker import steam_sync
 from modules.game_tracker.models import STEAM, TrackerSettings
 from modules.game_tracker.store import GameTrackerStore
-from modules.steamapi import SteamAPIError, SteamConnectionError
+from modules.steamapi import SteamAPIError, SteamConnectionError, SteamRateLimited
 
 
 class FakeSteam:
@@ -91,13 +91,19 @@ def test_new_game_after_import_counts_all_its_unlocks(db):
     assert [e.kind for e in events] == ["started", "unlock", "unlock", "milestone", "completed"]
 
 
-def test_failed_first_read_is_silent_later(db):
+def test_failed_first_read_is_silent_later(db, monkeypatch):
     client = FakeSteam([owned(10)], {10: SteamAPIError("500 oops", 500)})
     steam_sync.sync_library(client, db, SETTINGS)
     assert db.get_game(STEAM, "10").baselined is False
     client.achievements[10] = ach(2, "a", "b")
+    client.calls.clear()
+    steam_sync.sync_library(client, db, SETTINGS)
+    assert client.calls == []  # a failed read waits before it's tried again
+    later = steam_sync.time.time() + steam_sync.RETRY_READ_SEC + 1
+    monkeypatch.setattr(steam_sync.time, "time", lambda: later)
     assert steam_sync.sync_library(client, db, SETTINGS) == []
     assert db.get_game(STEAM, "10").baselined is True
+    assert steam_sync.FAILED_AT not in db.get_game(STEAM, "10").extra
 
 
 def test_private_profile_stops_the_sweep(db):
@@ -192,3 +198,69 @@ def test_store_header_url(monkeypatch):
     from modules.game_tracker import covers
 
     assert covers._fallbacks[STEAM] is steam_sync.store_header_url
+
+
+def test_rate_limit_stops_the_sweep_and_keeps_old_values(db):
+    client = FakeSteam([owned(10, last=1000), owned(20, last=1000), owned(30, last=1000)],
+                       {10: ach(4, "a"), 20: ach(2), 30: ach(2)})
+    steam_sync.sync_library(client, db, SETTINGS)
+    client.calls.clear()
+    client.owned = [owned(10, last=3000), owned(20, last=2000), owned(30, last=1500)]
+    client.achievements[10] = ach(4, "a", "b")
+    client.achievements[20] = SteamRateLimited("429", 429)
+    events = steam_sync.sync_library(client, db, SETTINGS)
+    assert client.calls == [10, 20]  # stopped at the 429: 30 is left for the next sweep
+    assert [e.unlock_name for e in events if e.kind == "unlock"] == ["B"]
+    games = db.games_by_id(STEAM)
+    assert games["20"].baselined and games["20"].total_achievements == 2  # kept its last read
+
+
+def test_rate_limit_during_first_import_leaves_the_baseline_unset(db):
+    client = FakeSteam([owned(10, last=3000), owned(20, last=2000)], {10: ach(4, "a"), 20: SteamRateLimited("429", 429)})
+    steam_sync.sync_library(client, db, SETTINGS)
+    assert db.baseline(STEAM) is None
+    assert set(db.games_by_id(STEAM)) == {"10", "20"}
+
+
+def test_private_game_is_rechecked_every_six_hours_not_every_sync(db, monkeypatch):
+    private = {"has_achievements": True, "private": True, "total": 0, "unlocked": {}}
+    client = FakeSteam([owned(10, last=3)], {10: private})
+    steam_sync.sync_library(client, db, SETTINGS)
+    client.calls.clear()
+    steam_sync.sync_library(client, db, SETTINGS)
+    assert client.calls == []
+    later = steam_sync.time.time() + steam_sync.RETRY_READ_SEC + 1
+    monkeypatch.setattr(steam_sync.time, "time", lambda: later)
+    client.achievements[10] = ach(2, "a")
+    steam_sync.sync_library(client, db, SETTINGS)
+    assert client.calls == [10] and "private" not in db.get_game(STEAM, "10").extra
+
+
+def test_the_game_the_live_poller_watches_is_not_reread(db):
+    from types import SimpleNamespace
+
+    client = FakeSteam([owned(10, last=1000), owned(20, last=1000)], {10: ach(4, "a"), 20: ach(2)})
+    steam_sync.sync_library(client, db, SETTINGS)
+    client.calls.clear()
+    client.connected = True
+    client.steam_data = SimpleNamespace(current_game_appid=10, has_achievements=True, achievements_private=False)
+    client.owned = [owned(10, last=2000, playtime=120), owned(20, last=2000, playtime=90)]
+    steam_sync.sync_library(client, db, SETTINGS)
+    assert client.calls == [20]  # 10 is read every few seconds by the poller already
+    assert db.get_game(STEAM, "10").playtime_min == 120  # the library's playtime still lands
+    client.steam_data.current_game_appid = None  # the session ended: read it once more
+    client.owned = [owned(10, last=3000, playtime=130), owned(20, last=2000, playtime=90)]
+    client.calls.clear()
+    steam_sync.sync_library(client, db, SETTINGS)
+    assert client.calls == [10]
+
+
+def test_live_appid_needs_a_connected_poller_with_public_achievements():
+    from types import SimpleNamespace
+
+    data = SimpleNamespace(current_game_appid=10, has_achievements=True, achievements_private=False)
+    assert steam_sync._live_appid(SimpleNamespace(connected=True, steam_data=data)) == 10
+    assert steam_sync._live_appid(SimpleNamespace(connected=False, steam_data=data)) is None
+    assert steam_sync._live_appid(SimpleNamespace()) is None
+    data.achievements_private = True
+    assert steam_sync._live_appid(SimpleNamespace(connected=True, steam_data=data)) is None

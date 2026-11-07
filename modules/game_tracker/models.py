@@ -205,6 +205,28 @@ class GameEvent:
         return asdict(self)
 
 
+# While a game is being played every observe moves ``last_played``; that alone is written at most this often.
+LAST_PLAYED_WRITE_SEC = 300.0
+
+
+def game_changed(old: Optional["TrackedGame"], new: "TrackedGame", *, ignore_last_played: bool = False) -> bool:
+    """True when ``new`` differs from the stored ``old`` in anything worth writing.
+
+    With ``ignore_last_played`` a newer ``last_played`` only counts once it's
+    ``LAST_PLAYED_WRITE_SEC`` past the stored one."""
+    if old is None:
+        return True
+    a, b = old.to_dict(), new.to_dict()
+    for k in ("updated_at", "last_played"):
+        a.pop(k, None)
+        b.pop(k, None)
+    if a != b:
+        return True
+    if ignore_last_played:
+        return new.last_played - old.last_played >= LAST_PLAYED_WRITE_SEC
+    return new.last_played != old.last_played
+
+
 DEFAULT_MILESTONES = [25, 50, 75]
 SETTINGS_VERSION = 2  # 2: cover art kept 30 days by default (was 7)
 

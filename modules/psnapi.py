@@ -53,10 +53,19 @@ except ImportError:
 
     class PSNAWPUnauthorizedError(Exception):  # type: ignore[no-redef]
         pass
+try:
+    from psnawp_api.core.psnawp_exceptions import PSNAWPTooManyRequestsError
+except ImportError:
+
+    class PSNAWPTooManyRequestsError(Exception):  # type: ignore[no-redef]
+        pass
 from psnawp_api.models.trophies import PlatformType
 from psnawp_api.models.trophies.trophy_titles import TrophyTitleIterator
+from psnawp_api.models.user import User
 from psnawp_api.psnawp import PSNAWP
+from psnawp_api.utils.endpoints import API_PATH, BASE_PATH
 
+from . import api_usage
 from .database_manager import database_manager
 from .psn_data import PSNData, PSNGameMismatch
 
@@ -324,6 +333,13 @@ def _ensure_game_cache_index() -> None:
         )
 
 
+def cached_game_docs_by_comm_id() -> dict[str, dict]:
+    """Every PSN game cache document by NPWR ID, from the in-memory index (one DB read per process)."""
+    _ensure_game_cache_index()
+    with _game_cache_index_lock:
+        return dict(_game_cache_by_comm_id)
+
+
 def _trophy_set_to_counts(trophy_set: Any) -> dict[str, int]:
     """Normalize TrophySet / dict into bronze/silver/gold/platinum/total counts."""
     counts = {"bronze": 0, "silver": 0, "gold": 0, "platinum": 0, "total": 0}
@@ -397,6 +413,10 @@ def _is_psn_auth_expired_error(exc: BaseException) -> bool:
     return "expired token" in msg or "expired access token" in msg
 
 
+def _is_psn_rate_limited(exc: BaseException) -> bool:
+    return isinstance(exc, PSNAWPTooManyRequestsError)
+
+
 def _is_psn_connection_error(exc: BaseException) -> bool:
     if isinstance(exc, (RequestsConnectionError, OSError, TimeoutError)):
         return True
@@ -404,6 +424,20 @@ def _is_psn_connection_error(exc: BaseException) -> bool:
         return True
     msg = str(exc).lower()
     return "service unavailable" in msg
+
+
+def label_to_platform_type(label: str | None) -> PlatformType:
+    """PlatformType from a tracker platform label ("PS5", "PS4", "PS Vita", "PC")."""
+    return presence_format_to_platform_type((label or "PS5").replace(" ", "").replace("PC", "PSPC"))
+
+
+def _iso_ts(value: Any) -> float:
+    if not value:
+        return 0.0
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
 
 
 def presence_format_to_platform_type(platform: str | None) -> PlatformType:
@@ -647,8 +681,56 @@ class PSNClient:
         self.psn_data: PSNData = PSNData()
         # Profile pictures by lowercased online ID: (url or None, fetched at).
         self._avatar_cache: dict[str, tuple[str | None, float]] = {}
+        # psnawp User objects by (account ID, online ID). ``api.user(...)`` costs a profile
+        # request each time; building User directly costs nothing.
+        self._users: dict[tuple[str, str], tuple[Any, User]] = {}
+        # A 429 pauses every PSN request (presence, trophies, tracker) until it passes.
+        self.rate_limit = api_usage.Backoff(base=60.0, cap=900.0)
         if npsso_code:
             self.psn_data.npsso_code = npsso_code
+
+    def user_for(self, account_id: str | None, online_id: str | None = None) -> User:
+        """A psnawp ``User`` for an account (no request). ``online_id`` only matters for ``profile()``."""
+        if self.api is None:
+            raise RuntimeError("PSN is not connected")
+        key = (str(account_id or ""), str(online_id or ""))
+        cached = self._users.get(key)
+        if cached is not None and cached[0] is self.api:
+            return cached[1]
+        user = User(self.api.authenticator, key[1], key[0])
+        self._users[key] = (self.api, user)
+        return user
+
+    def _install_request_hooks(self, api: Any) -> None:
+        """Count every PSN request and hold them all back during a 429 pause."""
+        try:
+            builder = api.authenticator.request_builder
+        except AttributeError:
+            return
+        backoff = self.rate_limit
+
+        def on_response(response, *_args, **_kwargs):
+            api_usage.record("PSN", api_usage.endpoint_name(getattr(response, "url", "")), getattr(response, "status_code", None))
+            if getattr(response, "status_code", None) == 429:
+                wait = backoff.hit(response.headers.get("Retry-After"))
+                logger.warning("PSN rate limit (429); pausing PSN requests for %.0f s", wait)
+            elif getattr(response, "status_code", 500) < 400:
+                backoff.ok()
+            return response
+
+        builder.session.hooks.setdefault("response", []).append(on_response)
+        original = builder.request
+
+        def guarded(method, **kwargs):
+            if backoff.active():
+                raise PSNAWPTooManyRequestsError(f"PSN rate limit: waiting {backoff.remaining():.0f} s")
+            return original(method, **kwargs)
+
+        builder.request = guarded
+
+    def rate_limited(self) -> bool:
+        """True while a 429 pause is running."""
+        return self.rate_limit.active()
 
     def _clear_target_account_cache(self) -> None:
         self._cached_target_account_id = None
@@ -889,6 +971,7 @@ class PSNClient:
             )
 
             self.api = PSNAWP(self.npsso_code)
+            self._install_request_hooks(self.api)
             logger.debug("PSNAWP instance created successfully")
 
             client_me = (
@@ -992,15 +1075,14 @@ class PSNClient:
                 return url
         url = None
         try:
-            if self.user_online_id and key == self.user_online_id.lower() and self.account_id:
-                user = self.api.user(account_id=self.account_id)
-            else:
-                user = self.api.user(online_id=str(online_id).strip())
-            url = self._largest_avatar(user.profile())
+            # profile() reads the legacy profile by online ID: no account lookup needed.
+            url = self._largest_avatar(self.user_for(None, str(online_id).strip()).profile())
         except Exception as e:
             if _is_psn_auth_expired_error(e):
                 self._on_psn_auth_expired(f"get_avatar_url({online_id})", e)
                 return cached[0] if cached else None
+            if _is_psn_rate_limited(e):
+                return cached[0] if cached else None  # try again after the pause
             logger.debug("Could not fetch PSN profile picture for %s: %s", online_id, e)
         self._avatar_cache[key] = (url, now)
         return url
@@ -1065,9 +1147,11 @@ class PSNClient:
         logger.debug(f"Fetching presence for user: {target_online_id}")
 
         try:
-            # The psnawp.user() method expects online_id as an argument
-            user = self.api.user(online_id=target_online_id)
-            logger.debug(f"Created user object for {target_online_id}")
+            # basicPresences is read by account ID; the target's ID is looked up once and cached.
+            target_account_id = self.get_trophy_target_account_id()
+            if not target_account_id:
+                return None
+            user = self.user_for(target_account_id, target_online_id)
 
             presence_info = user.get_presence()
             logger.debug(f"Raw presence info received: {type(presence_info)}")
@@ -1181,6 +1265,9 @@ class PSNClient:
         except Exception as e:
             if _is_psn_auth_expired_error(e):
                 self._on_psn_auth_expired(f"get_presence({target_online_id})", e)
+            elif _is_psn_rate_limited(e):
+                # Keep the session: reconnecting would only spend more requests.
+                logger.debug("PSN presence paused for %s: %s", target_online_id, e)
             elif _allow_retry and _is_psn_connection_error(e):
                 logger.warning(
                     "Connection error fetching presence for %s, retrying: %s",
@@ -1229,6 +1316,8 @@ class PSNClient:
                     self._on_psn_auth_expired(
                         f"get_trophy_target_account_id({self.psn_username})", e
                     )
+                elif _is_psn_rate_limited(e):
+                    logger.debug("PSN request paused (rate limit): %s", e)
                 elif _allow_retry and _is_psn_connection_error(e):
                     logger.warning(
                         "Connection error resolving PSN account_id for %s, retrying: %s",
@@ -1303,7 +1392,7 @@ class PSNClient:
 
         try:
             # The API requires account_id for trophy operations
-            user = self.api.user(account_id=target_account_id)  # type: ignore
+            user = self.user_for(target_account_id)
             logger.debug("Created user object for trophy titles fetch")
 
             games_data = {}
@@ -1420,7 +1509,7 @@ class PSNClient:
                 offset += page_size
                 logger.debug(f"Fetched {page_size} titles, checking for more...")
 
-            self.psn_data.all_games_data = games_data
+            # Not kept on psn_data: it would ride every psn_data_update and state copy.
             target_desc = (
                 self.psn_username if self.psn_username else "authenticated user"
             )
@@ -1476,7 +1565,7 @@ class PSNClient:
         logger.debug(f"Fetching trophy summary for account_id: {target_account_id}")
 
         try:
-            user = self.api.user(account_id=target_account_id)  # type: ignore
+            user = self.user_for(target_account_id)
             logger.debug("Created user object for trophy summary fetch")
 
             summary = user.trophy_summary()  # type: ignore
@@ -1561,6 +1650,8 @@ class PSNClient:
                 self._on_psn_auth_expired(
                     f"get_overall_trophy_summary({target_desc})", e
                 )
+            elif _is_psn_rate_limited(e):
+                logger.debug("PSN trophy summary paused for %s: %s", target_desc, e)
             elif _allow_retry and _is_psn_connection_error(e):
                 logger.warning(
                     "Connection error fetching trophy summary for %s, retrying: %s",
@@ -1613,7 +1704,7 @@ class PSNClient:
         )
 
         try:
-            user = self.api.user(account_id=target_account_id)  # type: ignore
+            user = self.user_for(target_account_id)
 
             # Fetch trophy groups summary for the game
             trophy_groups_summary = user.trophy_groups_summary(  # type: ignore
@@ -1718,6 +1809,86 @@ class PSNClient:
             )
         return None
 
+    # ----- the tracked account's half of a trophy list (definitions live in the tracker catalog) -----
+
+    EARNED_PAGE_SIZE = 200
+
+    def _trophy_request(self, context: str, fn):
+        """Run one trophy request; None (logged) on any error, auth expiry handled."""
+        if not self.is_connected() or not self.api:
+            return None
+        try:
+            return fn()
+        except Exception as e:
+            if _is_psn_auth_expired_error(e):
+                self._on_psn_auth_expired(context, e)
+            elif _is_psn_rate_limited(e):
+                logger.debug("%s paused (rate limit): %s", context, e)
+            else:
+                logger.debug("%s failed: %s", context, e)
+            return None
+
+    def get_earned_trophies(self, np_communication_id: str, platform: str | None) -> dict | None:
+        """{trophy id: {"earned", "earned_at", "rarity"}} for the tracked account, every group.
+
+        Only the user's half of the list (1 request per 200 trophies); names, icons and
+        details come from the cached definitions. None when PSN can't be read.
+        """
+        def fetch() -> dict | None:
+            account_id = self.get_trophy_target_account_id()
+            if not account_id:
+                return None
+            url = BASE_PATH["trophies"] + API_PATH["trophies_earned_for_title"].format(
+                account_id=account_id, np_communication_id=np_communication_id, trophy_group_id="all"
+            )
+            service = label_to_platform_type(platform).get_trophy_service_name()
+            out: dict[str, dict] = {}
+            offset = 0
+            while True:
+                body = self.api.authenticator.get(
+                    url=url,
+                    params={"npServiceName": service, "limit": self.EARNED_PAGE_SIZE, "offset": offset},
+                ).json()
+                items = body.get("trophies") or []
+                for t in items:
+                    rate = t.get("trophyEarnedRate")
+                    try:
+                        rarity = float(rate) if rate is not None else None
+                    except (TypeError, ValueError):
+                        rarity = None
+                    out[str(t.get("trophyId"))] = {
+                        "earned": bool(t.get("earned")),
+                        "earned_at": _iso_ts(t.get("earnedDateTime")),
+                        "rarity": rarity,
+                    }
+                offset = int(body.get("nextOffset") or 0)
+                if not items or offset <= 0:
+                    return out
+
+        return self._trophy_request(f"get_earned_trophies({np_communication_id})", fetch)
+
+    def get_earned_trophy_groups(self, np_communication_id: str, platform: str | None) -> dict | None:
+        """{group id: {"earned": {grade: n}, "progress": int}} for the tracked account (1 request)."""
+        def fetch() -> dict | None:
+            account_id = self.get_trophy_target_account_id()
+            if not account_id:
+                return None
+            url = BASE_PATH["trophies"] + API_PATH["user_title_trophy_group"].format(
+                account_id=account_id, np_communication_id=np_communication_id
+            )
+            service = label_to_platform_type(platform).get_trophy_service_name()
+            body = self.api.authenticator.get(url=url, params={"npServiceName": service}).json()
+            out: dict[str, dict] = {}
+            for g in body.get("trophyGroups") or []:
+                earned = g.get("earnedTrophies") or {}
+                out[str(g.get("trophyGroupId") or "")] = {
+                    "earned": {k: int(earned.get(k) or 0) for k in ("bronze", "silver", "gold", "platinum")},
+                    "progress": int(g.get("progress") or 0),
+                }
+            return out
+
+        return self._trophy_request(f"get_earned_trophy_groups({np_communication_id})", fetch)
+
     def get_title_trophy_progress(self, np_title_id: str) -> dict | None:
         """
         Fetch title-level trophy progress for one presence ``npTitleId`` via
@@ -1744,7 +1915,7 @@ class PSNClient:
             target_account_id,
         )
         try:
-            user = self.api.user(account_id=target_account_id)  # type: ignore
+            user = self.user_for(target_account_id)
             titles = list(user.trophy_titles_for_title(title_ids=[np_title_id]))
             if not titles:
                 logger.warning(
@@ -1801,6 +1972,8 @@ class PSNClient:
                 self._on_psn_auth_expired(
                     f"get_title_trophy_progress({np_title_id})", e
                 )
+            elif _is_psn_rate_limited(e):
+                logger.debug("PSN request paused (rate limit): %s", e)
             elif _is_psn_connection_error(e):
                 logger.warning(
                     "Connection error fetching title trophy progress for %s: %s",
@@ -1843,7 +2016,7 @@ class PSNClient:
         )
 
         try:
-            user = self.api.user(account_id=target_account_id)  # type: ignore
+            user = self.user_for(target_account_id)
             platform_type = presence_format_to_platform_type(platform)
             trophy_groups_summary = user.trophy_groups_summary(  # type: ignore
                 np_communication_id=np_communication_id,
@@ -2001,6 +2174,8 @@ class PSNClient:
                     f"get_game_trophies({np_communication_id}, {target_desc})",
                     e,
                 )
+            elif _is_psn_rate_limited(e):
+                logger.debug("PSN request paused (rate limit): %s", e)
             elif _is_psn_connection_error(e):
                 logger.warning(
                     "Connection error fetching game trophies for %s for %s: %s",

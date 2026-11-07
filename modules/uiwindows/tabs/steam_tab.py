@@ -28,6 +28,7 @@ from .integration_ui import (
     open_url,
     section,
     set_connect_style,
+    UsageRow,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,7 @@ class SteamTab:
         self._page: Optional[IntegrationPage] = None
         self._card: Optional[AccountCard] = None
         self._fold: Any = None
+        self._usage: Any = None
         self._game: Any = None
         self._game_html: str = ""
         self._status_timer: Optional[Any] = None
@@ -196,6 +198,7 @@ class SteamTab:
                     link_label="Privacy settings",
                     url=PRIVACY_URL,
                 )
+                self._usage = UsageRow(["Steam"])
 
         with page.wide():
             with section("emoji_events", "Current game"):
@@ -344,6 +347,8 @@ class SteamTab:
             self._connected = pill_kind in ("ok", "warn") and pill_text != "Profile needed"
             if self._page is not None:
                 self._page.set_status([(pill_kind, pill_text)])
+            if self._usage is not None:
+                self._usage.refresh()
             live = state_manager.get_live_steam_data()
             if self._card is not None:
                 photo = getattr(live, "avatar_url", None) if (live is not None and self._connected) else None

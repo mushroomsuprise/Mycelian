@@ -93,6 +93,7 @@ class FakeUser:
         return self.api.summary
 
     def profile(self):
+        self.api.profile_calls.append(self.kw.get("online_id") or self.kw.get("account_id"))
         self._maybe_raise("profile")
         return self.api.profiles.get(self.kw.get("online_id") or self.kw.get("account_id"), {})
 
@@ -107,10 +108,17 @@ class FakeUser:
         return self.api.titles_for_title
 
 
+class _Auth(str):
+    """Stands in for psnapi's authenticator: equals "AUTH" and knows its FakeAPI."""
+
+    api = None
+
+
 class FakeAPI:
     def __init__(self, npsso="tok"):
         self.npsso = npsso
-        self.authenticator = "AUTH"
+        self.authenticator = _Auth("AUTH")
+        self.authenticator.api = self
         self.me_value = SimpleNamespace(account_id="acc-me", online_id="me")
         self.me_exc = None
         self.user_exc = None
@@ -124,6 +132,7 @@ class FakeAPI:
         self.titles_for_title = []
         self.for_title_calls = []
         self.user_calls = []
+        self.profile_calls = []
         self.target_account_ids = {}
         self.profiles = {}
 
@@ -157,8 +166,15 @@ class APIFactory:
         return nxt
 
 
+def _fake_user(authenticator, online_id, account_id):
+    """psnapi builds ``User(authenticator, online_id, account_id)`` directly; route it to the fake API."""
+    # Building a User costs no request, so it isn't recorded as a lookup.
+    return FakeUser(authenticator.api, {"account_id": account_id, "online_id": online_id})
+
+
 @pytest.fixture(autouse=True)
 def isolate(monkeypatch):
+    monkeypatch.setattr(psnapi, "User", _fake_user)
     monkeypatch.setattr(psnapi, "_game_cache_by_title_id", {})
     monkeypatch.setattr(psnapi, "_game_cache_by_name", {})
     monkeypatch.setattr(psnapi, "_game_cache_by_comm_id", {})
@@ -434,7 +450,7 @@ def test_presence_online_with_game():
     }}
     c = make_client(api)
     assert c.get_presence() is api.presence
-    assert api.user_calls == [{"online_id": "me"}]
+    assert api.user_calls == []  # own account: no profile lookup, just the presence request
     assert c.psn_data.current_game_name == "Returnal"
     assert c.psn_data.current_game_art_url == "c.png"
     assert c.psn_data.presence is api.presence
@@ -712,8 +728,8 @@ def test_all_games_single_page():
     assert out["A"]["earned_trophies"] == {"bronze": 1, "silver": 2, "gold": 3, "platinum": 0}
     assert out["A"]["defined_trophies"]["platinum"] == 1 and out["A"]["progress"] == 42
     assert out["B"]["earned_trophies"] == {} and out["B"]["defined_trophies"] == {}
-    assert c.psn_data.all_games_data is out
-    assert api.user_calls == [{"account_id": "acc-me"}]
+    assert c.psn_data.all_games_data == {}  # not carried on the live state
+    assert api.user_calls == []  # the User is built locally
 
 
 def test_all_games_paginates():
@@ -724,7 +740,7 @@ def test_all_games_paginates():
     out = c.get_all_games()
     assert api.title_calls == [(0, 800), (800, 800)]
     assert len(out) == 801 and "LAST" in out
-    assert api.user_calls[-1] == {"account_id": "acc-pal"}
+    assert api.user_calls == [{"online_id": "pal"}]  # the account ID lookup, once
 
 
 @pytest.mark.parametrize("page", [Page(), None])
@@ -1170,40 +1186,40 @@ def test_largest_avatar_prefers_xl_and_https():
     assert big({"avatars": []}) is None and big(None) is None and big({"avatars": None}) is None
 
 
-def test_avatar_url_uses_account_id_for_self_and_caches(monkeypatch):
+def test_avatar_url_reads_the_profile_by_online_id_and_caches(monkeypatch):
     api = FakeAPI()
-    api.profiles = {"acc-me": avatars("me"), "pal": avatars("pal")}
+    api.profiles = {"me": avatars("me"), "pal": avatars("pal")}
     c = make_client(api, username="pal")
     clock = [1000.0]
     monkeypatch.setattr(psnapi.time, "time", lambda: clock[0])
     c.refresh_avatars()
     assert c.psn_data.avatar_url == "https://img/me-xl.png"
     assert c.psn_data.target_avatar_url == "https://img/pal-xl.png"
-    assert api.user_calls == [{"account_id": "acc-me"}, {"online_id": "pal"}]
+    assert api.profile_calls == ["me", "pal"] and api.user_calls == []  # one request each, no account lookup
     c.refresh_avatars()
-    assert len(api.user_calls) == 2  # cached
+    assert len(api.profile_calls) == 2  # cached
     clock[0] += c.AVATAR_TTL_SEC + 1
     c.refresh_avatars()
-    assert len(api.user_calls) == 4  # stale: fetched again
+    assert len(api.profile_calls) == 4  # stale: fetched again
 
 
 def test_avatar_failures_retry_later_and_own_account_is_reused(monkeypatch):
     api = FakeAPI()
     api.raises["profile"] = [PSNAWPForbiddenError("private")]
-    api.profiles = {"acc-me": avatars("me")}
+    api.profiles = {"me": avatars("me")}
     c = make_client(api)
     clock = [1000.0]
     monkeypatch.setattr(psnapi.time, "time", lambda: clock[0])
     c.refresh_avatars()
     assert c.psn_data.avatar_url is None and c.psn_data.target_avatar_url is None
     c.refresh_avatars()
-    assert len(api.user_calls) == 1  # failure cached
+    assert len(api.profile_calls) == 1  # failure cached
     clock[0] += c.AVATAR_RETRY_SEC + 1
     c.refresh_avatars()
     assert c.psn_data.avatar_url == c.psn_data.target_avatar_url == "https://img/me-xl.png"
     c.update_psn_username("ME")  # same account, any case: no second request
     c.refresh_avatars()
-    assert len(api.user_calls) == 2
+    assert len(api.profile_calls) == 2
 
 
 def test_avatar_url_needs_a_connection_and_a_name():
@@ -1230,3 +1246,160 @@ def test_new_username_or_credentials_clear_pictures():
     assert c.psn_data.target_avatar_url is None and c.psn_data.avatar_url == "https://a"
     c.update_credentials("tok2", "other")
     assert c.psn_data.avatar_url is None and c._avatar_cache == {}
+
+
+# --------------------------------------------------------------------------- request hooks, 429 pause, cached users
+
+
+class _Resp:
+    def __init__(self, status, url="https://m.np.playstation.com/api/trophy/v1/users/1234567890/trophySummary", headers=None):
+        self.status_code = status
+        self.url = url
+        self.headers = dict(headers or {})
+
+
+class _Builder:
+    def __init__(self):
+        self.session = SimpleNamespace(hooks={"response": []})
+        self.sent = []
+
+    def request(self, method, **kwargs):
+        self.sent.append((method, kwargs.get("url")))
+        return "ok"
+
+
+def _hooked_client():
+    from modules import api_usage
+
+    api_usage.reset()
+    builder = _Builder()
+    api = SimpleNamespace(authenticator=SimpleNamespace(request_builder=builder))
+    c = psnapi.PSNClient(npsso_code="tok")
+    c._install_request_hooks(api)
+    return c, builder
+
+
+def test_requests_are_counted_and_a_429_pauses_them_all():
+    from modules import api_usage
+
+    c, builder = _hooked_client()
+    (hook,) = builder.session.hooks["response"]
+    assert builder.request("get", url="u1") == "ok" and builder.sent == [("get", "u1")]
+    hook(_Resp(200))
+    assert c.rate_limited() is False
+    hook(_Resp(429, headers={"Retry-After": "45"}))
+    assert c.rate_limited() and 44 <= c.rate_limit.remaining() <= 45
+    with pytest.raises(psnapi.PSNAWPTooManyRequestsError):
+        builder.request("get", url="u2")
+    assert builder.sent == [("get", "u1")]  # held back
+    snap = api_usage.snapshot("PSN")
+    assert snap["hour"] == 2 and snap["rate_limited_hour"] == 1
+    assert snap["endpoints"] == {"/trophy/v1/users/{id}/trophySummary": 2}
+    api_usage.reset()
+
+
+def test_hooks_need_a_request_builder():
+    c = psnapi.PSNClient(npsso_code="tok")
+    c._install_request_hooks(SimpleNamespace())  # older psnawp: nothing to hook, no error
+
+
+def test_connect_installs_the_hooks(monkeypatch):
+    api = FakeAPI()
+    api.authenticator.request_builder = _Builder()
+    monkeypatch.setattr(psnapi, "PSNAWP", APIFactory(api))
+    c = psnapi.PSNClient(npsso_code="tok")
+    assert c.connect() is True
+    assert len(api.authenticator.request_builder.session.hooks["response"]) == 1
+
+
+def test_user_for_is_built_once_per_session(monkeypatch):
+    built = []
+    monkeypatch.setattr(psnapi, "User", lambda auth, online_id, account_id: built.append((auth, online_id, account_id)) or object())
+    c = make_client()
+    a = c.user_for("acc-1")
+    assert c.user_for("acc-1") is a and built == [("AUTH", "", "acc-1")]
+    assert c.user_for("acc-1", "pal") is not a  # a different online ID is a different User
+    c.api = FakeAPI()  # reconnected: rebuild on the new session
+    assert c.user_for("acc-1") is not a and len(built) == 3
+    c.api = None
+    with pytest.raises(RuntimeError):
+        c.user_for("acc-1")
+
+
+def test_rate_limited_presence_and_summary_keep_the_session():
+    api = FakeAPI()
+    api.raises["get_presence"] = psnapi.PSNAWPTooManyRequestsError("slow down")
+    api.raises["trophy_summary"] = psnapi.PSNAWPTooManyRequestsError("slow down")
+    c = make_client(api)
+    assert c.get_presence() is None
+    assert c.get_overall_trophy_summary() is None
+    assert c.authenticated is True and c.api is api  # no reconnect storm
+
+
+class _JSON:
+    def __init__(self, body):
+        self.body = body
+
+    def json(self):
+        return self.body
+
+
+def _raw_client(pages):
+    calls = []
+
+    def get(url, params=None):
+        calls.append((url, dict(params or {})))
+        page = pages.pop(0)
+        if isinstance(page, BaseException):
+            raise page
+        return _JSON(page)
+
+    c = make_client(SimpleNamespace(authenticator=SimpleNamespace(get=get)))
+    return c, calls
+
+
+def test_earned_trophies_pages_and_parses():
+    c, calls = _raw_client([
+        {"trophies": [{"trophyId": 0, "earned": True, "earnedDateTime": "2026-01-02T03:04:05Z", "trophyEarnedRate": "12.5"},
+                      {"trophyId": 1, "earned": False, "trophyEarnedRate": "bad"}], "nextOffset": 2},
+        {"trophies": [{"trophyId": 2, "earned": True}]},
+    ])
+    out = c.get_earned_trophies("NPWR1_00", "PS4")
+    assert out["0"] == {"earned": True, "earned_at": 1767323045.0, "rarity": 12.5}
+    assert out["1"] == {"earned": False, "earned_at": 0.0, "rarity": None}
+    assert out["2"]["earned"] is True
+    url, params = calls[0]
+    assert url.endswith("/users/acc-me/npCommunicationIds/NPWR1_00/trophyGroups/all/trophies")
+    assert params == {"npServiceName": "trophy", "limit": 200, "offset": 0} and calls[1][1]["offset"] == 2
+
+
+def test_earned_trophies_ps5_service_and_errors():
+    c, calls = _raw_client([{"trophies": []}])
+    assert c.get_earned_trophies("NPWR1_00", "PS5") == {}
+    assert calls[0][1]["npServiceName"] == "trophy2"
+    c, _ = _raw_client([psnapi.PSNAWPTooManyRequestsError("slow")])
+    assert c.get_earned_trophies("NPWR1_00", "PS5") is None and c.authenticated is True
+    c, _ = _raw_client([RuntimeError("boom")])
+    assert c.get_earned_trophies("NPWR1_00", "PS5") is None
+    c, _ = _raw_client([PSNAWPAuthenticationError("expired token")])
+    assert c.get_earned_trophies("NPWR1_00", "PS5") is None and c.is_auth_expired()
+    assert make_client(connected=False).get_earned_trophies("NPWR1_00", "PS5") is None
+
+
+def test_earned_trophy_groups():
+    c, calls = _raw_client([{"trophyGroups": [
+        {"trophyGroupId": "default", "progress": 75, "earnedTrophies": {"bronze": 3, "gold": 1}},
+        {"trophyGroupId": "001", "earnedTrophies": None}]}])
+    out = c.get_earned_trophy_groups("NPWR1_00", "PS Vita")
+    assert out == {"default": {"earned": {"bronze": 3, "silver": 0, "gold": 1, "platinum": 0}, "progress": 75},
+                   "001": {"earned": {"bronze": 0, "silver": 0, "gold": 0, "platinum": 0}, "progress": 0}}
+    assert calls[0][0].endswith("/users/acc-me/npCommunicationIds/NPWR1_00/trophyGroups")
+    assert calls[0][1] == {"npServiceName": "trophy"}
+
+
+def test_label_to_platform_type():
+    from psnawp_api.models.trophies import PlatformType
+
+    assert psnapi.label_to_platform_type("PS Vita") == PlatformType.PS_VITA
+    assert psnapi.label_to_platform_type("PC") == PlatformType.PSPC
+    assert psnapi.label_to_platform_type("") == PlatformType.PS5

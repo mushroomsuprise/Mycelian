@@ -26,10 +26,11 @@ def title(comm_id, name, earned, defined, progress, platform="PS5", updated=None
     )
 
 
-def trophy(name, grade, earned_at, rate=12.5):
-    return SimpleNamespace(trophy_name=name, trophy_detail=f"{name} detail", trophy_icon_url=f"https://t/{name}",
-                           trophy_type=SimpleNamespace(value=grade), earned=True, trophy_earn_rate=rate,
-                           earned_date_time=datetime.fromtimestamp(earned_at, tz=timezone.utc))
+def trophy(name, grade, earned_at, rate=12.5, earned=True, group="default"):
+    return SimpleNamespace(trophy_id=name, trophy_group_id=group, trophy_hidden=False, trophy_name=name,
+                           trophy_detail=f"{name} detail", trophy_icon_url=f"https://t/{name}",
+                           trophy_type=SimpleNamespace(value=grade), earned=earned, trophy_earn_rate=rate,
+                           earned_date_time=datetime.fromtimestamp(earned_at, tz=timezone.utc) if earned else None)
 
 
 class FakeUser:
@@ -49,6 +50,10 @@ class FakeClient:
         self.titles = list(titles)
         self.trophies = {}
         self.trophy_calls = []
+        self.earned_calls = []
+        self.earned_error = False
+        self.group_earned = {}
+        self.group_earned_calls = []
         self.account = account
         self.connected = True
         self.api = SimpleNamespace(user=lambda account_id: FakeUser(self))
@@ -59,6 +64,22 @@ class FakeClient:
     def get_trophy_target_account_id(self):
         return self.account
 
+    def get_earned_trophies(self, comm_id, label):
+        """The account's half of a list (PSNClient.get_earned_trophies)."""
+        self.earned_calls.append(comm_id)
+        if self.earned_error:
+            return None
+        return {str(t.trophy_id): {"earned": bool(t.earned), "rarity": t.trophy_earn_rate,
+                                   "earned_at": t.earned_date_time.timestamp() if t.earned_date_time else 0.0}
+                for t in self.trophies.get(comm_id, [])}
+
+    def get_earned_trophy_groups(self, comm_id, label):
+        self.group_earned_calls.append(comm_id)
+        return self.group_earned.get(comm_id)
+
+    def user_for(self, account_id, online_id=None):
+        return self.api.user(account_id=account_id)
+
     def resolve_np_communication_id_from_np_title_id(self, np_title_id):
         return {"PPSA00001_00": "NPWR99999_00"}.get(np_title_id)
 
@@ -66,6 +87,11 @@ class FakeClient:
 @pytest.fixture
 def cache(monkeypatch):
     docs = {}
+    # The sync reads cache documents through psnapi's in-memory index: start each test without one.
+    monkeypatch.setattr(psnapi, "_game_cache_by_title_id", {})
+    monkeypatch.setattr(psnapi, "_game_cache_by_name", {})
+    monkeypatch.setattr(psnapi, "_game_cache_by_comm_id", {})
+    monkeypatch.setattr(psnapi, "_game_cache_index_loaded", False)
     monkeypatch.setattr(psnapi, "load_all_psn_game_cache_docs_from_db", lambda: [dict(d) for d in docs.values()])
     monkeypatch.setattr(psnapi, "get_psn_game_cache_by_comm_id", lambda cid: dict(docs[cid]) if cid in docs else None)
 
@@ -226,33 +252,55 @@ def test_resolve_and_remove(db, cache):
     assert psn_sync.cover_items(db.list_games()) == []
 
 
-def test_group_progress_is_cached_and_safe(monkeypatch):
-    monkeypatch.setattr(psn_sync, "_groups_cache", {})
-    calls = []
+class GroupsUser(FakeUser):
+    def trophy_groups_summary(self, np_communication_id, platform, include_progress):
+        assert include_progress is False  # names and totals only; the earned half is its own request
+        self.client.group_def_calls.append((np_communication_id, platform))
+        return SimpleNamespace(trophy_groups=[
+            SimpleNamespace(trophy_group_id="default", trophy_group_name=None, defined_trophies=ts(b=4)),
+            SimpleNamespace(trophy_group_id="001", trophy_group_name="DLC", defined_trophies=ts(g=2)),
+        ])
 
-    class User(FakeUser):
-        def trophy_groups_summary(self, np_communication_id, platform, include_progress):
-            calls.append((np_communication_id, platform))
-            return SimpleNamespace(trophy_groups=[
-                SimpleNamespace(trophy_group_id="default", trophy_group_name=None, earned_trophies=ts(b=3),
-                                defined_trophies=ts(b=4), progress=None),
-                SimpleNamespace(trophy_group_id="001", trophy_group_name="DLC", earned_trophies=ts(g=1),
-                                defined_trophies=ts(g=2), progress=50),
-            ])
 
+def groups_client():
     client = FakeClient()
-    client.api = SimpleNamespace(user=lambda account_id: User(client))
-    groups = psn_sync.group_progress(client, "NPWR00001_00", "PS4")
+    client.group_def_calls = []
+    client.api = SimpleNamespace(user=lambda account_id: GroupsUser(client))
+    client.group_earned["NPWR00001_00"] = {"default": {"earned": {"bronze": 3}, "progress": 0},
+                                            "001": {"earned": {"gold": 1}, "progress": 50}}
+    return client
+
+
+def test_group_progress_is_cached_and_safe(monkeypatch, db):
+    monkeypatch.setattr(psn_sync, "_groups_cache", {})
+    client = groups_client()
+    groups = psn_sync.group_progress(client, "NPWR00001_00", "PS4", store=db)
     assert groups == [
         {"id": "default", "name": "Base game", "earned": 3, "defined": 4, "progress": 75},
         {"id": "001", "name": "DLC", "earned": 1, "defined": 2, "progress": 50},
     ]
-    assert psn_sync.group_progress(client, "NPWR00001_00", "PS4") is groups and len(calls) == 1
-    assert calls[0][1] == PlatformType.PS4
+    assert psn_sync.group_progress(client, "NPWR00001_00", "PS4", store=db) is groups
+    assert client.group_def_calls == [("NPWR00001_00", PlatformType.PS4)] and client.group_earned_calls == ["NPWR00001_00"]
     assert psn_sync.group_progress(None, "NPWR00002_00", "PS5") is None
     broken = FakeClient()
     broken.api = SimpleNamespace(user=lambda account_id: (_ for _ in ()).throw(RuntimeError("x")))
-    assert psn_sync.group_progress(broken, "NPWR00003_00", "PS5") is None
+    broken.group_earned["NPWR00003_00"] = {}
+    assert psn_sync.group_progress(broken, "NPWR00003_00", "PS5", store=db) is None
+    assert psn_sync.group_progress(FakeClient(), "NPWR00004_00", "PS5", store=db) is None  # earned half unavailable
+
+
+def test_group_names_and_totals_are_read_once(monkeypatch, db):
+    monkeypatch.setattr(psn_sync, "_groups_cache", {})
+    client = groups_client()
+    psn_sync.group_progress(client, "NPWR00001_00", "PS4", defined=ts(b=4, g=2), store=db)
+    psn_sync._groups_cache.clear()  # ten minutes later
+    client.group_earned["NPWR00001_00"]["default"]["earned"]["bronze"] = 4
+    groups = psn_sync.group_progress(client, "NPWR00001_00", "PS4", defined=ts(b=4, g=2), store=db)
+    assert groups[0]["earned"] == 4
+    assert len(client.group_def_calls) == 1 and len(client.group_earned_calls) == 2  # one request per open
+    psn_sync._groups_cache.clear()
+    psn_sync.group_progress(client, "NPWR00001_00", "PS4", defined=ts(b=4, g=3), store=db)  # a DLC trophy landed
+    assert len(client.group_def_calls) == 2
 
 
 def test_service_group_progress(db, monkeypatch):
@@ -261,5 +309,119 @@ def test_service_group_progress(db, monkeypatch):
     service = svc.GameTrackerService(db, psn_client_fn=lambda: "client", steam_client_fn=lambda: None)
     assert service.group_progress("NPWR00404_00") is None
     db.upsert_games([psn_sync.title_to_game({"np_communication_id": "NPWR00001_00", "name": "A", "platform": "PS4"})])
-    monkeypatch.setattr(psn_sync, "group_progress", lambda client, cid, label: [(client, cid, label)])
+    monkeypatch.setattr(psn_sync, "group_progress", lambda client, cid, label, **kw: [(client, cid, label)])
     assert service.group_progress("NPWR00001_00") == [("client", "NPWR00001_00", "PS4")]
+
+
+# --------------------------------------------------------------------------- catalog: one request per read
+
+
+def test_trophy_list_reads_definitions_once_then_only_the_earned_half(db):
+    client = FakeClient()
+    client.trophies["NPWR00001_00"] = [trophy("A", "bronze", 100), trophy("B", "gold", 0, earned=False, rate=3.0)]
+    first = psn_sync.trophy_list(client, "NPWR00001_00", "PS5", defined={"bronze": 1, "gold": 1}, store=db)
+    assert [(t["id"], t["earned"], t["grade"]) for t in first] == [("A", True, "bronze"), ("B", False, "gold")]
+    assert first[1]["rarity"] == 3.0 and first[0]["name"] == "A" and first[0]["earned_at"] == 100
+    assert len(client.trophy_calls) == 1 and client.earned_calls == ["NPWR00001_00"]
+    again = psn_sync.trophy_list(client, "NPWR00001_00", "PS5", earned_only=True, defined={"bronze": 1, "gold": 1}, store=db)
+    assert [t["id"] for t in again] == ["A"]
+    assert len(client.trophy_calls) == 1 and len(client.earned_calls) == 2  # definitions came from the catalog
+
+
+def test_trophy_list_rereads_definitions_when_a_dlc_lands(db):
+    client = FakeClient()
+    client.trophies["NPWR00001_00"] = [trophy("A", "bronze", 100)]
+    psn_sync.trophy_list(client, "NPWR00001_00", "PS5", defined={"bronze": 1}, store=db)
+    client.trophies["NPWR00001_00"].append(trophy("DLC1", "silver", 200))
+    out = psn_sync.trophy_list(client, "NPWR00001_00", "PS5", defined={"bronze": 1, "silver": 1}, store=db)
+    assert [t["id"] for t in out] == ["A", "DLC1"] and len(client.trophy_calls) == 2
+    # Counts not known yet, but an earned trophy the list doesn't have: read the definitions again too.
+    client.trophies["NPWR00001_00"].append(trophy("DLC2", "gold", 300))
+    out = psn_sync.trophy_list(client, "NPWR00001_00", "PS5", store=db)
+    assert [t["id"] for t in out] == ["A", "DLC1", "DLC2"] and len(client.trophy_calls) == 3
+
+
+def test_trophy_list_unavailable(db):
+    assert psn_sync.trophy_list(None, "NPWR00001_00", "PS5", store=db) is None
+    client = FakeClient()
+    client.earned_error = True
+    assert psn_sync.trophy_list(client, "NPWR00001_00", "PS5", store=db) is None
+    assert client.trophy_calls == []  # no definitions read when the earned half failed
+    client.earned_error = False
+    client.api = SimpleNamespace(user=lambda account_id: (_ for _ in ()).throw(RuntimeError("x")))
+    assert psn_sync.trophy_list(client, "NPWR00001_00", "PS5", store=db) is None  # nothing cached, PSN failing
+
+
+def test_goal_check_marker_survives_a_restart(db):
+    from modules.game_tracker import goals as goal_kinds
+    from modules.game_tracker import service as svc
+    from modules.game_tracker.goals import GameGoal
+
+    client = FakeClient()
+    client.trophies["NPWR00001_00"] = [trophy("A", "bronze", 100)]
+    game = psn_sync.title_to_game({"np_communication_id": "NPWR00001_00", "name": "A", "platform": "PS5",
+                                   "earned": {"bronze": 1}, "defined": {"bronze": 2}})
+    db.upsert_games([game])
+    goal = GameGoal(platform=PSN, game_id="NPWR00001_00", kind=goal_kinds.UNLOCK, unlock_id="Z")
+    service = svc.GameTrackerService(db, psn_client_fn=lambda: client, steam_client_fn=lambda: None)
+    assert service._refresh_psn_unlocks(client, db.get_game(PSN, "NPWR00001_00"), [goal]) == []
+    assert client.earned_calls == ["NPWR00001_00"]
+    assert db.get_game(PSN, "NPWR00001_00").extra[svc.CHECKED_EARNED] == 1
+    restarted = svc.GameTrackerService(db, psn_client_fn=lambda: client, steam_client_fn=lambda: None)
+    restarted._refresh_psn_unlocks(client, db.get_game(PSN, "NPWR00001_00"), [goal])
+    assert client.earned_calls == ["NPWR00001_00"]  # same earned total: not read again
+
+
+# --------------------------------------------------------------------------- incremental sync
+
+
+class PagedUser(FakeUser):
+    """Yields titles lazily and records how far the sync read (psnawp asks for a page at a time)."""
+
+    def trophy_titles(self, limit=None, offset=0, page_size=50):
+        self.client.page_sizes.append(page_size)
+        for i, t in enumerate(self.client.titles):
+            self.client.read = i + 1
+            yield t
+
+
+def paged_client(n=12):
+    client = FakeClient([title(f"NPWR{i:05d}_00", f"G{i}", ts(b=1), ts(b=10), 10) for i in range(n)])
+    client.page_sizes, client.read = [], 0
+    client.api = SimpleNamespace(user=lambda account_id: PagedUser(client))
+    return client
+
+
+def test_routine_sync_reads_only_the_recent_titles(db, cache):
+    client = paged_client()
+    psn_sync.sync_library(client, db, SETTINGS)  # first import: everything
+    assert client.page_sizes == [psn_sync.PAGE_SIZE] and client.read == 12
+    client.titles[0] = title("NPWR00000_00", "G0", ts(b=2), ts(b=10), 20)  # newest first: one unlock
+    events = psn_sync.sync_library(client, db, SETTINGS)
+    assert client.page_sizes[-1] == psn_sync.INCREMENTAL_PAGE_SIZE
+    assert client.read == 1 + psn_sync.UNCHANGED_RUN_STOP  # stopped after a run of unchanged titles
+    assert [e.kind for e in events] == ["unlock"]
+    assert db.get_game(PSN, "NPWR00000_00").earned["bronze"] == 2
+
+
+def test_full_listing_on_request_and_when_due(db, cache, monkeypatch):
+    client = paged_client()
+    psn_sync.sync_library(client, db, SETTINGS)
+    psn_sync.sync_library(client, db, SETTINGS, full=True)
+    assert client.page_sizes[-1] == psn_sync.PAGE_SIZE and client.read == 12
+    full_at = db.get_meta(psn_sync.SYNC_META_KEY)["full_at"]
+    now = psn_sync.time.time()
+    monkeypatch.setattr(psn_sync.time, "time", lambda: full_at + psn_sync.FULL_SYNC_SEC + 1)
+    psn_sync.sync_library(client, db, SETTINGS)
+    assert client.page_sizes[-1] == psn_sync.PAGE_SIZE
+    monkeypatch.setattr(psn_sync.time, "time", lambda: now)
+
+
+def test_unchanged_titles_skip_the_cache_and_store_work(db, cache, monkeypatch):
+    client = paged_client(3)
+    psn_sync.sync_library(client, db, SETTINGS)
+    monkeypatch.setattr(psnapi, "_game_cache_index_loaded", False)  # the fake cache store doesn't index
+    writes = []
+    monkeypatch.setattr(psn_sync, "_ensure_cache_doc", lambda game, docs: writes.append(game.game_id))
+    assert psn_sync.sync_library(client, db, SETTINGS, full=True) == []
+    assert writes == []

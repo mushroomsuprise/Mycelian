@@ -3,8 +3,9 @@
 """Local SQLite store for the Games Tracker (data/game_tracker.db).
 
 Holds every tracked game, the log of changes (for recent unlocks and period totals),
-the tracker settings and the per-platform baseline (which account the silent first
-import was for). PSN identity (presence name, NPWR ID, NP Title ID) stays in the PSN
+the tracker settings, the per-platform baseline (which account the silent first
+import was for) and a catalog of game data that rarely changes (trophy and achievement
+definitions, Steam schemas and global percentages; see ``catalog.py``). PSN identity (presence name, NPWR ID, NP Title ID) stays in the PSN
 game cache; ``psn_sync`` keeps the two in step.
 """
 
@@ -32,9 +33,17 @@ _BASELINE_KEY = "baseline:{platform}"
 
 
 class GameTrackerStore:
+    """Reads of games and meta come from memory (loaded once, kept in step with every write);
+    ``version`` goes up whenever a game row is written or removed, so callers can tell whether
+    anything changed without comparing rows."""
+
     def __init__(self, db_path: Optional[str] = None):
         self._db_path = db_path or self._default_db_path()
         self._lock = threading.RLock()
+        # (platform, game_id) -> the row's JSON; None until first read. JSON so every read is a fresh copy.
+        self._games: Optional[Dict[tuple, str]] = None
+        self._meta: Dict[str, Optional[str]] = {}  # key -> JSON (None: not set)
+        self.version = 0
         self._ensure_db()
 
     @staticmethod
@@ -109,24 +118,40 @@ class GameTrackerStore:
                     """
                 )
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_speedruns_game ON speedruns(platform, game_id)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_events_game ON events(platform, game_id)")
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS catalog (
+                        kind TEXT NOT NULL,
+                        key TEXT NOT NULL,
+                        data TEXT NOT NULL,
+                        fetched_at REAL NOT NULL,
+                        PRIMARY KEY (kind, key)
+                    )
+                    """
+                )
                 conn.commit()
             finally:
                 conn.close()
 
     # ----- games -----
 
-    def list_games(self, platform: Optional[str] = None) -> List[TrackedGame]:
-        with self._lock:
+    def _game_rows(self) -> Dict[tuple, str]:
+        """Every game row's JSON by (platform, game_id); read from the DB once (caller holds the lock)."""
+        if self._games is None:
             conn = self._connect()
             try:
-                if platform:
-                    rows = conn.execute("SELECT data FROM games WHERE platform = ?", (platform,)).fetchall()
-                else:
-                    rows = conn.execute("SELECT data FROM games").fetchall()
+                rows = conn.execute("SELECT platform, game_id, data FROM games").fetchall()
             finally:
                 conn.close()
+            self._games = {(p, str(g)): raw for p, g, raw in rows}
+        return self._games
+
+    def list_games(self, platform: Optional[str] = None) -> List[TrackedGame]:
+        with self._lock:
+            raws = [raw for (p, _g), raw in self._game_rows().items() if not platform or p == platform]
         out: List[TrackedGame] = []
-        for (raw,) in rows:
+        for raw in raws:
             try:
                 out.append(TrackedGame.from_dict(json.loads(raw)))
             except Exception as e:
@@ -138,14 +163,8 @@ class GameTrackerStore:
 
     def get_game(self, platform: str, game_id: str) -> Optional[TrackedGame]:
         with self._lock:
-            conn = self._connect()
-            try:
-                row = conn.execute(
-                    "SELECT data FROM games WHERE platform = ? AND game_id = ?", (platform, str(game_id))
-                ).fetchone()
-            finally:
-                conn.close()
-        return TrackedGame.from_dict(json.loads(row[0])) if row else None
+            raw = self._game_rows().get((platform, str(game_id)))
+        return TrackedGame.from_dict(json.loads(raw)) if raw else None
 
     def upsert_games(self, games: Iterable[TrackedGame]) -> int:
         now = time.time()
@@ -166,6 +185,10 @@ class GameTrackerStore:
                 conn.commit()
             finally:
                 conn.close()
+            if self._games is not None:
+                for platform, game_id, raw, _ts in rows:
+                    self._games[(platform, game_id)] = raw
+            self.version += 1
         return len(rows)
 
     def delete_game(self, platform: str, game_id: str, *, keep_goals: bool = False) -> bool:
@@ -177,9 +200,12 @@ class GameTrackerStore:
                     conn.execute("DELETE FROM goals WHERE platform = ? AND game_id = ?", (platform, str(game_id)))
                     conn.execute("DELETE FROM speedruns WHERE platform = ? AND game_id = ?", (platform, str(game_id)))
                 conn.commit()
-                return cur.rowcount > 0
             finally:
                 conn.close()
+            if self._games is not None:
+                self._games.pop((platform, str(game_id)), None)
+            self.version += 1
+            return cur.rowcount > 0
 
     def rekey_game(self, platform: str, old_id: str, new_id: str) -> Optional[TrackedGame]:
         """Move a game to a new ID (a corrected NPWR ID). Returns the moved game."""
@@ -220,6 +246,10 @@ class GameTrackerStore:
                 conn.commit()
             finally:
                 conn.close()
+            if self._games is not None:
+                for key in [k for k in self._games if k[0] == platform]:
+                    del self._games[key]
+            self.version += 1
 
     # ----- goals -----
 
@@ -436,15 +466,19 @@ class GameTrackerStore:
 
     def get_meta(self, key: str, default: Any = None) -> Any:
         with self._lock:
-            conn = self._connect()
-            try:
-                row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
-            finally:
-                conn.close()
-        if not row:
+            if key in self._meta:
+                raw = self._meta[key]
+            else:
+                conn = self._connect()
+                try:
+                    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+                finally:
+                    conn.close()
+                raw = self._meta[key] = row[0] if row else None
+        if raw is None:
             return default
         try:
-            return json.loads(row[0])
+            return json.loads(raw)
         except ValueError:
             return default
 
@@ -452,13 +486,15 @@ class GameTrackerStore:
         with self._lock:
             conn = self._connect()
             try:
+                raw = json.dumps(value)
                 conn.execute(
                     "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    (key, json.dumps(value)),
+                    (key, raw),
                 )
                 conn.commit()
             finally:
                 conn.close()
+            self._meta[key] = raw
 
     def delete_meta(self, key: str) -> None:
         with self._lock:
@@ -466,6 +502,51 @@ class GameTrackerStore:
             try:
                 conn.execute("DELETE FROM meta WHERE key = ?", (key,))
                 conn.commit()
+            finally:
+                conn.close()
+            self._meta[key] = None
+
+    # ----- catalog: game data that rarely changes (see catalog.py) -----
+
+    def catalog_get(self, kind: str, key: str) -> Optional[tuple]:
+        """(data, fetched_at) or None."""
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute("SELECT data, fetched_at FROM catalog WHERE kind = ? AND key = ?", (kind, str(key))).fetchone()
+            finally:
+                conn.close()
+        if not row:
+            return None
+        try:
+            return json.loads(row[0]), float(row[1])
+        except ValueError:
+            return None
+
+    def catalog_put(self, kind: str, key: str, data: Any, fetched_at: Optional[float] = None) -> None:
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "INSERT INTO catalog (kind, key, data, fetched_at) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(kind, key) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at",
+                    (kind, str(key), json.dumps(data), time.time() if fetched_at is None else float(fetched_at)),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    def catalog_delete(self, kind: str, key: Optional[str] = None) -> int:
+        """Forget one entry, or every entry of a kind."""
+        with self._lock:
+            conn = self._connect()
+            try:
+                if key is None:
+                    cur = conn.execute("DELETE FROM catalog WHERE kind = ?", (kind,))
+                else:
+                    cur = conn.execute("DELETE FROM catalog WHERE kind = ? AND key = ?", (kind, str(key)))
+                conn.commit()
+                return cur.rowcount
             finally:
                 conn.close()
 

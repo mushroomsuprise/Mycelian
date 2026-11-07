@@ -138,13 +138,18 @@ def test_save_failure_notifies(env, monkeypatch):
 
 def test_clear_covers_reset_baseline_and_open_library(env, monkeypatch):
     monkeypatch.setattr(tabmod.covers, "clear_covers", lambda: 3)
-    env.store.upsert_games([TrackedGame(platform=PSN, game_id="NPWR00001_00", title="ELDEN RING", platform_label="PS5")])
+    env.store.upsert_games([TrackedGame(platform=PSN, game_id="NPWR00001_00", title="ELDEN RING", platform_label="PS5",
+                                        cover_url="https://img/er.png")])
     tabs: List[Any] = []
 
     async def check(user):
         tab = tabs[0]
+        queued, syncs = [], []
+        monkeypatch.setattr(tabmod.covers, "request_covers", lambda items: queued.extend(items))
+        monkeypatch.setattr(env.service, "sync_now", lambda *a: syncs.append(a))
         await tab._clear_covers()
         assert env.notes[-1]["title"] == "Cover art cleared" and "3 covers" in env.notes[-1]["message"]
+        assert queued and queued[0][:2] == (PSN, "NPWR00001_00") and syncs == []  # covers re-queued, no library sync
         tab._reset_baseline()
         assert env.store.get_game(PSN, "NPWR00001_00").baselined is False
         tab._confirm_reset()
@@ -162,3 +167,26 @@ def test_without_a_page():
     assert tab.has_unsaved_changes() is False
     d = tab._settings_dict(TrackerSettings())
     assert "export" not in d and "view" not in d
+
+
+def test_usage_line_shows_both_platforms_and_updates(env):
+    from modules import api_usage
+
+    api_usage.reset()
+    tabs: List[Any] = []
+
+    async def check(user):
+        tab = tabs[0]
+        await user.should_see("API requests: PSN 0 in the last hour · 0 today; Steam 0 in the last hour · 0 today")
+        api_usage.record("PSN", "/x", 429)
+        tab._usage.refresh()
+        await user.should_see("PSN 1 in the last hour · 1 today · 1 rate-limited")
+        tab.on_exit()
+        assert tab._usage_timer.active is False
+        tab.on_enter()
+        assert tab._usage_timer.active is True
+
+    try:
+        run_ui(build_into(tabs), check)
+    finally:
+        api_usage.reset()
