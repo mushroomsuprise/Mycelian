@@ -1095,3 +1095,25 @@ def test_token_status_error(st, api):
 
     st.expired = boom
     assert api.get_token_status() == {"error": "bad expiry"}
+
+
+def test_stage_expired_refresh_offline_waits_instead_of_signing_in(st, manager, monkeypatch):
+    st.expired = True
+    a = chatbot.Chatbot_API()
+
+    async def offline_refresh():
+        a._last_refresh_transient = True
+        return False
+
+    monkeypatch.setattr(a, "refresh_auth_token", offline_refresh)
+    assert run(a.stage_chatbot_api()) is False
+    assert ("oauth",) not in st.calls  # no browser window during an outage
+
+
+def test_stage_validation_network_error_waits(st, manager, monkeypatch):
+    import aiohttp
+
+    st.users_error = aiohttp.ClientConnectionError("Cannot connect to host api.twitch.tv")
+    a = chatbot.Chatbot_API()
+    assert run(a.stage_chatbot_api()) is False
+    assert ("oauth",) not in st.calls

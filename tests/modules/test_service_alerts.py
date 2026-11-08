@@ -234,3 +234,13 @@ def test_forget():
 def test_notice_defaults():
     n = sa.Notice("k", "problem", "warning", "T")
     assert (n.message, n.hint, n.source, n.settings_tab, n.dedupe_key) == ("", "", "app", None, "")
+
+
+def test_obs_problem_says_what_the_last_connect_ran_into(monkeypatch):
+    err = {"kind": "refused", "title": "OBS's WebSocket server is off", "message": "Nothing is accepting connections.",
+           "hint": "Tick Enable WebSocket server.", "details": "ConnectionRefusedError"}
+    monkeypatch.setattr(sa, "_obs_error", lambda: err)
+    t = sa.ServiceAlertTracker()
+    feed(t, {"obs": "Can't connect"}, sa.STARTUP_POLLS - 1)
+    (notice,) = t.observe({"obs": "Can't connect"})
+    assert (notice.title, notice.message, notice.hint) == (err["title"], err["message"], err["hint"])

@@ -809,7 +809,7 @@ def test_connect_realtime_handshake_auth_and_tips(env, fake_ws):
     c._connect_realtime("tok")
     (app,) = fake_ws.instances
     assert app.url == se.REALTIME_URL
-    assert app.run_kwargs["ping_interval"] == 0 and app.run_kwargs["ping_timeout"] is None
+    assert app.run_kwargs["ping_interval"] == 25 and app.run_kwargs["ping_timeout"] == 10  # notices a dead link
     assert app.run_kwargs["sslopt"]["cert_reqs"] == se.ssl.CERT_REQUIRED
     assert app.run_kwargs["sslopt"]["ca_certs"] == se.certifi.where()
     assert app.sent[0] == "40"

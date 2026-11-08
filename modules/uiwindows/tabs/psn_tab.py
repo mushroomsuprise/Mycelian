@@ -23,6 +23,7 @@ from ...npsso_authenticator import (
     show_npsso_instruction_dialog,
 )
 from .integration_ui import (
+    clear_credentials_button,
     AccountCard,
     IntegrationPage,
     banner,
@@ -124,6 +125,7 @@ class PSNTab:
             with section("account_circle", "Account"):
                 self._card = AccountCard("psn", "PlayStation account")
                 with self._card.actions:
+                    clear_credentials_button("psn", self._page, self._after_clear)
                     outline_button("How to connect", self._show_help_dialog, icon="help_outline").props(
                         "dense"
                     ).classes("px-3")
@@ -593,6 +595,13 @@ class PSNTab:
         from nicegui import background_tasks
 
         background_tasks.create(_run_service(), name="psn_save_settings_change")
+
+    def _after_clear(self) -> None:
+        """Show the cleared credentials: reload the fields from the (now blank) saved settings."""
+        self.discard()
+        refresh = getattr(self, "_refresh_status", None)
+        if callable(refresh):
+            refresh()
 
     def discard(self) -> None:
         self._suppress_dirty = True

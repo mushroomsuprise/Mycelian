@@ -323,6 +323,8 @@ class Chatbot_API:
 
         # Token refresh synchronization
         self._refresh_lock = threading.Lock()
+        # True when the last token refresh failed for a network reason (try again later, no sign-in).
+        self._last_refresh_transient = False
         self._last_refresh_attempt = None
         # Why the last chat send failed: (kind, technical text) or None.
         # kind: auth / channel / refused / dropped (see _report_twitch_send_problem).
@@ -584,6 +586,7 @@ class Chatbot_API:
                 )
 
             self._last_refresh_attempt = now
+            self._last_refresh_transient = False
             logger.info("Refreshing chatbot authentication token")
 
             self._sync_client_credentials()
@@ -625,6 +628,8 @@ class Chatbot_API:
             )
             if result.outcome in ("invalid_refresh_token", "client_id_mismatch"):
                 self._clear_tokens_after_refresh_failure()
+            else:
+                self._last_refresh_transient = True
             return False
 
         except InvalidRefreshTokenException as e:
@@ -648,6 +653,7 @@ class Chatbot_API:
                 logger.warning("Chatbot refresh token invalid: %s", e)
                 self._clear_tokens_after_refresh_failure()
                 return False
+            self._last_refresh_transient = True
             logger.error(
                 "Failed to refresh chatbot authentication token (transient): %s",
                 e,
@@ -805,6 +811,11 @@ class Chatbot_API:
                         "Chatbot auth token expired during staging, attempting to refresh"
                     )
                     refresh_success = await self.refresh_auth_token()
+                    if not refresh_success and getattr(self, "_last_refresh_transient", False):
+                        # Offline or Twitch down: the tokens may be fine. No browser sign-in;
+                        # the connection monitor retries once Twitch is reachable.
+                        logger.warning("Twitch unreachable while refreshing the chatbot token; will retry")
+                        return False
                     if not refresh_success:
                         logger.warning(
                             "Failed to refresh chatbot token during staging, will attempt new authentication"
@@ -869,6 +880,10 @@ class Chatbot_API:
                             logger.debug(
                                 "Existing chatbot tokens still invalid: %s", e
                             )
+                        if isinstance(e, (aiohttp.ClientConnectionError, asyncio.TimeoutError, TimeoutError,
+                                          ConnectionError, OSError)):
+                            logger.warning("Twitch unreachable while checking the chatbot tokens; will retry")
+                            return False
                         logger.info(
                             "Attempting chatbot token refresh before OAuth after validation failure"
                         )
@@ -896,6 +911,9 @@ class Chatbot_API:
                                     retry_err,
                                 )
                                 refresh_success = False
+                        if not refresh_success and getattr(self, "_last_refresh_transient", False):
+                            logger.warning("Twitch unreachable while refreshing the chatbot token; will retry")
+                            return False
                         if not refresh_success:
                             oauth_success = await self.authenticate_with_oauth()
                             if not oauth_success:

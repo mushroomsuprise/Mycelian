@@ -93,6 +93,9 @@ class FakeUser:
         return self.api.summary
 
     def profile(self):
+        # Like psnawp: the profile endpoint is read by account ID. A User built without one gets nothing.
+        if "account_id" in self.kw and not self.kw["account_id"]:
+            return {}
         self.api.profile_calls.append(self.kw.get("online_id") or self.kw.get("account_id"))
         self._maybe_raise("profile")
         return self.api.profiles.get(self.kw.get("online_id") or self.kw.get("account_id"), {})
@@ -1186,7 +1189,7 @@ def test_largest_avatar_prefers_xl_and_https():
     assert big({"avatars": []}) is None and big(None) is None and big({"avatars": None}) is None
 
 
-def test_avatar_url_reads_the_profile_by_online_id_and_caches(monkeypatch):
+def test_avatar_url_reads_the_profile_by_account_id_and_caches(monkeypatch):
     api = FakeAPI()
     api.profiles = {"me": avatars("me"), "pal": avatars("pal")}
     c = make_client(api, username="pal")
@@ -1195,7 +1198,8 @@ def test_avatar_url_reads_the_profile_by_online_id_and_caches(monkeypatch):
     c.refresh_avatars()
     assert c.psn_data.avatar_url == "https://img/me-xl.png"
     assert c.psn_data.target_avatar_url == "https://img/pal-xl.png"
-    assert api.profile_calls == ["me", "pal"] and api.user_calls == []  # one request each, no account lookup
+    assert api.profile_calls == ["me", "pal"]
+    assert api.user_calls == [{"online_id": "pal"}]  # the tracked account's ID: looked up once, shared with trophies
     c.refresh_avatars()
     assert len(api.profile_calls) == 2  # cached
     clock[0] += c.AVATAR_TTL_SEC + 1
@@ -1403,3 +1407,25 @@ def test_label_to_platform_type():
     assert psnapi.label_to_platform_type("PS Vita") == PlatformType.PS_VITA
     assert psnapi.label_to_platform_type("PC") == PlatformType.PSPC
     assert psnapi.label_to_platform_type("") == PlatformType.PS5
+
+
+def test_avatar_url_builds_the_user_with_an_account_id(monkeypatch):
+    """Regression: profile() reads /users/{account_id}/profiles, so a User without an account ID gets no picture."""
+    built = []
+
+    def user(auth, online_id, account_id):
+        built.append(account_id)
+        return SimpleNamespace(profile=lambda: avatars(online_id))
+
+    monkeypatch.setattr(psnapi, "User", user)
+    c = make_client()
+    assert c.get_avatar_url("me") == "https://img/me-xl.png"
+    assert built == ["acc-me"]
+
+
+def test_avatar_url_for_someone_else_looks_them_up(monkeypatch):
+    api = FakeAPI()
+    api.profiles = {"stranger": avatars("stranger")}
+    c = make_client(api)
+    assert c.get_avatar_url("stranger") == "https://img/stranger-xl.png"
+    assert api.user_calls == [{"online_id": "stranger"}]

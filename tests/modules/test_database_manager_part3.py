@@ -495,6 +495,7 @@ class TestRunWithTimeout:
         assert notes[-1][2]["title"] == "Couldn't save to the Firebase database"
 
     def test_timeout_on_write_invalidates_generation(self, remote, backend, monkeypatch, notes):
+        monkeypatch.setattr(remote, "_queue_after_failure", lambda *a: False)  # plumbing only (see outage tests)
         monkeypatch.setattr(dbm, "threading", _ThreadingProxy(HangingThread))
         seen = []
         remote.add_write_listener(lambda p, d: seen.append((p, d)))
@@ -517,6 +518,7 @@ class TestRunWithTimeout:
         assert dbm.last_write_problem() is None
 
     def test_timeout_after_newer_write_keeps_generation(self, remote, monkeypatch, notes):
+        monkeypatch.setattr(remote, "_queue_after_failure", lambda *a: False)  # plumbing only
         monkeypatch.setattr(dbm, "threading", _ThreadingProxy(HangingThread))
 
         class BumpOnJoin(HangingThread):

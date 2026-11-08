@@ -722,6 +722,10 @@ def test_attempt_auto_reconnect(env, monitor):
     assert ps.attempt_auto_reconnect() is False
     monitor["raise"] = False
     assert c.connects == 0
+    started = []
+    env.mp.setattr(ps, "start_psn_data_updater_thread", lambda: started.append(1))
     assert ps.attempt_auto_reconnect() is True and c.connects == 1
+    assert started == [1]  # the app may have started offline: the updater must run now
     c.connect_result = False
     assert ps.attempt_auto_reconnect() is False
+    assert started == [1]

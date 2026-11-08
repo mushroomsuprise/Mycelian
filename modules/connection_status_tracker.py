@@ -92,11 +92,13 @@ _OBS_PROCESS_TTL_SEC = 10.0
 
 
 def _obs_host_is_local() -> bool:
+    """localhost, or one of this computer's own addresses (the IP OBS's Show Connect Info shows)."""
     try:
         from .dataobjects import state_manager
+        from .obs_service import obs_host_is_this_computer
 
         o = state_manager.get_obs_data()
-        return str(getattr(o, "host", "") or "").strip().lower() in _LOCAL_HOSTS
+        return obs_host_is_this_computer(getattr(o, "host", ""))
     except Exception:
         return False
 

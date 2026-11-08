@@ -177,10 +177,11 @@ def test_usage_line_shows_both_platforms_and_updates(env):
 
     async def check(user):
         tab = tabs[0]
-        await user.should_see("API requests: PSN 0 in the last hour · 0 today; Steam 0 in the last hour · 0 today")
+        await user.should_see("0% of the estimated limit (0 of ~300 requests in the last 15 min)")
+        await user.should_see("0% of the limit (0 of 100,000 requests in the last 24 h)")
         api_usage.record("PSN", "/x", 429)
         tab._usage.refresh()
-        await user.should_see("PSN 1 in the last hour · 1 today · 1 rate-limited")
+        await user.should_see("0.3% of the estimated limit (1 of ~300 requests in the last 15 min) · 1 rate-limited in the last hour")
         tab.on_exit()
         assert tab._usage_timer.active is False
         tab.on_enter()

@@ -1279,3 +1279,27 @@ def test_complete_oauth_flow_exception(client, http_fake):
     http_fake(OSError("offline"))
     assert client.complete_oauth_flow("C") is False
     assert client.spotify_data.connection_status == "OAuth Error"
+
+
+def test_authenticate_offline_stays_retryable(client, clock, monkeypatch):
+    """An outage isn't a sign-in problem: "Disconnected" keeps the connection monitor retrying
+    ("Authorization Required" would stop it, and polling, until the user signed in again)."""
+    from modules.connection_status_tracker import _SPOTIFY_SKIP_RECONNECT
+
+    _authed(client, clock)
+
+    def offline(*a, **k):
+        raise sp.requests.ConnectionError("Failed to resolve api.spotify.com")
+
+    monkeypatch.setattr(sp.requests, "request", offline)
+    assert client.authenticate() is False
+    assert client.spotify_data.connection_status == "Disconnected"
+    assert "Disconnected" not in _SPOTIFY_SKIP_RECONNECT
+    assert client.should_skip_playback_poll() is False
+
+
+def test_authenticate_rejected_token_still_asks_to_sign_in(client, clock, http_fake):
+    _authed(client, clock)
+    http_fake(Resp(418))  # an answer, just not a good one
+    assert client.authenticate() is False
+    assert client.spotify_data.connection_status == "Authorization Required"

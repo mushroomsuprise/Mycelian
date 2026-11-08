@@ -1075,8 +1075,17 @@ class PSNClient:
                 return url
         url = None
         try:
-            # profile() reads the legacy profile by online ID: no account lookup needed.
-            url = self._largest_avatar(self.user_for(None, str(online_id).strip()).profile())
+            # profile() reads by account ID. The signed-in and the tracked accounts' IDs are
+            # already known (no lookup); anyone else needs one profile lookup by online ID.
+            name = str(online_id).strip()
+            if self.user_online_id and key == self.user_online_id.lower() and self.account_id:
+                account_id = self.account_id
+            elif self.psn_username and key == self.psn_username.strip().lower():
+                account_id = self.get_trophy_target_account_id()
+            else:
+                account_id = None
+            user = self.user_for(account_id, name) if account_id else self.api.user(online_id=name)
+            url = self._largest_avatar(user.profile())
         except Exception as e:
             if _is_psn_auth_expired_error(e):
                 self._on_psn_auth_expired(f"get_avatar_url({online_id})", e)

@@ -136,6 +136,15 @@ def classify(key: str, status: Optional[str]) -> str:
     return "busy"
 
 
+def _obs_error() -> Optional[Dict[str, str]]:
+    try:
+        from .obs_service import obs_service
+
+        return obs_service.last_connect_error()
+    except Exception:
+        return None
+
+
 @dataclass
 class Notice:
     key: str
@@ -256,6 +265,10 @@ class ServiceAlertTracker:
                 title = f"{label} {track.raw.lower() or 'stopped'}"
             elif auth:
                 title = f"{label} needs you to sign in again"
+            elif key == "obs" and _obs_error() is not None:
+                # What the last connect attempt actually ran into, not a guess.
+                err = _obs_error()
+                title, message, hint = err["title"], err["message"], err["hint"]
             elif key == "obs" and raw.strip() == "can't connect":
                 title = "Mycelian can't connect to OBS"
                 message = "OBS is open, but its WebSocket server isn't answering."

@@ -13,6 +13,7 @@ from ... import dataobjects
 from ...api_credentials_manager import api_credentials_manager
 from ...dataobjects import state_manager
 from .integration_ui import (
+    clear_credentials_button,
     AccountCard,
     CopyRow,
     CredentialsFold,
@@ -332,6 +333,7 @@ class TwitchTab:
         card = AccountCard("twitch", kicker)
         self._cards[prefix] = card
         with card.actions:
+            clear_credentials_button("twitch" if prefix == "main" else "chatbot", self._page, self._after_clear)
             self.ui_elements[f"{prefix}_refresh_button"] = (
                 ui.button(icon="refresh", on_click=refresh_handler)
                 .props("flat round dense")
@@ -585,6 +587,13 @@ class TwitchTab:
             self.dirty = False
         # A failed save_changes() was already reported once (changes stay pending).
         self._refresh_overview()
+
+    def _after_clear(self) -> None:
+        """Show the cleared credentials: reload the fields from the (now blank) saved settings."""
+        self.discard()
+        refresh = getattr(self, "_refresh_status", None)
+        if callable(refresh):
+            refresh()
 
     def discard(self) -> None:
         self._load_from_state()

@@ -1310,4 +1310,8 @@ def attempt_auto_reconnect() -> bool:
             return False
     except Exception:
         return False
-    return bool(psn_client_instance.connect())
+    ok = bool(psn_client_instance.connect())
+    if ok:
+        # The app may have started offline, before the updater ever ran: make sure it's running.
+        start_psn_data_updater_thread()
+    return ok

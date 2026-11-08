@@ -16,6 +16,7 @@ from ...notification_engine import nav_actions_settings, notify
 from ...ui_buttons import outline_button, primary_button
 from ...ui_timer import layout_schedule
 from .integration_ui import (
+    clear_credentials_button,
     AccountCard,
     CopyRow,
     CredentialsFold,
@@ -658,6 +659,7 @@ class DiscordTab:
             with section("smart_toy", "Bot"):
                 self._card = AccountCard("discord", "Discord bot")
                 with self._card.actions:
+                    clear_credentials_button("discord", self._page, self._after_clear)
                     self.ui_elements["disconnect_button"] = (
                         ui.button(icon="logout", on_click=self._handle_disconnect)
                         .props("flat round dense")
@@ -771,6 +773,13 @@ class DiscordTab:
                 notify("", type="success", source="discord", title="Discord settings saved")
             self._refresh_status()
         # A failed save was already reported by _save_settings_only / save_changes.
+
+    def _after_clear(self) -> None:
+        """Show the cleared credentials: reload the fields from the (now blank) saved settings."""
+        self.discard()
+        refresh = getattr(self, "_refresh_status", None)
+        if callable(refresh):
+            refresh()
 
     def discard(self) -> None:
         self._load_from_state()

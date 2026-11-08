@@ -162,7 +162,7 @@
       </div>
       <figcaption>Version numbers are examples. The OBS item in the status footer turns green.</figcaption>
     </figure>
-    <p>If OBS is closed, Mycelian keeps retrying in the background (5 seconds at first, then up to every 45 seconds). You can start OBS before or after Mycelian.</p>
+    <p>If OBS is closed, Mycelian keeps retrying in the background. When OBS runs on this computer, Mycelian notices it opening and connects within a few seconds. You can start OBS before or after Mycelian.</p>
   </div>
 
 </section>
@@ -210,14 +210,30 @@
 
 <h2>If something goes wrong</h2>
 
+<p><strong>Test</strong>, the status on the OBS tab and the pop-ups all say what the last connection attempt actually ran into. <strong>Copy details</strong> on the notice copies the exact text from OBS or the network.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Message</th><th>What it means</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td>OBS isn't open</td><td>No OBS is running on this computer.</td><td>Open OBS. Mycelian connects on its own.</td></tr>
+<tr><td>OBS's WebSocket server is off</td><td>Nothing accepts connections on that port of this computer.</td><td>In OBS, Tools → WebSocket Server Settings: tick <strong>Enable WebSocket server</strong> and check the port.</td></tr>
+<tr><td>OBS at <em>address</em> refused the connection</td><td>The other computer is reachable, but nothing listens on that port.</td><td>Turn the WebSocket server on there, check the port, allow it through the firewall.</td></tr>
+<tr><td>OBS didn't answer at <em>address</em></td><td>Something listens there but didn't finish the handshake.</td><td>Check the port. OBS older than 28 uses an old plugin on port 4444: update OBS.</td></tr>
+<tr><td>Port <em>n</em> isn't OBS's WebSocket server</td><td>A different program answered on that port.</td><td>Copy the <strong>Server Port</strong> from Show Connect Info.</td></tr>
+<tr><td>Mycelian can't find the computer "<em>host</em>"</td><td>The host isn't a name or address that can be looked up.</td><td>Use <code>localhost</code> for this computer, or the other computer's IP address.</td></tr>
+<tr><td>OBS needs a WebSocket password / rejected the password</td><td>Authentication is on in OBS and the password is missing or different.</td><td>Copy the <strong>Server Password</strong> from Show Connect Info again.</td></tr>
+<tr><td>Connected, but OBS didn't send its scenes in time</td><td>OBS is busy (loading a scene collection or a heavy browser source).</td><td>Wait a moment and test again.</td></tr>
+</tbody>
+</table></div>
+
 <details class="hx-details">
-  <summary>Test says "OBS isn't open" or "Couldn't reach OBS"</summary>
-  <p><em>"OBS isn't open"</em> means no OBS is running on this computer; open it and test again. <em>"OBS is open, but its WebSocket server isn't answering"</em> means <strong>Enable WebSocket server</strong> is not ticked or the port is different. <em>"Couldn't reach OBS at localhost:4455"</em> (with your host and port) means nothing answered there. <strong>Copy details</strong> on the notice copies the exact text from OBS or the network.</p>
+  <summary>OBS runs on this computer, but it still won't connect</summary>
+  <p>Use <code>localhost</code> as the <strong>Host</strong>. <strong>Show Connect Info</strong> shows your computer's network address as the <strong>Server IP</strong>; that address changes when your router hands out a new one or a VPN is on, and then OBS seems to vanish. You can paste <code>ws://…:4455</code> or <code>host:port</code> into the Host field: Mycelian splits it into host and port when you save.</p>
 </details>
 
 <details class="hx-details">
   <summary>Wrong password, or "OBS rejected the WebSocket password"</summary>
-  <p>The password does not match (or OBS asks for one and the field is empty: <em>"OBS needs a WebSocket password"</em>). In OBS click <strong>Show Connect Info</strong>, copy the password again, paste it into <strong>WebSocket password</strong>, and click <strong>Save</strong>. Watch for a stray space at the end.</p>
+  <p>The password does not match (or OBS asks for one and the field is empty: <em>"OBS needs a WebSocket password"</em>). In OBS click <strong>Show Connect Info</strong>, copy the password again, paste it into <strong>WebSocket password</strong>, and click <strong>Save</strong>. Spaces at either end are removed for you. If it still says the password is wrong right after you saved it, click <strong>Test</strong>: the status shows the new attempt.</p>
 </details>
 
 <details class="hx-details">

@@ -556,3 +556,120 @@ def test_stage_not_verified_at_end(stage_env, monkeypatch):
 def test_stage_unexpected_error(stage_env, monkeypatch):
     monkeypatch.setattr(stage_env, "load_auth_data", MagicMock(side_effect=RuntimeError("boom")))
     assert run(stage_env.stage_twitch_api()) is False
+
+
+# --------------------------------------------------------------------------- outages: retry later, no browser sign-in
+
+
+def test_refresh_network_error_is_marked_transient(refreshable, monkeypatch):
+    monkeypatch.setattr(tw, "refresh_user_token", AsyncMock(side_effect=aiohttp_error()))
+    assert run(refreshable.refresh_auth_token()) is False
+    assert refreshable._last_refresh_transient is True
+    assert refreshable.auth_token == "old"  # tokens kept
+
+
+def aiohttp_error():
+    import aiohttp
+
+    return aiohttp.ClientConnectionError("Cannot connect to host id.twitch.tv")
+
+
+def test_stage_expired_token_offline_waits_instead_of_signing_in(stage_env, monkeypatch):
+    orig = stage_env.load_auth_data
+
+    def load():
+        orig()
+        stage_env.token_expiry = datetime.now() - timedelta(minutes=1)
+        return True
+
+    async def offline_refresh():
+        stage_env._last_refresh_transient = True
+        return False
+
+    monkeypatch.setattr(stage_env, "load_auth_data", load)
+    monkeypatch.setattr(stage_env, "refresh_auth_token", offline_refresh)
+    assert run(stage_env.stage_twitch_api()) is False
+    stage_env.authenticate_with_oauth.assert_not_awaited()  # no browser window during an outage
+    tw.notify_twitch_connect_failed.assert_not_called()
+
+
+def test_stage_validation_network_error_waits(stage_env, monkeypatch):
+    monkeypatch.setattr(tw, "first", AsyncMock(side_effect=aiohttp_error()))
+    assert run(stage_env.stage_twitch_api()) is False
+    stage_env.refresh_auth_token.assert_not_awaited()
+    stage_env.authenticate_with_oauth.assert_not_awaited()
+
+
+def test_stage_refresh_after_validation_offline_waits(stage_env, monkeypatch):
+    monkeypatch.setattr(tw, "first", AsyncMock(side_effect=RuntimeError("401")))
+
+    async def offline_refresh():
+        stage_env._last_refresh_transient = True
+        return False
+
+    monkeypatch.setattr(stage_env, "refresh_auth_token", offline_refresh)
+    assert run(stage_env.stage_twitch_api()) is False
+    stage_env.authenticate_with_oauth.assert_not_awaited()
+
+
+# --------------------------------------------------------------------------- EventSub: the library giving up
+
+
+def test_reconnecting_flag_expires(api, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(tw.time, "monotonic", lambda: clock[0])
+    api.eventsub = SimpleNamespace(_is_reconnecting=True)
+    assert api._eventsub_is_reconnecting() is True
+    clock[0] += tw.EVENTSUB_LIBRARY_RECONNECT_MAX_SEC - 1
+    assert api._eventsub_is_reconnecting() is True
+    clock[0] += 2  # twitchAPI gave up long ago and left its flag set
+    assert api._eventsub_is_reconnecting() is False
+    api.eventsub._is_reconnecting = False
+    assert api._eventsub_is_reconnecting() is False and api._eventsub_reconnecting_since is None
+    api.eventsub._is_reconnecting = True  # a new reconnect starts a new clock
+    assert api._eventsub_is_reconnecting() is True
+
+
+def test_bounded_start_succeeds_and_raises():
+    started = []
+    ok = SimpleNamespace(start=lambda: started.append(1), _startup_complete=True)
+    assert tw.Twitch_API._start_eventsub_bounded(ok, timeout=2) is True and started == [1]
+
+    def boom():
+        raise RuntimeError("Twitch needs user authentication")
+
+    with pytest.raises(RuntimeError):
+        tw.Twitch_API._start_eventsub_bounded(SimpleNamespace(start=boom), timeout=2)
+
+
+def test_bounded_start_gives_up_when_the_socket_thread_dies():
+    import threading
+
+    dead = threading.Thread(target=lambda: None)
+    dead.start()
+    dead.join()
+
+    class Stuck:
+        _startup_complete = False
+        _running = True
+        _socket_thread = dead
+
+        def start(self):
+            while not self._startup_complete:  # like twitchAPI: waits with no time limit
+                tw.time.sleep(0.01)
+
+    es = Stuck()
+    assert tw.Twitch_API._start_eventsub_bounded(es, timeout=5) is False
+    assert es._startup_complete is True and es._running is False  # the waiting thread is released
+
+
+def test_bounded_start_times_out():
+    class Slow:
+        _startup_complete = False
+
+        def start(self):
+            while not self._startup_complete:
+                tw.time.sleep(0.01)
+
+    es = Slow()
+    assert tw.Twitch_API._start_eventsub_bounded(es, timeout=0.3) is False

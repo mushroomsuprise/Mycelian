@@ -822,7 +822,7 @@ def test_connect_socket_engineio_flow(env, fake_ws, monkeypatch):
     c._connect_socket("to/k")
     (app,) = fake_ws.instances
     assert app.url == sl.SOCKET_URL + "?EIO=3&transport=websocket&token=to%2Fk"
-    assert app.run_kwargs == {"ping_interval": 0, "ping_timeout": None}
+    assert app.run_kwargs == {"ping_interval": 25, "ping_timeout": 10}  # notices a silently dead link
     assert app.sent == ["40", "40", "3"]
     assert len(_InstantThread.started) == 1
     assert _InstantThread.started[0].args == (5.0,)

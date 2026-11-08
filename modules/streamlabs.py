@@ -578,7 +578,9 @@ class StreamlabsClient:
         )
         self._ws = app
         try:
-            app.run_forever(ping_interval=0, ping_timeout=None)
+            # WebSocket pings notice a connection that died silently (an internet outage)
+            # within ~35 s; the loop then reconnects. Socket.IO's own pings don't detect that.
+            app.run_forever(ping_interval=25, ping_timeout=10)
         finally:
             ping_stop.set()
             self._ws = None

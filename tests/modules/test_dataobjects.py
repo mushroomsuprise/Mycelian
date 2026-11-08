@@ -1079,3 +1079,33 @@ def test_module_level_initializers(db, notes, monkeypatch):
 
 def test_global_state_manager_exists():
     assert isinstance(do.state_manager, do.StateManager)
+
+
+# ======================================================================= clearing saved credentials
+
+
+class TestClearFields:
+    def test_blanks_secrets_the_setters_would_keep(self, sm, db):
+        sm.update_twitch_field("auth_token", "tok")
+        sm.update_twitch_field("refresh_token", "ref")
+        assert sm.save_changes()
+        sm.update_twitch_field("auth_token", "")  # the guard: a blank never wipes a sign-in
+        assert sm.get_twitch_data().auth_token == "tok"
+        assert sm.clear_fields("twitch_data", {"auth_token": "", "refresh_token": ""}) is True
+        assert sm.get_twitch_data().auth_token == "" and sm.get_twitch_data().refresh_token == ""
+        stored = db.data["TwitchData"]
+        assert stored["auth_token"] == "" and stored["refresh_token"] == ""
+
+    def test_discord_token_is_really_cleared(self, sm, db):
+        db.data["DiscordData"] = {"bot_token": enc("BOT"), "bot_username": "b"}
+        assert sm.clear_fields("discord_data", {"bot_token": ""}) is True
+        assert db.data["DiscordData"]["bot_token"] == ""
+        assert not do._discord_clear_token.is_set()  # one clear, not every later save
+        do._write_discord_data_merged({"bot_token": ""})
+        db.data["DiscordData"]["bot_token"] = "STORED"
+        do._write_discord_data_merged({"bot_token": ""})
+        assert db.data["DiscordData"]["bot_token"] == "STORED"  # later blank saves keep it again
+
+    def test_unknown_blob(self, sm):
+        with pytest.raises(ValueError):
+            sm.clear_fields("nope", {"x": ""})

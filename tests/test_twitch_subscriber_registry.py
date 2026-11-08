@@ -146,7 +146,7 @@ class EventSubInitOrderTests(unittest.TestCase):
         import inspect
 
         src = inspect.getsource(twitch_module.Twitch_API.intialize_twitch_api)
-        start_idx = src.find("eventsub.start()")
+        start_idx = src.find("self._start_eventsub_bounded(eventsub)")
         listen_idx = src.find("listen_channel_chat_message")
         established_idx = src.find(
             "Twitch API websocket connection established successfully"

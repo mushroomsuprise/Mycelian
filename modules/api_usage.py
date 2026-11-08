@@ -1,11 +1,14 @@
 # Copyright (c) 2024-2026 Mycelian
 # SPDX-License-Identifier: MIT
-"""How many PSN / Steam API requests the app makes, plus a small 429 backoff helper.
+"""How many PSN / Steam API requests the app makes, measured against each platform's limit,
+plus a small 429 backoff helper.
 
 ``record`` is called once per HTTP request (the Steam client's request method and a
-response hook on the PSN session). Counts live in memory only: the last hour and today
-(since local midnight) per platform, with a per-endpoint breakdown, and an hourly INFO
-line in the log. ``snapshot`` / ``summary_text`` feed the Settings tabs.
+response hook on the PSN session). Counts live in memory only, with a per-endpoint breakdown
+and an hourly INFO line in the log. ``LIMITS`` holds each platform's limit and its window:
+Steam publishes one (100,000 calls a day); Sony doesn't, so PSN uses the community estimate
+psnawp is built around (about 300 requests per 15 minutes). ``usage`` / ``percent_timeline``
+feed the Settings tabs.
 """
 
 from __future__ import annotations
@@ -15,8 +18,10 @@ import re
 import threading
 import time
 from collections import Counter, deque
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Deque, Dict, Optional, Tuple
+from bisect import bisect_right
+from typing import Any, Deque, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
@@ -24,6 +29,22 @@ logger = logging.getLogger(__name__)
 HOUR = 3600.0
 DAY = 86400.0
 LOG_EVERY_SEC = HOUR
+KEEP_SEC = DAY + HOUR  # a day's window, an hour back (the graph's first point)
+
+
+@dataclass(frozen=True)
+class Limit:
+    requests: int
+    window_sec: float
+    window_text: str  # "15 min", "24 h"
+    source: str  # where the number comes from
+    estimated: bool
+
+
+LIMITS: Dict[str, Limit] = {
+    "PSN": Limit(300, 15 * 60.0, "15 min", "Sony doesn't publish a limit: this is the community estimate", True),
+    "Steam": Limit(100_000, DAY, "24 h", "the Steam Web API terms", False),
+}
 
 _lock = threading.Lock()
 # platform -> deque of (ts, endpoint, status); entries older than a day are dropped
@@ -50,7 +71,7 @@ def _midnight(now: float) -> float:
 
 
 def _prune(q: Deque[Tuple[float, str, Optional[int]]], now: float) -> None:
-    cutoff = now - DAY
+    cutoff = now - KEEP_SEC
     while q and q[0][0] < cutoff:
         q.popleft()
 
@@ -93,41 +114,79 @@ def snapshot(platform: str, *, now: Optional[float] = None) -> Dict[str, Any]:
             "endpoints": dict(endpoints.most_common())}
 
 
-def timeline(platforms, *, minutes: int = 60, now: Optional[float] = None) -> Dict[str, Any]:
-    """Requests per minute for the last ``minutes`` minutes (oldest first, the current minute last):
-    ``{"labels": ["14:05", ...], "starts": [epoch, ...], "counts": {platform: [n, ...]},
-    "limited": {platform: [429s, ...]}}``."""
+def _times(platform: str) -> List[Tuple[float, Optional[int]]]:
+    with _lock:
+        q = _entries.get(platform)
+        items = list(q) if q else []
+    items.sort(key=lambda e: e[0])
+    return [(ts, status) for ts, _ep, status in items]
+
+
+def usage(platform: str, *, now: Optional[float] = None) -> Dict[str, Any]:
+    """Requests in the platform's limit window and the share of the limit they use."""
     t = time.time() if now is None else now
-    end = (int(t // 60) + 1) * 60.0
-    start = end - minutes * 60.0
-    starts = [start + i * 60.0 for i in range(minutes)]
+    limit = LIMITS.get(platform)
+    window = limit.window_sec if limit else HOUR
+    stamps = [ts for ts, _s in _times(platform)]
+    count = len(stamps) - bisect_right(stamps, t - window)
+    percent = count * 100.0 / limit.requests if limit else 0.0
+    return {"count": count, "percent": percent, "limit": limit}
+
+
+def percent_timeline(platforms, *, minutes: int = 60, now: Optional[float] = None) -> Dict[str, Any]:
+    """Share of each platform's limit in use, once a minute for the last ``minutes`` minutes (oldest first;
+    the last point is now): ``{"labels": [...], "percent": {p: [...]}, "count": {p: [...]},
+    "limited": {p: [429s in that minute, ...]}}``. Each point counts the requests in the limit's
+    window ending there (15 min for PSN, 24 h for Steam)."""
+    t = time.time() if now is None else now
+    ends = [t - (minutes - 1 - i) * 60.0 for i in range(minutes)]
     out: Dict[str, Any] = {
-        "labels": [datetime.fromtimestamp(s).strftime("%H:%M") for s in starts],
-        "starts": starts,
-        "counts": {},
+        "labels": [datetime.fromtimestamp(e).strftime("%H:%M") for e in ends],
+        "percent": {},
+        "count": {},
         "limited": {},
     }
     for platform in platforms:
-        counts, limited = [0] * minutes, [0] * minutes
-        with _lock:
-            q = _entries.get(platform)
-            items = list(q) if q else []
-        for ts, _ep, status in items:
-            i = int((ts - start) // 60)
-            if 0 <= i < minutes:
-                counts[i] += 1
-                if status == 429:
-                    limited[i] += 1
-        out["counts"][platform] = counts
+        limit = LIMITS.get(platform)
+        window = limit.window_sec if limit else HOUR
+        items = _times(platform)
+        stamps = [ts for ts, _s in items]
+        limited_stamps = [ts for ts, st in items if st == 429]
+        counts, percents, limited = [], [], []
+        for e in ends:
+            n = bisect_right(stamps, e) - bisect_right(stamps, e - window)
+            counts.append(n)
+            percents.append(round(n * 100.0 / limit.requests, 2) if limit else 0.0)
+            limited.append(bisect_right(limited_stamps, e) - bisect_right(limited_stamps, e - 60.0))
+        out["count"][platform] = counts
+        out["percent"][platform] = percents
         out["limited"][platform] = limited
     return out
 
 
+def percent_text(value: float) -> str:
+    """12% / 0.4% / <0.1%: whole numbers from 10%, one decimal below."""
+    if value <= 0:
+        return "0%"
+    if value < 0.1:
+        return "<0.1%"
+    return f"{value:.0f}%" if value >= 10 else f"{value:.1f}%"
+
+
 def summary_text(platform: str, *, now: Optional[float] = None) -> str:
-    s = snapshot(platform, now=now)
-    text = f"API calls: {s['hour']:,} last hour · {s['today']:,} today"
-    if s["rate_limited_hour"]:
-        text += f" · {s['rate_limited_hour']:,} rate-limited"
+    """"41% of the estimated limit (123 of ~300 requests in the last 15 min)"."""
+    u = usage(platform, now=now)
+    limit = u["limit"]
+    if limit is None:
+        text = f"{u['count']:,} requests in the last hour"
+    else:
+        approx = "~" if limit.estimated else ""
+        which = "the estimated limit" if limit.estimated else "the limit"
+        text = (f"{percent_text(u['percent'])} of {which} "
+                f"({u['count']:,} of {approx}{limit.requests:,} requests in the last {limit.window_text})")
+    limited = snapshot(platform, now=now)["rate_limited_hour"]
+    if limited:
+        text += f" · {limited:,} rate-limited in the last hour"
     return text
 
 

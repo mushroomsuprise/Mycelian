@@ -290,7 +290,7 @@ def test_apply_settings_sets_wakeup_and_queues(caplog):
     svc = obs.ObsServiceImpl()
     svc.apply_settings()
     assert svc._reconnect_wakeup.is_set()
-    assert svc._req_queue.get_nowait() == (None, "__reconnect__", {})
+    assert svc._req_queue.get_nowait() == (None, "__reconnect__", {"seq": 1})
     svc._req_queue = queue.Queue(maxsize=1)
     svc._req_queue.put_nowait((None, "x", {}))
     with caplog.at_level(logging.WARNING, logger=obs.__name__):
@@ -536,10 +536,20 @@ def test_idle_drain_answers_every_queued_op():
 def test_idle_drain_reconnect_item_wakes():
     svc = obs.ObsServiceImpl()
     svc._retry_after_fail_sec = 30
-    svc._req_queue.put_nowait((None, "__reconnect__", {}))
+    svc.apply_settings()
     svc._reconnect_wakeup.clear()
     assert svc._disconnect_idle_wait_or_drain_queue(5.0) == "wake"
     assert svc._retry_after_fail_sec == obs._CONNECT_ATTEMPT_FIRST_WAIT_SEC
+
+
+def test_a_reconnect_already_handled_is_ignored(monkeypatch):
+    """apply_settings() both wakes the worker and queues __reconnect__: one reconnect, not two."""
+    svc = obs.ObsServiceImpl()
+    monkeypatch.setattr(svc, "_obs_just_started", lambda: False)
+    svc.apply_settings()
+    assert svc._disconnect_idle_wait_or_drain_queue(5.0) == "wake"  # the wake-up flag
+    assert svc._disconnect_idle_wait_or_drain_queue(0.05) == "done"  # the queued item: already handled
+    assert svc._req_queue.empty()
 
 
 def test_idle_drain_wakeup_flag():
@@ -589,7 +599,8 @@ def test_run_loop_shutdown_disconnects():
 
 def test_run_loop_reconnect_returns_without_disconnect():
     svc = _loop_service(Rec())
-    svc._req_queue.put_nowait((None, "__reconnect__", {}))
+    svc._reconnect_seq = 1
+    svc._req_queue.put_nowait((None, "__reconnect__", {"seq": 1}))
     svc._run_loop_iteration()
     assert svc.disconnects == 0
 

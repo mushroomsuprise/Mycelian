@@ -17,6 +17,7 @@ from ... import dataobjects
 from ...dataobjects import state_manager, YouTubeData
 from ...youtube import YOUTUBE_OAUTH_REDIRECT_URI
 from .integration_ui import (
+    clear_credentials_button,
     AccountCard,
     CopyRow,
     IntegrationPage,
@@ -601,6 +602,7 @@ class YouTubeTab:
             with section("account_circle", "Connections"):
                 self._live_card = AccountCard("youtube", "Live chat & alerts (Google sign-in)")
                 with self._live_card.actions:
+                    clear_credentials_button("youtube", self._page, self._after_clear)
                     self._disconnect_button = (
                         ui.button(icon="logout", on_click=self._handle_oauth_disconnect)
                         .props("flat round dense")
@@ -824,6 +826,13 @@ class YouTubeTab:
             self.dirty = False
             self._refresh_status()
         # A failed save_changes() was already reported once (changes stay pending).
+
+    def _after_clear(self) -> None:
+        """Show the cleared credentials: reload the fields from the (now blank) saved settings."""
+        self.discard()
+        refresh = getattr(self, "_refresh_status", None)
+        if callable(refresh):
+            refresh()
 
     def discard(self) -> None:
         self._suppress_dirty = True

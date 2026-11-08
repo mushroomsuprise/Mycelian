@@ -14,6 +14,7 @@ from ...dataobjects import state_manager
 from ...api_credentials_manager import api_credentials_manager
 from ...spotify import SPOTIFY_OAUTH_REDIRECT_URI
 from .integration_ui import (
+    clear_credentials_button,
     AccountCard,
     CopyRow,
     CredentialsFold,
@@ -219,6 +220,7 @@ class SpotifyTab:
             with section("account_circle", "Account"):
                 self._card = card = AccountCard("spotify", "Spotify")
                 with card.actions:
+                    clear_credentials_button("spotify", self._page, self._after_clear)
                     self.ui_elements["refresh_button"] = (
                         ui.button(icon="refresh", on_click=self._refresh_status)
                         .props("flat round dense")
@@ -345,6 +347,13 @@ class SpotifyTab:
             self._changed_fields = set()
             self.dirty = False
         # A failed save_changes() was already reported once (changes stay pending).
+
+    def _after_clear(self) -> None:
+        """Show the cleared credentials: reload the fields from the (now blank) saved settings."""
+        self.discard()
+        refresh = getattr(self, "_refresh_status", None)
+        if callable(refresh):
+            refresh()
 
     def discard(self) -> None:
         self._load_from_state()

@@ -247,6 +247,11 @@
 <h2>Troubleshooting</h2>
 
 <details class="hx-details">
+  <summary>"Lost the connection to the Firebase (or MongoDB) database"</summary>
+  <p>The internet dropped, or the database stopped answering. Mycelian keeps every change in memory and checks every few seconds; once the database answers again it writes them in the order you made them and says <em>"Reconnected to the … database"</em> with how many changes it saved. While it waits, Mycelian shows what you changed (not what's in the database), and saves don't freeze the app. Keep Mycelian open until the reconnect notice: changes still waiting when it closes are lost. The local database is on this computer, so it never goes offline.</p>
+</details>
+
+<details class="hx-details">
   <summary>"Can't connect to the … database"</summary>
   <p>Mycelian lost its database. The notice says <em>"Changes won't be saved until the connection is back."</em> and the header pill shows <strong>Can't connect</strong>. Open <span class="hx-path"><span>Settings</span><span>Database</span></span> (the notice has a button for it), check the fields of the type in use, and click <strong>Test</strong>. For Firebase and MongoDB, check your internet connection too. When it comes back you see <em>"Reconnected to the … database"</em>.</p>
 </details>

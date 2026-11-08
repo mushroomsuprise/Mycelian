@@ -18,6 +18,7 @@ from ...steamapi import parse_profile
 from ...ui_buttons import outline_button, primary_button
 from ...ui_timer import layout_schedule
 from .integration_ui import (
+    clear_credentials_button,
     AccountCard,
     IntegrationPage,
     esc,
@@ -156,6 +157,7 @@ class SteamTab:
             with section("account_circle", "Account"):
                 self._card = AccountCard("steam", "Steam profile")
                 with self._card.actions:
+                    clear_credentials_button("steam", self._page, self._after_clear)
                     outline_button("Get an API key", lambda: open_url(API_KEY_URL), icon="open_in_new").props(
                         "dense"
                     ).classes("px-3")
@@ -233,6 +235,13 @@ class SteamTab:
 
     def has_unsaved_changes(self) -> bool:
         return bool(self.dirty)
+
+    def _after_clear(self) -> None:
+        """Show the cleared credentials: reload the fields from the (now blank) saved settings."""
+        self.discard()
+        refresh = getattr(self, "_refresh_status", None)
+        if callable(refresh):
+            refresh()
 
     def discard(self) -> None:
         self._load_from_state()

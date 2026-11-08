@@ -459,6 +459,21 @@ class APICredentialsManager:
 
         return True
 
+    def clear_service_credentials(self, service: str) -> bool:
+        """Blank one service's client ID and secret ("twitch", "chatbot", "spotify", "youtube",
+        "streamlabs"). The update_* methods keep a secret when given a blank one; this doesn't."""
+        if not self._initialized:
+            self.initialize()
+        if not self._credentials:
+            return False
+        names = (f"{service}_client_id", f"{service}_client_secret")
+        if not all(hasattr(self._credentials, n) for n in names):
+            raise ValueError(f"Unknown API credentials service: {service}")
+        for name in names:
+            setattr(self._credentials, name, "")
+        logger.info("Cleared saved %s API credentials", service)
+        return self._save_credentials()
+
     def export_credentials(self, export_path: str) -> bool:
         """Export credentials to a different file"""
         try:
@@ -570,6 +585,11 @@ def update_streamlabs_credentials(
     return api_credentials_manager.update_streamlabs_credentials(
         client_id=client_id, client_secret=client_secret
     )
+
+
+def clear_service_credentials(service: str) -> bool:
+    """Blank one service's client ID and secret (see APICredentialsManager.clear_service_credentials)."""
+    return api_credentials_manager.clear_service_credentials(service)
 
 
 def initialize_api_credentials() -> bool:

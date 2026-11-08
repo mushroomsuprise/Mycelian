@@ -149,7 +149,8 @@ def test_update_output_flags_only():
     svc._apply_ws_timeout = lambda cl, t: timeouts.append(t)
     svc._update_output_flags_only()
     svc._update_output_flags_only(use_health_timeout=True)
-    assert timeouts == [obs._RPC_TIMEOUT_SEC, obs._HEALTH_TIMEOUT_SEC]
+    # A health probe uses the short timeout, then hands the full one back for snapshots and actions.
+    assert timeouts == [obs._RPC_TIMEOUT_SEC, obs._HEALTH_TIMEOUT_SEC, obs._RPC_TIMEOUT_SEC]
     assert svc._snapshot["stream_output_active"] is True
     assert svc._snapshot["stream_output_state"] == "STARTED"
     assert svc._snapshot["record_output_active"] is False

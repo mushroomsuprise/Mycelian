@@ -95,6 +95,9 @@ logger = logging.getLogger(__name__)
 # Serialize DiscordData DB read-modify-writes so a blank concurrent save cannot
 # overwrite a token that was just persisted on another thread.
 _discord_db_write_lock = threading.Lock()
+# Set by StateManager.clear_fields when the user clears the Discord bot token: the next merged
+# write stores the blank token instead of keeping the old one.
+_discord_clear_token = threading.Event()
 _SECRET_FIELDS = {
     "twitch_data": ("client_secret", "auth_token", "refresh_token"),
     "spotify_data": ("client_secret", "access_token", "refresh_token"),
@@ -132,6 +135,11 @@ def _write_discord_data_merged(payload: Dict[str, Any]) -> bool:
 
         incoming_token = str((payload or {}).get("bot_token") or "").strip()
         existing_token = str(existing.get("bot_token") or "").strip()
+        if not incoming_token and _discord_clear_token.is_set():
+            _discord_clear_token.clear()
+            merged["bot_token"] = ""
+            logger.info("DiscordData write: bot_token cleared by the user")
+            return bool(database_manager.set_data(path, merged))
         if incoming_token:
             merged["bot_token"] = (
                 incoming_token
@@ -1890,6 +1898,27 @@ class StateManager:
                     f"Error updating Twitch data field {field}: {str(e)}", exc_info=True
                 )
                 return False
+
+    def clear_fields(self, state_key: str, fields: Dict[str, Any]) -> bool:
+        """Set fields of one settings blob (e.g. ``"twitch_data"``) and save at once, even secrets.
+
+        The usual setters keep a stored token or secret when given a blank one (a half-filled
+        form must never wipe a sign-in); clearing saved credentials on purpose goes through here.
+        ``fields`` maps field name to its cleared value (usually ``""``). True when saved."""
+        with self._lock:
+            if not self._initialized:
+                self.initialize()
+            blob = self._state.get(state_key)
+            if blob is None:
+                raise ValueError(f"Unknown settings blob: {state_key}")
+            for name, value in fields.items():
+                blob[name] = value
+                self._changed_fields.add(f"{state_key}.{name}")
+            self._changes_pending = True
+            if state_key == "discord_data" and "bot_token" in fields and not fields["bot_token"]:
+                _discord_clear_token.set()
+            self._update_local_objects()
+        return self.save_changes()
 
     def update_app_setting(self, field: str, value: Any) -> bool:
         """Update a single field in the application settings

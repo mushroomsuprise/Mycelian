@@ -29,6 +29,10 @@
 
 <div class="hx-callout hx-note"><p>Pop-ups only report a service once it settles into a problem (for example <em>Twitch disconnected</em>) and again when it reconnects. A dropped internet connection gives one <em>You're offline</em> notice instead of one per service. Short reconnects show only in the footer. See <a href="help:notifications">Notifications</a>.</p></div>
 
+<div class="hx-callout hx-note"><p><strong>Internet outages:</strong> you don't need to restart Mycelian. When the connection comes back, Twitch, the chatbot, Spotify, YouTube, PlayStation, Steam, Discord, Streamlabs, StreamElements and OBS reconnect on their own, usually within a minute or two. A Firebase or MongoDB database keeps your changes in memory and writes them once it's reachable again.</p></div>
+
+<p><strong>Start a sign-in over:</strong> every account card in Settings (Twitch, the chatbot, OBS, PSN, Steam, Spotify, YouTube, Streamlabs, StreamElements and Discord) has a {{icon:key_off}} <strong>Clear saved credentials</strong> button. It asks first, disconnects that service and removes its saved tokens, keys, client ID and secret, or password. Settings such as channels, profiles or the OBS host and port stay.</p>
+
 <h2>Fix by service</h2>
 
 <div class="hx-tabs">

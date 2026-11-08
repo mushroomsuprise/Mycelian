@@ -57,6 +57,13 @@ class FakeObs:
         self.apply_error: Any = None
         self.snapshot_result = (True, "")
         self.snapshot_timeouts: List[float] = []
+        self.error: Any = None
+
+    def last_connect_error(self):
+        return self.error
+
+    def is_connected(self):
+        return self.phase == "connected"
 
     def get_connection_phase(self):
         return self.phase
@@ -216,6 +223,27 @@ def test_status_disconnected_reasons(env, why, kind, short):
     assert tabmod.ObsTab()._status()[:2] == (kind, short)
 
 
+def test_status_uses_the_last_connect_error(env):
+    env.why = "Can't connect"
+    env.obs.error = {"kind": "not_websocket", "title": "Port 4460 isn't OBS's WebSocket server", "message": "m",
+                     "hint": "Copy the Server Port.", "details": "d"}
+    kind, short, line, _meta = tabmod.ObsTab()._status()
+    assert (kind, short) == ("warn", "Can't connect")
+    assert line == "Port 4460 isn't OBS's WebSocket server. Copy the Server Port."
+    env.why = "Not running"  # OBS closed: that's the reason, whatever the last attempt said
+    assert tabmod.ObsTab()._status()[1] == "OBS not running"
+
+
+def test_save_cleans_a_pasted_address(env):
+    tab = loaded_tab(env)
+    tab.buffer.host = "ws://127.0.0.1:4470"
+    tab._normalize_address()
+    assert (tab.buffer.host, tab.buffer.port) == ("127.0.0.1", 4470)
+    tab.buffer.host = ""
+    tab._normalize_address()
+    assert tab.buffer.host == ""  # blank stays blank (means localhost)
+
+
 def test_refresh_status_without_ui_and_errors(env, monkeypatch):
     tab = tabmod.ObsTab()
     tab._refresh_status()
@@ -352,12 +380,17 @@ def test_test_connection_ok(env):
     assert refreshed == [1] and tab._test_in_progress is False
 
 
-def test_test_connection_auth_failed_closes_progress(env):
-    env.obs.snapshot_result = (False, "auth")
+def test_test_connection_reports_the_real_error_every_time(env):
+    """Even when a wrong password was already reported, Test says so again (it used to close silently)."""
+    env.obs.snapshot_result = (False, "Not connected")
     env.obs.auth = True
+    env.obs.error = {"kind": "auth_wrong", "title": "OBS rejected the WebSocket password", "message": "m",
+                     "hint": "h", "details": "OBSSDKError: failed to identify client"}
     tab = loaded_tab(env)
     run_test(tab)
-    assert env.progress[0].result == ("close",)
+    result = env.progress[0].result
+    assert result[0] == "fail" and result[1] == "OBS rejected the WebSocket password"
+    assert "failed to identify client" in str(result)
 
 
 @pytest.mark.parametrize(

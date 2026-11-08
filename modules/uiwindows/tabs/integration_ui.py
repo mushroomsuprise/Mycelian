@@ -12,6 +12,7 @@ variables only; scoped under ``.itg``.
 from __future__ import annotations
 
 import html
+import logging
 import re
 import webbrowser
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -20,6 +21,8 @@ from nicegui import ui
 
 from ...ui_buttons import outline_button, primary_button
 from ..service_brand_icons import OBS_HALO_ATTRS, SERVICE_BRAND_SVG
+
+logger = logging.getLogger(__name__)
 
 BRAND_COLORS = {
     "twitch": "#9146FF",
@@ -719,23 +722,80 @@ def steps(items: Iterable[Tuple[str, bool]]) -> Any:
     return ui.html(steps_html(items), sanitize=False).classes("w-full")
 
 
-def usage_html(platforms: Sequence[str]) -> str:
-    """'API requests: …' for one or more platforms (see modules.api_usage), styled like ``hint``."""
-    from ...api_usage import snapshot
+def clear_credentials_button(service: str, page: Any, on_cleared: Optional[Callable[[], Any]] = None) -> Any:
+    """A key-off icon button that asks, then clears one integration's saved credentials
+    (``modules.credentials_reset``) and disconnects it. ``on_cleared`` runs afterwards on the UI
+    (reload the tab's fields from state)."""
+    from ...credentials_reset import SERVICES
 
-    parts = []
+    info = SERVICES[service]
+
+    def open_dialog() -> None:
+        parent = getattr(page, "root", None)
+        with (parent if parent is not None else ui.element("div")):
+            with ui.dialog() as dialog, ui.card().classes("itg-dialog is-danger"):
+                ui.html(f'{icon_html("key_off")}Clear the saved {esc(info.label)} credentials?',
+                        sanitize=False).classes("itg-dialog-title")
+                ui.label(
+                    f"This removes {info.what} from Mycelian and disconnects {info.label}. "
+                    f"{info.kept[0].upper() + info.kept[1:]} stay. To reconnect, sign in or paste them again."
+                ).classes("itg-dialog-sub")
+
+                async def confirm() -> None:
+                    from nicegui import run
+
+                    from ...credentials_reset import clear_and_notify
+
+                    dialog.close()
+                    await run.io_bound(clear_and_notify, service)
+                    if on_cleared is not None:
+                        try:
+                            on_cleared()
+                        except Exception:
+                            logger.debug("Refresh after clearing %s credentials failed", service, exc_info=True)
+
+                with ui.element("div").classes("itg-actions-end"):
+                    outline_button("Cancel", dialog.close)
+                    ui.button("Clear credentials", icon="key_off", on_click=confirm).props(
+                        "unelevated no-caps color=negative"
+                    )
+        dialog.open()
+
+    return (
+        ui.button(icon="key_off", on_click=open_dialog)
+        .props(f'flat round dense aria-label="Clear saved {esc(info.label)} credentials"')
+        .classes("itg-ibtn")
+        .tooltip("Clear saved credentials")
+    )
+
+
+USAGE_WARN_PERCENT = 80.0
+
+
+def usage_html(platforms: Sequence[str]) -> str:
+    """'API use: 41% of the estimated limit (…)' per platform (see modules.api_usage), styled like
+    ``hint``; turns into a warning from ``USAGE_WARN_PERCENT``."""
+    from ...api_usage import LIMITS, summary_text, usage
+
+    lines, warn, sources = [], False, []
     for platform in platforms:
-        s = snapshot(platform)
-        text = f"{s['hour']:,} in the last hour · {s['today']:,} today"
-        if s["rate_limited_hour"]:
-            text += f" · {s['rate_limited_hour']:,} rate-limited"
-        parts.append(f"{esc(platform)} {esc(text)}" if len(platforms) > 1 else esc(text))
-    return f'<div class="itg-hint">{icon_html("insights")}<span>API requests: {"; ".join(parts)}</span></div>'
+        text = esc(summary_text(platform))
+        lines.append(f"<b>{esc(platform)}</b> {text}" if len(platforms) > 1 else text)
+        warn = warn or usage(platform)["percent"] >= USAGE_WARN_PERCENT
+        limit = LIMITS.get(platform)
+        if limit is not None:
+            approx = "about " if limit.estimated else ""
+            sources.append(f"{platform}: {approx}{limit.requests:,} requests per {limit.window_text}, from {limit.source}.")
+    body = "<br>".join(lines) if len(lines) > 1 else (lines[0] if lines else "")
+    title = esc(" ".join(sources))
+    cls = "itg-hint is-warn" if warn else "itg-hint"
+    icon = icon_html("warning" if warn else "speed")
+    return f'<div class="{cls}" title="{title}">{icon}<span>API use: {"<br>" if len(lines) > 1 else ""}{body}</span></div>'
 
 
 class UsageRow:
-    """The API request counts as a muted line plus a live graph of requests per minute over the
-    last hour; call ``refresh()`` from the tab's status timer."""
+    """API use against each platform's limit: a muted line plus a live graph of the share in use
+    over the last hour; call ``refresh()`` from the tab's status timer."""
 
     def __init__(self, platforms: Sequence[str], *, chart: bool = True) -> None:
         self.platforms = tuple(platforms)
@@ -749,17 +809,17 @@ class UsageRow:
                 ui.echart(self._chart_options())
                 .classes("itg-usage-chart w-full")
                 .style("height: 150px")
-                .props(f'role=img aria-label="{esc(names)} API requests per minute, last hour"')
+                .props(f'role=img aria-label="{esc(names)} API use as a share of the limit, last hour"')
             )
 
     def _chart_options(self) -> Dict[str, Any]:
-        from ...api_usage import timeline
-        from .api_usage_chart import chart_colors, usage_columns
+        from ...api_usage import percent_timeline
+        from .api_usage_chart import chart_colors, usage_lines
 
-        data = timeline(self.platforms)
-        self._chart_sig = (data["labels"][-1], tuple(tuple(data["counts"][p]) for p in self.platforms),
+        data = percent_timeline(self.platforms)
+        self._chart_sig = (data["labels"][-1], tuple(tuple(data["count"][p]) for p in self.platforms),
                            tuple(tuple(data["limited"][p]) for p in self.platforms))
-        return usage_columns(data, self.platforms, chart_colors())
+        return usage_lines(data, self.platforms, chart_colors())
 
     def refresh(self) -> None:
         html = usage_html(self.platforms)

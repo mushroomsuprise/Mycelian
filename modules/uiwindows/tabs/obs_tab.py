@@ -13,7 +13,17 @@ from ...notification_engine import notify, notify_progress
 from ...obs_service import obs_service
 from ...ui_buttons import outline_button
 from ...ui_timer import layout_schedule
-from .integration_ui import AccountCard, IntegrationPage, field, fields, hint, section, steps, switch_row
+from .integration_ui import (
+    AccountCard,
+    IntegrationPage,
+    clear_credentials_button,
+    field,
+    fields,
+    hint,
+    section,
+    steps,
+    switch_row,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +76,11 @@ class ObsTab:
 
         why = obs_disconnected_status()
         if why == "Not running":
-            return "off", "OBS not running", "OBS isn't open. Mycelian connects on its own once it is.", []
+            return "off", "OBS not running", "OBS isn't open. Mycelian connects on its own as soon as it opens.", []
+        err = obs_service.last_connect_error()
+        if err is not None:
+            # The real reason from the last attempt, with what to change.
+            return "warn", "Can't connect", f"{err['title']}. {err['hint']}", []
         if why == "Can't connect":
             return "warn", "Can't connect", "OBS is open, but its WebSocket server isn't answering.", []
         return "warn", "Not connected", "Can't reach OBS at this address. Check that it's open there.", []
@@ -120,7 +134,8 @@ class ObsTab:
         if not self.buffer:
             return
         self._test_in_progress = True
-        address = f"{self.buffer.host}:{self.buffer.port}"
+        self._normalize_address()
+        address = f"{self.buffer.host or 'localhost'}:{self.buffer.port}"
         work = None
         try:
             state_manager.set_obs_data(
@@ -145,8 +160,17 @@ class ObsTab:
                 from ...service_alerts import OBS_OPEN_HINT
 
                 why = obs_disconnected_status()
-                if obs_service.auth_failed():
-                    work.close()  # obs_service already explained the password problem
+                err = obs_service.last_connect_error()
+                if obs_service.is_connected():
+                    work.fail(
+                        "Connected, but OBS didn't send its scenes in time",
+                        hint="OBS may be busy (loading a scene collection, or a heavy browser source). "
+                        "Wait a moment and test again.",
+                        details=str(msg or "No answer within 25 seconds."),
+                    )
+                elif err is not None:
+                    # The exact reason from the attempt this test made, every time (also a wrong password).
+                    work.fail(err["title"], err["message"], hint=err["hint"], details=f"{address}: {err['details']}")
                 elif why == "Not running":
                     work.fail(
                         "OBS isn't open",
@@ -198,6 +222,7 @@ class ObsTab:
             with section("cable", "Connection"):
                 self._card = AccountCard("obs", "OBS Studio")
                 with self._card.actions:
+                    clear_credentials_button("obs", self._page, self._after_clear)
                     outline_button("Test", self._test_connection, icon="wifi_tethering").props("dense").classes(
                         "px-3"
                     ).tooltip("Save these settings and try connecting now")
@@ -213,7 +238,7 @@ class ObsTab:
                         "Host",
                         value=getattr(self.buffer, "host", ""),
                         placeholder="localhost",
-                        tip="Hostname or IP address where the OBS WebSocket server listens",
+                        tip="localhost when OBS runs on this computer; otherwise that computer's IP address",
                         on_change=lambda e: self._set("host", ("" if e.value is None else str(e.value)).strip()),
                     )
                     self.ui_elements["port"] = field(
@@ -231,7 +256,7 @@ class ObsTab:
                         value=getattr(self.buffer, "password", ""),
                         password=True,
                         tip="From OBS → Tools → WebSocket Server Settings → Show Connect Info",
-                        on_change=lambda e: self._set("password", "" if e.value is None else str(e.value)),
+                        on_change=lambda e: self._set("password", ("" if e.value is None else str(e.value)).strip()),
                     )
         with page.column():
             with section("checklist", "WebSocket checklist"):
@@ -242,6 +267,10 @@ class ObsTab:
                         ("Click <b>Show Connect Info</b> and copy the password.", False),
                         ("Enter the host, port and password here, <b>Save</b>, then <b>Test</b>.", False),
                     ]
+                )
+                hint(
+                    "OBS on this computer? Use <b>localhost</b> as the host, not the Server IP that Show Connect Info "
+                    "shows: that address can change when your network does."
                 )
                 hint(
                     "OBS on another computer? Use that computer's IP address as the host, and allow the port "
@@ -262,9 +291,27 @@ class ObsTab:
             self._set("port", int(str(e.value).strip()))
             self._refresh_status()
 
+    def _normalize_address(self) -> None:
+        """A pasted ws://host:port (or host:port) becomes host + port."""
+        from ...obs_service import normalize_obs_address
+
+        if self.buffer is None:
+            return
+        typed = str(self.buffer.host or "").strip()
+        host, port = normalize_obs_address(typed, self.buffer.port)
+        if not typed:
+            host = ""
+        if host != typed or port != int(self.buffer.port or 4455):
+            self.buffer.host, self.buffer.port = host, port
+            for key, value in (("host", host), ("port", port)):
+                el = self.ui_elements.get(key)
+                if el is not None and hasattr(el, "value"):
+                    el.value = value
+
     def save(self) -> None:
         if not self.buffer:
             return
+        self._normalize_address()
         payload = {
             f.name: getattr(self.buffer, f.name)
             for f in OBSData.__dataclass_fields__.values()
@@ -276,6 +323,13 @@ class ObsTab:
             obs_service.apply_settings()
             self._refresh_status()
         # A failed save_changes() was already reported once (changes stay pending).
+
+    def _after_clear(self) -> None:
+        """Show the cleared credentials: reload the fields from the (now blank) saved settings."""
+        self.discard()
+        refresh = getattr(self, "_refresh_status", None)
+        if callable(refresh):
+            refresh()
 
     def discard(self) -> None:
         self._load_from_state()

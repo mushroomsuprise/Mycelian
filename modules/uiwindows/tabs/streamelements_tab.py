@@ -20,6 +20,7 @@ from ...streamelements import (
 from ...ui_buttons import browser_link, outline_button, primary_button
 from ...ui_timer import layout_schedule
 from .integration_ui import (
+    clear_credentials_button,
     AccountCard,
     CredentialsFold,
     IntegrationPage,
@@ -123,6 +124,13 @@ class StreamElementsTab:
                 actions=nav_actions_settings("Database"),
             )
         self._refresh_status()
+
+    def _after_clear(self) -> None:
+        """Show the cleared credentials: reload the fields from the (now blank) saved settings."""
+        self.discard()
+        refresh = getattr(self, "_refresh_status", None)
+        if callable(refresh):
+            refresh()
 
     def discard(self) -> None:
         self._load()
@@ -263,6 +271,7 @@ class StreamElementsTab:
             with section("account_circle", "Account"):
                 self._card = AccountCard("streamelements", "StreamElements")
                 with self._card.actions:
+                    clear_credentials_button("streamelements", self._page, self._after_clear)
                     self._disconnect_button = (
                         ui.button(icon="logout", on_click=self._disconnect)
                         .props("flat round dense")

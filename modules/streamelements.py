@@ -643,7 +643,9 @@ class StreamElementsClient:
             "ca_certs": certifi.where(),
         }
         try:
-            app.run_forever(ping_interval=0, ping_timeout=None, sslopt=sslopt)
+            # WebSocket pings notice a connection that died silently (an internet outage)
+            # within ~35 s; the loop then reconnects.
+            app.run_forever(ping_interval=25, ping_timeout=10, sslopt=sslopt)
         finally:
             self._realtime_ws = None
 

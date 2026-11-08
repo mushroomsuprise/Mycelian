@@ -633,6 +633,16 @@ def build_token_timing_fields(
 
 
 _NEW_SUB_DEBOUNCE_SECONDS = 2.0
+
+# twitchAPI retries a dropped EventSub websocket for about 255 s, then gives up while still
+# saying "reconnecting". Past this, Mycelian stops trusting that flag and rebuilds the session.
+EVENTSUB_LIBRARY_RECONNECT_MAX_SEC = 360.0
+# EventSubWebsocket.start() waits with no time limit for its first connect; this bounds it.
+EVENTSUB_START_TIMEOUT_SEC = 300.0
+
+
+def _is_network_error(exc: BaseException) -> bool:
+    return isinstance(exc, (aiohttp.ClientConnectionError, asyncio.TimeoutError, TimeoutError, ConnectionError, OSError))
 # Wait window for attaching a recipient name to a single gifted sub alert.
 _SINGLE_GIFT_RECIPIENT_WAIT_SECONDS = _NEW_SUB_DEBOUNCE_SECONDS
 _RECENT_GIFT_RECIPIENT_TTL_SECONDS = 5.0
@@ -1830,6 +1840,9 @@ class Twitch_API:
         # don't spawn overlapping init threads.
         self._reconnect_lock = threading.Lock()
         self._reconnect_in_progress = False
+        self._eventsub_reconnecting_since: Optional[float] = None
+        # True when the last token refresh failed for a network reason (try again later, no sign-in).
+        self._last_refresh_transient = False
         self._eventsub_subscriptions_ready = False
         self._sub_registry_retry_stop = threading.Event()
         self._sub_registry_retry_thread = None
@@ -2089,6 +2102,7 @@ class Twitch_API:
 
             logger.info("Refreshing authentication token")
             attempted = True
+            self._last_refresh_transient = False
 
             # Only sync client credentials — never overwrite in-memory tokens from state.
             self.sync_client_credentials()
@@ -2132,6 +2146,8 @@ class Twitch_API:
             )
             if result.outcome in ("invalid_refresh_token", "client_id_mismatch"):
                 self._clear_tokens_after_refresh_failure()
+            else:
+                self._last_refresh_transient = True
             return False
 
         except InvalidRefreshTokenException as e:
@@ -2157,6 +2173,7 @@ class Twitch_API:
                 logger.warning("Twitch refresh token invalid: %s", e)
                 self._clear_tokens_after_refresh_failure()
                 return False
+            self._last_refresh_transient = True
             logger.error(
                 "Failed to refresh authentication token (transient): %s",
                 e,
@@ -2321,6 +2338,11 @@ class Twitch_API:
                         "Auth token expired during staging, attempting to refresh"
                     )
                     refresh_success = await self.refresh_auth_token()
+                    if not refresh_success and getattr(self, "_last_refresh_transient", False):
+                        # Offline or Twitch down: the tokens may be fine. Don't open a browser
+                        # sign-in; the connection monitor retries once Twitch is reachable.
+                        logger.warning("Twitch unreachable while refreshing the token; will retry")
+                        return False
                     if not refresh_success:
                         logger.warning(
                             "Failed to refresh token during staging, will attempt new authentication"
@@ -2379,6 +2401,9 @@ class Twitch_API:
                         logger.warning(
                             "Existing tokens failed validation: %s", e
                         )
+                        if _is_network_error(e):
+                            logger.warning("Twitch unreachable while checking the tokens; will retry")
+                            return False
                         logger.info(
                             "Attempting token refresh before OAuth after validation failure"
                         )
@@ -2406,6 +2431,9 @@ class Twitch_API:
                                     retry_err,
                                 )
                                 refresh_success = False
+                        if not refresh_success and getattr(self, "_last_refresh_transient", False):
+                            logger.warning("Twitch unreachable while refreshing the token; will retry")
+                            return False
                         if not refresh_success:
                             notify_twitch_connect_failed("signin_needed")
                             oauth_success = await self.authenticate_with_oauth()
@@ -5201,11 +5229,60 @@ class Twitch_API:
             attempt += 1
 
     def _eventsub_is_reconnecting(self) -> bool:
-        """True while twitchAPI is already recovering the EventSub websocket."""
+        """True while twitchAPI is already recovering the EventSub websocket.
+
+        The library leaves its flag set after it gives up (about 255 s of failed retries), so a
+        flag older than EVENTSUB_LIBRARY_RECONNECT_MAX_SEC counts as given up: the health
+        check and the connection monitor then rebuild the session instead of waiting forever."""
         eventsub = self.eventsub
-        if eventsub is None:
+        if eventsub is None or not getattr(eventsub, "_is_reconnecting", False):
+            self._eventsub_reconnecting_since = None
             return False
-        return bool(getattr(eventsub, "_is_reconnecting", False))
+        now = time.monotonic()
+        since = getattr(self, "_eventsub_reconnecting_since", None)
+        if since is None:
+            since = self._eventsub_reconnecting_since = now
+        if now - since > EVENTSUB_LIBRARY_RECONNECT_MAX_SEC:
+            logger.warning(
+                "Twitch EventSub has been reconnecting for over %d s; rebuilding the session",
+                int(EVENTSUB_LIBRARY_RECONNECT_MAX_SEC),
+            )
+            return False
+        return True
+
+    @staticmethod
+    def _start_eventsub_bounded(eventsub, timeout: float = EVENTSUB_START_TIMEOUT_SEC) -> bool:
+        """``eventsub.start()``, but give up (False) when its socket thread dies before the first
+        connect or ``timeout`` passes, instead of spinning forever."""
+        errors: list = []
+
+        def run() -> None:
+            try:
+                eventsub.start()
+            except BaseException as e:  # noqa: BLE001 - re-raised below
+                errors.append(e)
+
+        starter = threading.Thread(target=run, daemon=True, name="TwitchEventSubStart")
+        starter.start()
+        deadline = time.monotonic() + timeout
+        while starter.is_alive() and time.monotonic() < deadline:
+            starter.join(0.25)
+            sock = getattr(eventsub, "_socket_thread", None)
+            if (isinstance(sock, threading.Thread) and not sock.is_alive()
+                    and getattr(eventsub, "_startup_complete", True) is False):
+                break  # the library gave up connecting
+        if errors:
+            raise errors[0]
+        if not starter.is_alive():
+            return True  # start() returned: the library finished its startup
+        # Release start()'s wait loop so its thread ends; the session never came up.
+        try:
+            eventsub._startup_complete = True
+            eventsub._running = False
+        except Exception:
+            pass
+        logger.warning("Twitch EventSub couldn't connect; the connection monitor will retry")
+        return False
 
     def is_eventsub_live(self) -> bool:
         """True when EventSub reports an active websocket session."""
@@ -5692,7 +5769,12 @@ class Twitch_API:
 
             # Start the websocket connection first. The first listen_* must
             # happen within 10s or Twitch closes the unused session (4003).
-            eventsub.start()
+            if not self._start_eventsub_bounded(eventsub):
+                if self.eventsub is eventsub:
+                    self.eventsub = None
+                self.is_connected = False
+                twitch_connected = False
+                return False
             self._eventsub_subscriptions_ready = False
 
             # Optional Helix seed of current subscribers; never blocks new-sub alerts.

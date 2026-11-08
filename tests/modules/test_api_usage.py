@@ -50,18 +50,21 @@ def test_counts_last_hour_today_errors_and_endpoints():
     assert s == {"hour": 3, "today": 4, "errors_hour": 2, "rate_limited_hour": 1, "endpoints": {"/b": 2, "/a": 1}}
     assert api_usage.snapshot("Steam", now=now)["hour"] == 1
     assert api_usage.snapshot("nothing", now=now)["today"] == 0
-    assert api_usage.summary_text("PSN", now=now) == "API calls: 3 last hour · 4 today · 1 rate-limited"
-    assert api_usage.summary_text("Steam", now=now) == "API calls: 1 last hour · 1 today"
+    assert api_usage.summary_text("PSN", now=now) == (
+        "1.0% of the estimated limit (3 of ~300 requests in the last 15 min) · 1 rate-limited in the last hour")
+    assert api_usage.summary_text("Steam", now=now) == "<0.1% of the limit (1 of 100,000 requests in the last 24 h)"
+    assert api_usage.summary_text("Other", now=now) == "0 requests in the last hour"
 
 
 def test_today_starts_at_midnight_and_old_entries_are_dropped():
     now = datetime(2026, 11, 7, 0, 30).timestamp()
     api_usage.record("Steam", "/s", 200, now=now - 2 * 86400)  # pruned on the next record
+    api_usage.record("Steam", "/s", 200, now=now - 86400 - 1800)  # kept: the graph's first point needs it
     api_usage.record("Steam", "/s", 200, now=now - 3600 + 10)  # yesterday 23:30
     api_usage.record("Steam", "/s", 200, now=now)
     s = api_usage.snapshot("Steam", now=now)
     assert s["hour"] == 2 and s["today"] == 1
-    assert len(api_usage._entries["Steam"]) == 2
+    assert len(api_usage._entries["Steam"]) == 3
 
 
 def test_hourly_log_line(caplog, monkeypatch):
@@ -102,14 +105,27 @@ def test_change_gate_sends_changes_and_a_heartbeat():
     assert gate.should_send({"a": 2}, now=93) is True
 
 
-def test_timeline_buckets_requests_per_minute():
-    now = datetime(2026, 11, 7, 15, 30, 20).timestamp()
-    api_usage.record("PSN", "/a", 200, now=now - 5)  # the current minute
-    api_usage.record("PSN", "/a", 429, now=now - 15)
-    api_usage.record("PSN", "/a", 200, now=now - 60)  # the minute before
-    api_usage.record("PSN", "/a", 200, now=now - 3700)  # older than the window
-    data = api_usage.timeline(["PSN", "Steam"], minutes=60, now=now)
-    assert len(data["labels"]) == 60 and data["labels"][-1] == "15:30" and data["labels"][0] == "14:31"
-    assert data["counts"]["PSN"][-1] == 2 and data["limited"]["PSN"][-1] == 1
-    assert data["counts"]["PSN"][-2] == 1 and sum(data["counts"]["PSN"]) == 3
-    assert data["counts"]["Steam"] == [0] * 60
+def test_usage_against_the_limit_window():
+    now = 1_000_000.0
+    for i in range(30):
+        api_usage.record("PSN", "/p", 200, now=now - i * 60)  # one a minute for 30 minutes
+    u = api_usage.usage("PSN", now=now)
+    assert u["count"] == 15 and u["percent"] == 5.0 and u["limit"].window_sec == 900  # only the last 15 minutes count
+    assert api_usage.usage("Steam", now=now)["percent"] == 0.0
+
+
+def test_percent_timeline_follows_the_window():
+    now = 1_000_000.0
+    for i in range(30):
+        api_usage.record("PSN", "/p", 429 if i == 0 else 200, now=now - i * 60)
+    data = api_usage.percent_timeline(["PSN", "Steam"], minutes=60, now=now)
+    assert len(data["labels"]) == 60
+    assert data["count"]["PSN"][-1] == 15 and data["percent"]["PSN"][-1] == 5.0
+    assert data["count"]["PSN"][-20] == 11  # 19 minutes ago: the window held 11 of them
+    assert data["count"]["PSN"][0] == 0 and data["limited"]["PSN"][-1] == 1 and data["limited"]["PSN"][-2] == 0
+    assert data["percent"]["Steam"] == [0.0] * 60
+
+
+@pytest.mark.parametrize("value,text", [(0, "0%"), (0.04, "<0.1%"), (0.9, "0.9%"), (9.95, "9.9%"), (41.4, "41%"), (130, "130%")])
+def test_percent_text(value, text):
+    assert api_usage.percent_text(value) == text

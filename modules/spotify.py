@@ -243,6 +243,8 @@ class SpotifyClient:
         self.update_interval_idle = 5.0
         self.running = False
         self._last_api_success = False
+        # True when the last API request got no response at all (offline, DNS, timeout).
+        self._last_network_error = False
         self._refresh_lock = threading.Lock()
         self._api_backoff_until = 0.0
         self._auth_failure_until = 0.0
@@ -456,8 +458,13 @@ class SpotifyClient:
                 method.upper(), url, headers=headers, data=data, timeout=10
             )
         except Exception as e:
-            logger.error("Spotify API request failed: %s", e, exc_info=True)
+            self._last_network_error = True
+            if isinstance(e, requests.RequestException):
+                logger.warning("Spotify unreachable: %s", e)
+            else:
+                logger.error("Spotify API request failed: %s", e, exc_info=True)
             return None
+        self._last_network_error = False
         if response.status_code == 429:
             self._apply_rate_limit_backoff(response)
         return response
@@ -728,7 +735,12 @@ class SpotifyClient:
                 return True
 
             self.is_authenticated = False
-            if not self.is_in_auth_cooldown():
+            if self._last_network_error:
+                # No answer at all (an outage): not a sign-in problem. "Disconnected" keeps the
+                # connection monitor retrying; "Authorization Required" would stop it for good.
+                self.update_field("connection_status", "Disconnected")
+                logger.info("Spotify unreachable; Mycelian keeps retrying")
+            elif not self.is_in_auth_cooldown():
                 self.update_field("connection_status", "Authorization Required")
                 logger.warning(
                     "Spotify authentication failed - may need re-authorization"

@@ -2049,6 +2049,87 @@ class DatabaseManager:
         self._last_failure_toast: Dict[str, float] = {}
         # Outcome of the last migrate_data() call, for the Database tab to report.
         self.last_migration_result: Dict[str, Any] = {}
+        # Firebase / MongoDB writes made during an internet outage wait here (database_offline.py).
+        from .database_offline import OfflineWrites
+
+        self._offline_writes = OfflineWrites(
+            self._direct_write, self._backend_answers, lambda: _db_label(self._config.database_type)
+        )
+        self._offline_flush_registered = False
+
+    # ----- outages (remote backends) -----
+
+    def _is_remote(self) -> bool:
+        return str(getattr(self._config, "database_type", "sql") or "sql") != "sql"
+
+    def offline_status(self) -> Dict[str, Any]:
+        """``{"offline": bool, "pending": n}``: writes waiting for the connection to come back."""
+        from .database_offline import describe
+
+        return describe(self._offline_writes)
+
+    def _direct_write(self, op: str, path: str, data: Any) -> bool:
+        """One write straight to the backend (the offline queue's flush)."""
+        db = self._database
+        if db is None:
+            return False
+        call = {
+            "set": lambda: db.set_data(path, data),
+            "update": lambda: db.update_data(path, data),
+            "delete": lambda: db.delete_data(path),
+        }[op]
+        return bool(self._run_db_op_with_timeout(op.title(), call, False, path=path, invalidate_on_timeout=True))
+
+    def _backend_answers(self, timeout: float = 5.0) -> bool:
+        """Quick check that the remote database answers (on a worker thread, bounded)."""
+        db = self._database
+        if db is None:
+            return False
+        result = {"ok": False}
+
+        def probe() -> None:
+            try:
+                result["ok"] = bool(db.test_connection())
+            except Exception:
+                result["ok"] = False
+
+        worker = threading.Thread(target=probe, name="MycelianDBProbe", daemon=True)
+        worker.start()
+        worker.join(timeout)
+        return result["ok"] and not worker.is_alive()
+
+    def _queue_while_offline(self, op: str, path: str, data: Any) -> bool:
+        """During a known outage, keep the write in memory instead of waiting on the network."""
+        if not (self._is_remote() and self._offline_writes.offline):
+            return False
+        self._offline_writes.queue(op, path, data)
+        _write_tls.last_write = ("queued", "")
+        return True
+
+    def _queue_after_failure(self, op: str, path: str, data: Any) -> bool:
+        """A remote write failed: if the database is unreachable (an outage), keep it and say so.
+        False for a real refusal (permissions, bad data), which is reported as before."""
+        if not self._is_remote():
+            return False
+        from .database_offline import _internet_up, looks_like_outage
+
+        status, reason = last_write_problem() or ("failed", "")
+        if status in ("ok", "superseded", "down"):
+            return False
+        if not (looks_like_outage(status, reason) or not _internet_up() or not self._backend_answers()):
+            return False
+        self._offline_writes.queue(op, path, data)
+        if not self._offline_flush_registered:
+            self._offline_flush_registered = True
+            try:
+                from .shutdown import register_shutdown_flush
+
+                register_shutdown_flush("database_offline_writes", self._offline_writes.flush_on_shutdown)
+            except Exception:
+                logger.debug("Couldn't register the offline write flush", exc_info=True)
+        self._offline_writes.go_offline(reason or status)
+        _write_tls.last_write = ("queued", "")
+        return True
 
     def add_write_listener(self, callback) -> None:
         """Call ``callback(path, done)`` around every write.
@@ -2187,6 +2268,15 @@ class DatabaseManager:
             if config:
                 self._config = config
 
+            # A reconnect builds a new backend: close the old MongoDB client so its
+            # connection pool and monitor threads don't pile up.
+            old_client = getattr(self._database, "_client", None) if self._database is not None else None
+            if old_client is not None and hasattr(old_client, "close"):
+                try:
+                    old_client.close()
+                except Exception:
+                    logger.debug("Closing the previous MongoDB client failed", exc_info=True)
+
             # Create the appropriate database implementation
             if self._config.database_type == "sql":
                 self._database = SQLDatabase(self._config)
@@ -2267,12 +2357,18 @@ class DatabaseManager:
             return {}
 
         default = {"data": {}, "etag": None} if request_etag else {}
-        return self._run_db_op_with_timeout(
+        value = self._run_db_op_with_timeout(
             "Get",
             lambda: self._database.get_data(path, request_etag),
             default,
             path=path,
         )
+        if self._offline_writes.pending_count():
+            # A change still waiting for the connection is newer than what the database has.
+            if request_etag and isinstance(value, dict):
+                return {**value, "data": self._offline_writes.overlay(path, value.get("data"))}
+            return self._offline_writes.overlay(path, value)
+        return value
 
     def get_data_checked(self, path: str):
         """Like get_data, plus whether the read succeeded: ``(data, ok)``.
@@ -2295,6 +2391,11 @@ class DatabaseManager:
             None,
             path=path,
         )
+        if self._offline_writes.pending_count():
+            data, ok = outcome if outcome is not None else ({}, False)
+            overlaid = self._offline_writes.overlay(path, data)
+            if overlaid is not data:
+                return overlaid, True  # the waiting write is the current value
         if outcome is None:
             return {}, False
         return outcome
@@ -2316,6 +2417,8 @@ class DatabaseManager:
             _write_tls.last_write = ("down", "")
             self._report_write_failure("Write", path)
             return False
+        if self._queue_while_offline("set", path, data):
+            return True
 
         ok = bool(
             self._run_db_op_with_timeout(
@@ -2327,6 +2430,8 @@ class DatabaseManager:
             )
         )
         if not ok:
+            if self._queue_after_failure("set", path, data):
+                return True
             self._report_write_failure("Write", path)
         return ok
 
@@ -2441,6 +2546,8 @@ class DatabaseManager:
             _write_tls.last_write = ("down", "")
             self._report_write_failure("Update", path)
             return False
+        if self._queue_while_offline("update", path, data):
+            return True
 
         ok = bool(
             self._run_db_op_with_timeout(
@@ -2452,6 +2559,8 @@ class DatabaseManager:
             )
         )
         if not ok:
+            if self._queue_after_failure("update", path, data):
+                return True
             self._report_write_failure("Update", path)
         return ok
 
@@ -2465,6 +2574,8 @@ class DatabaseManager:
             _write_tls.last_write = ("down", "")
             self._report_write_failure("Delete", path)
             return False
+        if self._queue_while_offline("delete", path, None):
+            return True
 
         ok = bool(
             self._run_db_op_with_timeout(
@@ -2476,6 +2587,8 @@ class DatabaseManager:
             )
         )
         if not ok:
+            if self._queue_after_failure("delete", path, None):
+                return True
             self._report_write_failure("Delete", path)
         return ok
 

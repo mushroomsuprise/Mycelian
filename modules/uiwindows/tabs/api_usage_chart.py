@@ -2,7 +2,11 @@
 # SPDX-License-Identifier: MIT
 """ECharts option for the live API usage graph in Settings → PSN, Steam and Games Tracker.
 
-Requests per minute over the last hour, as columns (stacked when both platforms are shown).
+The share of each platform's request limit in use (``api_usage.LIMITS``: PSN's estimated
+300 per 15 minutes, Steam's 100,000 per day), once a minute over the last hour, one line per
+platform. The scale steps 10 / 25 / 50 / 100%, so low use is still readable; past 100% it grows
+and a "Limit" line marks 100%.
+
 Each platform keeps one color everywhere: categorical slot 1 (blue) for PSN and slot 2
 (orange) for Steam, stepped for the light or dark surface. The two brand blues are too
 close to tell apart, so they aren't used here. Validated with the dataviz palette checker
@@ -13,9 +17,10 @@ carry the values too.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, Sequence
 
-from .statistics_charts import ANIMATE, ChartColors, _rgb, _tooltip, _value_axis, mix
+from .statistics_charts import ANIMATE, ChartColors, _rgb, _tooltip, _value_axis
 
 # platform -> (light step, dark step)
 PLATFORM_COLORS = {
@@ -23,15 +28,16 @@ PLATFORM_COLORS = {
     "Steam": ("#eb6834", "#d95926"),
 }
 
-# Axis tooltip: the minute, each platform's count (and its 429s), and the total for two platforms.
+# Axis tooltip: the minute, then each platform's share of its limit, the requests behind it and its 429s.
 _TOOLTIP_FORMATTER = (
-    "ps => { let h = ps[0].axisValueLabel; let t = 0;"
-    " for (const p of ps) { const v = p.value || 0; t += v;"
-    " h += '<br>' + p.marker + p.seriesName + ': <b>' + v + '</b>'"
-    " + (p.data && p.data.limited ? ' · ' + p.data.limited + ' rate-limited' : ''); }"
-    " if (ps.length > 1) h += '<br>Total: <b>' + t + '</b>';"
+    "ps => { let h = ps[0].axisValueLabel;"
+    " for (const p of ps) { const d = p.data || {};"
+    " h += '<br>' + p.marker + p.seriesName + ': <b>' + (d.text || '0%') + '</b>'"
+    " + (d.detail ? ' · ' + d.detail : '')"
+    " + (d.limited ? ' · ' + d.limited + ' rate-limited' : ''); }"
     " return h; }"
 )
+SCALE_STEPS = (10, 25, 50, 100)
 
 
 def _is_dark(c: ChartColors) -> bool:
@@ -44,57 +50,91 @@ def platform_color(platform: str, c: ChartColors) -> str:
     return dark if _is_dark(c) else light
 
 
-def usage_columns(data: Dict[str, Any], platforms: Sequence[str], c: ChartColors) -> Dict[str, Any]:
-    """Columns of requests per minute; ``data`` is ``api_usage.timeline(platforms)``."""
+def scale_max(values: Sequence[float]) -> float:
+    """The y-axis top: the first of 10 / 25 / 50 / 100% that fits, else the next 25% above."""
+    top = max(values, default=0.0)
+    for step in SCALE_STEPS:
+        if top <= step:
+            return float(step)
+    return float(math.ceil(top / 25.0) * 25)
+
+
+def usage_lines(data: Dict[str, Any], platforms: Sequence[str], c: ChartColors) -> Dict[str, Any]:
+    """Share of the limit in use over time; ``data`` is ``api_usage.percent_timeline(platforms)``."""
+    from ...api_usage import LIMITS, percent_text
+
     platforms = list(platforms)
-    stacked = len(platforms) > 1
+    several = len(platforms) > 1
     series = []
-    for i, platform in enumerate(platforms):
+    every = []
+    for platform in platforms:
         color = platform_color(platform, c)
-        top = i == len(platforms) - 1
-        counts = data["counts"].get(platform) or []
+        limit = LIMITS.get(platform)
+        percents = data["percent"].get(platform) or []
+        counts = data["count"].get(platform) or []
         limited = data["limited"].get(platform) or []
-        entry = {
+        every.extend(percents)
+        approx = "~" if limit is not None and limit.estimated else ""
+        points = []
+        for j, pct in enumerate(percents):
+            n = counts[j] if j < len(counts) else 0
+            detail = f"{n:,} of {approx}{limit.requests:,} in {limit.window_text}" if limit else f"{n:,} requests"
+            points.append({"value": pct, "text": percent_text(pct), "detail": detail,
+                           "limited": limited[j] if j < len(limited) else 0})
+        entry: Dict[str, Any] = {
             "name": platform,
-            "type": "bar",
-            "data": [{"value": n, "limited": limited[j] if j < len(limited) else 0} for j, n in enumerate(counts)],
-            "barMaxWidth": 10,
-            "barCategoryGap": "30%",
-            # A surface-colored edge keeps a gap between stacked segments; the top one gets the rounded end.
-            "itemStyle": {
-                "color": color,
-                "borderRadius": [4, 4, 0, 0] if top else 0,
-                "borderColor": c.surface if stacked else color,
-                "borderWidth": 1 if stacked else 0,
-            },
-            "emphasis": {"itemStyle": {"color": mix(color, c.text, 0.18)}},
+            "type": "line",
+            "data": points,
+            "smooth": False,
+            "showSymbol": False,
+            "symbolSize": 8,
+            "lineStyle": {"width": 2, "color": color},
+            "itemStyle": {"color": color, "borderColor": c.surface, "borderWidth": 2},
+            "emphasis": {"focus": "none"},
         }
-        if stacked:
-            entry["stack"] = "requests"
+        if not several:
+            entry["areaStyle"] = {"color": color, "opacity": 0.10}
         series.append(entry)
+    top = scale_max(every)
+    if top > 100 and series:
+        series[0]["markLine"] = {
+            "silent": True,
+            "symbol": "none",
+            "lineStyle": {"color": c.axis, "width": 1, "type": "dashed"},
+            "label": {"position": "insideEndTop", "color": c.text_secondary, "fontSize": 11, "formatter": "Limit"},
+            "data": [{"yAxis": 100}],
+        }
     option: Dict[str, Any] = {
         "animation": ANIMATE,
         "animationDuration": 300,
         "animationDurationUpdate": 200,
-        "grid": {"left": 4, "right": 8, "top": 26 if stacked else 10, "bottom": 2, "containLabel": True},
+        "grid": {"left": 4, "right": 8, "top": 26 if several else 10, "bottom": 2, "containLabel": True},
         "tooltip": {**_tooltip(c), ":formatter": _TOOLTIP_FORMATTER},
         "xAxis": {
             "type": "category",
+            "boundaryGap": False,
             "data": list(data["labels"]),
             "axisTick": {"show": False},
             "axisLine": {"lineStyle": {"color": c.axis}},
             "axisLabel": {"color": c.text_muted, "fontSize": 10, "interval": 14},
         },
-        "yAxis": {**_value_axis(c), "splitNumber": 3},
+        "yAxis": {
+            **_value_axis(c),
+            "min": 0,
+            "max": top,
+            "splitNumber": 2,
+            "minInterval": 0,
+            "axisLabel": {"color": c.text_muted, "fontSize": 11, ":formatter": "v => v + '%'"},
+        },
         "series": series,
     }
-    if stacked:
+    if several:
         option["legend"] = {
             "top": 0,
             "right": 4,
-            "itemWidth": 10,
-            "itemHeight": 10,
-            "icon": "roundRect",
+            "itemWidth": 14,
+            "itemHeight": 3,
+            "icon": "rect",
             "textStyle": {"color": c.text_secondary, "fontSize": 11},
             "data": platforms,
         }

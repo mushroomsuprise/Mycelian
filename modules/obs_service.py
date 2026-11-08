@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 _CONNECT_ATTEMPT_FIRST_WAIT_SEC = 5.0
 _CONNECT_ATTEMPT_MAX_WAIT_SEC = 45.0
 _CONNECT_ATTEMPT_BACKOFF_FACTOR = 1.35
+# While waiting, look for OBS starting on this computer this often; when it does, try at once and
+# then every _OBS_STARTING_RETRY_SEC for _OBS_STARTING_WINDOW_SEC (its WebSocket server needs a moment).
+_OBS_PROCESS_CHECK_SEC = 2.0
+_OBS_STARTING_RETRY_SEC = 3.0
+_OBS_STARTING_WINDOW_SEC = 60.0
 # Worker thread poll while OBS integration disabled in Settings.
 _DISABLED_POLL_INTERVAL_SEC = 15.0
 # After unexpected thread errors, pause before restarting the outer loop.
@@ -35,7 +40,10 @@ _IDLE_TICK_SEC = 0.25
 # previous probe's start. Every second idle tick (was every 0.3 s tick).
 _IDLE_HEALTH_INTERVAL_SEC = 0.45
 # Socket timeouts (seconds) — keep connect/health probes short so the UI stays responsive.
-_CONNECT_TIMEOUT_SEC = 3.0
+# Each socket step may take this long; the whole connect (TCP, WebSocket upgrade, Hello, Identify,
+# GetVersion) gets _CONNECT_BUDGET_SEC. Windows tries ::1 before 127.0.0.1 for "localhost".
+_CONNECT_TIMEOUT_SEC = 5.0
+_CONNECT_BUDGET_SEC = 8.0
 _RPC_TIMEOUT_SEC = 5.0
 _HEALTH_TIMEOUT_SEC = 2.0
 _EVENT_DISCONNECT_JOIN_TIMEOUT_SEC = 2.0
@@ -207,6 +215,149 @@ def _is_transient_connect_error(exc: BaseException) -> bool:
     return type(exc).__name__ in ("WebSocketTimeoutException", "WebSocketBadStatusException")
 
 
+_LOCAL_HOST_NAMES = frozenset({"", "localhost", "127.0.0.1", "::1", "0.0.0.0"})
+
+
+def normalize_obs_address(host: Any, port: Any) -> Tuple[str, int]:
+    """(host, port) from what the user typed: drops ``ws://`` / ``wss://``, a trailing path, IPv6
+    brackets and an embedded ``:port`` (which wins over the port field)."""
+    text = str(host or "").strip()
+    for scheme in ("ws://", "wss://", "http://", "https://"):
+        if text.lower().startswith(scheme):
+            text = text[len(scheme):]
+    text = text.split("/", 1)[0].strip()
+    try:
+        number = int(port or 4455)
+    except (TypeError, ValueError):
+        number = 4455
+    if text.startswith("["):  # [::1]:4455
+        inner, _, rest = text[1:].partition("]")
+        text = inner
+        if rest.startswith(":") and rest[1:].isdigit():
+            number = int(rest[1:])
+    elif text.count(":") == 1:  # host:4455 (a bare IPv6 address has several colons)
+        name, _, tail = text.partition(":")
+        if tail.isdigit():
+            text, number = name, int(tail)
+    if not 1 <= number <= 65535:
+        number = 4455
+    return (text or "localhost"), number
+
+
+_local_addr_cache: list = [0.0, frozenset()]
+_LOCAL_ADDR_TTL_SEC = 60.0
+
+
+def _local_addresses() -> frozenset:
+    """This computer's own IP addresses (OBS's Show Connect Info shows one of them), cached a minute."""
+    import socket
+
+    now = time.monotonic()
+    if _local_addr_cache[1] and now - _local_addr_cache[0] < _LOCAL_ADDR_TTL_SEC:
+        return _local_addr_cache[1]
+    # Interface addresses only: a hostname lookup can block for seconds when DNS is down.
+    found = set()
+    try:
+        import psutil
+
+        for addrs in psutil.net_if_addrs().values():
+            for a in addrs:
+                if a.family in (socket.AF_INET, socket.AF_INET6):
+                    found.add(str(a.address).split("%", 1)[0])
+    except Exception:
+        pass
+    _local_addr_cache[0], _local_addr_cache[1] = now, frozenset(a.lower() for a in found)
+    return _local_addr_cache[1]
+
+
+def obs_host_is_this_computer(host: Any) -> bool:
+    """True for localhost and for any of this computer's own addresses."""
+    name, _port = normalize_obs_address(host, 4455)
+    name = name.lower()
+    return name in _LOCAL_HOST_NAMES or name in _local_addresses()
+
+
+def _ensure_no_proxy_for_localhost() -> None:
+    """websocket-client honours http_proxy even for localhost unless no_proxy lists it."""
+    import os
+
+    wanted = ("localhost", "127.0.0.1", "::1")
+    for key in ("no_proxy", "NO_PROXY"):
+        current = [x.strip() for x in (os.environ.get(key) or "").split(",") if x.strip()]
+        missing = [w for w in wanted if w not in current]
+        if missing and (current or any(os.environ.get(k) for k in ("http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"))):
+            os.environ[key] = ",".join(current + missing)
+
+
+def classify_connect_error(exc: Optional[BaseException], host: str, port: int) -> Dict[str, str]:
+    """What went wrong connecting to OBS, in words the user can act on:
+    ``{"kind", "title", "message", "hint", "details"}``. ``exc`` None means the connect timed out."""
+    address = f"{host}:{port}"
+    local = obs_host_is_this_computer(host)
+    raw = f"{type(exc).__name__}: {exc}" if exc is not None else "No answer in time"
+    name = type(exc).__name__ if exc is not None else ""
+    msg = str(exc or "").lower()
+    auth = _obs_auth_problem(exc) if exc is not None else None
+    settings = "In OBS open Tools → WebSocket Server Settings."
+    if auth == "missing":
+        return {"kind": "auth_missing", "title": "OBS needs a WebSocket password",
+                "message": "OBS has WebSocket authentication turned on, but no password is set in Mycelian.",
+                "hint": f"{settings} Click Show Connect Info and copy the Server Password into Settings → OBS.",
+                "details": raw}
+    if auth == "wrong":
+        return {"kind": "auth_wrong", "title": "OBS rejected the WebSocket password",
+                "message": "The password in Settings → OBS doesn't match the one in OBS.",
+                "hint": f"{settings} Click Show Connect Info, copy the Server Password again and paste it in Settings → OBS.",
+                "details": raw}
+    if exc is None or name in ("WebSocketTimeoutException", "TimeoutError", "timeout") or "timed out" in msg:
+        return {"kind": "timeout", "title": f"OBS didn't answer at {address}",
+                "message": "Something is listening there, but it didn't finish the WebSocket handshake in time.",
+                "hint": "Check the port matches Tools → WebSocket Server Settings (4455 by default). OBS older than 28 "
+                        "uses a different WebSocket plugin on port 4444: update OBS. If OBS is on another computer, "
+                        "check its firewall.",
+                "details": raw}
+    if isinstance(exc, ConnectionRefusedError) or "refused" in msg or "errno 61" in msg or "errno 111" in msg or "10061" in msg:
+        if local:
+            return {"kind": "refused", "title": "OBS's WebSocket server is off",
+                    "message": f"Nothing is accepting connections on port {port} of this computer.",
+                    "hint": f"Open OBS, then {settings[3:].lower().rstrip('.')} and tick Enable WebSocket server. "
+                            "Check the port there matches Settings → OBS.",
+                    "details": raw}
+        return {"kind": "refused", "title": f"OBS at {address} refused the connection",
+                "message": "That computer is reachable, but nothing accepts connections on that port.",
+                "hint": "On that computer, open OBS and turn on its WebSocket server, check the port, and allow it "
+                        "through the firewall.",
+                "details": raw}
+    if name == "WebSocketAddressException" or "getaddrinfo" in msg or "name or service not known" in msg or "nodename nor servname" in msg:
+        return {"kind": "host", "title": f"Mycelian can't find the computer “{host}”",
+                "message": "The host in Settings → OBS isn't a name or address this computer can look up.",
+                "hint": "If OBS runs on this computer, set the host to localhost. Otherwise use that computer's IP address.",
+                "details": raw}
+    if name == "WebSocketBadStatusException" or "handshake status" in msg:
+        return {"kind": "not_websocket", "title": f"Port {port} isn't OBS's WebSocket server",
+                "message": "Something answered there, but not as an OBS WebSocket server.",
+                "hint": f"{settings} Copy the Server Port into Settings → OBS (4455 by default).",
+                "details": raw}
+    if isinstance(exc, (ConnectionResetError, BrokenPipeError)) or "connection is already closed" in msg or name == "WebSocketConnectionClosedException":
+        return {"kind": "closed", "title": "OBS closed the connection",
+                "message": "OBS accepted the connection, then closed it. It may be starting up or shutting down.",
+                "hint": "Mycelian tries again on its own. If it keeps happening, restart OBS.",
+                "details": raw}
+    if isinstance(exc, OSError) and ("unreachable" in msg or "no route" in msg):
+        return {"kind": "unreachable", "title": f"Can't reach {host}",
+                "message": "The network can't get to that computer.",
+                "hint": "Check both computers are on the same network, and that the IP address hasn't changed.",
+                "details": raw}
+    return {"kind": "other", "title": f"Couldn't connect to OBS at {address}",
+            "message": "The connection failed for a reason Mycelian doesn't recognise.",
+            "hint": "Check the host, port and password in Settings → OBS, then test again. The details say what OBS or the network reported.",
+            "details": raw}
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    return isinstance(exc, TimeoutError) or "Timeout" in type(exc).__name__ or "timed out" in str(exc).lower()
+
+
 def _obs_auth_problem(exc: BaseException) -> Optional[str]:
     """``missing`` / ``wrong`` when OBS refused the WebSocket password, else None.
 
@@ -219,6 +370,18 @@ def _obs_auth_problem(exc: BaseException) -> Optional[str]:
     if "failed to identify client" in msg:
         return "wrong"
     return None
+
+
+def _close_late_session(fut: "concurrent.futures.Future[Any]") -> None:
+    try:
+        session = fut.result()
+    except Exception:
+        return
+    try:
+        session[0].disconnect()
+        logger.debug("Closed an OBS session that connected after its time ran out")
+    except Exception:
+        pass
 
 
 class ObsServiceImpl:
@@ -254,6 +417,15 @@ class ObsServiceImpl:
         self._connect_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
         # (host, port, password hash) the user was last told OBS rejected; cleared on connect.
         self._auth_notified_sig: Optional[Tuple[str, int, int]] = None
+        # Why the last connect failed (classify_connect_error), None once connected.
+        self._last_error: Optional[Dict[str, str]] = None
+        self._logged_error_kinds: set = set()  # warned once per kind+address, then DEBUG
+        # apply_settings() bumps the sequence; a queued __reconnect__ older than the last one handled is ignored.
+        self._reconnect_seq = 0
+        self._reconnect_handled = 0
+        self._request_timed_out = False  # a reply may still be in flight: reconnect to resync
+        self._obs_seen_running: Optional[bool] = None
+        self._obs_started_at = 0.0
 
     # --- Public API ---
     def set_connector_loop(self, loop: Optional[asyncio.AbstractEventLoop]) -> None:
@@ -298,11 +470,46 @@ class ObsServiceImpl:
 
     def apply_settings(self) -> None:
         """Ask the worker thread to reconnect using current ``state_manager`` settings."""
+        # New settings: the last failure (a wrong password, say) no longer describes them.
+        self._auth_notified_sig = None
+        self._last_error = None
+        self._reconnect_seq += 1
         self._reconnect_wakeup.set()
         try:
-            self._req_queue.put_nowait((None, "__reconnect__", {}))
+            self._req_queue.put_nowait((None, "__reconnect__", {"seq": self._reconnect_seq}))
         except queue.Full:
             logger.warning("OBS reconnect signal dropped — queue full")
+
+    def last_connect_error(self) -> Optional[Dict[str, str]]:
+        """Why the last connect attempt failed (``classify_connect_error``), or None."""
+        err = self._last_error
+        return dict(err) if err else None
+
+    def _consume_wakeup(self) -> None:
+        self._reconnect_wakeup.clear()
+        self._reconnect_handled = self._reconnect_seq
+        self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
+
+    def _stale_reconnect(self, kw: Dict[str, Any]) -> bool:
+        """A queued __reconnect__ whose wake-up was already handled."""
+        return int((kw or {}).get("seq") or 0) <= self._reconnect_handled
+
+    def _obs_just_started(self) -> bool:
+        """True once when an OBS process appears on this computer (for a local host)."""
+        try:
+            from . import dataobjects
+            from .obs_browser_docks import obs_process_is_running
+
+            if not obs_host_is_this_computer(dataobjects.state_manager.get_obs_data().host):
+                return False
+            running = bool(obs_process_is_running())
+        except Exception:
+            return False
+        before, self._obs_seen_running = self._obs_seen_running, running
+        if running and before is False:
+            self._obs_started_at = time.monotonic()
+            return True
+        return False
 
     def enqueue_refresh_snapshot(self) -> concurrent.futures.Future[Any]:
         """Queue a snapshot rebuild on the OBS worker thread (preferred for UI)."""
@@ -447,15 +654,23 @@ class ObsServiceImpl:
 
         Returns ``shutdown``, ``wake`` (__reconnect__ short-circuit), or ``done`` after the wait."""
 
+        if time.monotonic() - self._obs_started_at < _OBS_STARTING_WINDOW_SEC:
+            wait_seconds = min(wait_seconds, _OBS_STARTING_RETRY_SEC)  # OBS just opened: keep trying
         deadline = time.monotonic() + max(0.0, wait_seconds)
+        next_process_check = 0.0
         while time.monotonic() < deadline and not self._stop.is_set():
             if self._reconnect_wakeup.is_set():
-                self._reconnect_wakeup.clear()
-                self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
+                self._consume_wakeup()
                 return "wake"
+            if time.monotonic() >= next_process_check:
+                next_process_check = time.monotonic() + _OBS_PROCESS_CHECK_SEC
+                if self._obs_just_started():
+                    logger.info("OBS started; connecting now")
+                    self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
+                    return "wake"
 
             remaining = deadline - time.monotonic()
-            slice_s = max(0.01, min(2.0, remaining))
+            slice_s = max(0.01, min(_OBS_PROCESS_CHECK_SEC, remaining))
             try:
                 item = self._req_queue.get(timeout=slice_s)
             except queue.Empty:
@@ -464,8 +679,9 @@ class ObsServiceImpl:
             if op == "__shutdown__":
                 return "shutdown"
             if op == "__reconnect__":
-                self._reconnect_wakeup.clear()
-                self._retry_after_fail_sec = _CONNECT_ATTEMPT_FIRST_WAIT_SEC
+                if self._stale_reconnect(kw):
+                    continue
+                self._consume_wakeup()
                 return "wake"
             if op == "__refresh_snapshot__":
                 if fut is not None:
@@ -499,7 +715,13 @@ class ObsServiceImpl:
                 item = self._req_queue.get(timeout=_IDLE_TICK_SEC)
             except queue.Empty:
                 if self._reconnect_wakeup.is_set():
-                    self._reconnect_wakeup.clear()
+                    self._consume_wakeup()
+                    return
+                if self._request_timed_out:
+                    # A late reply would be read as the answer to the next request: start a fresh session.
+                    self._request_timed_out = False
+                    logger.info("OBS request timed out; reconnecting so replies stay in step")
+                    self._disconnect_clients()
                     return
                 # Keep snapshot fresh lightly (stream/record state)
                 now = time.monotonic()
@@ -535,6 +757,9 @@ class ObsServiceImpl:
             if op == "__shutdown__":
                 break
             if op == "__reconnect__":
+                if self._stale_reconnect(kw):
+                    continue  # its wake-up already reconnected
+                self._consume_wakeup()
                 return
             try:
                 if op == "__refresh_snapshot__":
@@ -559,6 +784,7 @@ class ObsServiceImpl:
                             if fut:
                                 fut.set_result((True, None, payload))
                         except Exception as e:
+                            self._note_request_error(e)
                             if fut:
                                 fut.set_result((False, str(e), None))
                     continue
@@ -575,6 +801,7 @@ class ObsServiceImpl:
                             if fut:
                                 fut.set_result((True, None, payload))
                         except Exception as e:
+                            self._note_request_error(e)
                             if fut:
                                 fut.set_result((False, str(e), None))
                     continue
@@ -588,6 +815,7 @@ class ObsServiceImpl:
                             if fut:
                                 fut.set_result((True, None, payload))
                         except Exception as e:
+                            self._note_request_error(e)
                             if fut:
                                 fut.set_result((False, str(e), None))
                     continue
@@ -601,6 +829,7 @@ class ObsServiceImpl:
                             if fut:
                                 fut.set_result((True, None, payload))
                         except Exception as e:
+                            self._note_request_error(e)
                             if fut:
                                 fut.set_result((False, str(e), None))
                     continue
@@ -610,12 +839,17 @@ class ObsServiceImpl:
                 if fut:
                     fut.set_result((True, None, None))
             except Exception as e:
+                self._note_request_error(e)
                 msg = str(e)
                 logger.warning("OBS connector op failed %s %s — %s", op, kw, msg)
                 if fut:
                     fut.set_result((False, msg, None))
 
         self._disconnect_clients()
+
+    def _note_request_error(self, exc: BaseException) -> None:
+        if _is_timeout(exc):
+            self._request_timed_out = True
 
     def _load_enabled_settings(self) -> bool:
         """Return True when integration should remain active."""
@@ -641,10 +875,11 @@ class ObsServiceImpl:
             timeout = _RPC_TIMEOUT_SEC
 
         obs = dataobjects.state_manager.get_obs_data()
-        port = int(obs.port or 4455)
-        pwd = getattr(obs, "password", "") or ""
+        host, port = normalize_obs_address(obs.host, obs.port)
+        # OBS passwords never start or end with spaces; a pasted one often does.
+        pwd = str(getattr(obs, "password", "") or "").strip()
         kwargs: Dict[str, Any] = {
-            "host": (obs.host or "localhost").strip() or "localhost",
+            "host": host,
             "port": port,
             "password": pwd,
             "timeout": timeout,
@@ -671,24 +906,36 @@ class ObsServiceImpl:
     def _run_connect_with_timeout(
         self, kw: Dict[str, Any]
     ) -> Optional[Tuple[Any, str, str]]:
+        _ensure_no_proxy_for_localhost()
         pool = self._get_connect_executor()
         fut = pool.submit(self._establish_req_session, kw)
         try:
-            return fut.result(timeout=_CONNECT_TIMEOUT_SEC + 0.5)
+            session = fut.result(timeout=_CONNECT_BUDGET_SEC)
+            self._last_error = None
+            return session
         except concurrent.futures.TimeoutError:
-            logger.debug("OBS ReqClient connect timed out")
+            # The connect may still finish later: close that session instead of leaving it open in OBS.
+            fut.add_done_callback(_close_late_session)
             self._replace_connect_executor()
+            self._record_connect_error(None, kw)
             return None
         except Exception as e:
             auth = _obs_auth_problem(e)
+            self._record_connect_error(e, kw)
             if auth:
-                logger.info("OBS rejected the connection (%s password): %s", auth, e)
                 self._notify_auth_failed(auth, kw, e)
-            elif _is_transient_connect_error(e):
-                logger.debug("OBS unreachable: %s", e)
-            else:
-                logger.info("OBS connect failed: %s", e)
             return None
+
+    def _record_connect_error(self, exc: Optional[BaseException], kw: Dict[str, Any]) -> None:
+        """Keep why the connect failed (for the tab, Test and pop-ups) and log it once per kind at WARNING."""
+        err = classify_connect_error(exc, str(kw.get("host") or ""), int(kw.get("port") or 0))
+        self._last_error = err
+        key = (err["kind"], kw.get("host"), kw.get("port"))
+        if key in self._logged_error_kinds:
+            logger.debug("OBS connect failed (%s): %s", err["kind"], err["details"])
+        else:
+            self._logged_error_kinds.add(key)
+            logger.warning("OBS connect failed: %s (%s)", err["title"], err["details"])
 
     def _notify_auth_failed(self, problem: str, kw: Dict[str, Any], exc: BaseException) -> None:
         """Tell the user once per host/port/password that OBS refused the password."""
@@ -734,7 +981,7 @@ class ObsServiceImpl:
         pool = self._get_connect_executor()
         fut = pool.submit(_open_events)
         try:
-            ev = fut.result(timeout=_CONNECT_TIMEOUT_SEC + 0.5)
+            ev = fut.result(timeout=_CONNECT_BUDGET_SEC)
             if self._should_abort_connect():
                 self._disconnect_event_client_bounded(ev)
                 return
@@ -800,6 +1047,9 @@ class ObsServiceImpl:
         self._obs_version = plug
         self._websocket_version = ws_v
         self._auth_notified_sig = None
+        self._last_error = None
+        self._logged_error_kinds.clear()
+        self._request_timed_out = False
         self._set_phase("connected")
 
         logger.info(
@@ -987,8 +1237,15 @@ class ObsServiceImpl:
             return
         timeout = _HEALTH_TIMEOUT_SEC if use_health_timeout else _RPC_TIMEOUT_SEC
         self._apply_ws_timeout(cl, timeout)
-        ss = cl.get_stream_status()
-        rs = cl.get_record_status()
+        try:
+            ss = cl.get_stream_status()
+            rs = cl.get_record_status()
+        except Exception as e:
+            self._note_request_error(e)
+            raise
+        finally:
+            if use_health_timeout:
+                self._apply_ws_timeout(cl, _RPC_TIMEOUT_SEC)  # snapshots and actions get the full timeout
         sav = bool(_attr(ss, "output_active", "outputActive") or False)
         s_state = _attr(ss, "output_state", "outputState") or ""
         rav = bool(_attr(rs, "output_active", "outputActive") or False)
