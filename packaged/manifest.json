@@ -1,5 +1,5 @@
 {
-  "version": "1.14.2",
+  "version": "1.14.3",
   "files": [
     {
       "path": "README.md",
@@ -279,6 +279,13 @@
       "install": "assets/default_assets/fonts/Roboto-Bold.ttf",
       "sha256": "24571503140760240924dcd1238f77e7cd0454c0d8b0793990cefa2fad71471f",
       "size": 163448,
+      "action": "replace"
+    },
+    {
+      "path": "assets/default_assets/fonts/Roboto-Italic.ttf",
+      "install": "assets/default_assets/fonts/Roboto-Italic.ttf",
+      "sha256": "044d2e3e3a17da487da46fc38cbd0a729deb9af044e563f66f8cdbc57421277e",
+      "size": 161484,
       "action": "replace"
     },
     {
@@ -886,8 +893,8 @@
     {
       "path": "assets/default_assets/spore_studio/editor.js",
       "install": "assets/default_assets/spore_studio/editor.js",
-      "sha256": "777830c35bbf5e67358bd2c11cdd5f4ee29c0b56a318bc8cf3fb2a528b1dc0f4",
-      "size": 546772,
+      "sha256": "8311d8d6c6222c501994599e40e1e5e2a362c69d04ff4df47e84dbeefa06a3b1",
+      "size": 546767,
       "action": "replace"
     },
     {
@@ -1376,8 +1383,8 @@
     {
       "path": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/game-goal.html",
       "install": "sd_plugin/com.mushroomsuprise.mycelian.sdPlugin/ui/game-goal.html",
-      "sha256": "f5af3546655d4158dc96b36bf474d6107f87450e5101d59cb3625f3fd80cd3ca",
-      "size": 12124,
+      "sha256": "446b2da5713898ce8ff3ef57d9f54fbfa900d2656ddb6c44ba48076259aa5944",
+      "size": 12110,
       "action": "replace"
     },
     {
@@ -1509,8 +1516,8 @@
     {
       "path": "templates/chat.html",
       "install": "templates/chat.html",
-      "sha256": "5272b15486da8a5a2662252baef118615ee12c057b06e8567cff11da6c6c128a",
-      "size": 249548,
+      "sha256": "b9550784baf7fa673d82be162804c9f76d6e21d7eda3f6f5fd5c35d9adfc2436",
+      "size": 250136,
       "action": "replace"
     },
     {
@@ -1572,15 +1579,15 @@
     {
       "path": "templates/source_controls.html",
       "install": "templates/source_controls.html",
-      "sha256": "9837a37458b9dd7d7edc0b945701bba0870039b4834b805f8811769a8a13e294",
-      "size": 49855,
+      "sha256": "6302325fc808cade22afa7aac11a679a41f524fa6c91186a60f84f8bba4ae90b",
+      "size": 50064,
       "action": "replace"
     },
     {
       "path": "templates/spotify.html",
       "install": "templates/spotify.html",
-      "sha256": "40764b964d727a1193d67b60e986fe0740ca348325f5c7769bb1ccd86533b7ce",
-      "size": 40109,
+      "sha256": "6606c81490957919b536cd94046bb2f396772b416ef6d02907dac94e0fc937a2",
+      "size": 40556,
       "action": "replace"
     },
     {
@@ -1635,8 +1642,8 @@
     {
       "path": "templates/template_configs/chat.json",
       "install": "templates/template_configs/chat.json",
-      "sha256": "0222445b13d16bd75d9a0927ceeb3acbecd196e1df0a927ed58bd29adff11da1",
-      "size": 64030,
+      "sha256": "3d43a63f2173106e0f173dd1188a488786bebfcc3f2912dc26b11474f2b65f22",
+      "size": 63983,
       "action": "merge"
     },
     {
@@ -1887,8 +1894,8 @@
     {
       "path": "packaged/windows/Mycelian.exe",
       "install": "Mycelian.exe",
-      "sha256": "d18133658c0cbf27de23181315c7a6545c2f831512da62a7f326649561d6bdf1",
-      "size": 58959993,
+      "sha256": "00678041a29e4b995ffcfc6a9c060b6f8e3ab369f1e920e82ccb55c1bea211b2",
+      "size": 59085625,
       "action": "replace",
       "os": "windows"
     }
