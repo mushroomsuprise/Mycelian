@@ -605,7 +605,31 @@ def test_hidden_imports_uses_collect_submodules(fake_hooks):
 # --------------------------------------------------------------------------- data files
 
 
-def test_get_data_files(root, monkeypatch, capsys):
+def _fake_copy_metadata(monkeypatch, copy_metadata=None):
+    """Install a fake ``PyInstaller.utils.hooks``; None makes its import fail."""
+    monkeypatch.setitem(sys.modules, "PyInstaller", types.ModuleType("PyInstaller"))
+    monkeypatch.setitem(sys.modules, "PyInstaller.utils", types.ModuleType("PyInstaller.utils"))
+    hooks = None
+    if copy_metadata is not None:
+        hooks = types.ModuleType("PyInstaller.utils.hooks")
+        hooks.copy_metadata = copy_metadata
+    monkeypatch.setitem(sys.modules, "PyInstaller.utils.hooks", hooks)
+
+
+@pytest.fixture
+def metadata(monkeypatch):
+    """Fake copy_metadata: one dist-info folder per requested distribution."""
+    calls = []
+
+    def copy_metadata(dist):
+        calls.append(dist)
+        return [(f"/site/{dist}.dist-info", f"{dist}.dist-info")]
+
+    _fake_copy_metadata(monkeypatch, copy_metadata)
+    return calls
+
+
+def test_get_data_files(root, monkeypatch, capsys, metadata):
     pkg = root / "site" / "nicegui"
     for sub in ("static", "elements", "native"):
         (pkg / sub).mkdir(parents=True)
@@ -624,13 +648,30 @@ def test_get_data_files(root, monkeypatch, capsys):
         (str(icons), "assets/default_assets/icons"),
         (str(root / "modules/help_system/content"), "modules/help_system/content"),
         (str(root / "factorio_mod"), "factorio_mod"),
+        # steam_web_api reads its own dist-info at import time
+        ("/site/python-steam-api.dist-info", "python-steam-api.dist-info"),
     ]
+    assert metadata == ["python-steam-api"]
     out = capsys.readouterr().out
     assert "Including application icons" in out and "Including help content" in out
     assert "Including Factorio companion mod" in out
+    assert "Including package metadata: python-steam-api" in out
+
+
+def test_get_data_files_metadata_failures_are_warnings(root, monkeypatch, capsys):
+    def boom(dist):
+        raise RuntimeError("not installed")
+
+    _fake_copy_metadata(monkeypatch, boom)
+    assert not [d for _, d in bld.get_data_files() if d.endswith(".dist-info")]
+    assert "could not include metadata for python-steam-api: not installed" in capsys.readouterr().out
+    _fake_copy_metadata(monkeypatch, None)  # PyInstaller not importable
+    assert not [d for _, d in bld.get_data_files() if d.endswith(".dist-info")]
+    assert "PyInstaller hooks unavailable; skipping package metadata" in capsys.readouterr().out
 
 
 def test_get_data_files_all_nicegui_dirs_and_nothing_else(root, monkeypatch):
+    _fake_copy_metadata(monkeypatch, lambda dist: [])
     pkg = root / "nicegui"
     subs = ("static", "templates", "elements", "functions", "app", "native")
     for sub in subs:

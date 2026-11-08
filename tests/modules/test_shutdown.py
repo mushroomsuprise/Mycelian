@@ -108,6 +108,8 @@ def _safety(monkeypatch):
     monkeypatch.setattr(sh, "_shutdown_in_progress", False)
     monkeypatch.setattr(sh, "_native_close_registered", False)
     monkeypatch.setattr(sh, "_native_close_exit_started", False)
+    monkeypatch.setattr(sh, "_window_watchdog_started", False)
+    monkeypatch.setattr(sh, "_webview_process_seen", False)
     monkeypatch.setattr(sh, "_protected_child_pids", set())
     monkeypatch.setattr(sh, "_pending_flushes", [])
     exits = []
@@ -1016,9 +1018,22 @@ def test_signal_native_shutdown(monkeypatch, caplog):
 
 def test_hard_exit_after_native_close(monkeypatch, _safety):
     calls = []
+    monkeypatch.setattr(sh, "shutdown_application", lambda **kw: calls.append(("shutdown", kw)))
     fake_module(monkeypatch, "updater", _force_application_exit=lambda: calls.append("force"))
     sh._hard_exit_after_native_close()
-    assert calls == ["force"] and _safety == []
+    # Full teardown first so statistics and registered flushes are saved.
+    assert calls == [("shutdown", {"reason": "native_window_closed", "force": True}), "force"]
+    assert _safety == []
+
+    # A failing teardown still ends in the forced exit.
+    calls.clear()
+
+    def bad_shutdown(**kw):
+        raise RuntimeError("teardown")
+
+    monkeypatch.setattr(sh, "shutdown_application", bad_shutdown)
+    sh._hard_exit_after_native_close()
+    assert calls == ["force"]
 
     def boom():
         raise RuntimeError("cannot")
@@ -1027,6 +1042,16 @@ def test_hard_exit_after_native_close(monkeypatch, _safety):
     with pytest.raises(Exited):
         sh._hard_exit_after_native_close()
     assert _safety == [1]
+
+
+def test_hard_exit_after_native_close_defers_to_running_shutdown(monkeypatch, _safety):
+    # Another teardown is already running; its armed watchdog guarantees the exit.
+    calls = []
+    monkeypatch.setattr(sh, "_shutdown_in_progress", True)
+    monkeypatch.setattr(sh, "shutdown_application", lambda **kw: calls.append("shutdown"))
+    fake_module(monkeypatch, "updater", _force_application_exit=lambda: calls.append("force"))
+    sh._hard_exit_after_native_close()
+    assert calls == [] and _safety == []
 
 
 class RecThread:
@@ -1070,10 +1095,15 @@ def test_register_native_window_close_handler(monkeypatch, rec_threads):
     sh.register_native_window_close_handler()
     assert sh._native_close_registered is True and set(handlers) == {"closed"}
     sh.register_native_window_close_handler()  # idempotent
+    # Registering also starts the webview-process watchdog (once).
+    (watchdog,) = rec_threads.created
+    assert watchdog.name == "mycelian-window-watchdog" and watchdog.started and watchdog.daemon
+    assert watchdog.target is sh._native_window_process_watchdog
     calls = []
     monkeypatch.setattr(sh, "_signal_native_shutdown", lambda: calls.append("signal"))
     handlers["closed"](None)
-    assert calls == ["signal"] and len(rec_threads.created) == 1
+    assert calls == ["signal"] and len(rec_threads.created) == 2
+    assert rec_threads.created[1].name == "mycelian-window-closed-exit"
 
 
 def test_register_native_window_close_handler_unavailable(monkeypatch, caplog):

@@ -833,7 +833,13 @@ def test_prune_and_join_known_server_threads(engine, warnings_log):
     engine.server_thread = b
     engine._join_known_server_threads(2.0)
     assert a.joined == [2.0] and b.joined == [2.0] and dead.joined == []
-    assert warnings_log == ["WebEngine thread b did not exit within 2s"]
+    assert warnings_log == ["WebEngine thread b did not exit within 2s; abandoning it"]
+    assert engine._known_server_threads == []
+    assert engine._abandoned_server_threads == [b]
+    # A thread that already failed a join is not waited on again by later restarts.
+    engine._known_server_threads = [b]
+    engine._join_known_server_threads(2.0)
+    assert b.joined == [2.0] and len(warnings_log) == 1
     assert engine._known_server_threads == []
 
 
@@ -906,8 +912,9 @@ def test_is_own_overlay_pid(engine, monkeypatch):
     assert engine._is_own_overlay_pid(1) is True
     monkeypatch.setattr(we, "_process_cmdline", lambda pid: "ControlCenter")
     assert engine._is_own_overlay_pid(1) is False
+    # A /api/health answer may come from another, healthy Mycelian: not proof.
     engine._probe_health_endpoint = lambda: True
-    assert engine._is_own_overlay_pid(1) is True
+    assert engine._is_own_overlay_pid(1) is False
 
 
 def test_try_terminate_unknown_and_own_pid(engine):
@@ -928,8 +935,19 @@ def test_try_terminate_foreign_is_left_alone(engine):
     engine._extract_listening_pid = lambda: 999999
     engine._is_own_overlay_pid = lambda pid: False
     engine._log_port_holder_hint = mock.Mock()
-    assert engine._try_terminate_stale_port_holder() is False
+    assert engine._try_terminate_stale_port_holder(allow_other_process=True) is False
     engine._log_port_holder_hint.assert_called_once()
+
+
+def test_try_terminate_other_process_left_alone_during_restart(engine, monkeypatch):
+    # Outside startup another Mycelian on the port is a live instance, never killed.
+    engine._extract_listening_pid = lambda: 999999
+    engine._is_own_overlay_pid = mock.Mock(return_value=True)
+    kill = mock.Mock()
+    monkeypatch.setattr(we.os, "kill", kill)
+    assert engine._try_terminate_stale_port_holder() is False
+    engine._is_own_overlay_pid.assert_not_called()
+    kill.assert_not_called()
 
 
 def test_try_terminate_posix_sends_sigterm(engine, monkeypatch):
@@ -940,10 +958,10 @@ def test_try_terminate_posix_sends_sigterm(engine, monkeypatch):
     monkeypatch.setattr(we.sys, "platform", "darwin")
     kill = mock.Mock()
     monkeypatch.setattr(we.os, "kill", kill)
-    assert engine._try_terminate_stale_port_holder() is True
+    assert engine._try_terminate_stale_port_holder(allow_other_process=True) is True
     kill.assert_called_once_with(999999, signal.SIGTERM)
     kill.side_effect = ProcessLookupError
-    assert engine._try_terminate_stale_port_holder() is False
+    assert engine._try_terminate_stale_port_holder(allow_other_process=True) is False
 
 
 def test_try_terminate_windows_taskkill(engine, monkeypatch):
@@ -960,16 +978,16 @@ def test_try_terminate_windows_taskkill(engine, monkeypatch):
     sp = types.SimpleNamespace(run=run, CREATE_NO_WINDOW=0x08000000, STARTUPINFO=StartupInfo,
                                STARTF_USESHOWWINDOW=1, SW_HIDE=0)
     monkeypatch.setattr(we, "subprocess", sp)
-    assert engine._try_terminate_stale_port_holder() is True
+    assert engine._try_terminate_stale_port_holder(allow_other_process=True) is True
     args, kw = run.call_args
-    assert args[0] == ["taskkill", "/PID", "4242", "/F"]
+    assert args[0] == ["taskkill", "/PID", "4242", "/T", "/F"]  # /T: children too
     assert kw["creationflags"] == 0x08000000 and kw["startupinfo"].dwFlags == 1
     run.return_value = _run(returncode=128, stderr="Access denied")
-    assert engine._try_terminate_stale_port_holder() is False
+    assert engine._try_terminate_stale_port_holder(allow_other_process=True) is False
     # No STARTUPINFO on this platform build
     monkeypatch.setattr(we, "subprocess", types.SimpleNamespace(run=run))
     run.return_value = _run(returncode=0)
-    assert engine._try_terminate_stale_port_holder() is True
+    assert engine._try_terminate_stale_port_holder(allow_other_process=True) is True
     assert "startupinfo" not in run.call_args[1] and run.call_args[1]["creationflags"] == 0
 
 
@@ -991,42 +1009,58 @@ def test_notify_port_conflict(engine, monkeypatch, platform, hint_part):
     engine._notify_port_conflict("ctx")
 
 
-def test_prepare_port_for_startup_free_and_foreign(engine):
+def test_prepare_port_for_startup_free_and_foreign(engine, monkeypatch):
     engine._port_is_open = lambda: False
     engine._probe_health_endpoint = mock.Mock()
     engine.prepare_port_for_startup()
     engine._probe_health_endpoint.assert_not_called()
     engine._port_is_open = lambda: True
+    engine._extract_listening_pid = lambda: 4242
+    monkeypatch.setattr(we, "_process_cmdline", lambda pid: "ControlCenter")
     engine._probe_health_endpoint = lambda: False
     engine._log_port_holder_hint = mock.Mock()
-    engine._prepare_port_for_restart = mock.Mock()
+    engine._try_terminate_stale_port_holder = mock.Mock()
     engine.prepare_port_for_startup()
     engine._log_port_holder_hint.assert_called_once()
-    engine._prepare_port_for_restart.assert_not_called()
+    engine._try_terminate_stale_port_holder.assert_not_called()
 
 
 def test_prepare_port_for_startup_releases_own_listener(engine, clock):
+    engine._extract_listening_pid = lambda: None
     engine._probe_health_endpoint = lambda: True
-    engine._prepare_port_for_restart = mock.Mock()
     engine._try_terminate_stale_port_holder = mock.Mock()
-    states = iter([True, True, True, False])
+    states = iter([True, True, False])
     engine._port_is_open = lambda: next(states)
     engine.prepare_port_for_startup()
-    engine._try_terminate_stale_port_holder.assert_called_once()
+    # Startup holds the single-instance lock, so any other Mycelian is a leftover.
+    engine._try_terminate_stale_port_holder.assert_called_once_with(allow_other_process=True)
     assert clock.sleeps == [0.5]
 
-    # Freed by the restart prep alone
-    states = iter([True, False, False])
+    # Freed right after the terminate
+    states = iter([True, False])
     engine._port_is_open = lambda: next(states)
-    engine._try_terminate_stale_port_holder.reset_mock()
+    clock.sleeps.clear()
     engine.prepare_port_for_startup()
-    engine._try_terminate_stale_port_holder.assert_not_called()
+    assert clock.sleeps == []
 
-    # Still held at the end -> hint + error
+    # Still held at the end -> backoff, hint + error
     engine._port_is_open = lambda: True
     engine._log_port_holder_hint = mock.Mock()
     engine.prepare_port_for_startup()
+    assert clock.sleeps == [0.5, 1.0, 2.0, 4.0]
     engine._log_port_holder_hint.assert_called_once()
+
+
+def test_prepare_port_for_startup_releases_hung_mycelian_without_health(engine, clock, monkeypatch):
+    # A hung earlier Mycelian no longer answers /api/health; its command line identifies it.
+    engine._extract_listening_pid = lambda: 4242
+    monkeypatch.setattr(we, "_process_cmdline", lambda pid: "/Applications/Mycelian.app/x")
+    engine._probe_health_endpoint = lambda: False
+    engine._try_terminate_stale_port_holder = mock.Mock()
+    states = iter([True, False])
+    engine._port_is_open = lambda: next(states)
+    engine.prepare_port_for_startup()
+    engine._try_terminate_stale_port_holder.assert_called_once_with(allow_other_process=True)
 
 
 def test_prepare_port_for_restart(engine):

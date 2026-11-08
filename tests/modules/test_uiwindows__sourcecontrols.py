@@ -678,8 +678,22 @@ def test_send_websocket_event_engine_missing_or_stopped(monkeypatch, notes, cloc
     sc.send_websocket_event("chat", "x", {})
     assert len(notes) == 1
     clock.t += sc._EMIT_FAIL_NOTIFY_INTERVAL_SEC
-    sc.send_websocket_event("chat", None, {})
-    assert len(notes) == 2 and notes[1][1]["title"] == "“control” wasn't sent to chat"
+    sc.send_websocket_event("chat", "go", {})
+    assert len(notes) == 2 and notes[1][1]["title"] == "“go” wasn't sent to chat"
+    clock.t += sc._EMIT_FAIL_NOTIFY_INTERVAL_SEC
+    sc._notify_control_not_sent("chat", None, "r")
+    assert len(notes) == 3 and notes[2][1]["title"] == "“control” wasn't sent to chat"
+
+
+@pytest.mark.parametrize("action", [None, "", "  "])
+def test_send_websocket_event_without_action_is_skipped(monkeypatch, notes, action):
+    # "<template>_" is never listened for by the overlay: nothing to emit or report.
+    emitted = []
+    engine = FakeEngine()
+    engine.emit_template_control_event = lambda *a: emitted.append(a)
+    monkeypatch.setattr(sc.web_engine, "web_engine_instance", engine)
+    sc.send_websocket_event("chat", action, {})
+    assert emitted == [] and notes == []
 
 
 def test_send_websocket_event_emit_error(monkeypatch, notes):

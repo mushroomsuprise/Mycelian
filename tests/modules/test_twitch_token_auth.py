@@ -270,12 +270,14 @@ def test_apply_validates_unknown_token_and_drops_missing_optional(monkeypatch):
     assert tw.set_user_authentication.await_args.args[1] == [AuthScope.CHAT_READ]
 
 
-def test_apply_keeps_all_when_scopes_unknown(monkeypatch):
+def test_apply_requires_only_core_scopes_when_scopes_unknown(monkeypatch):
+    # Validation failed (e.g. expired token about to be refreshed): asking twitchAPI
+    # for optional scopes would raise MissingScopeException after its refresh.
     _validate_returns(monkeypatch, None)  # validate never records scopes
     tw = _tw()
     scopes = [AuthScope.CHAT_READ, AuthScope.CHANNEL_MANAGE_POLLS]
     run(tta.apply_user_authentication(tw, "t", "r", scopes))
-    assert tw.set_user_authentication.await_args.args[1] == scopes
+    assert tw.set_user_authentication.await_args.args[1] == [AuthScope.CHAT_READ]
 
 
 # ------------------------------------------------------------------ refresh_user_token

@@ -562,6 +562,9 @@ def test_stage_unexpected_error(stage_env, monkeypatch):
 
 
 def test_refresh_network_error_is_marked_transient(refreshable, monkeypatch):
+    # Stub the client too: a real one would call id.twitch.tv with the fake credentials.
+    monkeypatch.setattr(tw, "create_twitch_client", AsyncMock(return_value=MagicMock()))
+    monkeypatch.setattr(tw, "attach_refresh_callback", MagicMock())
     monkeypatch.setattr(tw, "refresh_user_token", AsyncMock(side_effect=aiohttp_error()))
     assert run(refreshable.refresh_auth_token()) is False
     assert refreshable._last_refresh_transient is True

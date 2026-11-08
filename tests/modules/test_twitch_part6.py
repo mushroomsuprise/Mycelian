@@ -84,7 +84,12 @@ def test_clear_channel_points_icon_cache():
 
 
 def test_helix_fallback_icon(monkeypatch):
-    monkeypatch.setattr(tw, "_fetch_channel_point_rewards_async", AsyncMock(return_value=(None, "error")))
+    fetch = AsyncMock(return_value=(None, "error"))
+    monkeypatch.setattr(tw, "_fetch_channel_point_rewards_async", fetch)
+    monkeypatch.setattr(tw, "twitch_api", None)
+    assert run(tw._helix_fallback_channel_points_icon()) is None  # not connected: no Helix call
+    fetch.assert_not_awaited()
+    monkeypatch.setattr(tw, "twitch_api", SimpleNamespace(is_connected=True))
     assert run(tw._helix_fallback_channel_points_icon()) is None
     monkeypatch.setattr(tw, "_fetch_channel_point_rewards_async",
                         AsyncMock(return_value=([{"default_image": None}, {"default_image": {"url_1x": "r"}}], "ok")))
@@ -557,6 +562,15 @@ def test_is_twitch_disconnected_for_monitor(tokens, monkeypatch):
 
 
 def test_attempt_auto_reconnect(tokens, monkeypatch):
+    import threading
+
+    staging = threading.Event()
+    monkeypatch.setattr(tw, "_staging_complete", staging)
+    monkeypatch.setattr(tw, "twitch_api", MagicMock())
+    assert tw.attempt_auto_reconnect() is False  # startup staging still running
+    tw.twitch_api.reconnect.assert_not_called()
+    staging.set()
+    monkeypatch.setattr(tw, "twitch_api", None)
     assert tw.attempt_auto_reconnect() is False  # no api
     api = MagicMock()
     api._eventsub_is_reconnecting.return_value = True

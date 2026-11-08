@@ -385,11 +385,13 @@ def test_assets_watch_templates(engine):
 def test_stop_twitch_worker_only_when_started(engine):
     engine._twitch_api_queue = mock.Mock()
     engine._stop_twitch_api_worker()
-    engine._twitch_api_queue.put.assert_not_called()
+    engine._twitch_api_queue.put_nowait.assert_not_called()
     engine._twitch_api_worker_started = True
     engine._stop_twitch_api_worker()
-    engine._twitch_api_queue.put.assert_called_once_with(None)
-    engine._twitch_api_queue.put.side_effect = RuntimeError("closed")
+    # put_nowait: a full queue (stuck worker) must never hang the restart thread.
+    engine._twitch_api_queue.put_nowait.assert_called_once_with(None)
+    engine._twitch_api_queue.put.assert_not_called()
+    engine._twitch_api_queue.put_nowait.side_effect = queue.Full()
     engine._stop_twitch_api_worker()  # logged, not raised
 
 

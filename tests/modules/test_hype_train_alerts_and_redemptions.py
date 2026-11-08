@@ -212,6 +212,7 @@ def helix(monkeypatch):
 
     api.generic_api_call = call
     monkeypatch.setattr(tw, "twitch_api", api)
+    monkeypatch.setattr(tw, "_unmanageable_reward_ids", set())
     import modules.notification_engine as ne
 
     monkeypatch.setattr(ne, "notify", lambda message, **kw: rec.notes.append(dict(kw, message=message)))
@@ -228,16 +229,21 @@ def test_complete_point_redemption(helix, monkeypatch):
     helix.error = tw.TwitchPermissionError("403 not owned")
     assert tw.complete_point_redemption("rw1", "red-2") == "not_manageable"
     assert helix.notes[-1]["dedupe_key"] == "twitch:redemption_not_manageable:rw1"
+    # A refused reward is remembered: later redemptions skip the PATCH for the session.
+    helix.error = None
+    calls_before = len(helix.calls)
+    assert tw.complete_point_redemption("rw1", "red-3") == "not_manageable"
+    assert len(helix.calls) == calls_before
     helix.error = RuntimeError("404 not unfulfilled")
-    assert tw.complete_point_redemption("rw1", "red-3") == "error"
+    assert tw.complete_point_redemption("rw2", "red-3") == "error"
     assert helix.notes[-1]["dedupe_key"] == "twitch:redemption_complete_failed"
     helix.api.is_connected = False
-    assert tw.complete_point_redemption("rw1", "red-4") == "not_connected"
+    assert tw.complete_point_redemption("rw2", "red-4") == "not_connected"
     import modules.notification_engine as ne
 
     monkeypatch.setattr(ne, "notify", MagicMock(side_effect=RuntimeError("ui gone")))
     helix.api.is_connected = True
-    assert tw.complete_point_redemption("rw1", "red-5") == "error"  # a failing notice never escapes
+    assert tw.complete_point_redemption("rw2", "red-5") == "error"  # a failing notice never escapes
 
 
 class _Engine:
