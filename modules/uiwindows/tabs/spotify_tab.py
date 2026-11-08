@@ -15,6 +15,7 @@ from ...api_credentials_manager import api_credentials_manager
 from ...spotify import SPOTIFY_OAUTH_REDIRECT_URI
 from .integration_ui import (
     clear_credentials_button,
+    UsageRow,
     AccountCard,
     CopyRow,
     CredentialsFold,
@@ -291,6 +292,9 @@ class SpotifyTab:
                         "market_country", self._str_from_value_event(e)
                     )
                 )
+        with page.wide():
+            with section("speed", "API use"):
+                self._usage = UsageRow(["Spotify"], page=page)
         self._status_timer = layout_schedule(5.0, self._refresh_status, active=True)
         self._refresh_status()
 

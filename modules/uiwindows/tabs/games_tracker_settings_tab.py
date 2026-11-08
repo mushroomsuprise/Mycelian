@@ -18,7 +18,6 @@ from ...game_tracker.models import TrackerSettings, clean_milestones
 from ...game_tracker.service import get_service
 from ...notification_engine import notify
 from ...ui_buttons import outline_button
-from ...ui_timer import layout_schedule
 from .integration_ui import IntegrationPage, UsageRow, esc, fields, hint, icon_html, section, switch_row, tool_row
 
 logger = logging.getLogger(__name__)
@@ -32,7 +31,6 @@ class GamesTrackerSettingsTab:
         self.ui_elements: Dict[str, Any] = {}
         self._page: Optional[IntegrationPage] = None
         self._usage: Optional[UsageRow] = None
-        self._usage_timer: Any = None
         self._loaded: TrackerSettings = TrackerSettings()
         self._buffer: TrackerSettings = TrackerSettings()
 
@@ -106,7 +104,7 @@ class GamesTrackerSettingsTab:
                         self.ui_elements["milestones"] = ui.element("div").classes("gtr-tokens")
                 hint("The first import of each account is silent. Only changes after it count toward Statistics, chatbot events and "
                      "connectors. Switching account starts a new silent import.")
-                self._usage = UsageRow(["PSN", "Steam"])
+                self._usage = UsageRow(["PSN", "Steam"], page=page)
         with page.wide():
             with section("build", "Maintenance"):
                 with tool_row("image", "Cover art cache", "Covers are kept on disk. Clearing re-downloads them in the background."):
@@ -116,20 +114,17 @@ class GamesTrackerSettingsTab:
                 with tool_row("sports_esports", "Library", "Games, goals, speedrun info and export live on the Games Tracker tab."):
                     outline_button("Open Games Tracker", _open_games_tracker, icon="arrow_forward")
         self._render_milestones()
-        self._usage_timer = layout_schedule(5.0, self._usage.refresh, active=True)
 
     def on_enter(self) -> None:
         if self._page is not None:
             self._page.set_active(True)
-        if self._usage_timer is not None:
-            self._usage_timer.active = True
+        if self._usage is not None:
             self._usage.refresh()
 
     def on_exit(self) -> None:
         if self._page is not None:
             self._page.set_active(False)
-        if self._usage_timer is not None:
-            self._usage_timer.active = False
+
 
     # ----- options -----
 

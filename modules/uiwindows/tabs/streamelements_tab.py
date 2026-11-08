@@ -21,6 +21,7 @@ from ...ui_buttons import browser_link, outline_button, primary_button
 from ...ui_timer import layout_schedule
 from .integration_ui import (
     clear_credentials_button,
+    UsageRow,
     AccountCard,
     CredentialsFold,
     IntegrationPage,
@@ -315,6 +316,9 @@ class StreamElementsTab:
                         lambda event: self._set_currency(self._str_from_value_event(event))
                     )
                 hint("Only tips come from StreamElements. Follows, subs and bits stay on Twitch.")
+        with page.wide():
+            with section("speed", "API use"):
+                self._usage = UsageRow(["StreamElements"], page=page)
         with page.root:
             self._status_timer = ui.timer(2.0, self._refresh_status)
         self._refresh_status()

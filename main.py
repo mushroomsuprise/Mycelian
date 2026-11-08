@@ -210,6 +210,12 @@ with StartupTimer("setup_logging"):
     setup_logging()
 logger = logging.getLogger(__name__)
 
+# Count requests to Twitch, YouTube, Spotify, Streamlabs and StreamElements from the first one
+# (Settings → each service → API use); importing api_usage installs the request hooks.
+from modules import api_usage as _api_usage  # noqa: E402
+
+_api_usage.install_http_hooks()
+
 
 # Signal handlers for graceful shutdown
 def signal_handler(sig, frame):

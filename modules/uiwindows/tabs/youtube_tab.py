@@ -18,6 +18,7 @@ from ...dataobjects import state_manager, YouTubeData
 from ...youtube import YOUTUBE_OAUTH_REDIRECT_URI
 from .integration_ui import (
     clear_credentials_button,
+    UsageRow,
     AccountCard,
     CopyRow,
     IntegrationPage,
@@ -746,6 +747,9 @@ class YouTubeTab:
                 hint("Videos in these playlists are skipped when picking the latest video.")
                 self._rebuild_playlist_list()
 
+        with page.wide():
+            with section("speed", "API use"):
+                self._usage = UsageRow(["YouTube"], page=page)
         self._status_timer = layout_schedule(5.0, self._refresh_status, active=True)
         self._refresh_status()
 

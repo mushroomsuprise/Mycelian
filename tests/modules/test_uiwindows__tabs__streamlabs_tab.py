@@ -354,6 +354,8 @@ def test_build_without_credentials(env):
         tab = refs["tab"]
         await user.should_see("Donations from Streamlabs as alerts")
         await user.should_see("Client ID")
+        await user.should_see("API use")
+        assert tab._usage.platforms == ("Streamlabs",) and tab._usage.range is not None
         await user.should_see("Redirect URI")
         await user.should_see(tabmod.STREAMLABS_OAUTH_REDIRECT_URI)
         await user.should_see("dev.streamlabs.com")

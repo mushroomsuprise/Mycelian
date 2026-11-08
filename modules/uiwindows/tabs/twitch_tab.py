@@ -14,6 +14,7 @@ from ...api_credentials_manager import api_credentials_manager
 from ...dataobjects import state_manager
 from .integration_ui import (
     clear_credentials_button,
+    UsageRow,
     AccountCard,
     CopyRow,
     CredentialsFold,
@@ -437,6 +438,9 @@ class TwitchTab:
                 self._build_goals_section()
             with section("menu_book", "Setup"):
                 self._steps = ui.html("", sanitize=False).classes("w-full")
+        with page.wide():
+            with section("speed", "API use"):
+                self._usage = UsageRow(["Twitch"], page=page)
         self._refresh_overview()
         self._status_timer = layout_schedule(3.0, self._refresh_status, active=True)
         self._token_timer = layout_schedule(

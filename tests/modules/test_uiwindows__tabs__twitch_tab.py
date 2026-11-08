@@ -681,6 +681,8 @@ def test_build_connected(env, monkeypatch):
         await user.should_see("Main account")
         await user.should_see("Chatbot account")
         await user.should_see("Process Twitch alerts")
+        await user.should_see("API use")
+        assert holder["tab"]._usage.platforms == ("Twitch",) and holder["tab"]._usage.range is not None
         await user.should_see("Send a native Twitch shoutout")
         await user.should_see("Send a chat raid shoutout")
         tab = holder["tab"]

@@ -172,6 +172,7 @@ def test_without_a_page():
 def test_usage_line_shows_both_platforms_and_updates(env):
     from modules import api_usage
 
+    api_usage.configure_storage(enabled=False)
     api_usage.reset()
     tabs: List[Any] = []
 
@@ -183,9 +184,9 @@ def test_usage_line_shows_both_platforms_and_updates(env):
         tab._usage.refresh()
         await user.should_see("0.3% of the estimated limit (1 of ~300 requests in the last 15 min) · 1 rate-limited in the last hour")
         tab.on_exit()
-        assert tab._usage_timer.active is False
+        assert tab._usage._timer.active is False  # paused with the page
         tab.on_enter()
-        assert tab._usage_timer.active is True
+        assert tab._usage._timer.active is True
 
     try:
         run_ui(build_into(tabs), check)

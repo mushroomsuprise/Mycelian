@@ -200,7 +200,7 @@ class SteamTab:
                     link_label="Privacy settings",
                     url=PRIVACY_URL,
                 )
-                self._usage = UsageRow(["Steam"])
+                self._usage = UsageRow(["Steam"], page=page)
 
         with page.wide():
             with section("emoji_events", "Current game"):

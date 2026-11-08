@@ -23,9 +23,16 @@ from typing import Any, Dict, Sequence
 from .statistics_charts import ANIMATE, ChartColors, _rgb, _tooltip, _value_axis
 
 # platform -> (light step, dark step)
+# Fixed categorical slots per platform (a platform keeps its color on every page). Only PSN and
+# Steam ever share a graph (Games Tracker), and that pair passes the palette checker in both themes.
 PLATFORM_COLORS = {
-    "PSN": ("#2a78d6", "#3987e5"),
-    "Steam": ("#eb6834", "#d95926"),
+    "PSN": ("#2a78d6", "#3987e5"),  # slot 1 blue
+    "Steam": ("#eb6834", "#d95926"),  # slot 2 orange
+    "Spotify": ("#1baf7a", "#199e70"),  # slot 3 aqua
+    "Streamlabs": ("#008300", "#008300"),  # slot 6 green
+    "StreamElements": ("#e87ba4", "#d55181"),  # slot 5 magenta
+    "Twitch": ("#6250d6", "#9085e9"),  # slot 7 violet
+    "YouTube": ("#e34948", "#e66767"),  # slot 8 red
 }
 
 # Axis tooltip: the minute, then each platform's share of its limit, the requests behind it and its 429s.
@@ -59,8 +66,67 @@ def scale_max(values: Sequence[float]) -> float:
     return float(math.ceil(top / 25.0) * 25)
 
 
+def usage_chart(data: Dict[str, Any], platforms: Sequence[str], c: ChartColors) -> Dict[str, Any]:
+    """The graph for ``api_usage.series(platforms)``: the share of the limit in use when every
+    platform has a known limit, else requests per step as columns."""
+    if all(data["percent"].get(p) is not None for p in platforms):
+        return usage_lines(data, platforms, c)
+    return usage_columns(data, platforms, c)
+
+
+def _x_axis(data: Dict[str, Any], c: ChartColors, *, boundary: bool) -> Dict[str, Any]:
+    labels = list(data["labels"])
+    return {
+        "type": "category",
+        "boundaryGap": boundary,
+        "data": labels,
+        "axisTick": {"show": False},
+        "axisLine": {"lineStyle": {"color": c.axis}},
+        "axisLabel": {"color": c.text_muted, "fontSize": 10, "interval": max(0, len(labels) // 4 - 1)},
+    }
+
+
+_COLUMN_TOOLTIP = (
+    "ps => { let h = ps[0].axisValueLabel;"
+    " for (const p of ps) { const d = p.data || {};"
+    " h += '<br>' + p.marker + p.seriesName + ': <b>' + (d.value || 0) + '</b> ' + (d.per || 'requests')"
+    " + (d.limited ? ' · ' + d.limited + ' rate-limited' : ''); }"
+    " return h; }"
+)
+
+
+def usage_columns(data: Dict[str, Any], platforms: Sequence[str], c: ChartColors) -> Dict[str, Any]:
+    """Requests per step (a minute, 15 minutes or 2 hours) for platforms without a published limit."""
+    step = int(data.get("step_minutes") or 1)
+    per = "requests" if step == 1 else f"requests in {step // 60} h" if step >= 60 else f"requests in {step} min"
+    series = []
+    for platform in platforms:
+        color = platform_color(platform, c)
+        counts = data["requests"].get(platform) or []
+        limited = data["limited"].get(platform) or []
+        series.append({
+            "name": platform,
+            "type": "bar",
+            "data": [{"value": n, "per": per, "limited": limited[j] if j < len(limited) else 0}
+                     for j, n in enumerate(counts)],
+            "barMaxWidth": 10,
+            "barCategoryGap": "30%",
+            "itemStyle": {"color": color, "borderRadius": [4, 4, 0, 0]},
+        })
+    return {
+        "animation": ANIMATE,
+        "animationDuration": 300,
+        "animationDurationUpdate": 200,
+        "grid": {"left": 4, "right": 8, "top": 10, "bottom": 2, "containLabel": True},
+        "tooltip": {**_tooltip(c), ":formatter": _COLUMN_TOOLTIP},
+        "xAxis": _x_axis(data, c, boundary=True),
+        "yAxis": {**_value_axis(c), "splitNumber": 3},
+        "series": series,
+    }
+
+
 def usage_lines(data: Dict[str, Any], platforms: Sequence[str], c: ChartColors) -> Dict[str, Any]:
-    """Share of the limit in use over time; ``data`` is ``api_usage.percent_timeline(platforms)``."""
+    """Share of the limit in use over time; ``data`` is ``api_usage.series(platforms)``."""
     from ...api_usage import LIMITS, percent_text
 
     platforms = list(platforms)
@@ -75,10 +141,13 @@ def usage_lines(data: Dict[str, Any], platforms: Sequence[str], c: ChartColors) 
         limited = data["limited"].get(platform) or []
         every.extend(percents)
         approx = "~" if limit is not None and limit.estimated else ""
+        unit = "" if limit is None or limit.unit == "requests" else f" {limit.unit}"
+        within = "that day" if limit is not None and limit.window_text == "today" else (
+            f"in {limit.window_text}" if limit is not None else "")
         points = []
         for j, pct in enumerate(percents):
             n = counts[j] if j < len(counts) else 0
-            detail = f"{n:,} of {approx}{limit.requests:,} in {limit.window_text}" if limit else f"{n:,} requests"
+            detail = f"{n:,} of {approx}{limit.requests:,}{unit} {within}" if limit else f"{n:,} requests"
             points.append({"value": pct, "text": percent_text(pct), "detail": detail,
                            "limited": limited[j] if j < len(limited) else 0})
         entry: Dict[str, Any] = {
@@ -110,14 +179,7 @@ def usage_lines(data: Dict[str, Any], platforms: Sequence[str], c: ChartColors) 
         "animationDurationUpdate": 200,
         "grid": {"left": 4, "right": 8, "top": 26 if several else 10, "bottom": 2, "containLabel": True},
         "tooltip": {**_tooltip(c), ":formatter": _TOOLTIP_FORMATTER},
-        "xAxis": {
-            "type": "category",
-            "boundaryGap": False,
-            "data": list(data["labels"]),
-            "axisTick": {"show": False},
-            "axisLine": {"lineStyle": {"color": c.axis}},
-            "axisLabel": {"color": c.text_muted, "fontSize": 10, "interval": 14},
-        },
+        "xAxis": _x_axis(data, c, boundary=False),
         "yAxis": {
             **_value_axis(c),
             "min": 0,

@@ -167,6 +167,8 @@ body:not(.body--dark) .itg :is(p, span, div, label):not([class]) { color: inheri
 .itg .q-field--outlined.q-textarea .q-field__native { height: auto; min-height: 60px; padding-top: 2px; line-height: 1.5; }
 .itg .q-field--outlined .q-chip { margin: 2px; }
 .itg-hint { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; font-size: .72rem; line-height: 1.4; color: var(--color-text-muted); }
+.itg-usage-head { display: flex; justify-content: flex-end; margin-top: 6px; }
+.itg-usage-range .q-btn { font-size: .7rem; min-height: 24px; padding: 0 8px; }
 .itg-hint .itg-icon { font-size: 14px; margin-top: 1px; color: var(--color-text-muted); }
 .itg-hint.is-warn, .itg-hint.is-warn .itg-icon { color: var(--color-warning); }
 .itg-link { color: color-mix(in srgb, var(--color-primary) 60%, var(--color-text-primary)); font-weight: 600; cursor: pointer; text-decoration: none; }
@@ -445,6 +447,7 @@ class IntegrationPage:
         self.discard_button: Any = None
         self.save_button: Any = None
         self._timer: Any = None
+        self._extra_timers: List[Any] = []
         with parent:
             self.root = ui.element("div").classes("itg").style(f"--brand:{BRAND_COLORS.get(key, 'var(--color-primary)')}")
             with self.root:
@@ -509,9 +512,15 @@ class IntegrationPage:
             self.discard_button.props("disable")
 
     def set_active(self, active: bool) -> None:
-        """Pause the dirty poll while the tab is hidden."""
+        """Pause the dirty poll (and timers added with ``add_timer``) while the tab is hidden."""
         if self._timer is not None:
             self._timer.active = active
+        for timer in self._extra_timers:
+            timer.active = active
+
+    def add_timer(self, timer: Any) -> None:
+        """A timer that should run only while this page is showing."""
+        self._extra_timers.append(timer)
 
 
 def tool_row(icon: str, title: str, sub: str) -> Any:
@@ -774,52 +783,78 @@ USAGE_WARN_PERCENT = 80.0
 
 def usage_html(platforms: Sequence[str]) -> str:
     """'API use: 41% of the estimated limit (…)' per platform (see modules.api_usage), styled like
-    ``hint``; turns into a warning from ``USAGE_WARN_PERCENT``."""
-    from ...api_usage import LIMITS, summary_text, usage
+    ``hint``; turns into a warning from ``USAGE_WARN_PERCENT``. Hovering says where each limit
+    comes from (or that the platform doesn't publish one)."""
+    from ...api_usage import limit_note, summary_text, usage
 
-    lines, warn, sources = [], False, []
+    lines, warn, notes = [], False, []
     for platform in platforms:
         text = esc(summary_text(platform))
         lines.append(f"<b>{esc(platform)}</b> {text}" if len(platforms) > 1 else text)
         warn = warn or usage(platform)["percent"] >= USAGE_WARN_PERCENT
-        limit = LIMITS.get(platform)
-        if limit is not None:
-            approx = "about " if limit.estimated else ""
-            sources.append(f"{platform}: {approx}{limit.requests:,} requests per {limit.window_text}, from {limit.source}.")
+        note = limit_note(platform)
+        if note:
+            notes.append(note)
     body = "<br>".join(lines) if len(lines) > 1 else (lines[0] if lines else "")
-    title = esc(" ".join(sources))
+    title = esc(" ".join(notes))
     cls = "itg-hint is-warn" if warn else "itg-hint"
     icon = icon_html("warning" if warn else "speed")
     return f'<div class="{cls}" title="{title}">{icon}<span>API use: {"<br>" if len(lines) > 1 else ""}{body}</span></div>'
 
 
-class UsageRow:
-    """API use against each platform's limit: a muted line plus a live graph of the share in use
-    over the last hour; call ``refresh()`` from the tab's status timer."""
+USAGE_RANGES = {"1h": "1 hour", "24h": "24 hours", "7d": "7 days"}
 
-    def __init__(self, platforms: Sequence[str], *, chart: bool = True) -> None:
+
+class UsageRow:
+    """API use for one or more platforms: a muted line (share of the limit, or plain counts) and a
+    graph with a 1 hour / 24 hours / 7 days switch. History comes from ``data/api_usage.db``, so
+    it survives restarts. Refreshes itself every ``refresh_sec``; pass the tab's ``page`` so the
+    refresh pauses while the tab is hidden."""
+
+    def __init__(self, platforms: Sequence[str], *, chart: bool = True, page: Any = None,
+                 refresh_sec: float = 5.0) -> None:
         self.platforms = tuple(platforms)
+        self.span = "1h"
         self._html = usage_html(self.platforms)
         self.element = ui.html(self._html, sanitize=False).classes("w-full")
         self.chart: Any = None
+        self.range: Any = None
         self._chart_sig: Any = None
         if chart:
             names = " and ".join(self.platforms)
+            with ui.element("div").classes("itg-usage-head"):
+                self.range = (
+                    ui.toggle(USAGE_RANGES, value=self.span, on_change=lambda e: self.set_span(e.value))
+                    .props("dense no-caps unelevated size=sm toggle-color=primary")
+                    .classes("itg-usage-range")
+                )
             self.chart = (
                 ui.echart(self._chart_options())
                 .classes("itg-usage-chart w-full")
                 .style("height: 150px")
-                .props(f'role=img aria-label="{esc(names)} API use as a share of the limit, last hour"')
+                .props(f'role=img aria-label="{esc(names)} API use"')
             )
+        self._timer = ui.timer(refresh_sec, self.refresh)
+        if page is not None and hasattr(page, "add_timer"):
+            page.add_timer(self._timer)
+
+    def set_span(self, span: Any) -> None:
+        span = str(span or "1h")
+        if span not in USAGE_RANGES or span == self.span:
+            return
+        self.span = span
+        self._chart_sig = None
+        self.refresh()
 
     def _chart_options(self) -> Dict[str, Any]:
-        from ...api_usage import percent_timeline
-        from .api_usage_chart import chart_colors, usage_lines
+        from ...api_usage import series
+        from .api_usage_chart import chart_colors, usage_chart
 
-        data = percent_timeline(self.platforms)
-        self._chart_sig = (data["labels"][-1], tuple(tuple(data["count"][p]) for p in self.platforms),
+        data = series(self.platforms, span=self.span)
+        self._chart_sig = (self.span, data["labels"][-1],
+                           tuple(tuple(data["count"][p] or ()) for p in self.platforms),
                            tuple(tuple(data["limited"][p]) for p in self.platforms))
-        return usage_lines(data, self.platforms, chart_colors())
+        return usage_chart(data, self.platforms, chart_colors())
 
     def refresh(self) -> None:
         html = usage_html(self.platforms)
@@ -829,7 +864,7 @@ class UsageRow:
         if self.chart is not None:
             sig = self._chart_sig
             options = self._chart_options()
-            if self._chart_sig != sig:  # a new request or a new minute: redraw (one push)
+            if self._chart_sig != sig:  # new requests, a new minute or another range: redraw (one push)
                 self.chart._props["options"] = options
 
 

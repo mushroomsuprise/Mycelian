@@ -31,6 +31,8 @@
 
 <div class="hx-callout hx-note"><p><strong>Internet outages:</strong> you don't need to restart Mycelian. When the connection comes back, Twitch, the chatbot, Spotify, YouTube, PlayStation, Steam, Discord, Streamlabs, StreamElements and OBS reconnect on their own, usually within a minute or two. A Firebase or MongoDB database keeps your changes in memory and writes them once it's reachable again.</p></div>
 
+<p><strong>How much of an API Mycelian uses:</strong> Settings → Twitch, YouTube, Spotify, Streamlabs, StreamElements, PSN and Steam each have an <strong>API use</strong> readout with a graph (last hour, 24 hours or 7 days; the history survives restarts). Where the service publishes a limit it shows the share in use: Twitch allows 800 requests a minute, YouTube 10,000 quota units a day (a search costs 100; the day resets at midnight Pacific), Steam 100,000 a day. PSN is measured against the community estimate of about 300 per 15 minutes. Spotify, Streamlabs and StreamElements don't publish a number, so those show plain request counts. A rate-limited request (Too Many Requests) is counted separately.</p>
+
 <p><strong>Start a sign-in over:</strong> every account card in Settings (Twitch, the chatbot, OBS, PSN, Steam, Spotify, YouTube, Streamlabs, StreamElements and Discord) has a {{icon:key_off}} <strong>Clear saved credentials</strong> button. It asks first, disconnects that service and removes its saved tokens, keys, client ID and secret, or password. Settings such as channels, profiles or the OBS host and port stay.</p>
 
 <h2>Fix by service</h2>

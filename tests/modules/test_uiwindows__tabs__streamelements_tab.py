@@ -270,6 +270,8 @@ def test_build_not_connected_then_edit_and_connect(env):
         tab = refs["tab"]
         await user.should_see("Tips from StreamElements as alerts")
         await user.should_see("JWT token")
+        await user.should_see("API use")
+        assert tab._usage.platforms == ("StreamElements",) and tab._usage.range is not None
         await user.should_see("Alert currency")
         assert "Paste your channel&#x27;s JWT token, then connect" in tab._card._who.content
         assert tab._fold.expansion.value is True  # opened while no JWT saved

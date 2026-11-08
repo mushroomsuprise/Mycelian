@@ -28,6 +28,7 @@ LIGHT = ChartColors.from_theme(SimpleNamespace(bg_surface="rgb(240, 240, 245)"))
 
 @pytest.fixture(autouse=True)
 def clean():
+    api_usage.configure_storage(enabled=False)
     api_usage.reset()
     yield
     api_usage.reset()
@@ -35,9 +36,11 @@ def clean():
 
 def data(psn=(5.0, 6.5, 75.0), steam=(0.1, 0.2, 0.3)):
     n = len(psn)
-    return {"labels": [f"10:0{i}" for i in range(n)], "percent": {"PSN": list(psn), "Steam": list(steam)},
-            "count": {"PSN": [15, 20, 225][:n], "Steam": [100, 200, 300][:n]},
-            "limited": {"PSN": [0, 0, 1][:n], "Steam": [0, 0, 0][:n]}}
+    return {"span": "1h", "step_minutes": 1, "labels": [f"10:0{i}" for i in range(n)],
+            "percent": {"PSN": list(psn), "Steam": list(steam), "Spotify": None},
+            "count": {"PSN": [15, 20, 225][:n], "Steam": [100, 200, 300][:n], "Spotify": [3, 0, 7][:n]},
+            "requests": {"PSN": [1, 1, 2][:n], "Steam": [1, 1, 1][:n], "Spotify": [3, 0, 7][:n]},
+            "limited": {"PSN": [0, 0, 1][:n], "Steam": [0, 0, 0][:n], "Spotify": [0, 0, 1][:n]}}
 
 
 def test_one_platform_one_line_no_legend():
@@ -91,9 +94,46 @@ def test_usage_row_redraws_only_when_the_counts_change():
         api_usage.record("PSN", "/x", 200)
         row.refresh()
         assert updates == [1] and row.chart.options["series"][0]["data"][-1]["detail"] == "1 of ~300 in 15 min"
-        assert row.chart.props["aria-label"] == "PSN API use as a share of the limit, last hour"
+        assert row.chart.props["aria-label"] == "PSN API use"
+        row.set_span("24h")
+        assert updates == [1, 1] and len(row.chart.options["xAxis"]["data"]) == 96
+        row.set_span("24h")  # same range: nothing to redraw
+        row.set_span("nonsense")
+        assert updates == [1, 1] and row.span == "24h"
 
     run_ui(lambda: rows.append(UsageRow(["PSN"])), check)
+
+
+def test_usage_row_timer_pauses_with_the_page():
+    rows: List[Any] = []
+    added: List[Any] = []
+    page = SimpleNamespace(add_timer=lambda t: added.append(t))
+
+    async def check(user):
+        assert added == [rows[0]._timer]
+        await user.should_see("1 hour")
+        await user.should_see("7 days")
+
+    run_ui(lambda: rows.append(UsageRow(["Twitch"], page=page)), check)
+
+
+def test_columns_for_a_platform_without_a_limit():
+    opt = chart.usage_chart(data(), ["Spotify"], DARK)
+    (s,) = opt["series"]
+    assert s["type"] == "bar" and s["itemStyle"]["color"] == "#199e70"
+    assert s["data"][2] == {"value": 7, "per": "requests", "limited": 1}
+    wide = dict(data(), step_minutes=120)
+    assert chart.usage_columns(wide, ["Spotify"], LIGHT)["series"][0]["data"][0]["per"] == "requests in 2 h"
+    quarter = dict(data(), step_minutes=15)
+    assert chart.usage_columns(quarter, ["Spotify"], LIGHT)["series"][0]["data"][0]["per"] == "requests in 15 min"
+    assert chart.usage_chart(data(), ["PSN"], DARK)["series"][0]["type"] == "line"
+
+
+def test_youtube_detail_is_in_units_per_day():
+    yt = {"span": "1h", "step_minutes": 1, "labels": ["10:00"], "percent": {"YouTube": [1.0]},
+          "count": {"YouTube": [100]}, "requests": {"YouTube": [1]}, "limited": {"YouTube": [0]}}
+    point = chart.usage_lines(yt, ["YouTube"], DARK)["series"][0]["data"][0]
+    assert point["detail"] == "100 of 10,000 units that day"
 
 
 def test_usage_row_without_a_chart():

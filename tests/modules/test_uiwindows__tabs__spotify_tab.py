@@ -732,6 +732,8 @@ def test_build_renders_and_edits(env):
         tab = holder["tab"]
         await user.should_see("Now playing for overlays and chat commands")
         await user.should_see("Market country")
+        await user.should_see("API use")
+        assert tab._usage.platforms == ("Spotify",) and tab._usage.range is not None
         assert "Client ID &amp; secret" in tab._fold._head.content
         assert tab._fold.expansion.value is True  # nothing saved yet -> opened
         assert tab.ui_elements["market_country"].options["JP"] == "JP"

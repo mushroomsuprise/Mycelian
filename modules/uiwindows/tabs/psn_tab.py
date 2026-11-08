@@ -168,7 +168,7 @@ class PSNTab:
                         on_change=lambda e: self._set("psn_username", self._str_from_value_event(e)),
                     )
                 hint("You can only track your own profile, or friends who are online.")
-                self._usage = UsageRow(["PSN"])
+                self._usage = UsageRow(["PSN"], page=page)
 
         with page.wide():
             self._build_game_cache_link()

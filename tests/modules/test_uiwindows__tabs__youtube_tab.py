@@ -776,6 +776,8 @@ def test_build_and_interact(env):
         tab = holder["tab"]
         await user.should_see("Latest videos, live chat, memberships and Super Chats")
         await user.should_see("Read live chat")
+        await user.should_see("API use")
+        assert tab._usage.platforms == ("YouTube",) and tab._usage.range is not None
         await user.should_see("Process YouTube alerts")
         await user.should_see("https://youtube.com/@one")
         await user.should_see("Shorts")

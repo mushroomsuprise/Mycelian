@@ -28,6 +28,7 @@ from ...ui_form_controls import copy_text_button
 from ...ui_timer import layout_schedule
 from .integration_ui import (
     clear_credentials_button,
+    UsageRow,
     AccountCard,
     CopyRow,
     CredentialsFold,
@@ -434,6 +435,9 @@ class StreamlabsTab:
                         lambda event: self._set_currency(self._str_from_value_event(event))
                     )
                 hint("Only tips come from Streamlabs. Follows, subs and bits stay on Twitch.")
+        with page.wide():
+            with section("speed", "API use"):
+                self._usage = UsageRow(["Streamlabs"], page=page)
         with page.root:
             self._status_timer = ui.timer(2.0, self._refresh_status)
         self._refresh_status()
