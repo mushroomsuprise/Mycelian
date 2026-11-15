@@ -142,13 +142,19 @@
             mode: "containers",
             sel: "#mc-canvas",
             title: "Container canvas",
-            body: "Arrange templates in a grid. Dynamic sizing lets one overlay grow while the others keep a minimum size."
+            body: "Place and size each template where it should go. A dashed outline marks a shared space: boxes in it make room for each other, and the badges and arrows show which box grows and which one gives way."
+        },
+        {
+            mode: "containers",
+            sel: "#mc-simulate",
+            title: "Simulate",
+            body: "Pretend every \u201cFits its content\u201d box is empty or full to see how the others react, without waiting for a real alert or battle. Nothing here is saved."
         },
         {
             mode: "containers",
             sel: "#mc-inspector-host",
             title: "Container inspector",
-            body: "Name the route, set the canvas size, and tune each slot's priority, minimum size, and whether its audio is muted."
+            body: "Pick a box and choose its Sizing: Fixed, Fits its content (like FF7) or Fills leftover space (like chat), with minimum and maximum sizes. With nothing selected you get the route, canvas size and the list of shared spaces."
         }
     ];
 

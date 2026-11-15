@@ -148,21 +148,30 @@ def test_is_not_ready_error(msg, expected):
 
 # --------------------------------------------------------------------------- _trigger_reload
 
+class FireAndForgetClient(FakeClient):
+    """NiceGUI's run_javascript fires without waiting when it is not awaited."""
+
+    def run_javascript(self, code, timeout=None):  # type: ignore[override]
+        self.js.append((code, timeout))
+        if self.exc:
+            raise self.exc
+        return None
+
+
 def test_trigger_reload_happy_path(env, monkeypatch):
-    c = FakeClient()
+    c = FireAndForgetClient()
     armed(env, monkeypatch, c)
     hm._trigger_reload("why")
     assert hm._reload_count == 1 and hm._last_reload_mono == env["clock"].t
-    assert [n for n, _ in env["tasks"]] == ["ui_health_reload"]
-    run_tasks(env)
-    assert c.js == [("window.location.reload()", 5.0)]
+    # Fired straight away and not awaited: a reloading page never answers.
+    assert env["tasks"] == []
+    assert c.js == [("window.location.reload()", None)]
 
 
 def test_trigger_reload_js_failure_logged(env, monkeypatch, caplog):
-    c = FakeClient(exc=RuntimeError("gone"))
+    c = FireAndForgetClient(exc=RuntimeError("gone"))
     armed(env, monkeypatch, c)
     hm._trigger_reload("why")
-    run_tasks(env)
     assert "reload failed" in caplog.text
 
 

@@ -989,6 +989,15 @@ def test_update_playback_data_none(client):
     assert client._last_playback_state == "idle"
 
 
+def test_update_playback_data_no_item(client):
+    """Ads and some podcast states report playback with item: null."""
+    client.spotify_data.track_name = "Old"
+    client.get_current_playback = lambda: {"item": None, "progress_ms": 0, "is_playing": True}
+    client.update_playback_data()
+    assert client.spotify_data.track_name == "Nothing playing"
+    assert client._last_playback_state == "idle"
+
+
 def test_update_playback_data_malformed_and_error(client):
     client.spotify_data.track_name = "Old"
     client.get_current_playback = lambda: {"item": {"name": "x", "artists": []}}

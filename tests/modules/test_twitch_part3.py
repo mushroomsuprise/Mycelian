@@ -571,6 +571,20 @@ def test_refresh_network_error_is_marked_transient(refreshable, monkeypatch):
     assert refreshable.auth_token == "old"  # tokens kept
 
 
+def test_refresh_missing_scope_needs_sign_in_not_retry(refreshable, monkeypatch):
+    from twitchAPI.type import MissingScopeException
+
+    monkeypatch.setattr(tw, "create_twitch_client", AsyncMock(return_value=MagicMock()))
+    monkeypatch.setattr(tw, "attach_refresh_callback", MagicMock())
+    monkeypatch.setattr(
+        tw, "refresh_user_token", AsyncMock(side_effect=MissingScopeException("channel:read:ads"))
+    )
+    assert run(refreshable.refresh_auth_token()) is False
+    # Retrying can't add a permission; the caller must start the Twitch sign-in.
+    assert refreshable._last_refresh_transient is False
+    assert refreshable.auth_token == "old"  # still works for everything else
+
+
 def aiohttp_error():
     import aiohttp
 

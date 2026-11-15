@@ -186,13 +186,37 @@ def test_send_shoutout_missing_ids(api):
 
 
 def test_send_shoutout_failure_notifies(api, monkeypatch):
-    api.generic_api_call = AsyncMock(side_effect=RuntimeError("429"))
+    api.generic_api_call = AsyncMock(side_effect=RuntimeError("Twitch API Error 400: not live"))
     notify = MagicMock()
     monkeypatch.setattr(notification_engine, "notify", notify)
     assert run(api.send_shoutout("99")) is False
     assert notify.call_args.kwargs["title"] == "Couldn't send a Twitch shoutout to the raider"
     notify.side_effect = RuntimeError("ui")
     assert run(api.send_shoutout("99", "bob")) is False
+
+
+def test_send_shoutout_respects_twitch_cooldowns(api, monkeypatch):
+    api.generic_api_call = AsyncMock(return_value={})
+    notify = MagicMock()
+    monkeypatch.setattr(notification_engine, "notify", notify)
+    clock = [1000.0]
+    monkeypatch.setattr(tw.time, "monotonic", lambda: clock[0])
+    assert run(api.send_shoutout("99", "bob")) is True
+    clock[0] += 60
+    assert run(api.send_shoutout("77", "amy")) is False  # inside the 2-minute global window
+    clock[0] += 61
+    assert run(api.send_shoutout("99", "bob")) is False  # same streamer within the hour
+    assert run(api.send_shoutout("77", "amy")) is True
+    assert api.generic_api_call.await_count == 2 and not notify.called
+
+
+def test_send_shoutout_429_is_a_cooldown_not_an_error(api, monkeypatch):
+    api.generic_api_call = AsyncMock(side_effect=RuntimeError("Twitch API Error 429: {'error': 'Too Many Requests'}"))
+    notify = MagicMock()
+    monkeypatch.setattr(notification_engine, "notify", notify)
+    assert run(api.send_shoutout("99", "bob")) is False
+    assert not notify.called
+    assert tw.shoutout_cooldown_remaining("99") > 0  # don't hammer Twitch again
 
 
 # --------------------------------------------------------------------------- health check thread

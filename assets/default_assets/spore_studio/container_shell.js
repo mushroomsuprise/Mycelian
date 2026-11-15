@@ -1,11 +1,17 @@
 /*
- * Live container page. Measures locked templates and gives unused space
- * to flexible ones. The iframe viewport of a locked template stays at its
- * designated size so percentage layouts do not collapse.
+ * Live container page. Measures "fits its content" templates with
+ * container_measure.js and gives the space they don't use to "fills leftover
+ * space" templates in the same shared space. A fits-content iframe keeps its
+ * drawn size (the box around it is clipped) so measuring can't feed back into
+ * its own layout; a fills-leftover iframe gets its real new size, so the
+ * template's resolution changes and its picture is cropped or reflows.
+ * Changes apply instantly, without animation.
  */
 (function () {
     var dataEl = document.getElementById("mc-container-data");
-    if (!dataEl || !window.MycelianContainerLayout) {
+    var Layout = window.MycelianContainerLayout;
+    var Measure = window.MycelianContainerMeasure;
+    if (!dataEl || !Layout || !Measure) {
         return;
     }
     var payload;
@@ -15,7 +21,7 @@
         return;
     }
     var container = payload.container;
-    var explicit = {};
+    var explicit = Measure.createExplicitSizes();
     var origins = {};
     var lastKey = "";
     var timer = null;
@@ -30,87 +36,32 @@
         return null;
     }
 
-    function measureFrame(iframe) {
-        try {
-            var doc = iframe.contentDocument;
-            if (!doc || !doc.body || !doc.defaultView) {
-                return null;
-            }
-            var viewW = iframe.clientWidth || iframe.offsetWidth;
-            var viewH = iframe.clientHeight || iframe.offsetHeight;
-            if (viewW < 2 || viewH < 2) {
-                return null;
-            }
-            var minX = Infinity;
-            var minY = Infinity;
-            var maxX = -Infinity;
-            var maxY = -Infinity;
-            var found = false;
-            var nodes = doc.body.querySelectorAll("*");
-            for (var i = 0; i < nodes.length; i++) {
-                var el = nodes[i];
-                var cs = doc.defaultView.getComputedStyle(el);
-                if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) {
-                    continue;
-                }
-                var rect = el.getBoundingClientRect();
-                if (rect.width < 1 || rect.height < 1) {
-                    continue;
-                }
-                if (rect.width >= viewW - 1 && rect.height >= viewH - 1) {
-                    continue;
-                }
-                // Only what is on screen counts (an alert parked off screen doesn't).
-                var left = Math.max(0, rect.left);
-                var top = Math.max(0, rect.top);
-                var right = Math.min(viewW, rect.right);
-                var bottom = Math.min(viewH, rect.bottom);
-                if (right - left < 1 || bottom - top < 1) {
-                    continue;
-                }
-                found = true;
-                if (left < minX) minX = left;
-                if (top < minY) minY = top;
-                if (right > maxX) maxX = right;
-                if (bottom > maxY) maxY = bottom;
-            }
-            if (!found) {
-                return null;
-            }
-            return {
-                w: Math.ceil(maxX - minX),
-                h: Math.ceil(maxY - minY),
-                originX: minX,
-                originY: minY
-            };
-        } catch (err) {
-            return null;
-        }
+    function frames() {
+        return Array.prototype.slice.call(document.querySelectorAll("iframe[data-slot]"));
     }
 
     function collectUsed() {
         var used = {};
-        var frames = document.querySelectorAll("iframe[data-slot]");
-        for (var i = 0; i < frames.length; i++) {
-            var iframe = frames[i];
+        frames().forEach(function (iframe) {
             var id = iframe.getAttribute("data-slot");
             var meta = slotMeta(id);
             if (!meta || !meta.link || meta.link.role !== "locked" || meta.fit === "scale") {
-                continue;
+                return;
             }
-            if (explicit[id]) {
-                used[id] = explicit[id];
-                origins[id] = { x: 0, y: 0 };
-                continue;
-            }
-            var measured = measureFrame(iframe);
+            var measured = explicit.get(id) || Measure.measure(iframe);
             if (!measured) {
+                // Not readable yet: the box keeps its drawn size.
                 delete origins[id];
-                continue;
+                return;
+            }
+            if (measured.empty) {
+                used[id] = { empty: true };
+                delete origins[id];
+                return;
             }
             used[id] = { w: measured.w, h: measured.h };
-            origins[id] = { x: measured.originX, y: measured.originY };
-        }
+            origins[id] = { x: measured.x, y: measured.y };
+        });
         return used;
     }
 
@@ -152,7 +103,7 @@
         frame.style.width = slot.iframe.w + "px";
         frame.style.height = slot.iframe.h + "px";
         if (slot.role === "locked") {
-            // Only the linked axis is trimmed to the content.
+            // Only the shared-space axis is trimmed to the content.
             frame.style.left = (slot.axis === "horizontal" ? -origin.x : 0) + "px";
             frame.style.top = (slot.axis === "vertical" ? -origin.y : 0) + "px";
         } else {
@@ -162,10 +113,10 @@
     }
 
     function relayout() {
-        var layout = window.MycelianContainerLayout.solve(container, collectUsed());
+        var layout = Layout.solve(container, collectUsed());
         var key = JSON.stringify(layout.slots.map(function (slot) {
             var origin = origins[slot.id] || { x: 0, y: 0 };
-            return [slot.id, slot.x, slot.y, slot.w, slot.h, slot.content, origin.x, origin.y];
+            return [slot.id, slot.x, slot.y, slot.w, slot.h, slot.content, slot.iframe, origin.x, origin.y];
         }));
         if (key === lastKey) {
             return;
@@ -175,61 +126,23 @@
     }
 
     function schedule() {
-        // Throttle, not debounce: constant animation must not hold the relayout back forever.
+        // Coalesce bursts (one relayout per frame); never hold back behind constant animation.
         if (timer) {
             return;
         }
         timer = setTimeout(function () {
             timer = null;
             relayout();
-        }, 120);
+        }, 0);
     }
 
-    function watchFrame(iframe) {
-        iframe.addEventListener("load", function () {
-            schedule();
-            try {
-                var doc = iframe.contentDocument;
-                if (!doc || !doc.documentElement) {
-                    return;
-                }
-                var obs = new MutationObserver(schedule);
-                obs.observe(doc.documentElement, {
-                    childList: true,
-                    subtree: true,
-                    attributes: true
-                });
-            } catch (err) {
-                /* cross-origin or not ready */
-            }
-        });
-    }
-
-    document.querySelectorAll("iframe[data-slot]").forEach(watchFrame);
+    frames().forEach(function (iframe) {
+        Measure.watch(iframe, schedule);
+    });
     window.addEventListener("message", function (ev) {
-        var data = ev.data;
-        if (!data || data.type !== "mycelian-content-size") {
-            return;
-        }
-        var frames = document.querySelectorAll("iframe[data-slot]");
-        for (var i = 0; i < frames.length; i++) {
-            if (frames[i].contentWindow !== ev.source) {
-                continue;
-            }
-            var width = Number(data.width);
-            var height = Number(data.height);
-            if (!isFinite(width) || !isFinite(height)) {
-                return;
-            }
-            explicit[frames[i].getAttribute("data-slot")] = {
-                w: width,
-                h: height,
-                explicit: true
-            };
+        if (explicit.handle(ev, frames())) {
             schedule();
-            return;
         }
     });
-    setInterval(schedule, 500);
     schedule();
 })();

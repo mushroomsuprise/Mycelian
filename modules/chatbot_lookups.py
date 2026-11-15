@@ -762,12 +762,23 @@ async def _channel_info(config, context, kind, entry):
 async def _shoutout(config, context, kind, entry):
     user = await resolve_target_user(config, context, kind)
     out = await _channel_vars(user)
+    from .twitch import record_shoutout, shoutout_cooldown_remaining
+
+    target_id = str(user.get("id") or "")
+    wait = shoutout_cooldown_remaining(target_id)
+    if wait > 0:
+        logger.info(
+            "Twitch shoutout to %s not sent: cooldown, %.0fs left", out.get("target_login"), wait
+        )
+        out["shoutout_sent"] = "no"
+        return out
     try:
         await helix_request("POST", f"{HELIX}/chat/shoutouts", {
             "from_broadcaster_id": broadcaster_id(),
             "to_broadcaster_id": user.get("id"),
             "moderator_id": broadcaster_id(),
         })
+        record_shoutout(target_id)
         out["shoutout_sent"] = "yes"
     except HelixError as exc:
         # Twitch only allows shoutouts while live and with cooldowns; the chat

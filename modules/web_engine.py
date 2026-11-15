@@ -128,6 +128,24 @@ def _theme_dock_html(template: str, html: str) -> str:
     return html
 
 
+def _embed_cache_variant() -> tuple:
+    """Part of the served-HTML cache key: what _finalize_served_overlay_html adds.
+
+    A page inside a container gets the mute/volume script, a plain OBS source
+    doesn't, so the two (and each volume) must not share one cached copy.
+    """
+    try:
+        if request is None or request.args.get("mycelian_embed") != "1":
+            return ()
+        return (
+            "embed",
+            request.args.get("mycelian_volume", "100"),
+            request.args.get("mycelian_muted", "0"),
+        )
+    except Exception:
+        return ()
+
+
 def _finalize_served_overlay_html(html: str) -> str:
     """Inject overlay scripts, and mute/volume when the page is inside a container."""
     html = _inject_served_overlay_scripts(html)
@@ -4283,6 +4301,8 @@ class WebEngine:
             daemon=True,
         ).start()
 
+    _TWITCH_API_BATCH_MAX = 8
+
     def _submit_twitch_api_coro(self, coro) -> None:
         self.ensure_twitch_api_worker()
         try:
@@ -4301,17 +4321,40 @@ class WebEngine:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            while True:
-                coro = self._twitch_api_queue.get()
+            stop = False
+            while not stop:
+                # Run everything already queued together. One at a time, a burst
+                # of overlay requests (several sources polling on the same tick)
+                # queued each reply behind the others and overlays timed out.
+                batch = [self._twitch_api_queue.get()]
+                while len(batch) < self._TWITCH_API_BATCH_MAX:
+                    try:
+                        batch.append(self._twitch_api_queue.get_nowait())
+                    except queue.Empty:
+                        break
                 with self._queue_metrics_lock:
-                    if self._tw_enqueue_times:
-                        self._tw_enqueue_times.popleft()
-                if coro is None:
-                    break
+                    for _ in batch:
+                        if self._tw_enqueue_times:
+                            self._tw_enqueue_times.popleft()
+                if None in batch:
+                    stop = True
+                coros = [c for c in batch if c is not None]
+                if not coros:
+                    continue
                 try:
-                    loop.run_until_complete(coro)
+                    results = loop.run_until_complete(
+                        asyncio.gather(*coros, return_exceptions=True)
+                    )
                 except Exception as e:
-                    logger.error("Twitch API worker job failed: %s", e, exc_info=True)
+                    logger.error("Twitch API worker batch failed: %s", e, exc_info=True)
+                    continue
+                for result in results:
+                    if isinstance(result, Exception):
+                        logger.error(
+                            "Twitch API worker job failed: %s",
+                            result,
+                            exc_info=result,
+                        )
         finally:
             try:
                 loop.run_until_complete(loop.shutdown_asyncgens())
@@ -5513,6 +5556,10 @@ class WebEngine:
         if abandoned:
             self._abandoned_server_threads = [t for t in abandoned if t.is_alive()]
 
+    def _has_live_abandoned_thread(self) -> bool:
+        abandoned = getattr(self, "_abandoned_server_threads", None) or []
+        return any(t is not None and t.is_alive() for t in abandoned)
+
     def _join_known_server_threads(self, join_timeout: float) -> None:
         """Join every WebEngine thread this instance has started.
 
@@ -5535,6 +5582,12 @@ class WebEngine:
                     "WebEngine thread %s did not exit within %.0fs; abandoning it",
                     thread.name,
                     join_timeout,
+                )
+                # Capture where the hub is stuck before it is abandoned: the
+                # probe-driven restart fires before the 45s watchdog would.
+                self._dump_all_thread_stacks(
+                    f"WebEngine thread {thread.name} did not exit within "
+                    f"{join_timeout:.0f}s; abandoning it"
                 )
                 abandoned.append(thread)
         self._prune_known_server_threads()
@@ -6087,6 +6140,25 @@ class WebEngine:
             if now - self._last_restart_ts < self._RESTART_COOLDOWN_SEC:
                 return
             if self._restart_attempts >= self._MAX_RESTART_ATTEMPTS:
+                if not self._restart_giveup_notified:
+                    self._restart_giveup_notified = True
+                    self._notify_restart_giveup()
+                return
+            if self._has_live_abandoned_thread():
+                # A hub that never stopped is still blocked in a native call and
+                # shares this SocketIO object and the app's locks with any new
+                # server, so a replacement that froze too can't be fixed by
+                # restarting again in-process.
+                logger.error(
+                    "WebEngine: a previous overlay server thread is still frozen and "
+                    "its replacement stopped responding too (%s); not restarting "
+                    "again — Mycelian must be restarted",
+                    reason,
+                )
+                self._last_run_error = (
+                    "overlay server froze again after an automatic restart"
+                )
+                self._restart_attempts = self._MAX_RESTART_ATTEMPTS
                 if not self._restart_giveup_notified:
                     self._restart_giveup_notified = True
                     self._notify_restart_giveup()
@@ -8804,7 +8876,7 @@ class WebEngine:
                 if isinstance(raw_filters, dict):
                     filters = normalize_filter_state(raw_filters)
                 else:
-                    filters = view_manager.load()["filters"]
+                    filters = self._run_off_hub(view_manager.load)["filters"]
                 search = data.get("search")
                 if search is not None:
                     search = str(search)
@@ -8813,8 +8885,14 @@ class WebEngine:
                     "Loading condensed view groups for past %s hours", hours
                 )
 
-                response = build_condensed_overlay_payload(
-                    hours=hours, filter_state=filters, search=search
+                # Uncached database scan + grouping: keep it off the gevent hub.
+                response = self._run_off_hub(
+                    functools.partial(
+                        build_condensed_overlay_payload,
+                        hours=hours,
+                        filter_state=filters,
+                        search=search,
+                    )
                 )
                 hours = response.get("hours", hours)
 
@@ -8846,11 +8924,16 @@ class WebEngine:
         @self.socketio.on("get_activity_feed_view")
         def handle_get_activity_feed_view(data=None):
             """Send the shared activity-feed view and the alerts that belong on it."""
-            logger.debug("Received get_activity_feed_view from %s", request.sid)
+            sid = request.sid
+            logger.debug("Received get_activity_feed_view from %s", sid)
             try:
                 from modules.uiwindows.activity_feed import publish_activity_feed_view
 
-                snapshot = publish_activity_feed_view(to=request.sid)
+                # Loads stored alerts from the database on first use and takes
+                # native locks: run it on a worker thread, never on the hub.
+                snapshot = self._run_off_hub(
+                    functools.partial(publish_activity_feed_view, to=sid)
+                )
                 return {"success": True, "view": snapshot}
             except Exception as exc:
                 logger.error(
@@ -9316,7 +9399,9 @@ class WebEngine:
                         logger.debug("Twitch API request successful for %s", endpoint)
                     except Exception as e:
                         err = str(e)
-                        if err.startswith("Authentication required"):
+                        if err.startswith(
+                            ("Authentication required", "Authentication failed")
+                        ):
                             logger.warning(
                                 "Twitch API request skipped (%s): %s",
                                 endpoint,
@@ -10949,6 +11034,7 @@ class WebEngine:
             html_mtime,
             config_mtime,
             getattr(self, "_template_config_generation", 0),
+            _embed_cache_variant(),
         )
 
     def _cached_overlay_html(self, template: str, key=None):

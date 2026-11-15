@@ -34,7 +34,7 @@ const frames = (clock) => clock.tick(40);
 
 test("every step points at markup that exists in editor.html", () => {
     const { W, doc } = setup();
-    assert.equal(W.STEPS.length, 19);
+    assert.equal(W.STEPS.length, 20);
     for (const step of W.STEPS) {
         const sels = step.sels || [step.sel];
         for (const sel of sels) { assert.ok(doc.querySelector(sel), step.title + ": " + sel); }
@@ -133,7 +133,7 @@ test("startTour shows step 1 with counter, disabled Back and the blocker", () =>
     assert.equal(doc.querySelector(".ss-tour-blocker").style.display, "block");
     assert.equal(card(doc).style.display, "block");
     assert.equal(tour(doc, "title").textContent, "Templates and containers");
-    assert.equal(tour(doc, "count").textContent, "1 of 19");
+    assert.equal(tour(doc, "count").textContent, "1 of 20");
     assert.equal(tour(doc, "back").disabled, true);
     assert.equal(tour(doc, "next").textContent, "Next");
     frames(clock);
@@ -162,12 +162,12 @@ test("Next/Back/arrow keys walk the steps, switching tabs and modes; Done ends a
     doc.querySelector('.ss-tab[data-tab="bindings"]').click(); // user was on Bindings
     W.startTour();
     tour(doc, "next").click();
-    assert.equal(tour(doc, "count").textContent, "2 of 19");
+    assert.equal(tour(doc, "count").textContent, "2 of 20");
     assert.equal(tour(doc, "back").disabled, false);
     tour(doc, "back").click();
-    assert.equal(tour(doc, "count").textContent, "1 of 19");
+    assert.equal(tour(doc, "count").textContent, "1 of 20");
     fire(win, doc.body, "keydown", { key: "ArrowLeft" }); // already at the start
-    assert.equal(tour(doc, "count").textContent, "1 of 19");
+    assert.equal(tour(doc, "count").textContent, "1 of 20");
     for (let i = 0; i < 7; i++) { fire(win, doc.body, "keydown", { key: "ArrowRight" }); }
     assert.equal(tour(doc, "title").textContent, "Properties");
     assert.ok(doc.querySelector('.ss-tab[data-tab="properties"]').classList.contains("active"));
@@ -184,6 +184,8 @@ test("Next/Back/arrow keys walk the steps, switching tabs and modes; Done ends a
     assert.ok(root.classList.contains("ss-root--containers"));
     fire(win, doc.body, "keydown", { key: "x" }); // other keys ignored
     tour(doc, "next").click();
+    tour(doc, "next").click();
+    assert.equal(tour(doc, "title").textContent, "Simulate");
     tour(doc, "next").click();
     assert.equal(tour(doc, "next").textContent, "Done");
     tour(doc, "next").click();

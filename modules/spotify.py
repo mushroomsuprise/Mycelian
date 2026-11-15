@@ -794,6 +794,13 @@ class SpotifyClient:
                     self.set_empty_track_data()
                 return
 
+            if not playback_data.get("item"):
+                # Ads, private sessions and some podcast states report playback
+                # with no item: nothing to show.
+                self._last_playback_state = "idle"
+                self.set_empty_track_data()
+                return
+
             try:
                 # Extract track data - same logic as old script
                 track_name = playback_data["item"]["name"]
@@ -848,7 +855,7 @@ class SpotifyClient:
                 # if api_time > 0.5:
                 #     logger.warning(f"Slow Spotify API response: {api_time:.3f}s")
 
-            except (KeyError, IndexError) as e:
+            except (KeyError, IndexError, TypeError) as e:
                 logger.warning(f"Error parsing playback data: {str(e)}")
                 self.set_empty_track_data()
 

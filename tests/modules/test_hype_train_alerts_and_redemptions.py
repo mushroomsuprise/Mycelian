@@ -201,10 +201,16 @@ def test_point_alert_keeps_the_redemption(api, pipe, monkeypatch):
 
 @pytest.fixture
 def helix(monkeypatch):
-    rec = SimpleNamespace(calls=[], error=None, notes=[])
+    # calls: redemption PATCHes; gets: manageable-reward list lookups.
+    rec = SimpleNamespace(calls=[], gets=[], error=None, notes=[], manageable=["rw1", "rw2"])
     api = SimpleNamespace(is_connected=True, user_id="42")
 
     async def call(url, method, json_data=None):
+        if method == "GET":
+            rec.gets.append(url)
+            if rec.error:
+                raise rec.error
+            return {"data": [{"id": rid} for rid in rec.manageable]}
         rec.calls.append((url, method, json_data))
         if rec.error:
             raise rec.error
@@ -213,6 +219,8 @@ def helix(monkeypatch):
     api.generic_api_call = call
     monkeypatch.setattr(tw, "twitch_api", api)
     monkeypatch.setattr(tw, "_unmanageable_reward_ids", set())
+    monkeypatch.setattr(tw, "_manageable_reward_ids", None)
+    monkeypatch.setattr(tw, "_manageable_rewards_fetched_at", 0.0)
     import modules.notification_engine as ne
 
     monkeypatch.setattr(ne, "notify", lambda message, **kw: rec.notes.append(dict(kw, message=message)))
@@ -244,6 +252,24 @@ def test_complete_point_redemption(helix, monkeypatch):
     monkeypatch.setattr(ne, "notify", MagicMock(side_effect=RuntimeError("ui gone")))
     helix.api.is_connected = True
     assert tw.complete_point_redemption("rw2", "red-5") == "error"  # a failing notice never escapes
+
+
+def test_complete_point_redemption_skips_rewards_this_app_does_not_own(helix):
+    helix.manageable = ["mine"]
+    assert tw.complete_point_redemption("dashboard-reward", "red-1") == "not_manageable"
+    # Known up front from Twitch's manageable-rewards list: no PATCH, so no 403.
+    assert helix.calls == []
+    assert len(helix.gets) == 1 and "only_manageable_rewards=true" in helix.gets[0]
+    assert helix.notes[-1]["dedupe_key"] == "twitch:redemption_not_manageable:dashboard-reward"
+    assert tw.complete_point_redemption("mine", "red-2") == "ok"
+    assert len(helix.gets) == 1  # list cached for the session
+    assert [m for _, m, _ in helix.calls] == ["PATCH"]
+
+
+def test_complete_point_redemption_list_unavailable_falls_back_to_patch(helix):
+    helix.error = RuntimeError("network down")
+    assert tw.complete_point_redemption("rw1", "red-1") == "error"
+    assert len(helix.calls) == 1  # list lookup failed, so the PATCH was still tried
 
 
 class _Engine:

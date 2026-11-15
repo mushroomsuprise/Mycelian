@@ -215,7 +215,8 @@
 
         var pendingApiRequestId = null;
         var apiWatchdogTimer = null;
-        var API_WATCHDOG_MS = 10000;
+        var API_WATCHDOG_MS = 30000;
+        var apiTimeoutStreak = 0;
         var apiRetryTimer = null;
         var apiRetryMs = 5000;
         var API_RETRY_BASE_MS = 5000;
@@ -807,7 +808,13 @@
                 // replying; without this the overlay would block fetches forever.
                 apiWatchdogTimer = null;
                 pendingApiRequestId = null;
-                console.warn('Twitch API request timed out; will retry');
+                apiTimeoutStreak += 1;
+                // One slow reply is routine (the retry fixes it); only report
+                // a run of them.
+                if (apiTimeoutStreak >= 2) {
+                    console.warn('Twitch API request timed out ' + apiTimeoutStreak +
+                        ' times in a row; will retry');
+                }
                 scheduleApiRetry();
             }, API_WATCHDOG_MS);
 
@@ -908,6 +915,7 @@
 
             pendingApiRequestId = null;
             clearApiWatchdog();
+            apiTimeoutStreak = 0;
 
             var channels = data.success && data.data && data.data.data;
             if (Array.isArray(channels) && channels.length > 0) {

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -40,6 +41,7 @@ _ORIGINALS = {name: getattr(feed, name) for name in ("_emit_overlay_event", "_ru
 
 _GLOBALS = (
     "_live_seq", "_legacy_hours_cache", "_person_payload", "_person_rows_payload", "_stored_loaded",
+    "_stored_loading",
     "_condensed_update_scheduled", "_condensed_rebuild_running", "_condensed_rebuild_rerun",
     "_host", "_slot_cache", "_slot_rev", "_live_push_scheduled", "_queue_poll_timer", "_watchdog_timer",
     "_last_queue_sig", "_last_meta", "_meta_tick", "_health_failures", "_registered_event_clients",
@@ -858,6 +860,38 @@ def test_load_stored_into_feed(monkeypatch, settings, isolated):
     assert [a["alert_id"] for a in feed.live_alerts_snapshot()] == ["live", "a5", "a9"]
 
 
+def test_load_stored_into_feed_never_holds_lock_during_fetch(monkeypatch, settings, isolated):
+    """Regression: the overlay hub deadlocked when a second dock asked mid-fetch.
+
+    On the gevent hub the fetch can yield while waiting for the stored-alert
+    prefetch; a second caller that blocked on the (native) lock froze the whole
+    hub. Now the lock is free during the fetch and a concurrent caller returns
+    straight away.
+    """
+    seen = {}
+
+    def page(n):
+        seen["lock_held"] = feed._stored_lock.locked()
+        seen["nested"] = feed.load_stored_into_feed()  # a second dock asking mid-fetch
+        return {"alerts": [_stored(1)], "has_next": False}
+
+    monkeypatch.setattr(alertutils, "alert_state_manager", _Pager(page))
+    result = {}
+    worker = threading.Thread(target=lambda: result.setdefault("added", feed.load_stored_into_feed()), daemon=True)
+    worker.start()
+    worker.join(5.0)
+    assert not worker.is_alive(), "load_stored_into_feed deadlocked on a concurrent caller"
+    assert seen == {"lock_held": False, "nested": 0}
+    assert result["added"] == 1 and feed._stored_loaded is True and feed._stored_loading is False
+
+
+def test_load_stored_into_feed_reload_runs_during_initial_load(monkeypatch, settings, isolated):
+    monkeypatch.setattr(feed, "_stored_loading", True)
+    monkeypatch.setattr(alertutils, "alert_state_manager", _Pager(_pages([_stored(1)])))
+    assert feed.load_stored_into_feed() == 0  # another load is running
+    assert feed.load_stored_into_feed(reload=True) == 1  # a settings change is not dropped
+
+
 def test_load_stored_into_feed_error(monkeypatch, settings, isolated):
     monkeypatch.setattr(alertutils, "alert_state_manager", _Pager(lambda page: 1 / 0))
     assert feed.load_stored_into_feed() == 0
@@ -1381,6 +1415,16 @@ def test_update_and_refresh_condensed_view(monkeypatch, isolated):
     isolated.vm._view["condensed"] = True
     feed.refresh_condensed_view()
     assert rebuilds == ["update_condensed_view"]
+
+
+def test_publish_activity_feed_view_repaints_everyone_after_loading(monkeypatch, isolated):
+    """Docks that asked while the load ran got the feed without stored alerts."""
+    after = []
+    monkeypatch.setattr(feed, "current_feed_settings", lambda app_settings=None: {"layout": "rows"})
+    monkeypatch.setattr(feed, "load_stored_into_feed", lambda reload=False: 4)
+    monkeypatch.setattr(feed, "_after_stored_loaded", lambda: after.append(1))
+    feed.publish_activity_feed_view(to="sid")
+    assert after == [1]
 
 
 @pytest.mark.parametrize("mode", ["feed", "person"])

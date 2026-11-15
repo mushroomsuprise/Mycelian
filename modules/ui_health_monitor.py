@@ -157,13 +157,12 @@ def _trigger_reload(reason: str) -> None:
     _reload_count += 1
     logger.warning("ui_health: triggering_reload (%s)", reason)
 
-    async def _reload() -> None:
-        try:
-            await client.run_javascript("window.location.reload()", timeout=5.0)
-        except Exception as exc:
-            logger.error("ui_health: reload failed: %s", exc, exc_info=True)
-
-    background_tasks.create(_reload(), name="ui_health_reload")
+    # Fire and forget: a page that is reloading never answers, so awaiting a
+    # result only ever times out and reported every reload as a failure.
+    try:
+        client.run_javascript("window.location.reload()")
+    except Exception as exc:
+        logger.error("ui_health: reload failed: %s", exc, exc_info=True)
 
 
 def _on_ping_check_result(alive: Optional[Any]) -> None:

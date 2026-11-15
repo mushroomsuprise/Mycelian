@@ -1,16 +1,17 @@
 // Copyright (c) 2024-2026 Mycelian
 // SPDX-License-Identifier: MIT
-// assets/default_assets/spore_studio/container_shell.js: the live container page. Measures locked
-// templates inside their iframes (or takes explicit postMessage sizes), re-solves the layout with
-// container_layout.js and moves slots / clips / iframes. The page markup mirrors
-// containers.py render_shell.
+// assets/default_assets/spore_studio/container_shell.js: the live container page. Measures
+// "fits its content" templates with container_measure.js (or takes their own postMessage
+// sizes), re-solves the layout with container_layout.js and moves slots / clips / iframes.
+// The page markup mirrors containers.py render_shell.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeWindow, loadScript } from "./helpers/env.mjs";
-import { Document } from "./helpers/dom.mjs";
+import { frameDoc, RED } from "./helpers/frame_doc.mjs";
 
 const LAYOUT = "assets/default_assets/spore_studio/container_layout.js";
+const MEASURE = "assets/default_assets/spore_studio/container_measure.js";
 const SHELL = "assets/default_assets/spore_studio/container_shell.js";
 
 function slot(id, over = {}) {
@@ -21,22 +22,9 @@ function slot(id, over = {}) {
     }, over);
 }
 function link(id, over = {}) {
-    return Object.assign({ id, axis: "vertical", role: "flexible", min_px: 0, min_pct: 0, max_px: null, max_pct: null }, over);
+    return Object.assign({ id, axis: "vertical", role: "flexible", when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null }, over);
 }
-
-// A fake same-origin iframe document whose elements have fixed rects and computed styles.
-function frameDoc(boxes) {
-    const doc = new Document();
-    const styles = new Map();
-    for (const b of boxes) {
-        const el = doc.createElement("div");
-        el._rect = { left: b.left, top: b.top, width: b.width, height: b.height };
-        styles.set(el, { display: b.display || "block", visibility: b.visibility || "visible", opacity: b.opacity === undefined ? "1" : b.opacity });
-        doc.body.appendChild(el);
-    }
-    doc.defaultView = { getComputedStyle: (el) => styles.get(el) };
-    return doc;
-}
+const box = (left, top, width, height, style = RED) => ({ rect: [left, top, width, height], style });
 
 function setup(container, opts = {}) {
     const win = makeWindow();
@@ -50,10 +38,11 @@ function setup(container, opts = {}) {
     for (const f of doc.querySelectorAll("iframe")) {
         f.contentWindow = { id: f.getAttribute("data-slot") };
         f._rect = { width: 400, height: 300 };
-        const boxes = (opts.frames || {})[f.getAttribute("data-slot")];
-        if (boxes) { f.contentDocument = frameDoc(boxes); }
+        const tree = (opts.frames || {})[f.getAttribute("data-slot")];
+        if (tree) { f.contentDocument = frameDoc(tree); }
     }
     if (!opts.noLayout) { loadScript(win, LAYOUT); }
+    if (!opts.noMeasure) { loadScript(win, MEASURE, { expose: false }); }
     const solveCalls = [];
     if (win.MycelianContainerLayout) {
         const real = win.MycelianContainerLayout.solve;
@@ -66,21 +55,21 @@ const slotEl = (doc, id) => doc.querySelector('.mc-slot[data-slot="' + id + '"]'
 const frameEl = (doc, id) => doc.querySelector('iframe[data-slot="' + id + '"]');
 const px = (el, ...props) => props.map((p) => el.style[p]);
 
-test("does nothing without the data block, the solver or valid JSON", () => {
+test("does nothing without the data block, the solver, the measurer or valid JSON", () => {
     const c = { width: 800, height: 600, slots: [slot("a")] };
-    const noLayout = setup(c, { noLayout: true });
-    noLayout.clock.tick(1000);
-    assert.equal(slotEl(noLayout.doc, "a").style.left, "");
-    const bad = setup(c, { rawData: "{not json" });
-    bad.clock.tick(1000);
-    assert.equal(bad.clock.pending(), 0);
+    for (const opts of [{ noLayout: true }, { noMeasure: true }, { rawData: "{not json" }]) {
+        const run = setup(c, opts);
+        run.clock.tick(2000);
+        assert.equal(slotEl(run.doc, "a").style.left, "", JSON.stringify(opts));
+    }
     const win = makeWindow();
     loadScript(win, LAYOUT);
+    loadScript(win, MEASURE, { expose: false });
     loadScript(win, SHELL);
     assert.equal(win.__clock.pending(), 0);
 });
 
-test("first relayout after 120ms positions every slot, clip and iframe", () => {
+test("first relayout right away positions every slot, clip and iframe", () => {
     const c = {
         width: 800, height: 600, slots: [
             slot("a", { x: 10, y: 20, w: 300, h: 200, z: 3, opacity: 50, padding: { t: 5, r: 6, b: 7, l: 8 } }),
@@ -88,9 +77,7 @@ test("first relayout after 120ms positions every slot, clip and iframe", () => {
         ],
     };
     const { doc, clock } = setup(c);
-    clock.tick(119);
-    assert.equal(slotEl(doc, "a").style.left, "");
-    clock.tick(1);
+    clock.tick(0);
     const a = slotEl(doc, "a");
     assert.deepEqual(px(a, "left", "top", "width", "height", "zIndex", "opacity"), ["10px", "20px", "300px", "200px", "3", "0.5"]);
     assert.deepEqual(px(a.querySelector(".mc-clip"), "left", "top", "width", "height"), ["8px", "5px", "286px", "188px"]);
@@ -101,133 +88,129 @@ test("first relayout after 120ms positions every slot, clip and iframe", () => {
 test("scaled slots are scaled and centred in their content box", () => {
     const c = { width: 800, height: 600, slots: [slot("s", { w: 400, h: 300, fit: "scale", design_width: 1600, design_height: 900 })] };
     const { doc, clock } = setup(c);
-    clock.tick(120);
+    clock.tick(0);
     const f = frameEl(doc, "s");
     assert.deepEqual(px(f, "width", "height", "transformOrigin", "transform", "left", "top"),
         ["1600px", "900px", "top left", "scale(0.25)", "0px", "37.5px"]);
 });
 
-test("locked slots shrink to the measured visible content and shift the iframe on the linked axis", () => {
+test("FF7 + chat: chat gets the room FF7 isn't using; FF7's iframe keeps its drawn size", () => {
     const c = {
-        width: 800, height: 600, slots: [
-            slot("head", { y: 0, h: 300, link: link("col", { role: "locked" }) }),
-            slot("body", { y: 300, h: 300, link: link("col") }),
+        width: 800, height: 900, slots: [
+            slot("chat", { y: 100, h: 400, link: link("col") }),
+            slot("ff7", { y: 500, h: 300, link: link("col", { role: "locked" }) }),
+            slot("title", { y: 0, h: 80 }),
         ],
     };
-    const frames = {
-        head: [
-            { left: 20, top: 40, width: 100, height: 50 },
-            { left: 0, top: 0, width: 400, height: 300 }, // full-viewport background: ignored
-            { left: 50, top: 60, width: 200, height: 70 },
-            { left: 0, top: 0, width: 50, height: 50, display: "none" },
-            { left: 0, top: 0, width: 50, height: 50, visibility: "hidden" },
-            { left: 0, top: 0, width: 50, height: 50, opacity: "0" },
-            { left: 0, top: 0, width: 0.5, height: 50 },
-            { left: 500, top: 10, width: 50, height: 50 }, // off screen to the right
-        ],
-    };
-    const { doc, clock, solveCalls } = setup(c, { frames });
-    clock.tick(120);
-    assert.deepEqual(solveCalls[0], { head: { w: 230, h: 90 } });
-    assert.deepEqual(px(slotEl(doc, "head"), "top", "height"), ["0px", "90px"]);
-    assert.deepEqual(px(slotEl(doc, "body"), "top", "height"), ["90px", "510px"]);
-    const f = frameEl(doc, "head");
-    assert.deepEqual(px(f, "left", "top", "height"), ["0px", "-40px", "300px"], "content moved up to the clip top");
+    // FF7: a transparent full-height root (ignored), party panel and enemies panel.
+    const ff7 = [{ rect: [0, 0, 400, 300], children: [box(4, 4, 392, 100), box(4, 110, 392, 60)] }];
+    const { doc, clock, solveCalls } = setup(c, { frames: { ff7 } });
+    clock.tick(0);
+    assert.deepEqual(solveCalls.at(-1), { ff7: { w: 392, h: 166 } });
+    // Shared space is y=100..800: FF7 takes 166, chat the other 534.
+    assert.deepEqual(px(slotEl(doc, "chat"), "top", "height"), ["100px", "534px"]);
+    assert.deepEqual(px(frameEl(doc, "chat"), "height"), ["534px"], "chat's resolution really changes");
+    assert.deepEqual(px(slotEl(doc, "ff7"), "top", "height"), ["634px", "166px"]);
+    assert.deepEqual(px(frameEl(doc, "ff7"), "top", "height"), ["-4px", "300px"], "content moved up to the clip top");
+    assert.deepEqual(px(slotEl(doc, "title"), "top", "height"), ["0px", "80px"], "outside the space: untouched");
 });
 
-test("horizontal locked slots shift left by the content origin", () => {
+test("a template showing nothing closes; chat takes the whole space", () => {
+    const c = { width: 800, height: 600, slots: [
+        slot("chat", { y: 0, h: 300, link: link("col") }),
+        slot("alerts", { y: 300, h: 300, link: link("col", { role: "locked" }) }),
+    ] };
+    const idle = [{ rect: [0, 0, 400, 300], style: { opacity: "0" }, children: [box(50, 50, 300, 200)] }];
+    const { doc, clock, solveCalls } = setup(c, { frames: { alerts: idle } });
+    clock.tick(0);
+    assert.deepEqual(solveCalls.at(-1), { alerts: { empty: true } });
+    assert.deepEqual(px(slotEl(doc, "alerts"), "height"), ["0px"]);
+    assert.deepEqual(px(slotEl(doc, "chat"), "height"), ["600px"]);
+    assert.deepEqual(px(frameEl(doc, "alerts"), "top"), ["0px"], "no origin when empty");
+});
+
+test("horizontal fits-content slots shift left by the content origin", () => {
     const c = {
         width: 800, height: 600, slots: [
             slot("l", { x: 0, w: 400, link: link("row", { axis: "horizontal", role: "locked" }) }),
             slot("r", { x: 400, w: 400, link: link("row", { axis: "horizontal" }) }),
         ],
     };
-    const { doc, clock } = setup(c, { frames: { l: [{ left: 30, top: 10, width: 100.2, height: 20 }] } });
-    clock.tick(120);
+    const { doc, clock } = setup(c, { frames: { l: [box(30, 10, 100.2, 20)] } });
+    clock.tick(0);
     assert.equal(slotEl(doc, "l").style.width, "101px", "measured width is rounded up");
     assert.deepEqual(px(frameEl(doc, "l"), "left", "top"), ["-30px", "0px"]);
 });
 
-test("unmeasurable frames fall back to the designated size", () => {
+test("frames that can't be read yet keep their drawn size", () => {
     const c = { width: 800, height: 600, slots: [
         slot("a", { y: 0, h: 200, link: link("L", { role: "locked" }) }),
-        slot("b", { y: 1, h: 200, link: link("L", { role: "locked" }) }),
-        slot("c", { y: 2, h: 200, link: link("L", { role: "locked" }) }),
-        slot("d", { y: 3, h: 200, link: link("L", { role: "locked" }) }),
-        slot("e", { y: 4, h: 100, link: link("L", { role: "locked", }), fit: "scale" }),
-        slot("f", { y: 5, h: 100, link: link("L") }),
+        slot("c", { y: 200, h: 200, link: link("L", { role: "locked" }) }),
+        slot("e", { y: 400, h: 100, link: link("L", { role: "locked" }), fit: "scale" }),
+        slot("f", { y: 500, h: 100, link: link("L") }),
     ] };
-    const { doc, clock, solveCalls, win } = setup(c, { frames: { b: [], c: [{ left: 0, top: 0, width: 10, height: 10 }], d: [{ left: 0, top: 0, width: 10, height: 10 }] } });
-    // a: no document; b: nothing visible; c: frame too small; d: getComputedStyle throws
+    const { doc, clock, solveCalls } = setup(c, { frames: { c: [box(0, 0, 10, 10)] } });
+    // a: no document yet; c: window too small to measure; e: scaled (never measured)
     frameEl(doc, "c")._rect = { width: 1, height: 300 };
-    frameEl(doc, "d").contentDocument.defaultView.getComputedStyle = () => { throw new Error("cross-origin"); };
-    const noBody = frameEl(doc, "e");
-    noBody.contentDocument = { body: null };
-    clock.tick(120);
-    assert.deepEqual(solveCalls[0], {});
+    clock.tick(0);
+    assert.deepEqual(solveCalls.at(-1), {});
     assert.deepEqual(px(slotEl(doc, "a"), "height"), ["200px"]);
-    win.__clock.tick(0);
+    assert.deepEqual(px(slotEl(doc, "c"), "height"), ["200px"]);
 });
 
-test("explicit mycelian-content-size messages win over measuring", () => {
+test("a template's own mycelian-content-size message wins until it sends auto", () => {
     const c = { width: 800, height: 600, slots: [
         slot("a", { y: 0, h: 300, link: link("L", { role: "locked" }) }),
         slot("b", { y: 300, h: 300, link: link("L") }),
     ] };
-    const { doc, clock, win, solveCalls } = setup(c, { frames: { a: [{ left: 10, top: 10, width: 50, height: 50 }] } });
-    clock.tick(120);
+    const { doc, clock, win, solveCalls } = setup(c, { frames: { a: [box(10, 10, 50, 50)] } });
+    clock.tick(0);
     const source = frameEl(doc, "a").contentWindow;
     const post = (data, src = source) => win.dispatchEvent(Object.assign(new win.Event("message"), { data, source: src }));
-    post(null);
     post({ type: "other" });
     post({ type: "mycelian-content-size", width: 10, height: 10 }, { stranger: true });
-    post({ type: "mycelian-content-size", width: "x", height: 5 });
-    clock.tick(500);
+    clock.tick(0);
     assert.deepEqual(solveCalls.at(-1), { a: { w: 50, h: 50 } });
     post({ type: "mycelian-content-size", width: "120", height: 80 });
-    clock.tick(120);
-    assert.deepEqual(solveCalls.at(-1), { a: { w: 120, h: 80, explicit: true } });
+    clock.tick(0);
+    assert.deepEqual(solveCalls.at(-1), { a: { w: 120, h: 80 } });
     assert.equal(slotEl(doc, "a").style.height, "80px");
-    assert.deepEqual(px(frameEl(doc, "a"), "top"), ["0px"], "explicit sizes use a zero origin");
+    assert.deepEqual(px(frameEl(doc, "a"), "top"), ["0px"], "reported sizes use a zero origin");
+    post({ type: "mycelian-content-size", auto: true });
+    clock.tick(0);
+    assert.deepEqual(solveCalls.at(-1), { a: { w: 50, h: 50 } }, "back to measuring");
 });
 
-test("relayout is throttled and skips DOM writes when nothing changed", () => {
-    const c = { width: 800, height: 600, slots: [slot("a")] };
-    const { doc, clock, I, solveCalls } = setup(c);
-    clock.tick(120);
-    assert.equal(solveCalls.length, 1);
-    slotEl(doc, "a").style.left = "999px";
-    clock.tick(500); // interval tick schedules one more relayout
-    clock.tick(120);
-    assert.equal(solveCalls.length, 2);
-    assert.equal(slotEl(doc, "a").style.left, "999px", "same layout: no rewrite");
-    I.schedule();
-    I.schedule();
-    clock.tick(120);
-    assert.equal(solveCalls.length, 3, "two schedule() calls inside 120ms run once");
-});
-
-test("iframe load re-schedules and observes the frame document; cross-origin is tolerated", () => {
-    const c = { width: 800, height: 600, slots: [slot("a"), slot("b"), slot("c")] };
-    const { doc, clock, win, solveCalls } = setup(c, { frames: { a: [] } });
-    clock.tick(120);
-    const before = solveCalls.length;
-    frameEl(doc, "a").dispatchEvent(new win.Event("load"));
-    const obs = win.__observers.filter((o) => o.targets.length).at(-1);
-    assert.equal(obs.targets[0], frameEl(doc, "a").contentDocument.documentElement);
-    assert.deepEqual({ ...obs.opts }, { childList: true, subtree: true, attributes: true });
-    clock.tick(120);
-    assert.equal(solveCalls.length, before + 1);
-    frameEl(doc, "b").dispatchEvent(new win.Event("load")); // no contentDocument
-    Object.defineProperty(frameEl(doc, "c"), "contentDocument", { get() { throw new Error("SecurityError"); } });
-    assert.doesNotThrow(() => frameEl(doc, "c").dispatchEvent(new win.Event("load")));
+test("changes inside a template relayout on the next frame; unchanged layouts aren't rewritten", () => {
+    const c = { width: 800, height: 600, slots: [
+        slot("chat", { y: 0, h: 300, link: link("col") }),
+        slot("ff7", { y: 300, h: 300, link: link("col", { role: "locked" }) }),
+    ] };
+    const { doc, clock, win, solveCalls } = setup(c, { frames: { ff7: [box(0, 0, 400, 100)] } });
+    clock.tick(16);
+    assert.equal(slotEl(doc, "ff7").style.height, "100px");
+    const page = frameEl(doc, "ff7").contentDocument;
+    const enemies = page.createElement("div");
+    enemies._rect = { left: 0, top: 100, width: 400, height: 80 };
+    page.__styles.set(enemies, Object.assign({}, page.defaultView.getComputedStyle(page.body), RED));
+    page.body.appendChild(enemies);
+    const observer = win.MutationObserver.all.find((o) => o.targets.includes(page.documentElement));
+    observer.trigger([]);
+    clock.tick(16);
+    assert.equal(slotEl(doc, "ff7").style.height, "180px", "enemies panel appeared");
+    assert.equal(slotEl(doc, "chat").style.height, "420px");
+    const calls = solveCalls.length;
+    slotEl(doc, "chat").style.left = "999px";
+    clock.tick(1016);
+    assert.equal(solveCalls.length, calls + 1, "safety poll re-solved");
+    assert.equal(slotEl(doc, "chat").style.left, "999px", "same layout: no rewrite");
 });
 
 test("slots without markup or without a clip/iframe are skipped safely", () => {
     const c = { width: 800, height: 600, slots: [slot("a"), slot("gone"), slot("bare")] };
     const { doc, clock } = setup(c, { noClip: ["bare"] });
     slotEl(doc, "gone").remove();
-    clock.tick(120);
+    clock.tick(0);
     assert.equal(slotEl(doc, "bare").style.width, "400px");
     assert.equal(slotEl(doc, "a").style.width, "400px");
 });

@@ -1574,6 +1574,98 @@
     background: color-mix(in srgb, var(--color-primary) 45%, transparent);
     border-radius: 2px;
 }
+.help-doc .hm-ss-space {                       /* dashed outline of a shared space */
+    position: absolute;
+    border: 2px dashed #4fc3f7;
+    border-radius: 3px;
+    pointer-events: none;
+}
+.help-doc .hm-ss-space::before {
+    content: attr(data-label);
+    position: absolute;
+    left: -2px;
+    bottom: 100%;
+    padding: 0 5px;
+    border-radius: 3px 3px 0 0;
+    background: #4fc3f7;
+    color: #111;
+    font-size: 8.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.help-doc .hm-ss-badge {                       /* Fixed / Fits content / Fills leftover badge */
+    position: absolute;
+    right: 3px;
+    top: 3px;
+    padding: 0 4px;
+    border-radius: 4px;
+    border: 1px solid #4fc3f7;
+    background: rgba(0, 0, 0, 0.72);
+    color: #fff;
+    font-size: 8px;
+    font-weight: 650;
+}
+.help-doc .hm-ss-badge.is-fixed { border-color: transparent; opacity: 0.75; }
+.help-doc .hm-ss-ghost {                       /* drawn size of a fits-content box */
+    position: absolute;
+    border: 1px dashed var(--color-warning);
+    pointer-events: none;
+}
+.help-doc .hm-ss-minline {
+    position: absolute;
+    border-top: 1px dashed var(--color-info, var(--color-primary));
+}
+.help-doc .hm-ss-crop {
+    position: absolute;
+    height: 4px;
+    background: repeating-linear-gradient(135deg, var(--color-error) 0 3px, transparent 3px 6px);
+}
+.help-doc .hm-ss-flow {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    margin: -7px 0 0 -7px;
+    border-radius: 50%;
+    border: 1px solid #111;
+    background: #4fc3f7;
+    color: #111;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 12px;
+    text-align: center;
+}
+.help-doc .hm-ss-seg {                         /* Sizing: Fixed / Fits its content / Fills leftover space */
+    display: flex;
+    gap: 3px;
+    padding: 2px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-surface);
+}
+.help-doc .hm-ss-seg > span {
+    flex: 1 1 0;
+    padding: 3px 2px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    text-align: center;
+    color: var(--color-text-secondary);
+}
+.help-doc .hm-ss-seg > span.is-on {
+    border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+    background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+    color: var(--color-text-primary);
+}
+.help-doc .hm-ss-summary {
+    margin: 0 0 6px;
+    padding: 5px 7px;
+    border-left: 3px solid var(--color-primary);
+    border-radius: 4px;
+    background: var(--color-bg-surface);
+    font-size: 9.5px;
+    line-height: 1.4;
+}
 
 /* ---- Waiting placeholder + toast ------------------------------------ */
 

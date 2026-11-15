@@ -12,7 +12,7 @@ const FILE = "assets/default_assets/spore_studio/container_layout.js";
 
 function setup() {
     const win = makeWindow();
-    const { internals: I } = loadScript(win, FILE, { expose: true, anchor: "return { solve: solve };" });
+    const { internals: I } = loadScript(win, FILE, { expose: true, anchor: "return { solve: solve, groupExtent: groupExtent };" });
     return { win, L: win.MycelianContainerLayout, I };
 }
 
@@ -33,10 +33,10 @@ const rects = (res) => Object.fromEntries(res.slots.map((s) => [s.id, [s.x, s.y,
 
 test("exports solve on window and on module.exports (UMD)", () => {
     const { L } = setup();
-    assert.deepEqual(Object.keys(L), ["solve"]);
+    assert.deepEqual(Object.keys(L), ["solve", "groupExtent"]);
     const mod = { exports: {} };
     const win = makeWindow({ extra: { module: mod } });
-    loadScript(win, FILE, { expose: true, anchor: "return { solve: solve };" });
+    loadScript(win, FILE, { expose: true, anchor: "return { solve: solve, groupExtent: groupExtent };" });
     assert.equal(mod.exports, win.MycelianContainerLayout);
     assert.equal(typeof mod.exports.solve, "function");
 });
@@ -96,7 +96,10 @@ test("lockedOuter shrinks to measured content plus padding within min and design
     assert.equal(I.lockedOuter(s, "vertical", 1080, null, w), 300, "unmeasured: designated size");
     assert.equal(I.lockedOuter(s, "vertical", 1080, { a: { h: 100.5 } }, w), 130, "100.5 -> 100 (even) + 30");
     assert.equal(I.lockedOuter(s, "vertical", 1080, { a: { h: 5000 } }, w), 300, "capped by content box");
-    assert.equal(I.lockedOuter(s, "vertical", 1080, { a: { h: -40 } }, w), 30, "negative measure is 0");
+    assert.equal(I.lockedOuter(s, "vertical", 1080, { a: { h: -40 } }, w), 0, "nothing showing closes the box, padding too");
+    assert.equal(I.lockedOuter(s, "vertical", 1080, { a: { empty: true } }, w), 0, "empty closes the box");
+    const keep = slot("a", { h: 300, padding: { t: 10, r: 0, b: 20, l: 0 }, link: link("L", { role: "locked", when_empty: "keep" }) });
+    assert.equal(I.lockedOuter(keep, "vertical", 1080, { a: { empty: true } }, w), 300, "keep: drawn size");
     const minned = slot("a", { h: 300, link: link("L", { role: "locked", min_px: 200 }) });
     assert.equal(I.lockedOuter(minned, "vertical", 1080, { a: { h: 50 } }, w), 200);
     const capped = slot("a", { h: 300, link: link("L", { role: "locked", max_pct: 10 }) });
@@ -215,7 +218,7 @@ test("vertical link: locked header shrinks to content, flexible slots share the 
     const c = container([
         slot("chat", { y: 400, h: 600, link: link("col") }),
         slot("header", { y: 0, h: 200, link: link("col", { role: "locked" }) }),
-        slot("goal", { y: 900, h: 200, link: link("col") }),
+        slot("goal", { y: 880, h: 200, link: link("col") }),
         slot("free", { x: 1000, y: 5, w: 100, h: 100 }),
     ], { spacing: 10 });
     const res = L.solve(c, { header: { h: 80 } });
@@ -236,14 +239,15 @@ test("vertical link: locked header shrinks to content, flexible slots share the 
 test("horizontal link sorts by x then id and lays out left to right", () => {
     const { L } = setup();
     const c = container([
-        slot("b", { x: 100, w: 300, link: link("row", { axis: "horizontal" }) }),
+        slot("b", { x: 100, w: 900, link: link("row", { axis: "horizontal" }) }),
         slot("a", { x: 100, w: 100, link: link("row", { axis: "horizontal" }) }),
         slot("c", { x: 0, w: 100, link: link("row", { axis: "horizontal", role: "locked" }) }),
     ], { width: 1000 });
     const r = rects(L.solve(c));
+    // The shared space is x=0..1000; 900 left after c, split 100:900.
     assert.deepEqual(r.c, [0, 0, 100, 360]);
-    assert.deepEqual(r.a, [100, 0, 225, 360]);
-    assert.deepEqual(r.b, [325, 0, 675, 360]);
+    assert.deepEqual(r.a, [100, 0, 90, 360]);
+    assert.deepEqual(r.b, [190, 0, 810, 360]);
 });
 
 test("min overflow is warned once per link; separate links are independent", () => {
@@ -252,7 +256,7 @@ test("min overflow is warned once per link; separate links are independent", () 
         slot("a", { y: 0, link: link("L", { min_px: 800 }) }),
         slot("b", { y: 10, link: link("L", { min_px: 800 }) }),
         slot("c", { y: 0, link: link("M", { axis: "horizontal", role: "locked", min_px: 5000 }) }),
-        slot("d", { y: 0, link: link("M", { axis: "horizontal", role: "locked", min_px: 5000 }) }),
+        slot("d", { x: 640, y: 0, link: link("M", { axis: "horizontal", role: "locked", min_px: 5000 }) }),
     ]);
     const res = plain(L.solve(c));
     assert.deepEqual(res.warnings.map((w) => [w.code, w.link]), [["min_overflow", "L"], ["min_above_designated", "M"]]);

@@ -59,7 +59,7 @@ from twitchAPI.object.eventsub import (
     StreamOnlineEvent,
 )
 from twitchAPI.oauth import UserAuthenticator
-from twitchAPI.type import AuthScope, InvalidRefreshTokenException
+from twitchAPI.type import AuthScope, InvalidRefreshTokenException, MissingScopeException
 from urllib.parse import parse_qs, urlparse
 
 from .twitch_chat_commands import is_allowed_slash_message
@@ -1398,11 +1398,17 @@ _staging_complete = threading.Event()
 twitch_connected = False
 
 
+_EPHEMERAL_HELIX_TIMEOUT_SEC = 15.0
+
+
 @asynccontextmanager
 async def _ephemeral_client_session():
     """Short-lived Helix client; enable_cleanup_closed avoids pending tasks on Py 3.13."""
     connector = aiohttp.TCPConnector(enable_cleanup_closed=True)
-    async with aiohttp.ClientSession(connector=connector) as session:
+    # Bounded: aiohttp's default is 300s, and one stuck call holds up every
+    # overlay request queued behind it on the Twitch API worker.
+    timeout = aiohttp.ClientTimeout(total=_EPHEMERAL_HELIX_TIMEOUT_SEC)
+    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
         yield session
 
 
@@ -2172,6 +2178,12 @@ class Twitch_API:
             if is_definitive_refresh_failure(e):
                 logger.warning("Twitch refresh token invalid: %s", e)
                 self._clear_tokens_after_refresh_failure()
+                return False
+            if isinstance(e, MissingScopeException):
+                # Retrying can't add a permission the token was never granted;
+                # only signing in again can, so report it as non-transient and
+                # let the caller start the Twitch sign-in.
+                logger.warning("Twitch token is missing a required permission: %s", e)
                 return False
             self._last_refresh_transient = True
             logger.error(
@@ -5131,6 +5143,16 @@ class Twitch_API:
                 logger.warning("Cannot send shoutout - no raider ID provided")
                 return False
 
+            wait = shoutout_cooldown_remaining(raider_id)
+            if wait > 0:
+                logger.info(
+                    "Skipping shoutout to %s (%s): Twitch shoutout cooldown, %.0fs left",
+                    raider_name or raider_id,
+                    raider_id,
+                    wait,
+                )
+                return False
+
             url = f"https://api.twitch.tv/helix/chat/shoutouts"
             params = {
                 "from_broadcaster_id": self.user_id,
@@ -5139,10 +5161,19 @@ class Twitch_API:
             }
 
             response = await self.generic_api_call(url, "POST", params=params)
+            record_shoutout(raider_id)
             logger.info(f"Successfully sent shoutout to broadcaster ID: {raider_id}")
             return True
 
         except Exception as e:
+            if "Too Many Requests" in str(e) or "429" in str(e):
+                # Cooldown we didn't know about (e.g. a shoutout sent from the
+                # Twitch site): expected, not an error.
+                record_shoutout(raider_id)
+                logger.info(
+                    "Twitch refused the shoutout to %s (cooldown): %s", raider_id, e
+                )
+                return False
             logger.error(
                 f"Error sending shoutout to broadcaster ID {raider_id}: {str(e)}",
                 exc_info=True,
@@ -6882,10 +6913,79 @@ def update_point_reward(reward_id: str, reward_data: dict):
         return False
 
 
+# Twitch shoutout limits: one every 2 minutes, and one per target streamer per hour.
+_SHOUTOUT_GLOBAL_COOLDOWN_SEC = 120.0
+_SHOUTOUT_TARGET_COOLDOWN_SEC = 3600.0
+_shoutout_lock = threading.Lock()
+_shoutout_last_any = 0.0
+_shoutout_last_by_target: Dict[str, float] = {}
+
+
+def shoutout_cooldown_remaining(target_id: str) -> float:
+    """Seconds until Twitch would accept a shoutout to ``target_id`` (0 = now)."""
+    now = time.monotonic()
+    with _shoutout_lock:
+        wait_any = _shoutout_last_any + _SHOUTOUT_GLOBAL_COOLDOWN_SEC - now if _shoutout_last_any else 0.0
+        last = _shoutout_last_by_target.get(str(target_id))
+        wait_target = last + _SHOUTOUT_TARGET_COOLDOWN_SEC - now if last else 0.0
+    return max(0.0, wait_any, wait_target)
+
+
+def record_shoutout(target_id: str) -> None:
+    """Remember a shoutout Twitch accepted (or refused with 429) for the cooldowns."""
+    global _shoutout_last_any
+    now = time.monotonic()
+    with _shoutout_lock:
+        _shoutout_last_any = now
+        _shoutout_last_by_target[str(target_id)] = now
+
+
 # Rewards Twitch refused to let this client manage (403). Twitch only lets the app
 # that created a reward update its redemptions, so once a reward is refused every
 # later PATCH for it would fail the same way; skip them for the rest of the session.
 _unmanageable_reward_ids: set[str] = set()
+# Reward ids this client may manage, fetched once per session (None = not known yet).
+_manageable_reward_ids: Optional[set[str]] = None
+_MANAGEABLE_REWARDS_RETRY_SEC = 600.0
+_manageable_rewards_fetched_at = 0.0
+
+
+def _get_manageable_reward_ids() -> Optional[set[str]]:
+    """Reward ids this Twitch client created (the only ones it may complete).
+
+    Cached for the session; refetched when a reward id is not in the cache and
+    the last fetch is old (a reward created since). None when the list can't
+    be fetched, so the caller falls back to trying the PATCH.
+    """
+    global _manageable_reward_ids, _manageable_rewards_fetched_at
+    url = (
+        "https://api.twitch.tv/helix/channel_points/custom_rewards"
+        f"?broadcaster_id={twitch_api.user_id}&only_manageable_rewards=true"
+    )
+    try:
+        response = _run_twitch_coro_sync(twitch_api.generic_api_call(url, "GET"))
+    except Exception as e:
+        logger.debug("Could not list manageable channel point rewards: %s", e)
+        return None
+    rows = response.get("data") if isinstance(response, dict) else None
+    if not isinstance(rows, list):
+        return None
+    _manageable_reward_ids = {
+        str(row.get("id")) for row in rows if isinstance(row, dict) and row.get("id")
+    }
+    _manageable_rewards_fetched_at = time.monotonic()
+    return _manageable_reward_ids
+
+
+def _reward_is_manageable(reward_id: str) -> Optional[bool]:
+    """True/False when known, None when Twitch couldn't be asked."""
+    ids = _manageable_reward_ids
+    stale = time.monotonic() - _manageable_rewards_fetched_at > _MANAGEABLE_REWARDS_RETRY_SEC
+    if ids is None or (reward_id not in ids and stale):
+        ids = _get_manageable_reward_ids()
+    if ids is None:
+        return None
+    return reward_id in ids
 
 
 def complete_point_redemption(reward_id: str, redemption_id: str) -> str:
@@ -6903,6 +7003,17 @@ def complete_point_redemption(reward_id: str, redemption_id: str) -> str:
         return "not_manageable"
     if not twitch_api or not twitch_api.is_connected:
         return "not_connected"
+    if _reward_is_manageable(reward_id) is False:
+        _unmanageable_reward_ids.add(reward_id)
+        logger.info(
+            "Redemption %s can't be completed (reward %s not created by Mycelian)",
+            redemption_id,
+            reward_id,
+        )
+        _notify_reward_not_manageable(
+            reward_id, f"Reward {reward_id} is not in this app's manageable rewards."
+        )
+        return "not_manageable"
     url = (
         "https://api.twitch.tv/helix/channel_points/custom_rewards/redemptions"
         f"?broadcaster_id={twitch_api.user_id}&reward_id={reward_id}&id={redemption_id}"
@@ -6913,15 +7024,7 @@ def complete_point_redemption(reward_id: str, redemption_id: str) -> str:
     except TwitchPermissionError as e:
         _unmanageable_reward_ids.add(reward_id)
         logger.info("Redemption %s can't be completed (reward not created by Mycelian): %s", redemption_id, e)
-        _notify_redemption_problem(
-            "This reward was made outside Mycelian (or with other Twitch app credentials), so Twitch only lets "
-            "its creator complete redemptions. They stay in your Twitch reward queue.",
-            title="Couldn't complete a channel point redemption",
-            hint="Recreate the reward in Alerts → Channel Points, or turn off “Complete the redemption after its "
-                 "alert plays” for it.",
-            dedupe_key=f"twitch:redemption_not_manageable:{reward_id}",
-            details=str(e),
-        )
+        _notify_reward_not_manageable(reward_id, str(e))
         return "not_manageable"
     except Exception as e:
         logger.warning("Completing redemption %s failed: %s", redemption_id, e)
@@ -6933,6 +7036,18 @@ def complete_point_redemption(reward_id: str, redemption_id: str) -> str:
             details=f"{type(e).__name__}: {e}",
         )
         return "error"
+
+
+def _notify_reward_not_manageable(reward_id: str, details: str) -> None:
+    _notify_redemption_problem(
+        "This reward was made outside Mycelian (or with other Twitch app credentials), so Twitch only lets "
+        "its creator complete redemptions. They stay in your Twitch reward queue.",
+        title="Couldn't complete a channel point redemption",
+        hint="Recreate the reward in Alerts → Channel Points, or turn off “Complete the redemption after its "
+             "alert plays” for it.",
+        dedupe_key=f"twitch:redemption_not_manageable:{reward_id}",
+        details=details,
+    )
 
 
 def _notify_redemption_problem(message: str, *, title: str, hint: str, dedupe_key: str, details: str) -> None:

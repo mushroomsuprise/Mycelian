@@ -1021,7 +1021,11 @@ def get_data_files():
                 data_files.extend(copy_metadata(dist_name))
                 print(f"Including package metadata: {dist_name}")
             except Exception as exc:
-                print(f"Warning: could not include metadata for {dist_name}: {exc}")
+                # A build without it ships a broken Steam integration (every
+                # launch logs "cannot import name '__version__'"), so stop here.
+                raise SystemExit(
+                    f"Build failed: could not include package metadata for {dist_name}: {exc}"
+                ) from exc
     except ImportError:
         print("Warning: PyInstaller hooks unavailable; skipping package metadata")
 

@@ -112,6 +112,9 @@ def _safety(monkeypatch):
     monkeypatch.setattr(sh, "_webview_process_seen", False)
     monkeypatch.setattr(sh, "_protected_child_pids", set())
     monkeypatch.setattr(sh, "_pending_flushes", [])
+    monkeypatch.setattr(sh, "_shutdown_watchdog_armed", False)
+    # Never leave a real force-exit timer running in the test process.
+    monkeypatch.setattr(sh.threading, "Timer", FakeTimer)
     exits = []
 
     def fake_exit(code):
@@ -197,7 +200,15 @@ class FakeTimer:
 def timers(monkeypatch):
     FakeTimer.instances = []
     monkeypatch.setattr(sh.threading, "Timer", FakeTimer)
+    monkeypatch.setattr(sh, "_shutdown_watchdog_armed", False)
     return FakeTimer
+
+
+def test_watchdog_arms_once(monkeypatch, timers):
+    monkeypatch.setenv("MYCELIAN_SHUTDOWN_WATCHDOG_SEC", "5")
+    sh._start_shutdown_watchdog()
+    sh._start_shutdown_watchdog()
+    assert len(timers.instances) == 1
 
 
 @pytest.mark.parametrize("raw, seconds", [(None, 20.0), ("", 20.0), ("  ", 20.0), ("3.5", 3.5)])
@@ -1020,10 +1031,13 @@ def test_hard_exit_after_native_close(monkeypatch, _safety):
     calls = []
     monkeypatch.setattr(sh, "shutdown_application", lambda **kw: calls.append(("shutdown", kw)))
     fake_module(monkeypatch, "updater", _force_application_exit=lambda: calls.append("force"))
+    FakeTimer.instances = []
     sh._hard_exit_after_native_close()
     # Full teardown first so statistics and registered flushes are saved.
     assert calls == [("shutdown", {"reason": "native_window_closed", "force": True}), "force"]
     assert _safety == []
+    # The force-exit timer is armed before the teardown starts.
+    assert sh._shutdown_watchdog_armed is True and len(FakeTimer.instances) == 1
 
     # A failing teardown still ends in the forced exit.
     calls.clear()
@@ -1104,6 +1118,77 @@ def test_register_native_window_close_handler(monkeypatch, rec_threads):
     handlers["closed"](None)
     assert calls == ["signal"] and len(rec_threads.created) == 2
     assert rec_threads.created[1].name == "mycelian-window-closed-exit"
+
+
+class FakeReceiver:
+    def __init__(self, messages):
+        self.messages = list(messages)
+        self.closed = False
+
+    def recv(self):
+        if not self.messages:
+            raise EOFError
+        return self.messages.pop(0)
+
+    def close(self):
+        self.closed = True
+
+
+def _install_native_pipe(monkeypatch, receiver):
+    native_mod = ModuleType("nicegui.native.native")
+    native_mod.event_receiver = receiver
+    pkg = sys.modules["nicegui.native"]
+    pkg.native = native_mod
+    monkeypatch.setitem(sys.modules, "nicegui.native.native", native_mod)
+    return native_mod
+
+
+def test_closed_event_starts_exit_without_the_ui_loop(monkeypatch, rec_threads):
+    """A stalled asyncio loop must not stop the app from exiting on window close."""
+    dispatched = []
+
+    class EM:
+        def on(self, name, fn):
+            pass
+
+        def _event_loop(self):
+            # Mirrors NiceGUI: reads the pipe and hands events to the (stalled) loop.
+            while True:
+                try:
+                    data = native_mod.event_receiver.recv()
+                except EOFError:
+                    break
+                dispatched.append(data["type"])
+
+    em = EM()
+    install_nicegui(monkeypatch, event_manager=em)
+    receiver = FakeReceiver([{"type": "shown"}, {"type": "closed"}])
+    native_mod = _install_native_pipe(monkeypatch, receiver)
+    sh.register_native_window_close_handler()
+    em._event_loop()
+    assert dispatched == ["shown", "closed"]
+    exit_threads = [t for t in rec_threads.created if t.name == "mycelian-window-closed-exit"]
+    assert len(exit_threads) == 1 and exit_threads[0].started
+    # Other attributes still reach the real connection.
+    native_mod.event_receiver.close()
+    assert receiver.closed is True
+
+
+def test_closed_event_tap_installed_once(monkeypatch, rec_threads):
+    class EM:
+        def on(self, name, fn):
+            pass
+
+        def _event_loop(self):
+            pass
+
+    em = EM()
+    install_nicegui(monkeypatch, event_manager=em)
+    _install_native_pipe(monkeypatch, FakeReceiver([]))
+    sh._install_closed_event_tap(em)
+    wrapped = em._event_loop
+    sh._install_closed_event_tap(em)
+    assert em._event_loop is wrapped
 
 
 def test_register_native_window_close_handler_unavailable(monkeypatch, caplog):

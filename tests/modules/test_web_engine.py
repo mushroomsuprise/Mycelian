@@ -155,6 +155,23 @@ def test_finalize_served_overlay_html_embed_failure_is_swallowed(monkeypatch, fl
         assert we._finalize_served_overlay_html("p") == "p"
 
 
+def test_embed_cache_variant_keeps_container_and_plain_copies_apart(monkeypatch, flask_ready):
+    """A cached plain page must not be served inside a container (or the reverse)."""
+    import flask
+
+    app = flask.Flask("t")
+    with app.test_request_context("/chat"):
+        plain = we._embed_cache_variant()
+    with app.test_request_context("/chat?mycelian_embed=1&mycelian_volume=40&mycelian_muted=0"):
+        embed40 = we._embed_cache_variant()
+    with app.test_request_context("/chat?mycelian_embed=1&mycelian_volume=0&mycelian_muted=1"):
+        muted = we._embed_cache_variant()
+    assert plain == ()
+    assert len({plain, embed40, muted}) == 3
+    monkeypatch.setattr(we, "request", None)
+    assert we._embed_cache_variant() == ()
+
+
 # --------------------------------------------------------------------------- lazy imports
 
 

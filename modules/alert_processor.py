@@ -308,6 +308,53 @@ def _after_alert_finished(alert: AlertObj) -> None:
     threading.Thread(target=worker, name="CompleteRedemption", daemon=True).start()
 
 
+def _alert_audio_relpath(audio_dir, audio_name) -> str:
+    """The assets-relative path the alerts overlay builds from dir + name."""
+    parts = []
+    for part in (audio_dir, audio_name):
+        text = str(part or "").replace("\\", "/").strip().strip("/")
+        if text:
+            parts.append(text)
+    return "/".join(parts)
+
+
+def _drop_missing_alert_audio(alert_data: dict) -> None:
+    """Clear a single-audio file that isn't in the assets folder, and say so once.
+
+    The overlay would otherwise request it, get a 404 and log a media error on
+    every alert of that type. Randomized audio (picked from a folder) still plays.
+    """
+    audio_dir = alert_data.get("single_audio_dir")
+    audio_name = alert_data.get("single_audio_name")
+    if not audio_dir or not audio_name:
+        return
+    rel = _alert_audio_relpath(audio_dir, audio_name)
+    if not rel or "://" in rel or rel.startswith("/") or ":" in rel.split("/", 1)[0]:
+        return  # URL or absolute path: not served from assets, leave it alone
+    try:
+        if web_engine._resolved_assets_file(rel):
+            return
+    except Exception:
+        return
+    logger.warning("Alert audio file not found in assets: %s", rel)
+    alert_data["single_audio_dir"] = ""
+    alert_data["single_audio_name"] = ""
+    try:
+        name = alert_data.get("alert_name") or alert_data.get("alert_type") or "an alert"
+        notify(
+            f"The sound for {name} ({rel}) isn't in your Mycelian assets folder, so it plays without sound.",
+            type="warning",
+            source="alerts",
+            title="Alert sound file missing",
+            hint="Pick the sound again in Alert Settings, or put the file back in the assets folder.",
+            details=rel,
+            dedupe_key=f"alerts:audio_missing:{rel}",
+            dedupe_cooldown_sec=6 * 3600.0,
+        )
+    except Exception:
+        logger.debug("Missing alert audio notice failed", exc_info=True)
+
+
 def _process_alert(alert: AlertObj):
     try:
         if getattr(alert, "alert_type", "") == "point" and not alert.hold_queue_only:
@@ -342,6 +389,7 @@ def _process_alert(alert: AlertObj):
 
         # Copy for JSON serialization; the AlertObj itself stays unchanged.
         alert_data = dict(vars(alert))
+        _drop_missing_alert_audio(alert_data)
         queue_seq = web_engine.assign_next_alert_queue_seq()
         alert_data["queue_seq"] = queue_seq
 

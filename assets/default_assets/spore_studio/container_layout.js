@@ -67,6 +67,9 @@
         if (!entry || typeof entry !== "object") {
             return null;
         }
+        if (entry.empty) {
+            return 0;
+        }
         var key = axis === "vertical" ? "h" : "w";
         if (entry[key] === undefined || entry[key] === null) {
             return null;
@@ -86,8 +89,15 @@
         var after = pads[1];
         var contentCap = Math.max(0, size - before - after);
         var measured = measuredContent(slot, axis, used);
-        var content = measured === null ? contentCap : Math.min(contentCap, Math.max(0, measured));
-        var outer = pyRound(content) + before + after;
+        var outer;
+        if (measured === null || (measured <= 0 && link.when_empty === "keep")) {
+            outer = pyRound(contentCap) + before + after;
+        } else if (measured <= 0) {
+            // Nothing showing: the box closes completely (padding too), down to its minimum.
+            outer = 0;
+        } else {
+            outer = pyRound(Math.min(contentCap, measured)) + before + after;
+        }
         var lo = effMin(link, span);
         var hi = size;
         var cap = effMax(link, span);
@@ -98,7 +108,9 @@
             warnings.push({
                 code: "min_above_designated",
                 link: link.id,
-                message: "A locked template's minimum is larger than its designated size. The designated size is kept."
+                slots: [slot.id],
+                message: "In shared space \u201c" + link.id + "\u201d, the minimum of \u201c" + slot.template +
+                    "\u201d is bigger than the size it was drawn at, so it stays at its drawn size."
             });
             return hi;
         }
@@ -250,6 +262,39 @@
         return { w: iframeW, h: iframeH, left: content.x, top: content.y };
     }
 
+    function groupExtent(members, axis) {
+        var start = Infinity;
+        var end = -Infinity;
+        members.forEach(function (slot) {
+            var a = axis === "vertical" ? slot.y : slot.x;
+            var b = a + (axis === "vertical" ? slot.h : slot.w);
+            if (a < start) start = a;
+            if (b > end) end = b;
+        });
+        return [start, Math.max(0, end - start)];
+    }
+
+    function warnGroupAlignment(linkId, members, axis, warnings) {
+        for (var i = 0; i + 1 < members.length; i++) {
+            var prev = members[i];
+            var next = members[i + 1];
+            var a0 = axis === "vertical" ? prev.x : prev.y;
+            var a1 = a0 + (axis === "vertical" ? prev.w : prev.h);
+            var b0 = axis === "vertical" ? next.x : next.y;
+            var b1 = b0 + (axis === "vertical" ? next.w : next.h);
+            if (Math.min(a1, b1) <= Math.max(a0, b0)) {
+                warnings.push({
+                    code: "not_aligned",
+                    link: linkId,
+                    slots: members.map(function (slot) { return slot.id; }),
+                    message: "The boxes in shared space \u201c" + linkId + "\u201d aren't in the same " +
+                        (axis === "vertical" ? "column" : "row") + ". Line them up so they stack."
+                });
+                return;
+            }
+        }
+    }
+
     function solve(container, used) {
         var warnings = [];
         var spacing = container.spacing || 0;
@@ -268,7 +313,6 @@
         Object.keys(groups).forEach(function (linkId) {
             var members = groups[linkId].slice();
             var axis = members[0].link.axis;
-            var span = axis === "vertical" ? container.height : container.width;
             members.sort(function (a, b) {
                 var av = axis === "vertical" ? a.y : a.x;
                 var bv = axis === "vertical" ? b.y : b.x;
@@ -283,9 +327,23 @@
                 }
                 return 0;
             });
+            // A shared space covers only the area its boxes were drawn in.
+            var extent = groupExtent(members, axis);
+            var start = extent[0];
+            var span = extent[1];
+            warnGroupAlignment(linkId, members, axis, warnings);
             var lockedSizes = {};
             var flexible = [];
             members.forEach(function (slot) {
+                if (slot.link.role === "locked" && slot.fit === "scale") {
+                    warnings.push({
+                        code: "fit_scale_in_group",
+                        link: linkId,
+                        slots: [slot.id],
+                        message: "\u201c" + slot.template + "\u201d is set to scale from its design size, so it " +
+                            "can't fit its content. It keeps the size it was drawn at."
+                    });
+                }
                 if (slot.link.role === "locked") {
                     lockedSizes[slot.id] = lockedOuter(slot, axis, span, used, warnings);
                 } else {
@@ -297,11 +355,16 @@
                     });
                 }
             });
-            var gapTotal = spacing * Math.max(0, members.length - 1);
+            // Closed (0px) boxes take no gap either.
             var lockedSum = 0;
+            var openCount = flexible.length;
             Object.keys(lockedSizes).forEach(function (id) {
                 lockedSum += lockedSizes[id];
+                if (lockedSizes[id] > 0) {
+                    openCount += 1;
+                }
             });
+            var gapTotal = spacing * Math.max(0, openCount - 1);
             var remaining = span - gapTotal - lockedSum;
             var distributed = distributeFlexible(remaining, flexible);
             var flexSizes = distributed[0];
@@ -310,14 +373,21 @@
                 warnings.push({
                     code: "min_overflow",
                     link: linkId,
-                    message: "Minimum sizes are larger than the canvas, so this link overflows."
+                    slots: members.map(function (slot) { return slot.id; }),
+                    message: "The boxes in shared space \u201c" + linkId + "\u201d need more room than the space " +
+                        "has (their minimum sizes add up to more), so they spill past it. Lower a minimum or " +
+                        "make the space bigger."
                 });
             }
-            var cursor = 0;
-            members.forEach(function (slot, index) {
+            var cursor = start;
+            var placedAny = false;
+            members.forEach(function (slot) {
                 var size = lockedSizes[slot.id];
                 if (size === undefined) {
                     size = flexSizes[slot.id] || 0;
+                }
+                if (size > 0 && placedAny) {
+                    cursor += spacing;
                 }
                 if (axis === "vertical") {
                     solved[slot.id] = { x: slot.x, y: cursor, w: slot.w, h: size };
@@ -325,8 +395,8 @@
                     solved[slot.id] = { x: cursor, y: slot.y, w: size, h: slot.h };
                 }
                 cursor += size;
-                if (index < members.length - 1) {
-                    cursor += spacing;
+                if (size > 0) {
+                    placedAny = true;
                 }
             });
         });
@@ -379,5 +449,5 @@
         };
     }
 
-    return { solve: solve };
+    return { solve: solve, groupExtent: groupExtent };
 });

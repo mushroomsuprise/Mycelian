@@ -716,6 +716,8 @@ def _random_container(rng, percents: bool = True) -> Dict[str, Any]:
                 link["max_px"] = rng.randint(0, 1500)
             if percents and rng.random() < 0.3:
                 link["max_pct"] = rng.randint(0, 100)
+            if rng.random() < 0.3:
+                link["when_empty"] = rng.choice(["collapse", "keep"])
             slot["link"] = link
         slots.append(slot)
     return {"name": "c", "route": "c", "width": rng.randint(320, 3840), "height": rng.randint(240, 2160),
@@ -744,7 +746,8 @@ def test_container_layout_js_matches_python_solver(percents):
     for _ in range(300):
         raw = _random_container(rng, percents)
         model = containers.normalize_container(raw)
-        used = {s["id"]: {"w": rng.uniform(-20, 1300), "h": rng.choice([rng.uniform(0, 1000), None, "x"])}
+        used = {s["id"]: ({"empty": True} if rng.random() < 0.15 else
+                          {"w": rng.uniform(-20, 1300), "h": rng.choice([rng.uniform(0, 1000), 0, None, "x"])})
                 for s in model["slots"] if rng.random() < 0.5}
         cases.append({"container": model, "used": used or None})
     js_results = _js_solve(cases)

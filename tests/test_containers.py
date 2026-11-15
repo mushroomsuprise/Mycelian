@@ -159,11 +159,11 @@ class SolverTests(unittest.TestCase):
                     h=500,
                     link=_link(role="locked", min_pct=10, max_px=800, max_pct=20),
                 ),
-                _slot("b", h=100, link=_link(role="flexible")),
+                _slot("b", y=500, h=500, link=_link(role="flexible")),
             ],
             height=1000,
         )
-        # min 10% of 1000 = 100, max pct 20% = 200 is tighter than max px 800.
+        # min 10% of the 1000px shared space = 100, max pct 20% = 200 is tighter than max px 800.
         layout = solve_layout(raw, {"a": {"h": 40}})
         self.assertEqual(_rect(layout, "a")["h"], 100)
         capped = solve_layout(raw, {"a": {"h": 400}})
@@ -181,7 +181,7 @@ class SolverTests(unittest.TestCase):
                 _slot(
                     "b",
                     y=500,
-                    h=400,
+                    h=500,
                     padding={"t": 15, "r": 0, "b": 0, "l": 0},
                     link=_link(role="flexible"),
                 ),
@@ -228,7 +228,7 @@ class SolverTests(unittest.TestCase):
                     "b",
                     x=300,
                     y=5,
-                    w=200,
+                    w=500,
                     h=40,
                     link=_link(axis="horizontal", role="flexible"),
                 ),
@@ -246,8 +246,8 @@ class SolverTests(unittest.TestCase):
         raw = _container(
             [
                 _slot("lock", h=200, link=_link(role="locked")),
-                _slot("small", y=10, h=100, link=_link(role="flexible")),
-                _slot("large", y=20, h=300, link=_link(role="flexible")),
+                _slot("small", y=200, h=200, link=_link(role="flexible")),
+                _slot("large", y=400, h=600, link=_link(role="flexible")),
             ],
             height=1000,
         )
@@ -273,7 +273,7 @@ class SolverTests(unittest.TestCase):
         raw = _container(
             [
                 _slot("x", w=400, h=10, link=_link(role="flexible", min_px=900)),
-                _slot("y", w=400, y=10, h=1000, link=_link(role="flexible", max_px=500)),
+                _slot("y", w=400, y=10, h=1070, link=_link(role="flexible", max_px=500)),
             ],
             width=400,
             height=1080,
@@ -294,6 +294,84 @@ class SolverTests(unittest.TestCase):
         locked = _rect(layout, "a")
         self.assertEqual(locked["iframe"]["h"], 500)
         self.assertEqual(locked["content"]["h"], 350)
+
+
+    def test_shared_space_covers_only_where_its_boxes_were_drawn(self) -> None:
+        raw = _container(
+            [
+                _slot("ff7", y=600, h=300, link=_link(role="locked")),
+                _slot("chat", y=100, h=500, link=_link(role="flexible", min_pct=25)),
+                _slot("title", y=0, h=80, template="title"),
+            ],
+            height=1080,
+        )
+        layout = solve_layout(raw, {"ff7": {"h": 200}})
+        chat = _rect(layout, "chat")
+        ff7 = _rect(layout, "ff7")
+        # Space is y=100..900 (800px); the canvas edges and the title above are untouched.
+        self.assertEqual((chat["y"], chat["h"]), (100, 600))
+        self.assertEqual((ff7["y"], ff7["h"]), (700, 200))
+        self.assertEqual(_rect(layout, "title")["y"], 0)
+        squeezed = _container(
+            [
+                _slot("ff7", y=600, h=700, link=_link(role="locked")),
+                _slot("chat", y=100, h=500, link=_link(role="flexible", min_pct=50)),
+            ],
+            height=1400,
+        )
+        tight = solve_layout(squeezed, {"ff7": {"h": 700}})
+        # Minimum is 50% of the 1200px space (600), not of the 1400px canvas (700).
+        self.assertEqual(_rect(tight, "chat")["h"], 600)
+
+    def test_empty_template_closes_unless_set_to_keep(self) -> None:
+        def build(**link):
+            return _container(
+                [
+                    _slot("chat", y=0, h=500, link=_link(role="flexible")),
+                    _slot("ff7", y=500, h=500, link=_link(role="locked", **link)),
+                ],
+                height=1000,
+                spacing=20,
+            )
+
+        closed = solve_layout(build(), {"ff7": {"empty": True}})
+        self.assertEqual(_rect(closed, "ff7")["h"], 0)
+        # A closed box takes no gap: chat gets the whole space.
+        self.assertEqual(_rect(closed, "chat")["h"], 1000)
+        zero = solve_layout(build(), {"ff7": {"h": 0}})
+        self.assertEqual(_rect(zero, "ff7")["h"], 0)
+        floor = solve_layout(build(min_px=120), {"ff7": {"empty": True}})
+        self.assertEqual(_rect(floor, "ff7")["h"], 120)
+        self.assertEqual(_rect(floor, "chat")["h"], 860)
+        kept = solve_layout(build(when_empty="keep"), {"ff7": {"empty": True}})
+        self.assertEqual(_rect(kept, "ff7")["h"], 500)
+        # Not measured yet (first paint): keeps the drawn size.
+        unknown = solve_layout(build(), {})
+        self.assertEqual(_rect(unknown, "ff7")["h"], 500)
+        self.assertEqual(_rect(unknown, "chat")["h"], 480)
+
+    def test_warns_when_boxes_are_not_stacked_or_cannot_fit_content(self) -> None:
+        raw = _container(
+            [
+                _slot("a", x=0, w=300, h=300, link=_link(role="locked")),
+                _slot("b", x=900, y=300, w=300, h=300, link=_link(role="flexible")),
+                _slot("c", x=900, y=700, w=300, h=200, fit="scale", link=_link("other", role="locked")),
+                _slot("d", x=900, y=900, w=300, h=100, link=_link("other")),
+            ]
+        )
+        warnings = solve_layout(raw)["warnings"]
+        codes = {(w["code"], w["link"]) for w in warnings}
+        self.assertIn(("not_aligned", "stack"), codes)
+        self.assertIn(("fit_scale_in_group", "other"), codes)
+        aligned = next(w for w in warnings if w["code"] == "not_aligned")
+        self.assertEqual(aligned["slots"], ["a", "b"])
+        self.assertIn("same column", aligned["message"])
+
+    def test_when_empty_is_normalized(self) -> None:
+        model = normalize_container(_container([_slot("a", link=_link(role="locked"))]))
+        self.assertEqual(model["slots"][0]["link"]["when_empty"], "collapse")
+        with self.assertRaises(ContainerError):
+            normalize_container(_container([_slot("a", link=_link(when_empty="maybe"))]))
 
 
 class ShellTests(unittest.TestCase):
@@ -465,6 +543,33 @@ class JsSolverParityTests(unittest.TestCase):
                     height=1080,
                 ),
                 {},
+            ),
+            # Shared space placed mid-canvas, % of the space, a closed box with spacing.
+            (
+                _container(
+                    [
+                        _slot("ff7", y=600, h=300, padding={"t": 4, "r": 0, "b": 6, "l": 0},
+                              link=_link(role="locked", min_pct=5)),
+                        _slot("chat", y=100, h=500, link=_link(role="flexible", min_pct=25)),
+                        _slot("alerts", y=900, h=100, link=_link(role="locked")),
+                        _slot("title", y=0, h=80, template="title"),
+                    ],
+                    height=1080,
+                    spacing=12,
+                ),
+                {"ff7": {"h": 133.4}, "alerts": {"empty": True}},
+            ),
+            (
+                _container(
+                    [
+                        _slot("a", x=0, w=300, h=300, link=_link(role="locked", when_empty="keep")),
+                        _slot("b", x=900, y=300, w=300, h=300, link=_link(role="flexible", max_pct=40)),
+                        _slot("c", x=900, y=700, w=300, h=200, fit="scale",
+                              link=_link("other", role="locked", min_px=500)),
+                        _slot("d", x=900, y=900, w=300, h=100, link=_link("other", min_px=400)),
+                    ]
+                ),
+                {"a": {"h": 0}, "c": {"h": 10}},
             ),
         ]
         for raw, used in specs:

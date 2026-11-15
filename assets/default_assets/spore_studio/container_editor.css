@@ -335,3 +335,229 @@
     background: var(--ss-accent-soft);
     color: var(--ss-text);
 }
+
+/* ------------------------------------------------------------------ sizing and shared spaces */
+
+/* Inspector: Fixed / Fits its content / Fills leftover space. */
+.mc-seg {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    margin-bottom: 8px;
+    border-radius: var(--ss-radius);
+    background: var(--ss-soft);
+    border: 1px solid var(--ss-border);
+}
+
+.mc-seg__opt {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 4px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ss-text-2);
+    font: 600 11px/1.2 inherit;
+    text-align: center;
+    cursor: pointer;
+}
+
+.mc-seg__opt .ss-ic { width: 16px; height: 16px; }
+.mc-seg__opt:hover:not(:disabled) { background: var(--ss-soft-2); color: var(--ss-text); }
+.mc-seg__opt.is-on {
+    background: var(--ss-accent-soft);
+    border-color: var(--ss-accent-line);
+    color: var(--ss-text);
+}
+.mc-seg__opt.is-disabled { opacity: 0.45; cursor: not-allowed; }
+.mc-seg__opt:focus-visible { outline: 2px solid var(--ss-accent); outline-offset: 1px; }
+
+/* Smaller variant inside a form row (Preview as: Live / Empty / Half / Full). */
+.ss-form-row .mc-seg { margin-bottom: 0; }
+.ss-form-row .mc-seg__opt { flex-direction: row; justify-content: center; padding: 4px; }
+
+.mc-summary {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border-radius: var(--ss-radius);
+    background: var(--ss-soft);
+    border-left: 3px solid var(--ss-accent);
+    color: var(--ss-text);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.mc-summary--note { border-left-color: var(--ss-info); color: var(--ss-text-2); }
+
+.mc-space-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    flex: none;
+    margin-right: 6px;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+
+.ss-form-row .mc-space-dot + select { width: calc(100% - 16px); }
+
+.mc-limits { display: flex; flex-direction: column; gap: 0; }
+
+.mc-limit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mc-limit > label { flex: 1 0 100%; }
+.mc-limit input { flex: 1 1 0; min-width: 0; }
+.mc-limit .mc-unit { flex: 0 0 auto; width: auto; }
+
+.mc-space-card {
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: var(--ss-radius);
+    border: 1px solid var(--ss-border);
+    border-left: 3px solid var(--mc-space-color, var(--ss-accent));
+    background: var(--ss-soft);
+}
+
+.mc-space-card__head { display: flex; align-items: center; margin-bottom: 4px; }
+.mc-space-card__head input { flex: 1 1 auto; min-width: 0; }
+.mc-space-card__detail { margin-bottom: 6px; color: var(--ss-text-2); font-size: 11.5px; line-height: 1.4; }
+
+/* Toolbar: Simulate. */
+.mc-simulate { display: inline-flex; align-items: center; gap: 4px; }
+.mc-simulate__icon .ss-ic { width: 15px; height: 15px; color: var(--ss-text-muted); }
+.mc-simulate select { max-width: 170px; }
+
+.mc-simulating {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 10px 12px 0;
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: 1px dashed var(--ss-accent-line);
+    background: var(--ss-accent-soft);
+    color: var(--ss-text);
+    font-size: 12px;
+}
+
+.mc-simulating[hidden] { display: none; }
+
+/* Warnings: one line each, with a button that points at the boxes. */
+.mc-warnings { display: flex; flex-direction: column; gap: 6px; }
+.mc-warnings[hidden] { display: none; }
+.mc-warning { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mc-warning__show { flex: none; padding: 2px 8px; font-size: 11px; }
+
+/* Canvas indicators (editor only). Text sizes undo the canvas zoom so they stay readable. */
+.mc-badge {
+    position: absolute;
+    right: 4px;
+    top: 4px;
+    z-index: 4;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: calc(100% - 8px);
+    padding: calc(2px / var(--mc-zoom, 1)) calc(7px / var(--mc-zoom, 1));
+    border-radius: calc(6px / var(--mc-zoom, 1));
+    border: calc(1.5px / var(--mc-zoom, 1)) solid transparent;
+    background: rgba(0, 0, 0, 0.72);
+    color: #fff;
+    font-size: calc(10.5px / var(--mc-zoom, 1));
+    font-weight: 650;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.mc-badge .ss-ic { width: 1.2em; height: 1.2em; }
+.mc-badge--fixed { opacity: 0.75; }
+.mc-badge.is-simulated { background: color-mix(in srgb, var(--ss-accent) 75%, black); }
+
+.mc-slot.is-flagged {
+    outline: calc(3px / var(--mc-zoom, 1)) solid var(--ss-warn);
+    outline-offset: 0;
+}
+
+.mc-space {
+    position: absolute;
+    z-index: 25;
+    box-sizing: border-box;
+    border: calc(2px / var(--mc-zoom, 1)) dashed var(--mc-space-color, var(--ss-accent));
+    border-radius: calc(4px / var(--mc-zoom, 1));
+    pointer-events: none;
+}
+
+.mc-space::before {
+    content: attr(data-label);
+    position: absolute;
+    left: -2px;
+    bottom: 100%;
+    padding: calc(1px / var(--mc-zoom, 1)) calc(6px / var(--mc-zoom, 1));
+    border-radius: calc(4px / var(--mc-zoom, 1)) calc(4px / var(--mc-zoom, 1)) 0 0;
+    background: var(--mc-space-color, var(--ss-accent));
+    color: #111;
+    font-size: calc(10.5px / var(--mc-zoom, 1));
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.mc-designated {
+    z-index: 26;
+    border-width: calc(1.5px / var(--mc-zoom, 1));
+}
+
+.mc-designated::after,
+.mc-min-line::after {
+    content: attr(data-label);
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    padding: 0 calc(5px / var(--mc-zoom, 1));
+    border-radius: calc(4px / var(--mc-zoom, 1));
+    background: rgba(0, 0, 0, 0.7);
+    color: var(--ss-warn);
+    font-size: calc(10px / var(--mc-zoom, 1));
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.mc-min-line {
+    position: absolute;
+    z-index: 26;
+    border-top: calc(1.5px / var(--mc-zoom, 1)) dashed var(--ss-info);
+    pointer-events: none;
+}
+
+.mc-min-line--h { border-top: 0; border-left: calc(1.5px / var(--mc-zoom, 1)) dashed var(--ss-info); }
+.mc-min-line::after { top: 2px; bottom: auto; color: var(--ss-info); }
+.mc-min-line--h::after { left: 4px; right: auto; }
+
+/* Hatched edge where a fills-leftover box is being cropped. */
+.mc-crop {
+    position: absolute;
+    z-index: 27;
+    background: repeating-linear-gradient(135deg, var(--ss-error) 0 4px, transparent 4px 8px);
+    opacity: 0.85;
+}
+
+.mc-flow {
+    position: absolute;
+    z-index: 31;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    transform: scale(calc(1 / var(--mc-zoom, 1)));
+    border-radius: 50%;
+    border: 2px solid #111;
+    background: var(--mc-space-color, var(--ss-accent));
+    color: #111;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: help;
+}

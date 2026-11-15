@@ -721,6 +721,21 @@ def test_activity_feed_view_and_settings(engine, sio, feed):
     assert feed.calls == [("open",)]
 
 
+def test_activity_feed_handlers_run_off_the_hub(engine, sio, feed):
+    """Loading stored alerts / the person scan blocks: never on the gevent hub."""
+    offloaded = []
+
+    def run_off_hub(fn, *args):
+        offloaded.append(fn)
+        return fn(*args)
+
+    engine._run_off_hub = run_off_hub
+    assert call(sio, "get_activity_feed_view")["success"] is True
+    assert len(offloaded) == 1 and set(offloaded[0].keywords) == {"to"}  # sid captured before leaving the hub
+    call(sio, "get_condensed_view_alerts", {"hours": "4", "filters": {"bits": True}})
+    assert len(offloaded) == 2  # the person scan too
+
+
 def test_activity_feed_handler_errors(engine, sio, feed):
     feed.publish_activity_feed_view = _boom
     feed.view_manager = SimpleNamespace(update=_boom)

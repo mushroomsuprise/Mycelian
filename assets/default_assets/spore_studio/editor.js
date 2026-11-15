@@ -1271,6 +1271,12 @@
         anchor.addEventListener("focusout", hideTipSoon);
     }
 
+    /* Shared with container_editor.js so both modes use the same tooltip. */
+    window.SporeStudioTips = {
+        bind: function (anchor, text) { bindTip(anchor, text); },
+        upgrade: function (root) { upgradeNativeTitles(root); }
+    };
+
     /* Native title popups do not show reliably in the embedded editor. */
     function upgradeNativeTitles(root) {
         if (!root || !root.querySelectorAll) { return; }

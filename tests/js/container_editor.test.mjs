@@ -3,13 +3,13 @@
 // assets/default_assets/spore_studio/container_editor.js on the real editor.html markup: API error
 // handling, mode switching, loading/saving/creating/duplicating/deleting containers, the canvas
 // (slots, frames, handles, gutters, drag/resize, measuring), the inspectors (container and slot
-// settings, size links), undo/redo, keyboard shortcuts, palette drag/drop and the preview.
+// settings, sizing and shared spaces, simulate), undo/redo, keyboard shortcuts, palette drag/drop and the preview.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeFetch, fire, settle, plain } from "./helpers/env.mjs";
 import { makeStudioWindow, fireDomReady } from "./helpers/studio.mjs";
-import { Document } from "./helpers/dom.mjs";
+import { frameDoc, RED } from "./helpers/frame_doc.mjs";
 
 function slot(id, over = {}) {
     return Object.assign({
@@ -56,7 +56,7 @@ function setup(opts = {}) {
         }],
         ["/api/spore-studio/containers", () => opts.listReply || { containers: Object.values(data.containers).map((c) => ({ name: c.name, route: c.route })) }],
     ]);
-    const { win, internals } = makeStudioWindow({ scripts: ["container_layout.js", "container_editor.js"], fetch, localStorage: opts.localStorage, confirm: opts.confirm });
+    const { win, internals } = makeStudioWindow({ scripts: ["container_layout.js", "container_measure.js", "container_editor.js"], fetch, localStorage: opts.localStorage, confirm: opts.confirm });
     const C = internals.container_editor;
     const notes = [];
     if (!opts.noNotify) { win.sporeNotify = (o) => notes.push(plain(o)); }
@@ -183,7 +183,7 @@ test("an empty container list shows the empty inspector; list failures notify", 
 });
 
 test("init does nothing without the container markup", () => {
-    const { win, internals } = makeStudioWindow({ scripts: ["container_layout.js", "container_editor.js"], body: "<div></div>" });
+    const { win, internals } = makeStudioWindow({ scripts: ["container_layout.js", "container_measure.js", "container_editor.js"], body: "<div></div>" });
     fireDomReady(win);
     assert.equal(internals.container_editor.state.mode, "templates");
 });
@@ -238,8 +238,8 @@ test("a dirty container asks before switching containers or modes", async () => 
 
 test("renderCanvas draws slots, frames, missing templates, ghosts and gutters", async () => {
     const m = model({ spacing: 0, slots: [
-        slot("a", { template: "alerts", y: 0, h: 300, link: { id: "L", axis: "vertical", role: "locked", min_px: 0, min_pct: 0, max_px: null, max_pct: null } }),
-        slot("b", { template: "chat", y: 400, link: { id: "L", axis: "vertical", role: "flexible", min_px: 0, min_pct: 0, max_px: null, max_pct: null } }),
+        slot("a", { template: "alerts", y: 0, h: 300, link: { id: "L", axis: "vertical", role: "locked", when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null } }),
+        slot("b", { template: "chat", y: 400, link: { id: "L", axis: "vertical", role: "flexible", when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null } }),
         slot("c", { template: "gone", x: 900 }),
         slot("d", { template: "poll", x: 1200, visible: false }),
         slot("e", { template: "giveaway", x: 1400, fit: "scale", design_width: 800, design_height: 600 }),
@@ -256,18 +256,13 @@ test("renderCanvas draws slots, frames, missing templates, ghosts and gutters", 
     assert.equal(slotEl(s, "d").style.outline, "1px dashed var(--ss-text-muted)");
     assert.match(slotEl(s, "e").querySelector("iframe").style.transform, /^scale\(0\.5\)$/);
     assert.equal(s.$("mc-warnings").hidden, false);
-    assert.match(s.$("mc-warnings").textContent, /gone was not found/);
+    assert.match(s.$("mc-warnings").textContent, /\u201cgone\u201d was not found/);
     assert.equal(s.doc.querySelectorAll(".mc-gutter--v").length, 1);
-    // measuring shrinks the locked slot and draws its designated-size ghost
-    const doc2 = new Document();
-    const box = doc2.createElement("div");
-    box._rect = { left: 10, top: 20, width: 100, height: 50 };
-    doc2.body.appendChild(box);
-    doc2.defaultView = { getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) };
-    frameA.contentDocument = doc2;
+    // measuring shrinks the fits-content slot and draws its drawn-size ghost
+    frameA.contentDocument = frameDoc([{ rect: [0, 0, 400, 300], children: [{ rect: [10, 20, 100, 50], style: RED }] }]);
     frameA._rect = { width: 400, height: 300 };
     fire(s.win, frameA, "load", { bubbles: false });
-    s.clock.tick(150);
+    s.clock.tick(200);
     assert.deepEqual(plain(s.C.state.used), { a: { w: 100, h: 50 } });
     assert.equal(slotEl(s, "a").style.height, "50px");
     assert.ok(s.doc.querySelector(".mc-designated"));
@@ -275,26 +270,38 @@ test("renderCanvas draws slots, frames, missing templates, ghosts and gutters", 
     assert.equal(frameA.style.top, "-20px");
 });
 
-test("measureFrame skips hidden, tiny, full-size and off-screen boxes", async () => {
-    const s = setup();
+test("measureFrame uses the shared measurer; a template's own size report wins", async () => {
+    const link = { id: "L", axis: "vertical", role: "locked", when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null };
+    const s = setup({ containers: { main: model({ slots: [slot("a", { template: "alerts", link }), slot("b", { template: "chat", y: 300, link: Object.assign({}, link, { role: "flexible" }) })] }) } });
     await containersMode(s);
-    const d = new Document();
-    const styles = new Map();
-    const add = (rect, style) => { const el = d.createElement("div"); el._rect = rect; styles.set(el, Object.assign({ display: "block", visibility: "visible", opacity: "1" }, style)); d.body.appendChild(el); };
-    add({ left: 0, top: 0, width: 50, height: 50 }, { display: "none" });
-    add({ left: 0, top: 0, width: 50, height: 50 }, { visibility: "hidden" });
-    add({ left: 0, top: 0, width: 50, height: 50 }, { opacity: "0" });
-    add({ left: 0, top: 0, width: 0.5, height: 50 });
-    add({ left: 0, top: 0, width: 400, height: 300 });
-    add({ left: 900, top: 0, width: 50, height: 50 });
-    d.defaultView = { getComputedStyle: (el) => styles.get(el) };
-    const frame = { contentDocument: d, clientWidth: 400, clientHeight: 300 };
-    assert.equal(s.C.measureFrame(frame), null);
-    add({ left: 30, top: 40, width: 10.2, height: 10 });
-    assert.deepEqual(plain(s.C.measureFrame(frame)), { w: 11, h: 10, originX: 30, originY: 40 });
-    assert.equal(s.C.measureFrame({ contentDocument: d, clientWidth: 1, clientHeight: 300 }), null);
-    assert.equal(s.C.measureFrame({}), null);
-    assert.equal(s.C.measureFrame({ get contentDocument() { throw new Error("cross-origin"); } }), null);
+    const frame = (doc) => ({ contentDocument: doc, clientWidth: 400, clientHeight: 300, getAttribute: () => "zz" });
+    // Same rules as the live page: transparent wrapper and faded panel ignored.
+    const page = frameDoc([{ rect: [0, 0, 400, 300], children: [
+        { rect: [30, 40, 10.2, 10], style: RED },
+        { rect: [0, 0, 400, 300], style: Object.assign({ opacity: "0" }, RED) },
+    ] }]);
+    assert.deepEqual(plain(s.C.measureFrame(frame(page))), { w: 11, h: 10, x: 30, y: 40 });
+    assert.deepEqual(plain(s.C.measureFrame(frame(frameDoc([])))), { empty: true });
+    assert.equal(s.C.measureFrame({ getAttribute: () => "zz", get contentDocument() { throw new Error("cross-origin"); } }), null);
+    // A size reported by the template in slot a beats measuring, until it says auto.
+    const frameA = slotEl(s, "a").querySelector("iframe");
+    frameA.contentWindow = { name: "a" };
+    frameA.contentDocument = frameDoc([{ rect: [0, 0, 400, 100], style: RED }]);
+    frameA._rect = { width: 400, height: 300 };
+    const post = (data) => s.win.dispatchEvent(Object.assign(new s.win.Event("message"), { data, source: frameA.contentWindow }));
+    post({ type: "mycelian-content-size", width: 400, height: 40 });
+    assert.deepEqual(plain(s.C.measureFrame(frameA)), { w: 400, h: 40, x: 0, y: 0 });
+    s.clock.tick(200);
+    assert.deepEqual(plain(s.C.state.used), { a: { w: 400, h: 40 } });
+    post({ type: "mycelian-content-size", auto: true });
+    s.clock.tick(200);
+    assert.deepEqual(plain(s.C.state.used), { a: { w: 400, h: 100 } });
+    // An empty template closes its box and the filler takes the room.
+    frameA.contentDocument = frameDoc([]);
+    s.C.runMeasure();
+    assert.deepEqual(plain(s.C.state.used), { a: { empty: true } });
+    assert.equal(slotEl(s, "a").style.height, "0px");
+    assert.equal(slotEl(s, "b").style.height, "600px");
 });
 
 test("placeholders mode skips frames, is remembered and stops measuring", async () => {
@@ -390,14 +397,23 @@ test("resize handles change size from each edge with a 20px minimum", async () =
     s.C.startResize({ preventDefault() {}, clientX: 0, clientY: 0 }, "e");
 });
 
-test("flexible linked slots only get the cross-axis handle; gutters change spacing", async () => {
-    const link = (role, axis) => ({ id: "L", axis, role, min_px: 0, min_pct: 0, max_px: null, max_pct: null });
+test("every box gets all resize handles and shows its drawn size while dragging; gutters change spacing", async () => {
+    const link = (role, axis) => ({ id: "L", axis, role, when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null });
     const m = model({ slots: [slot("a", { x: 0, link: link("flexible", "horizontal") }), slot("b", { x: 500, link: link("locked", "horizontal") })] });
     const s = setup({ containers: { main: m } });
     await containersMode(s);
     s.C.state.selectedId = "a";
     s.C.renderCanvas();
-    assert.deepEqual(slotEl(s, "a").querySelectorAll(".mc-handle").map((h) => h.dataset.dir), ["s"]);
+    assert.deepEqual(slotEl(s, "a").querySelectorAll(".mc-handle").map((h) => h.dataset.dir), ["e", "s", "se", "w", "n"]);
+    assert.equal(slotEl(s, "a").style.width, "500px", "fills up to b (space is x=0..900)");
+    const handle = slotEl(s, "a").querySelector(".mc-handle--s");
+    fire(s.win, handle, "mousedown", { clientX: 0, clientY: 0 });
+    fire(s.win, s.doc, "mousemove", { clientX: 0, clientY: 1 });
+    assert.equal(slotEl(s, "a").style.width, "400px", "drawn size while dragging");
+    assert.equal(s.doc.querySelectorAll(".mc-space").length, 0, "no indicators while dragging");
+    fire(s.win, s.doc, "mouseup", {});
+    assert.equal(s.C.state.dragging, false);
+    assert.equal(s.doc.querySelectorAll(".mc-space").length, 1);
     const gutter = s.doc.querySelector(".mc-gutter--h");
     assert.ok(gutter);
     fire(s.win, gutter, "mousedown", { clientX: 0, clientY: 0 });
@@ -410,7 +426,7 @@ test("flexible linked slots only get the cross-axis handle; gutters change spaci
     await containersMode(v);
     v.C.state.selectedId = "a";
     v.C.renderCanvas();
-    assert.deepEqual(slotEl(v, "a").querySelectorAll(".mc-handle").map((h) => h.dataset.dir), ["e"]);
+    assert.deepEqual(slotEl(v, "a").querySelectorAll(".mc-handle").map((h) => h.dataset.dir), ["e", "s", "se", "w", "n"]);
     const vg = v.doc.querySelector(".mc-gutter--v");
     assert.equal(vg.style.height, "12px");
     fire(v.win, vg, "mousedown", { clientX: 0, clientY: 0 });
@@ -611,61 +627,294 @@ test("slot inspector: padding uniform/split, fit and design size, audio", async 
     assert.deepEqual(plain(s.C.selectedSlot().audio), { muted: true, volume: 0 });
 });
 
-test("slot inspector: size links, groups, roles, limits and stack order", async () => {
-    const s = setup({ containers: { main: model({ slots: [slot("a"), slot("b", { y: 500 }), slot("c", { y: 900 })] }) } });
+const SIZING = (host) => host.querySelector(".mc-seg");
+const pickRole = (s, host, value) => {
+    SIZING(host).querySelectorAll(".mc-seg__opt").find((b) => b.dataset.value === value).click();
+    return s.$("mc-inspector-host");
+};
+const summary = (host) => host.querySelector(".mc-summary").textContent;
+const tipOf = (el) => el.getAttribute("data-ss-tip") || el.title || "";
+
+test("sizing: Fixed / Fits its content / Fills leftover space, pairing a neighbour into a new shared space", async () => {
+    const s = setup({ containers: { main: model({ slots: [
+        slot("ff7", { template: "ff7", y: 500, h: 300 }),
+        slot("chat", { template: "chat", y: 100, h: 400 }),
+        slot("far", { template: "alerts", x: 1500, y: 0, w: 300, h: 100 }),
+    ] }) } });
+    await containersMode(s);
+    let host = await selectSlot(s, "ff7");
+    assert.deepEqual(SIZING(host).querySelectorAll(".mc-seg__opt").map((b) => [b.dataset.value, b.classList.contains("is-on")]),
+        [["fixed", true], ["fit", false], ["fill", false]]);
+    assert.match(summary(host), /stays exactly where and how big you drew it/);
+    host = pickRole(s, host, "fit");
+    const ff7 = s.C.state.model.slots[0];
+    const chat = s.C.state.model.slots[1];
+    assert.deepEqual(plain(ff7.link), { id: "Space 1", axis: "vertical", role: "locked", when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null });
+    assert.deepEqual(plain(chat.link), { id: "Space 1", axis: "vertical", role: "flexible", when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null });
+    assert.match(host.querySelector(".mc-summary--note").textContent, /“chat” joined this shared space as “Fills leftover space”/);
+    assert.match(summary(host), /“ff7” grows and shrinks with what it is showing.*When it shows nothing it closes\. “chat” gets the space it isn't using\./);
+    assert.equal(s.C.state.dirty, true);
+    // chat: the filler's own summary
+    host = await selectSlot(s, "chat");
+    assert.match(summary(host), /“chat” takes the space “ff7” isn't using\. When space is tight its picture is cropped/);
+    // a box with nobody next to it starts its own space
+    host = await selectSlot(s, "far");
+    host = pickRole(s, host, "fill");
+    assert.equal(s.C.state.model.slots[2].link.id, "Space 2");
+    assert.match(summary(host), /shares the space with the other boxes in it/);
+    // a box next to one already in a space joins it
+    s.C.state.model.slots.push(slot("goal", { template: "poll", y: 900, h: 100 }));
+    host = await selectSlot(s, "goal");
+    host = pickRole(s, host, "fit");
+    assert.equal(s.C.state.model.slots[3].link.id, "Space 1");
+    // back to Fixed
+    host = pickRole(s, host, "fixed");
+    assert.equal(s.C.state.model.slots[3].link, null);
+    // switching between the two flexible options keeps the space
+    host = await selectSlot(s, "chat");
+    pickRole(s, host, "fit");
+    assert.equal(chat.link.role, "locked");
+    assert.equal(chat.link.id, "Space 1");
+    // clicking the option that is already on changes nothing
+    const before = s.C.state.history.length;
+    pickRole(s, s.$("mc-inspector-host"), "fit");
+    assert.equal(s.C.state.history.length, before);
+});
+
+test("sizing: shared-space picker, direction, limits with px/% and when nothing shows", async () => {
+    const link = (id, role, over = {}) => Object.assign({ id, axis: "vertical", role, when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null }, over);
+    const s = setup({ containers: { main: model({ slots: [
+        slot("a", { template: "ff7", y: 500, link: link("Space 1", "locked") }),
+        slot("b", { template: "chat", y: 0, link: link("Space 1", "flexible") }),
+        slot("c", { template: "poll", x: 1000, link: link("Side", "flexible", { axis: "horizontal" }) }),
+    ] }) } });
     await containersMode(s);
     let host = await selectSlot(s, "a");
-    let axis = rowInput(host, "Size link");
-    axis.value = "vertical";
-    fire(s.win, axis, "change");
-    assert.deepEqual(plain(s.C.selectedSlot().link), { id: "link1", axis: "vertical", role: "locked", min_px: 0, min_pct: 0, max_px: null, max_pct: null });
-    host = await selectSlot(s, "b");
-    axis = rowInput(host, "Size link");
-    axis.value = "vertical";
-    fire(s.win, axis, "change");
-    assert.equal(s.C.selectedSlot().link.id, "link1", "joins the existing vertical link");
-    host = s.$("mc-inspector-host");
-    const role = rowInput(host, "Size priority");
-    role.value = "flexible";
-    fire(s.win, role, "change");
-    assert.equal(s.C.selectedSlot().link.role, "flexible");
-    for (const [label, value, key, want] of [["Min px", "9000", "min_px", 7680], ["Min %", "-1", "min_pct", 0], ["Max px", "300", "max_px", 300], ["Max %", "101", "max_pct", 100], ["Max px", "", "max_px", null], ["Max %", "", "max_pct", null], ["Min px", "", "min_px", 0]]) {
+    const pick = host.querySelector(".mc-space-pick");
+    assert.deepEqual(pick.options.map((o) => o.value), ["Space 1", "Side", "__new__"]);
+    assert.match(pick.options[0].textContent, /Space 1 – chat/);
+    assert.match(pick.options[1].textContent, /Side – poll/);
+    const limit = (label) => host.querySelectorAll(".mc-limit").find((r) => r.querySelector("label").textContent === label);
+    const setLimit = (label, value, unit) => {
+        const row = limit(label);
+        row.querySelector("input").value = value;
+        if (unit) { row.querySelector("select").value = unit; }
+        fire(s.win, row.querySelector(unit ? "select" : "input"), "change");
         host = s.$("mc-inspector-host");
-        rowInput(host, label).value = value;
-        fire(s.win, rowInput(host, label), "change");
-        assert.equal(s.C.selectedSlot().link[key], want, label + "=" + value);
-    }
+    };
+    const link0 = () => s.C.state.model.slots[0].link;
+    setLimit("Never smaller than", "120");
+    assert.equal(link0().min_px, 120);
+    setLimit("Never smaller than", "25", "pct");
+    assert.deepEqual([link0().min_px, link0().min_pct], [0, 25]);
+    assert.equal(limit("Never smaller than").querySelector("select").value, "pct");
+    setLimit("Never smaller than", "900", "pct");
+    assert.equal(link0().min_pct, 100, "clamped");
+    setLimit("Never bigger than", "400");
+    assert.equal(link0().max_px, 400);
+    setLimit("Never bigger than", "", "px");
+    assert.equal(link0().max_px, null);
+    setLimit("Never bigger than", "50", "pct");
+    assert.deepEqual([link0().max_px, link0().max_pct], [null, 50]);
+    assert.match(summary(host), /never past 50% of the space/);
+    assert.match(summary(host), /closes down to 100% of the space/);
+    rowInput(host, "When nothing shows").value = "keep";
+    fire(s.win, rowInput(host, "When nothing shows"), "change");
     host = s.$("mc-inspector-host");
-    const group = rowInput(host, "Link group");
-    assert.deepEqual(group.options.map((o) => o.value), ["link1", "__new__"]);
-    group.value = "__new__";
-    fire(s.win, group, "change");
-    assert.equal(s.C.selectedSlot().link.id, "link2");
+    assert.equal(link0().when_empty, "keep");
+    assert.match(summary(host), /When it shows nothing it keeps its drawn size/);
+    // direction changes the whole space
+    rowInput(host, "Boxes stack").value = "horizontal";
+    fire(s.win, rowInput(host, "Boxes stack"), "change");
+    assert.deepEqual(s.C.state.model.slots.map((x) => x.link.axis), ["horizontal", "horizontal", "horizontal"]);
     host = s.$("mc-inspector-host");
-    rowInput(host, "Link group").value = "link1";
-    fire(s.win, rowInput(host, "Link group"), "change");
-    // move b (y 500) above a (y 0) in the link stack
+    rowInput(host, "Boxes stack").value = "vertical";
+    fire(s.win, rowInput(host, "Boxes stack"), "change");
+    // move into another space (takes its direction) and into a brand-new one
     host = s.$("mc-inspector-host");
+    host.querySelector(".mc-space-pick").value = "Side";
+    fire(s.win, host.querySelector(".mc-space-pick"), "change");
+    assert.deepEqual([link0().id, link0().axis], ["Side", "horizontal"]);
+    host = s.$("mc-inspector-host");
+    host.querySelector(".mc-space-pick").value = "__new__";
+    fire(s.win, host.querySelector(".mc-space-pick"), "change");
+    assert.equal(link0().id, "Space 2");
+    // the filler has no "when nothing shows" or preview controls
+    host = await selectSlot(s, "b");
+    const labels = host.querySelectorAll(".ss-form-row").map((r) => r.querySelector("label").textContent);
+    assert.equal(labels.includes("When nothing shows"), false);
+    assert.equal(labels.includes("Preview as"), false);
+    assert.match(tipOf(limit("Never bigger than")), /Leave empty/);
+});
+
+test("sizing: stack order buttons, and scale fit can't fit its content", async () => {
+    const link = (role) => ({ id: "L", axis: "vertical", role, when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null });
+    const s = setup({ containers: { main: model({ slots: [slot("a", { y: 0, link: link("locked") }), slot("b", { y: 500, link: link("flexible") }), slot("c", { x: 900, fit: "scale" })] }) } });
+    await containersMode(s);
+    let host = await selectSlot(s, "b");
     host.querySelectorAll("button").find((b) => b.textContent === "Move up in stack").click();
     assert.ok(s.C.state.model.slots[1].y < s.C.state.model.slots[0].y);
     host = s.$("mc-inspector-host");
     host.querySelectorAll("button").find((b) => b.textContent === "Move up in stack").click(); // already first
+    host = s.$("mc-inspector-host");
     host.querySelectorAll("button").find((b) => b.textContent === "Move down in stack").click();
     assert.ok(s.C.state.model.slots[1].y > s.C.state.model.slots[0].y);
-    // horizontal link swaps x
-    host = await selectSlot(s, "c");
-    rowInput(host, "Size link").value = "horizontal";
-    fire(s.win, rowInput(host, "Size link"), "change");
-    assert.equal(s.C.selectedSlot().link.id, "link2", "a fresh id for a new axis");
-    s.C.state.model.slots[0].link = { id: "link2", axis: "horizontal", role: "locked" };
+    s.C.state.model.slots[0].link = { id: "H", axis: "horizontal", role: "locked" };
+    s.C.state.model.slots[1].link = { id: "H", axis: "horizontal", role: "flexible" };
     s.C.state.model.slots[0].x = 800;
     s.C.nudgeOrder(1);
     assert.equal(s.C.selectedSlot().x, 799);
     host = await selectSlot(s, "c");
-    rowInput(host, "Size link").value = "";
-    fire(s.win, rowInput(host, "Size link"), "change");
-    assert.equal(s.C.selectedSlot().link, null);
+    const fit = SIZING(host).querySelectorAll(".mc-seg__opt").find((b) => b.dataset.value === "fit");
+    assert.equal(fit.disabled, true);
+    assert.match(tipOf(fit), /Scale from design size/);
+    fit.click();
+    assert.equal(s.C.state.model.slots[2].link, null);
+    assert.equal(host.querySelectorAll("button").find((b) => b.textContent === "Move up in stack"), undefined, "no stack buttons outside a space");
     s.C.nudgeOrder(1);
+});
+
+test("simulate: per box and for all boxes; never saved, cleared on save", async () => {
+    const link = (role) => ({ id: "L", axis: "vertical", role, when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null });
+    const s = setup({ containers: { main: model({ height: 1000, slots: [
+        slot("ff7", { template: "ff7", y: 600, h: 400, link: link("locked") }),
+        slot("chat", { template: "chat", y: 0, h: 600, link: link("flexible") }),
+    ] }) } });
+    await containersMode(s);
+    assert.equal(s.$("mc-simulate").disabled, false);
+    assert.equal(s.$("mc-simulating").hidden, true);
+    s.$("mc-simulate").value = "empty";
+    fire(s.win, s.$("mc-simulate"), "change");
+    assert.equal(slotEl(s, "ff7").style.height, "0px");
+    assert.equal(slotEl(s, "chat").style.height, "1000px");
+    assert.equal(s.$("mc-simulating").hidden, false);
+    assert.match(s.$("mc-simulating").textContent, /ff7: Empty.*not saved/);
+    assert.match(slotEl(s, "ff7").querySelector(".mc-badge").textContent, /pretend empty/);
+    const host = await selectSlot(s, "ff7");
+    const preview = host.querySelectorAll(".ss-form-row").find((r) => r.querySelector("label").textContent === "Preview as");
+    assert.equal(preview.querySelector(".mc-seg__opt.is-on").dataset.value, "empty");
+    preview.querySelectorAll(".mc-seg__opt").find((b) => b.dataset.value === "half").click();
+    assert.equal(slotEl(s, "ff7").style.height, "200px");
+    assert.equal(s.$("mc-simulate").value, "half");
+    s.$("mc-simulate").value = "full";
+    fire(s.win, s.$("mc-simulate"), "change");
+    assert.equal(slotEl(s, "ff7").style.height, "400px");
+    // a pretend size on a box that doesn't fit its content is ignored
+    s.C.state.simulate.chat = "empty";
+    s.C.renderCanvas();
+    assert.equal(slotEl(s, "chat").style.height, "600px");
+    assert.equal(s.$("mc-simulate").value, "full");
+    delete s.C.state.simulate.chat;
+    s.C.state.model.slots.push(slot("goal", { template: "poll", y: 1000, h: 100, link: link("locked") }));
+    s.C.state.simulate.goal = "empty";
+    s.C.renderCanvas();
+    assert.equal(s.$("mc-simulate").value, "mixed");
+    s.$("mc-btn-simulate-live").click();
+    assert.deepEqual(plain(s.C.state.simulate), {});
+    assert.equal(s.$("mc-simulating").hidden, true);
+    // saving never sends pretend sizes and clears them
+    s.C.state.simulate.ff7 = "empty";
+    s.C.state.dirty = true;
+    s.$("mc-btn-save").click();
+    await settle();
+    const sent = JSON.parse(s.fetch.calls.find((c) => c.url.endsWith("/containers/save")).init.body);
+    assert.equal(JSON.stringify(sent).includes("simulate"), false);
+    assert.deepEqual(plain(s.C.state.simulate), {});
+    // a container with no fits-content boxes disables the menu
+    s.C.state.model.slots.forEach((x) => { x.link = null; });
+    s.C.renderCanvas();
+    assert.equal(s.$("mc-simulate").disabled, true);
+});
+
+test("canvas indicators: shared space outline, badges, drawn-size ghost, minimum line, crop edge, flow arrow", async () => {
+    const link = (role, over = {}) => Object.assign({ id: "Space 1", axis: "vertical", role, when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null }, over);
+    const s = setup({ containers: { main: model({ height: 1000, slots: [
+        slot("chat", { template: "chat", y: 100, h: 500, link: link("flexible", { min_px: 150 }) }),
+        slot("ff7", { template: "ff7", y: 600, h: 300, link: link("locked") }),
+        slot("title", { template: "title", y: 0, h: 80, x: 1000 }),
+    ] }) } });
+    await containersMode(s);
+    s.C.state.simulate.ff7 = "half";
+    s.C.renderCanvas();
+    const space = s.doc.querySelector(".mc-space");
+    assert.equal(space.getAttribute("data-label"), "Space 1 · top to bottom");
+    assert.deepEqual([space.style.top, space.style.height, space.style.width], ["100px", "800px", "400px"]);
+    const badge = (id) => slotEl(s, id).querySelector(".mc-badge");
+    assert.ok(badge("chat").classList.contains("mc-badge--fill"));
+    assert.ok(badge("ff7").classList.contains("mc-badge--fit"));
+    assert.ok(badge("title").classList.contains("mc-badge--fixed"));
+    assert.equal(badge("title").textContent, "Fixed");
+    // ff7 at half (150px of 300): drawn-size ghost
+    const ghost = s.doc.querySelector(".mc-designated");
+    assert.equal(ghost.getAttribute("data-label"), "can grow to 300px (drawn size)");
+    assert.equal(ghost.style.height, "300px");
+    // chat (650px) is above its drawn 500px: min line, no crop
+    assert.equal(s.doc.querySelector(".mc-min-line").getAttribute("data-label"), "min 150px");
+    assert.equal(s.doc.querySelector(".mc-crop"), null);
+    const arrow = s.doc.querySelector(".mc-flow");
+    assert.equal(arrow.textContent, "↕");
+    assert.match(tipOf(arrow), /“chat” gets the room “ff7” isn't using/);
+    // ff7 full and chat drawn taller: chat squeezed below its drawn size -> crop edge
+    s.C.state.simulate.ff7 = "full";
+    s.C.state.model.slots[0].y = 0;
+    s.C.state.model.slots[0].h = 700;
+    s.C.renderCanvas();
+    assert.equal(slotEl(s, "chat").style.height, "600px");
+    assert.match(tipOf(s.doc.querySelector(".mc-crop")), /Cropped: 600px of the 700px it was drawn at/);
+    assert.notEqual(s.$("mc-canvas").style.getPropertyValue("--mc-zoom"), "");
+});
+
+test("container inspector lists shared spaces: rename, show on canvas, stop sharing", async () => {
+    const link = (role) => ({ id: "Space 1", axis: "vertical", role, when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null });
+    const s = setup({ containers: { main: model({ slots: [slot("a", { template: "ff7", y: 500, link: link("locked") }), slot("b", { template: "chat", link: link("flexible") }), slot("c", { x: 900, link: Object.assign(link("flexible"), { id: "Other" }) })] }) } });
+    await containersMode(s);
+    const cards = () => s.$("mc-inspector-host").querySelectorAll(".mc-space-card");
+    assert.equal(cards().length, 2);
+    assert.equal(cards()[0].querySelector(".mc-space-card__detail").textContent, "chat (fills leftover) → ff7 (fits content) · top to bottom");
+    const rename = (value) => {
+        const input = cards()[0].querySelector("input");
+        input.value = value;
+        fire(s.win, input, "change");
+    };
+    rename("Other");
+    assert.equal(s.C.state.model.slots[0].link.id, "Space 1", "duplicate name refused");
+    assert.equal(s.notes.at(-1).title, "Pick another name");
+    rename("a/b");
+    rename("");
+    assert.equal(s.C.state.model.slots[0].link.id, "Space 1");
+    rename("Left column");
+    assert.deepEqual(s.C.state.model.slots.slice(0, 2).map((x) => x.link.id), ["Left column", "Left column"]);
+    cards()[0].querySelectorAll("button").find((b) => b.textContent === "Show on canvas").click();
+    assert.deepEqual(plain(s.C.state.flagged), ["b", "a"]);
+    assert.ok(slotEl(s, "b").classList.contains("is-flagged"));
+    s.clock.tick(2500);
+    assert.deepEqual(plain(s.C.state.flagged), []);
+    s.C.state.selectedId = null;
+    s.C.renderAll();
+    s.C.state.simulate.a = "empty";
+    cards()[0].querySelectorAll("button").find((b) => b.textContent === "Stop sharing").click();
+    assert.deepEqual(s.C.state.model.slots.slice(0, 2).map((x) => x.link), [null, null]);
+    assert.deepEqual(plain(s.C.state.simulate), {});
+    s.C.state.model.slots[2].link = null;
+    s.C.renderAll();
+    assert.equal(cards().length, 0);
+    assert.match(s.$("mc-inspector-host").textContent, /Select a box \(for example FF7\) and pick “Fits its content”/);
+});
+
+test("warnings name the shared space and a button points at the boxes", async () => {
+    const link = (role, over = {}) => Object.assign({ id: "Space 1", axis: "vertical", role, when_empty: "collapse", min_px: 0, min_pct: 0, max_px: null, max_pct: null }, over);
+    const s = setup({ containers: { main: model({ height: 1000, slots: [
+        slot("a", { template: "alerts", y: 0, h: 200, link: link("flexible", { min_px: 900 }) }),
+        slot("b", { template: "chat", y: 200, h: 200, link: link("flexible", { min_px: 900 }) }),
+    ] }) } });
+    await containersMode(s);
+    const rows = s.$("mc-warnings").querySelectorAll(".mc-warning");
+    assert.equal(rows.length, 1);
+    assert.match(rows[0].textContent, /shared space “Space 1” need more room than the space has/);
+    assert.equal(rows[0].querySelector("button").textContent, "Show boxes");
+    rows[0].querySelector("button").click();
+    assert.equal(s.C.state.selectedId, "a");
+    assert.deepEqual(plain(s.C.state.flagged), ["a", "b"]);
 });
 
 test("slot inspector stacking buttons and removal", async () => {

@@ -828,6 +828,8 @@ class _Thread:
 
 
 def test_prune_and_join_known_server_threads(engine, warnings_log):
+    dumps = []
+    engine._dump_all_thread_stacks = dumps.append
     a, b, dead = _Thread("a"), _Thread("b", alive_after_join=True), _Thread("dead", alive=False)
     engine._known_server_threads = [a, None, dead]
     engine.server_thread = b
@@ -836,6 +838,8 @@ def test_prune_and_join_known_server_threads(engine, warnings_log):
     assert warnings_log == ["WebEngine thread b did not exit within 2s; abandoning it"]
     assert engine._known_server_threads == []
     assert engine._abandoned_server_threads == [b]
+    # Where the hub is stuck is captured before it is abandoned.
+    assert dumps == ["WebEngine thread b did not exit within 2s; abandoning it"]
     # A thread that already failed a join is not waited on again by later restarts.
     engine._known_server_threads = [b]
     engine._join_known_server_threads(2.0)
@@ -1265,6 +1269,22 @@ def test_do_restart_not_recovered_with_foreign_holder(engine, clock, restart):
 
 
 # --------------------------------------------------------------------------- request_restart / start / give up
+
+
+def test_request_restart_gives_up_when_a_frozen_hub_is_still_alive(engine, clock, shutdown, fake_threads):
+    """A frozen hub shares the SocketIO object and locks: restarting again can't help."""
+    engine._notify_restart_giveup = mock.Mock()
+    engine._abandoned_server_threads = [_Thread("old", alive=True)]
+    engine.request_restart("health probe failed again")
+    assert fake_threads == []
+    engine._notify_restart_giveup.assert_called_once()
+    assert engine._restart_attempts == engine._MAX_RESTART_ATTEMPTS
+    assert "froze again" in engine._last_run_error
+    # Once the stuck thread finally exits, restarts are allowed again.
+    engine._abandoned_server_threads = [_Thread("old", alive=False)]
+    engine._restart_attempts = 0
+    engine.request_restart("x")
+    assert len(fake_threads) == 1
 
 
 def test_request_restart_gates(engine, clock, shutdown, fake_threads):

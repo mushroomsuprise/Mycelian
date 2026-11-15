@@ -4147,6 +4147,10 @@
             });
         }
 
+        // Chat inside a container gets smaller when a neighbour needs room: keep the
+        // newest messages in view instead of cutting them off at the bottom.
+        window.addEventListener('resize', scheduleScrollToBottom);
+
         function bindDeferredScrollForMedia(rootEl) {
             if (!rootEl) {
                 return;
@@ -4753,10 +4757,12 @@
         chatLog('Mycelian Chat initialized');
 
         // Live third-party emotes. REST fetches below stay as the initial load and the
-        // 30-minute fail-safe. 7TV and BTTV push changes; FFZ is polled just under its cap.
+        // 30-minute fail-safe. 7TV and BTTV push changes; FFZ has no push, so its channel
+        // set is polled. Every chat source on this PC shares one IP and FFZ rate limit,
+        // so the poll stays well under the cap and only asks for the channel set.
         var SEVENTV_WS_URL = 'wss://events.7tv.io/v3';
         var BTTV_WS_URL = 'wss://sockets.betterttv.net/ws';
-        var FFZ_POLL_BASE_MS = 1100;
+        var FFZ_POLL_BASE_MS = 10000;
         var FFZ_POLL_MAX_MS = 30000;
         var FFZ_POLL_COOLDOWN_MS = 60000;
         var FFZ_POLL_EASE_AFTER = 30;
@@ -4791,6 +4797,8 @@
         var ffzPollTimer = null;
         var ffzPollStarted = false;
         var ffzPollDelay = FFZ_POLL_BASE_MS;
+        // Easing never goes back below the pace that last got rate limited.
+        var ffzPollFloor = FFZ_POLL_BASE_MS;
         var ffzPollSuccessStreak = 0;
         var ffzRateLimitedUntil = 0;
         var ffzFetchPromise = null;
@@ -5491,7 +5499,8 @@
         }
 
         function noteFfzRateLimit() {
-            ffzPollDelay = Math.min(FFZ_POLL_MAX_MS, Math.max(FFZ_POLL_BASE_MS, ffzPollDelay) * 2);
+            ffzPollFloor = Math.min(FFZ_POLL_MAX_MS, Math.max(ffzPollFloor, ffzPollDelay * 2));
+            ffzPollDelay = Math.min(FFZ_POLL_MAX_MS, Math.max(ffzPollFloor, ffzPollDelay) * 2);
             ffzPollSuccessStreak = 0;
             ffzRateLimitedUntil = Date.now() + FFZ_POLL_COOLDOWN_MS;
             console.warn('FFZ emote poll rate limited; backing off to ' + ffzPollDelay + 'ms');
@@ -5524,15 +5533,15 @@
                 scheduleFfzPoll(ffzPollDelay);
                 return;
             }
-            fetchFFZEmotes().then(function (result) {
+            fetchFFZEmotes(true).then(function (result) {
                 if (result && result.rateLimited) {
                     scheduleFfzPoll(FFZ_POLL_COOLDOWN_MS);
                     return;
                 }
                 if (result && result.ok) {
                     ffzPollSuccessStreak++;
-                    if (ffzPollDelay > FFZ_POLL_BASE_MS && ffzPollSuccessStreak >= FFZ_POLL_EASE_AFTER) {
-                        ffzPollDelay = Math.max(FFZ_POLL_BASE_MS, Math.floor(ffzPollDelay / 2));
+                    if (ffzPollDelay > ffzPollFloor && ffzPollSuccessStreak >= FFZ_POLL_EASE_AFTER) {
+                        ffzPollDelay = Math.max(ffzPollFloor, Math.floor(ffzPollDelay / 2));
                         ffzPollSuccessStreak = 0;
                         chatLog('FFZ poll interval eased to', ffzPollDelay);
                     }
@@ -5550,7 +5559,7 @@
 
         function noteFfzPollFailure() {
             ffzPollSuccessStreak = 0;
-            ffzPollDelay = Math.min(FFZ_POLL_MAX_MS, Math.max(FFZ_POLL_BASE_MS, ffzPollDelay) * 2);
+            ffzPollDelay = Math.min(FFZ_POLL_MAX_MS, Math.max(ffzPollFloor, ffzPollDelay) * 2);
         }
 
         // url -> { text, signature }: raw body last applied and the list signature it
@@ -5588,15 +5597,22 @@
             ffzRawCache[result.url] = { text: result.raw, signature: signature };
         }
 
-        function fetchFFZEmotesNow() {
-            var jobs = [fetchFfzJson('https://api.frankerfacez.com/v1/set/global')];
+        // roomOnly (the poll): skip the global set, which the initial load and the
+        // 30-minute refresh keep current.
+        function fetchFFZEmotesNow(roomOnly) {
+            var includeGlobal = !(roomOnly && streamerID);
+            var jobs = [includeGlobal
+                ? fetchFfzJson('https://api.frankerfacez.com/v1/set/global')
+                : Promise.resolve(null)];
             if (streamerID) jobs.push(fetchFfzJson('https://api.frankerfacez.com/v1/room/id/' + streamerID));
             return Promise.all(jobs).then(function (results) {
                 var rateLimited = false;
                 var ok = true;
                 var changed = false;
-                var globalResult = results[0] || {};
-                if (globalResult.rateLimited) rateLimited = true;
+                var globalResult = results[0];
+                if (!globalResult) {
+                    // Not requested this time.
+                } else if (globalResult.rateLimited) rateLimited = true;
                 else if (globalResult.ok && globalResult.cached && globalResult.cached.signature === ffzGlobalSignature) {
                     // Same body as the list already applied: nothing would change.
                 } else if (globalResult.ok && ffzResultData(globalResult)) {
@@ -5629,9 +5645,9 @@
             });
         }
 
-        function fetchFFZEmotes() {
+        function fetchFFZEmotes(roomOnly) {
             if (ffzFetchPromise) return ffzFetchPromise;
-            ffzFetchPromise = fetchFFZEmotesNow().then(function (result) {
+            ffzFetchPromise = fetchFFZEmotesNow(roomOnly).then(function (result) {
                 ffzFetchPromise = null;
                 return result;
             }, function (error) {

@@ -61,6 +61,17 @@
                     title="Open live preview window"><span>Preview</span></button>
             <button class="ss-btn ss-btn--primary ss-template-only" id="ss-btn-save" data-ss-icon="check"
                     title="Save (Ctrl+S)"><span>Save</span><kbd class="ss-kbd">Ctrl S</kbd></button>
+            <label class="mc-simulate ss-container-only"
+                   title="Pretend every “Fits its content” box is empty or full to see how the other boxes react. Only in the editor; nothing is saved.">
+                <span class="mc-simulate__icon" data-ss-icon="beaker"></span>
+                <select id="mc-simulate" aria-label="Simulate content sizes">
+                    <option value="live">Live content</option>
+                    <option value="empty">Pretend all empty</option>
+                    <option value="half">Pretend all half full</option>
+                    <option value="full">Pretend all full</option>
+                    <option value="mixed" disabled>Pretend: per box</option>
+                </select>
+            </label>
             <button type="button" class="ss-btn ss-container-only" id="mc-btn-placeholders" data-ss-icon="box"
                     title="Show template names instead of live previews"><span>Placeholders</span></button>
             <button type="button" class="ss-btn ss-container-only" id="mc-btn-preview" data-ss-icon="play"
@@ -235,6 +246,10 @@
         </div>
         <div class="ss-panel-canvas ss-panel-container-canvas ss-container-only" id="mc-stage-wrap">
             <div id="mc-warnings" class="mc-warnings" hidden></div>
+            <div id="mc-simulating" class="mc-simulating" hidden>
+                <span class="mc-simulating__text"></span>
+                <button type="button" class="ss-btn ss-btn--ghost" id="mc-btn-simulate-live">Back to live</button>
+            </div>
             <div id="mc-canvas-scroll">
                 <div id="mc-canvas" tabindex="0"></div>
             </div>
@@ -432,6 +447,7 @@
     <script src="/assets/default_assets/spore_studio/qrcode.js"></script>
     <script src="/assets/default_assets/spore_studio/game_panel.js"></script>
     <script src="/assets/default_assets/spore_studio/container_layout.js"></script>
+    <script src="/assets/default_assets/spore_studio/container_measure.js"></script>
     <script src="/assets/default_assets/spore_studio/advanced_js_editor.js"></script>
     <script src="/assets/default_assets/mycelian_color_picker.js"></script>
     <script src="/assets/default_assets/spore_studio/spore_ui.js"></script>

@@ -438,7 +438,8 @@ def test_twitch_worker_loop_swallows_loop_teardown_errors(engine, monkeypatch):
         def run_until_complete(self, coro):
             if coro == "shutdown":
                 raise RuntimeError("teardown")
-            self.ran.append(coro)
+            self.ran.extend(coro)
+            return [None] * len(coro)
 
         def shutdown_asyncgens(self):
             return "shutdown"
@@ -448,12 +449,41 @@ def test_twitch_worker_loop_swallows_loop_teardown_errors(engine, monkeypatch):
 
     loop = Loop()
     monkeypatch.setattr(we, "asyncio", types.SimpleNamespace(new_event_loop=lambda: loop,
-                                                             set_event_loop=lambda l: None))
+                                                             set_event_loop=lambda l: None,
+                                                             gather=lambda *c, return_exceptions: list(c)))
     engine._twitch_api_worker_started = True
     engine._twitch_api_queue.put("job")
     engine._twitch_api_queue.put(None)
     engine._twitch_api_worker_loop()
     assert loop.ran == ["job"]
+    assert engine._twitch_api_worker_started is False
+
+
+def test_twitch_worker_runs_queued_requests_together(engine):
+    """A burst of overlay requests must not queue each reply behind the others."""
+    import asyncio as real_asyncio
+
+    started = []
+    state = {}
+
+    async def job(name, fail=False):
+        started.append(name)
+        if "gate" not in state:
+            state["gate"] = real_asyncio.Event()
+        if len(started) == 3:
+            state["gate"].set()
+        # Serial execution would wait here forever for the other jobs to start.
+        await real_asyncio.wait_for(state["gate"].wait(), 2.0)
+        if fail:
+            raise RuntimeError(f"{name} failed")
+
+    engine._twitch_api_worker_started = True
+    engine._twitch_api_queue.put(job("a"))
+    engine._twitch_api_queue.put(job("b", fail=True))
+    engine._twitch_api_queue.put(job("c"))
+    engine._twitch_api_queue.put(None)
+    engine._twitch_api_worker_loop()
+    assert sorted(started) == ["a", "b", "c"]
     assert engine._twitch_api_worker_started is False
 
 

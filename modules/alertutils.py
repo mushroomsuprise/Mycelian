@@ -566,6 +566,13 @@ class AlertStateManager:
 
     @staticmethod
     def _wait_event(event: threading.Event) -> None:
+        """Wait for ``event``; on the overlay hub, yield to other greenlets.
+
+        Hub callers must not hold a native ``threading`` lock across this call:
+        while this greenlet sleeps, another hub greenlet that blocks on that
+        lock stalls the whole hub thread, and this one can never resume to
+        release it (deadlock).
+        """
         if database_manager._caller_is_overlay_hub():
             try:
                 from gevent import sleep as _hub_sleep

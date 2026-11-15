@@ -15,7 +15,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,15 @@ def mark_shutdown_in_progress() -> bool:
         return True
 
 
+_shutdown_watchdog_armed = False
+
+
 def _start_shutdown_watchdog() -> None:
+    global _shutdown_watchdog_armed
+    with _shutdown_lock:
+        if _shutdown_watchdog_armed:
+            return
+        _shutdown_watchdog_armed = True
     raw = os.environ.get("MYCELIAN_SHUTDOWN_WATCHDOG_SEC", "20").strip()
     if not raw:
         raw = "20"
@@ -723,6 +731,9 @@ def _hard_exit_after_native_close() -> None:
     try:
         if is_shutdown_in_progress():
             return
+        # Arm the force-exit timer first: if anything below blocks before
+        # shutdown_application gets to arm it, the process still exits.
+        _start_shutdown_watchdog()
         shutdown_application(reason="native_window_closed", force=True)
     except Exception:
         logger.error("Native close shutdown failed; forcing exit", exc_info=True)
@@ -791,7 +802,10 @@ def _native_window_process_watchdog() -> None:
             proc = None
         if proc is None:
             if time.monotonic() > deadline:
-                logger.debug("Window watchdog: webview process not found; not watching")
+                logger.warning(
+                    "Window watchdog: webview process not found after %.0fs; not watching",
+                    _WINDOW_PROCESS_FIND_TIMEOUT_SEC,
+                )
                 return
             time.sleep(0.5)
 
@@ -845,6 +859,63 @@ def start_native_window_process_watchdog() -> None:
     ).start()
 
 
+class _ClosedEventTap:
+    """Wraps NiceGUI's native event pipe and reacts to ``closed`` on its thread.
+
+    NiceGUI hands every window event to its asyncio loop with
+    ``call_soon_threadsafe``. If that loop is stalled when the user closes the
+    window, the ``closed`` handler never runs and the process lives on with no
+    window. Starting the hard-exit thread here, on the pipe-reader thread,
+    needs no loop. Everything else is delegated to the real connection.
+    """
+
+    def __init__(self, receiver: Any) -> None:
+        self._receiver = receiver
+
+    def recv(self) -> Any:
+        data = self._receiver.recv()
+        try:
+            if isinstance(data, dict) and data.get("type") == "closed":
+                logger.warning("Native window closed; starting shutdown off the UI loop")
+                _start_native_close_hard_exit()
+        except Exception as e:
+            logger.debug("Native closed tap failed: %s", e)
+        return data
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._receiver, name)
+
+
+def _install_closed_event_tap(event_manager: Any) -> None:
+    """Wrap ``native.event_receiver`` just before NiceGUI's event thread reads it.
+
+    The pipe is created when the native window starts, after this handler is
+    registered, so the tap is installed from a wrapper around the instance's
+    ``_event_loop`` (the thread target). Best effort: leaves NiceGUI untouched
+    if its internals differ.
+    """
+    try:
+        from nicegui.native import native as ng_native
+
+        original = getattr(event_manager, "_event_loop", None)
+        if original is None or getattr(original, "_mycelian_closed_tap", False):
+            return
+
+        def _event_loop_with_tap() -> None:
+            try:
+                receiver = getattr(ng_native, "event_receiver", None)
+                if receiver is not None and not isinstance(receiver, _ClosedEventTap):
+                    ng_native.event_receiver = _ClosedEventTap(receiver)
+            except Exception as e:
+                logger.debug("Native closed tap install failed: %s", e)
+            original()
+
+        _event_loop_with_tap._mycelian_closed_tap = True  # type: ignore[attr-defined]
+        event_manager._event_loop = _event_loop_with_tap
+    except Exception as e:
+        logger.debug("Native closed tap unavailable: %s", e)
+
+
 def register_native_window_close_handler() -> None:
     """Ensure parent process stops when the native window closes."""
     global _native_close_registered
@@ -862,6 +933,7 @@ def register_native_window_close_handler() -> None:
         _start_native_close_hard_exit()
 
     event_manager.on("closed", _on_native_closed)
+    _install_closed_event_tap(event_manager)
     _native_close_registered = True
     start_native_window_process_watchdog()
     logger.debug("Registered native window closed shutdown handler")

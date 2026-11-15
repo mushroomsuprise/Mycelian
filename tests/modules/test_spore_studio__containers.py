@@ -151,12 +151,14 @@ def test_padding():
 def test_normalize_link():
     assert c._normalize_link(None) is None
     out = c._normalize_link({"id": " L ", "max_px": "", "max_pct": 50})
-    assert out == {"id": "L", "axis": "vertical", "role": "flexible", "min_px": 0, "min_pct": 0,
-                   "max_px": None, "max_pct": 50}
+    assert out == {"id": "L", "axis": "vertical", "role": "flexible", "when_empty": "collapse",
+                   "min_px": 0, "min_pct": 0, "max_px": None, "max_pct": 50}
+    assert c._normalize_link({"id": "L", "when_empty": "keep"})["when_empty"] == "keep"
     for bad, msg in [("x", "must be an object"), ({"id": ""}, "id is invalid"),
                      ({"id": "a/b"}, "id is invalid"), ({"id": "x" * 65}, "id is invalid"),
                      ({"id": "a", "axis": "diag"}, "axis"), ({"id": "a", "role": "boss"}, "role"),
-                     ({"id": "a", "min_pct": 101}, "Minimum percent")]:
+                     ({"id": "a", "min_pct": 101}, "Minimum percent"),
+                     ({"id": "a", "when_empty": "hide"}, "When nothing shows")]:
         with pytest.raises(c.ContainerError, match=msg):
             c._normalize_link(bad)
 
@@ -406,6 +408,7 @@ def test_measured_content():
     assert c._measured_content(s, "vertical", {"a": {}}) is None
     assert c._measured_content(s, "horizontal", {"a": {"w": 7}}) == 7.0
     assert c._measured_content(s, "vertical", {"a": {"h": "bad"}}) is None
+    assert c._measured_content(s, "vertical", {"a": {"empty": True}}) == 0.0
 
 
 def test_split_int():
@@ -464,7 +467,12 @@ def test_locked_outer_measured_and_capped():
     # measured 100 content + 20 pad = 120, cap 300
     assert c._locked_outer(slot, "vertical", 1000, {"a": {"h": 100}}, warnings) == 120
     assert c._locked_outer(slot, "vertical", 1000, {"a": {"h": 9999}}, warnings) == 300
-    assert c._locked_outer(slot, "vertical", 1000, {"a": {"h": -5}}, warnings) == 20
+    # Nothing showing closes the box completely (padding too).
+    assert c._locked_outer(slot, "vertical", 1000, {"a": {"h": -5}}, warnings) == 0
+    assert c._locked_outer(slot, "vertical", 1000, {"a": {"empty": True}}, warnings) == 0
+    keep = c._normalize_slot(_slot("a", h=400, padding={"t": 10, "b": 10},
+                                   link=_link(role="locked", max_pct=30, when_empty="keep")), 0)
+    assert c._locked_outer(keep, "vertical", 1000, {"a": {"empty": True}}, warnings) == 300
     assert warnings == []
 
 
@@ -473,7 +481,7 @@ def test_locked_outer_measured_and_capped():
 def test_solve_layout_vertical_stack_with_spacing_and_overflow_warning():
     cont = _base(height=1000, spacing=10, slots=[
         _slot("top", y=0, h=200, link=_link(role="locked")),
-        _slot("bot", y=500, h=600, link=_link(min_px=900)),
+        _slot("bot", y=500, h=500, link=_link(min_px=900)),
         _slot("free", x=50, y=60, w=70, h=80, visible=False, pointer_events=False),
     ])
     out = c.solve_layout(cont, used={"top": {"h": 100}})
@@ -494,8 +502,8 @@ def test_solve_layout_dedupes_warnings():
 
 
 def test_solve_layout_horizontal():
-    cont = _base(width=1000, slots=[_slot("l", x=0, w=300, link=_link(axis="horizontal")),
-                                    _slot("r", x=600, w=300, link=_link(axis="horizontal"))])
+    cont = _base(width=1000, slots=[_slot("l", x=0, w=500, link=_link(axis="horizontal")),
+                                    _slot("r", x=500, w=500, link=_link(axis="horizontal"))])
     out = c.solve_layout(cont)
     rects = {s["id"]: s for s in out["slots"]}
     assert (rects["l"]["x"], rects["l"]["w"]) == (0, 500)

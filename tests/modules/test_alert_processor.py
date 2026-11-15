@@ -266,6 +266,38 @@ def test_notify_alert_dropped(eng):
     assert kwargs["dedupe_key"] == "alert:dropped"
 
 
+# ------------------------------------------------------------------ missing alert audio
+
+def _audio_env(monkeypatch, existing):
+    notes = []
+    monkeypatch.setattr(ap, "web_engine", SimpleNamespace(
+        _resolved_assets_file=lambda rel: f"/assets/{rel}" if rel in existing else None))
+    monkeypatch.setattr(ap, "notify", lambda message, **kw: notes.append(dict(kw, message=message)))
+    return notes
+
+
+def test_drop_missing_alert_audio(monkeypatch):
+    notes = _audio_env(monkeypatch, existing=set())
+    data = {"alert_name": "Donation", "single_audio_dir": "donations\\", "single_audio_name": "donation.mp3"}
+    ap._drop_missing_alert_audio(data)
+    assert data["single_audio_dir"] == "" and data["single_audio_name"] == ""
+    assert notes[0]["dedupe_key"] == "alerts:audio_missing:donations/donation.mp3"
+    assert "Donation" in notes[0]["message"]
+
+
+@pytest.mark.parametrize("audio_dir,audio_name", [
+    ("donations", "donation.mp3"),           # present
+    ("", "donation.mp3"),                     # no audio configured
+    ("https://cdn.example", "a.mp3"),         # URL, not an asset
+    ("C:/sounds", "a.mp3"),                   # absolute path, not an asset
+])
+def test_drop_missing_alert_audio_leaves_others_alone(monkeypatch, audio_dir, audio_name):
+    notes = _audio_env(monkeypatch, existing={"donations/donation.mp3"})
+    data = {"single_audio_dir": audio_dir, "single_audio_name": audio_name}
+    ap._drop_missing_alert_audio(data)
+    assert data == {"single_audio_dir": audio_dir, "single_audio_name": audio_name} and notes == []
+
+
 # ------------------------------------------------------------------ process_alert
 
 def test_process_alert_no_engine(eng):

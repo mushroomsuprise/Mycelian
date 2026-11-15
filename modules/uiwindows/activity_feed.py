@@ -1807,6 +1807,7 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
 
 _stored_lock = threading.Lock()
 _stored_loaded = False
+_stored_loading = False
 
 
 def _load_stored_feed_alerts(limit: int, pages: int) -> List[Dict[str, Any]]:
@@ -1835,10 +1836,16 @@ def load_stored_into_feed(*, reload: bool = False) -> int:
     the feed grows past that size until the next start. Alerts already in the feed are
     not added twice. Numbering runs oldest = #1. Returns how many were added.
     """
-    global _stored_loaded, _live_seq
+    global _stored_loaded, _stored_loading, _live_seq
+    # _stored_lock is a native lock. It must never be held across the database
+    # fetch: on the overlay (gevent) hub the fetch can yield while it waits for
+    # the AlertStoragePrefetch thread, and a second hub greenlet blocking on a
+    # held native lock freezes the whole hub thread forever.
     with _stored_lock:
-        if _stored_loaded and not reload:
+        if not reload and (_stored_loaded or _stored_loading):
             return 0
+        _stored_loading = True
+    try:
         settings = current_feed_settings()
         limit, pages = int(settings["page_limit"]), int(settings["max_pages"])
         try:
@@ -1856,6 +1863,16 @@ def load_stored_into_feed(*, reload: bool = False) -> int:
                 dedupe_key="activity_feed:stored_failed",
                 dedupe_cooldown_sec=60.0,
             )
+            with _stored_lock:
+                _stored_loading = False
+            return 0
+    except BaseException:
+        with _stored_lock:
+            _stored_loading = False
+        raise
+    with _stored_lock:
+        _stored_loading = False
+        if _stored_loaded and not reload:
             return 0
         with _live_lock, _seq_lock:
             session = [
@@ -2915,7 +2932,10 @@ def refresh_condensed_view() -> None:
 def publish_activity_feed_view(*, to: Optional[str] = None) -> Dict[str, Any]:
     """Send one dock everything it needs: settings, view + feed, or the groups."""
     snapshot = view_manager.load()
-    load_stored_into_feed()
+    if load_stored_into_feed():
+        # Docks that asked while this load was running got the feed without the
+        # stored alerts; repaint everyone now that they are in.
+        _after_stored_loaded()
     broadcast_feed_settings(to=to)
     broadcast_activity_feed_view(snapshot, to=to, include_live_alerts=True)
     if view_mode(snapshot) == "person":

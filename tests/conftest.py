@@ -134,6 +134,16 @@ def _guarded_connect_ex(self, address):
 
 
 @pytest.fixture(autouse=True)
+def _reset_twitch_shoutout_cooldowns():
+    """Shoutout cooldowns are process-wide; one test's shoutout must not block the next."""
+    tw = sys.modules.get("modules.twitch")
+    if tw is not None and hasattr(tw, "_shoutout_last_by_target"):
+        tw._shoutout_last_any = 0.0
+        tw._shoutout_last_by_target.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_network(monkeypatch):
     monkeypatch.setattr(socket.socket, "connect", _guarded_connect)
     monkeypatch.setattr(socket.socket, "connect_ex", _guarded_connect_ex)

@@ -658,13 +658,14 @@ def test_get_data_files(root, monkeypatch, capsys, metadata):
     assert "Including package metadata: python-steam-api" in out
 
 
-def test_get_data_files_metadata_failures_are_warnings(root, monkeypatch, capsys):
+def test_get_data_files_metadata_failure_stops_the_build(root, monkeypatch, capsys):
     def boom(dist):
         raise RuntimeError("not installed")
 
     _fake_copy_metadata(monkeypatch, boom)
-    assert not [d for _, d in bld.get_data_files() if d.endswith(".dist-info")]
-    assert "could not include metadata for python-steam-api: not installed" in capsys.readouterr().out
+    # Shipping without it breaks the Steam integration on every launch.
+    with pytest.raises(SystemExit, match="could not include package metadata for python-steam-api: not installed"):
+        bld.get_data_files()
     _fake_copy_metadata(monkeypatch, None)  # PyInstaller not importable
     assert not [d for _, d in bld.get_data_files() if d.endswith(".dist-info")]
     assert "PyInstaller hooks unavailable; skipping package metadata" in capsys.readouterr().out

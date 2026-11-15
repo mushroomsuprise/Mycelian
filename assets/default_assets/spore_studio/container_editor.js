@@ -4,7 +4,11 @@
  */
 (function () {
     var Layout = window.MycelianContainerLayout;
+    var Measure = window.MycelianContainerMeasure;
     var UI = window.SporeUI;
+    /* One colour per shared space, in the order the spaces first appear. */
+    var SPACE_COLORS = ["#4fc3f7", "#ffb74d", "#ba68c8", "#81c784", "#f06292", "#ffd54f"];
+    var SIMULATE_LABELS = { empty: "Empty", half: "Half full", full: "Full" };
     var state = {
         mode: "templates",
         list: [],
@@ -18,6 +22,10 @@
         placeholders: localStorage.getItem("mycelian-container-placeholders") === "1",
         used: {},
         origins: {},
+        // Pretend sizes for "fits its content" boxes (editor only, never saved): id -> empty|half|full.
+        simulate: {},
+        explicit: Measure ? Measure.createExplicitSizes() : null,
+        flagged: [],
         dragging: false,
         known: {},
         splitPadding: {}
@@ -180,9 +188,48 @@
         return Math.max(lo, Math.min(hi, value));
     }
 
+    function slotById(id) {
+        var slots = state.model ? state.model.slots : [];
+        for (var i = 0; i < slots.length; i++) {
+            if (slots[i].id === id) { return slots[i]; }
+        }
+        return null;
+    }
+
+    /* Measured sizes, with any "Simulate" pretend sizes on top. */
+    function effectiveUsed() {
+        var used = {};
+        if (!state.placeholders) {
+            Object.keys(state.used).forEach(function (id) { used[id] = state.used[id]; });
+        }
+        Object.keys(state.simulate).forEach(function (id) {
+            var slot = slotById(id);
+            if (!slot || !slot.link || slot.link.role !== "locked") { return; }
+            var mode = state.simulate[id];
+            if (mode === "empty") {
+                used[id] = { empty: true };
+            } else if (mode === "half") {
+                used[id] = { w: Math.round(slot.w / 2), h: Math.round(slot.h / 2) };
+            } else if (mode === "full") {
+                used[id] = { w: slot.w, h: slot.h };
+            }
+        });
+        return used;
+    }
+
+    function isSimulating() {
+        return Object.keys(state.simulate).length > 0;
+    }
+
     function layoutNow() {
         if (!state.model || !Layout) { return null; }
-        return Layout.solve(state.model, state.placeholders ? null : state.used);
+        if (state.dragging) {
+            // While moving or resizing, every box shows exactly where it is drawn.
+            var drawn = JSON.parse(JSON.stringify(state.model));
+            drawn.slots.forEach(function (slot) { slot.link = null; });
+            return Layout.solve(drawn, null);
+        }
+        return Layout.solve(state.model, effectiveUsed());
     }
 
     function canvasScale() {
@@ -209,44 +256,12 @@
             "?mycelian_embed=1&mycelian_volume=" + volume + "&mycelian_muted=" + muted;
     }
 
+    /* Same measuring as the live container page (container_measure.js). */
     function measureFrame(iframe) {
-        try {
-            var doc = iframe.contentDocument;
-            if (!doc || !doc.body || !doc.defaultView) { return null; }
-            var viewW = iframe.clientWidth || iframe.offsetWidth;
-            var viewH = iframe.clientHeight || iframe.offsetHeight;
-            if (viewW < 2 || viewH < 2) { return null; }
-            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, found = false;
-            var nodes = doc.body.querySelectorAll("*");
-            for (var i = 0; i < nodes.length; i++) {
-                var node = nodes[i];
-                var cs = doc.defaultView.getComputedStyle(node);
-                if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) {
-                    continue;
-                }
-                var rect = node.getBoundingClientRect();
-                if (rect.width < 1 || rect.height < 1) { continue; }
-                if (rect.width >= viewW - 1 && rect.height >= viewH - 1) { continue; }
-                // Parked off screen (an alert waiting to slide in) doesn't count.
-                var left = Math.max(0, rect.left), top = Math.max(0, rect.top);
-                var right = Math.min(viewW, rect.right), bottom = Math.min(viewH, rect.bottom);
-                if (right - left < 1 || bottom - top < 1) { continue; }
-                found = true;
-                minX = Math.min(minX, left);
-                minY = Math.min(minY, top);
-                maxX = Math.max(maxX, right);
-                maxY = Math.max(maxY, bottom);
-            }
-            if (!found) { return null; }
-            return {
-                w: Math.ceil(maxX - minX),
-                h: Math.ceil(maxY - minY),
-                originX: minX,
-                originY: minY
-            };
-        } catch (err) {
-            return null;
-        }
+        if (!Measure) { return null; }
+        var id = iframe.getAttribute("data-slot");
+        var reported = state.explicit ? state.explicit.get(id) : null;
+        return reported || Measure.measure(iframe);
     }
 
     var measureTimer = null;
@@ -278,8 +293,12 @@
             }
             var measured = measureFrame(iframe);
             if (!measured) { continue; }
+            if (measured.empty) {
+                next[id] = { empty: true };
+                continue;
+            }
             next[id] = { w: measured.w, h: measured.h };
-            origins[id] = { x: measured.originX, y: measured.originY };
+            origins[id] = { x: measured.x, y: measured.y };
         }
         var same = JSON.stringify(next) === JSON.stringify(state.used) &&
             JSON.stringify(origins) === JSON.stringify(state.origins);
@@ -300,6 +319,8 @@
         canvas.style.width = state.model.width + "px";
         canvas.style.height = state.model.height + "px";
         canvas.style.transform = "scale(" + scale + ")";
+        // Indicator labels divide by this so they stay readable at any zoom.
+        canvas.style.setProperty("--mc-zoom", String(scale));
         canvas.style.marginRight = (state.model.width * (scale - 1)) + "px";
         canvas.style.marginBottom = (state.model.height * (scale - 1)) + "px";
         var grid = state.model.snap || 0;
@@ -308,22 +329,54 @@
         canvas.style.backgroundColor = bg;
     }
 
+    /* Briefly outline the boxes a warning is about, and select the first one. */
+    function flagSlots(ids) {
+        state.flagged = ids.slice();
+        if (ids.length) { state.selectedId = ids[0]; }
+        renderAll();
+        clearTimeout(state.flagTimer);
+        state.flagTimer = setTimeout(function () {
+            state.flagged = [];
+            renderCanvas();
+        }, 2500);
+    }
+
     function renderWarnings(layout) {
         var host = $("mc-warnings");
         if (!host) { return; }
-        var messages = (layout.warnings || []).map(function (item) { return item.message; });
+        var items = (layout.warnings || []).map(function (item) {
+            return { message: item.message, slots: item.slots || [] };
+        });
         (state.model.slots || []).forEach(function (slot) {
             if (!state.known[slot.template]) {
-                messages.push(slot.template + " was not found. Its slot will stay empty on the route.");
+                items.push({
+                    message: "“" + slot.template + "” was not found. Its box will stay empty on the route.",
+                    slots: [slot.id]
+                });
             }
         });
-        if (!messages.length) {
+        host.textContent = "";
+        if (!items.length) {
             host.hidden = true;
-            host.textContent = "";
             return;
         }
         host.hidden = false;
-        host.textContent = messages.join(" ");
+        items.forEach(function (item) {
+            var row = document.createElement("div");
+            row.className = "mc-warning";
+            var text = document.createElement("span");
+            text.textContent = item.message;
+            row.appendChild(text);
+            if (item.slots.length) {
+                var show = document.createElement("button");
+                show.type = "button";
+                show.className = "ss-btn ss-btn--ghost mc-warning__show";
+                show.textContent = item.slots.length > 1 ? "Show boxes" : "Show box";
+                show.addEventListener("click", function () { flagSlots(item.slots); });
+                row.appendChild(show);
+            }
+            host.appendChild(row);
+        });
     }
 
     /*
@@ -349,18 +402,6 @@
         var live = {};
         layout.slots.forEach(function (slot) {
             live[slot.id] = true;
-            if (slot.role === "locked") {
-                var shorter = slot.axis === "vertical" ? slot.h < slot.designated_h : slot.w < slot.designated_w;
-                if (shorter) {
-                    var ghost = document.createElement("div");
-                    ghost.className = "mc-designated";
-                    ghost.style.left = slot.x + "px";
-                    ghost.style.top = slot.y + "px";
-                    ghost.style.width = (slot.axis === "horizontal" ? slot.designated_w : slot.w) + "px";
-                    ghost.style.height = (slot.axis === "vertical" ? slot.designated_h : slot.h) + "px";
-                    canvas.appendChild(ghost);
-                }
-            }
             var el = existing[slot.id];
             if (!el) {
                 el = document.createElement("div");
@@ -421,13 +462,15 @@
                 applyFrame(frame, slot);
             }
             if (slot.id === state.selectedId) {
-                addHandles(el, slot);
+                addHandles(el);
             }
         });
         Object.keys(existing).forEach(function (id) {
             if (!live[id]) { existing[id].remove(); }
         });
         addGutters(canvas, layout);
+        addSpaceIndicators(canvas, layout);
+        renderSimulateControls();
     }
 
     function createSlotFrame(slotId, src) {
@@ -436,21 +479,14 @@
         frame.dataset.src = src;
         frame.src = src;
         frame.setAttribute("allow", "autoplay");
-        frame.addEventListener("load", function () {
-            scheduleMeasure();
-            try {
-                var doc = frame.contentDocument;
-                if (doc && doc.documentElement && window.MutationObserver) {
-                    var obs = new MutationObserver(scheduleMeasure);
-                    obs.observe(doc.documentElement, { childList: true, subtree: true, attributes: true });
-                }
-            } catch (err) { /* ignore */ }
-        });
+        if (Measure) {
+            Measure.watch(frame, scheduleMeasure);
+        }
         return frame;
     }
 
     function applyFrame(frame, slot) {
-        var origin = state.origins[slot.id] || { x: 0, y: 0 };
+        var origin = (!state.simulate[slot.id] && state.origins[slot.id]) || { x: 0, y: 0 };
         frame.style.position = "absolute";
         frame.style.border = "0";
         if (slot.fit === "scale") {
@@ -479,15 +515,9 @@
         }
     }
 
-    function addHandles(el, slot) {
-        var vertical = slot.axis === "vertical";
-        var horizontal = slot.axis === "horizontal";
-        var flex = slot.role === "flexible";
-        var dirs = ["e", "s", "se"];
-        if (!slot.axis) { dirs.push("w", "n"); }
-        if (vertical && flex) { dirs = ["e"]; }
-        if (horizontal && flex) { dirs = ["s"]; }
-        dirs.forEach(function (dir) {
+    /* Handles change the size a box is drawn at; while dragging, every box shows its drawn size. */
+    function addHandles(el) {
+        ["e", "s", "se", "w", "n"].forEach(function (dir) {
             var handle = document.createElement("div");
             handle.className = "mc-handle mc-handle--" + dir;
             handle.dataset.dir = dir;
@@ -620,7 +650,8 @@
             state.dragging = false;
             document.removeEventListener("mousemove", move);
             document.removeEventListener("mouseup", up);
-            renderInspector();
+            // Back from drawn sizes to the solved layout.
+            renderAll();
             scheduleMeasure();
         }
         document.addEventListener("mousemove", move);
@@ -649,7 +680,7 @@
             state.dragging = false;
             document.removeEventListener("mousemove", move);
             document.removeEventListener("mouseup", up);
-            renderInspector();
+            renderAll();
         }
         document.addEventListener("mousemove", move);
         document.addEventListener("mouseup", up);
@@ -792,11 +823,87 @@
         } else {
             renderSlotInspector(host, slot);
         }
+        if (window.SporeStudioTips) { window.SporeStudioTips.upgrade(host); }
+    }
+
+    /* Container settings: every shared space, with rename / select / remove. */
+    function renderSpacesList(host) {
+        groupLabel(host, "fill_space", "Shared spaces");
+        var list = spaces();
+        if (!list.length) {
+            callout(host, "Want boxes to make room for each other? Select a box (for example FF7) and pick " +
+                "“Fits its content” under Sizing. The box next to it (for example chat) is set to " +
+                "“Fills leftover space” so it shrinks when FF7 needs more room.");
+            return;
+        }
+        list.forEach(function (space) {
+            var card = document.createElement("div");
+            card.className = "mc-space-card";
+            card.style.setProperty("--mc-space-color", space.color);
+            var head = document.createElement("div");
+            head.className = "mc-space-card__head";
+            var dot = document.createElement("span");
+            dot.className = "mc-space-dot";
+            dot.style.background = space.color;
+            head.appendChild(dot);
+            var name = document.createElement("input");
+            name.type = "text";
+            name.value = space.id;
+            name.setAttribute("aria-label", "Shared space name");
+            name.addEventListener("change", function () {
+                var next = name.value.trim();
+                if (!next || next.indexOf("/") !== -1 || next.length > 64 ||
+                    (next !== space.id && linkIds().indexOf(next) !== -1)) {
+                    name.value = space.id;
+                    notify({ type: "warning", title: "Pick another name",
+                        message: "Names must be unique, up to 64 characters, without “/”." });
+                    return;
+                }
+                commit(function () {
+                    space.members.forEach(function (slot) { slot.link.id = next; });
+                });
+                renderInspector();
+            });
+            head.appendChild(name);
+            card.appendChild(head);
+            var detail = document.createElement("div");
+            detail.className = "mc-space-card__detail";
+            detail.textContent = space.members.map(function (slot) {
+                return slot.template + " (" + (roleOf(slot) === "fit" ? "fits content" : "fills leftover") + ")";
+            }).join(" → ") + " · " + directionText(space.axis);
+            card.appendChild(detail);
+            var actions = document.createElement("div");
+            actions.className = "mc-inline";
+            var select = document.createElement("button");
+            select.type = "button";
+            select.className = "ss-btn";
+            select.textContent = "Show on canvas";
+            select.addEventListener("click", function () {
+                flagSlots(space.members.map(function (slot) { return slot.id; }));
+            });
+            actions.appendChild(select);
+            var remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "ss-btn ss-btn--ghost";
+            remove.textContent = "Stop sharing";
+            remove.title = "Makes every box in this space Fixed again.";
+            remove.addEventListener("click", function () {
+                commit(function () {
+                    space.members.forEach(function (slot) {
+                        slot.link = null;
+                        delete state.simulate[slot.id];
+                    });
+                });
+                renderInspector();
+            });
+            actions.appendChild(remove);
+            card.appendChild(actions);
+            host.appendChild(card);
+        });
     }
 
     function renderContainerInspector(host) {
         inspectorHeading(host, "grid", "Container settings");
-        callout(host, "Locked templates keep the size you set and give unused space to flexible templates in the same link. Drag the bar between linked templates to space them out.");
 
         var name = document.createElement("input");
         name.type = "text";
@@ -881,7 +988,8 @@
             fieldRow(host, "Color").appendChild(buildBackgroundSwatch());
         }
 
-        var spacingRow = fieldRow(host, "Space between templates");
+        var spacingRow = fieldRow(host, "Gap between boxes in a shared space");
+        spacingRow.title = "Space left between boxes that share space. A box that has closed up takes no gap.";
         var spacing = document.createElement("input");
         spacing.type = "range";
         spacing.min = "0";
@@ -907,6 +1015,7 @@
         addCheck(host, "Enabled (show on the About page and serve the route)", state.model.enabled, function (checked) {
             state.model.enabled = checked;
         });
+        renderSpacesList(host);
     }
 
     function renderSlotInspector(host, slot) {
@@ -931,6 +1040,8 @@
             commit(function () { slot.template = picker.value; });
         });
         fieldRow(host, "Template").appendChild(picker);
+
+        renderSizingSection(host, slot);
 
         groupLabel(host, "move", "Position and size");
         var dims = document.createElement("div");
@@ -1024,96 +1135,6 @@
             slot.audio.volume = clamp(Math.round(value || 0), 0, 100);
         }, { min: 0, max: 100 });
 
-        var axis = document.createElement("select");
-        [
-            ["", "No size link"],
-            ["vertical", "Share leftover height"],
-            ["horizontal", "Share leftover width"]
-        ].forEach(function (item) {
-            var opt = document.createElement("option");
-            opt.value = item[0];
-            opt.textContent = item[1];
-            opt.selected = (slot.link ? slot.link.axis : "") === item[0];
-            axis.appendChild(opt);
-        });
-        axis.addEventListener("change", function () {
-            commit(function () {
-                if (!axis.value) {
-                    slot.link = null;
-                    return;
-                }
-                var existing = linkIds(axis.value);
-                slot.link = {
-                    id: existing[0] || freshLinkId(),
-                    axis: axis.value,
-                    role: "locked",
-                    min_px: slot.link ? slot.link.min_px : 0,
-                    min_pct: slot.link ? slot.link.min_pct : 0,
-                    max_px: slot.link ? slot.link.max_px : null,
-                    max_pct: slot.link ? slot.link.max_pct : null
-                };
-            });
-            renderInspector();
-        });
-        groupLabel(host, "link", "Size link");
-        fieldRow(host, "Size link").appendChild(axis);
-
-        if (slot.link) {
-            var group = document.createElement("select");
-            linkIds(slot.link.axis).concat(["__new__"]).forEach(function (id) {
-                var opt = document.createElement("option");
-                opt.value = id;
-                opt.textContent = id === "__new__" ? "New link" : id;
-                opt.selected = id === slot.link.id;
-                group.appendChild(opt);
-            });
-            group.addEventListener("change", function () {
-                commit(function () {
-                    slot.link.id = group.value === "__new__" ? freshLinkId() : group.value;
-                });
-                renderInspector();
-            });
-            fieldRow(host, "Link group").appendChild(group);
-
-            var role = document.createElement("select");
-            [["locked", "Locked (priority, keeps this size)"], ["flexible", "Flexible (fills leftover space)"]].forEach(function (item) {
-                var opt = document.createElement("option");
-                opt.value = item[0];
-                opt.textContent = item[1];
-                opt.selected = slot.link.role === item[0];
-                role.appendChild(opt);
-            });
-            role.addEventListener("change", function () {
-                commit(function () { slot.link.role = role.value; });
-            });
-            fieldRow(host, "Size priority").appendChild(role);
-
-            var mins = document.createElement("div");
-            mins.className = "mc-inline";
-            host.appendChild(mins);
-            addNumber(mins, "Min px", slot.link.min_px, function (value) {
-                slot.link.min_px = clamp(Math.round(value || 0), 0, 7680);
-            }, { min: 0 });
-            addNumber(mins, "Min %", slot.link.min_pct, function (value) {
-                slot.link.min_pct = clamp(Math.round(value || 0), 0, 100);
-            }, { min: 0, max: 100 });
-            var maxes = document.createElement("div");
-            maxes.className = "mc-inline";
-            host.appendChild(maxes);
-            addNumber(maxes, "Max px", slot.link.max_px, function (value) {
-                slot.link.max_px = value == null || value === "" ? null : clamp(Math.round(value), 0, 7680);
-            }, { min: 0 });
-            addNumber(maxes, "Max %", slot.link.max_pct, function (value) {
-                slot.link.max_pct = value == null || value === "" ? null : clamp(Math.round(value), 0, 100);
-            }, { min: 0, max: 100 });
-
-            var order = document.createElement("div");
-            order.className = "mc-inline";
-            host.appendChild(order);
-            order.appendChild(actionButton("Move up in stack", function () { nudgeOrder(-1); }));
-            order.appendChild(actionButton("Move down in stack", function () { nudgeOrder(1); }));
-        }
-
         groupLabel(host, "layers", "Stacking");
         var layer = document.createElement("div");
         layer.className = "mc-inline";
@@ -1127,6 +1148,550 @@
         });
         remove.classList.add("ss-btn--danger", "ss-btn--block");
         host.appendChild(remove);
+    }
+
+    /* ---------------------------------------------------------------- shared spaces */
+
+    function roleOf(slot) {
+        if (!slot.link) { return "fixed"; }
+        return slot.link.role === "locked" ? "fit" : "fill";
+    }
+
+    /** Shared spaces in the order they first appear: {id, axis, color, members (in stack order)}. */
+    function spaces() {
+        var out = [];
+        var byId = {};
+        (state.model ? state.model.slots : []).forEach(function (slot) {
+            if (!slot.link) { return; }
+            var space = byId[slot.link.id];
+            if (!space) {
+                space = { id: slot.link.id, axis: slot.link.axis, members: [] };
+                space.color = SPACE_COLORS[out.length % SPACE_COLORS.length];
+                byId[slot.link.id] = space;
+                out.push(space);
+            }
+            space.members.push(slot);
+        });
+        out.forEach(function (space) {
+            space.members.sort(function (a, b) {
+                return space.axis === "vertical" ? a.y - b.y : a.x - b.x;
+            });
+        });
+        return out;
+    }
+
+    function spaceById(id) {
+        var list = spaces();
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].id === id) { return list[i]; }
+        }
+        return null;
+    }
+
+    function directionText(axis) {
+        return axis === "horizontal" ? "left to right" : "top to bottom";
+    }
+
+    function limitText(px, pct) {
+        if (pct) { return pct + "% of the space"; }
+        return px + "px";
+    }
+
+    function namesOf(slots) {
+        var names = slots.map(function (slot) { return "“" + slot.template + "”"; });
+        if (names.length <= 1) { return names.join(""); }
+        return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+    }
+
+    /** One plain sentence saying what will happen to this box. */
+    function sizingSummary(slot) {
+        var role = roleOf(slot);
+        var name = "“" + slot.template + "”";
+        if (role === "fixed") {
+            return name + " stays exactly where and how big you drew it.";
+        }
+        var space = spaceById(slot.link.id);
+        var others = space ? space.members.filter(function (item) { return item !== slot; }) : [];
+        var link = slot.link;
+        var minText = (link.min_px || link.min_pct) ? limitText(link.min_px, link.min_pct) : "";
+        var maxText = (link.max_px != null || link.max_pct != null)
+            ? limitText(link.max_px != null ? link.max_px : 0, link.max_pct) : "";
+        if (role === "fit") {
+            var parts = [name + " grows and shrinks with what it is showing, up to the size you drew it" +
+                (maxText ? " (and never past " + maxText + ")" : "") + "."];
+            if (link.when_empty === "keep") {
+                parts.push("When it shows nothing it keeps its drawn size.");
+            } else {
+                parts.push("When it shows nothing it closes" + (minText ? " down to " + minText : "") + ".");
+            }
+            var fillers = others.filter(function (item) { return roleOf(item) === "fill"; });
+            if (fillers.length) {
+                parts.push(namesOf(fillers) + (fillers.length > 1 ? " get" : " gets") + " the space it isn't using.");
+            } else {
+                parts.push("Add a “Fills leftover space” box to this shared space to use the room it frees up.");
+            }
+            return parts.join(" ");
+        }
+        var fits = others.filter(function (item) { return roleOf(item) === "fit"; });
+        var sentence = fits.length
+            ? name + " takes the space " + namesOf(fits) + (fits.length > 1 ? " aren't" : " isn't") + " using"
+            : name + " shares the space with the other boxes in it";
+        if (minText) { sentence += ", never smaller than " + minText; }
+        if (maxText) { sentence += ", never bigger than " + maxText; }
+        return sentence + ". When space is tight its picture is cropped (the template sees a smaller window and re-flows).";
+    }
+
+    function freshSpaceId() {
+        var n = 1;
+        var ids = linkIds();
+        while (ids.indexOf("Space " + n) !== -1) { n += 1; }
+        return "Space " + n;
+    }
+
+    /**
+     * The box this one most likely stacks with: the nearest box above/below it in the
+     * same column, or left/right of it in the same row.
+     */
+    function stackNeighbour(slot) {
+        var best = null;
+        (state.model.slots || []).forEach(function (other) {
+            if (other === slot) { return; }
+            var colOverlap = Math.min(slot.x + slot.w, other.x + other.w) - Math.max(slot.x, other.x);
+            var rowOverlap = Math.min(slot.y + slot.h, other.y + other.h) - Math.max(slot.y, other.y);
+            var candidates = [];
+            if (colOverlap > 0) {
+                candidates.push({ axis: "vertical", gap: Math.max(other.y - (slot.y + slot.h), slot.y - (other.y + other.h), 0) });
+            }
+            if (rowOverlap > 0) {
+                candidates.push({ axis: "horizontal", gap: Math.max(other.x - (slot.x + slot.w), slot.x - (other.x + other.w), 0) });
+            }
+            candidates.forEach(function (item) {
+                // Prefer a box already in a space, then the closest.
+                var score = item.gap - (other.link ? 0.5 : 0);
+                if (!best || score < best.score) {
+                    best = { other: other, axis: other.link ? other.link.axis : item.axis, score: score };
+                }
+            });
+        });
+        return best;
+    }
+
+    function newLink(id, axis, role, from) {
+        return {
+            id: id,
+            axis: axis,
+            role: role,
+            when_empty: from && from.when_empty ? from.when_empty : "collapse",
+            min_px: from ? from.min_px || 0 : 0,
+            min_pct: from ? from.min_pct || 0 : 0,
+            max_px: from && from.max_px != null ? from.max_px : null,
+            max_pct: from && from.max_pct != null ? from.max_pct : null
+        };
+    }
+
+    /** Switch a box between Fixed / Fits its content / Fills leftover space. */
+    function setRole(slot, role) {
+        var note = "";
+        commit(function () {
+            if (role === "fixed") {
+                slot.link = null;
+                delete state.simulate[slot.id];
+                return;
+            }
+            var linkRole = role === "fit" ? "locked" : "flexible";
+            if (slot.link) {
+                slot.link.role = linkRole;
+                if (linkRole !== "locked") { delete state.simulate[slot.id]; }
+                return;
+            }
+            var near = stackNeighbour(slot);
+            if (near && near.other.link) {
+                slot.link = newLink(near.other.link.id, near.other.link.axis, linkRole);
+            } else if (near) {
+                // Pair it with the box next to it: one fits its content, the other fills the rest.
+                var id = freshSpaceId();
+                slot.link = newLink(id, near.axis, linkRole);
+                near.other.link = newLink(id, near.axis, linkRole === "locked" ? "flexible" : "locked");
+                note = "“" + near.other.template + "” joined this shared space as “" +
+                    (linkRole === "locked" ? "Fills leftover space" : "Fits its content") + "”.";
+            } else {
+                slot.link = newLink(freshSpaceId(), "vertical", linkRole);
+            }
+        });
+        state.sizingNote = note;
+        renderInspector();
+    }
+
+    function segmented(options, current, onPick) {
+        var wrap = document.createElement("div");
+        wrap.className = "mc-seg";
+        wrap.setAttribute("role", "radiogroup");
+        options.forEach(function (opt) {
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "mc-seg__opt" + (opt.value === current ? " is-on" : "");
+            button.setAttribute("role", "radio");
+            button.setAttribute("aria-checked", opt.value === current ? "true" : "false");
+            button.dataset.value = opt.value;
+            if (opt.icon) { button.innerHTML = UI.icon(opt.icon); }
+            var label = document.createElement("span");
+            label.textContent = opt.label;
+            button.appendChild(label);
+            if (opt.tip) { button.title = opt.tip; }
+            if (opt.disabled) {
+                button.disabled = true;
+                button.classList.add("is-disabled");
+            }
+            button.addEventListener("click", function () {
+                if (!opt.disabled && opt.value !== current) { onPick(opt.value); }
+            });
+            wrap.appendChild(button);
+        });
+        return wrap;
+    }
+
+    /** Number + px/% toggle for a minimum or maximum. ``which`` is "min" or "max". */
+    function limitField(host, slot, which, label, hint) {
+        var link = slot.link;
+        var pctKey = which + "_pct";
+        var pxKey = which + "_px";
+        var usePct = !!link[pctKey];
+        var row = fieldRow(host, label);
+        row.classList.add("mc-limit");
+        if (hint) { row.title = hint; }
+        var input = document.createElement("input");
+        input.type = "number";
+        input.min = "0";
+        input.max = usePct ? "100" : "7680";
+        input.placeholder = which === "max" ? "none" : "0";
+        var value = usePct ? link[pctKey] : link[pxKey];
+        if (which === "min") {
+            input.value = String(value || 0);
+        } else {
+            input.value = value == null ? "" : String(value);
+        }
+        var unit = document.createElement("select");
+        unit.className = "mc-unit";
+        [["px", "px"], ["pct", "% of space"]].forEach(function (item) {
+            var opt = document.createElement("option");
+            opt.value = item[0];
+            opt.textContent = item[1];
+            opt.selected = (item[0] === "pct") === usePct;
+            unit.appendChild(opt);
+        });
+        function apply() {
+            var raw = input.value === "" ? null : Math.round(Number(input.value) || 0);
+            var pct = unit.value === "pct";
+            commit(function () {
+                if (which === "min") {
+                    link.min_px = pct ? 0 : clamp(raw || 0, 0, 7680);
+                    link.min_pct = pct ? clamp(raw || 0, 0, 100) : 0;
+                } else {
+                    link.max_px = pct || raw == null ? null : clamp(raw, 0, 7680);
+                    link.max_pct = !pct || raw == null ? null : clamp(raw, 0, 100);
+                }
+            });
+            renderInspector();
+        }
+        input.addEventListener("change", apply);
+        unit.addEventListener("change", apply);
+        row.appendChild(input);
+        row.appendChild(unit);
+        return row;
+    }
+
+    function renderSizingSection(host, slot) {
+        groupLabel(host, "fill_space", "Sizing");
+        var role = roleOf(slot);
+        var scaled = slot.fit === "scale";
+        host.appendChild(segmented([
+            { value: "fixed", icon: "pin", label: "Fixed", tip: "Never changes size or position." },
+            {
+                value: "fit", icon: "fit_content", label: "Fits its content",
+                tip: scaled
+                    ? "Not available while Fit is “Scale from design size”: a scaled template can't be measured."
+                    : "Grows and shrinks with what the template is showing right now, up to the size you drew. Good for FF7, alerts or a goal bar.",
+                disabled: scaled && role !== "fit"
+            },
+            {
+                value: "fill", icon: "fill_space", label: "Fills leftover space",
+                tip: "Gets whatever room the “Fits its content” boxes don't use. Good for chat."
+            }
+        ], role, function (value) { setRole(slot, value); }));
+
+        var summary = document.createElement("p");
+        summary.className = "mc-summary";
+        summary.textContent = sizingSummary(slot);
+        host.appendChild(summary);
+        if (state.sizingNote) {
+            var note = document.createElement("p");
+            note.className = "mc-summary mc-summary--note";
+            note.textContent = state.sizingNote;
+            host.appendChild(note);
+            state.sizingNote = "";
+        }
+        if (role === "fixed") { return; }
+
+        var current = spaceById(slot.link.id);
+        var spaceRow = fieldRow(host, "Shares space with");
+        var pick = document.createElement("select");
+        pick.className = "mc-space-pick";
+        spaces().forEach(function (space) {
+            var opt = document.createElement("option");
+            opt.value = space.id;
+            var others = space.members.filter(function (item) { return item !== slot; })
+                .map(function (item) { return item.template; });
+            opt.textContent = "● " + space.id + (others.length ? " – " + others.join(", ") : " (just this box)");
+            opt.style.color = space.color;
+            opt.selected = space.id === slot.link.id;
+            pick.appendChild(opt);
+        });
+        var fresh = document.createElement("option");
+        fresh.value = "__new__";
+        fresh.textContent = "+ New shared space";
+        pick.appendChild(fresh);
+        pick.addEventListener("change", function () {
+            commit(function () {
+                if (pick.value === "__new__") {
+                    slot.link.id = freshSpaceId();
+                } else {
+                    var target = spaceById(pick.value);
+                    slot.link.id = pick.value;
+                    if (target) { slot.link.axis = target.axis; }
+                }
+            });
+            renderInspector();
+        });
+        spaceRow.appendChild(pick);
+        if (current) {
+            var swatch = document.createElement("span");
+            swatch.className = "mc-space-dot";
+            swatch.style.background = current.color;
+            spaceRow.insertBefore(swatch, pick);
+        }
+
+        var dirRow = fieldRow(host, "Boxes stack");
+        var dir = document.createElement("select");
+        [["vertical", "Top to bottom"], ["horizontal", "Left to right"]].forEach(function (item) {
+            var opt = document.createElement("option");
+            opt.value = item[0];
+            opt.textContent = item[1];
+            opt.selected = slot.link.axis === item[0];
+            dir.appendChild(opt);
+        });
+        dir.addEventListener("change", function () {
+            commit(function () {
+                var id = slot.link.id;
+                state.model.slots.forEach(function (item) {
+                    if (item.link && item.link.id === id) { item.link.axis = dir.value; }
+                });
+            });
+            renderInspector();
+        });
+        dirRow.appendChild(dir);
+
+        var limits = document.createElement("div");
+        limits.className = "mc-limits";
+        host.appendChild(limits);
+        limitField(limits, slot, "min", "Never smaller than",
+            "The smallest this box can get. % is a share of the whole shared space.");
+        limitField(limits, slot, "max", "Never bigger than",
+            role === "fit"
+                ? "Optional. It never grows past the size you drew it anyway."
+                : "Optional. Leave empty to let it take all the leftover space.");
+
+        if (role === "fit") {
+            var emptyRow = fieldRow(host, "When nothing shows");
+            var whenEmpty = document.createElement("select");
+            [["collapse", "Close up (down to its minimum)"], ["keep", "Keep its drawn size"]].forEach(function (item) {
+                var opt = document.createElement("option");
+                opt.value = item[0];
+                opt.textContent = item[1];
+                opt.selected = (slot.link.when_empty || "collapse") === item[0];
+                whenEmpty.appendChild(opt);
+            });
+            whenEmpty.addEventListener("change", function () {
+                commit(function () { slot.link.when_empty = whenEmpty.value; });
+                renderInspector();
+            });
+            emptyRow.appendChild(whenEmpty);
+
+            var simRow = fieldRow(host, "Preview as");
+            simRow.title = "Pretend this template is showing nothing, some or all of its content to see how the other boxes react. Only in the editor; nothing is saved.";
+            simRow.appendChild(segmented([
+                { value: "live", label: "Live" },
+                { value: "empty", label: "Empty" },
+                { value: "half", label: "Half" },
+                { value: "full", label: "Full" }
+            ], state.simulate[slot.id] || "live", function (value) {
+                setSimulate(slot.id, value);
+            }));
+        }
+
+        if (current && current.members.length > 1) {
+            var order = document.createElement("div");
+            order.className = "mc-inline";
+            host.appendChild(order);
+            order.appendChild(actionButton("Move up in stack", function () { nudgeOrder(-1); }));
+            order.appendChild(actionButton("Move down in stack", function () { nudgeOrder(1); }));
+        }
+    }
+
+    /* ---------------------------------------------------------------- simulate */
+
+    function setSimulate(id, mode) {
+        if (!mode || mode === "live") {
+            delete state.simulate[id];
+        } else {
+            state.simulate[id] = mode;
+        }
+        renderAll();
+    }
+
+    /** Toolbar: pretend every "fits its content" box is empty / full, or go back to live. */
+    function setSimulateAll(mode) {
+        state.simulate = {};
+        if (mode && mode !== "live" && state.model) {
+            state.model.slots.forEach(function (slot) {
+                if (roleOf(slot) === "fit") { state.simulate[slot.id] = mode; }
+            });
+        }
+        renderAll();
+    }
+
+    function clearSimulate() {
+        state.simulate = {};
+    }
+
+    function renderSimulateControls() {
+        var select = $("mc-simulate");
+        var chip = $("mc-simulating");
+        var fits = state.model ? state.model.slots.filter(function (slot) { return roleOf(slot) === "fit"; }) : [];
+        if (select) {
+            select.disabled = !fits.length;
+            var modes = fits.map(function (slot) { return state.simulate[slot.id] || "live"; });
+            var same = modes.length && modes.every(function (m) { return m === modes[0]; });
+            select.value = !isSimulating() ? "live" : (same ? modes[0] : "mixed");
+        }
+        if (chip) {
+            chip.hidden = !isSimulating();
+            var label = chip.querySelector(".mc-simulating__text");
+            if (label) {
+                var names = Object.keys(state.simulate).map(function (id) {
+                    var slot = slotById(id);
+                    return slot ? slot.template + ": " + SIMULATE_LABELS[state.simulate[id]] : "";
+                }).filter(function (s) { return !!s; });
+                label.textContent = "Previewing pretend sizes (" + names.join(", ") + ") – not saved";
+            }
+        }
+    }
+
+    /* ---------------------------------------------------------------- canvas indicators */
+
+    function indicator(canvas, className, rect, text) {
+        var el = document.createElement("div");
+        el.className = className;
+        el.style.left = rect.x + "px";
+        el.style.top = rect.y + "px";
+        el.style.width = Math.max(0, rect.w) + "px";
+        el.style.height = Math.max(0, rect.h) + "px";
+        if (text) { el.setAttribute("data-label", text); }
+        canvas.appendChild(el);
+        return el;
+    }
+
+    /**
+     * Editor-only drawings: each shared space's area, a badge on every box, the drawn
+     * size and minimum of boxes in a space, and arrows where boxes give and take space.
+     */
+    function addSpaceIndicators(canvas, layout) {
+        if (state.dragging) { return; }
+        var solved = {};
+        layout.slots.forEach(function (slot) { solved[slot.id] = slot; });
+        layout.slots.forEach(function (slot) {
+            var el = canvas.querySelector('.mc-slot[data-slot="' + slot.id + '"]');
+            if (!el) { return; }
+            var model = slotById(slot.id);
+            var role = model ? roleOf(model) : "fixed";
+            var badge = el.querySelector(".mc-badge");
+            if (!badge) {
+                badge = document.createElement("div");
+                el.appendChild(badge);
+            }
+            badge.className = "mc-badge mc-badge--" + role + (state.simulate[slot.id] ? " is-simulated" : "");
+            var text = { fixed: "Fixed", fit: "Fits content", fill: "Fills leftover" }[role];
+            if (state.simulate[slot.id]) { text += " · pretend " + SIMULATE_LABELS[state.simulate[slot.id]].toLowerCase(); }
+            badge.innerHTML = UI.icon({ fixed: "pin", fit: "fit_content", fill: "fill_space" }[role]);
+            var span = document.createElement("span");
+            span.textContent = text;
+            badge.appendChild(span);
+            var space = model && model.link ? spaceById(model.link.id) : null;
+            if (space) { badge.style.borderColor = space.color; } else { badge.style.borderColor = ""; }
+            el.classList.toggle("is-flagged", state.flagged.indexOf(slot.id) !== -1);
+        });
+
+        spaces().forEach(function (space) {
+            var extent = Layout.groupExtent ? Layout.groupExtent(space.members, space.axis) : null;
+            if (!extent) { return; }
+            var crossStart = Infinity;
+            var crossEnd = -Infinity;
+            space.members.forEach(function (slot) {
+                var a = space.axis === "vertical" ? slot.x : slot.y;
+                var b = a + (space.axis === "vertical" ? slot.w : slot.h);
+                crossStart = Math.min(crossStart, a);
+                crossEnd = Math.max(crossEnd, b);
+            });
+            var area = space.axis === "vertical"
+                ? { x: crossStart, y: extent[0], w: crossEnd - crossStart, h: extent[1] }
+                : { x: extent[0], y: crossStart, w: extent[1], h: crossEnd - crossStart };
+            var outline = indicator(canvas, "mc-space", area, space.id + " · " + directionText(space.axis));
+            outline.style.setProperty("--mc-space-color", space.color);
+
+            space.members.forEach(function (model, index) {
+                var slot = solved[model.id];
+                if (!slot) { return; }
+                var vertical = space.axis === "vertical";
+                var size = vertical ? slot.h : slot.w;
+                var drawn = vertical ? model.h : model.w;
+                var link = model.link;
+                if (roleOf(model) === "fit" && size < drawn) {
+                    indicator(canvas, "mc-designated", {
+                        x: slot.x, y: slot.y,
+                        w: vertical ? slot.w : drawn,
+                        h: vertical ? drawn : slot.h
+                    }, "can grow to " + drawn + "px (drawn size)");
+                }
+                if (roleOf(model) === "fill") {
+                    var min = Math.max(link.min_px || 0, Math.round(extent[1] * (link.min_pct || 0) / 100));
+                    if (min > 0 && min < size) {
+                        indicator(canvas, "mc-min-line" + (vertical ? "" : " mc-min-line--h"), vertical
+                            ? { x: slot.x, y: slot.y + min, w: slot.w, h: 0 }
+                            : { x: slot.x + min, y: slot.y, w: 0, h: slot.h }, "min " + min + "px");
+                    }
+                    if (size < drawn) {
+                        var crop = indicator(canvas, "mc-crop" + (vertical ? "" : " mc-crop--h"), vertical
+                            ? { x: slot.x, y: slot.y + size - 6, w: slot.w, h: 6 }
+                            : { x: slot.x + size - 6, y: slot.y, w: 6, h: slot.h }, "");
+                        crop.title = "Cropped: " + size + "px of the " + drawn + "px it was drawn at";
+                    }
+                }
+                var next = space.members[index + 1];
+                var nextSlot = next ? solved[next.id] : null;
+                if (nextSlot) {
+                    var giver = roleOf(model) === "fit" ? model : (roleOf(next) === "fit" ? next : null);
+                    var taker = giver === model ? next : model;
+                    var edge = vertical
+                        ? { x: slot.x + slot.w / 2 - 11, y: (slot.y + slot.h + nextSlot.y) / 2 - 11, w: 22, h: 22 }
+                        : { x: (slot.x + slot.w + nextSlot.x) / 2 - 11, y: slot.y + slot.h / 2 - 11, w: 22, h: 22 };
+                    var arrow = indicator(canvas, "mc-flow" + (vertical ? "" : " mc-flow--h"), edge, "");
+                    arrow.style.setProperty("--mc-space-color", space.color);
+                    arrow.textContent = vertical ? "↕" : "↔";
+                    arrow.title = giver
+                        ? "“" + taker.template + "” gets the room “" + giver.template + "” isn't using."
+                        : "These boxes share the leftover space.";
+                }
+            });
+        });
     }
 
     function actionButton(label, fn) {
@@ -1149,13 +1714,6 @@
             if (ids.indexOf(slot.link.id) === -1) { ids.push(slot.link.id); }
         });
         return ids;
-    }
-
-    function freshLinkId() {
-        var n = 1;
-        var ids = linkIds();
-        while (ids.indexOf("link" + n) !== -1) { n += 1; }
-        return "link" + n;
     }
 
     function allTemplateNames() {
@@ -1259,6 +1817,7 @@
             state.dirty = false;
             state.used = {};
             state.origins = {};
+            clearSimulate();
             state.savedSnap = JSON.stringify(model);
             state.history = [];
             state.future = [];
@@ -1285,6 +1844,7 @@
             state.savedSnap = JSON.stringify(body.container);
             if (JSON.stringify(state.model) === sent) {
                 state.model = body.container;
+                clearSimulate();
                 state.dirty = false;
                 state.history = [];
                 state.future = [];
@@ -1604,6 +2164,7 @@
     /* Go back to the saved copy, so discarded edits don't come back later. */
     function discardContainerEdits() {
         state.model = state.savedSnap ? JSON.parse(state.savedSnap) : null;
+        clearSimulate();
         state.history = [];
         state.future = [];
         if (state.selectedId && !selectedSlot()) { state.selectedId = null; }
@@ -1728,6 +2289,20 @@
             }
         });
         $("mc-template-search").addEventListener("input", renderPalette);
+        var simulate = $("mc-simulate");
+        if (simulate) {
+            simulate.addEventListener("change", function () { setSimulateAll(simulate.value); });
+        }
+        var backToLive = $("mc-btn-simulate-live");
+        if (backToLive) {
+            backToLive.addEventListener("click", function () { setSimulateAll("live"); });
+        }
+        // Templates may report their own content size (see container_measure.js).
+        window.addEventListener("message", function (ev) {
+            if (!state.explicit) { return; }
+            var frames = Array.prototype.slice.call(document.querySelectorAll("#mc-canvas iframe[data-slot]"));
+            if (state.explicit.handle(ev, frames)) { scheduleMeasure(); }
+        });
         var canvas = $("mc-canvas");
         canvas.addEventListener("dragover", function (ev) { ev.preventDefault(); });
         canvas.addEventListener("drop", function (ev) {

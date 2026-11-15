@@ -169,10 +169,14 @@ def _normalize_link(raw: Any) -> Optional[Dict[str, Any]]:
     role = raw.get("role") or "flexible"
     if role not in ("locked", "flexible"):
         raise ContainerError("Size link role must be locked or flexible.")
+    when_empty = raw.get("when_empty") or "collapse"
+    if when_empty not in ("collapse", "keep"):
+        raise ContainerError("When nothing shows must be collapse or keep.")
     return {
         "id": link_id,
         "axis": axis,
         "role": role,
+        "when_empty": when_empty,
         "min_px": _as_int(raw.get("min_px"), 0, 0, _MAX_CANVAS_W, "Minimum px"),
         "min_pct": _as_int(raw.get("min_pct"), 0, 0, 100, "Minimum percent"),
         "max_px": _optional_int(raw.get("max_px"), 0, _MAX_CANVAS_W, "Maximum px"),
@@ -532,7 +536,8 @@ def _designated(slot: Dict[str, Any], axis: str) -> int:
 def _measured_content(
     slot: Dict[str, Any], axis: str, used: Optional[Dict[str, Any]]
 ) -> Optional[float]:
-    """Content size along ``axis``, or None when the slot fills its box."""
+    """Content size along ``axis``: 0 when the template shows nothing, None
+    when it hasn't been measured (the slot then keeps its drawn size)."""
     if slot.get("fit") == "scale":
         return None
     if not used:
@@ -540,13 +545,8 @@ def _measured_content(
     entry = used.get(slot["id"])
     if not isinstance(entry, dict):
         return None
-    if entry.get("explicit"):
-        key = "h" if axis == "vertical" else "w"
-        try:
-            return float(entry[key])
-        except (KeyError, TypeError, ValueError):
-            return None
-    # Only locked native slots report a scanned used size. Missing means fill.
+    if entry.get("empty"):
+        return 0.0
     key = "h" if axis == "vertical" else "w"
     if key not in entry or entry[key] is None:
         return None
@@ -573,11 +573,13 @@ def _locked_outer(
     before, after = _axis_pads(slot, axis)
     content_cap = max(0, designated - before - after)
     measured = _measured_content(slot, axis, used)
-    if measured is None:
-        content = content_cap
+    if measured is None or (measured <= 0 and link.get("when_empty") == "keep"):
+        outer = _outer_from_content(slot, axis, content_cap)
+    elif measured <= 0:
+        # Nothing showing: the box closes completely (padding too), down to its minimum.
+        outer = 0
     else:
-        content = min(content_cap, max(0.0, measured))
-    outer = _outer_from_content(slot, axis, content)
+        outer = _outer_from_content(slot, axis, min(content_cap, measured))
     lo = _eff_min(link, span)
     hi = designated
     cap = _eff_max(link, span)
@@ -588,14 +590,58 @@ def _locked_outer(
             {
                 "code": "min_above_designated",
                 "link": link["id"],
+                "slots": [slot["id"]],
                 "message": (
-                    "A locked template's minimum is larger than its designated "
-                    "size. The designated size is kept."
+                    f"In shared space \u201c{link['id']}\u201d, the minimum of "
+                    f"\u201c{slot['template']}\u201d is bigger than the size it was "
+                    "drawn at, so it stays at its drawn size."
                 ),
             }
         )
         return hi
     return max(lo, min(hi, outer))
+
+
+def _group_extent(members: List[Dict[str, Any]], axis: str) -> Tuple[int, int]:
+    """Start and length of the area a shared space's boxes were drawn in."""
+    if axis == "vertical":
+        start = min(int(slot["y"]) for slot in members)
+        end = max(int(slot["y"]) + int(slot["h"]) for slot in members)
+    else:
+        start = min(int(slot["x"]) for slot in members)
+        end = max(int(slot["x"]) + int(slot["w"]) for slot in members)
+    return start, max(0, end - start)
+
+
+def _warn_group_alignment(
+    link_id: str,
+    members: List[Dict[str, Any]],
+    axis: str,
+    warnings: List[Dict[str, Any]],
+) -> None:
+    """Boxes stacked in one shared space should overlap across the stack."""
+    for prev, nxt in zip(members, members[1:]):
+        if axis == "vertical":
+            a0, a1 = int(prev["x"]), int(prev["x"]) + int(prev["w"])
+            b0, b1 = int(nxt["x"]), int(nxt["x"]) + int(nxt["w"])
+            word = "column"
+        else:
+            a0, a1 = int(prev["y"]), int(prev["y"]) + int(prev["h"])
+            b0, b1 = int(nxt["y"]), int(nxt["y"]) + int(nxt["h"])
+            word = "row"
+        if min(a1, b1) <= max(a0, b0):
+            warnings.append(
+                {
+                    "code": "not_aligned",
+                    "link": link_id,
+                    "slots": [slot["id"] for slot in members],
+                    "message": (
+                        f"The boxes in shared space \u201c{link_id}\u201d aren't in the "
+                        f"same {word}. Line them up so they stack."
+                    ),
+                }
+            )
+            return
 
 
 def _split_int(total: int, weights: List[Tuple[str, int]]) -> Dict[str, int]:
@@ -748,7 +794,6 @@ def solve_layout(
 
     for link_id, members in groups.items():
         axis = members[0]["link"]["axis"]
-        span = int(model["height"] if axis == "vertical" else model["width"])
         members = sorted(
             members,
             key=lambda slot: (
@@ -756,9 +801,25 @@ def solve_layout(
                 slot["id"],
             ),
         )
+        # A shared space covers only the area its boxes were drawn in.
+        start, span = _group_extent(members, axis)
+        _warn_group_alignment(link_id, members, axis, warnings)
         locked_sizes: Dict[str, int] = {}
         flexible: List[Dict[str, Any]] = []
         for slot in members:
+            if slot["link"]["role"] == "locked" and slot.get("fit") == "scale":
+                warnings.append(
+                    {
+                        "code": "fit_scale_in_group",
+                        "link": link_id,
+                        "slots": [slot["id"]],
+                        "message": (
+                            f"\u201c{slot['template']}\u201d is set to scale from its "
+                            "design size, so it can't fit its content. It keeps the "
+                            "size it was drawn at."
+                        ),
+                    }
+                )
             if slot["link"]["role"] == "locked":
                 locked_sizes[slot["id"]] = _locked_outer(
                     slot, axis, span, used, warnings
@@ -773,7 +834,9 @@ def solve_layout(
                         "max": _eff_max(slot["link"], span),
                     }
                 )
-        gap_total = spacing * max(0, len(members) - 1)
+        # Closed (0px) boxes take no gap either.
+        open_count = len(flexible) + sum(1 for size in locked_sizes.values() if size > 0)
+        gap_total = spacing * max(0, open_count - 1)
         remaining = span - gap_total - sum(locked_sizes.values())
         flex_sizes, overflow = _distribute_flexible(remaining, flexible)
         if overflow or remaining < 0:
@@ -781,15 +844,20 @@ def solve_layout(
                 {
                     "code": "min_overflow",
                     "link": link_id,
+                    "slots": [slot["id"] for slot in members],
                     "message": (
-                        "Minimum sizes are larger than the canvas, so this "
-                        "link overflows."
+                        f"The boxes in shared space \u201c{link_id}\u201d need more room "
+                        "than the space has (their minimum sizes add up to more), so "
+                        "they spill past it. Lower a minimum or make the space bigger."
                     ),
                 }
             )
-        cursor = 0
-        for index, slot in enumerate(members):
+        cursor = start
+        placed_any = False
+        for slot in members:
             size = locked_sizes.get(slot["id"], flex_sizes.get(slot["id"], 0))
+            if size > 0 and placed_any:
+                cursor += spacing
             if axis == "vertical":
                 solved[slot["id"]] = {
                     "x": int(slot["x"]),
@@ -805,8 +873,8 @@ def solve_layout(
                     "h": int(slot["h"]),
                 }
             cursor += int(size)
-            if index < len(members) - 1:
-                cursor += spacing
+            if size > 0:
+                placed_any = True
 
     resolved_slots: List[Dict[str, Any]] = []
     for slot in model["slots"]:
@@ -990,6 +1058,7 @@ def render_shell(container: Dict[str, Any]) -> str:
         f'<div id="mc-container">{"".join(slot_html)}</div>',
         f'<script id="mc-container-data" type="application/json">{data}</script>',
         '<script src="/assets/default_assets/spore_studio/container_layout.js"></script>',
+        '<script src="/assets/default_assets/spore_studio/container_measure.js"></script>',
         '<script src="/assets/default_assets/spore_studio/container_shell.js"></script>',
         "</body></html>",
     ]
