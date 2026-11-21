@@ -338,6 +338,52 @@ def test_top_level_in_spawn_child_skips_handlers_and_ssl(env):
     assert ns["_IS_SPAWN_CHILD"] is True
     assert env.mod("modules.ssl_certs").ensure_ssl_certificates.calls == []
     assert env.signals.calls == [] and env.atexit.calls == []
+    assert "_api_usage" not in ns  # no requests/aiohttp hooks in the webview or tray child
+    (args, kwargs), = env.basic_config.calls
+    assert kwargs["handlers"][0].trim is False  # only the main process trims the shared log
+
+
+def test_app_process_installs_http_hooks_and_trims(env):
+    ns = env.run()
+    assert "_api_usage" in ns
+    (args, kwargs), = env.basic_config.calls
+    assert kwargs["handlers"][0].trim is True
+
+
+def test_no_console_handler_without_stderr(env):
+    env.stderr = None  # windowed frozen build
+    env.run()
+    (args, kwargs), = env.basic_config.calls
+    assert [type(h).__name__ for h in kwargs["handlers"]] == ["CappedFileHandler"]
+
+
+def test_capped_handler_checks_the_real_size_only_near_the_cap(env, monkeypatch):
+    ns = env.run()
+    path = env.tmp / "a.log"
+    handler = ns["CappedFileHandler"](path, max_bytes=10_000, keep_bytes=100)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    sizes = []
+    real = os.path.getsize
+    monkeypatch.setattr(os.path, "getsize", lambda p: sizes.append(p) or real(p))
+    try:
+        for i in range(50):
+            handler.emit(_record(f"message {i:03d}"))
+        assert len(sizes) == 1  # the first record reads the size, the rest add to it
+    finally:
+        handler.close()
+
+
+def test_child_handler_never_trims(env):
+    ns = env.run()
+    path = env.tmp / "shared.log"
+    path.write_bytes(b"x" * 1000)
+    handler = ns["CappedFileHandler"](path, max_bytes=100, keep_bytes=50, trim=False)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    try:
+        handler.emit(_record("child line"))
+        assert path.stat().st_size > 1000
+    finally:
+        handler.close()
 
 
 def test_profile_owner_pid_is_kept_when_already_set(env):

@@ -381,6 +381,18 @@ def test_connect_other_errors(monkeypatch, exc_cls, isolate):
     assert isolate.notes.forbidden == []
 
 
+def test_repeated_unexpected_connect_error_logs_one_traceback(monkeypatch, isolate, caplog):
+    api = FakeAPI()
+    api.me_exc = RuntimeError("sony 503")
+    monkeypatch.setattr(psnapi, "PSNAWP", APIFactory(api))
+    c = psnapi.PSNClient("tok")
+    for _ in range(3):
+        assert c.connect() is False
+    tracebacks = [r for r in caplog.records if r.exc_info]
+    assert len(tracebacks) == 1
+    assert caplog.text.count("PSN connection failed again: RuntimeError: sony 503") == 2
+
+
 def test_connect_forbidden_notifies(monkeypatch, isolate):
     monkeypatch.setattr(psnapi, "PSNAWP", APIFactory(err(PSNAWPForbiddenError)))
     c = psnapi.PSNClient("tok")

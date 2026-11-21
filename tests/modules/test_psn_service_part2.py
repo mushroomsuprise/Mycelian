@@ -263,6 +263,14 @@ def test_loop_connectivity_check_error_still_connects_and_fails(loop):
     assert loop.client.names() == ["connect"] and len(loop.state.set_calls) == 1
 
 
+def test_loop_failed_connects_back_off(loop):
+    loop.client.connected = False
+    loop.client.connect_result = False
+    ev = loop.run(4)
+    assert ev.waits == [6.0, 12.0, 24.0, 48.0]
+    assert [ps.connect_retry_delay(n) for n in (0, 1, 2, 9, 10, 50)] == [6.0, 6.0, 12.0, 900.0, 900.0, 900.0]
+
+
 def test_loop_reconnect_success_continues_to_presence(loop):
     loop.client.connected = False
     loop.client.presence = None

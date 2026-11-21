@@ -311,6 +311,13 @@ def _stop_deferred_services() -> None:
         logger.debug("Deferred service manager stop: %s", e)
 
 
+def _checkpoint_sqlite() -> None:
+    """Last step: fold the app database's write-ahead log into the file (all writes done)."""
+    from . import database_manager
+
+    database_manager.database_manager.checkpoint_wal()
+
+
 def _save_statistics() -> None:
     from . import statistics_manager
 
@@ -1002,6 +1009,7 @@ def shutdown_application(*, reason: str, force: bool = False) -> None:
         _run_step("deferred_services", _stop_deferred_services, timeout=2.0)
         _run_registered_flushes()
         _run_step("statistics", _save_statistics, timeout=8.0)
+        _run_step("sqlite_checkpoint", _checkpoint_sqlite, timeout=3.0)
     finally:
         # Leave the watchdog armed until os._exit. Cancelling it here used to
         # let sys.exit hang forever on leftover non-daemon threads.

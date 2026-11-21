@@ -94,6 +94,9 @@ _minutes: Dict[str, Dict[int, List[int]]] = {}
 # platform -> last hour of (ts, endpoint) for the per-endpoint breakdown (memory only)
 _recent: Dict[str, Deque[Tuple[float, str]]] = {}
 _dirty: set = set()  # (platform, minute) not yet in the database
+# Old minutes are pruned at most this often (the prune used to run on every flush).
+PRUNE_EVERY_SEC = 3600.0
+_last_prune = 0.0
 _loaded = False
 _persist = True
 _db_path_override: Optional[str] = None
@@ -137,6 +140,8 @@ def _connect() -> sqlite3.Connection:
         "requests INTEGER NOT NULL, cost INTEGER NOT NULL, errors INTEGER NOT NULL, "
         "limited INTEGER NOT NULL, PRIMARY KEY (platform, minute))"
     )
+    # The retention prune filters on minute alone, which the (platform, minute) key can't serve.
+    conn.execute("CREATE INDEX IF NOT EXISTS usage_minute ON usage (minute)")
     return conn
 
 
@@ -172,6 +177,7 @@ def _ensure_loaded() -> None:
 
 def flush() -> None:
     """Write the minutes changed since the last flush (also at shutdown)."""
+    global _last_prune
     if not _persist:
         return
     with _lock:
@@ -193,7 +199,10 @@ def flush() -> None:
                 "errors = excluded.errors, limited = excluded.limited",
                 rows,
             )
-            conn.execute("DELETE FROM usage WHERE minute < ?", (int(time.time() // 60) - KEEP_DAYS * 1440,))
+            now = time.time()
+            if now - _last_prune >= PRUNE_EVERY_SEC:
+                conn.execute("DELETE FROM usage WHERE minute < ?", (int(now // 60) - KEEP_DAYS * 1440,))
+                _last_prune = now
             conn.commit()
         finally:
             conn.close()
@@ -227,10 +236,11 @@ def _ensure_flusher() -> None:
 
 def configure_storage(*, enabled: bool = True, path: Optional[str] = None) -> None:
     """Turn the history file on or off, or point it elsewhere (tests)."""
-    global _persist, _db_path_override, _loaded
+    global _persist, _db_path_override, _loaded, _last_prune
     _persist = enabled
     _db_path_override = path
     _loaded = False
+    _last_prune = 0.0  # a new file is pruned on its first flush
 
 
 # ----- counting -----

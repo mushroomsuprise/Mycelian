@@ -29,6 +29,9 @@ from .donation_settings import clear_secret, get_settings, set_status, update_se
 
 logger = logging.getLogger(__name__)
 
+# One keep-alive connection for the donation poll (every 20 s).
+_HTTP = requests.Session()
+
 STREAMLABS_OAUTH_REDIRECT_URI = "http://127.0.0.1:9975"
 AUTHORIZE_URL = "https://streamlabs.com/api/v2.0/authorize"
 TOKEN_URL = "https://streamlabs.com/api/v2.0/token"
@@ -463,7 +466,7 @@ class StreamlabsClient:
 
     def _authorized_get(self, url: str, access: str, params: Optional[dict]) -> Optional[requests.Response]:
         try:
-            return requests.get(
+            return _HTTP.get(
                 url,
                 headers={
                     "Authorization": f"Bearer {access}",

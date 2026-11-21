@@ -402,6 +402,26 @@ class SQLDatabase(DatabaseInterface):
         self._configure_app_sqlite_connection(conn)
         return conn
 
+    def checkpoint_wal(self) -> bool:
+        """Fold the WAL into the database file and empty it (call at shutdown).
+
+        The app exits with ``os._exit``, so SQLite never got to checkpoint on close and
+        the write-ahead log stayed at a few MB with the main file days out of date.
+        """
+        if not self._initialized:
+            return False
+        try:
+            conn = sqlite3.connect(self.db_path, timeout=2.0)
+            try:
+                conn.execute("PRAGMA busy_timeout=2000")
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            finally:
+                conn.close()
+            return True
+        except Exception as e:
+            logger.debug("WAL checkpoint skipped: %s", e)
+            return False
+
     def _return_connection(self, conn):
         """Return connection to pool"""
         with self._pool_lock:
@@ -2058,6 +2078,12 @@ class DatabaseManager:
         self._offline_flush_registered = False
 
     # ----- outages (remote backends) -----
+
+    def checkpoint_wal(self) -> bool:
+        """Checkpoint the local SQLite database, when that is the active backend."""
+        db = getattr(self, "_database", None)
+        checkpoint = getattr(db, "checkpoint_wal", None)
+        return bool(checkpoint()) if callable(checkpoint) else False
 
     def _is_remote(self) -> bool:
         return str(getattr(self._config, "database_type", "sql") or "sql") != "sql"

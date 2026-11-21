@@ -23,6 +23,9 @@ def test_obs_process_check_reuses_live_process(monkeypatch):
             return iter([proc] if child.poll() is None else [])
 
         monkeypatch.setattr(docks, "_cached_obs_proc", None)
+        monkeypatch.setattr(docks, "_last_negative_scan_at", 0.0)
+        clock = {"t": 1000.0}
+        monkeypatch.setattr(docks.time, "monotonic", lambda: clock["t"])
         monkeypatch.setattr(docks, "_is_obs_main_process_name", lambda n: n == child_name)
         monkeypatch.setattr(psutil, "process_iter", fake_iter)
 
@@ -34,7 +37,10 @@ def test_obs_process_check_reuses_live_process(monkeypatch):
         assert docks.obs_process_is_running() is False
         assert scans["n"] == 2
         assert docks.obs_process_is_running() is False
-        assert scans["n"] == 3  # not running: full scan every call, as before
+        assert scans["n"] == 2  # not running: the dock watcher and OBS service share one scan
+        clock["t"] += docks._NEGATIVE_SCAN_TTL_SEC + 0.01
+        assert docks.obs_process_is_running() is False
+        assert scans["n"] == 3  # after the short window, a full scan again
     finally:
         if child.poll() is None:
             child.kill()

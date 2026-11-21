@@ -118,13 +118,33 @@ class CappedFileHandler(logging.FileHandler):
         filename,
         max_bytes: int = LOG_MAX_BYTES,
         keep_bytes: int = LOG_TRIM_KEEP_BYTES,
+        trim: bool = True,
         **kwargs,
     ):
         self.max_bytes = max_bytes
         self.keep_bytes = min(keep_bytes, max_bytes)
+        # Only the main process trims. The webview and tray child processes append to
+        # the same file; two processes trimming it at once lost lines (and on Windows
+        # the replace fails while the other process holds the file open).
+        self.trim = trim
+        # Size of the file as this handler last knew it plus what it wrote since, so
+        # the real size is read only near the cap instead of a stat per record.
+        self._approx_size = None
         path = Path(filename)
-        _trim_log_file(path, max_bytes, self.keep_bytes)
+        if trim:
+            _trim_log_file(path, max_bytes, self.keep_bytes)
         super().__init__(filename, mode="a", **kwargs)
+
+    def _over_cap(self, written: int) -> bool:
+        if self._approx_size is None:
+            self._approx_size = os.path.getsize(self.baseFilename)
+        else:
+            self._approx_size += written
+        if self._approx_size <= self.max_bytes:
+            return False
+        # Near the cap: check the real size (multi-byte text, other processes' lines).
+        self._approx_size = os.path.getsize(self.baseFilename)
+        return self._approx_size > self.max_bytes
 
     def emit(self, record):
         if self.baseFilename is None:
@@ -138,13 +158,14 @@ class CappedFileHandler(logging.FileHandler):
                 stream = self.stream
                 stream.write(msg + self.terminator)
                 self.flush()
-                if os.path.getsize(self.baseFilename) > self.max_bytes:
+                if self.trim and self._over_cap(len(msg) + len(self.terminator)):
                     if self.stream:
                         self.stream.close()
                         self.stream = None
                     _trim_log_file(
                         Path(self.baseFilename), self.max_bytes, self.keep_bytes
                     )
+                    self._approx_size = None
                     if not self.delay:
                         self.stream = self._open()
             except RecursionError:
@@ -173,17 +194,22 @@ def setup_logging():
     log_dir.mkdir(exist_ok=True)
 
     # Single log file capped at 15MB; oldest entries trimmed in place on startup and rollover
+    handlers = [
+        CappedFileHandler(
+            log_dir / "mycelian.log",
+            max_bytes=LOG_MAX_BYTES,
+            encoding="utf-8",
+            trim=not _IS_SPAWN_CHILD,
+        ),
+    ]
+    # Also log to the console, when there is one: a windowed frozen build has
+    # sys.stderr = None, and the handler then failed (and was caught) on every record.
+    if sys.stderr is not None:
+        handlers.append(logging.StreamHandler())
     logging.basicConfig(
         level=logging.WARNING,  # Changed to WARNING to reduce log noise while keeping errors
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            CappedFileHandler(
-                log_dir / "mycelian.log",
-                max_bytes=LOG_MAX_BYTES,
-                encoding="utf-8",
-            ),
-            logging.StreamHandler(),  # Also log to console
-        ],
+        handlers=handlers,
     )
 
     # Set logging level for specific modules
@@ -212,9 +238,12 @@ logger = logging.getLogger(__name__)
 
 # Count requests to Twitch, YouTube, Spotify, Streamlabs and StreamElements from the first one
 # (Settings → each service → API use); importing api_usage installs the request hooks.
-from modules import api_usage as _api_usage  # noqa: E402
+# Spawn children (webview window, tray icon) send none of these requests; importing
+# requests + aiohttp there cost ~200 ms and ~30 MB per child process.
+if not _IS_SPAWN_CHILD:
+    from modules import api_usage as _api_usage  # noqa: E402
 
-_api_usage.install_http_hooks()
+    _api_usage.install_http_hooks()
 
 
 # Signal handlers for graceful shutdown

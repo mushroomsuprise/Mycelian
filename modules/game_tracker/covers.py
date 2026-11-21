@@ -196,12 +196,23 @@ def _ensure_worker() -> None:
         _worker.start()
 
 
+_session = None
+
+
+def _http_session():
+    """One keep-alive session for the cover worker (a first import fetches ~150 covers)."""
+    global _session
+    if _session is None:
+        import requests
+
+        _session = requests.Session()
+    return _session
+
+
 def _download(url: str) -> bytes:
     if _fetcher is not None:
         return _fetcher(url)
-    import requests
-
-    with requests.get(url, timeout=DOWNLOAD_TIMEOUT_SEC, stream=True) as r:
+    with _http_session().get(url, timeout=DOWNLOAD_TIMEOUT_SEC, stream=True) as r:
         r.raise_for_status()
         data = bytearray()
         for chunk in r.iter_content(65536):

@@ -43,6 +43,9 @@ class GameTrackerStore:
         # (platform, game_id) -> the row's JSON; None until first read. JSON so every read is a fresh copy.
         self._games: Optional[Dict[tuple, str]] = None
         self._meta: Dict[str, Optional[str]] = {}  # key -> JSON (None: not set)
+        # speedrun link id -> (platform, game_id, JSON); None until first read. The split-file
+        # watcher lists these every 2 s, which opened the database each time.
+        self._speedruns: Optional[Dict[str, tuple]] = None
         self.version = 0
         self._ensure_db()
 
@@ -204,6 +207,9 @@ class GameTrackerStore:
                 conn.close()
             if self._games is not None:
                 self._games.pop((platform, str(game_id)), None)
+            if not keep_goals and self._speedruns is not None:
+                for link_id in [i for i, (p, g, _r) in self._speedruns.items() if p == platform and g == str(game_id)]:
+                    del self._speedruns[link_id]
             self.version += 1
             return cur.rowcount > 0
 
@@ -322,20 +328,24 @@ class GameTrackerStore:
 
     # ----- speedrun links (LiveSplit split files, one row per file) -----
 
-    def list_speedruns(self, platform: Optional[str] = None, game_id: Optional[str] = None) -> List[SpeedrunLink]:
-        sql, args = "SELECT data FROM speedruns", []
-        if platform:
-            sql += " WHERE platform = ?"
-            args.append(platform)
-            if game_id is not None:
-                sql += " AND game_id = ?"
-                args.append(str(game_id))
-        with self._lock:
+    def _speedrun_rows(self) -> Dict[str, tuple]:
+        """Every speedrun link by id; read from the DB once (caller holds the lock)."""
+        if self._speedruns is None:
             conn = self._connect()
             try:
-                rows = conn.execute(sql, args).fetchall()
+                rows = conn.execute("SELECT id, platform, game_id, data FROM speedruns").fetchall()
             finally:
                 conn.close()
+            self._speedruns = {str(i): (p, str(g), raw) for i, p, g, raw in rows}
+        return self._speedruns
+
+    def list_speedruns(self, platform: Optional[str] = None, game_id: Optional[str] = None) -> List[SpeedrunLink]:
+        with self._lock:
+            rows = [
+                (raw,)
+                for p, g, raw in self._speedrun_rows().values()
+                if not platform or (p == platform and (game_id is None or g == str(game_id)))
+            ]
         out = []
         for (raw,) in rows:
             try:
@@ -353,14 +363,11 @@ class GameTrackerStore:
 
     def get_speedrun(self, link_id: str) -> Optional[SpeedrunLink]:
         with self._lock:
-            conn = self._connect()
-            try:
-                row = conn.execute("SELECT data FROM speedruns WHERE id = ?", (str(link_id),)).fetchone()
-            finally:
-                conn.close()
-        return SpeedrunLink.from_dict(json.loads(row[0])) if row else None
+            row = self._speedrun_rows().get(str(link_id))
+        return SpeedrunLink.from_dict(json.loads(row[2])) if row else None
 
     def upsert_speedrun(self, link: SpeedrunLink) -> None:
+        raw = json.dumps(link.to_dict(), separators=(",", ":"))
         with self._lock:
             conn = self._connect()
             try:
@@ -368,9 +375,11 @@ class GameTrackerStore:
                     "INSERT INTO speedruns (id, platform, game_id, data, updated_at) VALUES (?, ?, ?, ?, ?) "
                     "ON CONFLICT(id) DO UPDATE SET platform = excluded.platform, game_id = excluded.game_id, "
                     "data = excluded.data, updated_at = excluded.updated_at",
-                    (link.id, link.platform, str(link.game_id), json.dumps(link.to_dict(), separators=(",", ":")), time.time()),
+                    (link.id, link.platform, str(link.game_id), raw, time.time()),
                 )
                 conn.commit()
+                if self._speedruns is not None:
+                    self._speedruns[str(link.id)] = (link.platform, str(link.game_id), raw)
             finally:
                 conn.close()
 
@@ -380,6 +389,8 @@ class GameTrackerStore:
             try:
                 cur = conn.execute("DELETE FROM speedruns WHERE id = ?", (str(link_id),))
                 conn.commit()
+                if self._speedruns is not None:
+                    self._speedruns.pop(str(link_id), None)
                 return cur.rowcount > 0
             finally:
                 conn.close()

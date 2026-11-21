@@ -1023,7 +1023,14 @@ class PSNClient:
             self.authenticated = False
             self.psn_data.connection_status = "Authentication Failed"
         except Exception as e:
-            logger.exception(f"An unexpected error occurred during PSN connection: {e}")
+            # A failing connect is retried with backoff; the traceback is logged once
+            # per kind of error, not on every attempt.
+            kind = f"{type(e).__name__}: {e}"
+            if getattr(self, "_last_connect_error", None) != kind:
+                self._last_connect_error = kind
+                logger.exception(f"An unexpected error occurred during PSN connection: {e}")
+            else:
+                logger.warning("PSN connection failed again: %s", kind)
             self.authenticated = False
             self.psn_data.connection_status = "Authentication Failed"
 

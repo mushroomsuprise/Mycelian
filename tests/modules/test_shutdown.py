@@ -1247,8 +1247,9 @@ def test_shutdown_application_order(orchestration):
     names = [c[0] if isinstance(c, tuple) else c for c in orchestration.calls]
     assert names == ["watchdog", "ui_health_monitor", "tray", "pywebview", "pause_alerts", "connection_monitor",
                      "alert_processor", "connectors", "obs", "parallel", "deferred_services", "flushes",
-                     "statistics"]
+                     "statistics", "sqlite_checkpoint"]
     steps = {c[0]: c for c in orchestration.calls if isinstance(c, tuple)}
+    assert steps["sqlite_checkpoint"][1] is sh._checkpoint_sqlite  # last: after every write
     assert steps["pywebview"][1] is sh._close_native_window and steps["pywebview"][2] == 5.0
     assert steps["statistics"][1] is sh._save_statistics and steps["statistics"][2] == 8.0
     assert steps["parallel"][1] == ["youtube", "spotify", "discord", "psn", "steam", "game_tracker", "twitch", "chatbot"]
@@ -1281,3 +1282,12 @@ def test_shutdown_application_logs_finish_even_on_error(monkeypatch, orchestrati
         sh.shutdown_application(reason="x", force=True)
     assert "Application shutdown finished (reason=x)" in caplog.text
     assert orchestration.exits == []
+
+
+def test_checkpoint_sqlite_calls_the_active_database(monkeypatch):
+    from modules import database_manager as dm
+
+    calls = []
+    monkeypatch.setattr(dm.database_manager, "checkpoint_wal", lambda: calls.append(1) or True)
+    sh._checkpoint_sqlite()
+    assert calls == [1]

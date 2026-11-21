@@ -476,6 +476,7 @@ class SpeedrunWatcher:
         self._thread: Optional[threading.Thread] = None
         self._seen: Dict[str, Optional[Tuple[int, int]]] = {}  # link id -> signature at the previous check
         self._failed: Dict[str, Optional[Tuple[int, int]]] = {}  # link id -> signature a read failed on (retried once it changes)
+        self._link_count = 0  # links seen by the last check; none: sleep until poke() or stop()
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -497,7 +498,9 @@ class SpeedrunWatcher:
 
     def check_once(self) -> List[str]:
         changed: List[str] = []
-        for link in self._load():
+        links = self._load()
+        self._link_count = len(links)
+        for link in links:
             sig = file_signature(link.path)
             previous = self._seen.get(link.id)
             self._seen[link.id] = sig
@@ -526,5 +529,7 @@ class SpeedrunWatcher:
                     self._on_change(changed)
             except Exception:
                 logger.debug("Games Tracker: speedrun check failed", exc_info=True)
-            self._wake.wait(self._poll)
+            # Nothing linked: wait for poke() (a file was linked) or stop() instead of
+            # checking every few seconds.
+            self._wake.wait(self._poll if self._link_count else None)
             self._wake.clear()

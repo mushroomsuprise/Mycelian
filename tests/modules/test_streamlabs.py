@@ -653,7 +653,7 @@ def test_authorized_get(env, monkeypatch):
         seen.update(url=url, headers=headers, params=params, timeout=timeout)
         return FakeResponse(200, {})
 
-    monkeypatch.setattr(sl.requests, "get", fake_get)
+    monkeypatch.setattr(sl._HTTP, "get", fake_get)
     c = sl.StreamlabsClient()
     assert c._authorized_get("u", "tok", {"a": 1}).status_code == 200
     assert seen["headers"]["Authorization"] == "Bearer tok" and seen["params"] == {"a": 1} and seen["timeout"] == 20
@@ -661,7 +661,7 @@ def test_authorized_get(env, monkeypatch):
     def boom(*a, **k):
         raise requests.ConnectionError("x")
 
-    monkeypatch.setattr(sl.requests, "get", boom)
+    monkeypatch.setattr(sl._HTTP, "get", boom)
     assert c._authorized_get("u", "tok", None) is None
 
 

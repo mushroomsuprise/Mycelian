@@ -52,6 +52,16 @@ stop_psn_thread_event = threading.Event()
 
 # Updater cadence — budgeted against PSNAWP's default 1 HTTP request / 3s limiter
 SLEEP_PRESENCE = 6  # Presence poll interval (also used when idle / no game)
+# A failed connect (Sony error, Forbidden, BadRequest) is a full sign-in of 2-3 requests.
+# Retry with growing waits instead of every SLEEP_PRESENCE: 6 s, 12 s, 24 s ... 15 min.
+PSN_CONNECT_RETRY_MAX = 15 * 60
+
+
+def connect_retry_delay(failures: int) -> float:
+    """Seconds to wait after ``failures`` connect attempts in a row failed."""
+    if failures <= 0:
+        return float(SLEEP_PRESENCE)
+    return float(min(PSN_CONNECT_RETRY_MAX, SLEEP_PRESENCE * (2 ** min(failures - 1, 16))))
 TROPHY_TITLE_REFRESH_SEC = 12  # trophy_titles_for_title while same game
 OVERALL_SUMMARY_SEC = 120  # Account-wide trophy_summary
 # Skip trophy_groups_summary API when cached group structure is fresher than this
@@ -275,6 +285,7 @@ def psn_data_update_loop():
     last_title_trophy_at = 0.0
     tracked_np_title_id: str | None = None
     force_title_refresh = True
+    connect_failures = 0
 
     while not stop_psn_thread_event.is_set():
         sleep_time = SLEEP_PRESENCE
@@ -326,12 +337,18 @@ def psn_data_update_loop():
                 logger.info(f"Reconnection attempt result: {connection_result}")
 
                 if not connection_result:
-                    logger.warning(
-                        "PSNClient remains disconnected after connection attempt in loop."
+                    connect_failures += 1
+                    wait = connect_retry_delay(connect_failures)
+                    log = logger.warning if connect_failures == 1 else logger.debug
+                    log(
+                        "PSNClient remains disconnected after connection attempt %d; next try in %.0f s",
+                        connect_failures,
+                        wait,
                     )
                     state_manager.set_live_psn_data(psn_client_instance.psn_data)
-                    stop_psn_thread_event.wait(SLEEP_PRESENCE)
+                    stop_psn_thread_event.wait(wait)
                     continue
+                connect_failures = 0
 
             logger.debug("PSNClient is connected. Fetching updates...")
 

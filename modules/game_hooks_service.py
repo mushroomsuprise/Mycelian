@@ -36,6 +36,10 @@ from .game_hooks.registry import (
 logger = logging.getLogger(__name__)
 
 _INTERVAL = 0.25
+# With every hook switched off there is nothing to read; the "disabled" snapshot is
+# still sent (overlays show it) but once a second instead of four times. Switching a
+# hook on is picked up on the next tick, within this long.
+_IDLE_INTERVAL = 1.0
 _WRITE_QUEUE_MAXSIZE = 256
 
 
@@ -273,13 +277,16 @@ class GameHooksServiceImpl:
             t0 = time.time()
             hooks: Dict[str, Any] = {}
             changed = False
+            any_enabled = False
 
             for hook_id in registered_hook_ids():
                 hook = self._get_hook(hook_id)
                 if hook is None:
                     continue
 
-                if not is_hook_enabled(hook_id):
+                enabled = is_hook_enabled(hook_id)
+                any_enabled = any_enabled or enabled
+                if not enabled:
                     self._stop_worker(hook_id)
                     snap = hook.idle_snapshot(disabled=True)
                 elif not hook.is_process_running():
@@ -327,7 +334,7 @@ class GameHooksServiceImpl:
             self._emit(payload)
 
             elapsed = time.time() - t0
-            wait = max(0.0, _INTERVAL - elapsed)
+            wait = max(0.0, (_INTERVAL if any_enabled else _IDLE_INTERVAL) - elapsed)
             if self._stop.wait(wait):
                 break
 

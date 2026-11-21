@@ -588,6 +588,11 @@ def _is_obs_main_process_name(name: str) -> bool:
 # start time) with an OBS name, the full process-list walk is skipped; once it exits
 # the next call scans again, so quit/start detection timing is unchanged.
 _cached_obs_proc: Any = None
+# When OBS is not running, the dock watcher (1.5 s) and the OBS service (2 s) both
+# walked the whole process list. A "not running" answer is reused this long, so
+# the two share one scan; OBS starting is seen at most this much later.
+_NEGATIVE_SCAN_TTL_SEC = 1.4
+_last_negative_scan_at = 0.0
 
 
 def obs_process_is_running() -> bool:
@@ -605,14 +610,20 @@ def obs_process_is_running() -> bool:
         except Exception:
             pass
         _cached_obs_proc = None
+    global _last_negative_scan_at
+    now = time.monotonic()
+    if now - _last_negative_scan_at < _NEGATIVE_SCAN_TTL_SEC:
+        return False
     try:
         for proc in psutil.process_iter(["name"]):
             name = str(proc.info.get("name") or "")
             if _is_obs_main_process_name(name):
                 _cached_obs_proc = proc
+                _last_negative_scan_at = 0.0
                 return True
     except Exception:
         return False
+    _last_negative_scan_at = now
     return False
 
 

@@ -148,7 +148,7 @@ def clock(monkeypatch):
 def http_fake(monkeypatch):
     def install(*responses):
         f = FakeHTTP(*responses)
-        monkeypatch.setattr(sp.requests, "request", f)
+        monkeypatch.setattr(sp._HTTP, "request", f)
         monkeypatch.setattr(sp.requests, "post", f.post)
         return f
 
@@ -1300,7 +1300,7 @@ def test_authenticate_offline_stays_retryable(client, clock, monkeypatch):
     def offline(*a, **k):
         raise sp.requests.ConnectionError("Failed to resolve api.spotify.com")
 
-    monkeypatch.setattr(sp.requests, "request", offline)
+    monkeypatch.setattr(sp._HTTP, "request", offline)
     assert client.authenticate() is False
     assert client.spotify_data.connection_status == "Disconnected"
     assert "Disconnected" not in _SPOTIFY_SKIP_RECONNECT

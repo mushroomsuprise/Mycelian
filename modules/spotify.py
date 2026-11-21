@@ -40,6 +40,10 @@ from .dataobjects import SpotifyData, state_manager
 
 logger = logging.getLogger(__name__)
 
+# One keep-alive connection for the 5 s player poll instead of a new TCP + TLS
+# handshake per request (~17k a day).
+_HTTP = requests.Session()
+
 # Non-HTTPS Spotify redirects must use loopback literal; must match dashboard URI exactly.
 SPOTIFY_OAUTH_REDIRECT_URI = "http://127.0.0.1:9973"
 
@@ -454,7 +458,7 @@ class SpotifyClient:
             logger.debug("Skipping Spotify API request — auth failure cooldown active")
             return None
         try:
-            response = requests.request(
+            response = _HTTP.request(
                 method.upper(), url, headers=headers, data=data, timeout=10
             )
         except Exception as e:

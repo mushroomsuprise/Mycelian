@@ -313,3 +313,41 @@ def test_backoff_doubles_honours_retry_after_and_resets():
 def test_twitch_minute_wording():
     api_usage.record("Twitch", "/helix/users", 200)
     assert api_usage.summary_text("Twitch") == "0.1% of the limit (1 of 800 requests in the last minute)"
+
+
+def test_old_minutes_are_pruned_at_most_hourly(tmp_path, monkeypatch):
+    import sqlite3
+
+    clock = [ts("2026-11-07T15:00:00")]
+    monkeypatch.setattr(api_usage.time, "time", lambda: clock[0])
+    deletes = []
+    real_connect = api_usage._connect
+
+    class Spy:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def execute(self, sql, *a):
+            if sql.startswith("DELETE"):
+                deletes.append(sql)
+            return self.conn.execute(sql, *a)
+
+        def __getattr__(self, name):
+            return getattr(self.conn, name)
+
+    monkeypatch.setattr(api_usage, "_connect", lambda: Spy(real_connect()))
+    for minute in range(3):
+        api_usage.record("Steam", "/s", 200, now=clock[0])
+        api_usage.flush()
+        clock[0] += 60
+    assert len(deletes) == 1
+    clock[0] += api_usage.PRUNE_EVERY_SEC
+    api_usage.record("Steam", "/s", 200, now=clock[0])
+    api_usage.flush()
+    assert len(deletes) == 2
+    conn = sqlite3.connect(str(tmp_path / "api_usage.db"))
+    try:
+        names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+    finally:
+        conn.close()
+    assert "usage_minute" in names

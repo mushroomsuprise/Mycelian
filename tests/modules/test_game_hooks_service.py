@@ -404,6 +404,21 @@ def test_coordinator_uses_worker_snapshot_and_not_running(svc, monkeypatch):
     assert hooks["factorio"] == {"hook": "factorio", "attached": False, "disabled": False}
 
 
+def test_coordinator_ticks_once_a_second_with_every_hook_off(svc):
+    s = svc.s
+    svc.enabled["ff7"] = False
+    svc.enabled["factorio"] = False
+    s._stop = OneShotEvent(2)
+    s._coordinator_loop()
+    assert len(s._stop.waits) == 2 and all(w > ghs._INTERVAL for w in s._stop.waits)
+    assert all(w <= ghs._IDLE_INTERVAL for w in s._stop.waits)
+    assert svc.emitted[-1]["hooks"]["ff7"]["disabled"] is True  # still sent, just less often
+    svc.enabled["ff7"] = True
+    s._stop = OneShotEvent(1)
+    s._coordinator_loop()
+    assert s._stop.waits[-1] <= ghs._INTERVAL
+
+
 def test_coordinator_unchanged_reuses_last_hooks(svc, monkeypatch):
     s = svc.s
     svc.enabled["ff7"] = False
