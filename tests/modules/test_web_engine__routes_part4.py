@@ -603,9 +603,16 @@ def test_overlay_html_cache(engine, dirs, monkeypatch):
     assert engine._cached_overlay_html("alpha") == "<html>"
     assert engine._cached_overlay_html("alpha", key) == "<html>"
     assert engine._cached_overlay_html("alpha", ("other",)) is None
-    for i in range(30):
+    cap = engine._OVERLAY_HTML_CACHE_MAX
+    for i in range(cap + 6):
         engine._store_overlay_html(f"t{i}", "x", key=(i,))
-    assert len(engine._overlay_html_cache) == 24
+    assert len(engine._overlay_html_cache) == cap
+    assert "t0" not in engine._overlay_html_cache and f"t{cap + 5}" in engine._overlay_html_cache
+    # OBS and container copies of one template keep separate slots
+    engine._store_overlay_html("both", "obs", key=(1, 2, 0, ()))
+    engine._store_overlay_html("both", "embed", key=(1, 2, 0, ("embed", "40", "0")))
+    assert engine._cached_overlay_html("both", (1, 2, 0, ())) == "obs"
+    assert engine._cached_overlay_html("both", (1, 2, 0, ("embed", "40", "0"))) == "embed"
     engine._overlay_html_cache = None
     assert engine._cached_overlay_html("alpha") is None
     engine._store_overlay_html("alpha", "x")
@@ -712,7 +719,7 @@ def outputs(monkeypatch):
     from modules.spore_studio import template_outputs as to
 
     monkeypatch.setattr(to, "known_output_events", lambda: {"roulette_result": ["roulette"]})
-    monkeypatch.setattr(to, "resolve_emitter", lambda ev, payload: "roulette")
+    monkeypatch.setattr(to, "resolve_emitter", lambda ev, payload, known=None: "roulette")
     return to
 
 
@@ -737,10 +744,16 @@ def test_template_output_relay_filters(engine, sio, sio2, outputs, monkeypatch):
 
 
 def test_template_output_relay_unserialisable_and_errors(engine, sio, sio2, outputs, monkeypatch):
-    real_dumps = json.dumps
-    monkeypatch.setattr(web_engine.json, "dumps", lambda *a, **k: (_ for _ in ()).throw(TypeError("nope")))
+    real_dumps = web_engine.fast_json.dumps
+
+    def size_probe_fails(*a, **k):  # only the relay's size check passes default=
+        if "default" in k:
+            raise TypeError("nope")
+        return real_dumps(*a, **k)
+
+    monkeypatch.setattr(web_engine.fast_json, "dumps", size_probe_fails)
     sio.emit("roulette_result", {"a": 1})
-    monkeypatch.setattr(web_engine.json, "dumps", real_dumps)
+    monkeypatch.setattr(web_engine.fast_json, "dumps", real_dumps)
     monkeypatch.setattr(outputs, "known_output_events", _boom)
     sio.emit("roulette_result", {"a": 1})
     monkeypatch.setattr(web_engine, "_reject_non_localhost_socket", lambda: True)

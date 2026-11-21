@@ -272,3 +272,22 @@ def test_streamdeck_game_goals_and_adjust(client, tracker):
     assert client.post("/api/streamdeck/adjust_goal", json={"goalId": "nope"}).status_code == 404
     auto = tracker.service.goals_for("steam", "440")[1]
     assert client.post("/api/streamdeck/adjust_goal", json={"goalId": auto.id}).status_code == 400
+
+
+def test_blocking_tracker_work_runs_off_the_hub(client, tracker, monkeypatch):
+    """Library reads, PSN lookups and exports go through _run_off_hub (WE-41)."""
+    offloaded = []
+    real = WE._run_off_hub
+
+    def spy(self, fn, *args):
+        offloaded.append(getattr(fn, "__name__", None) or getattr(getattr(fn, "func", None), "__name__", "?"))
+        return real(self, fn, *args)
+
+    monkeypatch.setattr(WE, "_run_off_hub", spy)
+    assert client.get("/api/game-tracker/games").status_code == 200
+    assert client.get("/api/game-tracker/backlog").status_code == 200
+    assert client.get("/api/game-tracker/summary").status_code == 200
+    assert client.get("/api/game-tracker/games/psn/NPWR00001_00").status_code == 200
+    res = client.post("/api/game-tracker/games/psn/NPWR00001_00/resolve", json={"np_title_id": "ppsa01234_00"})
+    assert res.status_code == 200 and tracker.resolved.calls == ["PPSA01234_00"]
+    assert offloaded == ["_games_rows", "backlog", "<lambda>", "_game_request", "_resolve"]

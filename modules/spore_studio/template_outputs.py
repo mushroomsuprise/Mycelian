@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import threading
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -97,7 +98,11 @@ _DENY_PREFIXES = (
 _DENY_SUFFIXES = ("_request", "_request_state", "-request")
 
 _lock = threading.Lock()
-_cache: Dict[str, Any] = {"key": None, "outputs": []}
+_cache: Dict[str, Any] = {"key": None, "outputs": [], "checked_at": 0.0}
+# The relay asks for the output table on every Socket.IO event a template sends. The
+# file-mtime signature (a listdir plus a stat per template and config) is re-checked
+# at most this often; a Spore Studio save clears the cache at once (invalidate_cache).
+_SIGNATURE_CHECK_SEC = 2.0
 
 
 def is_relayable_event(name: Any) -> bool:
@@ -312,22 +317,31 @@ def invalidate_cache() -> None:
     with _lock:
         _cache["key"] = None
         _cache["outputs"] = []
+        _cache["checked_at"] = 0.0
+
+
+def _refresh_locked(refresh: bool = False) -> None:
+    now = time.monotonic()
+    if not refresh and _cache["key"] is not None and now - _cache["checked_at"] < _SIGNATURE_CHECK_SEC:
+        return
+    try:
+        key = _signature()
+    except Exception:  # pragma: no cover - defensive
+        key = None
+    _cache["checked_at"] = now
+    if refresh or key is None or _cache["key"] != key:
+        try:
+            _cache["outputs"] = _scan_templates()
+        except Exception:
+            logger.exception("Template output scan failed")
+            _cache["outputs"] = []
+        _cache["key"] = key
 
 
 def list_template_outputs(refresh: bool = False) -> List[Dict[str, Any]]:
     """Every discovered template output (cached by file mtimes)."""
     with _lock:
-        try:
-            key = _signature()
-        except Exception:  # pragma: no cover - defensive
-            key = None
-        if refresh or key is None or _cache["key"] != key:
-            try:
-                _cache["outputs"] = _scan_templates()
-            except Exception:
-                logger.exception("Template output scan failed")
-                _cache["outputs"] = []
-            _cache["key"] = key
+        _refresh_locked(refresh)
         return [dict(row) for row in _cache["outputs"]]
 
 
@@ -377,13 +391,16 @@ def merge_into_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return events
 
 
-def resolve_emitter(event: str, payload: Any) -> str:
-    """Best guess at which template emitted ``event`` (payload wins)."""
+def resolve_emitter(event: str, payload: Any, known: Optional[Dict[str, List[str]]] = None) -> str:
+    """Best guess at which template emitted ``event`` (payload wins).
+
+    ``known`` is a ``known_output_events()`` table the caller already has.
+    """
     if isinstance(payload, dict):
         tpl = payload.get("template")
         if isinstance(tpl, str) and tpl.strip():
             return tpl.strip()
-    owners = known_output_events().get(event) or []
+    owners = (known if known is not None else known_output_events()).get(event) or []
     if len(owners) == 1:
         return owners[0]
     return ""

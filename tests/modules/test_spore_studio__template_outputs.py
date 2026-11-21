@@ -335,3 +335,29 @@ def test_sample_envelope(monkeypatch):
     assert env["data"] == {"s": "sample", "n": 1, "b": True, "a": ["one", "two"],
                            "o": "sample", "d": "sample", "element_id": "w1", "template": "w"}
     assert to.sample_envelope("missing") is None
+
+
+def test_signature_is_checked_at_most_every_two_seconds(tdir, monkeypatch):
+    """The relay looks the table up per event; a stat of every template each time was waste."""
+    clock = [100.0]
+    monkeypatch.setattr(to.time, "monotonic", lambda: clock[0])
+    sigs = []
+    real = to._signature
+    monkeypatch.setattr(to, "_signature", lambda: sigs.append(1) or real())
+    for _ in range(5):
+        to.known_output_events()
+    assert len(sigs) == 1
+    clock[0] += to._SIGNATURE_CHECK_SEC
+    to.list_template_outputs()
+    assert len(sigs) == 2
+    to.invalidate_cache()  # a Spore Studio save: seen at once
+    to.list_template_outputs()
+    assert len(sigs) == 3
+    to.list_template_outputs(refresh=True)
+    assert len(sigs) == 4
+
+
+def test_resolve_emitter_uses_a_table_it_is_given(monkeypatch):
+    monkeypatch.setattr(to, "known_output_events", lambda: pytest.fail("looked up again"))
+    assert to.resolve_emitter("e", {}, {"e": ["only"]}) == "only"
+    assert to.resolve_emitter("e", {}, {"e": ["a", "b"]}) == ""

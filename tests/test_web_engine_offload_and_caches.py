@@ -135,6 +135,17 @@ class AllTemplateConfigsCacheTests(unittest.TestCase):
         self.assertEqual(_value(body2), "VALUE_TWO")
         self.assertFalse(hit)
 
+    def test_preview_bodies_do_not_evict_the_obs_body(self) -> None:
+        eng = self.eng
+        obs, _ = eng._get_all_template_configs_cached("")
+        eng.push_preview_overrides("tok", "follow", {"Msg": "PREVIEW"})
+        preview, _ = eng._get_all_template_configs_cached("tok")
+        self.assertEqual(_value(preview), "PREVIEW")
+        self.assertEqual(eng._peek_all_template_configs_cache(""), obs)  # OBS refresh still hits
+        eng.invalidate_all_template_configs_cache()
+        self.assertIsNone(eng._peek_all_template_configs_cache(""))
+        self.assertIsNone(eng._peek_all_template_configs_cache("tok"))
+
     def test_unchanged_files_keep_the_cache_hit(self) -> None:
         eng = self.eng
         body1, hit1 = eng._get_all_template_configs_cached("")

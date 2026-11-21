@@ -31,6 +31,7 @@ import errno
 import faulthandler
 import functools
 import glob
+import hashlib
 import ipaddress
 import json
 import logging
@@ -43,14 +44,14 @@ import subprocess
 import sys
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
-from . import alertutils, database_manager, statistics_manager
+from . import alertutils, database_manager, fast_json, statistics_manager
 from .dataobjects import state_manager  # To access live PSN data
 from .path_utils import (
     get_assets_path,
@@ -949,7 +950,7 @@ def _sync_pause_button_state() -> None:
 
             sync_pause_button_state()
         except Exception as e:
-            logger.debug(f"Could not sync pause button state: {e}")
+            logger.debug("Could not sync pause button state: %s", e)
 
     try:
         from .ui_timer import run_on_ui_loop
@@ -967,7 +968,7 @@ def _sync_mute_button_state() -> None:
 
             sync_mute_button_state()
         except Exception as e:
-            logger.debug(f"Could not sync mute button state: {e}")
+            logger.debug("Could not sync mute button state: %s", e)
 
     try:
         from .ui_timer import run_on_ui_loop
@@ -1514,7 +1515,7 @@ class WebEngine:
             host (str): Host IP to run the server on
             port (int): Port number to run the server on
         """
-        logger.debug(f"Initializing WebEngine with host={host}, port={port}")
+        logger.debug("Initializing WebEngine with host=%s, port=%s", host, port)
         _ensure_server_deps()
         # Use path utils to get correct template directory for exe
         self.template_dir = (
@@ -1552,11 +1553,11 @@ class WebEngine:
         self._template_log_rate_limiter = TemplateLogRateLimiter()
 
         # Log template directory info
-        logger.debug(f"Template directory: {template_dir}")
-        logger.debug(f"Template directory exists: {os.path.exists(template_dir)}")
+        logger.debug("Template directory: %s", template_dir)
+        logger.debug("Template directory exists: %s", os.path.exists(template_dir))
         if os.path.exists(template_dir):
             logger.debug(
-                f"Template directory absolute path: {os.path.abspath(template_dir)}"
+                "Template directory absolute path: %s", os.path.abspath(template_dir)
             )
 
         # Initialize Flask app and SocketIO with template reloading enabled
@@ -1564,6 +1565,8 @@ class WebEngine:
         self.app = Flask(
             __name__, template_folder=self.template_dir, static_folder=None
         )
+        # orjson for JSON responses (same sorted keys and conversions, faster) (WE-51)
+        fast_json.install_flask_provider(self.app)
 
         # Template auto-reload: dev / unfrozen builds only (OBS sources stat every HTML file otherwise)
         _jinja_auto_reload = bool(
@@ -1626,6 +1629,9 @@ class WebEngine:
         # Short-TTL cache for GET /api/all-template-configs (OBS refresh storms)
         # (key, expires_at, payload, generation, fingerprint, verified_at)
         self._all_template_configs_cache: Optional[tuple] = None
+        # Spore Studio preview bodies get their own slot: every editor change makes a new
+        # preview key, and sharing one slot made each OBS refresh rebuild every config.
+        self._all_template_configs_preview_cache: Optional[tuple] = None
         self._all_template_configs_cache_lock = threading.Lock()
         self._all_template_configs_slow_log_at = 0.0
 
@@ -1642,6 +1648,8 @@ class WebEngine:
             self.app,
             cors_allowed_origins="*",
             async_mode="gevent",
+            # Socket.IO packets encoded with orjson (game hooks, chat, feed payloads)
+            json=fast_json,
             # Configure Engine.IO server to handle more packets and larger payloads
             # These settings are passed through to the underlying Engine.IO server
             max_http_buffer_size=10000000,  # 10MB instead of default 1MB
@@ -2110,13 +2118,17 @@ class WebEngine:
                         400,
                         {"Content-Type": "application/json"},
                     )
-                if model.get("legacy"):
-                    html = _sp._load_existing_html(
-                        _sp._validate_name(model.get("template_name") or "")
-                    ) or ""
-                else:
-                    html, _config = _sp.compile_preview_draft(model)
-                scripts = template_scripts(html, assets_root=get_assets_path())
+                def _scripts():
+                    if model.get("legacy"):
+                        html = _sp._load_existing_html(
+                            _sp._validate_name(model.get("template_name") or "")
+                        ) or ""
+                    else:
+                        html, _config = self._spore_compile_draft(model)
+                    return template_scripts(html, assets_root=get_assets_path())
+
+                # Compiling the draft and reading its scripts runs off the hub.
+                scripts = self._run_off_hub(_scripts)
                 return (
                     {"scripts": scripts},
                     200,
@@ -2565,7 +2577,8 @@ class WebEngine:
                         {"Content-Type": "application/json"},
                     )
                 try:
-                    saved = _sp.save_template(model)
+                    # Codegen, file writes and route refresh: off the hub (WE-16).
+                    saved = self._run_off_hub(self._spore_write, _sp.save_template, model)
                 except _sp.SporeStudioError as ex:
                     return (
                         {"error": str(ex)},
@@ -2643,7 +2656,7 @@ class WebEngine:
                         {"Content-Type": "application/json"},
                     )
                 try:
-                    draft_html, draft_config = _sp.compile_preview_draft(model)
+                    draft_html, draft_config = self._run_off_hub(self._spore_compile_draft, model)
                 except _sp.SporeStudioError as ex:
                     return (
                         {"error": str(ex)},
@@ -2700,6 +2713,7 @@ class WebEngine:
                     self._preview_sessions.pop(str(token), None)
                     self._preview_iframe_sids.pop(str(token), None)
                     self._bump_preview_sessions_rev()
+                self._sweep_preview_sessions()
                 return (
                     {"ok": True},
                     200,
@@ -3012,12 +3026,16 @@ class WebEngine:
 
                 payload = request.get_json(silent=True) or {}
                 try:
-                    model = _sp.create_template(
-                        name=str(payload.get("name") or ""),
-                        alert_system=str(payload.get("alert_system") or "queue"),
-                        copy_from=payload.get("copy_from") or None,
-                        design_width=_int_or(payload.get("design_width"), 800),
-                        design_height=_int_or(payload.get("design_height"), 200),
+                    model = self._run_off_hub(
+                        self._spore_write,
+                        functools.partial(
+                            _sp.create_template,
+                            name=str(payload.get("name") or ""),
+                            alert_system=str(payload.get("alert_system") or "queue"),
+                            copy_from=payload.get("copy_from") or None,
+                            design_width=_int_or(payload.get("design_width"), 800),
+                            design_height=_int_or(payload.get("design_height"), 200),
+                        ),
                     )
                 except _sp.SporeStudioError as ex:
                     return (
@@ -3046,7 +3064,9 @@ class WebEngine:
 
                 payload = request.get_json(silent=True) or {}
                 try:
-                    _sp.delete_template(str(payload.get("name") or ""))
+                    self._run_off_hub(
+                        self._spore_write, _sp.delete_template, str(payload.get("name") or "")
+                    )
                 except _sp.SporeStudioError as ex:
                     return (
                         {"error": str(ex)},
@@ -3365,7 +3385,7 @@ class WebEngine:
                                 continue
 
                         logger.debug(
-                            f"Stream Deck: Found {len(actions_list)} template actions across {len(template_configs)} templates"
+                            "Stream Deck: Found %s template actions across %s templates", len(actions_list), len(template_configs)
                         )
 
                         return (
@@ -3689,7 +3709,7 @@ class WebEngine:
                         continue
 
                 logger.debug(
-                    f"Stream Deck: Found {len(actions_list)} template actions across {len(template_configs)} templates"
+                    "Stream Deck: Found %s template actions across %s templates", len(actions_list), len(template_configs)
                 )
 
                 return (
@@ -4077,6 +4097,22 @@ class WebEngine:
                 logger.warning("Error loading config for %s: %s", config_name, e)
         return configs
 
+    # Work moved off the hub (database reads, Spore compiles, exports) runs on gevent's
+    # threadpool, 10 threads by default. Many docks reconnecting at once queued there.
+    _HUB_THREADPOOL_MAX = 32
+
+    def _size_hub_threadpool(self) -> None:
+        """Let the hub's threadpool grow with the machine (call on the server thread)."""
+        try:
+            from gevent import get_hub
+
+            pool = get_hub().threadpool
+            want = max(10, min(self._HUB_THREADPOOL_MAX, 4 * (os.cpu_count() or 2)))
+            if pool.maxsize < want:
+                pool.maxsize = want
+        except Exception as exc:
+            logger.debug("Could not size the gevent threadpool: %s", exc)
+
     def _yield_sleep(self, seconds: float) -> None:
         """Sleep without blocking the gevent hub when called from a greenlet."""
         try:
@@ -4119,11 +4155,16 @@ class WebEngine:
             out.append((name, mtime))
         return tuple(out)
 
+    @staticmethod
+    def _template_configs_cache_slot(preview_tok: Optional[str]) -> str:
+        return "_all_template_configs_preview_cache" if preview_tok else "_all_template_configs_cache"
+
     def _peek_all_template_configs_cache(self, preview_tok: str) -> Optional[bytes]:
         """Return the cached all-template-configs payload if fresh, else None."""
         cache_key = self._template_configs_cache_key(preview_tok)
+        slot = self._template_configs_cache_slot(preview_tok)
         with self._all_template_configs_cache_lock:
-            cached = self._all_template_configs_cache
+            cached = getattr(self, slot, None)
         if cached is None:
             return None
         key, expires_at, payload_bytes, generation, fingerprint, verified_at = cached
@@ -4143,8 +4184,8 @@ class WebEngine:
         if not unchanged:
             return None
         with self._all_template_configs_cache_lock:
-            if self._all_template_configs_cache is cached:
-                self._all_template_configs_cache = cached[:5] + (now,)
+            if getattr(self, slot, None) is cached:
+                setattr(self, slot, cached[:5] + (now,))
         return payload_bytes
 
     def _get_all_template_configs_cached(self, preview_tok: str) -> Tuple[bytes, bool]:
@@ -4180,14 +4221,14 @@ class WebEngine:
             payload_bytes = json.dumps(configs, separators=(",", ":")).encode("utf-8")
             with self._all_template_configs_cache_lock:
                 if generation == self._template_config_generation:
-                    self._all_template_configs_cache = (
+                    setattr(self, self._template_configs_cache_slot(preview_tok), (
                         cache_key,
                         built_at + self._ALL_TEMPLATE_CONFIGS_CACHE_TTL,
                         payload_bytes,
                         generation,
                         fingerprint,
                         built_at,
-                    )
+                    ))
             return payload_bytes, False
         finally:
             with self._all_template_configs_cache_lock:
@@ -4335,6 +4376,7 @@ class WebEngine:
     def invalidate_all_template_configs_cache(self) -> None:
         with self._all_template_configs_cache_lock:
             self._all_template_configs_cache = None
+            self._all_template_configs_preview_cache = None
         with self._dynamic_controls_cache_lock:
             self._dynamic_controls_cache = None
         self.invalidate_template_queue_metadata_cache()
@@ -4366,6 +4408,54 @@ class WebEngine:
             return
         with self._assets_watch_templates_lock:
             self._assets_watch_templates.discard(name)
+
+    # A preview session nobody has used (no iframe socket, no draft) for this long is
+    # dropped; each one can hold a whole draft template and its config.
+    _PREVIEW_SESSION_IDLE_SEC = 600.0
+    # Assets are polled only for templates with a live preview (or one opened just now).
+    _ASSETS_WATCH_IDLE_SEC = 60.0
+
+    def _sweep_preview_sessions(self, now: Optional[float] = None) -> None:
+        """Drop idle preview sessions and watch assets only for live previews (WE-43/44).
+
+        Previously a template stayed in the assets watch list for the rest of the
+        session once previewed (``os.walk`` of its folder every 1.5 s), and preview
+        sessions without an explicit release were never removed.
+        """
+        now = time.time() if now is None else now
+        lock = getattr(self, "_preview_sessions_lock", None)
+        if lock is None:
+            return
+        with lock:
+            sessions = self._preview_sessions
+            sids = getattr(self, "_preview_iframe_sids", {})
+
+            def _age(sess: Any) -> float:
+                try:
+                    return now - float((sess or {}).get("ts") or 0)
+                except (TypeError, ValueError, AttributeError):
+                    return now
+
+            stale = [tok for tok, sess in sessions.items()
+                     if not sids.get(tok) and _age(sess) > self._PREVIEW_SESSION_IDLE_SEC]
+            for tok in stale:
+                sessions.pop(tok, None)
+            if stale:
+                self._bump_preview_sessions_rev()
+            live = {
+                str(sess.get("template"))
+                for tok, sess in sessions.items()
+                if isinstance(sess, dict) and sess.get("template")
+                and (sids.get(tok) or _age(sess) < self._ASSETS_WATCH_IDLE_SEC)
+            }
+        watch_lock = getattr(self, "_assets_watch_templates_lock", None)
+        if watch_lock is None:
+            return
+        with watch_lock:
+            gone = self._assets_watch_templates - live
+            self._assets_watch_templates.intersection_update(live)
+        if stale or gone:
+            logger.debug("Preview sweep: dropped %d session(s); stopped watching %s", len(stale), sorted(gone))
 
     def get_assets_watch_templates(self) -> List[str]:
         with self._assets_watch_templates_lock:
@@ -5062,6 +5152,63 @@ class WebEngine:
             return fn(*args)
         return pool.apply(fn, args)
 
+    # ----- Spore Studio work that used to run on the hub (WE-40) -----
+
+    _SPORE_DRAFT_CACHE_SIZE = 8
+    _SPORE_DRAFT_CACHE_TTL_SEC = 60.0
+
+    def _spore_write(self, fn, *args):
+        """Run a template save/create/delete; one at a time (they share files and routes)."""
+        lock = self.__dict__.setdefault("_spore_write_lock", threading.Lock())
+        with lock:
+            return fn(*args)
+
+    def _spore_compile_draft(self, model: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+        """``compile_preview_draft``, reused for the same model for a short while.
+
+        The preview draft and the Advanced JS checker compile the same unsaved model
+        within a second or two of each other. The key includes the template-config
+        generation so a saved Source Settings change is never answered from cache.
+        """
+        from .spore_studio import save_pipeline as _sp
+
+        try:
+            body = json.dumps(model, sort_keys=True, separators=(",", ":"), default=str)
+        except (TypeError, ValueError):
+            return _sp.compile_preview_draft(model)
+        key = (
+            hashlib.sha1(body.encode("utf-8")).hexdigest(),
+            getattr(self, "_template_config_generation", 0),
+        )
+        cache = self.__dict__.setdefault("_spore_draft_cache", OrderedDict())
+        lock = self.__dict__.setdefault("_spore_draft_cache_lock", threading.Lock())
+        now = time.monotonic()
+        with lock:
+            hit = cache.get(key)
+            if hit is not None and now - hit[2] < self._SPORE_DRAFT_CACHE_TTL_SEC:
+                cache.move_to_end(key)
+                return hit[0], copy.deepcopy(hit[1])
+        html, config = _sp.compile_preview_draft(model)
+        with lock:
+            cache[key] = (html, copy.deepcopy(config), now)
+            while len(cache) > self._SPORE_DRAFT_CACHE_SIZE:
+                cache.popitem(last=False)
+        return html, config
+
+    def _compiled_draft_template(self, draft_html: str):
+        """Jinja template for a preview draft, compiled once per draft (about 18 ms each)."""
+        cache = self.__dict__.setdefault("_draft_template_cache", OrderedDict())
+        key = hashlib.sha1(draft_html.encode("utf-8")).hexdigest()
+        template = cache.get(key)
+        if template is None:
+            template = self.app.jinja_env.from_string(draft_html)
+            cache[key] = template
+            while len(cache) > self._SPORE_DRAFT_CACHE_SIZE:
+                cache.popitem(last=False)
+        else:
+            cache.move_to_end(key)
+        return template
+
     def _hub_alert_state_serialized(self, handler):
         """Let one hub greenlet at a time into AlertStateManager (TH-14).
 
@@ -5375,6 +5522,10 @@ class WebEngine:
         self._last_heartbeat_mono = now_mono
         # Mark the gevent hub as alive for the watchdog.
         self._last_gevent_heartbeat = time.time()
+        try:
+            self._sweep_preview_sessions()
+        except Exception as exc:
+            logger.debug("Preview session sweep failed: %s", exc)
         bottleneck_diag = self._get_bottleneck_diagnostics()
         m = bottleneck_diag.get("metrics") or {}
         status = "overloaded" if bottleneck_diag.get("bottlenecked") else "running"
@@ -6321,41 +6472,45 @@ class WebEngine:
                 q = (request.args.get("q") or "").strip().lower()
                 sort = (request.args.get("sort") or "recent").strip().lower()
                 include_hidden = (request.args.get("include_hidden") or "").strip().lower() in ("1", "true", "yes")
-                games = _service().store.list_games(platform or None)
-                if not include_hidden:
-                    games = [g for g in games if not g.hidden]
-                if q:
-                    games = [g for g in games if q in g.display_title.lower()]
-                if sort == "name":
-                    games.sort(key=lambda g: g.display_title.lower())
-                elif sort == "progress":
-                    games.sort(key=lambda g: (-g.progress, -g.last_played))
-                else:
-                    games.sort(key=lambda g: -g.last_played)
-                from .game_tracker.speedrun import speedruns_public
-
-                goals = _service().goals_by_game()
-                runs = _service().speedruns_by_game()
-                rows = []
-                for g in games:
-                    row = g.public()
-                    mine = goals.get(g.key) or []
-                    row["key"] = g.key
-                    row["goals_total"] = len(mine)
-                    row["goals_done"] = sum(1 for x in mine if x.completed_at)
-                    row["speedruns"] = speedruns_public(runs.get(g.key, []))
-                    rows.append(row)
-                return {"games": rows}
+                # SQLite reads (games, goals, speedruns) run off the hub (WE-41).
+                return {"games": self._run_off_hub(_games_rows, platform, q, sort, include_hidden)}
             except Exception as e:
                 logger.error("game tracker games: %s", e, exc_info=True)
                 return _bad("Couldn't read the games library", 500)
+
+        def _games_rows(platform: str, q: str, sort: str, include_hidden: bool) -> list:
+            games = _service().store.list_games(platform or None)
+            if not include_hidden:
+                games = [g for g in games if not g.hidden]
+            if q:
+                games = [g for g in games if q in g.display_title.lower()]
+            if sort == "name":
+                games.sort(key=lambda g: g.display_title.lower())
+            elif sort == "progress":
+                games.sort(key=lambda g: (-g.progress, -g.last_played))
+            else:
+                games.sort(key=lambda g: -g.last_played)
+            from .game_tracker.speedrun import speedruns_public
+
+            goals = _service().goals_by_game()
+            runs = _service().speedruns_by_game()
+            rows = []
+            for g in games:
+                row = g.public()
+                mine = goals.get(g.key) or []
+                row["key"] = g.key
+                row["goals_total"] = len(mine)
+                row["goals_done"] = sum(1 for x in mine if x.completed_at)
+                row["speedruns"] = speedruns_public(runs.get(g.key, []))
+                rows.append(row)
+            return rows
 
         @self.app.route("/api/game-tracker/backlog")
         def game_tracker_backlog():
             """Every game with goals, with its goals (open sets first, then the furthest along)."""
             try:
                 include_hidden = (request.args.get("include_hidden") or "").strip().lower() in ("1", "true", "yes")
-                return {"games": _service().backlog(include_hidden=include_hidden)}
+                return {"games": self._run_off_hub(functools.partial(_service().backlog, include_hidden=include_hidden))}
             except Exception as e:
                 logger.error("game tracker backlog: %s", e, exc_info=True)
                 return _bad("Couldn't read the backlog", 500)
@@ -6364,7 +6519,7 @@ class WebEngine:
         def game_tracker_summary():
             try:
                 svc = _service()
-                return {"summary": svc.summary(), "status": svc.status()}
+                return self._run_off_hub(lambda: {"summary": svc.summary(), "status": svc.status()})
             except Exception as e:
                 logger.error("game tracker summary: %s", e, exc_info=True)
                 return _bad("Couldn't read the games library", 500)
@@ -6374,42 +6529,46 @@ class WebEngine:
             platform = (platform or "").lower()
             if platform not in platforms:
                 return _bad("platform must be psn or steam")
+            method = request.method
+            payload = request.get_json(silent=True) if method == "PATCH" else None
             try:
-                svc = _service()
-                if request.method == "DELETE":
-                    if not svc.remove_game(platform, game_id):
-                        return _bad("Unknown game", 404)
-                    return {"ok": True}
-                if request.method == "PATCH":
-                    payload = request.get_json(silent=True)
-                    if not isinstance(payload, dict):
-                        return _bad("Send a JSON object")
-                    if svc.store.get_game(platform, game_id) is None:
-                        return _bad("Unknown game", 404)
-                    changes = {}
-                    if "title" in payload:
-                        changes["title"] = str(payload.get("title") or "")
-                    if "hidden" in payload:
-                        changes["hidden"] = bool(payload.get("hidden"))
-                    if platform == "psn":
-                        if "np_title_id" in payload:
-                            changes["np_title_id"] = str(payload.get("np_title_id") or "")
-                        if "np_communication_id" in payload:
-                            changes["np_communication_id"] = str(payload.get("np_communication_id") or "")
-                    game, error = svc.update_game(platform, game_id, **changes)
-                    if error or game is None:
-                        return _bad(error or "Couldn't save the game")
-                    return {"game": game.public()}
-                game = svc.store.get_game(platform, game_id)
-                if game is None:
-                    return _bad("Unknown game", 404)
-                unlocks = svc.store.recent_events(10, platform=platform, game_id=game.game_id, kinds=("unlock",))
-                payload = svc.game_payload_for(game.key) or {}
-                return {"game": game.public(), "goals": payload.get("goals", []),
-                        "recent_unlocks": [e.fields_for_events() for e in unlocks]}
+                return self._run_off_hub(_game_request, method, platform, game_id, payload)
             except Exception as e:
                 logger.error("game tracker game %s/%s: %s", platform, game_id, e, exc_info=True)
                 return _bad("Couldn't read the game", 500)
+
+        def _game_request(method: str, platform: str, game_id: str, payload: Any):
+            svc = _service()
+            if method == "DELETE":
+                if not svc.remove_game(platform, game_id):
+                    return _bad("Unknown game", 404)
+                return {"ok": True}
+            if method == "PATCH":
+                if not isinstance(payload, dict):
+                    return _bad("Send a JSON object")
+                if svc.store.get_game(platform, game_id) is None:
+                    return _bad("Unknown game", 404)
+                changes = {}
+                if "title" in payload:
+                    changes["title"] = str(payload.get("title") or "")
+                if "hidden" in payload:
+                    changes["hidden"] = bool(payload.get("hidden"))
+                if platform == "psn":
+                    if "np_title_id" in payload:
+                        changes["np_title_id"] = str(payload.get("np_title_id") or "")
+                    if "np_communication_id" in payload:
+                        changes["np_communication_id"] = str(payload.get("np_communication_id") or "")
+                game, error = svc.update_game(platform, game_id, **changes)
+                if error or game is None:
+                    return _bad(error or "Couldn't save the game")
+                return {"game": game.public()}
+            game = svc.store.get_game(platform, game_id)
+            if game is None:
+                return _bad("Unknown game", 404)
+            unlocks = svc.store.recent_events(10, platform=platform, game_id=game.game_id, kinds=("unlock",))
+            payload = svc.game_payload_for(game.key) or {}
+            return {"game": game.public(), "goals": payload.get("goals", []),
+                    "recent_unlocks": [e.fields_for_events() for e in unlocks]}
 
         @self.app.route("/api/game-tracker/games/psn/<game_id>/resolve", methods=["POST"])
         def game_tracker_resolve(game_id: str):
@@ -6417,20 +6576,23 @@ class WebEngine:
             if not isinstance(payload, dict) or not str(payload.get("np_title_id") or "").strip():
                 return _bad("Send np_title_id")
             try:
-                svc = _service()
-                if svc.store.get_game("psn", game_id) is None:
-                    return _bad("Unknown game", 404)
-                np_title_id = str(payload["np_title_id"]).strip().upper()
-                npwr = svc.resolve_npwr(np_title_id)
-                if not npwr:
-                    return _bad("PlayStation didn't return an NPWR ID for that title ID", 404)
-                game, error = svc.update_game("psn", game_id, np_title_id=np_title_id, np_communication_id=npwr)
-                if error or game is None:
-                    return _bad(error or "Couldn't save the game")
-                return {"game": game.public(), "np_communication_id": npwr}
+                return self._run_off_hub(_resolve, game_id, str(payload["np_title_id"]).strip().upper())
             except Exception as e:
                 logger.error("game tracker resolve %s: %s", game_id, e, exc_info=True)
                 return _bad("Couldn't resolve the NPWR ID", 500)
+
+        def _resolve(game_id: str, np_title_id: str):
+            """Blocking PSN lookup: runs on a worker thread, never on the hub (WE-41)."""
+            svc = _service()
+            if svc.store.get_game("psn", game_id) is None:
+                return _bad("Unknown game", 404)
+            npwr = svc.resolve_npwr(np_title_id)
+            if not npwr:
+                return _bad("PlayStation didn't return an NPWR ID for that title ID", 404)
+            game, error = svc.update_game("psn", game_id, np_title_id=np_title_id, np_communication_id=npwr)
+            if error or game is None:
+                return _bad(error or "Couldn't save the game")
+            return {"game": game.public(), "np_communication_id": npwr}
 
         @self.app.route("/api/game-tracker/sync", methods=["POST"])
         def game_tracker_sync():
@@ -6475,12 +6637,20 @@ class WebEngine:
                         raw[key] = args.get(key)
                 if args.get("game") is not None:
                     raw["game_key"] = args.get("game")
-                image = render_games_image(ExportOptions.from_dict(raw), store=svc.store)
-                if image is None:
+
+                def _png() -> Optional[bytes]:
+                    # PIL drawing and PNG encoding: CPU work, off the hub (WE-41).
+                    image = render_games_image(ExportOptions.from_dict(raw), store=svc.store)
+                    if image is None:
+                        return None
+                    buf = io.BytesIO()
+                    image.convert("RGB").save(buf, "PNG")
+                    return buf.getvalue()
+
+                data = self._run_off_hub(_png)
+                if data is None:
                     return make_response(b"", 404)
-                buf = io.BytesIO()
-                image.convert("RGB").save(buf, "PNG")
-                resp = make_response(buf.getvalue())
+                resp = make_response(data)
                 resp.headers["Content-Type"] = "image/png"
                 resp.headers["Cache-Control"] = "no-store"
                 return resp
@@ -6502,7 +6672,7 @@ class WebEngine:
                     if args.get(key) is not None:
                         raw[key] = str(args.get(key)).strip().lower() in ("1", "true", "yes", "on")
                 options = SpreadsheetOptions.from_dict(raw)
-                data = workbook_bytes(svc.store, options)
+                data = self._run_off_hub(workbook_bytes, svc.store, options)
                 if data is None:
                     return make_response(b"", 404)
                 resp = make_response(data)
@@ -6526,7 +6696,7 @@ class WebEngine:
                 os.path.basename(f).replace(".html", "") for f in html_files
             }
             logger.debug(
-                f"Found {len(current_templates)} HTML templates: {sorted(current_templates)}"
+                "Found %s HTML templates: %s", len(current_templates), sorted(current_templates)
             )
         else:
             logger.warning(f"Template directory {self.template_dir} not found.")
@@ -6552,7 +6722,7 @@ class WebEngine:
         self._registered_template_routes = current_templates
 
         logger.debug(
-            f"Template route registration complete. Total routes: {len(self._registered_template_routes)}"
+            "Template route registration complete. Total routes: %s", len(self._registered_template_routes)
         )
 
     def overlay_source_routes(self):
@@ -6688,7 +6858,7 @@ class WebEngine:
             endpoint_name = f"route_{template_name}_{self._route_counter}"
 
             logger.debug(
-                f"Registering route: {route_path} -> {template_name}.html (endpoint: {endpoint_name})"
+                "Registering route: %s -> %s.html (endpoint: %s)", route_path, template_name, endpoint_name
             )
 
             # Create assets folder for this template if it doesn't exist
@@ -6698,7 +6868,7 @@ class WebEngine:
                 engine_self = self
 
                 def route_handler():
-                    logger.debug(f"Serving template {template}")
+                    logger.debug("Serving template %s", template)
                     if not os.path.isfile(
                         os.path.join(engine_self.template_dir, f"{template}.html")
                     ):
@@ -6775,11 +6945,11 @@ class WebEngine:
                         )
 
                         logger.debug(
-                            f"Template {template} variables: {list(template_vars.keys())}"
+                            "Template %s variables: %s", template, list(template_vars.keys())
                         )
                         if draft_html is not None:
-                            html = render_template_string(
-                                draft_html,
+                            html = render_template(
+                                engine_self._compiled_draft_template(draft_html),
                                 **template_vars,
                                 mycelian_html_stem=str(template),
                                 mycelian_preview_mode=mycelian_preview_mode,
@@ -6838,7 +7008,7 @@ class WebEngine:
                 route_path, endpoint_name, route_handler, methods=["GET"]
             )
 
-            logger.debug(f"Successfully registered route for template: {template_name}")
+            logger.debug("Successfully registered route for template: %s", template_name)
 
         except AssertionError as e:
             # Flask 3.x forbids add_url_rule after the first request. The
@@ -6945,8 +7115,8 @@ class WebEngine:
                 template_vars = WebEngine._template_variable_map(template_config)
 
                 if draft_html is not None:
-                    html = render_template_string(
-                        draft_html,
+                    html = render_template(
+                        engine_self._compiled_draft_template(draft_html),
                         **template_vars,
                         mycelian_html_stem=str(template_name),
                         mycelian_preview_mode=mycelian_preview_mode,
@@ -7015,18 +7185,18 @@ class WebEngine:
             assets_dir = get_assets_path()
             if not os.path.exists(assets_dir):
                 os.makedirs(assets_dir)
-                logger.debug(f"Created main assets directory: {assets_dir}")
+                logger.debug("Created main assets directory: %s", assets_dir)
 
             # Create template-specific folder within assets
             template_assets_dir = os.path.join(assets_dir, template_name)
             if not os.path.exists(template_assets_dir):
                 os.makedirs(template_assets_dir)
                 logger.debug(
-                    f"Created assets folder for template '{template_name}': {template_assets_dir}"
+                    "Created assets folder for template '%s': %s", template_name, template_assets_dir
                 )
             else:
                 logger.debug(
-                    f"Assets folder already exists for template '{template_name}': {template_assets_dir}"
+                    "Assets folder already exists for template '%s': %s", template_name, template_assets_dir
                 )
 
         except Exception as e:
@@ -7065,6 +7235,7 @@ class WebEngine:
                 sids.discard(sid)
                 if not sids:
                     self._preview_iframe_sids.pop(stale_token, None)
+        self._sweep_preview_sessions()
 
     def _preview_iframe_has_sid(self, sid: str) -> bool:
         with self._preview_sessions_lock:
@@ -7391,7 +7562,7 @@ class WebEngine:
                     - request_id (str): Unique request identifier for response matching
             """
             client_sid = request.sid
-            logger.debug(f"Received get_audio_files request from {client_sid}: {data}")
+            logger.debug("Received get_audio_files request from %s: %s", client_sid, data)
             fallback_request_id = (
                 data.get("request_id", "unknown") if isinstance(data, dict) else "unknown"
             )
@@ -7470,7 +7641,7 @@ class WebEngine:
                     audio_files.sort()  # Sort for consistent ordering
 
                     logger.debug(
-                        f"Found {len(audio_files)} audio files in {audio_folder_path}"
+                        "Found %s audio files in %s", len(audio_files), audio_folder_path
                     )
 
                     response_data = {
@@ -7758,7 +7929,7 @@ class WebEngine:
                         },
                         to=request.sid,
                     )
-                    logger.debug(f"Sent current theme to {request.sid}: {theme.name}")
+                    logger.debug("Sent current theme to %s: %s", request.sid, theme.name)
             except Exception as e:
                 logger.error(
                     f"Error handling get_current_theme: {str(e)}",
@@ -7956,7 +8127,7 @@ class WebEngine:
 
                 database_manager.set_data(path, data_to_set)
                 self._broadcast_source_control_runtime_path_update(path, data_to_set)
-                logger.debug(f"Successfully set data at path: {path}")
+                logger.debug("Successfully set data at path: %s", path)
                 return True
             except Exception as e:
                 logger.error(f"Error setting data: {str(e)}", exc_info=True)
@@ -7988,7 +8159,7 @@ class WebEngine:
 
                 database_manager.update_data(path, data_to_update)
                 self._broadcast_source_control_runtime_path_update(path, data_to_update)
-                logger.debug(f"Successfully updated data at path: {path}")
+                logger.debug("Successfully updated data at path: %s", path)
                 return True
             except Exception as e:
                 logger.error(f"Error updating data: {str(e)}", exc_info=True)
@@ -8042,7 +8213,7 @@ class WebEngine:
                         logger.debug("statistics/session snapshot failed: %s", exc)
 
                 result = database_manager.get_data(path, request_etag)
-                logger.debug(f"Successfully retrieved data from path: {path}")
+                logger.debug("Successfully retrieved data from path: %s", path)
 
                 if isinstance(result, dict):
                     if request_etag and "data" in result:
@@ -8092,17 +8263,17 @@ class WebEngine:
                         alert_type, include_ranges=include_ranges
                     )
                     logger.debug(
-                        f"Returning alert state for type: {alert_type} to {client_sid}"
+                        "Returning alert state for type: %s to %s", alert_type, client_sid
                     )
                 else:
                     # Get all alert data
                     result = alertutils.alert_state_manager.get_all_alerts()
-                    logger.debug(f"Returning complete alert state to {client_sid}")
+                    logger.debug("Returning complete alert state to %s", client_sid)
 
                 # Emit the result back to the requesting client
                 self.socketio.emit("alert_state_response", result, to=client_sid)
                 logger.debug(
-                    f"Emitted alert_state_response to {client_sid} with {len(result) if result else 0} alerts"
+                    "Emitted alert_state_response to %s with %s alerts", client_sid, len(result) if result else 0
                 )
 
                 return result
@@ -8154,7 +8325,7 @@ class WebEngine:
                 )
 
                 if success:
-                    logger.debug(f"Successfully updated alert data for {alert_id}")
+                    logger.debug("Successfully updated alert data for %s", alert_id)
                     return {"success": True}
                 else:
                     logger.error(f"Failed to update alert data for {alert_id}")
@@ -8198,7 +8369,7 @@ class WebEngine:
                 success = alertutils.alert_state_manager.save_alert_by_id(alert_id)
 
                 if success:
-                    logger.debug(f"Successfully saved alert {alert_id}")
+                    logger.debug("Successfully saved alert %s", alert_id)
                     return {"success": True}
                 else:
                     logger.error(f"Failed to save alert {alert_id}")
@@ -8223,7 +8394,7 @@ class WebEngine:
 
                 # Get stored alerts
                 result = alertutils.alert_state_manager.get_stored_alerts()
-                logger.debug(f"Returning {len(result)} stored alerts")
+                logger.debug("Returning %s stored alerts", len(result))
 
                 return result
             except Exception as e:
@@ -8245,7 +8416,7 @@ class WebEngine:
             """
             # Store the client session ID before entering the thread
             client_sid = request.sid
-            logger.debug(f"Received twitch_api_proxy request: {data}")
+            logger.debug("Received twitch_api_proxy request: %s", data)
             try:
                 if not isinstance(data, dict) or "url" not in data:
                     logger.error(
@@ -8433,47 +8604,47 @@ class WebEngine:
             client_sid = request.sid
             psn_debug = logger.isEnabledFor(logging.DEBUG)
             logger.debug(
-                f"=== WEB ENGINE: Received get_psn_data request from {client_sid} ==="
+                "=== WEB ENGINE: Received get_psn_data request from %s ===", client_sid
             )
-            logger.debug(f"Request data: {data}")
-            logger.debug(f"Request timestamp: {datetime.now().isoformat()}")
+            logger.debug("Request data: %s", data)
+            logger.debug("Request timestamp: %s", datetime.now().isoformat())
 
             try:
                 logger.debug("Attempting to get live PSN data from state manager...")
                 live_psn_data = state_manager.get_live_psn_data()
                 if psn_debug:
-                    logger.debug(f"Live PSN data retrieved: {live_psn_data}")
+                    logger.debug("Live PSN data retrieved: %s", live_psn_data)
 
                 if live_psn_data:
                     from .psn_service import _public_psn_payload
 
                     psn_data_dict = _public_psn_payload(live_psn_data)
                     if psn_debug:
-                        logger.debug(f"PSN data converted to dict: {psn_data_dict}")
-                        logger.debug(f"PSN data dict keys: {list(psn_data_dict.keys())}")
+                        logger.debug("PSN data converted to dict: %s", psn_data_dict)
+                        logger.debug("PSN data dict keys: %s", list(psn_data_dict.keys()))
 
                         # Log specific fields that the template is looking for
                         logger.debug("=== PSN Data Fields for Trophies Template ===")
                         logger.debug(
-                            f"  - current_game_name: {psn_data_dict.get('current_game_name')}"
+                            "  - current_game_name: %s", psn_data_dict.get('current_game_name')
                         )
                         logger.debug(
-                            f"  - current_game_art_url: {psn_data_dict.get('current_game_art_url')}"
+                            "  - current_game_art_url: %s", psn_data_dict.get('current_game_art_url')
                         )
                         logger.debug(
-                            f"  - current_game_trophies: {psn_data_dict.get('current_game_trophies')}"
+                            "  - current_game_trophies: %s", psn_data_dict.get('current_game_trophies')
                         )
                         logger.debug(
-                            f"  - trophy_counts: {psn_data_dict.get('trophy_counts')}"
+                            "  - trophy_counts: %s", psn_data_dict.get('trophy_counts')
                         )
                         logger.debug(
-                            f"  - current_game_progress: {psn_data_dict.get('current_game_progress')}"
+                            "  - current_game_progress: %s", psn_data_dict.get('current_game_progress')
                         )
 
                     self.socketio.emit("psn_data_update", psn_data_dict, to=client_sid)
-                    logger.debug(f"Successfully sent psn_data_update to {client_sid}")
+                    logger.debug("Successfully sent psn_data_update to %s", client_sid)
                     logger.debug(
-                        f"Data sent - Current game: {live_psn_data.current_game_name}"
+                        "Data sent - Current game: %s", live_psn_data.current_game_name
                     )
                 else:
                     logger.warning("No live PSN data available - sending default data")
@@ -8482,12 +8653,12 @@ class WebEngine:
 
                     default_data_dict = _public_psn_payload(PSNData())
                     if psn_debug:
-                        logger.debug(f"Default PSN data dict: {default_data_dict}")
+                        logger.debug("Default PSN data dict: %s", default_data_dict)
                     self.socketio.emit(
                         "psn_data_update", default_data_dict, to=client_sid
                     )
                     logger.debug(
-                        f"Sent default psn_data_update to {client_sid} as no live data was available."
+                        "Sent default psn_data_update to %s as no live data was available.", client_sid
                     )
 
                 logger.debug("=== WEB ENGINE: get_psn_data handling complete ===")
@@ -8524,7 +8695,7 @@ class WebEngine:
             Emitted by pausedalerts template when it loads.
             """
             client_sid = request.sid
-            logger.debug(f"Pause alerts template loaded from {client_sid}")
+            logger.debug("Pause alerts template loaded from %s", client_sid)
             # Send current pause status to the newly loaded template
             global ALERTS_PAUSED
             self.socketio.emit(
@@ -8539,7 +8710,7 @@ class WebEngine:
             """
             client_sid = request.sid
             global ALERTS_PAUSED
-            logger.debug(f"Received get_pause_status request from {client_sid}")
+            logger.debug("Received get_pause_status request from %s", client_sid)
             self.socketio.emit(
                 "pause_status_update", {"paused": ALERTS_PAUSED}, to=client_sid
             )
@@ -8575,7 +8746,7 @@ class WebEngine:
                 if isinstance(keys, str):
                     keys = keys.replace("\n", ",").split(",")
                 keys = [str(k).strip() for k in keys if str(k).strip()][:50]
-                games = get_service().games_payload(mode, keys)
+                games = self._run_off_hub(get_service().games_payload, mode, keys)
                 self.safe_emit("game_tracker_games", {"mode": mode, "keys": keys, "games": games}, to=client_sid)
                 return True
             except Exception as e:
@@ -8658,7 +8829,7 @@ class WebEngine:
                 logger.debug("ALERTS_PAUSED set to %s", ALERTS_PAUSED)
 
                 logger.debug(
-                    f"Pause status changed from {old_status} to {new_status} by {request.sid}"
+                    "Pause status changed from %s to %s by %s", old_status, new_status, request.sid
                 )
 
                 # Broadcast the status change to all connected clients
@@ -8678,7 +8849,7 @@ class WebEngine:
             """Return the current mute status to the requesting client."""
             client_sid = request.sid
             global ALERTS_MUTED
-            logger.debug(f"Received get_mute_status request from {client_sid}")
+            logger.debug("Received get_mute_status request from %s", client_sid)
             self.socketio.emit(
                 "mute_status_update", {"muted": ALERTS_MUTED}, to=client_sid
             )
@@ -8704,7 +8875,7 @@ class WebEngine:
                 old_status = ALERTS_MUTED
                 ALERTS_MUTED = new_status
                 logger.debug(
-                    f"Mute status changed from {old_status} to {new_status} by {request.sid}"
+                    "Mute status changed from %s to %s by %s", old_status, new_status, request.sid
                 )
 
                 self.socketio.emit("mute_status_update", {"muted": new_status})
@@ -8721,7 +8892,7 @@ class WebEngine:
             Handle get_spotify_data websocket event.
             Retrieves the current Spotify data from StateManager and sends it to the client.
             """
-            logger.debug(f"Received get_spotify_data request from {request.sid}")
+            logger.debug("Received get_spotify_data request from %s", request.sid)
             try:
                 from . import spotify
                 from .dataobjects import state_manager
@@ -8735,14 +8906,14 @@ class WebEngine:
                         "spotify_data_update", spotify_data_dict, to=request.sid
                     )
                     logger.debug(
-                        f"Sent spotify_data_update to {request.sid}: {spotify_data.track_name}"
+                        "Sent spotify_data_update to %s: %s", request.sid, spotify_data.track_name
                     )
                 else:
                     default_data_dict = spotify.public_spotify_payload(None)
                     self.socketio.emit(
                         "spotify_data_update", default_data_dict, to=request.sid
                     )
-                    logger.debug(f"Sent default spotify_data_update to {request.sid}")
+                    logger.debug("Sent default spotify_data_update to %s", request.sid)
                 return True
             except Exception as e:
                 logger.error(
@@ -8759,7 +8930,7 @@ class WebEngine:
             Handle spotify_oauth_start websocket event.
             Starts the Spotify OAuth flow and returns the authorization URL.
             """
-            logger.debug(f"Received spotify_oauth_start request from {request.sid}")
+            logger.debug("Received spotify_oauth_start request from %s", request.sid)
             try:
                 from . import spotify
 
@@ -8768,7 +8939,7 @@ class WebEngine:
                     self.socketio.emit(
                         "spotify_oauth_url", {"url": auth_url}, to=request.sid
                     )
-                    logger.debug(f"Sent Spotify OAuth URL to {request.sid}")
+                    logger.debug("Sent Spotify OAuth URL to %s", request.sid)
                     return {"success": True, "url": auth_url}
                 else:
                     self.socketio.emit(
@@ -8796,7 +8967,7 @@ class WebEngine:
                 data (dict): Dictionary containing:
                     - code (str): The authorization code from Spotify
             """
-            logger.debug(f"Received spotify_oauth_complete request from {request.sid}")
+            logger.debug("Received spotify_oauth_complete request from %s", request.sid)
             try:
                 if not isinstance(data, dict) or "code" not in data:
                     logger.error(
@@ -8850,7 +9021,7 @@ class WebEngine:
             Args:
                 data (dict): Dictionary containing Spotify settings to update
             """
-            logger.debug(f"Received update_spotify_settings request from {request.sid}")
+            logger.debug("Received update_spotify_settings request from %s", request.sid)
             try:
                 if not isinstance(data, dict):
                     logger.error(
@@ -8872,7 +9043,7 @@ class WebEngine:
                     client_id=client_id, client_secret=client_secret
                 )
 
-                logger.debug(f"Updated Spotify settings for {request.sid}")
+                logger.debug("Updated Spotify settings for %s", request.sid)
                 return {"success": True}
             except Exception as e:
                 logger.error(
@@ -8886,7 +9057,7 @@ class WebEngine:
             Handle get_spotify_status websocket event.
             Returns the current Spotify connection status.
             """
-            logger.debug(f"Received get_spotify_status request from {request.sid}")
+            logger.debug("Received get_spotify_status request from %s", request.sid)
             try:
                 from . import spotify
 
@@ -8894,7 +9065,7 @@ class WebEngine:
                 status = self._run_off_hub(spotify.get_spotify_status)
                 self.socketio.emit("spotify_status_update", status, to=request.sid)
                 logger.debug(
-                    f"Sent Spotify status to {request.sid}: {status['status']}"
+                    "Sent Spotify status to %s: %s", request.sid, status['status']
                 )
                 return status
             except Exception as e:
@@ -8912,7 +9083,7 @@ class WebEngine:
             Handle get_twitch_data websocket event.
             Retrieves the current Twitch data from StateManager and sends it to the client.
             """
-            logger.debug(f"Received get_twitch_data request from {request.sid}")
+            logger.debug("Received get_twitch_data request from %s", request.sid)
             try:
                 from .dataobjects import state_manager
 
@@ -8934,7 +9105,7 @@ class WebEngine:
                         "twitch_data_update", twitch_data_dict, to=request.sid
                     )
                     logger.debug(
-                        f"Sent twitch_data_update to {request.sid}: Current category {twitch_data.current_category}"
+                        "Sent twitch_data_update to %s: Current category %s", request.sid, twitch_data.current_category
                     )
                 else:
                     # Send empty data if no data is available
@@ -8946,7 +9117,7 @@ class WebEngine:
                     self.socketio.emit(
                         "twitch_data_update", default_data_dict, to=request.sid
                     )
-                    logger.debug(f"Sent default twitch_data_update to {request.sid}")
+                    logger.debug("Sent default twitch_data_update to %s", request.sid)
                 return True
             except Exception as e:
                 logger.error(f"Error handling get_twitch_data: {str(e)}", exc_info=True)
@@ -8962,7 +9133,8 @@ class WebEngine:
                 user = str((data or {}).get("user") or "") if isinstance(data, dict) else ""
                 from .uiwindows.activity_feed import _json_ready, person_rows_payload
 
-                return _json_ready(person_rows_payload(user))
+                # Stored-alert scan: off the hub, like get_condensed_view_alerts (WE-42).
+                return _json_ready(self._run_off_hub(person_rows_payload, user))
             except Exception as e:
                 logger.error("Error handling activity_feed_person_events: %s", e, exc_info=True)
                 return {"success": False, "user": "", "rows": [], "error": str(e)}
@@ -8979,7 +9151,7 @@ class WebEngine:
                     - filters (dict, optional): Overlay filter checkbox state
             """
             logger.debug(
-                f"Received get_condensed_view_alerts request from {request.sid}"
+                "Received get_condensed_view_alerts request from %s", request.sid
             )
             hours = 12
             try:
@@ -9093,7 +9265,8 @@ class WebEngine:
                     }
                 from modules.uiwindows.activity_feed import view_manager
 
-                snapshot = view_manager.update(data)
+                # update() loads and saves the view (a database write): off the hub (WE-42).
+                snapshot = self._run_off_hub(view_manager.update, data)
                 return {"success": True, "view": snapshot}
             except Exception as exc:
                 logger.error(
@@ -9206,12 +9379,12 @@ class WebEngine:
             Handle get_route_info websocket event.
             Returns detailed information about registered template routes.
             """
-            logger.debug(f"Received get_route_info request from {request.sid}")
+            logger.debug("Received get_route_info request from %s", request.sid)
             try:
                 route_info = self.get_registered_template_routes()
                 self.socketio.emit("route_info_update", route_info, to=request.sid)
                 logger.debug(
-                    f"Sent route info to {request.sid}: {route_info['total_routes']} routes"
+                    "Sent route info to %s: %s routes", request.sid, route_info['total_routes']
                 )
                 return route_info
             except Exception as e:
@@ -9228,7 +9401,7 @@ class WebEngine:
             """
             if _reject_non_localhost_socket():
                 return {"success": False, "error": "Forbidden"}
-            logger.debug(f"Received force_route_resync request from {request.sid}")
+            logger.debug("Received force_route_resync request from %s", request.sid)
             try:
                 logger.info("Force route resync triggered by client")
 
@@ -9290,7 +9463,7 @@ class WebEngine:
             Returns the current streamer information for chat templates.
             """
             client_sid = request.sid
-            logger.debug(f"Received get-streamer-info request from {client_sid}")
+            logger.debug("Received get-streamer-info request from %s", client_sid)
             try:
                 from .dataobjects import state_manager
 
@@ -9327,7 +9500,7 @@ class WebEngine:
                         )
                     self.socketio.emit("streamer-info", streamer_info, to=client_sid)
                     logger.debug(
-                        f"Sent streamer info to {client_sid}: {streamer_info['user_id']}"
+                        "Sent streamer info to %s: %s", client_sid, streamer_info['user_id']
                     )
                 else:
                     # Send default/empty data if no streamer data is available
@@ -9341,7 +9514,7 @@ class WebEngine:
                         "current_category": "No Category",
                     }
                     self.socketio.emit("streamer-info", default_info, to=client_sid)
-                    logger.debug(f"Sent default streamer info to {client_sid}")
+                    logger.debug("Sent default streamer info to %s", client_sid)
                 return True
             except Exception as e:
                 logger.error(
@@ -9366,7 +9539,7 @@ class WebEngine:
                 - json_data or json (dict, optional): JSON body for POST/PATCH/PUT.
             """
             client_sid = request.sid
-            logger.debug(f"Received twitch-api-request from {client_sid}: {data}")
+            logger.debug("Received twitch-api-request from %s: %s", client_sid, data)
             request_id = (
                 data.get("requestId", "unknown") if isinstance(data, dict) else "unknown"
             )
@@ -9604,7 +9777,7 @@ class WebEngine:
                 return {"error": "Not found"}
             client_sid = request.sid
             logger.debug(
-                f"=== WEB ENGINE: Debug PSN data request from {client_sid} ==="
+                "=== WEB ENGINE: Debug PSN data request from %s ===", client_sid
             )
             try:
                 # Get PSN data from state manager
@@ -9624,7 +9797,7 @@ class WebEngine:
 
                 # Send debug info back to client
                 self.socketio.emit("debug_psn_response", debug_info, to=client_sid)
-                logger.debug(f"Sent debug PSN response to {client_sid}")
+                logger.debug("Sent debug PSN response to %s", client_sid)
 
                 return debug_info
             except Exception as e:
@@ -9651,7 +9824,7 @@ class WebEngine:
                     - increment (bool, optional): Whether to increment existing value (default: False)
             """
             client_sid = request.sid
-            logger.debug(f"Received submit_template_stat from {client_sid}: {data}")
+            logger.debug("Received submit_template_stat from %s: %s", client_sid, data)
 
             try:
                 if not isinstance(data, dict):
@@ -9711,7 +9884,7 @@ class WebEngine:
                         "increment": increment,
                     }
                     logger.debug(
-                        f"Successfully submitted template stat: {template_name}.{stat_name} = {stat_value}"
+                        "Successfully submitted template stat: %s.%s = %s", template_name, stat_name, stat_value
                     )
                 else:
                     response = {
@@ -9769,7 +9942,7 @@ class WebEngine:
             """
             client_sid = request.sid
             logger.debug(
-                f"Received get_template_configs_for_streamdeck from {client_sid}"
+                "Received get_template_configs_for_streamdeck from %s", client_sid
             )
 
             try:
@@ -9794,7 +9967,7 @@ class WebEngine:
                             ):
                                 dynamic_configs[config_name] = config
                                 logger.debug(
-                                    f"Included template with dynamic controls: {config_name}"
+                                    "Included template with dynamic controls: %s", config_name
                                 )
                         except Exception as e:
                             logger.warning(
@@ -9812,7 +9985,7 @@ class WebEngine:
 
                 self.socketio.emit("template_configs_response", response, to=client_sid)
                 logger.debug(
-                    f"Sent {len(all_template_configs)} template configs to Stream Deck client"
+                    "Sent %s template configs to Stream Deck client", len(all_template_configs)
                 )
 
             except Exception as e:
@@ -9844,7 +10017,7 @@ class WebEngine:
             """
             client_sid = request.sid
             logger.debug(
-                f"Received streamdeck_template_action from {client_sid}: {data}"
+                "Received streamdeck_template_action from %s: %s", client_sid, data
             )
 
             try:
@@ -9982,7 +10155,7 @@ class WebEngine:
                                 if element_action == action_name:
                                     action_found = True
                                     logger.debug(
-                                        f"Found dynamic control action: {template_name}.{action_name}"
+                                        "Found dynamic control action: %s.%s", template_name, action_name
                                     )
                                     self._execute_dynamic_control_action(
                                         template_name, element, coerced
@@ -9994,7 +10167,7 @@ class WebEngine:
                         if action_name in connector_actions:
                             action_found = True
                             logger.debug(
-                                f"Found connector action: {template_name}.{action_name}"
+                                "Found connector action: %s.%s", template_name, action_name
                             )
                             self._execute_connector_action(
                                 template_name,
@@ -10202,7 +10375,7 @@ class WebEngine:
             self.safe_emit(event_name, event_data)
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
-                    f"Emitted Stream Deck event: {event_name} with data: {event_data}"
+                    "Emitted Stream Deck event: %s with data: %s", event_name, event_data
                 )
 
         except Exception as e:
@@ -10257,7 +10430,7 @@ class WebEngine:
 
             # Emit the connector event
             self.safe_emit(f"connector_{trigger}", event_data)
-            logger.debug(f"Emitted connector event: connector_{trigger}")
+            logger.debug("Emitted connector event: connector_%s", trigger)
 
         except Exception as e:
             logger.error(
@@ -10319,7 +10492,7 @@ class WebEngine:
                 self._registered_dynamic_handlers = set()
 
             logger.debug(
-                f"Scanning {len(config_files)} config files for dynamic controls"
+                "Scanning %s config files for dynamic controls", len(config_files)
             )
 
             # Limit the number of config files processed to avoid startup delays
@@ -10329,7 +10502,7 @@ class WebEngine:
             for config_name in config_files:
                 if processed_count >= max_configs:
                     logger.debug(
-                        f"Reached maximum config file limit ({max_configs}), skipping remaining files"
+                        "Reached maximum config file limit (%s), skipping remaining files", max_configs
                     )
                     break
 
@@ -10344,7 +10517,7 @@ class WebEngine:
                         elements = dynamic_controls.get("elements", [])
 
                         logger.debug(
-                            f"Found {len(elements)} dynamic control elements in {config_name}"
+                            "Found %s dynamic control elements in %s", len(elements), config_name
                         )
 
                         for element in elements:
@@ -10426,7 +10599,7 @@ class WebEngine:
                 self.socketio.on(event_name)(handler_func)
                 self._registered_dynamic_handlers.add(event_name)
                 logger.debug(
-                    f"Registered dynamic handler for {event_name} (type: {element_type})"
+                    "Registered dynamic handler for %s (type: %s)", event_name, element_type
                 )
 
         except Exception as e:
@@ -10443,7 +10616,7 @@ class WebEngine:
         def handler(data=None):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
-                    f"Dynamic control event: {template_name}_{action} (type: {element_type}) with data: {data}"
+                    "Dynamic control event: %s_%s (type: %s) with data: %s", template_name, action, element_type, data
                 )
 
             try:
@@ -10737,6 +10910,8 @@ class WebEngine:
                 event,
             )
 
+    _DRAIN_YIELD_EVERY = 50
+
     def _drain_safe_emit_queue(self, gen: Optional[int] = None) -> int:
         """Emit everything foreign threads queued via safe_emit (gevent worker).
 
@@ -10770,6 +10945,12 @@ class WebEngine:
                     with self._overload_lock:
                         self._emit_delivery_lags_ms.append(lag_ms)
                 emitted += 1
+                # A long burst (chat flood, game hooks) must not hold the hub: let
+                # requests and other greenlets run between batches (WE-49).
+                if emitted % self._DRAIN_YIELD_EVERY == 0 and (
+                    threading.get_ident() == getattr(self, "_server_thread_ident", None)
+                ):
+                    self._yield_sleep(0)
             except Exception as e:
                 self._record_event_timestamp(self._socket_emit_error_times)
                 logger.error(
@@ -11170,17 +11351,32 @@ class WebEngine:
             _embed_cache_variant(),
         )
 
+    # Served overlay pages kept in memory (least recently used dropped first).
+    _OVERLAY_HTML_CACHE_MAX = 96
+
+    @staticmethod
+    def _overlay_html_slot(template: str, key) -> Any:
+        """Cache slot: one per template and embed variant (WE-47).
+
+        A template shown both as an OBS source and inside a container (or at two
+        volumes) used to share one slot and replace itself on every load.
+        """
+        variant = key[-1] if isinstance(key, tuple) and key and isinstance(key[-1], tuple) else ()
+        return template if not variant else (template, variant)
+
     def _cached_overlay_html(self, template: str, key=None):
         cache = getattr(self, "_overlay_html_cache", None)
         if not isinstance(cache, dict):
             return None
-        cached = cache.get(template)
-        if not cached:
-            return None
         if key is None:
             key = self._overlay_html_cache_key(template)
+        slot = self._overlay_html_slot(template, key)
+        cached = cache.get(slot)
+        if not cached:
+            return None
         if cached[0] != key:
             return None
+        cache[slot] = cache.pop(slot)  # most recently used
         return cached[1]
 
     def _store_overlay_html(self, template: str, html: str, key=None) -> None:
@@ -11189,9 +11385,11 @@ class WebEngine:
             return
         if key is None:
             key = self._overlay_html_cache_key(template)
-        if len(cache) >= 24 and template not in cache:
+        slot = self._overlay_html_slot(template, key)
+        cache.pop(slot, None)
+        while len(cache) >= self._OVERLAY_HTML_CACHE_MAX:
             cache.pop(next(iter(cache)))
-        cache[template] = (key, html)
+        cache[slot] = (key, html)
 
     def _runtime_path_index(self) -> Dict[str, List[str]]:
         """Map runtime database paths to templates that mirror them."""
@@ -11370,7 +11568,7 @@ class WebEngine:
 
                     # Log the relay
                     logger.debug(
-                        f"Source controls relay: {event_name} -> {target_template} with data: {event_data}"
+                        "Source controls relay: %s -> %s with data: %s", event_name, target_template, event_data
                     )
 
                     # Emit the event to all connected clients
@@ -11438,12 +11636,12 @@ class WebEngine:
                     if not isinstance(payload, dict):
                         payload = {"value": payload}
                     try:
-                        if len(json.dumps(payload, default=str)) > 65536:
+                        if len(fast_json.dumps(payload, default=str)) > 65536:
                             logger.warning("Dropped oversized template output %s", event)
                             return
                     except (TypeError, ValueError):
                         return
-                    template = _to.resolve_emitter(event, payload)
+                    template = _to.resolve_emitter(event, payload, known)
                     envelope = {"template": template, "event": event, "data": payload}
                     self.socketio.emit("template_output", envelope)
                     self.socketio.emit(event, payload, skip_sid=request.sid)
@@ -11552,7 +11750,7 @@ class WebEngine:
         """
         ok = self.safe_emit("next_alert", alert_data)
         if ok and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Sent next_alert: {alert_data}")
+            logger.debug("Sent next_alert: %s", alert_data)
         return ok
 
     def activity_feed_alert(self, alert_data):
@@ -11564,7 +11762,7 @@ class WebEngine:
         """
         ok = self.safe_emit("activity_feed_alert", alert_data)
         if ok and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Sent activity_feed_alert: {alert_data}")
+            logger.debug("Sent activity_feed_alert: %s", alert_data)
         return ok
 
     def instant_alert(self, alert_data):
@@ -11576,7 +11774,7 @@ class WebEngine:
         """
         ok = self.safe_emit("instant_alert", alert_data)
         if ok and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Sent instant_alert: {alert_data}")
+            logger.debug("Sent instant_alert: %s", alert_data)
         return ok
 
     def new_message(self, message_data):
@@ -11588,7 +11786,7 @@ class WebEngine:
         """
         ok = self.safe_emit("new-message", message_data)
         if ok and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Sent new-message: {message_data}")
+            logger.debug("Sent new-message: %s", message_data)
         return ok
 
     def broadcast_overlay_recovery(
@@ -11610,7 +11808,7 @@ class WebEngine:
         """
         ok = self.safe_emit("message_moderation", moderation_data)
         if ok and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Sent message_moderation: {moderation_data}")
+            logger.debug("Sent message_moderation: %s", moderation_data)
         return ok
 
     def state(self, state_data):
@@ -11622,7 +11820,7 @@ class WebEngine:
         """
         ok = self.safe_emit("state", state_data)
         if ok and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Sent state update: {state_data}")
+            logger.debug("Sent state update: %s", state_data)
         return ok
 
     def pause_status_update(self):
@@ -11691,7 +11889,7 @@ class WebEngine:
                 status_data.update(hype_train_data)
 
             self.safe_emit("hype_train_active", status_data)
-            logger.debug(f"Emitted hype_train_active event: active={is_active}")
+            logger.debug("Emitted hype_train_active event: active=%s", is_active)
 
             return True
         except Exception as e:
@@ -11819,7 +12017,7 @@ class WebEngine:
                 actions_list = []
                 template_configs = self.template_config_parser.get_config_files()
                 logger.debug(
-                    f"Stream Deck: Found {len(template_configs)} template configs"
+                    "Stream Deck: Found %s template configs", len(template_configs)
                 )
 
                 for template_name in template_configs:
@@ -11926,7 +12124,7 @@ class WebEngine:
                         continue
 
                 logger.debug(
-                    f"Stream Deck: Found {len(actions_list)} template actions across {len(template_configs)} templates"
+                    "Stream Deck: Found %s template actions across %s templates", len(actions_list), len(template_configs)
                 )
 
                 response = {
@@ -11940,7 +12138,7 @@ class WebEngine:
                 # Handle SocketIO client response format
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Stream Deck: Sending template actions response to SID {request.sid}: {response}"
+                        "Stream Deck: Sending template actions response to SID %s: %s", request.sid, response
                     )
                 if data and isinstance(data, dict) and "requestId" in data:
                     # Emit specific response event for template actions list
@@ -12050,7 +12248,7 @@ class WebEngine:
                             ):
                                 dynamic_configs[config_name] = config
                                 logger.debug(
-                                    f"Included template with dynamic controls: {config_name}"
+                                    "Included template with dynamic controls: %s", config_name
                                 )
                         except Exception as e:
                             logger.warning(
@@ -12103,7 +12301,7 @@ class WebEngine:
         def handle_response(data):
             """Handle response events from SocketIO clients"""
             # This handler is mainly for logging - responses are handled by the specific handlers
-            logger.debug(f"Received response event: {data}")
+            logger.debug("Received response event: %s", data)
 
         logger.info("Stream Deck WebSocket handlers registered successfully")
 
@@ -12123,6 +12321,7 @@ class WebEngine:
             web_engine_running = True
             self._last_run_error = None
             self._server_thread_ident = threading.get_ident()
+            self._size_hub_threadpool()
             # This thread gets a fresh gevent hub, so greenlets armed by an
             # earlier run (e.g. one whose bind failed while a foreign process
             # held the port) never run here: re-arm them for this hub (TH-02).
@@ -12369,7 +12568,7 @@ class WebEngine:
                     and self.template_config_parser
                 ):
                     if self.template_config_parser.is_config_hidden(template_name):
-                        logger.debug(f"Skipping hidden template: {template_name}")
+                        logger.debug("Skipping hidden template: %s", template_name)
                         continue
 
                 url = f"{base_url}/{quote(template_name)}"
@@ -12399,7 +12598,7 @@ class WebEngine:
                     ):
                         if self.template_config_parser.is_config_hidden(template_name):
                             logger.debug(
-                                f"Skipping dynamic handler for hidden template: {template_name}"
+                                "Skipping dynamic handler for hidden template: %s", template_name
                             )
                             continue
 
@@ -12420,7 +12619,7 @@ class WebEngine:
                         # Template not in registered routes but has dynamic controls
                         # This might happen if the template file was deleted but handlers remain
                         logger.debug(
-                            f"Found dynamic handlers for template not in routes: {template_name}"
+                            "Found dynamic handlers for template not in routes: %s", template_name
                         )
 
             try:
@@ -12437,7 +12636,7 @@ class WebEngine:
                 logger.error("Could not list container source URLs: %s", exc)
 
             logger.debug(
-                f"Found {len(urls)} available source URLs (hidden templates excluded)"
+                "Found %s available source URLs (hidden templates excluded)", len(urls)
             )
             return urls
 
@@ -12490,7 +12689,7 @@ class WebEngine:
         """
         ok = self.safe_emit("remove-messages", message_ids)
         if ok and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Sent remove-messages: {message_ids}")
+            logger.debug("Sent remove-messages: %s", message_ids)
         return ok
 
 
