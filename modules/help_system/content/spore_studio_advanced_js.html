@@ -12,7 +12,7 @@
 <figure class="hx-figure hx-static">
   <div class="hm hm-ss">
     <div class="hm-ss-preview">
-      <div class="hm-ss-preview-head"><span class="hx-mi hm-accent">code</span>Advanced JS<span class="hm-ss-btn hm-ss-ghost hm-ss-sm"><span class="hx-mi">search</span>Find</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm"><span class="hx-mi">format_list_bulleted</span>Reference</span><span class="hm-marker" data-n="1"></span><span class="hm-ss-spacer"></span><span class="hm-ss-btn hm-ss-primary hm-ss-sm"><span class="hx-mi">check</span>Done</span></div>
+      <div class="hm-ss-preview-head"><span class="hx-mi hm-accent">code</span>Advanced JS<span class="hm-ss-btn hm-ss-ghost hm-ss-sm"><span class="hx-mi">search</span>Find</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm"><span class="hx-mi">format_list_bulleted</span>Reference</span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm"><span class="hx-mi">warning</span>Problems</span><span class="hm-marker" data-n="1"></span><span class="hm-ss-spacer"></span><span class="hm-ss-btn hm-ss-ghost hm-ss-sm"><span class="hx-mi">open_in_new</span>Pop out</span><span class="hm-marker" data-n="4"></span><span class="hm-ss-btn hm-ss-primary hm-ss-sm"><span class="hx-mi">check</span>Done</span></div>
       <div class="hm-ss-preview-bar">
         <span class="hm-ss-input" style="min-width:110px">thank</span>
         <span class="hm-ss-input is-placeholder" style="min-width:110px">Replace</span>
@@ -34,32 +34,55 @@
 <span class="c">// more…</span></div>
         </div>
         <div class="hm-ss-ref">
-          <b class="hm-ss-h">Insert helper <span class="hm-marker" data-n="2"></span></b>
+          <span class="hm-ss-input is-placeholder">Search functions</span>
+          <b class="hm-ss-h">Spore helpers 52 <span class="hm-marker" data-n="2"></span></b>
           <span>sporeShow(id)</span>
-          <span>sporeHide(id)</span>
           <span>sporeSetText(id, value)</span>
-          <span>sporePlayMediaAudio</span>
-          <span>sporeCounterAdjust</span>
-          <span>sporeTimerStart / Pause / Reset</span>
-          <span>sporeDbGet(path, cb)</span>
-          <span>sporeDbSet(path, data)</span>
+          <span>sporeCounterAdjust(id, mode, delta)</span>
+          <span>…</span>
+          <b class="hm-ss-h">Libraries 16</b>
+          <span>MycelianLog.info(message, extra)</span>
+          <b class="hm-ss-h">Your functions</b>
+          <span>thankViewer(name)</span>
+          <b class="hm-ss-h">Snippets</b>
           <span>socket.on(event)</span>
-          <span>alert_complete</span>
         </div>
       </div>
-      <div class="hm-ss-codestatus"><span>Ln 4, Col 22</span><span>213 chars</span><span class="hm-marker" data-n="3"></span></div>
+      <div class="hm-ss-codestatus"><span>● No problems</span><span>Ln 4, Col 22</span><span>213 chars</span><span class="hm-marker" data-n="3"></span></div>
     </div>
   </div>
   <figcaption>The expanded Advanced JS editor with Find and Reference open.</figcaption>
 </figure>
 
 <ol class="hx-annotations">
-  <li data-n="1"><strong>Find</strong> opens find and replace (also <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>F</kbd>). <strong>Reference</strong> opens the helper list. <strong>Done</strong> closes the editor.</li>
-  <li data-n="2"><strong>Insert helper</strong>: click an entry to insert a ready-made snippet at the cursor.</li>
-  <li data-n="3">Cursor position and length of the script.</li>
+  <li data-n="1"><strong>Find</strong> opens find and replace (also <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>F</kbd>). <strong>Reference</strong> opens the function list. <strong>Problems</strong> lists what the checker found. <strong>Done</strong> closes the editor.</li>
+  <li data-n="2"><strong>Reference</strong>: every function this template can call, read from the template itself, grouped and searchable. Hover an entry for its description and where it is defined; click it to insert the call with its arguments selected. <strong>Snippets</strong> at the bottom insert ready-made blocks.</li>
+  <li data-n="3">The checker's result, then the cursor position and length of the script. Click the result to open the problem list.</li>
+  <li data-n="4"><strong>Pop out</strong> moves the editor into its own window.</li>
 </ol>
 
 <p>The editor has line numbers, <kbd>Tab</kbd> indent, matching brackets and syntax coloring. Both editors edit the same script. Closing the large editor, or pausing while you type, records an undo step.</p>
+
+<h2>Checking your script</h2>
+
+<p>The editor checks the script as you type, the way the overlay will run it. Problems get a red (error) or yellow (warning) line number and an underline; hover the underline to read the message, or click a row in <strong>Problems</strong> to jump to it. The box on the tab shows the same summary under the script, and Save warns you if errors are left.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Errors (the overlay will not run)</th><th>Warnings (it runs, but check it)</th></tr></thead>
+<tbody>
+<tr><td>Syntax errors, such as a missing bracket</td><td>A name that is not defined anywhere (a <code>ReferenceError</code> when that line runs)</td></tr>
+<tr><td><code>let</code>/<code>const</code>/<code>class</code> reusing a name the template already declares, such as <code>socket</code></td><td>Assigning to an undeclared name, which creates a global</td></tr>
+<tr><td><code>&lt;/script&gt;</code> anywhere in the script, even in a string (write <code>&lt;\/script&gt;</code>)</td><td>A function that replaces one of the template's functions</td></tr>
+<tr><td>Assigning to a constant</td><td>Top-level names that clash with the page, such as <code>name</code> or <code>location</code></td></tr>
+<tr><td><code>return</code> or <code>await</code> outside a function</td><td><code>debugger</code> statements</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-warning"><p>Errors matter more than they look: your script shares one <code>&lt;script&gt;</code> tag with the template, so one syntax error stops the <em>whole</em> overlay, not only your part.</p></div>
+
+<h2>Pop-out window</h2>
+
+<p>{{icon:open_in_new}} <strong>Pop out</strong> opens the editor in its own window so you can keep the canvas and preview in view. From the Mycelian app it opens in your default browser; when Spore Studio itself is open in a browser, it opens as a new window there. Edits go straight to Spore Studio (undo, Save and the live preview work as usual), and switching templates in Studio switches the window too. While it is open, <strong>Expand editor</strong> brings that window forward instead. <strong>Close</strong> in the window, or closing it, hands editing back to Studio. If Studio is closed or reloaded, the window stops syncing and says so.</p>
 
 <h2>Where your script goes</h2>
 
@@ -200,6 +223,10 @@ sporeDbSet('my_overlay/counters', { note: 'saved from the overlay' });
 <details class="hx-details">
   <summary><code>sporeShow</code> does nothing</summary>
   <p>The id must match the element's <strong>ID</strong> in Properties exactly, including case.</p>
+</details>
+<details class="hx-details">
+  <summary>The checker says a name is not defined, but it works</summary>
+  <p>The checker knows the browser's globals and everything the template declares. Names created at run time (for example by another overlay script) are invisible to it. Use <code>window.thatName</code> to make the intent clear; the warning goes away.</p>
 </details>
 <details class="hx-details">
   <summary>An error says <code>socket</code> is not defined</summary>

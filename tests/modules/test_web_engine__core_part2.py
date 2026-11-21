@@ -1102,3 +1102,71 @@ def test_constructor_default_template_dir_and_frozen_reload(monkeypatch, tmp_pat
     eng = we.WebEngine(port=5998)
     assert eng.template_dir == str(tmp_path)
     assert eng.app.config["TEMPLATES_AUTO_RELOAD"] is False
+
+
+# --------------------------------------------------------------------------- Advanced JS editor
+
+
+def test_spore_js_popout_page(client, tmp_path, monkeypatch):
+    editor = tmp_path / "editor.html"
+    editor.write_text(
+        "<body><!-- SS_JS_DIALOG:begin x -->\n<div id=\"ss-js-dialog\" class=\"ss-js-dialog\" hidden>D</div>\n"
+        "<!-- SS_JS_DIALOG:end --></body>",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(we, "get_assets_path", lambda *a: str(editor))
+    monkeypatch.setattr(we, "_inject_theme_vars", lambda h: h + "<!--themed-->")
+    res = client.get("/_spore_studio_js_editor?channel=abcdef123456")
+    body = res.get_data(as_text=True)
+    assert res.status_code == 200 and res.headers["Content-Type"] == "text/html; charset=utf-8"
+    assert 'data-ss-js-popout="1"' in body and ">D</div>" in body and body.endswith("<!--themed-->")
+    editor.write_text("<body>no markers</body>", encoding="utf-8")
+    res = client.get("/_spore_studio_js_editor")
+    assert res.status_code == 500 and "bundle missing" in res.get_data(as_text=True)
+    monkeypatch.setattr(we, "get_assets_path", lambda *a: str(tmp_path / "none.html"))
+    assert client.get("/_spore_studio_js_editor").status_code == 500
+
+
+def test_spore_js_context(client, sp, monkeypatch, tmp_path):
+    html = '<script>function a() {}\n// SPORE_STUDIO:user-begin\n</script>'
+    monkeypatch.setattr(sp, "compile_preview_draft", lambda m: (html, {}))
+    monkeypatch.setattr(we, "get_assets_path", lambda *a: str(tmp_path))
+    url = "/api/spore-studio/js-context"
+    assert client.post(url, json={}).status_code == 400
+    res = client.post(url, json={"model": {"template_name": "a"}})
+    assert res.status_code == 200
+    assert _json(res) == {"scripts": [{"kind": "inline", "code": html[8:-9], "main": True}]}
+    # Legacy templates have no codegen: read the saved HTML instead.
+    monkeypatch.setattr(sp, "_load_existing_html", lambda name: "<script>var legacy = 1;</script>")
+    res = client.post(url, json={"model": {"template_name": "old", "legacy": True}})
+    assert _json(res)["scripts"][0]["code"] == "var legacy = 1;"
+    monkeypatch.setattr(sp, "_load_existing_html", lambda name: None)
+    assert _json(client.post(url, json={"model": {"template_name": "old", "legacy": True}})) == {"scripts": []}
+    monkeypatch.setattr(sp, "compile_preview_draft", mock.Mock(side_effect=sp.SporeStudioError("bad")))
+    res = client.post(url, json={"model": {}})
+    assert res.status_code == 400 and _json(res)["error"] == "bad"
+    monkeypatch.setattr(sp, "compile_preview_draft", mock.Mock(side_effect=RuntimeError("boom")))
+    assert client.post(url, json={"model": {}}).status_code == 500
+
+
+def test_spore_js_popout_open(engine, client, monkeypatch):
+    import webbrowser
+
+    opened = []
+    monkeypatch.setattr(webbrowser, "open", lambda url, new=0: opened.append((url, new)) or True)
+    url = "/api/spore-studio/js-popout/open"
+    res = client.post(url, json={"channel": "abcdef123456", "template": "my tpl"})
+    assert res.status_code == 200
+    expected = f"http://127.0.0.1:{engine.port}/_spore_studio_js_editor?channel=abcdef123456&template=my+tpl"
+    assert _json(res) == {"ok": True, "url": expected} and opened == [(expected, 1)]
+    for bad in ({}, {"channel": "bad!", "template": "a"}, {"channel": "abcdef123456"},
+                {"channel": "abcdef123456", "template": "x" * 201}):
+        assert client.post(url, json=bad).status_code == 400
+    monkeypatch.setattr(webbrowser, "open", lambda url, new=0: False)
+    res = client.post(url, json={"channel": "abcdef123456", "template": "a"})
+    assert res.status_code == 500 and _json(res)["url"].endswith("template=a")
+    monkeypatch.setattr(webbrowser, "open", mock.Mock(side_effect=RuntimeError("no browser")))
+    assert client.post(url, json={"channel": "abcdef123456", "template": "a"}).status_code == 500
+    res = client.post(url, json={"channel": "abcdef123456", "template": "a"},
+                      environ_base={"REMOTE_ADDR": "192.168.1.20"})
+    assert res.status_code == 403, "only this computer may open a browser window"

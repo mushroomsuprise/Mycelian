@@ -849,3 +849,50 @@ def test_chat_banner_request(engine, sio, monkeypatch):
     sio.emit("chat_banner_request", {"text": "x", "source": "bot"})
     sio.emit("chat_banner_request", "junk")
     assert seen == [{"text": "hi", "source": "template"}, {"text": "x", "source": "bot"}, {"source": "template"}]
+
+
+# ------------------------------------------------------------------ Advanced JS pop-out relay
+
+
+def test_spore_js_relay_reaches_the_other_side_only(engine, sio, sio2):
+    channel = "abcdef123456"
+    sio.emit("spore_js_join", {"channel": channel})
+    sio2.emit("spore_js_join", {"channel": channel})
+    sio.emit("spore_js_relay", {"channel": channel, "msg": {"type": "hello"}})
+    assert received(sio2, "spore_js_relay") == [{"channel": channel, "msg": {"type": "hello"}}]
+    assert received(sio, "spore_js_relay") == [], "the sender does not get its own message"
+
+
+@pytest.mark.parametrize(
+    "join, relay",
+    [
+        ({"channel": "bad!"}, {"channel": "bad!", "msg": {"type": "x"}}),
+        ("not a dict", "not a dict"),
+        ({"channel": "abcdef123456"}, {"channel": "abcdef123456", "msg": "not a dict"}),
+        ({"channel": "abcdef123456"}, {"channel": "zzzzzzzzzzzz", "msg": {"type": "x"}}),
+    ],
+)
+def test_spore_js_relay_ignores_bad_input(engine, sio, sio2, join, relay):
+    sio2.emit("spore_js_join", {"channel": "abcdef123456"})
+    sio.emit("spore_js_join", join)
+    sio.emit("spore_js_relay", relay)
+    assert received(sio2, "spore_js_relay") == []
+
+
+def test_spore_js_relay_drops_oversized_and_unserializable(engine, sio, sio2, monkeypatch):
+    from unittest import mock
+
+    sio2.emit("spore_js_join", {"channel": "abcdef123456"})
+    sio.emit("spore_js_relay", {"channel": "abcdef123456", "msg": {"text": "x" * (4 * 1024 * 1024 + 1)}})
+    assert received(sio2, "spore_js_relay") == []
+    monkeypatch.setattr(web_engine.json, "dumps", mock.Mock(side_effect=TypeError))
+    sio.emit("spore_js_relay", {"channel": "abcdef123456", "msg": {"type": "x"}})
+    assert received(sio2, "spore_js_relay") == []
+
+
+def test_spore_js_relay_rejects_remote_clients(engine, sio, sio2, monkeypatch):
+    sio2.emit("spore_js_join", {"channel": "abcdef123456"})
+    monkeypatch.setattr(web_engine, "_reject_non_localhost_socket", lambda: True)
+    sio.emit("spore_js_join", {"channel": "abcdef123456"})
+    sio.emit("spore_js_relay", {"channel": "abcdef123456", "msg": {"type": "x"}})
+    assert received(sio2, "spore_js_relay") == []

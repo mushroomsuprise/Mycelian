@@ -2039,6 +2039,99 @@ class WebEngine:
                 logger.error("Error serving Spore Studio editor: %s", e)
                 return (f"Error serving editor: {e}", 500)
 
+        @self.app.route("/_spore_studio_js_editor")
+        def serve_spore_studio_js_popout():
+            """Serve the pop-out Advanced JS editor (the editor.html dialog on its own page)."""
+            from .spore_studio.js_context import popout_page_html
+
+            editor_path = get_assets_path(
+                os.path.join("default_assets", "spore_studio", "editor.html")
+            )
+            try:
+                with open(editor_path, encoding="utf-8") as f:
+                    page = popout_page_html(f.read())
+            except OSError as e:
+                logger.error("Error reading Spore Studio editor for the JS pop-out: %s", e)
+                page = None
+            if not page:
+                return ("Spore Studio editor bundle missing.", 500)
+            response = make_response(_inject_theme_vars(page))
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+            return response
+
+        @self.app.route("/api/spore-studio/js-popout/open", methods=["POST"])
+        def spore_studio_js_popout_open():
+            """Open the pop-out Advanced JS editor in the default browser.
+
+            Spore Studio inside the app window is an iframe whose window.open is ignored,
+            so the server opens the page (like "Open externally" does).
+            """
+            from urllib.parse import urlencode
+
+            from .spore_studio.js_context import valid_channel
+
+            if not _is_localhost_remote_addr(getattr(request, "remote_addr", None)):
+                return ({"error": "Only this computer can open the editor window."}, 403,
+                        {"Content-Type": "application/json"})
+            payload = request.get_json(silent=True) or {}
+            channel = payload.get("channel")
+            template = payload.get("template")
+            if not valid_channel(channel) or not isinstance(template, str) or len(template) > 200:
+                return ({"error": "channel and template are required"}, 400,
+                        {"Content-Type": "application/json"})
+            url = (
+                f"http://127.0.0.1:{self.port}/_spore_studio_js_editor?"
+                + urlencode({"channel": channel, "template": template})
+            )
+            try:
+                import webbrowser
+
+                opened = webbrowser.open(url, new=1)
+            except Exception as e:
+                logger.warning("Couldn't open the Advanced JS pop-out: %s", e)
+                opened = False
+            if not opened:
+                return ({"error": "No browser could be opened.", "url": url}, 500,
+                        {"Content-Type": "application/json"})
+            return {"ok": True, "url": url}, 200, {"Content-Type": "application/json"}
+
+        @self.app.route("/api/spore-studio/js-context", methods=["POST"])
+        def spore_studio_js_context():
+            """Scripts of the compiled draft template, for the Advanced JS checker and reference."""
+            try:
+                from .spore_studio import save_pipeline as _sp
+                from .spore_studio.js_context import template_scripts
+
+                payload = request.get_json(silent=True) or {}
+                model = payload.get("model")
+                if not isinstance(model, dict):
+                    return (
+                        {"error": "model is required"},
+                        400,
+                        {"Content-Type": "application/json"},
+                    )
+                if model.get("legacy"):
+                    html = _sp._load_existing_html(
+                        _sp._validate_name(model.get("template_name") or "")
+                    ) or ""
+                else:
+                    html, _config = _sp.compile_preview_draft(model)
+                scripts = template_scripts(html, assets_root=get_assets_path())
+                return (
+                    {"scripts": scripts},
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            except Exception as e:
+                status = 400 if type(e).__name__ == "SporeStudioError" else 500
+                if status == 500:
+                    logger.error("Spore Studio js-context error: %s", e, exc_info=True)
+                return (
+                    {"error": str(e)},
+                    status,
+                    {"Content-Type": "application/json"},
+                )
+
         @self.app.route("/api/spore-studio/events")
         def serve_spore_studio_events():
             """Return the curated event + action registry for the binding picker."""
@@ -7607,6 +7700,46 @@ class WebEngine:
                 self.socketio.emit("notify_settings", current_prefs().for_client(), to=request.sid)
             except Exception as e:
                 logger.debug("get_notify_settings failed: %s", e)
+
+        @self.socketio.on("spore_js_join")
+        def handle_spore_js_join(data=None):
+            """Join the relay room the Advanced JS editor and its pop-out window share."""
+            from flask_socketio import join_room
+
+            from .spore_studio.js_context import valid_channel
+
+            if _reject_non_localhost_socket():
+                return
+            channel = (data or {}).get("channel") if isinstance(data, dict) else None
+            if not valid_channel(channel):
+                return
+            join_room("spore_js:" + channel)
+
+        @self.socketio.on("spore_js_relay")
+        def handle_spore_js_relay(data=None):
+            """Pass an editor <-> pop-out message to the other side of its channel."""
+            from .spore_studio.js_context import valid_channel
+
+            if _reject_non_localhost_socket():
+                return
+            if not isinstance(data, dict):
+                return
+            channel = data.get("channel")
+            msg = data.get("msg")
+            if not valid_channel(channel) or not isinstance(msg, dict):
+                return
+            try:
+                if len(json.dumps(msg, default=str)) > 4 * 1024 * 1024:
+                    logger.warning("Dropped oversized Advanced JS relay message")
+                    return
+            except (TypeError, ValueError):
+                return
+            self.socketio.emit(
+                "spore_js_relay",
+                {"channel": channel, "msg": msg},
+                to="spore_js:" + channel,
+                skip_sid=request.sid,
+            )
 
         @self.socketio.on("get_current_theme")
         def handle_get_current_theme():

@@ -177,6 +177,8 @@
                             title="Open a larger editor for this script"><span>Expand editor</span></button>
                     <textarea id="ss-advanced-js" class="ss-code-area" rows="20" spellcheck="false"
                               placeholder="// Place advanced custom JavaScript here.&#10;// You can call sporeShow(id), sporeHide(id), sporeSetText(id, value),&#10;// sporePlayMediaAudio(id, { volume?, fade_in_ms? }),&#10;// or attach additional socket.on(...) handlers."></textarea>
+                    <button type="button" id="ss-advanced-js-lint" class="ss-js-lint-chip" hidden
+                            title="Open the editor to see the problems"></button>
                 </div>
             </div>
             <div class="ss-tab-pane" id="ss-pane-canvas">
@@ -263,13 +265,17 @@
 
     <div id="ss-toast" class="ss-toast" role="status" aria-live="polite"></div>
 
+    <!-- SS_JS_DIALOG:begin (also served alone as the pop-out editor, see /_spore_studio_js_editor) -->
     <div id="ss-js-dialog" class="ss-js-dialog" hidden>
         <div class="ss-js-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="ss-js-dialog-title">
             <div class="ss-js-dialog__bar">
                 <span id="ss-js-dialog-title" class="ss-js-dialog__title" data-ss-icon="code">Advanced JS</span>
                 <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-find-toggle" data-ss-icon="search"><span>Find</span></button>
                 <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-ref-toggle" data-ss-icon="list"><span>Reference</span></button>
+                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-problems-toggle" data-ss-icon="alert"><span>Problems</span></button>
                 <span class="ss-spacer"></span>
+                <button type="button" class="ss-btn ss-btn--ghost" id="ss-js-popout" data-ss-icon="external"
+                        title="Edit in its own window (stays in sync with Spore Studio)"><span>Pop out</span></button>
                 <button type="button" class="ss-btn ss-btn--primary" id="ss-js-done" data-ss-icon="check"><span>Done</span></button>
             </div>
             <div id="ss-js-findbar" class="ss-js-findbar" hidden>
@@ -286,6 +292,7 @@
                     <div class="ss-js-scroller" id="ss-js-scroller">
                         <div class="ss-js-code" id="ss-js-code">
                             <div class="ss-js-linehl" id="ss-js-linehl"></div>
+                            <div class="ss-js-marks" id="ss-js-marks" aria-hidden="true"></div>
                             <pre class="ss-js-highlight" id="ss-js-highlight" aria-hidden="true"></pre>
                             <textarea id="ss-js-input" class="ss-js-input" spellcheck="false" autocomplete="off"
                                       aria-label="Advanced JavaScript"></textarea>
@@ -293,16 +300,27 @@
                     </div>
                 </div>
                 <aside id="ss-js-ref" class="ss-js-ref" hidden>
-                    <div class="ss-js-ref__title">Insert helper</div>
+                    <div class="ss-js-ref__head">
+                        <input type="search" id="ss-js-ref-search" placeholder="Search functions"
+                               aria-label="Search functions" spellcheck="false" autocomplete="off">
+                        <button type="button" class="ss-btn ss-btn--ghost ss-btn--icon" id="ss-js-ref-reload"
+                                data-ss-icon="refresh" title="Reload the functions from the template"></button>
+                    </div>
+                    <div id="ss-js-ref-status" class="ss-js-ref__status"></div>
                     <div id="ss-js-ref-list"></div>
                 </aside>
             </div>
+            <div id="ss-js-problems" class="ss-js-problems" hidden>
+                <div id="ss-js-problems-list" class="ss-js-problems__list" role="list"></div>
+            </div>
             <div class="ss-js-status">
+                <button type="button" id="ss-js-lint" class="ss-js-lint-status" title="Show problems">Checking…</button>
                 <span id="ss-js-pos">Ln 1, Col 1</span>
                 <span id="ss-js-count">0 chars</span>
             </div>
         </div>
     </div>
+    <!-- SS_JS_DIALOG:end -->
 
     <div id="ss-preview-dialog" class="ss-preview-dialog" hidden>
         <div class="ss-preview-dialog__head" data-drag-handle>
@@ -448,6 +466,8 @@
     <script src="/assets/default_assets/spore_studio/game_panel.js"></script>
     <script src="/assets/default_assets/spore_studio/container_layout.js"></script>
     <script src="/assets/default_assets/spore_studio/container_measure.js"></script>
+    <script src="/assets/default_assets/spore_studio/vendor/acorn.js"></script>
+    <script src="/assets/default_assets/spore_studio/js_lint.js"></script>
     <script src="/assets/default_assets/spore_studio/advanced_js_editor.js"></script>
     <script src="/assets/default_assets/mycelian_color_picker.js"></script>
     <script src="/assets/default_assets/spore_studio/spore_ui.js"></script>

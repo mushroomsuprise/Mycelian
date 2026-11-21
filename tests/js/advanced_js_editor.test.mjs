@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeWindow, loadScript, fire } from "./helpers/env.mjs";
+import { makeWindow, loadScript, fire, settle, readSource as readSourceRel } from "./helpers/env.mjs";
 import { makeStudioWindow, fireDomReady } from "./helpers/studio.mjs";
 
 function setup(text = "") {
@@ -428,4 +428,328 @@ test("showFind without focus just shows the bar; with focus but no input is safe
     assert.equal(s.J.findMatch(1), false);
     s.J.replaceOne();
     s.J.replaceAll();
+});
+
+/* ------------------------------------------------------------- checker, reference, pop-out */
+
+
+function fakeSocket() {
+    const handlers = {};
+    return {
+        connected: true,
+        emitted: [],
+        on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); },
+        emit(ev, data) { this.emitted.push([ev, JSON.parse(JSON.stringify(data === undefined ? null : data))]); },
+        fire(ev, data) { (handlers[ev] || []).forEach((fn) => fn(data)); },
+        relayed() { return this.emitted.filter((e) => e[0] === "spore_js_relay").map((e) => e[1].msg); },
+    };
+}
+
+const TEMPLATE = {
+    scripts: [{
+        kind: "inline", main: true,
+        code: "var socket = io();\nconst LIMIT = 3;\n/** Show an element. */\nfunction sporeShow(id) {}\n" +
+            "function renderThing(el, opts) {}\n// SPORE_STUDIO:user-begin\n// SPORE_STUDIO:user-end\n",
+    }],
+};
+
+function setupFull(text = "", { context = TEMPLATE, fail = false, body } = {}) {
+    const { win, internals } = makeStudioWindow({
+        scripts: ["assets/default_assets/spore_studio/vendor/acorn.js", "js_lint.js", "advanced_js_editor.js"], body,
+    });
+    const socket = fakeSocket();
+    const store = { text, commits: 0, contexts: 0, notes: [], key: "k1" };
+    fireDomReady(win);
+    win.SporeJsEditor.bind({
+        getText: () => store.text,
+        setText: (t) => { store.text = t; },
+        commit: () => { store.commits++; },
+        getContext: () => { store.contexts++; return fail ? Promise.reject(new Error("x")) : Promise.resolve(context); },
+        contextKey: () => store.key,
+        getSocket: () => socket,
+        templateName: () => "my_tpl",
+        notify: (n) => { store.notes.push(n); },
+    });
+    const doc = win.document;
+    return {
+        win, doc, store, socket, J: internals.advanced_js_editor, E: win.SporeJsEditor, clock: win.__clock,
+        ta: doc.getElementById("ss-js-input"),
+    };
+}
+
+test("the checker marks problems live: status, gutter, squiggles, list, jump and hover", async () => {
+    const s = setupFull("let socket = 1;\nfoo();\n");
+    s.E.open();
+    await settle();
+    s.clock.tick(300);
+    const status = s.doc.getElementById("ss-js-lint");
+    assert.equal(status.textContent, "1 error · 1 warning");
+    assert.equal(status.getAttribute("data-state"), "error");
+    const gutter = s.doc.getElementById("ss-js-gutter");
+    assert.equal(gutter.textContent, "1\n2\n3");
+    assert.equal(gutter.querySelectorAll(".ss-js-gut-err").length, 1);
+    assert.equal(gutter.querySelectorAll(".ss-js-gut-warn").length, 1);
+    assert.equal(s.doc.querySelectorAll("#ss-js-marks .ss-js-mark--error").length, 1);
+    status.click();
+    assert.equal(s.doc.getElementById("ss-js-problems").hidden, false);
+    const rows = s.doc.querySelectorAll("#ss-js-problems-list .ss-js-problem");
+    assert.equal(rows.length, 2);
+    assert.match(rows[0].textContent, /Ln 1, Col 5.*already declared by the template/);
+    rows[1].click();
+    assert.equal(s.ta.selectionStart, 16);
+    assert.equal(s.ta.selectionEnd, 19);
+    fire(s.win, s.ta, "mousemove", { offsetX: 12 + 1 * 7.8, offsetY: 8 + 20 + 5 });
+    assert.match(s.ta.title, /'foo' is not defined/);
+    fire(s.win, s.ta, "mousemove", { offsetX: 400, offsetY: 8 });
+    assert.equal(s.ta.getAttribute("title"), null);
+
+    s.ta.value = "let ok = 1;";
+    fire(s.win, s.ta, "input");
+    s.clock.tick(300);
+    assert.equal(status.textContent, "No problems");
+    assert.equal(s.doc.querySelector("#ss-js-problems-list").textContent, "No problems found. This script will run.");
+    const toggleLabel = s.doc.getElementById("ss-js-problems-toggle").querySelector("span");
+    assert.equal(toggleLabel.textContent, "Problems");
+});
+
+test("the inspector chip summarizes problems and check() lints the current text", async () => {
+    const s = setupFull("x = ;");
+    s.clock.tick(300);
+    const chip = s.doc.getElementById("ss-advanced-js-lint");
+    assert.equal(chip.hidden, false);
+    assert.equal(chip.textContent, "1 error");
+    assert.equal(chip.getAttribute("data-state"), "error");
+    assert.equal(s.E.check().problems[0].rule, "syntax");
+    s.store.text = "";
+    s.E.setValue("");
+    s.clock.tick(300);
+    assert.equal(chip.hidden, true);
+    chip.click();
+    assert.equal(s.E.isOpen(), true);
+    assert.equal(s.doc.getElementById("ss-js-problems").hidden, false);
+});
+
+test("the reference lists template and user functions by group, filters, and inserts calls", async () => {
+    const s = setupFull("/** Mine. */\nfunction mine(a, b) {}\n");
+    s.E.open();
+    s.doc.getElementById("ss-js-ref-toggle").click();
+    await settle();
+    s.clock.tick(300);
+    assert.equal(s.store.contexts, 1);
+    const groups = [...s.doc.querySelectorAll("#ss-js-ref-list details")].map((d) => d.getAttribute("data-group"));
+    assert.deepEqual(groups, ["spore", "template", "user", "snippets"]);
+    const sigs = [...s.doc.querySelectorAll(".ss-js-ref__fn .ss-js-ref__sig")].map((n) => n.textContent);
+    assert.deepEqual(sigs, ["sporeShow(id)", "renderThing(el, opts)", "mine(a, b)"]);
+    assert.match(s.doc.querySelector(".ss-js-ref__fn").title, /Show an element\.[\s\S]*This template, line 4/);
+
+    const search = s.doc.getElementById("ss-js-ref-search");
+    search.value = "render";
+    fire(s.win, search, "input");
+    assert.deepEqual([...s.doc.querySelectorAll(".ss-js-ref__sig")].map((n) => n.textContent), ["renderThing(el, opts)"]);
+    caret(s, s.ta.value.length);
+    s.doc.querySelector(".ss-js-ref__fn").click();
+    assert.ok(s.ta.value.endsWith("renderThing(el, opts)"));
+    assert.equal(s.ta.value.slice(s.ta.selectionStart, s.ta.selectionEnd), "el, opts");
+    search.value = "zzz";
+    fire(s.win, search, "input");
+    assert.equal(s.doc.querySelector(".ss-js-ref__empty").textContent, "No functions match “zzz”.");
+    fire(s.win, search, "keydown", { key: "Escape" });
+    assert.equal(search.value, "");
+
+    s.doc.getElementById("ss-js-ref-reload").click();
+    await settle();
+    assert.equal(s.store.contexts, 2);
+    s.E.modelChanged();
+    s.clock.tick(2000);
+    assert.equal(s.store.contexts, 2, "same template key: no refetch");
+    s.store.key = "k2";
+    s.E.modelChanged();
+    s.clock.tick(2000);
+    await settle();
+    assert.equal(s.store.contexts, 3);
+});
+
+test("the reference says when the template can't be read", async () => {
+    const s = setupFull("", { fail: true });
+    s.E.open();
+    s.doc.getElementById("ss-js-ref-toggle").click();
+    await settle();
+    const status = s.doc.getElementById("ss-js-ref-status");
+    assert.equal(status.hidden, false);
+    assert.match(status.textContent, /Couldn't read the template's functions/);
+    assert.ok(s.doc.querySelectorAll(".ss-js-ref__snippet").length > 0);
+});
+
+test("the template's names feed the checker once the context loads", async () => {
+    const s = setupFull("LIMIT = 4;");
+    s.E.open();
+    await settle();
+    s.clock.tick(300);
+    assert.equal(s.E.check().problems[0].rule, "const-assign");
+});
+
+function allowPopups(s) {
+    s.win.open = (...a) => { s.win.__opened.push(a); return {}; };
+}
+
+test("pop out: joins a channel, opens the window, syncs both ways and notices the window closing", async () => {
+    const s = setupFull("let a = 1;");
+    allowPopups(s);
+    s.E.open();
+    s.doc.getElementById("ss-js-popout").click();
+    assert.equal(s.E.isOpen(), false, "the dialog closes");
+    const join = s.socket.emitted.find((e) => e[0] === "spore_js_join");
+    const channel = join[1].channel;
+    assert.match(channel, /^[0-9a-f]{24}$/);
+    assert.equal(s.win.__opened.length, 1);
+    assert.equal(s.win.__opened[0][0], "/_spore_studio_js_editor?channel=" + channel + "&template=my_tpl");
+
+    s.socket.fire("spore_js_relay", { channel: "other", msg: { type: "hello" } });
+    assert.equal(s.E.isPoppedOut(), false, "other channels are ignored");
+    s.socket.fire("spore_js_relay", { channel, msg: { type: "hello" } });
+    assert.equal(s.E.isPoppedOut(), true);
+    const state = s.socket.relayed().find((m) => m.type === "state");
+    assert.equal(state.text, "let a = 1;");
+    assert.equal(state.template, "my_tpl");
+
+    s.socket.fire("spore_js_relay", { channel, msg: { type: "edit", text: "let b = 2;" } });
+    assert.equal(s.store.text, "let b = 2;");
+    s.socket.fire("spore_js_relay", { channel, msg: { type: "commit" } });
+    assert.equal(s.store.commits, 1);
+    s.E.setValue("let c = 3;");
+    assert.deepEqual(s.socket.relayed().at(-1), { type: "text", text: "let c = 3;" });
+
+    s.E.open();
+    assert.equal(s.E.isOpen(), false, "the dialog stays closed while popped out");
+    assert.match(s.store.notes.at(-1).title, /open in its own window/);
+    assert.equal(s.socket.relayed().at(-1).type, "focus");
+    s.clock.tick(300);
+    assert.match(s.doc.getElementById("ss-advanced-js-lint").textContent, /editing in pop-out/);
+
+    s.socket.fire("spore_js_relay", { channel, msg: { type: "bye" } });
+    assert.equal(s.E.isPoppedOut(), false);
+    s.clock.tick(11000);
+    assert.equal(s.store.notes.filter((n) => /didn't connect/.test(n.title)).length, 0);
+
+    s.socket.fire("spore_js_relay", { channel, msg: { type: "ping" } });
+    assert.equal(s.E.isPoppedOut(), true, "a ping revives it");
+    s.clock.tick(26000);
+    assert.equal(s.E.isPoppedOut(), false, "no pings for 20s: gone");
+    s.socket.fire("connect");
+    assert.equal(s.socket.emitted.filter((e) => e[0] === "spore_js_join").length, 2, "rejoins on reconnect");
+});
+
+test("pop out warns when no window connects or there is no socket", () => {
+    const s = setupFull("");
+    allowPopups(s);
+    s.doc.getElementById("ss-js-popout").click();
+    s.clock.tick(10001);
+    assert.match(s.store.notes.at(-1).title, /didn't connect/);
+    const t = setupFull("");
+    t.E.bind({ getSocket: () => null });
+    t.doc.getElementById("ss-js-popout").click();
+    assert.match(t.store.notes.at(-1).title, /Couldn't pop out/);
+});
+
+test("pop out inside the app (or with popups blocked) asks the server to open the window", async () => {
+    const s = setupFull("");
+    s.win.top = {};
+    s.win.fetch.on("/api/spore-studio/js-popout/open", { status: 200, body: { ok: true } });
+    s.doc.getElementById("ss-js-popout").click();
+    await settle();
+    assert.equal(s.win.__opened.length, 0, "window.open is not used in the app's iframe");
+    const call = s.win.fetch.calls.find((c) => c.url === "/api/spore-studio/js-popout/open");
+    const channel = s.socket.emitted.find((e) => e[0] === "spore_js_join")[1].channel;
+    assert.equal(call.method, "POST");
+    assert.deepEqual(JSON.parse(call.body), { channel, template: "my_tpl" });
+    assert.equal(s.store.notes.length, 0);
+
+    const b = setupFull("");
+    b.win.fetch.on("/api/spore-studio/js-popout/open", { status: 500, body: { error: "x" } });
+    b.doc.getElementById("ss-js-popout").click();
+    await settle();
+    assert.equal(b.win.__opened.length, 1, "tried window.open first; it was blocked (null)");
+    assert.match(b.store.notes.at(-1).title, /Couldn't open the pop-out editor/);
+    assert.match(b.store.notes.at(-1).message, /http:\/\/127\.0\.0\.1:5000\/_spore_studio_js_editor\?channel=/);
+    b.clock.tick(11000);
+    assert.equal(b.store.notes.filter((n) => /didn't connect/.test(n.title)).length, 0, "no second warning");
+
+    const c = setupFull("");
+    c.win.top = {};
+    c.win.fetch.on("/api/spore-studio/js-popout/open", new Error("offline"));
+    c.doc.getElementById("ss-js-popout").click();
+    await settle();
+    assert.match(c.store.notes.at(-1).title, /Couldn't open the pop-out editor/);
+});
+
+function popoutBody() {
+    const html = readSourceRel("assets/default_assets/spore_studio/editor.html");
+    const m = /<!-- SS_JS_DIALOG:begin[^>]*-->([\s\S]*?)<!-- SS_JS_DIALOG:end -->/.exec(html);
+    return m[1].replace('class="ss-js-dialog" hidden', 'class="ss-js-dialog"');
+}
+
+test("pop-out page: says hello, follows the Studio page, sends edits and handles closing", () => {
+    const socket = fakeSocket();
+    const { win, internals } = makeStudioWindow({
+        scripts: ["assets/default_assets/spore_studio/vendor/acorn.js", "js_lint.js", "advanced_js_editor.js"],
+        body: popoutBody(),
+        url: "http://127.0.0.1:5000/_spore_studio_js_editor?channel=abcdef123456&template=my%20tpl",
+    });
+    win.io = { connect: () => socket };
+    win.document.body.setAttribute("data-ss-js-popout", "1");
+    fireDomReady(win);
+    const doc = win.document;
+    const ta = doc.getElementById("ss-js-input");
+    const E = win.SporeJsEditor;
+    assert.equal(E.isOpen(), true);
+    assert.equal(doc.getElementById("ss-js-dialog").hidden, false);
+    assert.equal(doc.getElementById("ss-js-popout").hidden, true);
+    assert.equal(win.document.title, "Advanced JS — my tpl");
+    assert.deepEqual(socket.emitted.filter((e) => e[0] === "spore_js_join")[0][1], { channel: "abcdef123456" });
+    assert.equal(socket.relayed()[0].type, "hello");
+
+    socket.fire("spore_js_relay", { channel: "abcdef123456", msg: {
+        type: "state", text: "let x = 1;", template: "other", ctx: { declared: { x: "const" }, functions: [] } } });
+    assert.equal(ta.value, "let x = 1;");
+    assert.equal(win.document.title, "Advanced JS — other");
+    win.__clock.tick(300);
+    assert.match(doc.getElementById("ss-js-lint").textContent, /1 error/);
+
+    ta.value = "let y = 2;";
+    fire(win, ta, "input");
+    win.__clock.tick(130);
+    assert.deepEqual(socket.relayed().at(-1), { type: "edit", text: "let y = 2;" });
+    win.__clock.tick(700);
+    assert.equal(socket.relayed().at(-1).type, "commit");
+
+    socket.fire("spore_js_relay", { channel: "abcdef123456", msg: { type: "text", text: "let z = 3;" } });
+    assert.equal(ta.value, "let z = 3;");
+    fire(win, ta, "keydown", { key: "Escape" });
+    assert.equal(E.isOpen(), true, "Escape never closes the pop-out");
+    win.__clock.tick(5000);
+    assert.equal(socket.relayed().at(-1).type, "ping");
+
+    socket.fire("spore_js_relay", { channel: "abcdef123456", msg: { type: "closed" } });
+    assert.equal(ta.readOnly, true);
+    assert.match(doc.getElementById("ss-js-popout-banner").textContent, /no longer in sync/);
+    socket.fire("theme_update", { css: ":root{--x:1}", theme_type: "light" });
+    assert.equal(doc.getElementById("mycelian-theme-vars").textContent, ":root{--x:1}");
+
+    doc.getElementById("ss-js-done").click();
+    assert.equal(socket.relayed().at(-1).type, "bye");
+});
+
+test("pop-out page without a channel or socket explains instead of syncing", () => {
+    for (const [url, io, re] of [
+        ["http://127.0.0.1:5000/_spore_studio_js_editor", { connect: () => fakeSocket() }, /opened without a link/],
+        ["http://127.0.0.1:5000/_spore_studio_js_editor?channel=abcdef123456", undefined, /Couldn't connect/],
+    ]) {
+        const { win } = makeStudioWindow({
+            scripts: ["advanced_js_editor.js"], body: popoutBody(), url,
+        });
+        if (io) { win.io = io; }
+        win.document.body.setAttribute("data-ss-js-popout", "1");
+        fireDomReady(win);
+        assert.match(win.document.getElementById("ss-js-popout-banner").textContent, re);
+    }
 });

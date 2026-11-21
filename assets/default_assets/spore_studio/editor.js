@@ -1464,6 +1464,9 @@
             schedulePreviewMocksRefresh();
         }
         schedulePreviewDraft();
+        if (window.SporeJsEditor && window.SporeJsEditor.modelChanged) {
+            window.SporeJsEditor.modelChanged();
+        }
     }
 
     var previewMocksTimer = null;
@@ -10749,6 +10752,23 @@
         }
     }
 
+    // A syntax error in Advanced JS stops the template's whole script; say so after saving.
+    function warnAdvancedJsProblems(name) {
+        var check = window.SporeJsEditor && window.SporeJsEditor.check ? window.SporeJsEditor.check() : null;
+        if (!check || !check.problems) { return; }
+        var errors = check.problems.filter(function (p) { return p.severity === "error"; });
+        if (!errors.length) { return; }
+        var first = errors[0];
+        notify({
+            type: "warning",
+            title: "Advanced JS in “" + name + "” has " + errors.length +
+                (errors.length === 1 ? " error" : " errors"),
+            message: "Line " + first.line + ": " + first.message,
+            hint: "Open Advanced JS → Expand editor to see every problem.",
+            dedupe: "advanced_js_errors"
+        });
+    }
+
     function saveCurrent() {
         if (!state.model) { return; }
         commitFocusedField();
@@ -10776,6 +10796,7 @@
                     setDirty(false);
                 }
                 notify({ type: "success", title: "Saved “" + name + "”" });
+                warnAdvancedJsProblems(name);
                 refreshPreview(true);
             })
             .then(finishSave, function (err) {
@@ -11545,7 +11566,7 @@
         $("#ss-alert-system").value = state.model.alert_system;
         $("#ss-template-title").value = state.model.title || "";
         $("#ss-advanced-js").value = state.model.advanced_js || "";
-        if (window.SporeJsEditor && window.SporeJsEditor.isOpen()) {
+        if (window.SporeJsEditor) {
             window.SporeJsEditor.setValue(state.model.advanced_js || "");
         }
         refreshDurationCanvasUi();
@@ -11669,7 +11690,7 @@
         $("#ss-advanced-js").addEventListener("input", function (ev) {
             if (!state.model) { return; }
             state.model.advanced_js = ev.target.value;
-            if (window.SporeJsEditor && window.SporeJsEditor.isOpen()) {
+            if (window.SporeJsEditor) {
                 window.SporeJsEditor.setValue(ev.target.value);
             }
             modelTouch();
@@ -11687,7 +11708,31 @@
                     if (box && box.value !== text) { box.value = text; }
                     modelTouch();
                 },
-                commit: function () { pushHistory(); }
+                commit: function () { pushHistory(); },
+                // Compiled draft scripts for the checker and the function reference.
+                getContext: function () {
+                    if (!state.model) { return Promise.reject(new Error("No template loaded")); }
+                    return fetchJson("/api/spore-studio/js-context", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ model: state.model })
+                    }).then(function (res) {
+                        if (!res.ok) { throw requestError(res, "POST /api/spore-studio/js-context"); }
+                        return res.data;
+                    });
+                },
+                // Changes when anything but the Advanced JS changes (that is linted locally).
+                contextKey: function () {
+                    if (!state.model) { return ""; }
+                    try {
+                        return JSON.stringify(Object.assign({}, state.model, { advanced_js: "" }));
+                    } catch (err) {
+                        return String(Date.now());
+                    }
+                },
+                getSocket: function () { return state.socket || null; },
+                templateName: function () { return state.model ? (state.model.template_name || "") : ""; },
+                notify: notify
             });
         }
     }

@@ -2050,6 +2050,154 @@ html[data-theme-type="light"] {
     cursor: pointer;
 }
 .ss-js-ref button:hover { border-color: #a855f7; }
+.ss-js-ref { width: 320px; flex-basis: 320px; display: flex; flex-direction: column; gap: 6px; }
+.ss-js-ref__head { display: flex; gap: 4px; align-items: center; }
+.ss-js-ref__head input {
+    flex: 1;
+    min-width: 0;
+    height: 28px;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    background: var(--ss-bg-input);
+    color: var(--ss-text);
+    border: 1px solid var(--ss-border-strong);
+    border-radius: 6px;
+    font-size: 12px;
+}
+.ss-js-ref .ss-js-ref__head button { width: auto; margin: 0; border: 0; padding: 4px 6px; }
+.ss-js-ref__status, .ss-js-ref__empty { font-size: 11px; color: var(--ss-text-muted); line-height: 1.4; }
+.ss-js-ref__status[hidden] { display: none; }
+#ss-js-ref-list { overflow: auto; min-height: 0; flex: 1; }
+.ss-js-ref__group { margin-bottom: 6px; }
+.ss-js-ref__group > summary {
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ss-text-muted);
+    padding: 4px 2px;
+    user-select: none;
+}
+.ss-js-ref__count {
+    font-weight: 500;
+    letter-spacing: 0;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--ss-text) 10%, transparent);
+}
+.ss-js-ref .ss-js-ref__fn { display: flex; flex-direction: column; gap: 2px; }
+.ss-js-ref__sig { color: #7dd3fc; overflow-wrap: anywhere; }
+.ss-js-ref__sig i { color: var(--ss-text); font-style: normal; opacity: 0.8; }
+.ss-js-ref__doc {
+    font-family: var(--ss-font, system-ui, sans-serif);
+    color: var(--ss-text-muted);
+    font-size: 11px;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.ss-js-ref__fn--internal { opacity: 0.6; }
+
+/* Live checker: gutter marks, squiggles, status and problems list */
+.ss-js-gut-err { color: #f87171; font-weight: 700; }
+.ss-js-gut-warn { color: #fbbf24; font-weight: 700; }
+.ss-js-marks { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.ss-js-mark { position: absolute; height: 3px; }
+.ss-js-mark--error {
+    background: repeating-linear-gradient(135deg, #f87171 0 2px, transparent 2px 4px);
+}
+.ss-js-mark--warn {
+    background: repeating-linear-gradient(135deg, #fbbf24 0 2px, transparent 2px 4px);
+}
+.ss-js-measure { position: absolute; visibility: hidden; white-space: pre; font: 13px/20px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ss-js-lint-status {
+    background: transparent;
+    border: 0;
+    padding: 0 8px 0 0;
+    margin-right: auto;
+    font: inherit;
+    color: var(--ss-text-muted);
+    cursor: pointer;
+}
+.ss-js-lint-status::before, .ss-js-lint-chip::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    background: #64748b;
+}
+.ss-js-lint-status[data-state="ok"]::before, .ss-js-lint-chip[data-state="ok"]::before { background: #4ade80; }
+.ss-js-lint-status[data-state="warn"]::before, .ss-js-lint-chip[data-state="warn"]::before { background: #fbbf24; }
+.ss-js-lint-status[data-state="error"]::before, .ss-js-lint-chip[data-state="error"]::before { background: #f87171; }
+.ss-js-lint-status[data-state="error"] { color: #fca5a5; }
+#ss-js-problems-toggle[data-state="error"] { color: #fca5a5; }
+#ss-js-problems-toggle[data-state="warn"] { color: #fcd34d; }
+.ss-js-problems {
+    max-height: 30%;
+    min-height: 60px;
+    overflow: auto;
+    border-top: 1px solid var(--ss-border);
+    background: color-mix(in srgb, var(--ss-bg-elevated, #141820) 92%, black);
+}
+.ss-js-problems[hidden] { display: none; }
+.ss-js-problem {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    text-align: left;
+    padding: 6px 14px;
+    background: transparent;
+    color: var(--ss-text);
+    border: 0;
+    border-bottom: 1px solid var(--ss-border);
+    font-size: 12px;
+    cursor: pointer;
+}
+.ss-js-problem:hover { background: color-mix(in srgb, var(--ss-accent) 10%, transparent); }
+.ss-js-problem::before { font-weight: 700; flex: 0 0 auto; }
+.ss-js-problem--error::before { content: "✕"; color: #f87171; }
+.ss-js-problem--warn::before { content: "!"; color: #fbbf24; }
+.ss-js-problem__where {
+    flex: 0 0 auto;
+    color: var(--ss-text-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    padding-top: 1px;
+}
+.ss-js-problems__empty { padding: 10px 14px; font-size: 12px; color: var(--ss-text-muted); }
+.ss-js-lint-chip {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--ss-border);
+    background: transparent;
+    color: var(--ss-text-muted);
+    font-size: 11px;
+    cursor: pointer;
+}
+.ss-js-lint-chip[hidden] { display: none; }
+.ss-js-lint-chip[data-state="error"] { color: #fca5a5; border-color: color-mix(in srgb, #f87171 45%, transparent); }
+.ss-js-dialog__name { font-weight: 500; color: var(--ss-text-muted); }
+.ss-js-dialog__name:not(:empty)::before { content: "— "; }
+.ss-js-popout-banner {
+    padding: 8px 14px;
+    font-size: 12px;
+    background: color-mix(in srgb, #fbbf24 18%, transparent);
+    border-bottom: 1px solid var(--ss-border);
+}
+.ss-js-popout-banner[hidden] { display: none; }
+
+/* Pop-out window: the dialog fills the page */
+body[data-ss-js-popout="1"] { margin: 0; height: 100vh; overflow: hidden; background: var(--ss-bg-elevated, #141820); }
+body[data-ss-js-popout="1"] .ss-js-dialog { position: static; height: 100vh; padding: 0; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+body[data-ss-js-popout="1"] .ss-js-dialog__panel { max-width: none; border: 0; border-radius: 0; box-shadow: none; }
 
 .ss-tour-blocker {
     position: fixed;
