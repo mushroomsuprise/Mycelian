@@ -1042,6 +1042,7 @@ _PAYLOAD_EXTRA_FIELDS = frozenset(
         "months",
         "duration_months",
         "amt_cheered",
+        "power_up_type",
         "alert_name",
     }
 )
@@ -1142,6 +1143,7 @@ def build_activity_feed_alert_payload(
                         "months_prepaid",
                         "gift_qty",
                         "amt_cheered",
+                        "power_up_type",
                         "tier",
                         "recipient",
                         "donation_amount",
@@ -1688,7 +1690,12 @@ def convert_stored_alert_to_feed_format(stored_alert_data):
         duration_months = alert_duration_months(stored_alert_data)
         message = ""
         if original_type == "bit":
-            message = f"{username} cheered {_int(stored_alert_data.get('amt_cheered')):,} bits!"
+            bits = _int(stored_alert_data.get("amt_cheered"))
+            power_up = str(stored_alert_data.get("power_up_type") or "").strip()
+            if power_up:
+                message = f"{username} used the {power_up} Power-up for {bits:,} bits!"
+            else:
+                message = f"{username} cheered {bits:,} bits!"
         elif original_type == "sub":
             tier = stored_alert_data.get("tier", 1)
             resub_month = _int(stored_alert_data.get("resub_month"))

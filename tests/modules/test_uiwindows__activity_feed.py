@@ -782,6 +782,8 @@ def test_convert_stored_variants(monkeypatch):
 
 def test_convert_stored_basic_kinds():
     assert conv(alert_type="bit", amt_cheered="1,500")["message"] == "U cheered 1,500 bits!"
+    power = conv(alert_type="bit", amt_cheered=100, power_up_type="Celebration")
+    assert power["message"] == "U used the Celebration Power-up for 100 bits!" and power["badge_type"] == "bits"
     assert conv(alert_type="sub", tier=2)["message"] == "U subscribed (Tier 2)!"
     assert conv(alert_type="resub", resub_month=7)["message"] == "U resubscribed for 7 months!"
     assert conv(alert_type="follow")["message"] == "U just followed!"

@@ -2039,10 +2039,24 @@
             return symbol + text;
         }
 
+        // Power-up name on bits spent through a Power-up ('' for a plain cheer).
+        function resolvePowerUpType(alertData) {
+            return String(lookupChatAlertField(alertData, 'power_up_type') || '').trim();
+        }
+
+        function isPowerUpAlert(alertData) {
+            var t = normalizeChatAlertType(alertData);
+            return (t === 'bit' || t === 'bits') && !!resolvePowerUpType(alertData);
+        }
+
         function formatBitsMessage(alertData) {
             var username = lookupChatAlertField(alertData, 'username') || extractUsernameFromMessage(alertData) || 'Someone';
             var amount = parseInt(lookupChatAlertField(alertData, 'amt_cheered', 'bits', 'amount'), 10) || 1;
             var label = amount === 1 ? 'bit' : 'bits';
+            var powerUp = resolvePowerUpType(alertData);
+            if (powerUp) {
+                return username + ' used the ' + powerUp + ' Power-up for ' + amount + ' ' + label + '!';
+            }
             return username + ' cheered ' + amount + ' ' + label + '!';
         }
 
@@ -2337,7 +2351,7 @@
             chatLog('Adding activity event message:', alertData);
 
             var messageElement = document.createElement('li');
-            messageElement.className = 'chat-message activity-event';
+            messageElement.className = 'chat-message activity-event' + (isPowerUpAlert(alertData) ? ' power-up-event' : '');
             messageElement.id = 'activity-event-' + Date.now();
 
             var eventText = resolveActivityEventText(alertData);
@@ -2356,7 +2370,7 @@
             chatLog('Adding alert event message:', alertData);
 
             var messageElement = document.createElement('li');
-            messageElement.className = 'chat-message event-message alert-event-message';
+            messageElement.className = 'chat-message event-message alert-event-message' + (isPowerUpAlert(alertData) ? ' power-up-event' : '');
             messageElement.id = 'alert-event-' + Date.now();
 
             var eventText = generateAlertMessage(alertData);

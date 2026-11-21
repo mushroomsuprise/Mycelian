@@ -860,7 +860,7 @@ def test_event_panel_sits_under_the_existing_panels(themes, state):
         await user.should_see("Activity Feed events")
         assert set(tt.EVENT_COLOR_FIELDS) <= set(tab._swatch_els)
         chips = by_class(user.client, "thm-ev")
-        assert len(chips) == 17
+        assert len(chips) == 18
         # no event colours in the Colors panel or the readability list
         assert all(f not in tt._PALETTE_COLOR_FIELDS for f in tt.EVENT_COLOR_FIELDS)
         assert "event" not in tab.ui_elements["_readability"].content

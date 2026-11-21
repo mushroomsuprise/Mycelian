@@ -32,6 +32,7 @@
   "event_resub": "rgb(12, 119, 172)",
   "event_giftsub": "rgb(23, 139, 60)",
   "event_bits": "rgb(160, 110, 14)",
+  "event_powerup": "rgb(160, 110, 14)",
   "event_points": "rgb(186, 57, 123)",
   "event_raid": "rgb(196, 56, 67)",
   "event_streak": "rgb(186, 83, 0)",

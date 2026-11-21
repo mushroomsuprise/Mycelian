@@ -2796,6 +2796,8 @@ class AlertObj:
 
     # Bit options:
     amt_cheered: int = 0
+    # Power-up name for channel.bits.use Power-ups ("" for a plain cheer)
+    power_up_type: str = ""
     is_gigantified_emote: bool = False
     gigantified_emote_id: str = ""
     gigantified_emote_name: str = ""

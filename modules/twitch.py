@@ -76,6 +76,7 @@ from .chatbot_manager import get_manager as get_chatbot_manager
 from .template_config_parser import match_point_reward_dedicated_template
 from .text_safe import safe_console_str
 from .twitch_eventsub_patch import (
+    ensure_channel_bits_use_custom_power_up_patch,
     ensure_channel_chat_message_gif_patch,
     ensure_channel_chat_notification_modiversary_patch,
     ensure_channel_chat_notification_watch_streak_patch,
@@ -100,6 +101,7 @@ from .twitch_token_auth import (
 ensure_channel_chat_notification_watch_streak_patch()
 ensure_channel_chat_notification_modiversary_patch()
 ensure_channel_chat_message_gif_patch()
+ensure_channel_bits_use_custom_power_up_patch()
 ensure_hype_train_v2_patch()
 
 logger = logging.getLogger(__name__)
@@ -1696,6 +1698,28 @@ def _power_up_type_token(power_up) -> str:
     if "." in token:
         token = token.rsplit(".", 1)[-1]
     return token.replace("-", "_").replace(" ", "_")
+
+
+def _bits_use_power_up_label(event) -> str:
+    """Readable Power-up name for a channel.bits.use event; "" for a plain cheer.
+
+    Built-in Power-ups carry power_up.type (message_effect, celebration,
+    gigantify_an_emote). Custom Power-Ups come as type custom_power_up with a
+    custom_power_up.title (twitchAPI drops it unless twitch_eventsub_patch ran).
+    """
+    token = _power_up_type_token(getattr(event, "power_up", None))
+    if token:
+        return token.replace("_", " ").title()
+    event_type = str(getattr(event, "type", "") or "").strip().lower()
+    if event_type.rsplit(".", 1)[-1] != "custom_power_up":
+        return ""
+    custom = getattr(event, "custom_power_up", None)
+    if isinstance(custom, dict):
+        title = custom.get("title")
+    else:
+        title = getattr(custom, "title", None)
+    title = str(title or "").strip()
+    return title or "Custom Power-up"
 
 
 def _power_up_emote_identity(power_up) -> tuple[str, str]:
@@ -4068,15 +4092,15 @@ class Twitch_API:
         _apply_gigantified_emote_to_alert(
             alert, getattr(data.event, "power_up", None)
         )
-        if (
-            hasattr(data.event, "power_up")
-            and data.event.power_up
-            and hasattr(data.event.power_up, "type")
-        ):
+        # Cheers return above (channel.cheer alerts them); only Power-ups go on.
+        power_up_type = _bits_use_power_up_label(data.event)
+        alert.power_up_type = power_up_type
+        if power_up_type:
             _queue_twitch_alert(alert, play=emit_overlay)
-            # Determine activity feed message based on power_up field
-            power_up_type = str(data.event.power_up.type).replace("_", " ").title()
-            activity_message = f"{alert.username} has redeemed {power_up_type} for {alert.amt_cheered} bits!"
+            activity_message = (
+                f"{alert.username} used the {power_up_type} Power-up "
+                f"for {alert.amt_cheered} bits!"
+            )
 
             # Send instant alert
             if emit_overlay:
@@ -4169,6 +4193,9 @@ class Twitch_API:
                 timestamp=str(int(alert.timestamp)),
                 user_message="",
                 alert_id=alert.alert_id,
+                username=alert.username,
+                amt_cheered=alert.amt_cheered,
+                power_up_type=power_up_type,
             )
 
     async def on_cheer(self, data: ChannelCheerEvent):

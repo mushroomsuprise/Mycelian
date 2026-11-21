@@ -17,6 +17,8 @@ from typing import Optional  # noqa: E402
 import pytest  # noqa: E402
 from twitchAPI.eventsub.base import EventSubBase  # noqa: E402
 from twitchAPI.object.eventsub import (  # noqa: E402
+    ChannelBitsUseData,
+    ChannelBitsUseEvent,
     ChannelChatNotificationData,
     ChatMessageFragment,
     HypeTrainData,
@@ -31,13 +33,15 @@ from modules import twitch_eventsub_patch as tp  # noqa: E402
 @pytest.fixture
 def saved(monkeypatch):
     """Snapshot every class attribute the patches touch so monkeypatch restores them."""
-    classes = (ChannelChatNotificationData, ChatMessageFragment, HypeTrainData, HypeTrainEndData)
+    classes = (ChannelBitsUseData, ChannelChatNotificationData, ChatMessageFragment, HypeTrainData, HypeTrainEndData)
     originals = {cls: dict(getattr(cls, "__annotations__", {}) or {}) for cls in classes}
     for attr in (tp._WATCH_STREAK_PATCH_ATTR, tp._MODIVERSARY_PATCH_ATTR):
         monkeypatch.setattr(ChannelChatNotificationData, attr, getattr(ChannelChatNotificationData, attr, False),
                             raising=False)
     monkeypatch.setattr(ChatMessageFragment, tp._CHAT_GIF_PATCH_ATTR,
                         getattr(ChatMessageFragment, tp._CHAT_GIF_PATCH_ATTR, False), raising=False)
+    monkeypatch.setattr(ChannelBitsUseData, tp._CUSTOM_POWER_UP_PATCH_ATTR,
+                        getattr(ChannelBitsUseData, tp._CUSTOM_POWER_UP_PATCH_ATTR, False), raising=False)
     for name in ("listen_hype_train_begin", "listen_hype_train_progress", "listen_hype_train_end"):
         monkeypatch.setattr(EventSubBase, name, getattr(EventSubBase, name))
     monkeypatch.setattr(EventSubBase, tp._HYPE_TRAIN_V2_PATCH_ATTR,
@@ -56,6 +60,8 @@ def saved(monkeypatch):
          tp._WATCH_STREAK_PATCH_ATTR, "watch_streak", Optional[tp.WatchStreakNoticeData]),
         (tp.ensure_channel_chat_message_gif_patch, ChatMessageFragment,
          tp._CHAT_GIF_PATCH_ATTR, "gif", Optional[tp.ChatMessageFragmentGifMetadata]),
+        (tp.ensure_channel_bits_use_custom_power_up_patch, ChannelBitsUseData,
+         tp._CUSTOM_POWER_UP_PATCH_ATTR, "custom_power_up", Optional[tp.CustomPowerUpData]),
     ],
 )
 def test_field_patches_apply_and_are_idempotent(saved, fn, cls, attr, field, desired):
@@ -78,6 +84,8 @@ def test_field_patches_apply_and_are_idempotent(saved, fn, cls, attr, field, des
         (tp.ensure_channel_chat_notification_watch_streak_patch, ChannelChatNotificationData,
          tp._WATCH_STREAK_PATCH_ATTR, "watch_streak"),
         (tp.ensure_channel_chat_message_gif_patch, ChatMessageFragment, tp._CHAT_GIF_PATCH_ATTR, "gif"),
+        (tp.ensure_channel_bits_use_custom_power_up_patch, ChannelBitsUseData,
+         tp._CUSTOM_POWER_UP_PATCH_ATTR, "custom_power_up"),
     ],
 )
 def test_field_patches_repatch_when_flag_set_but_annotation_lost(saved, fn, cls, attr, field):
@@ -173,9 +181,30 @@ def test_notice_data_objects_deserialize():
         (tp.ensure_channel_chat_notification_modiversary_patch, ChannelChatNotificationData, "modiversary"),
         (tp.ensure_channel_chat_notification_watch_streak_patch, ChannelChatNotificationData, "watch_streak"),
         (tp.ensure_channel_chat_message_gif_patch, ChatMessageFragment, "gif"),
+        (tp.ensure_channel_bits_use_custom_power_up_patch, ChannelBitsUseData, "custom_power_up"),
     ],
 )
 def test_field_patches_replace_non_dict_annotations(saved, fn, cls, field):
     cls.__annotations__ = ["broken"]  # type: ignore[assignment]
     fn()
     assert list(cls.__annotations__) == [field]
+
+
+def test_bits_use_event_keeps_custom_power_up_title(saved):
+    """A real channel.bits.use payload keeps the Custom Power-Up after the patch."""
+    tp.ensure_channel_bits_use_custom_power_up_patch()
+    event = ChannelBitsUseEvent(
+        subscription={"id": "s", "type": "channel.bits.use", "version": "1"},
+        event={
+            "broadcaster_user_id": "1337", "broadcaster_user_login": "cooler_user",
+            "broadcaster_user_name": "Cooler_User", "user_id": "1234", "user_login": "cool_user",
+            "user_name": "Cool_User", "bits": 50, "type": "custom_power_up", "message": None,
+            "power_up": None, "custom_power_up": {"title": "Hydrate", "reward_id": "r-1"},
+        },
+    )
+    assert isinstance(event.event.custom_power_up, tp.CustomPowerUpData)
+    assert event.event.custom_power_up.title == "Hydrate"
+    assert event.event.custom_power_up.reward_id == "r-1"
+    from modules import twitch as tw
+
+    assert tw._bits_use_power_up_label(event.event) == "Hydrate"

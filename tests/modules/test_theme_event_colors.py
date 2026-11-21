@@ -39,7 +39,7 @@ def _contrast(a, b):
 
 
 def test_every_kind_has_a_field_and_feed_kind():
-    assert len(KEYS) == len(set(KEYS)) == 17
+    assert len(KEYS) == len(set(KEYS)) == 18
     assert ev.EVENT_COLOR_FIELDS == tuple(f"event_{k}" for k in KEYS)
     for field in ev.EVENT_COLOR_FIELDS:
         assert hasattr(ThemeColors(), field)
@@ -47,7 +47,7 @@ def test_every_kind_has_a_field_and_feed_kind():
     assert feed_kinds == set(KEYS), "every feed kind has a theme colour"
     groups = ev.event_groups()
     assert [g for g, _ in groups] == ["Twitch", "Tips", "YouTube", "Other"]
-    assert sum(len(fields) for _, fields in groups) == 17
+    assert sum(len(fields) for _, fields in groups) == 18
 
 
 @pytest.mark.parametrize("path", THEME_FILES, ids=lambda p: p.stem)

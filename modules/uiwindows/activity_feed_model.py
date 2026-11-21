@@ -217,6 +217,8 @@ KIND_META: Dict[str, tuple] = {
     "resub": ("autorenew", "var(--color-event-resub, var(--color-info))", "Resub", "resubs", "twitch"),
     "giftsub": ("redeem", "var(--color-event-giftsub, var(--color-success))", "Gift", "giftsubs", "twitch"),
     "bits": ("diamond", "var(--color-event-bits, var(--color-warning))", "Bits", "bits", "twitch"),
+    # Bits spent on a Power-up: own icon, colour and wording; shares the Bits filter chip.
+    "powerup": ("bolt", "var(--color-event-powerup, var(--color-event-bits, var(--color-warning)))", "Power-up", "bits", "twitch"),
     "points": ("toll", "var(--color-event-points, var(--color-error))", "Points", "points", "twitch"),
     "raid": ("groups", "var(--color-event-raid, var(--color-error))", "Raid", "raids", "twitch"),
     "donation": ("payments", "var(--color-event-donation, var(--color-success))", "Tip", "donations", ""),
@@ -241,6 +243,9 @@ _KIND_ALIASES = {
     "bits": "bits",
     "bit": "bits",
     "cheer": "bits",
+    "powerup": "powerup",
+    "power-up": "powerup",
+    "power_up": "powerup",
     "points": "points",
     "point": "points",
     "channel points": "points",
@@ -287,6 +292,8 @@ def feed_kind(alert: Mapping[str, Any]) -> str:
             break
     if not kind:
         return "alert"
+    if kind == "bits" and str(_pick(alert, "power_up_type") or "").strip():
+        return "powerup"
     if source == "youtube" and kind in ("sub", "resub", "giftsub", "donation"):
         kind = {"sub": "member", "resub": "milestone", "giftsub": "giftmember", "donation": "superchat"}[kind]
         stored = alert.get("stored_alert_data") if isinstance(alert.get("stored_alert_data"), Mapping) else {}
@@ -465,6 +472,15 @@ def feed_row_model(alert: Mapping[str, Any], *, seq: Optional[int] = None) -> Di
             match = _BITS_RE.search(message)
             bits = _to_int(match.group(1)) if match else None
         what = "cheered"
+        if bits:
+            amount = f"{_num(bits)} bits"
+    elif kind == "powerup":
+        bits = _to_int(_pick(alert, "amt_cheered", "bits"))
+        if not bits:
+            match = _BITS_RE.search(message)
+            bits = _to_int(match.group(1)) if match else None
+        name = str(_pick(alert, "power_up_type") or "").strip()
+        what = f"used the {name} Power-up" if name else "used a Power-up"
         if bits:
             amount = f"{_num(bits)} bits"
     elif kind == "points":
@@ -743,7 +759,7 @@ def person_totals(items: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
             slot["tier"] = item.get("tier")
     totals: List[Dict[str, Any]] = []
     for kind, slot in acc.items():
-        if kind == "bits":
+        if kind in ("bits", "powerup"):
             text = f"{int(slot['amount']):,} bits"
         elif kind in ("donation", "superchat", "supersticker"):
             text = format_money(slot["amount"]) if slot["amount"] else str(slot["count"])

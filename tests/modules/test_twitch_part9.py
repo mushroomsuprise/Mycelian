@@ -116,7 +116,10 @@ def test_bits_use_power_up(api, pipe, monkeypatch):
     assert bits_data["message"] == "x" and bits_data["user_id"] == "3"
     assert pipe.dispatched == [("ty",)]
     pipe.stats.increment_bit_alerts.assert_called_once_with(bit_amount=100, username="Bitty", alert_name="Power")
-    assert pipe.feed[0]["message"] == "Bitty has redeemed Gigantify An Emote for 100 bits!"
+    feed = pipe.feed[0]
+    assert feed["message"] == "Bitty used the Gigantify An Emote Power-up for 100 bits!"
+    assert feed["power_up_type"] == "Gigantify An Emote" and feed["amt_cheered"] == 100
+    assert feed["username"] == "Bitty" and alert.power_up_type == "Gigantify An Emote"
 
 
 def test_bits_use_power_up_anonymous_no_alert_and_errors(api, pipe, monkeypatch):
@@ -138,6 +141,20 @@ def test_bits_use_power_up_instant_and_chatbot_errors(api, pipe, monkeypatch):
     pipe.bot.process_event.side_effect = RuntimeError("bot")
     run(api.on_bits_use(_bits("power_up", power_up=SimpleNamespace(type="message_effect"))))
     assert len(pipe.feed) == 1
+
+
+def test_bits_use_custom_power_up(api, pipe, monkeypatch):
+    alert = _alert()
+    monkeypatch.setattr(alertutils, "fetch_cheer_alert", lambda b: alert)
+    run(api.on_bits_use(_bits("custom_power_up", custom_power_up=SimpleNamespace(title="Hydrate"))))
+    assert pipe.queued == [alert] and alert.power_up_type == "Hydrate"
+    assert pipe.feed[0]["message"] == "Bitty used the Hydrate Power-up for 100 bits!"
+
+
+def test_bits_use_custom_power_up_without_title(api, pipe, monkeypatch):
+    monkeypatch.setattr(alertutils, "fetch_cheer_alert", lambda b: _alert())
+    run(api.on_bits_use(_bits("custom_power_up")))
+    assert pipe.feed[0]["power_up_type"] == "Custom Power-up"
 
 
 def test_bits_use_other_type_without_power_up_does_nothing(api, pipe, monkeypatch):

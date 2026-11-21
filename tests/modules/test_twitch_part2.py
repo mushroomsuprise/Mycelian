@@ -246,6 +246,17 @@ def test_power_up_type_token(power_up, expected):
         assert token == expected
 
 
+def test_bits_use_power_up_label():
+    label = tw._bits_use_power_up_label
+    assert label(SimpleNamespace(type="cheer", power_up=None)) == ""
+    assert label(SimpleNamespace(type="power_up", power_up=None)) == ""
+    assert label(SimpleNamespace(type="power_up", power_up={"type": "gigantify_an_emote"})) == "Gigantify An Emote"
+    assert label(SimpleNamespace(type="power_up", power_up=SimpleNamespace(type="celebration"))) == "Celebration"
+    assert label(SimpleNamespace(type="custom_power_up", custom_power_up={"title": " Hydrate "})) == "Hydrate"
+    assert label(SimpleNamespace(type="custom_power_up", custom_power_up=SimpleNamespace(title=""))) == "Custom Power-up"
+    assert label(SimpleNamespace(type="custom_power_up")) == "Custom Power-up"
+
+
 def test_power_up_emote_identity():
     assert tw._power_up_emote_identity(None) == ("", "")
     assert tw._power_up_emote_identity({"emote": {"id": 1, "name": None}}) == ("1", "")

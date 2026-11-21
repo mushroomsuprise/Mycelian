@@ -36,6 +36,7 @@
     resub: ['autorenew', 'var(--color-event-resub, var(--color-info))', 'Resub', 'resubs', 'resubscribed'],
     giftsub: ['redeem', 'var(--color-event-giftsub, var(--color-success))', 'Gift', 'giftsubs', 'gifted subs'],
     bits: ['diamond', 'var(--color-event-bits, var(--color-warning))', 'Bits', 'bits', 'cheered'],
+    powerup: ['bolt', 'var(--color-event-powerup, var(--color-event-bits, var(--color-warning)))', 'Power-up', 'bits', 'used a Power-up'],
     points: ['toll', 'var(--color-event-points, var(--color-error))', 'Points', 'points', 'redeemed a reward'],
     raid: ['groups', 'var(--color-event-raid, var(--color-error))', 'Raid', 'raids', 'raided'],
     donation: ['payments', 'var(--color-event-donation, var(--color-success))', 'Tip', 'donations', 'tipped'],
@@ -51,7 +52,7 @@
   };
   var ALIASES = {
     follow: 'follow', sub: 'sub', subscription: 'sub', resub: 'resub', giftsub: 'giftsub', gift_sub: 'giftsub',
-    bits: 'bits', bit: 'bits', cheer: 'bits', points: 'points', point: 'points', raid: 'raid', donation: 'donation',
+    bits: 'bits', bit: 'bits', cheer: 'bits', powerup: 'powerup', 'power-up': 'powerup', power_up: 'powerup', points: 'points', point: 'points', raid: 'raid', donation: 'donation',
     tip: 'donation', streak: 'streak', 'hype train': 'hype', hype_train: 'hype', hype_train_start: 'hype',
     hype_train_progress: 'hype', hype_train_end: 'hype', modiversary: 'modiversary', membership: 'member',
     member: 'member', 'member milestone': 'milestone', member_milestone: 'milestone', 'gift membership': 'giftmember',
@@ -153,6 +154,7 @@
     if (a && a.kind && a.icon && a.user !== undefined) { return a; }
     a = a || {};
     var kind = kindOf(a.badge_type) !== 'alert' ? kindOf(a.badge_type) : kindOf(a.type || a.alert_type);
+    if (kind === 'bits' && String(a.power_up_type || '').trim()) { kind = 'powerup'; }
     var m = meta(kind);
     var user = a.username || String(a.message || '').split(/\s+/)[0] || 'Someone';
     var what = String(a.message || '');

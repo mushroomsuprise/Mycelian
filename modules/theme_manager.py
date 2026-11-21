@@ -87,6 +87,7 @@ class ThemeColors:
     event_resub: str = ""
     event_giftsub: str = ""
     event_bits: str = ""
+    event_powerup: str = ""
     event_points: str = ""
     event_raid: str = ""
     event_streak: str = ""

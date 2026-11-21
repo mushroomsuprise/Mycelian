@@ -13,10 +13,13 @@ Runtime patches for twitchAPI EventSub gaps:
    and ensure v2 payload fields are annotated for deserialization.
 3. ChatMessageFragment omits Twitch's ``gif`` fragment metadata (added 2026-07-16),
    so TwitchObject drops ``gif.url`` / ``gif_id`` during deserialization.
+4. ChannelBitsUseData omits Twitch's ``custom_power_up`` object, so the title of
+   a Custom Power-Up is dropped during deserialization.
 
 https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-notification-event
 https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelhype_trainbegin
 https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-message-event
+https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelbitsuse
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from typing import Awaitable, Callable, List, Optional
 from twitchAPI.eventsub.base import EventSubBase
 from twitchAPI.object.base import TwitchObject
 from twitchAPI.object.eventsub import (
+    ChannelBitsUseData,
     ChannelChatNotificationData,
     ChatMessageFragment,
     HypeTrainData,
@@ -41,6 +45,7 @@ _WATCH_STREAK_PATCH_ATTR = "__mycelian_watch_streak_field_patched__"
 _MODIVERSARY_PATCH_ATTR = "__mycelian_modiversary_field_patched__"
 _HYPE_TRAIN_V2_PATCH_ATTR = "__mycelian_hype_train_v2_patched__"
 _CHAT_GIF_PATCH_ATTR = "__mycelian_chat_message_gif_patched__"
+_CUSTOM_POWER_UP_PATCH_ATTR = "__mycelian_bits_use_custom_power_up_patched__"
 
 
 class WatchStreakNoticeData(TwitchObject):
@@ -91,6 +96,18 @@ ChatMessageFragmentGifMetadata.__annotations__ = {
     "gif_id": Optional[str],
     "id": Optional[str],
 }
+
+
+class CustomPowerUpData(TwitchObject):
+    """Twitch ``channel.bits.use`` ``custom_power_up`` payload."""
+
+    title: str
+    reward_id: str
+
+
+# twitchAPI TwitchObject reads __annotations__ directly and cannot resolve
+# postponed (string) annotations from ``from __future__ import annotations``.
+CustomPowerUpData.__annotations__ = {"title": str, "reward_id": str}
 
 
 def ensure_channel_chat_notification_modiversary_patch() -> None:
@@ -164,6 +181,31 @@ def ensure_channel_chat_message_gif_patch() -> None:
     setattr(ChatMessageFragment, _CHAT_GIF_PATCH_ATTR, True)
     logger.debug(
         "Patched ChatMessageFragment.gif for EventSub GIF deserialization"
+    )
+
+
+def ensure_channel_bits_use_custom_power_up_patch() -> None:
+    """Force ``custom_power_up`` onto twitchAPI ``ChannelBitsUseData``.
+
+    twitchAPI 4.5.x only knows built-in ``power_up``, so a Custom Power-Up's
+    title and reward id are dropped. Always overwrites a missing/weak annotation.
+    """
+    existing = getattr(ChannelBitsUseData, "__annotations__", None) or {}
+    if not isinstance(existing, dict):
+        existing = {}
+    desired = Optional[CustomPowerUpData]
+    if (
+        getattr(ChannelBitsUseData, _CUSTOM_POWER_UP_PATCH_ATTR, False)
+        and existing.get("custom_power_up") is desired
+    ):
+        return
+
+    merged = dict(existing)
+    merged["custom_power_up"] = desired
+    ChannelBitsUseData.__annotations__ = merged
+    setattr(ChannelBitsUseData, _CUSTOM_POWER_UP_PATCH_ATTR, True)
+    logger.debug(
+        "Patched ChannelBitsUseData.custom_power_up for EventSub deserialization"
     )
 
 

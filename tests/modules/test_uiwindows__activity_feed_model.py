@@ -241,6 +241,18 @@ def test_row_bits_points_raid():
     assert r["what"] == "raided" and r["amount"] == ""
 
 
+def test_row_power_up():
+    r = row(type="Bits", badge_type="bits", username="B", amt_cheered=500, power_up_type="Celebration")
+    assert r["kind"] == "powerup" and r["icon"] == "bolt" and r["label"] == "Power-up"
+    assert r["filter"] == "bits" and r["what"] == "used the Celebration Power-up" and r["amount"] == "500 bits"
+    stored = row(type="Bits", username="B", stored_alert_data={"power_up_type": "Hydrate", "amt_cheered": 10})
+    assert stored["kind"] == "powerup" and stored["what"] == "used the Hydrate Power-up"
+    assert row(type="Bits", username="B", amt_cheered=5, power_up_type="")["kind"] == "bits"
+    r = row(type="powerup", username="B", message="B used it for 1,000 bits")
+    assert r["what"] == "used a Power-up" and r["amount"] == "1,000 bits"
+    assert m.person_totals([{"kind": "powerup", "amount": 300}])[0]["text"] == "300 bits"
+
+
 def test_row_donation():
     r = row(type="donation", username="D", donation_amount=5, currency="GBP", donation_source="Streamlabs")
     assert r["amount"] == "£5.00" and r["platform"] == "streamlabs" and r["what"] == "tipped"

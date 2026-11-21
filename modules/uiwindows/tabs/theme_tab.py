@@ -111,6 +111,7 @@ _EVENT_SAMPLE_ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
     ("sub", "star", "NorthernLyte", "subscribed", "", "T1"),
     ("giftsub", "redeem", "PixelPaladin", "gifted 5 Tier 1 subs", "5", ""),
     ("bits", "diamond", "Fernwick", "cheered 500 bits", "500", ""),
+    ("powerup", "bolt", "SporeLord", "used the Celebration Power-up", "300", ""),
     ("raid", "groups", "CozyCartographer", "raided with 48 viewers", "48", ""),
     ("donation", "payments", "lumen_loaf", "tipped", "$10.00", ""),
     ("hype", "rocket_launch", "Hype Train", "reached Level 3", "", ""),
