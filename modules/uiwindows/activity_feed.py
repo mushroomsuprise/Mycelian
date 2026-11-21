@@ -32,6 +32,7 @@ SOFTWARE.
 # watchdog asks the renderer for its health and falls back to a plain server-rendered
 # list if it can't run (fail open, never a blank tab).
 
+import hashlib
 import html
 import json
 import logging
@@ -41,6 +42,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from nicegui import background_tasks, run, ui
 
+from .. import layout_events
 from ..notification_engine import nav_actions_main_tab, nav_actions_settings, notify
 from .. import alertutils
 from ..ui_timer import app_schedule, run_on_ui_loop
@@ -63,9 +65,10 @@ from .activity_feed_model import (
 
 logger = logging.getLogger(__name__)
 
-_FEED_EVENT = "mycelian-afx"
+_FEED_EVENT = layout_events.EVENT_FEED
 _STYLE_ID = "mycelian-activity-feed"
-_SLOT_NAMES = ("settings", "view", "live", "person", "person_rows", "queue", "meta")
+# "live_add" must come right after "live": the renderer applies slots in page order.
+_SLOT_NAMES = ("settings", "view", "live", "live_add", "person", "person_rows", "queue", "meta")
 _QUEUE_POLL_SEC = 0.5
 _FEED_WATCHDOG_INTERVAL_SEC = 20.0
 _LIVE_PUSH_DEBOUNCE_SEC = 0.15
@@ -105,6 +108,16 @@ def _element_alive(el: Any) -> bool:
 _live_lock = threading.RLock()
 _seq_lock = threading.Lock()
 _live_seq = 0
+
+# The tab gets the whole live list ("live" slot, revision ``_live_base``) once, then only
+# the alerts added on top of it ("live_add": every row added since that snapshot). A new
+# full snapshot goes out after _LIVE_DELTA_MAX additions or when rows change in place
+# (an updated alert, stored alerts merged in). Sending the whole list on every alert cost
+# a multi-megabyte json.dumps on the UI loop and a full re-parse in the page.
+_LIVE_DELTA_MAX = 200
+_live_base = 0
+_live_added = 0
+_live_full_needed = True
 
 
 def _next_seq() -> int:
@@ -170,6 +183,7 @@ class AlertEventHandler:
         self._should_stop = False
 
     def process_alert_immediately(self, alert_data: Dict[str, Any]) -> None:
+        global _live_added
         if self._should_stop or not isinstance(alert_data, dict):
             return
         try:
@@ -179,6 +193,7 @@ class AlertEventHandler:
                 entry["row"] = feed_row_model(entry)
             with _live_lock:
                 activity_feed_state.live_alerts.insert(0, entry)
+                _live_added += 1
             _trim_live_alerts()
             _schedule_live_push()
             if view_mode(view_manager.snapshot()) == "person":
@@ -1591,7 +1606,7 @@ def update_alert_in_feed(alert_id: Optional[str], **fields: Any) -> bool:
             stored.update({k: v for k, v in changes.items() if k != "message"})
             entry["stored_alert_data"] = stored
         entry["row"] = feed_row_model(entry)
-    _schedule_live_push()
+    _schedule_live_push(full=True)
     try:
         # The dock replaces its live list in place (no new row, order kept).
         broadcast_activity_feed_view(view_manager.snapshot(), include_live_alerts=True)
@@ -1907,7 +1922,7 @@ def load_stored_into_feed(*, reload: bool = False) -> int:
 
 def _after_stored_loaded() -> None:
     """Repaint the tab and the docks with the feed that now includes stored alerts."""
-    _schedule_live_push()
+    _schedule_live_push(full=True)
     broadcast_activity_feed_view(view_manager.snapshot(), include_live_alerts=True)
 
 
@@ -3019,7 +3034,9 @@ def _slot_value(name: str) -> Any:
     if name == "view":
         return view_manager.snapshot()
     if name == "live":
-        return [_row_for(a) for a in live_alerts_snapshot()]
+        return _live_full_payload()
+    if name == "live_add":
+        return _live_delta_payload()
     if name == "person":
         return _person_payload
     if name == "person_rows":
@@ -3031,17 +3048,56 @@ def _slot_value(name: str) -> Any:
     return None
 
 
+def _live_full_payload() -> Dict[str, Any]:
+    """The whole live list as a new base revision (resets the added-rows count)."""
+    global _live_base, _live_added, _live_full_needed
+    with _live_lock:
+        snapshot = list(activity_feed_state.live_alerts)
+        _live_base += 1
+        _live_added = 0
+        _live_full_needed = False
+        base = _live_base
+    return {"base": base, "rows": [_row_for(a) for a in snapshot]}
+
+
+def _live_delta_payload() -> Dict[str, Any]:
+    """Every row added on top of the last full snapshot, plus the list's current length."""
+    with _live_lock:
+        added = min(_live_added, len(activity_feed_state.live_alerts))
+        head = activity_feed_state.live_alerts[:added]
+        cap = len(activity_feed_state.live_alerts)
+        base = _live_base
+    return {"base": base, "rows": [_row_for(a) for a in head], "cap": cap}
+
+
+def _next_live_push() -> tuple:
+    """("live", full) when a new snapshot is due, else ("live_add", rows added since it)."""
+    with _live_lock:
+        full = _live_full_needed or _live_added > _LIVE_DELTA_MAX
+    if full:
+        return "live", _live_full_payload()
+    return "live_add", _live_delta_payload()
+
+
+def _slot_key(payload: str) -> str:
+    # The full live list can be megabytes; remember a digest, not a second copy.
+    if len(payload) < 4096:
+        return payload
+    return "sha1:" + hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
 def _apply_slot(name: str, payload: str) -> None:
     global _slot_rev
     host = _host
     if host is None or not _element_alive(host.host):
         return
-    if _slot_cache.get(name) == payload:
+    key = _slot_key(payload)
+    if _slot_cache.get(name) == key:
         return
     el = host.slots.get(name)
     if el is None or not _element_alive(el):
         return
-    _slot_cache[name] = payload
+    _slot_cache[name] = key
     _slot_rev += 1
     el._props.update({"data-json": payload, "data-rev": str(_slot_rev)})
     el.update()
@@ -3064,9 +3120,16 @@ def push_all_slots() -> None:
         _push_slot(name, _slot_value(name))
 
 
-def _schedule_live_push() -> None:
-    """Coalesce bursts of alerts into one repaint."""
-    global _live_push_scheduled
+def _schedule_live_push(full: bool = False) -> None:
+    """Coalesce bursts of alerts into one repaint.
+
+    ``full`` when rows changed in place (not only added on top), so the next push
+    sends the whole list instead of the added rows.
+    """
+    global _live_push_scheduled, _live_full_needed
+    if full:
+        with _live_lock:
+            _live_full_needed = True
     if not _tab_alive() or _live_push_scheduled:
         return
     _live_push_scheduled = True
@@ -3074,7 +3137,8 @@ def _schedule_live_push() -> None:
     def _go() -> None:
         global _live_push_scheduled
         _live_push_scheduled = False
-        _push_slot("live", _slot_value("live"))
+        name, value = _next_live_push()
+        _push_slot(name, value)
 
     def _arm() -> None:
         try:
@@ -3152,10 +3216,23 @@ def _meta_state() -> Dict[str, Any]:
     return {"app": True, "dock_open": dock_open}
 
 
+def _feed_tab_hidden() -> bool:
+    try:
+        from .tab_visibility import main_tab_hidden
+
+        return main_tab_hidden("Activity Feed")
+    except Exception:
+        return False
+
+
 def _poll_queue(force: bool = False) -> None:
     """Push the queue state to the tab when it changed (cheap; runs twice a second)."""
     global _last_queue_sig, _meta_tick, _last_meta
     if not _tab_alive():
+        return
+    if not force and _feed_tab_hidden():
+        # Another main tab is showing. The signature is compared again on the first
+        # poll after the Feed shows, so the queue is current within _QUEUE_POLL_SEC.
         return
     state = current_queue_state()
     sig = _queue_sig(state)
@@ -3618,7 +3695,7 @@ def create_activity_feed_tab():
         client = context.client
         if client.id not in _registered_event_clients:
             _registered_event_clients.add(client.id)
-            client.layout.on(_FEED_EVENT, _on_feed_event)
+            layout_events.listen(client, _FEED_EVENT, _on_feed_event)
     except Exception as exc:
         logger.error("activity_feed: could not listen for feed actions: %s", exc)
 

@@ -28,6 +28,9 @@ _PING_INTERVAL_SEC = 60.0
 _STARTUP_GRACE_SEC = 90.0
 _RELOAD_COOLDOWN_SEC = 120.0
 _MAX_RELOADS_PER_SESSION = 5
+# The reload budget refills only after this long without a forced reload, so a page that
+# keeps failing cannot reload forever (each reload re-arms the monitor on the new client).
+_RELOAD_BUDGET_RESET_SEC = 3600.0
 
 _consecutive_ping_failures = 0
 _last_reload_mono: float = 0.0
@@ -48,6 +51,7 @@ _CLIENT_WATCHDOG_SCRIPT = """
 
 _DOM_CHECK_JS = """
 (function () {
+    if (document.hidden) { return 'hidden'; }
     var tabs = document.querySelector('.mycelian-main-tabs');
     var appRoot = document.querySelector('#app, .nicegui-content');
     if (!tabs || !appRoot) { return null; }
@@ -112,12 +116,18 @@ def set_monitor_suspended(suspended: bool) -> None:
     _SUSPENDED = suspended
     _consecutive_ping_failures = 0
     if not suspended:
-        # Restoring rebuilds the UI from scratch; give it the same grace as a cold start
-        # and a fresh reload budget so a long 24/7 session cannot permanently disable
-        # the watchdog after five black-screen recoveries.
+        # Restoring rebuilds the UI from scratch; give it the same grace as a cold start.
+        # The reload budget refills after an hour without a forced reload, so a long 24/7
+        # session cannot permanently disable the watchdog after five recoveries.
         _armed_mono = time.monotonic()
-        _reload_count = 0
+        _refill_reload_budget()
     logger.debug("ui_health: monitor %s", "suspended" if suspended else "resumed")
+
+
+def _refill_reload_budget() -> None:
+    global _reload_count
+    if _reload_count and time.monotonic() - _last_reload_mono >= _RELOAD_BUDGET_RESET_SEC:
+        _reload_count = 0
 
 
 def _is_not_ready_error(exc: BaseException) -> bool:
@@ -170,6 +180,10 @@ def _on_ping_check_result(alive: Optional[Any]) -> None:
 
     if is_shutdown_in_progress() or _in_startup_grace():
         return
+    if alive == "hidden":
+        # Hidden or occluded windows have their timers throttled; nothing to judge.
+        logger.debug("ui_health: skip (page hidden)")
+        return
 
     socket_ok = _any_client_has_socket()
 
@@ -214,6 +228,11 @@ async def _run_health_check_async(client: Any) -> None:
     try:
         result = await client.run_javascript(_DOM_CHECK_JS, timeout=5.0)
         _on_ping_check_result(result)
+    except TimeoutError as exc:
+        # A slow answer means the page or the UI loop is busy, not broken. Reloading a
+        # busy page throws away the user's work; a dead socket is caught by
+        # has_socket_connection, and a missing shell by the DOM check itself.
+        logger.info("ui_health: check timed out (busy, not counted): %s", exc)
     except Exception as exc:
         if _is_not_ready_error(exc):
             logger.debug("ui_health: skip (not ready): %s", exc)
@@ -250,7 +269,8 @@ def arm_ui_health_monitor(client: Any) -> None:
 
     _health_client = client
     _armed_mono = time.monotonic()
-    _reload_count = 0
+    # Every reload re-arms the monitor on the new client, so the budget is not reset here.
+    _refill_reload_budget()
 
     if _MONITOR_STARTED:
         return

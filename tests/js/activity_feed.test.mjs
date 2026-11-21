@@ -746,6 +746,40 @@ test("ticker: relative times refresh every 15s, list re-renders every 60s, dead 
     assert.equal(s.F.instances.includes(s.f), false);
 });
 
+test("live snapshot plus live_add: added rows go on top, the cap trims, other bases are ignored", () => {
+    const s = feed();
+    s.f.set("live", { base: 3, rows: [row({ id: "a", alert_id: "a" }), row({ id: "b", alert_id: "b" })] });
+    assert.deepEqual(plain(s.f.s.live.map((r) => r.id)), ["a", "b"]);
+    s.f.set("live_add", { base: 3, rows: [row({ id: "c", alert_id: "c" })], cap: 3 });
+    assert.deepEqual(plain(s.f.s.live.map((r) => r.id)), ["c", "a", "b"]);
+    // cumulative: every row since the snapshot, so a missed push is never a missed row
+    s.f.set("live_add", { base: 3, rows: [row({ id: "d", alert_id: "d" }), row({ id: "c", alert_id: "c" })], cap: 3 });
+    assert.deepEqual(plain(s.f.s.live.map((r) => r.id)), ["d", "c", "a"]);
+    s.f.set("live_add", { base: 2, rows: [row({ id: "x", alert_id: "x" })], cap: 9 });  // stale snapshot
+    assert.deepEqual(plain(s.f.s.live.map((r) => r.id)), ["d", "c", "a"]);
+    assert.ok(s.qa(".afx-row").length >= 1);
+    s.f.set("live", [row({ id: "dock", alert_id: "dock" })]);  // docks still send plain rows
+    s.f.set("live_add", { base: 3, rows: [row({ id: "y", alert_id: "y" })], cap: 9 });
+    assert.deepEqual(plain(s.f.s.live.map((r) => r.id)), ["dock"]);
+});
+
+test("bindHosts re-reads live_add after a new snapshot in the same pass", () => {
+    const s = setup();
+    const slotHtml = (name, rev, json) => `<div class="afx-slot" data-slot="${name}" data-rev="${rev}" data-json='${JSON.stringify(json).replace(/'/g, "&#39;")}'></div>`;
+    s.doc.body.innerHTML = '<div class="afx-host" data-afx-app="1">' +
+        slotHtml("live", "1", { base: 1, rows: [row({ id: "a", alert_id: "a" })] }) +
+        slotHtml("live_add", "2", { base: 2, rows: [row({ id: "b", alert_id: "b" })], cap: 2 }) +
+        '<div class="afx-mount"></div></div>';
+    s.F.bindHosts();
+    const host = s.doc.querySelector(".afx-host");
+    assert.deepEqual(plain(host.__afx.s.live.map((r) => r.id)), ["a"]);  // live_add is for a snapshot not seen yet
+    const live = host.querySelector('[data-slot="live"]');
+    live.setAttribute("data-rev", "3");
+    live.setAttribute("data-json", JSON.stringify({ base: 2, rows: [row({ id: "a", alert_id: "a" })] }));
+    s.F.bindHosts();  // live_add's rev did not change, but it belongs to the new snapshot
+    assert.deepEqual(plain(host.__afx.s.live.map((r) => r.id)), ["b", "a"]);
+});
+
 test("bindHosts creates one Feed per host, applies changed slots and re-binds a new mount", () => {
     const s = setup();
     const emitted = [];

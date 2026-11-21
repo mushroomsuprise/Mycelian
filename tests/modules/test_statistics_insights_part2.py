@@ -33,7 +33,7 @@ class FakeManager:
         self._stats_db_initialized = True
         self.returned = []
 
-    def _get_stats_db_connection(self):
+    def _get_stats_db_connection(self, flush_events=True):
         return sqlite3.connect(self.path)
 
     def _return_stats_db_connection(self, conn):
@@ -195,7 +195,7 @@ def test_query_without_database_or_connection(db):
     assert si.Insights(off)._query("SELECT 1") == []
     assert si.Insights(object())._query("SELECT 1") == []  # a manager without the flag
     none = FakeManager(db)
-    none._get_stats_db_connection = lambda: None
+    none._get_stats_db_connection = lambda **k: None
     assert si.Insights(none)._query("SELECT 1") == []
     assert none.returned == [None]
 

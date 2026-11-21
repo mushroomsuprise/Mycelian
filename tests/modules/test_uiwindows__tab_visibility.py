@@ -50,6 +50,14 @@ def strips(monkeypatch):
     return main_tabs, chatbot_tabs
 
 
+def test_main_tab_hidden(strips):
+    main_tabs, _ = strips
+    assert tv.main_tab_hidden("Chatbot") is False
+    assert tv.main_tab_hidden("Alerts") is True
+    main_tabs.value = "Something new"
+    assert tv.main_tab_hidden("Alerts") is False  # unknown tab: never skip
+
+
 def test_tab_strips_returns_contextual_help_strips(strips):
     assert tv._tab_strips() == strips
 

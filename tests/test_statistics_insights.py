@@ -33,7 +33,7 @@ class FakeManager:
         self.path = path
         self._stats_db_initialized = True
 
-    def _get_stats_db_connection(self):
+    def _get_stats_db_connection(self, flush_events=True):
         return sqlite3.connect(self.path)
 
     def _return_stats_db_connection(self, conn):

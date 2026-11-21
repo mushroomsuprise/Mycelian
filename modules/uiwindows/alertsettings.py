@@ -38,6 +38,7 @@ from ..ui_form_controls import form_input, form_number, form_select
 from ..ui_timer import app_schedule, layout_schedule, run_on_ui_loop
 
 from ..help_system.contextual_help import set_alerts_ui_references
+from .tab_visibility import main_tab_hidden
 
 from .. import alert_processor, alertutils
 from .alerts_styles import ALERTS_CSS, ALERTS_TAB_CSS
@@ -1475,6 +1476,8 @@ def create_alert_settings_tab():
             alert_tabs.on_value_change(_on_alert_tab_change)
 
             def check_alert_tab_changes():
+                if main_tab_hidden("Alerts"):
+                    return
                 if (
                     alert_settings_state.unsaved_prompt_open
                     or alert_settings_state.tab_switch_guard

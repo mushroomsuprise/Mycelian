@@ -47,6 +47,7 @@ from ..notification_engine import nav_source_template, notify
 from ..spore_studio.spore_data_codegen import timer_control_event
 from ..ui_buttons import apply_flat_btn_props
 from ..ui_timer import layout_schedule
+from .tab_visibility import main_tab_hidden
 
 logger = logging.getLogger(__name__)
 
@@ -534,6 +535,10 @@ class _SourceControlsView:
                     ctl.apply_live(elements[idx].get("value"))
 
     async def tick(self) -> None:
+        # Hidden: changes stay marked dirty and are applied on the first tick after the
+        # tab shows again (at most _REFRESH_TICK_SEC later).
+        if main_tab_hidden("Source Controls"):
+            return
         for card in self.cards.values():
             for ctl in card.controls.values():
                 ctl.sync_if_settled()

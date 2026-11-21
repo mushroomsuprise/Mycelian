@@ -270,7 +270,11 @@ def test_bridge_for_client_injects_once(monkeypatch):
     b1 = cc._bridge_for_client(client)
     b2 = cc._bridge_for_client(client)
     assert b1 is b2 and isinstance(b1, cc._PickerBridge)
-    assert client.layout.listeners == [(cc._PICKER_EVENT, b1.dispatch)]
+    # The page listens for every page event once; the picker only plugs in its handler.
+    from modules import layout_events
+
+    assert [event for event, _ in client.layout.listeners] == list(layout_events.EVENTS)
+    assert layout_events.handler_for(client, cc._PICKER_EVENT) == b1.dispatch
     assert len(client.js) == 1
     js = client.js[0]
     assert "mycelian-color-picker-css" in js

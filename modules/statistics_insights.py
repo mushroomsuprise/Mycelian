@@ -210,7 +210,9 @@ class Insights:
             return []
         conn = None
         try:
-            conn = self.mgr._get_stats_db_connection()
+            # Reads don't flush the pending event batch: that turned every UI read into an
+            # INSERT + commit under the event write lock. The flusher writes within ~1 s.
+            conn = self.mgr._get_stats_db_connection(flush_events=False)
             if conn is None:
                 return []
             cur = conn.cursor()

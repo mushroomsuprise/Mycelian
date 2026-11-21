@@ -77,7 +77,7 @@ _splash_status = None
 # built in build_root_ui() (which would otherwise leave a splash that never closes).
 _splash_close_requested = False
 
-from . import alertutils, database_manager, dataobjects, tray_controller
+from . import alertutils, database_manager, dataobjects, layout_events, tray_controller
 from .theme_manager import get_theme_manager, generate_css_variables
 from .ui_font import apply_app_font, get_app_font_css_block
 from .ui_styles import get_full_theme_css, SUB_TAB_SEAM_SCRIPT
@@ -659,6 +659,10 @@ def build_root_ui() -> None:
         _ui_client_id = client_id
         logger.info("New NiceGUI client %s — will rebuild UI shell", client_id)
 
+    # Listen for every page-level custom event before anything is drawn. A listener
+    # added to the layout later (by a tab the preloader builds) re-renders the whole UI.
+    layout_events.install(context.client)
+
     # Per-page Quasar primary color (was module scope in NiceGUI 2.x).
     ui.colors(primary="var(--color-primary)")
 
@@ -748,6 +752,31 @@ def _start_overlay_engine_background() -> None:
     ).start()
 
 
+_ui_pref_writer = None
+
+
+def save_ui_prefs_in_background() -> None:
+    """Write pending App Settings on the preference writer thread, not the UI loop.
+
+    The in-memory setting is already updated; only the database write moves. With
+    SQLite a write can wait up to busy_timeout for another writer, and Firebase or
+    Mongo wait on the network, so saving on every tab switch froze the window.
+    Repeated calls merge into one save.
+    """
+    global _ui_pref_writer
+    if _ui_pref_writer is None:
+        from .background_writer import BackgroundWriter
+
+        _ui_pref_writer = BackgroundWriter("UiPrefSave")
+
+    def _save() -> None:
+        from .dataobjects import state_manager
+
+        state_manager.save_changes()
+
+    _ui_pref_writer.submit("app_settings", _save)
+
+
 def remember_ui_pref(field: str, value) -> None:
     """Persist a navigation or window preference without a settings-tab save."""
     try:
@@ -758,7 +787,7 @@ def remember_ui_pref(field: str, value) -> None:
             return
         if not state_manager.update_app_setting(field, value):
             return
-        state_manager.save_changes()
+        save_ui_prefs_in_background()
     except Exception as exc:
         logger.debug("Could not remember %s: %s", field, exc)
 
@@ -961,6 +990,18 @@ class LazyTabPanel:
 _LAZY_PRELOAD_DELAY_SEC = 30.0
 _LAZY_PRELOAD_GAP_SEC = 1.0
 _LAZY_PRELOAD_STEP_TIMEOUT_SEC = 180.0
+# Each build runs on the UI loop, so wait until the user has left the window alone
+# this long (tab switches and page widgets count) before building the next tab ...
+_LAZY_PRELOAD_IDLE_SEC = 3.0
+# ... but never hold the preload back longer than this.
+_LAZY_PRELOAD_MAX_IDLE_WAIT_SEC = 60.0
+# Builds slower than this are logged so heavy tabs can be found in user logs.
+_LAZY_PRELOAD_SLOW_MS = 250.0
+# The first page of the session preloads every tab. A later page (tray restore or a
+# reload) only warms the main tabs the user actually opened, instead of building
+# every tab again for each rebuilt page.
+_preload_first_client: Optional[str] = None
+_main_tabs_opened: set = set()
 _MAIN_TAB_PRELOAD_ORDER = (
     "Alerts",
     "Source Settings",
@@ -984,9 +1025,19 @@ def _start_lazy_tab_preload(lazy_tabs: dict, tabs) -> None:
 
     from .ui_tab_transitions import _tab_label
 
+    global _preload_first_client
     client = context.client
     client_id = client.id
     layout = client.layout
+    if _preload_first_client is None:
+        _preload_first_client = client_id
+    first_page = _preload_first_client == client_id
+    wanted_main = _MAIN_TAB_PRELOAD_ORDER if first_page else tuple(
+        name for name in _MAIN_TAB_PRELOAD_ORDER if name in _main_tabs_opened
+    )
+    if not wanted_main:
+        logger.info("Lazy tab preload skipped for client %s (no tabs opened before)", client_id)
+        return
 
     def _still_current() -> bool:
         try:
@@ -1043,16 +1094,44 @@ def _start_lazy_tab_preload(lazy_tabs: dict, tabs) -> None:
             time.sleep(min(0.5, remaining))
         return _still_current()
 
+    def _wait_for_idle() -> bool:
+        waited = 0.0
+        while waited < _LAZY_PRELOAD_MAX_IDLE_WAIT_SEC:
+            idle = layout_events.idle_seconds()
+            if idle >= _LAZY_PRELOAD_IDLE_SEC:
+                break
+            step = _LAZY_PRELOAD_IDLE_SEC - idle
+            if not _sleep_gap(step):
+                return False
+            waited += step
+        return _still_current()
+
+    def _timed(label: str, step):
+        def _run() -> None:
+            started = time.perf_counter()
+            try:
+                step()
+            finally:
+                ms = (time.perf_counter() - started) * 1000.0
+                if ms >= _LAZY_PRELOAD_SLOW_MS:
+                    logger.warning("Preloading %s held the UI for %.0f ms", label, ms)
+                else:
+                    logger.debug("Preloaded %s in %.0f ms", label, ms)
+
+        return _run
+
     def _worker() -> None:
         if not _sleep_gap(_LAZY_PRELOAD_DELAY_SEC):
             return
         logger.info("Lazy tab preload starting for client %s", client_id)
-        for name in _MAIN_TAB_PRELOAD_ORDER:
+        for name in wanted_main:
             if not _still_current():
                 return
             panel = lazy_tabs.get(name)
             if panel is None or panel.loaded:
                 continue
+            if not _wait_for_idle():
+                return
 
             def _build(panel=panel, name=name) -> None:
                 panel.ensure_loaded()
@@ -1073,11 +1152,14 @@ def _start_lazy_tab_preload(lazy_tabs: dict, tabs) -> None:
                     logger.debug("Could not pause %s timers after preload: %s", name, exc)
 
             logger.info("Preloading main tab %s", name)
-            if not _run_on_layout(_build):
+            if not _run_on_layout(_timed(f"main tab {name}", _build)):
                 return
             if not _sleep_gap(_LAZY_PRELOAD_GAP_SEC):
                 return
 
+        if "Settings" not in wanted_main:
+            logger.info("Lazy tab preload finished for client %s", client_id)
+            return
         while _still_current():
             built = {"ok": False}
 
@@ -1086,7 +1168,9 @@ def _start_lazy_tab_preload(lazy_tabs: dict, tabs) -> None:
 
                 built["ok"] = settings_ui.load_next_unloaded_settings_tab()
 
-            if not _run_on_layout(_next_settings_tab):
+            if not _wait_for_idle():
+                return
+            if not _run_on_layout(_timed("a Settings tab", _next_settings_tab)):
                 return
             if not built["ok"]:
                 logger.info("Lazy tab preload finished for client %s", client_id)
@@ -1402,6 +1486,7 @@ def create_ui_elements():
                     nonlocal previous_tab
                     if setting_tab["value"]:
                         return
+                    layout_events.mark_activity()
                     new_tab = getattr(e, "value", None)
                     leaving_tab = getattr(e, "previous_value", None)
                     if leaving_tab is None:
@@ -1462,6 +1547,7 @@ def create_ui_elements():
                         set_tab_quietly(new_tab)
                     if arriving:
                         remember_ui_pref("last_main_tab", arriving)
+                        _main_tabs_opened.add(arriving)
 
                     # Handle lazy loading for the new tab
                     def get_tab_name(tab):
@@ -1532,6 +1618,7 @@ def create_ui_elements():
                 )
                 if initial_main_label in lazy_tabs:
                     lazy_tabs[initial_main_label].ensure_loaded()
+                    _main_tabs_opened.add(initial_main_label)
 
                 def remember_window_geometry(box) -> None:
                     try:
@@ -1566,13 +1653,17 @@ def create_ui_elements():
                             if state_manager.update_app_setting(field, val):
                                 changed = True
                     if changed:
-                        state_manager.save_changes()
+                        save_ui_prefs_in_background()
 
                 def _on_window_geometry(e) -> None:
                     args = getattr(e, "args", None)
                     remember_window_geometry(args)
 
-                ui.on("mycelian-window-geometry", _on_window_geometry)
+                from nicegui import context as _geom_context
+
+                layout_events.listen(
+                    _geom_context.client, layout_events.EVENT_WINDOW_GEOMETRY, _on_window_geometry
+                )
                 ui.run_javascript(
                     """
                     if (!window.__mycelianGeomHook) {

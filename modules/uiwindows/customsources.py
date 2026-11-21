@@ -2489,7 +2489,9 @@ def _listen_for_split_once() -> None:
     if client.id in _split_listener_clients:
         return
     _split_listener_clients.add(client.id)
-    client.layout.on("mycelian-cs-split", _on_split_moved)
+    from .. import layout_events
+
+    layout_events.listen(client, layout_events.EVENT_CS_SPLIT, _on_split_moved)
     client.on_delete(lambda: _split_listener_clients.discard(client.id))
 
 

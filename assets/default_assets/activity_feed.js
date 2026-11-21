@@ -223,7 +223,7 @@
     this.s = {
       settings: normSettings(null),
       view: { mode: 'feed', filters: normFilters(null), search: '', page: 1, revision: -1 },
-      live: [],
+      live: [], liveBase: null, liveBaseRows: [],
       person: { groups: [], hours: 12, alert_count: 0, user_count: 0, loading: true },
       personRows: { user: '', rows: [] },
       queue: normQueue(null), meta: { connected: true, dock_open: null, app: !opts.dock }
@@ -331,7 +331,16 @@
       }
       if (prevMode !== s.view.mode && s.view.mode !== 'person') { this.dialogUser = null; }
     } else if (name === 'live') {
-      s.live = (value || []).map(rowFromAlert).slice(0, LIVE_CAP);
+      // The app tab sends {base, rows}: a snapshot that 'live_add' then adds to. Docks send rows.
+      var full = Array.isArray(value) ? value : (value && value.rows) || [];
+      s.liveBase = (value && !Array.isArray(value) && value.base != null) ? value.base : null;
+      s.live = s.liveBaseRows = full.map(rowFromAlert).slice(0, LIVE_CAP);
+    } else if (name === 'live_add') {
+      // Every row added since snapshot `base` (newest first) and the list's current length.
+      var d = value || {};
+      if (s.liveBase === null || d.base !== s.liveBase) { return; }
+      var cap = Math.min(LIVE_CAP, Number(d.cap) || LIVE_CAP);
+      s.live = (d.rows || []).map(rowFromAlert).concat(s.liveBaseRows).slice(0, cap);
     } else if (name === 'add') {
       var row = rowFromAlert(value);
       s.live = s.live.filter(function (r) { return r.id !== row.id; });
@@ -1035,6 +1044,8 @@
         var name = slot.getAttribute('data-slot'), rev = slot.getAttribute('data-rev');
         if (inst.revs[name] === rev) { continue; }
         inst.revs[name] = rev;
+        // A new snapshot re-reads the added rows (they follow it in page order).
+        if (name === 'live') { delete inst.revs.live_add; }
         try { inst.set(name, JSON.parse(slot.getAttribute('data-json') || 'null'), { defer: true }); changed = true; }
         catch (e) { if (window.console) { console.warn('activity feed: bad slot', name, e); } }
       }

@@ -565,9 +565,11 @@ def test_remember_ui_pref(state):
     mw.remember_ui_pref("last_main_tab", "Alerts")  # unchanged
     assert state.updates == []
     mw.remember_ui_pref("last_main_tab", "Chatbot")
+    assert mw._ui_pref_writer.flush(2.0)
     assert state.updates == [("last_main_tab", "Chatbot")] and state.saves == 1
     state.update_ok = False
     mw.remember_ui_pref("last_main_tab", "Settings")
+    assert mw._ui_pref_writer.flush(2.0)
     assert state.saves == 1
     state.settings = RuntimeError("db")
     mw.remember_ui_pref("last_main_tab", "x")  # swallowed

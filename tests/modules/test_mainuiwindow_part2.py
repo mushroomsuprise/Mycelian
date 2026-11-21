@@ -509,6 +509,7 @@ def test_window_geometry_saved(shell):
     async def check(user):
         _geometry(user, [1600, 900, 10, 20])
         assert shell.updates == [("window_width", 1600), ("window_height", 900), ("window_x", 10), ("window_y", 20)]
+        assert mw._ui_pref_writer.flush(2.0)  # saved on the preference writer, not the UI loop
         assert shell.saves == 1
 
     run_ui(mw.create_ui_elements, check)
@@ -578,6 +579,12 @@ def preload(monkeypatch, shell):
     monkeypatch.setattr(mw.threading, "Thread", CapThread)
     ft = FakeTime()
     monkeypatch.setattr(mw, "time", ft)
+    ft.perf_counter = lambda: ft.t
+    monkeypatch.setattr(mw, "_preload_first_client", None)
+    monkeypatch.setattr(mw, "_main_tabs_opened", set())
+    from modules import layout_events
+
+    monkeypatch.setattr(layout_events, "idle_seconds", lambda: 999.0)
     monkeypatch.setattr(mw, "run_on_ui_loop", lambda fn: fn())
     monkeypatch.setattr(mw, "layout_schedule", lambda i, cb, **kw: cb())
     from modules import shutdown
@@ -672,6 +679,83 @@ def test_preload_settings_not_loaded_and_pause_error(shell, preload, monkeypatch
             START_PRELOAD(lazy, SimpleNamespace(value="Alerts"))
         preload.captured[0].target()
         assert lazy["Settings"].loaded
+
+    run_ui(build, check)
+
+
+def test_preload_waits_until_the_user_is_idle(shell, preload, monkeypatch):
+    from modules import layout_events
+
+    lazy = {"Alerts": Panel("Alerts", shell.log)}
+    build, _ = _start_preload(shell, lazy)
+    busy_until = 1000.0 + mw._LAZY_PRELOAD_DELAY_SEC + 10.0
+    monkeypatch.setattr(layout_events, "idle_seconds", lambda: 0.0 if preload.time.t < busy_until else 999.0)
+
+    async def check(user):
+        shell.settings_ui.next_results = [False]
+        preload.captured[0].target()
+        assert "preload Alerts" in shell.log
+        assert preload.time.t >= busy_until  # nothing was built while the user was busy
+
+    run_ui(build, check)
+
+
+def test_preload_gives_up_waiting_for_idle_after_the_cap(shell, preload, monkeypatch):
+    from modules import layout_events
+
+    lazy = {"Alerts": Panel("Alerts", shell.log)}
+    build, _ = _start_preload(shell, lazy)
+    monkeypatch.setattr(layout_events, "idle_seconds", lambda: 0.0)
+
+    async def check(user):
+        shell.settings_ui.next_results = [False]
+        preload.captured[0].target()
+        assert "preload Alerts" in shell.log
+
+    run_ui(build, check)
+
+
+def test_later_pages_only_preload_tabs_the_user_opened(shell, preload, monkeypatch):
+    lazy = {"Alerts": Panel("Alerts", shell.log), "Chatbot": Panel("Chatbot", shell.log),
+            "Settings": Panel("Settings", shell.log)}
+    monkeypatch.setattr(mw, "_preload_first_client", "the-first-page")
+    mw._main_tabs_opened.add("Chatbot")
+    build, _ = _start_preload(shell, lazy)
+
+    async def check(user):
+        preload.captured[0].target()
+        assert "preload Chatbot" in shell.log
+        assert "preload Alerts" not in shell.log and "preload Settings" not in shell.log
+        assert "preload settings subtab" not in shell.log
+
+    run_ui(build, check)
+
+
+def test_later_page_with_no_opened_tabs_skips_preload(shell, preload, monkeypatch):
+    monkeypatch.setattr(mw, "_preload_first_client", "the-first-page")
+    build, _ = _start_preload(shell, {"Alerts": Panel("Alerts", shell.log)})
+
+    async def check(user):
+        assert preload.captured == []
+
+    run_ui(build, check)
+
+
+def test_slow_preload_steps_are_logged(shell, preload, caplog):
+    lazy = {"Alerts": Panel("Alerts", shell.log)}
+    build, _ = _start_preload(shell, lazy)
+    real = lazy["Alerts"].ensure_loaded
+
+    def slow():
+        real()
+        preload.time.t += 1.0
+
+    lazy["Alerts"].ensure_loaded = slow
+
+    async def check(user):
+        shell.settings_ui.next_results = [False]
+        preload.captured[0].target()
+        assert "Preloading main tab Alerts held the UI for 1000 ms" in caplog.text
 
     run_ui(build, check)
 

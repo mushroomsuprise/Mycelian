@@ -24,7 +24,7 @@ import time
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from nicegui import ui
+from nicegui import background_tasks, run, ui
 
 from ... import dataobjects, twitch_avatars
 from ...notification_engine import notify
@@ -210,6 +210,7 @@ class StatisticsTab:
         self.live_enabled = True
         self.live_timer = None
         self._tick = 0
+        self._overview_inflight = False
         self._session_label = None
         self._save_label = None
         self._live_badge = None
@@ -580,11 +581,41 @@ class StatisticsTab:
             if self.section == "lifetime":
                 self._update_lifetime_labels()
             elif self.section == "overview" and self._tick % LIVE_REQUERY_EVERY == 0:
-                rng = self._range()
-                if self._range_includes_now(rng):
-                    self._update_overview(rng)
+                self._schedule_overview_refresh()
         except Exception as e:
             logger.debug("statistics live tick failed: %s", e)
+
+    def _schedule_overview_refresh(self) -> None:
+        """Re-run the overview queries on a worker thread, then patch the cards on the UI loop."""
+        if self._overview_inflight:
+            return
+        self._overview_inflight = True
+        background_tasks.create(self._refresh_overview_async(), name="statistics_overview_refresh")
+
+    def _live_overview_bundle(self):
+        """Every query the live refresh needs: (range, (data, spotlight picks, heatmap)) or None."""
+        rng = self._range()
+        if not self._range_includes_now(rng):
+            return None
+        return rng, (self._overview_data(rng), self._spotlight_picks(rng), self._heatmap_grid(rng))
+
+    async def _refresh_overview_async(self) -> None:
+        try:
+            result = await run.io_bound(self._live_overview_bundle)
+        except Exception as e:
+            logger.debug("statistics live refresh failed: %s", e)
+            result = None
+        finally:
+            self._overview_inflight = False
+        if result is None or self.root is None or getattr(self.root, "is_deleted", False):
+            return
+        if self.section != "overview":
+            return
+        rng, bundle = result
+        try:
+            self._update_overview(rng, bundle)
+        except Exception as e:
+            logger.debug("statistics live refresh failed: %s", e)
 
     # ======================================================================
     # Overview
@@ -739,8 +770,11 @@ class StatisticsTab:
         refs["trend_title"].set_text(f"{metric.label} over time")
         refs["trend_sub"].set_text(sub)
 
-    def _update_overview(self, rng: DateRange) -> None:
-        data = self._overview_data(rng)
+    def _update_overview(self, rng: DateRange, bundle=None) -> None:
+        """Patch the overview cards. ``bundle`` is (data, picks, grid) already queried off the loop."""
+        if bundle is None:
+            bundle = (self._overview_data(rng), self._spotlight_picks(rng), self._heatmap_grid(rng))
+        data, picks, grid = bundle
         self._overview_refs["data"] = data
         for metric in METRICS:
             ref = (self._overview_refs.get("tiles") or {}).get(metric.key)
@@ -751,10 +785,10 @@ class StatisticsTab:
             ref["value"].set_text(compact(value))
             ref["foot"].set_content(self._tile_foot(value, prev, Insights.metric_series(data["series"], metric)))
         self._redraw_trend()
-        self._update_spotlight(rng)
+        self._update_spotlight(rng, picks)
         summary = data["summary"]
         self._redraw_card("mix", self._mix_key(summary), lambda: self._build_mix_card(summary))
-        self._update_heatmap(self._heatmap_grid(rng))
+        self._update_heatmap(grid)
 
     def _redraw_card(self, name: str, key: Any, build: Callable[[], None]) -> None:
         """Build an overview card into its holder, again only when its data changed."""
@@ -905,12 +939,13 @@ class StatisticsTab:
         self._fill_spotlight(box, self._spotlight_picks(self._range()))
         self._mark_spotlight_filter()
 
-    def _update_spotlight(self, rng: DateRange) -> None:
+    def _update_spotlight(self, rng: DateRange, picks=None) -> None:
         """Live tick: redraw the Spotlight only when a leader or their number changed."""
         box = self._overview_refs.get("spotlight")
         if box is None or box.is_deleted:
             return
-        picks = self._spotlight_picks(rng)
+        if picks is None:
+            picks = self._spotlight_picks(rng)
         if self._spotlight_key(picks) == self._overview_refs.get("spotlight_key"):
             return
         box.clear()

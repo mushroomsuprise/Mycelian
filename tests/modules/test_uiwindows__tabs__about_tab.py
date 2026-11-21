@@ -373,6 +373,20 @@ def test_open_update_without_manager(monkeypatch, timers):
     assert host.calls == ["check"]
 
 
+def test_update_timer_runs_only_while_about_is_open():
+    tab = at.AboutTab(Host())
+    tab.on_enter()  # not built yet: nothing to do
+    tab.on_exit()
+    timer = SimpleNamespace(active=True)
+    tab._update_timer = timer
+    ticks = []
+    tab._tick_update = lambda: ticks.append(1)
+    tab.on_exit()
+    assert timer.active is False and ticks == []
+    tab.on_enter()
+    assert timer.active is True and ticks == [1]  # refreshed at once on open
+
+
 def test_tick_without_box_and_timer():
     tab = at.AboutTab(Host())
     timer = SimpleNamespace(active=True)

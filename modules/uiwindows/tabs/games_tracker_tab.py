@@ -11,10 +11,11 @@ import logging
 import os
 import time
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from nicegui import run, ui
 
+from ... import layout_events
 from ...game_tracker import covers
 from ...game_tracker import goals as goal_kinds
 from ...game_tracker.goals import GameGoal
@@ -44,6 +45,13 @@ _STYLE_ID = "mycelian-games-tracker"
 _HOOKS_STYLE_ID = "mycelian-game-hooks"
 _MEDIA_ROUTE = "/_mycelian_game_covers"
 _media_route_dir: Optional[str] = None
+# cover_src per (platform, game id): two file stats per card on every repaint added up.
+# Cleared whenever a cover is downloaded (and on Sync now), so a new cover shows at once.
+_cover_src_cache: Dict[Tuple[str, str], Optional[str]] = {}
+
+
+def _forget_cover_srcs(_key: Any = None) -> None:
+    _cover_src_cache.clear()
 
 # Trophy grade colours are fixed (they mean the grade, like brand colours mean the service).
 GAMES_TRACKER_CSS = """
@@ -363,6 +371,15 @@ def filter_backlog(
 
 def cover_src(platform: str, game_id: str) -> Optional[str]:
     """URL the settings window loads a cached cover from (None when there's no cover yet)."""
+    key = (platform, game_id)
+    if key in _cover_src_cache and _media_route_dir == covers.cover_dir():
+        return _cover_src_cache[key]
+    src = _cover_src_uncached(platform, game_id)
+    _cover_src_cache[key] = src
+    return src
+
+
+def _cover_src_uncached(platform: str, game_id: str) -> Optional[str]:
     global _media_route_dir
     path = covers.cached_cover(platform, game_id)
     if not path:
@@ -640,7 +657,7 @@ def sheet_preview_html(data: Dict[str, Any]) -> str:
 DRAWER_MIN_WIDTH = 380
 DRAWER_MAX_WIDTH = 1400
 DRAWER_DEFAULT_WIDTH = 460
-_DRAWER_WIDTH_EVENT = "mycelian-gtr-drawer-width"
+_DRAWER_WIDTH_EVENT = layout_events.EVENT_GT_DRAWER_WIDTH
 
 # Drag the drawer's left edge (.gtr-dresize) to resize it; the width is reported once on release.
 _DRAWER_RESIZE_JS = r"""
@@ -696,7 +713,7 @@ def save_drawer_width(value: Any) -> int:
     service = get_service()
     s = service.settings
     if s.view.get("drawer_width") != width:
-        service.save_settings(TrackerSettings.from_dict({**s.to_dict(), "view": {**s.view, "drawer_width": width}}))
+        service.save_view_settings(TrackerSettings.from_dict({**s.to_dict(), "view": {**s.view, "drawer_width": width}}))
     return width
 
 
@@ -715,7 +732,7 @@ def _install_drawer_resize() -> None:
         client = context.client
         if client.id not in _drawer_width_clients:
             _drawer_width_clients.add(client.id)
-            client.layout.on(_DRAWER_WIDTH_EVENT, _on_drawer_width)
+            layout_events.listen(client, _DRAWER_WIDTH_EVENT, _on_drawer_width)
             client.on_delete(lambda: _drawer_width_clients.discard(client.id))
         ui.run_javascript(_DRAWER_RESIZE_JS)
     except Exception:
@@ -739,6 +756,8 @@ class GamesTrackerTab:
             "backlog": {"q": "", "platform": "all", "status": "all", "sort": "closest"},
         }
         self._limit = PAGE_SIZE
+        self._cards: Dict[str, Dict[str, Tuple[Dict[str, str], Any]]] = {}
+        self._card_order: Dict[str, List[Tuple[str, Dict[str, str]]]] = {}
         self._goal_form: Dict[str, Any] = {}
         self._achievements: List[Dict[str, Any]] = []
         self._timer: Optional[Any] = None
@@ -807,6 +826,7 @@ class GamesTrackerTab:
         self._build_export_dialog()
         self.service.add_listener(self._mark_changed)
         covers.add_listener(self._on_cover)
+        self._forget_listeners_with_page()
         self._timer = layout_schedule(1.0, self._tick, active=True)
         layout_schedule(0.05, self._refresh, once=True)
 
@@ -823,10 +843,32 @@ class GamesTrackerTab:
         if self._page is not None:
             self._page.set_active(False)
 
+    def _forget_listeners_with_page(self) -> None:
+        """Stop listening when this page goes away (tray restore and reloads build a new tab).
+
+        Without this every old tab, with its whole element tree, stayed alive in the
+        service's listener list.
+        """
+        try:
+            from nicegui import context
+
+            client = context.client
+        except Exception:
+            return
+
+        def _forget() -> None:
+            self.service.remove_listener(self._mark_changed)
+            covers.remove_listener(self._on_cover)
+            if self._timer is not None:
+                self._timer.active = False
+
+        client.on_delete(_forget)
+
     def _mark_changed(self) -> None:
         self._needs_refresh = True  # worker thread: the UI timer picks it up
 
     def _on_cover(self, _key: str) -> None:
+        _forget_cover_srcs()
         self._needs_refresh = True
 
     # ----- data refresh -----
@@ -991,7 +1033,7 @@ class GamesTrackerTab:
             # Merge: the view dict also holds the drawer width.
             wanted = {**s.view, **{w: {k: v for k, v in view.items() if k != "q"} for w, view in self._views.items()}}
             if s.view != wanted:
-                self.service.save_settings(TrackerSettings.from_dict({**s.to_dict(), "view": wanted}))
+                self.service.save_view_settings(TrackerSettings.from_dict({**s.to_dict(), "view": wanted}))
         except Exception:
             logger.debug("Games Tracker: list filters not saved", exc_info=True)
 
@@ -1032,11 +1074,8 @@ class GamesTrackerTab:
             return
         games = self.visible_games()
         shown = games[: self._limit]
-        grid.clear()
         now = time.time()
-        with grid:
-            for g in shown:
-                self._build_card(g, now)
+        self._sync_cards("library", grid, shown, now)
         self.ui_elements["none"].set_visibility(bool(self._games) and not games)
         remaining = len(games) - len(shown)
         self.ui_elements["more"].set_visibility(remaining > 0)
@@ -1048,16 +1087,14 @@ class GamesTrackerTab:
         grid = self.ui_elements.get("bl_grid")
         if grid is None:
             return
-        grid.clear()
         backlog = self.ui_elements.get("backlog")
         if backlog is not None:
             backlog.set_visibility(bool(self._games) and self._backlog_on)
         if not self._backlog_on:
+            self._sync_cards("backlog", grid, [], now)
             return
         games = self.visible_backlog()
-        with grid:
-            for g in games:
-                self._build_card(g, now)
+        self._sync_cards("backlog", grid, games, now)
         total = sum(1 for g in self._games if self._goals.get(g.key) and not g.hidden)
         none = self.ui_elements["bl_none"]
         none.set_text("No games in the backlog match these filters." if total else
@@ -1073,9 +1110,54 @@ class GamesTrackerTab:
         if heads:
             heads[0].set_content(f'{icon_html(icon)}{esc(title)}<span class="itg-sec-right">{esc(right)}</span>')
 
-    def _build_card(self, game: TrackedGame, now: float) -> None:
-        parts = card_parts(game, now, self._goals.get(game.key) or (), self._speedruns.get(game.key) or ())
-        with ui.element("div").classes(parts["cls"]):
+    def _sync_cards(self, which: str, grid: Any, games: Sequence[TrackedGame], now: float) -> None:
+        """Show ``games`` in ``grid`` in order, rebuilding only cards whose content changed.
+
+        A refresh used to clear and rebuild every card (hundreds of elements, about once
+        a second during a first import). Cards are keyed by game; one whose rendered
+        parts are unchanged is kept (and moved if the order changed).
+        """
+        cards = self._cards.setdefault(which, {})
+        if getattr(grid, "is_deleted", False):
+            cards.clear()
+            return
+        wanted: List[Tuple[str, Dict[str, str], TrackedGame]] = []
+        for g in games:
+            parts = card_parts(g, now, self._goals.get(g.key) or (), self._speedruns.get(g.key) or ())
+            wanted.append((g.key, parts, g))
+        order = [(key, parts) for key, parts, _g in wanted]
+        if order == self._card_order.get(which) and all(
+            key in cards and not getattr(cards[key][1], "is_deleted", False) for key, _p in order
+        ):
+            return  # nothing changed
+        keep = {key for key, _p, _g in wanted}
+        for key in [k for k in cards if k not in keep]:
+            _parts, el = cards.pop(key)
+            try:
+                grid.remove(el)
+            except Exception:
+                pass
+        for index, (key, parts, game) in enumerate(wanted):
+            old = cards.get(key)
+            if old is not None and old[0] == parts and not getattr(old[1], "is_deleted", False):
+                el = old[1]
+            else:
+                if old is not None:
+                    try:
+                        grid.remove(old[1])
+                    except Exception:
+                        pass
+                with grid:
+                    el = self._build_card(game, now, parts)
+                cards[key] = (parts, el)
+            if grid.default_slot.children.index(el) != index:
+                el.move(grid, target_index=index)
+        self._card_order[which] = order
+
+    def _build_card(self, game: TrackedGame, now: float, parts: Optional[Dict[str, str]] = None) -> Any:
+        if parts is None:
+            parts = card_parts(game, now, self._goals.get(game.key) or (), self._speedruns.get(game.key) or ())
+        with ui.element("div").classes(parts["cls"]) as card:
             ui.html(parts["top"], sanitize=False).classes("itg-hook-top")
             with ui.element("div").classes("itg-hook-state"):
                 ui.html(parts["foot"], sanitize=False).classes("gtr-grades")
@@ -1084,9 +1166,11 @@ class GamesTrackerTab:
                     ui.button(icon="settings", on_click=lambda g=game: self.open_drawer(g)).props(
                         f'flat round dense size=sm aria-label="Settings for {esc(game.display_title)}"'
                     ).classes("itg-ibtn").tooltip("Game settings")
+        return card
 
     def _sync_now(self) -> None:
         covers.forget_failures()  # covers that failed are tried again after this sync
+        _forget_cover_srcs()
         self.service.sync_now()
         notify("", type="info", source="game_tracker", title="Games Tracker sync started", hint="It runs in the background.")
         self._needs_refresh = True

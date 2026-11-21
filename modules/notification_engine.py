@@ -1802,15 +1802,19 @@ def _on_toast_action_event(e: Any) -> None:
 def inject_notification_ui_assets() -> None:
     """Add the pop-up renderer to the page head and listen for its button clicks (once)."""
     global _notification_leave_script_injected, _toast_nav_handler_registered
+    if not _toast_nav_handler_registered:
+        # Every page already listens for this event (build_root_ui installs it before
+        # the first render); adding a listener here would re-render the whole page.
+        from . import layout_events
+
+        layout_events.set_default(layout_events.EVENT_TOAST_ACTION, _on_toast_action_event)
+        _toast_nav_handler_registered = True
     if _notification_leave_script_injected:
         return
     from nicegui import ui
 
     ui.add_head_html(_toast_head_html(), shared=True)
     _notification_leave_script_injected = True
-    if not _toast_nav_handler_registered:
-        ui.on("mycelian-toast-action", _on_toast_action_event)
-        _toast_nav_handler_registered = True
 
 
 def create_notification_tray_button() -> None:

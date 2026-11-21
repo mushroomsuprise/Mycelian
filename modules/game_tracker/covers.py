@@ -79,6 +79,11 @@ def add_listener(fn: Callable[[str], None]) -> None:
         _listeners.append(fn)
 
 
+def remove_listener(fn: Callable[[str], None]) -> None:
+    if fn in _listeners:
+        _listeners.remove(fn)
+
+
 def _load_locked() -> None:
     global _loaded_from
     directory = cover_dir()

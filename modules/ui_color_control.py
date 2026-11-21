@@ -19,13 +19,14 @@ from typing import Any, Callable, Dict, List, Optional
 
 from nicegui import context, ui
 
+from . import layout_events
 from .ui_form_controls import form_input
 
 logger = logging.getLogger(__name__)
 
 PICKER_JS_ASSET = "default_assets/mycelian_color_picker.js"
 PICKER_CSS_ASSET = "default_assets/mycelian_color_picker.css"
-_PICKER_EVENT = "mycelian-color-picker"
+_PICKER_EVENT = layout_events.EVENT_COLOR_PICKER
 
 CHECKERBOARD_BG = (
     "linear-gradient(45deg, #ccc 25%, transparent 25%), "
@@ -297,7 +298,7 @@ def _bridge_for_client(client: Any = None) -> Optional[_PickerBridge]:
     if bridge is None:
         bridge = _PickerBridge()
         _bridges[client] = bridge
-        client.layout.on(_PICKER_EVENT, bridge.dispatch)
+        layout_events.listen(client, _PICKER_EVENT, bridge.dispatch)
         css = _read_asset(PICKER_CSS_ASSET) + "\n" + COLOR_CONTROL_CSS
         js = _read_asset(PICKER_JS_ASSET)
         client.run_javascript(

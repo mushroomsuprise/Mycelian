@@ -268,21 +268,33 @@ def fake_nicegui(monkeypatch):
     fake_ui = _FakeUI()
     monkeypatch.setattr(nicegui, "ui", fake_ui)
     monkeypatch.setattr(hr, "_shared_stylesheets", set())
+    monkeypatch.setattr(hr, "_client_stylesheets", {})
     return fake_ui
 
 
 def test_inject_page_stylesheet_adds_once_and_pushes_to_open_page(monkeypatch, fake_nicegui):
     import nicegui
 
-    js = []
-    client = SimpleNamespace(has_socket_connection=True, run_javascript=lambda code: js.append(code))
+    js, deleted = [], []
+    client = SimpleNamespace(id="c1", has_socket_connection=True, run_javascript=lambda code: js.append(code),
+                             on_delete=deleted.append)
     monkeypatch.setattr(nicegui, "context", SimpleNamespace(client=client))
     hr.inject_page_stylesheet("my-style", ".x{color:red}")
     hr.inject_page_stylesheet("my-style", ".x{color:red}")
     assert fake_nicegui.head == [("<style id='my-style'>.x{color:red}</style>", True)]
-    assert len(js) == 2
+    assert len(js) == 1, "an open page gets each stylesheet once, not on every tab build"
     assert 'document.getElementById("my-style")' in js[0]
     assert 's.textContent = ".x{color:red}"' in js[0]
+    hr.inject_page_stylesheet("other", "p{}")
+    assert len(js) == 2
+    other = SimpleNamespace(id="c2", has_socket_connection=True, run_javascript=lambda code: js.append(code),
+                            on_delete=deleted.append)
+    monkeypatch.setattr(nicegui, "context", SimpleNamespace(client=other))
+    hr.inject_page_stylesheet("my-style", ".x{color:red}")
+    assert len(js) == 3  # another page still gets it
+    for forget in deleted:
+        forget()
+    assert hr._client_stylesheets == {}
 
 
 def test_inject_page_stylesheet_without_socket(monkeypatch, fake_nicegui):

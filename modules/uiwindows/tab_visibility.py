@@ -58,6 +58,13 @@ def _label(tabs: Any) -> str:
         return ""
 
 
+def main_tab_hidden(label: str) -> bool:
+    """True only when another known main tab is showing (polls of ``label`` can skip)."""
+    main_tabs, _ = _tab_strips()
+    main = _label(main_tabs)
+    return main in _MAIN_TAB_LABELS and main != label
+
+
 def chatbot_subtab_hidden(sub_tab: str) -> bool:
     """True only when another known main tab or Chatbot sub-tab is showing."""
     main_tabs, chatbot_tabs = _tab_strips()

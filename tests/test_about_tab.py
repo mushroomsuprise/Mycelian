@@ -97,14 +97,17 @@ def test_page_stylesheet_reaches_an_already_open_page(monkeypatch):
 
     shared, scripts = [], []
     monkeypatch.setattr(help_render, "_shared_stylesheets", set())
+    monkeypatch.setattr(help_render, "_client_stylesheets", {})
     monkeypatch.setattr(nicegui.ui, "add_head_html", lambda code, **kw: shared.append((code, kw)))
-    client = SimpleNamespace(has_socket_connection=True, run_javascript=scripts.append)
+    client = SimpleNamespace(id="open-page", has_socket_connection=True, run_javascript=scripts.append,
+                             on_delete=lambda fn: None)
     monkeypatch.setattr(type(nicegui.context), "client", property(lambda self: client))
 
     help_render.inject_page_stylesheet("x-style", ".a{color:red}")
     help_render.inject_page_stylesheet("x-style", ".a{color:red}")
     assert len(shared) == 1 and shared[0][1] == {"shared": True}
-    assert len(scripts) == 2 and all("x-style" in s and "getElementById" in s for s in scripts)
+    # once per open page: rebuilding a tab does not resend the same CSS
+    assert len(scripts) == 1 and all("x-style" in s and "getElementById" in s for s in scripts)
 
 
 def test_older_versions_button_opens_window_or_explains(monkeypatch):

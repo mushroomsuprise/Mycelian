@@ -27,6 +27,7 @@ from .models import PLATFORMS, PSN, STEAM, GameEvent, TrackedGame, TrackerSettin
 from .store import GameTrackerStore, get_store
 
 logger = logging.getLogger(__name__)
+_view_writer = None
 
 START_DELAY_SEC = 8.0  # let the app and the platform clients settle first
 RETRY_SEC = 120.0  # after a sync that couldn't reach the platform
@@ -538,6 +539,22 @@ class GameTrackerService:
         covers.set_ttl(clean.cover_ttl_days, clean.cover_missing_hours)
         for q in self._queues.values():
             q.put(("tick", None))
+        return clean
+
+    def save_view_settings(self, settings: TrackerSettings) -> TrackerSettings:
+        """Save a view-only change (filters, sorts, drawer width) without waiting on SQLite.
+
+        The new settings apply at once; the write runs on a background writer, which
+        always stores the latest settings, so the UI loop never waits on the database.
+        """
+        clean = TrackerSettings.from_dict(settings.to_dict())
+        self._settings = clean
+        global _view_writer
+        if _view_writer is None:
+            from ..background_writer import BackgroundWriter
+
+            _view_writer = BackgroundWriter("GamesTrackerViewSave")
+        _view_writer.submit("settings", lambda: self.store.save_settings(self._settings))
         return clean
 
     def update_game(self, platform: str, game_id: str, **changes: Any) -> Tuple[Optional[TrackedGame], str]:

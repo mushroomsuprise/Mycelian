@@ -605,6 +605,22 @@ def test_tick_syncs_controls_and_returns_without_grid(monkeypatch):
     assert _run_tick(v, monkeypatch) == []
 
 
+def test_tick_waits_while_another_main_tab_shows(monkeypatch):
+    v = sc._SourceControlsView()
+    v.grid = FakeVisEl()
+    synced = []
+    v.cards = {"a": sc._Card("a", None, "", "")}
+    v.cards["a"].controls = {0: SimpleNamespace(sync_if_settled=lambda: synced.append(1))}
+    sc.mark_source_controls_dirty({"template_names": ["a"]})
+    monkeypatch.setattr(sc, "main_tab_hidden", lambda label: label == "Source Controls")
+    assert _run_tick(v, monkeypatch) == [] and synced == []
+    monkeypatch.setattr(sc, "main_tab_hidden", lambda label: False)
+    applied = []
+    monkeypatch.setattr(v, "apply", lambda c, h, n: applied.append(n))
+    assert _run_tick(v, monkeypatch, fetch_result=({}, set(), [])) == [sc._fetch_source_controls]
+    assert applied == [{"a"}] and synced == [1]  # the change waited, it was not lost
+
+
 def test_tick_nothing_dirty_does_nothing(monkeypatch):
     v = sc._SourceControlsView()
     v.grid = FakeVisEl()

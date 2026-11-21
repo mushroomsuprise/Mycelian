@@ -229,6 +229,15 @@ class AboutTab:
                 title="An update window is already open",
             )
 
+    def on_enter(self) -> None:
+        if self._update_timer is not None:
+            self._update_timer.active = True
+            self._tick_update()
+
+    def on_exit(self) -> None:
+        if self._update_timer is not None:
+            self._update_timer.active = False
+
     def _tick_update(self) -> None:
         if self.update_box is None or getattr(self.update_box, "is_deleted", False):
             if self._update_timer is not None:

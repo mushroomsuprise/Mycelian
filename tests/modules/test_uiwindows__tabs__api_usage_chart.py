@@ -89,10 +89,10 @@ def test_usage_row_redraws_only_when_the_counts_change():
         row = rows[0]
         updates = []
         row.chart.update = lambda: updates.append(1)
-        row.refresh()
+        row.refresh(force=True)
         assert updates == []  # nothing new
         api_usage.record("PSN", "/x", 200)
-        row.refresh()
+        row.refresh(force=True)
         assert updates == [1] and row.chart.options["series"][0]["data"][-1]["detail"] == "1 of ~300 in 15 min"
         assert row.chart.props["aria-label"] == "PSN API use"
         row.set_span("24h")
@@ -100,6 +100,30 @@ def test_usage_row_redraws_only_when_the_counts_change():
         row.set_span("24h")  # same range: nothing to redraw
         row.set_span("nonsense")
         assert updates == [1, 1] and row.span == "24h"
+
+    run_ui(lambda: rows.append(UsageRow(["PSN"])), check)
+
+
+def test_usage_row_skips_a_second_refresh_within_the_gap(monkeypatch):
+    from modules.uiwindows.tabs import integration_ui
+
+    rows: List[Any] = []
+    clock = [1000.0]
+    monkeypatch.setattr(integration_ui.time, "monotonic", lambda: clock[0])
+
+    async def check(user):
+        row = rows[0]
+        built = []
+        real = row._chart_options
+        row._chart_options = lambda: built.append(1) or real()
+        row.refresh()
+        row.refresh()  # the tab's status tick right after the row's own timer
+        assert built == [1]
+        clock[0] += UsageRow._MIN_REFRESH_GAP_SEC
+        row.refresh()
+        assert built == [1, 1]
+        row.refresh(force=True)
+        assert built == [1, 1, 1]
 
     run_ui(lambda: rows.append(UsageRow(["PSN"])), check)
 

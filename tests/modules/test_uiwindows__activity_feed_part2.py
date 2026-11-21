@@ -31,7 +31,7 @@ from ui_sim import run_ui  # noqa: E402
 _ORIGINALS = {name: getattr(feed, name) for name in ("_emit_overlay_event", "_run_on_ui_loop")}
 
 _GLOBALS = (
-    "_live_seq", "_legacy_hours_cache", "_person_payload", "_person_rows_payload", "_stored_loaded",
+    "_live_seq", "_live_base", "_live_added", "_live_full_needed", "_legacy_hours_cache", "_person_payload", "_person_rows_payload", "_stored_loaded",
     "_condensed_update_scheduled", "_condensed_rebuild_running", "_condensed_rebuild_rerun",
     "_host", "_slot_cache", "_slot_rev", "_live_push_scheduled", "_queue_poll_timer", "_watchdog_timer",
     "_last_queue_sig", "_last_meta", "_meta_tick", "_health_failures", "_registered_event_clients",
@@ -115,7 +115,9 @@ def test_slot_values(monkeypatch):
     feed.activity_feed_state.live_alerts = [{"type": "follow", "username": "A"}]
     assert feed._slot_value("settings") == {"layout": "rows"}
     assert feed._slot_value("view")["mode"] == "feed"
-    assert feed._slot_value("live")[0]["kind"] == "follow"
+    live = feed._slot_value("live")
+    assert live["rows"][0]["kind"] == "follow" and live["base"] >= 1
+    assert feed._slot_value("live_add") == {"base": live["base"], "rows": [], "cap": 1}
     assert feed._slot_value("person_rows") is feed._person_rows_payload
     assert feed._slot_value("person") is feed._person_payload
     assert feed._slot_value("queue") == {"q": 1} and feed._slot_value("meta") == {"m": 1}
@@ -172,14 +174,42 @@ def test_schedule_live_push(monkeypatch, isolated, sync_ui):
     feed._schedule_live_push()  # coalesced
     assert len(isolated.timers) == 1 and isolated.timers[0][0] == feed._LIVE_PUSH_DEBOUNCE_SEC
     isolated.timers[0][1]()
-    assert pushed == ["live"] and feed._live_push_scheduled is False
+    assert pushed == ["live"] and feed._live_push_scheduled is False  # first push: the whole list
 
     def boom(*a, **k):
         raise RuntimeError("no app")
 
     monkeypatch.setattr(feed, "app_schedule", boom)
-    feed._schedule_live_push()  # pushes right away
-    assert pushed == ["live", "live"]
+    feed._schedule_live_push()  # pushes right away: only rows added since the snapshot
+    assert pushed == ["live", "live_add"]
+    feed._schedule_live_push(full=True)  # rows changed in place: whole list again
+    assert pushed == ["live", "live_add", "live"]
+
+
+def test_live_pushes_send_added_rows_until_a_new_snapshot_is_due(monkeypatch, isolated):
+    feed.activity_feed_state.live_alerts = [{"type": "follow", "username": "Old"}]
+    name, full = feed._next_live_push()
+    assert name == "live" and [r["user"] for r in full["rows"]] == ["Old"]
+    for who in ("A", "B"):
+        feed.alert_event_handler.process_alert_immediately({"type": "follow", "username": who})
+    name, delta = feed._next_live_push()
+    assert name == "live_add" and delta["base"] == full["base"] and delta["cap"] == 3
+    assert [r["user"] for r in delta["rows"]] == ["B", "A"]  # newest first, all since the snapshot
+    monkeypatch.setattr(feed, "_LIVE_DELTA_MAX", 2)
+    feed.alert_event_handler.process_alert_immediately({"type": "follow", "username": "C"})
+    name, again = feed._next_live_push()
+    assert name == "live" and again["base"] == full["base"] + 1 and len(again["rows"]) == 4
+    assert feed._next_live_push()[1] == {"base": again["base"], "rows": [], "cap": 4}
+
+
+def test_big_slot_payloads_are_remembered_by_digest(monkeypatch, isolated, sync_ui):
+    host = fake_host()
+    monkeypatch.setattr(feed, "_host", host)
+    big = '{"rows":"' + "x" * 10000 + '"}'
+    feed._apply_slot("live", big)
+    assert feed._slot_cache["live"].startswith("sha1:")
+    feed._apply_slot("live", big)
+    assert host.slots["live"].updates == 1
 
 
 # ----------------------------------------------------------------- queue / meta
@@ -240,6 +270,26 @@ def test_poll_queue(monkeypatch):
     assert pushed == ["queue", "queue", "meta"]
     feed._poll_queue(force=True)
     assert pushed[-2:] == ["queue", "meta"]
+
+
+def test_poll_queue_waits_while_another_main_tab_shows(monkeypatch):
+    pushed = []
+    monkeypatch.setattr(feed, "_push_slot", lambda name, value: pushed.append(name))
+    monkeypatch.setattr(feed, "current_queue_state", lambda: {"paused": True})
+    monkeypatch.setattr(feed, "_meta_state", lambda: {"app": True})
+    monkeypatch.setattr(feed, "_host", fake_host())
+    hidden = [True]
+    from modules.uiwindows import tab_visibility
+
+    monkeypatch.setattr(tab_visibility, "main_tab_hidden", lambda label: hidden[0] and label == "Activity Feed")
+    feed._poll_queue()
+    assert pushed == []
+    feed._poll_queue(force=True)  # pause/mute changes still repaint at once
+    assert pushed == ["queue", "meta"]
+    hidden[0] = False
+    monkeypatch.setattr(feed, "current_queue_state", lambda: {"paused": False})
+    feed._poll_queue()
+    assert pushed[-1] == "queue"
 
 
 def test_sync_helpers(monkeypatch, sync_ui):
@@ -707,7 +757,7 @@ def test_create_activity_feed_tab(monkeypatch, isolated, tab_env, mode):
         for name in feed._SLOT_NAMES:
             el = host.slots[name]
             assert el.props.get("data-slot") == name and "data-json" in el.props
-        live = json.loads(host.slots["live"].props["data-json"])
+        live = json.loads(host.slots["live"].props["data-json"])["rows"]
         assert live[0]["user"] == "Amy"
         assert json.loads(host.slots["view"].props["data-json"])["mode"] == mode
         assert user.client.id in feed._registered_event_clients
@@ -786,8 +836,9 @@ def test_tab_alive_and_live_push_end_to_end(monkeypatch, isolated, tab_env):
         assert feed._tab_alive() is True
         feed.alert_event_handler.process_alert_immediately({"type": "bits", "username": "Bo", "bits": 100})
         isolated.timers[-1][1]()  # debounce fires
-        live = json.loads(feed._host.slots["live"].props["data-json"])
-        assert live[0]["user"] == "Bo" and live[0]["amount"] == "100 bits"
+        # The tab was built with an empty list; Bo arrives as an added row on top of it.
+        added = json.loads(feed._host.slots["live_add"].props["data-json"])
+        assert added["rows"][0]["user"] == "Bo" and added["rows"][0]["amount"] == "100 bits"
         feed._set_fallback(True)
         assert "is-fallback" in feed._host.host.classes and "Bo" in feed._host.fallback.content
 

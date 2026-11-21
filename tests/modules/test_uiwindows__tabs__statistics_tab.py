@@ -363,6 +363,11 @@ def test_live_tick_refreshes_labels_and_sections(ctx, monkeypatch):
     over = Mock()
     monkeypatch.setattr(tab, "_update_lifetime_labels", life)
     monkeypatch.setattr(tab, "_update_overview", over)
+    # The live refresh queries on a worker thread; run it inline here.
+    monkeypatch.setattr(tab, "_schedule_overview_refresh", lambda: (lambda r: r and over(*r))(tab._live_overview_bundle()))
+    monkeypatch.setattr(tab, "_overview_data", lambda rng: {})
+    monkeypatch.setattr(tab, "_spotlight_picks", lambda rng: ())
+    monkeypatch.setattr(tab, "_heatmap_grid", lambda rng: [])
     tab.section = "lifetime"
     tab._live_tick()
     life.assert_called_once()
@@ -1030,3 +1035,37 @@ def test_export_filter_chips_and_layout_update_in_place(ctx, monkeypatch):
         assert all(e["username"] != "Bob" for e in highlights.get("top_chat_messages") or [])
 
     run_tab(tab, check)
+
+
+def test_live_overview_refresh_queries_off_the_ui_loop(ctx, monkeypatch):
+    import asyncio
+    import threading
+
+    tab = tabmod.StatisticsTab()
+    tab.root = SimpleNamespace(is_deleted=False)
+    tab.section = "overview"
+    loop_thread = threading.get_ident()
+    seen = {}
+
+    def bundle():
+        seen["thread"] = threading.get_ident()
+        return "rng", ("data", "picks", "grid")
+
+    async def io_bound(fn):
+        return await asyncio.to_thread(fn)
+
+    applied = []
+    monkeypatch.setattr(tab, "_live_overview_bundle", bundle)
+    monkeypatch.setattr(tabmod.run, "io_bound", io_bound)
+    monkeypatch.setattr(tab, "_update_overview", lambda rng, b: applied.append((rng, b)))
+    asyncio.run(tab._refresh_overview_async())
+    assert seen["thread"] != loop_thread and applied == [("rng", ("data", "picks", "grid"))]
+    assert tab._overview_inflight is False
+    tab.section = "leaders"  # left the overview while querying: nothing patched
+    asyncio.run(tab._refresh_overview_async())
+    assert len(applied) == 1
+    created = []
+    monkeypatch.setattr(tabmod.background_tasks, "create", lambda coro, name=None: created.append(name) or coro.close())
+    tab._schedule_overview_refresh()
+    tab._schedule_overview_refresh()  # one refresh at a time
+    assert created == ["statistics_overview_refresh"]

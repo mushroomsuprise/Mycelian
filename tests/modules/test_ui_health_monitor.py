@@ -134,7 +134,12 @@ def test_set_monitor_suspended(env, monkeypatch):
     hm.set_monitor_suspended(True)
     assert hm._SUSPENDED is True and hm._consecutive_ping_failures == 0 and hm._reload_count == 4
     hm.set_monitor_suspended(False)
-    assert hm._SUSPENDED is False and hm._armed_mono == env["clock"].t and hm._reload_count == 0
+    # A restore soon after a forced reload keeps the budget, so the cap still holds.
+    assert hm._SUSPENDED is False and hm._armed_mono == env["clock"].t and hm._reload_count == 4
+    hm.set_monitor_suspended(True)
+    env["clock"].t += hm._RELOAD_BUDGET_RESET_SEC
+    hm.set_monitor_suspended(False)
+    assert hm._reload_count == 0
 
 
 @pytest.mark.parametrize(
@@ -265,6 +270,23 @@ def test_async_check_feeds_result(env, monkeypatch):
     assert seen == [None] and c.js == [(hm._DOM_CHECK_JS, 5.0)]
 
 
+def test_async_check_timeout_is_not_a_failure(env, monkeypatch):
+    c = FakeClient(exc=TimeoutError("JavaScript did not respond within 5.0 s"))
+    armed(env, monkeypatch, c)
+    seen = []
+    monkeypatch.setattr(hm, "_on_ping_check_result", seen.append)
+    asyncio.run(hm._run_health_check_async(c))
+    assert seen == []
+
+
+def test_hidden_page_is_not_judged(env, monkeypatch):
+    armed(env, monkeypatch, FakeClient())
+    monkeypatch.setattr(hm, "_consecutive_ping_failures", 2)
+    hm._on_ping_check_result("hidden")
+    assert hm._consecutive_ping_failures == 2
+    assert "document.hidden" in hm._DOM_CHECK_JS
+
+
 @pytest.mark.parametrize("msg,expected", [("slot stack", []), ("timeout", [False])])
 def test_async_check_errors(env, monkeypatch, msg, expected):
     c = FakeClient(exc=RuntimeError(msg))
@@ -308,7 +330,8 @@ def test_arm_starts_once_and_rebinds(env, monkeypatch):
     monkeypatch.setattr(hm, "_reload_count", 3)
     c1, c2 = FakeClient(), FakeClient()
     hm.arm_ui_health_monitor(c1)
-    assert hm._health_client is c1 and hm._armed_mono == env["clock"].t and hm._reload_count == 0
+    # Re-arming after a forced reload must not refill the budget (the cap would never hold).
+    assert hm._health_client is c1 and hm._armed_mono == env["clock"].t and hm._reload_count == 3
     assert hm._MONITOR_STARTED is True and injected == [1]
     assert env["scheduled"] == [((hm._PING_INTERVAL_SEC, hm._run_health_check), {"active": True})]
     env["clock"].t += 5

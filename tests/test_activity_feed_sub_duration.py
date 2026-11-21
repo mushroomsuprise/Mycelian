@@ -211,7 +211,7 @@ def test_update_alert_in_feed_repaints_in_place(monkeypatch):
     payload["seq"] = 7
     other = _payload("Follow", "F just followed!", "follow", alert_id="F1")
     monkeypatch.setattr(feed.activity_feed_state, "live_alerts", [other, payload])
-    monkeypatch.setattr(feed, "_schedule_live_push", lambda: None)
+    monkeypatch.setattr(feed, "_schedule_live_push", lambda full=False: None)
     sent = []
     monkeypatch.setattr(feed, "_emit_overlay_event", lambda event, data, to=None: sent.append((event, data)) or True)
     assert feed.update_alert_in_feed("G9", duration_months=3, message="Cy gifted 3 Tier 1 subs (3 months each)!") is True

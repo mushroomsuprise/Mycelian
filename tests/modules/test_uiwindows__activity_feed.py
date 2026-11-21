@@ -40,7 +40,7 @@ def _local_clock(module, monkeypatch, **fakes):
 _ORIGINALS = {name: getattr(feed, name) for name in ("_emit_overlay_event", "_run_on_ui_loop", "notify", "show_sub_duration")}
 
 _GLOBALS = (
-    "_live_seq", "_legacy_hours_cache", "_person_payload", "_person_rows_payload", "_stored_loaded",
+    "_live_seq", "_live_base", "_live_added", "_live_full_needed", "_legacy_hours_cache", "_person_payload", "_person_rows_payload", "_stored_loaded",
     "_stored_loading",
     "_condensed_update_scheduled", "_condensed_rebuild_running", "_condensed_rebuild_rerun",
     "_host", "_slot_cache", "_slot_rev", "_live_push_scheduled", "_queue_poll_timer", "_watchdog_timer",
@@ -140,7 +140,7 @@ def test_row_for():
 
 def test_alert_event_handler(monkeypatch, isolated):
     pushes, rebuilds = [], []
-    monkeypatch.setattr(feed, "_schedule_live_push", lambda: pushes.append(1))
+    monkeypatch.setattr(feed, "_schedule_live_push", lambda full=False: pushes.append(1))
     monkeypatch.setattr(feed, "schedule_condensed_view_update", lambda reason: rebuilds.append(reason))
     h = feed.AlertEventHandler()
     h.process_alert_immediately("not a dict")
@@ -713,7 +713,7 @@ def test_add_alert_to_feed(monkeypatch):
 
 def test_update_alert_in_feed(monkeypatch, isolated):
     pushes, rebuilds = [], []
-    monkeypatch.setattr(feed, "_schedule_live_push", lambda: pushes.append(1))
+    monkeypatch.setattr(feed, "_schedule_live_push", lambda full=False: pushes.append(1))
     monkeypatch.setattr(feed, "schedule_condensed_view_update", lambda reason: rebuilds.append(reason))
     assert feed.update_alert_in_feed(None, x=1) is False
     assert feed.update_alert_in_feed("a", x=None) is False
@@ -926,7 +926,7 @@ def test_schedule_stored_feed_load(monkeypatch, isolated):
 
 def test_after_stored_loaded_and_reload(monkeypatch, isolated):
     pushes, scheduled, changed = [], [], []
-    monkeypatch.setattr(feed, "_schedule_live_push", lambda: pushes.append(1))
+    monkeypatch.setattr(feed, "_schedule_live_push", lambda full=False: pushes.append(1))
     feed._after_stored_loaded()
     event, payload, _ = isolated.emitted[-1]
     assert pushes == [1] and event == "activity_feed_view" and "live_alerts" in payload

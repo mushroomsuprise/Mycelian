@@ -861,9 +861,12 @@ def test_on_toast_action_event(monkeypatch):
 
 
 def test_inject_notification_ui_assets(ne_env, monkeypatch):
+    from modules import layout_events
+
     heads, handlers = [], []
     monkeypatch.setattr(ui, "add_head_html", lambda html, shared=False: heads.append(shared))
-    monkeypatch.setattr(ui, "on", lambda event, handler: handlers.append((event, handler)))
+    monkeypatch.setattr(ui, "on", lambda *a, **k: pytest.fail("a late page listener re-renders the whole UI"))
+    monkeypatch.setattr(layout_events, "set_default", lambda event, handler: handlers.append((event, handler)))
     monkeypatch.setattr(ne, "_toast_head_html", lambda: "<script></script>")
     ne.inject_notification_ui_assets()
     ne.inject_notification_ui_assets()

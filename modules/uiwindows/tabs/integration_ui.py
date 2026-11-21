@@ -14,6 +14,7 @@ from __future__ import annotations
 import html
 import logging
 import re
+import time
 import webbrowser
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -820,6 +821,7 @@ class UsageRow:
         self.chart: Any = None
         self.range: Any = None
         self._chart_sig: Any = None
+        self._last_refresh = 0.0
         if chart:
             names = " and ".join(self.platforms)
             with ui.element("div").classes("itg-usage-head"):
@@ -844,7 +846,7 @@ class UsageRow:
             return
         self.span = span
         self._chart_sig = None
-        self.refresh()
+        self.refresh(force=True)
 
     def _chart_options(self) -> Dict[str, Any]:
         from ...api_usage import series
@@ -856,7 +858,15 @@ class UsageRow:
                            tuple(tuple(data["limited"][p]) for p in self.platforms))
         return usage_chart(data, self.platforms, chart_colors())
 
-    def refresh(self) -> None:
+    # The tab's status tick and this row's own timer both refresh; the second call within
+    # this gap would rebuild the same series (up to 7 days of minute buckets) for nothing.
+    _MIN_REFRESH_GAP_SEC = 2.0
+
+    def refresh(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and now - self._last_refresh < self._MIN_REFRESH_GAP_SEC:
+            return
+        self._last_refresh = now
         html = usage_html(self.platforms)
         if html != self._html:
             self._html = html

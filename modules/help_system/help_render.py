@@ -161,6 +161,9 @@ _promote_colors = promote_color_importance
 
 
 _shared_stylesheets: set = set()
+# Stylesheets already sent to each open page (client id -> style ids). Tab builds call
+# inject_page_stylesheet every time; resending tens of KB of CSS each time was waste.
+_client_stylesheets: dict = {}
 
 
 def inject_page_stylesheet(style_id: str, css: str) -> None:
@@ -182,6 +185,13 @@ def inject_page_stylesheet(style_id: str, css: str) -> None:
     except Exception:
         return
     if client.has_socket_connection:
+        sent = _client_stylesheets.get(client.id)
+        if sent is None:
+            sent = _client_stylesheets[client.id] = set()
+            client.on_delete(lambda cid=client.id: _client_stylesheets.pop(cid, None))
+        if style_id in sent:
+            return
+        sent.add(style_id)
         client.run_javascript(
             f"if (!document.getElementById({json.dumps(style_id)})) {{"
             "const s = document.createElement('style');"

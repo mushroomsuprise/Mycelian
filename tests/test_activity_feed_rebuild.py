@@ -317,7 +317,7 @@ def test_add_alert_to_feed_accepts_username_and_extra_kwargs(monkeypatch):
 
 def test_live_insert_is_capped_and_newest_first(monkeypatch):
     monkeypatch.setattr(feed.activity_feed_state, "live_alerts", [])
-    monkeypatch.setattr(feed, "_schedule_live_push", lambda: None)
+    monkeypatch.setattr(feed, "_schedule_live_push", lambda full=False: None)
     handler = feed.AlertEventHandler()
     for i in range(feed.MAX_LIVE_ALERTS + 3):
         handler.process_alert_immediately({"type": "Follow", "badge_type": "follow", "message": f"u{i} just followed!", "seq": i})

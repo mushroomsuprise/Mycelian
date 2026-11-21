@@ -721,7 +721,11 @@ def test_drawer_width_is_clamped_saved_and_applied(env):
     assert tabmod.clamp_drawer_width(None) == tabmod.DRAWER_DEFAULT_WIDTH
     assert tabmod.clamp_drawer_width("12") == tabmod.DRAWER_MIN_WIDTH
     assert tabmod.clamp_drawer_width(99999) == tabmod.DRAWER_MAX_WIDTH
+    from modules.game_tracker import service as svc_mod
+
     tabmod._on_drawer_width(SimpleNamespace(args=612.4))
+    assert tabmod.get_service().settings.view["drawer_width"] == 612  # applies at once
+    assert svc_mod._view_writer.flush(2.0)  # written off the UI loop
     assert env.store.load_settings().view["drawer_width"] == 612
     assert "__MIN__" not in tabmod._DRAWER_RESIZE_JS and "mycelian-gtr-drawer-width" in tabmod._DRAWER_RESIZE_JS
     env.store.upsert_games([psn_game()])
@@ -731,6 +735,7 @@ def test_drawer_width_is_clamped_saved_and_applied(env):
         tab = tabs[0]
         await run_scheduled(env, "_refresh")
         tab._set_filter("library", sort="name")  # remembering list filters keeps the width
+        assert svc_mod._view_writer.flush(2.0)
         assert env.store.load_settings().view["drawer_width"] == 612
         tab.open_drawer(tab._games[0])
         assert tab.ui_elements["drawer_body"]._style.get("width") == "612px"
@@ -794,5 +799,63 @@ def test_drawer_links_split_files_with_categories(env, tmp_path):
         await tab._speedrun_op("remove", rows[0]["id"])
         await tab._speedrun_op("remove", rows[1]["id"])
         assert tab.ui_elements["d_speedruns"] is not None and tab.service.speedruns_for(PSN, "NPWR00001_00") == []
+
+    run_ui(build_into(tabs), check)
+
+
+# --------------------------------------------------------------------------- repaint cost
+
+
+def test_refresh_keeps_unchanged_cards_and_follows_the_order(env, monkeypatch):
+    monkeypatch.setattr(tabmod.time, "time", lambda: NOW)
+    env.store.upsert_games([psn_game("NPWR1_00", "Alpha"), psn_game("NPWR2_00", "Beta"), steam_game("7", "Gamma")])
+    tabs: List[Any] = []
+
+    async def check(user):
+        tab = tabs[0]
+        await run_scheduled(env, "_refresh")
+        grid = tab.ui_elements["grid"]
+        first = {key: el for key, (_p, el) in tab._cards["library"].items()}
+        assert len(first) == 3 and len(grid.default_slot.children) == 3
+        tab._set_filter("library", sort="name")
+        cards = tab._cards["library"]
+        assert all(cards[k][1] is first[k] for k in first), "unchanged cards are kept"
+        order = [key for key, _p in tab._card_order["library"]]
+        assert [grid.default_slot.children.index(cards[k][1]) for k in order] == [0, 1, 2]
+        env.store.upsert_games([psn_game("NPWR2_00", "Beta", progress=90)])
+        await run_scheduled(env, "_refresh")
+        changed = next(k for k in first if "NPWR2_00" in k)
+        assert tab._cards["library"][changed][1] is not first[changed]  # rebuilt: its content changed
+        assert all(tab._cards["library"][k][1] is first[k] for k in first if k != changed)
+        tab._set_filter("library", q="gamma")
+        (only,) = tab._cards["library"]
+        assert tab._cards["library"][only][1] is first[only]  # filtering removes cards, keeps the match
+        assert len(grid.default_slot.children) == 1
+
+    run_ui(build_into(tabs), check)
+
+
+def test_cover_src_is_cached_until_a_cover_downloads(env, monkeypatch):
+    calls = []
+    monkeypatch.setattr(tabmod, "_cover_src_uncached", lambda p, g: calls.append((p, g)) or f"/src/{g}")
+    monkeypatch.setattr(tabmod, "_media_route_dir", tabmod.covers.cover_dir())
+    tabmod._forget_cover_srcs()
+    assert tabmod.cover_src(PSN, "a") == "/src/a"
+    assert tabmod.cover_src(PSN, "a") == "/src/a"
+    assert calls == [(PSN, "a")]
+    tab = tabmod.GamesTrackerTab()
+    tab._on_cover("psn:a")  # a new cover arrived
+    assert tabmod.cover_src(PSN, "a") == "/src/a" and len(calls) == 2
+
+
+def test_listeners_are_removed_with_the_page(env):
+    tabs: List[Any] = []
+
+    async def check(user):
+        tab = tabs[0]
+        assert tab._mark_changed in tab.service._listeners and tab._on_cover in tabmod.covers._listeners
+        user.client.delete()
+        assert tab._mark_changed not in tab.service._listeners
+        assert tab._on_cover not in tabmod.covers._listeners
 
     run_ui(build_into(tabs), check)
