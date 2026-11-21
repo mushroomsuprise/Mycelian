@@ -52,6 +52,14 @@ class RuleTests(unittest.TestCase):
             "nicegui/elements/aggrid/package-lock.json": "nicegui-npm-build-input",
             "nicegui/elements/aggrid/rollup.config.mjs": "nicegui-npm-build-input",
             "nicegui/elements/aggrid/src/index.mjs": "nicegui-npm-build-input",
+            "nicegui/elements/aggrid/aggrid.js": "nicegui-unused-element",
+            "nicegui/elements/plotly/dist/index.js": "nicegui-unused-element",
+            "nicegui/elements/mermaid/mermaid.js": "nicegui-unused-element",
+            "nicegui/static/quasar.umd.js": "nicegui-dev-build",
+            "nicegui/static/vue.esm-browser.js": "nicegui-dev-build",
+            "nicegui/static/quasar.important.css": "nicegui-dev-build",
+            "nicegui/static/sass.dart.js": "nicegui-sass",
+            "nicegui/static/lang/de.umd.prod.js": "quasar-lang",
         }
         for dest, rule in drop.items():
             self.assertEqual(bf.unused_data_rule(dest), rule, dest)
@@ -63,7 +71,12 @@ class RuleTests(unittest.TestCase):
             "nicegui/elements/markdown.js",
             "nicegui/elements/button.py",
             "nicegui/templates/index.html",
-            "nicegui/static/lang/de.umd.prod.js",
+            "nicegui/static/lang/en-US.umd.prod.js",
+            "nicegui/static/quasar.umd.prod.js",
+            "nicegui/static/quasar.important.prod.css",
+            "nicegui/elements/aggrid/aggrid.py",
+            "nicegui/elements/codemirror/dist/index.js",
+            "nicegui/elements/sortable/dist/index.js",
             "pycountry/databases/iso3166-1.json",
             "pycountry/locales/README",
             "PIL/__pycache__/Image.cpython-314.pyc",
@@ -89,6 +102,9 @@ class RuleTests(unittest.TestCase):
 class InstalledPackageTests(unittest.TestCase):
     """Apply the rules to the installed NiceGUI/pycountry trees."""
 
+    # Rules that drop files NiceGUI could serve, but only for features Mycelian never uses.
+    _UNUSED_FEATURE_RULES = ("nicegui-unused-element", "nicegui-dev-build", "nicegui-sass", "quasar-lang")
+
     def test_every_served_nicegui_file_except_maps_is_kept(self) -> None:
         dropped_rules = set()
         for dest, _path in _package_dests("nicegui"):
@@ -99,7 +115,7 @@ class InstalledPackageTests(unittest.TestCase):
                 ("nicegui/static/", "nicegui/templates/")
             )
             if dest.endswith(_SERVED_SUFFIXES) and served:
-                if not dest.endswith(".js.map"):
+                if not dest.endswith(".js.map") and rule not in self._UNUSED_FEATURE_RULES:
                     self.assertIsNone(rule, dest)
             if dest.endswith(".py"):
                 self.assertIsNone(rule, dest)
@@ -120,6 +136,17 @@ class InstalledPackageTests(unittest.TestCase):
                     or parts[3] == "src",
                     dest,
                 )
+            elif rule == "nicegui-unused-element":
+                parts = dest.split("/")
+                self.assertIn(parts[2], ("plotly", "mermaid", "json_editor", "aggrid", "scene", "leaflet",
+                                         "xterm", "joystick", "anywidget"), dest)
+                self.assertFalse(dest.endswith(".py"), dest)
+            elif rule == "nicegui-dev-build":
+                self.assertTrue(dest.startswith("nicegui/static/") and ".prod." not in dest, dest)
+            elif rule == "nicegui-sass":
+                self.assertIn("/static/sass.", dest)
+            elif rule == "quasar-lang":
+                self.assertTrue(dest.startswith("nicegui/static/lang/") and "en-US" not in dest, dest)
             else:
                 self.assertIsNone(rule, dest)
 
@@ -149,7 +176,8 @@ class InstalledPackageTests(unittest.TestCase):
                 self.assertTrue(
                     dest.endswith((".js.map", ".mo", ".pyc", "package.json",
                                    "package-lock.json", "rollup.config.mjs"))
-                    or "/src/" in dest,
+                    or "/src/" in dest
+                    or bf.unused_data_rule(dest) in InstalledPackageTests._UNUSED_FEATURE_RULES,
                     dest,
                 )
             elif dest.startswith("nicegui/") and "/dist/" in dest:

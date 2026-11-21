@@ -18,6 +18,18 @@ unread by Mycelian and by the library code that owns them:
 - ``nicegui/elements/<pkg>/{package.json,package-lock.json,rollup.config.mjs}``
   and ``nicegui/elements/<pkg>/src/**``: npm build inputs for the ``dist/``
   bundles. NiceGUI registers and serves ``dist/`` only.
+- ``nicegui/elements/{plotly,mermaid,json_editor,aggrid,scene,leaflet,xterm,
+  joystick,anywidget}/`` (everything but ``.py``): elements Mycelian never creates
+  (it uses ``ui.echart``, ``ui.codemirror`` and ``ui.markdown``). NiceGUI
+  registers an element's files with a glob when its class is defined, so missing
+  files only leave that element unregistered; it is never imported in a page.
+- ``nicegui/static/{quasar.umd.js,vue.esm-browser.js,quasar.important.css,
+  quasar.unimportant.css}``: development builds. ``ui.run`` keeps the default
+  ``prod_js=True``, so pages load the ``.prod`` files.
+- ``nicegui/static/sass.{dart,default}.js``: the Sass compiler behind
+  ``ui.add_scss``/``ui.add_sass``, which Mycelian does not call.
+- ``nicegui/static/lang/*`` except ``en-US``: Quasar language packs. A page loads
+  only the pack for ``ui.run(language=...)``, which Mycelian leaves at ``en-US``.
 
 Everything else is kept, including NiceGUI's ``.py`` copies (they give logged
 tracebacks their source lines). This directory must not contain ``__init__.py``
@@ -47,6 +59,23 @@ _RULES = (
             r"(?:package\.json|package-lock\.json|rollup\.config\.mjs|src/.+)$"
         ),
     ),
+    (
+        "nicegui-unused-element",
+        re.compile(
+            r"^nicegui/elements/"
+            r"(?:plotly|mermaid|json_editor|aggrid|scene|leaflet|xterm|joystick|anywidget)/"
+            r"(?!.*\.py$).+$"
+        ),
+    ),
+    (
+        "nicegui-dev-build",
+        re.compile(
+            r"^nicegui/static/"
+            r"(?:quasar\.umd\.js|vue\.esm-browser\.js|quasar\.important\.css|quasar\.unimportant\.css)$"
+        ),
+    ),
+    ("nicegui-sass", re.compile(r"^nicegui/static/sass\.(?:dart|default)\.js$")),
+    ("quasar-lang", re.compile(r"^nicegui/static/lang/(?!en-US\.umd\.prod\.js$).+$")),
 )
 
 # Files the running app reads; the build fails if a rule ever matches one of these
@@ -58,10 +87,14 @@ REQUIRED_DATA = (
     "nicegui/static/nicegui.js",
     "nicegui/static/dompurify.mjs",
     "nicegui/templates/index.html",
+    "nicegui/static/quasar.important.prod.css",
+    "nicegui/static/quasar.unimportant.prod.css",
+    "nicegui/static/lang/en-US.umd.prod.js",
     "pycountry/databases/iso3166-1.json",
 )
 REQUIRED_DATA_PREFIXES = (
     "nicegui/elements/echart/dist/",
+    "nicegui/elements/codemirror/dist/",
     "nicegui/elements/markdown.js",
 )
 

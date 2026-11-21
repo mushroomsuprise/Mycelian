@@ -648,27 +648,17 @@ def test_get_data_files(root, monkeypatch, capsys, metadata):
         (str(icons), "assets/default_assets/icons"),
         (str(root / "modules/help_system/content"), "modules/help_system/content"),
         (str(root / "factorio_mod"), "factorio_mod"),
-        # steam_web_api reads its own dist-info at import time
-        ("/site/python-steam-api.dist-info", "python-steam-api.dist-info"),
     ]
-    assert metadata == ["python-steam-api"]
+    # python-steam-api (which needed its dist-info at import) is no longer a dependency.
+    assert metadata == []
     out = capsys.readouterr().out
     assert "Including application icons" in out and "Including help content" in out
     assert "Including Factorio companion mod" in out
-    assert "Including package metadata: python-steam-api" in out
 
 
-def test_get_data_files_metadata_failure_stops_the_build(root, monkeypatch, capsys):
-    def boom(dist):
-        raise RuntimeError("not installed")
-
-    _fake_copy_metadata(monkeypatch, boom)
-    # Shipping without it breaks the Steam integration on every launch.
-    with pytest.raises(SystemExit, match="could not include package metadata for python-steam-api: not installed"):
-        bld.get_data_files()
-    _fake_copy_metadata(monkeypatch, None)  # PyInstaller not importable
-    assert not [d for _, d in bld.get_data_files() if d.endswith(".dist-info")]
-    assert "PyInstaller hooks unavailable; skipping package metadata" in capsys.readouterr().out
+def test_build_no_longer_bundles_python_steam_api():
+    imports = bld.get_hidden_imports(bld.CURRENT_OS)
+    assert not [m for m in imports if m.startswith(("steam_web_api", "bs4"))]
 
 
 def test_get_data_files_all_nicegui_dirs_and_nothing_else(root, monkeypatch):

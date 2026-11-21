@@ -731,18 +731,6 @@ def get_hidden_imports(current_os):
         ]
     )
 
-    # Steam Web API (python-steam-api imports bs4 for store search)
-    hidden_imports.extend(
-        [
-            "steam_web_api",
-            "steam_web_api.apps",
-            "steam_web_api.client",
-            "steam_web_api.users",
-            "steam_web_api.utils",
-            "bs4",
-        ]
-    )
-
     # Crypto and security
     hidden_imports.extend(
         [
@@ -1009,26 +997,6 @@ def get_data_files():
         data_files.append((str(factorio_mod), "factorio_mod"))
         print(f"Including Factorio companion mod: {factorio_mod}")
 
-    # Packages that read their own dist-info at import time. steam_web_api's
-    # _version.py swallows the PackageNotFoundError and leaves __version__
-    # undefined, so `import steam_web_api` fails in the frozen build unless the
-    # python-steam-api metadata ships with it.
-    try:
-        from PyInstaller.utils.hooks import copy_metadata
-
-        for dist_name in ("python-steam-api",):
-            try:
-                data_files.extend(copy_metadata(dist_name))
-                print(f"Including package metadata: {dist_name}")
-            except Exception as exc:
-                # A build without it ships a broken Steam integration (every
-                # launch logs "cannot import name '__version__'"), so stop here.
-                raise SystemExit(
-                    f"Build failed: could not include package metadata for {dist_name}: {exc}"
-                ) from exc
-    except ImportError:
-        print("Warning: PyInstaller hooks unavailable; skipping package metadata")
-
     return data_files
 
 
@@ -1068,6 +1036,8 @@ def get_excluded_modules():
         "pygame.mixer",
         # Specific PIL components we don't need
         "PIL.ImageQt",  # Qt-specific PIL components
+        # help() topic text; nothing in a windowed app calls help()
+        "pydoc_data",
     ]
 
     # Unused compiled codecs (see packaging/bundle_filter.py for the evidence).
@@ -1301,6 +1271,10 @@ a = Analysis(
     win_private_assemblies=False,
     cipher=None,
     noarchive=False,
+    # Bytecode without assert statements (docstrings kept: -O, not -OO). Mycelian has
+    # a handful of asserts and no code that reads docstrings; library asserts are
+    # checks, not control flow. Smaller PYZ, slightly faster imports.
+    optimize=1,
 )
 
 # Remove duplicate entries

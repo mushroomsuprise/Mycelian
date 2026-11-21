@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: MIT
 """
 Steam Web API client: the tracked profile, the game it is playing and that game's
-achievements. Endpoints go through ``python-steam-api`` (``steam_web_api``); its HTTP client is
-replaced so every request has a timeout and errors never carry the API key (Steam puts the key
+achievements. Every request has a timeout and errors never carry the API key (Steam puts the key
 in the query string, and requests' error messages quote the URL).
+
+The four Web API endpoints used here once went through ``python-steam-api``; that package also
+pulled in BeautifulSoup and soupsieve for store scraping Mycelian never does, so the few lines it
+contributed (URL building and the endpoint wrappers) now live here with the same behaviour.
 """
 
 from __future__ import annotations
@@ -16,12 +19,9 @@ import threading
 import time
 from typing import Any
 
+from urllib.parse import urlencode
+
 import requests
-from steam_web_api.apps import Apps
-from steam_web_api.client import Client
-from steam_web_api.constants import API_BASE_URL
-from steam_web_api.users import Users
-from steam_web_api.utils import buildUrlWithParams
 
 from . import api_usage
 from .steam_data import SteamData
@@ -84,11 +84,35 @@ def redact_key(text: str, key: str) -> str:
     return re.sub(r"(key=)[^&\s'\"]+", r"\1***", text)
 
 
-class _TimeoutClient(Client):
-    """``steam_web_api`` client with timeouts, a pooled session and key-free errors."""
+API_BASE_URL = "https://api.steampowered.com"
+
+
+def _clean_params(params: dict) -> dict:
+    """Drop None values, join lists with commas, spell booleans as true/false."""
+    out = {}
+    for name, value in (params or {}).items():
+        if value is None:
+            continue
+        if isinstance(value, list):
+            out[name] = ",".join(value)
+        elif isinstance(value, bool):
+            out[name] = "true" if value else "false"
+        else:
+            out[name] = value
+    return out
+
+
+def buildUrlWithParams(url: str, key: str, params: dict | None = None) -> str:
+    """``url?key=<key>[&params]`` (the key goes first, as Steam's own examples write it)."""
+    encoded = urlencode(_clean_params(params or {}))
+    return f"{url}?key={key}" + (f"&{encoded}" if encoded else "")
+
+
+class _TimeoutClient:
+    """Steam Web API client with timeouts, a pooled session and key-free errors."""
 
     def __init__(self, key: str = ""):
-        super().__init__(key)
+        self.key = key
         self._session = requests.Session()
         self._session.headers.update({"Accept": "application/json"})
 
@@ -124,6 +148,40 @@ class _TimeoutClient(Client):
         if body is None:
             raise SteamAPIError(f"{result.status_code}: not a JSON response", result.status_code)
         return body
+
+
+class Users:
+    """The ISteamUser / IPlayerService calls Mycelian makes."""
+
+    def __init__(self, client: _TimeoutClient):
+        self._client = client
+
+    def get_user_details(self, steam_id: str) -> dict:
+        response = self._client.request(
+            "get", "/ISteamUser/GetPlayerSummaries/v2/", params={"steamids": steam_id}
+        )["response"]
+        players = response.get("players") if isinstance(response, dict) else None
+        return {"player": players[0] if players else None}
+
+    def get_user_steam_level(self, steam_id: str) -> dict:
+        return self._client.request("get", "/IPlayerService/GetSteamLevel/v1/", params={"steamid": steam_id})["response"]
+
+    def get_steamid(self, vanity: str) -> dict:
+        return self._client.request("get", "/ISteamUser/ResolveVanityURL/v1", params={"vanityurl": vanity})["response"]
+
+
+class Apps:
+    """The ISteamUserStats calls Mycelian makes."""
+
+    def __init__(self, client: _TimeoutClient):
+        self._client = client
+
+    def get_user_achievements(self, steam_id: Any, app_id: Any, language: str = "en") -> dict:
+        return self._client.request(
+            "get",
+            "/ISteamUserStats/GetPlayerAchievements/v1/",
+            params={"steamid": steam_id, "appid": app_id, "l": language},
+        )
 
 
 def parse_profile(text: str | None) -> tuple[str, str] | None:
