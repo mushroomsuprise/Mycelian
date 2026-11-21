@@ -126,6 +126,22 @@ progress.update(f"Target OS: {CURRENT_OS}")
 # Set output directory to 'builds' folder in project root
 OUTPUT_PATH = "builds"
 
+# Windows app layout (--layout overrides):
+#   "onefile": one Mycelian.exe that unpacks ~1,600 files to %TEMP% on every launch.
+#   "folder":  Mycelian.exe plus a runtime\ folder next to it (PyInstaller onedir with
+#              contents_directory="runtime"). Nothing is unpacked at launch, there is one
+#              process instead of two, and the updater downloads only changed files.
+# Ship one release with the parallel updater downloads before switching to "folder", so
+# most installs fetch the ~1,600 runtime files in parallel when they move over.
+WINDOWS_LAYOUT_DEFAULT = "onefile"
+WINDOWS_RUNTIME_DIR = "runtime"
+WINDOWS_LAYOUT = WINDOWS_LAYOUT_DEFAULT
+
+
+def folder_layout(os_name=None) -> bool:
+    """True when this build ships Mycelian.exe + runtime\ instead of one file."""
+    return (os_name or CURRENT_OS) == "windows" and WINDOWS_LAYOUT == "folder"
+
 # Get OS-specific icon path
 ICON_PATH = get_os_specific_icon_path(CURRENT_OS)
 
@@ -1240,6 +1256,7 @@ PROJECT_ROOT = Path(r'{project_root}')
 
 # Current OS for conditional settings
 CURRENT_OS = '{CURRENT_OS}'
+FOLDER_LAYOUT = {folder_layout()!r}
 
 # Data files (includes NiceGUI assets only)
 datas = {data_files!r}
@@ -1338,6 +1355,38 @@ if CURRENT_OS == "macos":
         icon=None,
         bundle_identifier='com.mycelian.app'
     )
+elif FOLDER_LAYOUT:
+    # Windows folder layout: Mycelian.exe with every runtime file in the runtime folder
+    exe_folder = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='Mycelian',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon={repr(str(project_root / ICON_PATH) if ICON_PATH else None)},
+        version={repr(str(project_root / VERSION_FILE) if VERSION_FILE and CURRENT_OS == "windows" else None)},
+        contents_directory={WINDOWS_RUNTIME_DIR!r},
+    )
+    coll = COLLECT(
+        exe_folder,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name='Mycelian'
+    )
 else:
     # For Windows/Linux: Use EXE with onefile=True for single executable
     exe_final = EXE(
@@ -1420,7 +1469,12 @@ def build_executable():
             }
             exe_name = exe_names.get(CURRENT_OS, "Mycelian")
             exe_path = dist_dir / exe_name
-            if exe_path.exists():
+            if folder_layout():
+                folder = dist_dir / "Mycelian"
+                files = [f for f in folder.rglob("*") if f.is_file()] if folder.is_dir() else []
+                total_mb = sum(f.stat().st_size for f in files) / (1024 * 1024)
+                progress.update(f"Compiled Mycelian\\ ({len(files)} files, {total_mb:.1f} MB)")
+            elif exe_path.exists():
                 if CURRENT_OS == "macos" and exe_path.is_dir():
                     # macOS .app bundle - calculate total size of all files
                     total_size = sum(
@@ -1706,6 +1760,17 @@ def copy_binaries_to_project_root(project_root: Path, dist_dir: Path):
     """Copy the app and merge helper into the project root, then remove the dist copies."""
     app_dest = project_root / app_binary_name()
     helper_dest = project_root / merge_helper_name()
+    if folder_layout():
+        # dist/Mycelian/{Mycelian.exe, runtime/} -> project root (where Mycelian.iss looks)
+        folder = dist_dir / "Mycelian"
+        _copy_build_artifact(folder / app_binary_name(), app_dest)
+        _copy_build_artifact(folder / WINDOWS_RUNTIME_DIR, project_root / WINDOWS_RUNTIME_DIR)
+        shutil.rmtree(folder, ignore_errors=True)
+        _copy_build_artifact(dist_dir / merge_helper_name(), helper_dest)
+        src = dist_dir / merge_helper_name()
+        if src.exists() and src.resolve() != helper_dest.resolve():
+            src.unlink()
+        return app_dest, helper_dest
     _copy_build_artifact(dist_dir / app_binary_name(), app_dest)
     _copy_build_artifact(dist_dir / merge_helper_name(), helper_dest)
     for name in (app_binary_name(), merge_helper_name()):
@@ -1958,6 +2023,10 @@ def publish_packaged_release(project_root: Path, app_path: Path) -> Path:
     else:
         dest = os_dir / app_binary_name()
     _copy_build_artifact(app_path, dest)
+    if folder_layout():
+        # Every runtime file is its own manifest entry: an update downloads only the
+        # ones whose hash changed and deletes the ones a release no longer has.
+        _copy_build_artifact(app_path.parent / WINDOWS_RUNTIME_DIR, os_dir / WINDOWS_RUNTIME_DIR)
     manifest_path = write_update_manifest(project_root)
     progress.update(f"Updater manifest: {manifest_path}")
     return manifest_path
@@ -2287,6 +2356,12 @@ def _parse_args(argv=None):
         description="Build Mycelian and the installer for this operating system"
     )
     parser.add_argument(
+        "--layout",
+        choices=("onefile", "folder"),
+        default=WINDOWS_LAYOUT_DEFAULT,
+        help="Windows only: one Mycelian.exe, or Mycelian.exe plus a runtime folder",
+    )
+    parser.add_argument(
         "--skip-installer",
         action="store_true",
         help="Copy binaries into the project folder and skip the installer",
@@ -2341,7 +2416,9 @@ def run_test_gate(args, project_root: Path, ask=input) -> None:
 
 def main():
     """Main build function"""
+    global WINDOWS_LAYOUT
     args = _parse_args()
+    WINDOWS_LAYOUT = getattr(args, "layout", WINDOWS_LAYOUT_DEFAULT) or WINDOWS_LAYOUT_DEFAULT
     progress.total_steps = (6 if args.skip_installer else 7) + 1
 
     print(f"Mycelian Build Script v{VERSION} - {CURRENT_OS.upper()}")

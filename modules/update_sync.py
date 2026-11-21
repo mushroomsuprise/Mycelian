@@ -580,6 +580,33 @@ async def _download_file(
                 pass
 
 
+DOWNLOAD_CONCURRENCY = 8
+
+
+async def _run_all_or_fail(coros: List[Any]) -> None:
+    """Run every coroutine; on the first error cancel the rest and raise that error.
+
+    (``asyncio.TaskGroup`` would wrap it in an ExceptionGroup; callers catch
+    UpdateCancelled / UpdateSyncError themselves.)
+    """
+    tasks = [asyncio.ensure_future(c) for c in coros]
+    if not tasks:
+        return
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        failed = next((t for t in tasks if t.done() and not t.cancelled() and t.exception()), None)
+        if failed is not None:
+            for t in pending:
+                t.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            raise failed.exception()
+    except asyncio.CancelledError:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+
 async def _fetch_manifest(
     session: aiohttp.ClientSession,
     owner: str,
@@ -1278,55 +1305,66 @@ async def sync_release(
             window_start = time.perf_counter()
             window_bytes = 0
             speed = 0.0
-            fetched: List[Dict[str, Any]] = []
             skipped_installs: set[str] = set()
-            for index, entry in enumerate(downloads, start=1):
-                if _cancelled(cancel_event):
-                    raise UpdateCancelled("Update cancelled.")
-                name = Path(str(entry["install"])).name
-                label = f"Downloading {name} ({index} of {len(downloads)})"
+            got: List[bool] = [False] * len(downloads)
+            done_count = 0
+            label = ""
 
-                def on_chunk(nbytes: int, label: str = label) -> None:
-                    nonlocal downloaded, window_start, window_bytes, speed
-                    downloaded += nbytes
-                    window_bytes += nbytes
-                    now = time.perf_counter()
-                    elapsed = now - window_start
-                    if elapsed >= 0.5:
-                        speed = window_bytes / elapsed
-                        window_start = now
-                        window_bytes = 0
-                    elif downloaded > 0 and elapsed > 0:
-                        speed = downloaded / max(now - (window_start - elapsed), 0.001)
-                    state["bytes_done"] = downloaded
-                    _report(state, "downloading", downloaded / total, speed, label)
-
-                state["files_done"] = index - 1
+            def on_chunk(nbytes: int) -> None:
+                nonlocal downloaded, window_start, window_bytes, speed
+                downloaded += nbytes
+                window_bytes += nbytes
+                now = time.perf_counter()
+                elapsed = now - window_start
+                if elapsed >= 0.5:
+                    speed = window_bytes / elapsed
+                    window_start = now
+                    window_bytes = 0
+                elif downloaded > 0 and elapsed > 0:
+                    speed = downloaded / max(now - (window_start - elapsed), 0.001)
+                state["bytes_done"] = downloaded
                 _report(state, "downloading", downloaded / total, speed, label)
-                dest = _staged_file(staging, entry)
-                try:
-                    await _download_file(
-                        session,
-                        release_file_url(owner, repo, commit_sha, str(entry["path"])),
-                        dest,
-                        str(entry["sha256"]),
-                        on_chunk,
-                        cancel_event,
-                    )
-                except MissingReleaseFile:
-                    if _is_application_binary(entry):
-                        raise UpdateSyncError(
-                            f"The release is missing the application ({entry['path']})."
-                        ) from None
-                    logger.warning(
-                        "Release file is not in the repository; skipping %s",
-                        entry["path"],
-                    )
-                    skipped_installs.add(str(entry["install"]))
-                    downloaded += int(entry["size"])
-                    state["bytes_done"] = downloaded
-                    continue
-                fetched.append(entry)
+
+            # A release can be thousands of small files (the Windows runtime folder), so
+            # several download at once; each is still checked against its sha256.
+            limit = asyncio.Semaphore(DOWNLOAD_CONCURRENCY)
+
+            async def fetch(index: int, entry: Dict[str, Any]) -> None:
+                nonlocal downloaded, done_count, label
+                async with limit:
+                    if _cancelled(cancel_event):
+                        raise UpdateCancelled("Update cancelled.")
+                    name = Path(str(entry["install"])).name
+                    label = f"Downloading {name} ({done_count + 1} of {len(downloads)})"
+                    _report(state, "downloading", downloaded / total, speed, label)
+                    try:
+                        await _download_file(
+                            session,
+                            release_file_url(owner, repo, commit_sha, str(entry["path"])),
+                            _staged_file(staging, entry),
+                            str(entry["sha256"]),
+                            on_chunk,
+                            cancel_event,
+                        )
+                        got[index] = True
+                    except MissingReleaseFile:
+                        if _is_application_binary(entry):
+                            raise UpdateSyncError(
+                                f"The release is missing the application ({entry['path']})."
+                            ) from None
+                        logger.warning(
+                            "Release file is not in the repository; skipping %s",
+                            entry["path"],
+                        )
+                        skipped_installs.add(str(entry["install"]))
+                        downloaded += int(entry["size"])
+                        state["bytes_done"] = downloaded
+                    done_count += 1
+                    state["files_done"] = done_count
+
+            await _run_all_or_fail([fetch(i, e) for i, e in enumerate(downloads)])
+            # Same order as the release file list, whatever order the downloads finished in.
+            fetched: List[Dict[str, Any]] = [e for i, e in enumerate(downloads) if got[i]]
             state["files_done"] = len(downloads)
 
             if not fetched and not link_ops and not planned["deletes"]:

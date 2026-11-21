@@ -648,6 +648,14 @@ if __name__ == "__main__":
             # Start deferred init after UI is responsive
             service_manager.start_deferred_init(delay_seconds=1.0)
 
+            # Folder build on Windows: delete one-file unpack folders crashes left in %TEMP%.
+            try:
+                from modules.onefile_cleanup import start_background_cleanup
+
+                start_background_cleanup()
+            except Exception:
+                logger.debug("One-file leftover cleanup not started", exc_info=True)
+
             # Close splash screen after a short delay to show "Ready!" message
             def close_splash():
                 time.sleep(2.0)  # Show "Ready!" for 2 seconds

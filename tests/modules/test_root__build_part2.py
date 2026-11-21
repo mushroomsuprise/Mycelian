@@ -1233,3 +1233,61 @@ def test_copy_build_artifact_keeps_bundle_links(tmp_path):
     bld._copy_build_artifact(src, dest)
     assert (dest / "Resources" / "lib.so").is_symlink()
     assert os.readlink(dest / "Resources" / "lib.so") == "../Frameworks/lib.so"
+
+
+# --------------------------------------------------------------------------- Windows folder layout
+
+
+def test_folder_layout_is_windows_only_and_opt_in(monkeypatch, set_os):
+    set_os("windows")
+    assert bld.WINDOWS_LAYOUT_DEFAULT == "onefile"
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "folder")
+    assert bld.folder_layout() is True
+    set_os("linux")
+    assert bld.folder_layout() is False
+    assert bld._parse_args(["--layout", "folder"]).layout == "folder"
+    assert bld._parse_args([]).layout == "onefile"
+
+
+def test_copy_binaries_folder_layout(tmp_path, set_os, monkeypatch):
+    set_os("windows")
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "folder")
+    dist = tmp_path / "builds"
+    (dist / "Mycelian" / "runtime" / "lib").mkdir(parents=True)
+    (dist / "Mycelian" / "Mycelian.exe").write_bytes(b"launcher")
+    (dist / "Mycelian" / "runtime" / "python314.dll").write_bytes(b"dll")
+    (dist / "Mycelian" / "runtime" / "lib" / "a.pyd").write_bytes(b"pyd")
+    (dist / "merge_template_configs.exe").write_bytes(b"helper")
+    stale = tmp_path / "runtime" / "gone.dll"
+    stale.parent.mkdir()
+    stale.write_bytes(b"old")
+    app, helper = bld.copy_binaries_to_project_root(tmp_path, dist)
+    assert app == tmp_path / "Mycelian.exe" and app.read_bytes() == b"launcher"
+    assert (tmp_path / "runtime" / "lib" / "a.pyd").read_bytes() == b"pyd"
+    assert not stale.exists(), "the runtime folder is replaced, not merged"
+    assert helper.read_bytes() == b"helper"
+    assert list(dist.iterdir()) == []
+
+
+def test_publish_folder_layout_lists_every_runtime_file(tmp_path, set_os, monkeypatch):
+    set_os("windows")
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "folder")
+    (tmp_path / "runtime" / "lib").mkdir(parents=True)
+    app = tmp_path / "Mycelian.exe"
+    app.write_bytes(b"launcher")
+    (tmp_path / "runtime" / "python314.dll").write_bytes(b"dll")
+    (tmp_path / "runtime" / "lib" / "a.pyd").write_bytes(b"pyd")
+    old = tmp_path / "packaged" / "windows" / "runtime" / "removed.dll"
+    old.parent.mkdir(parents=True)
+    old.write_bytes(b"x")
+    monkeypatch.setattr(bld, "write_update_manifest", lambda root: root / "packaged" / "manifest.json")
+    bld.publish_packaged_release(tmp_path, app)
+    out = tmp_path / "packaged" / "windows"
+    assert (out / "Mycelian.exe").read_bytes() == b"launcher"
+    assert (out / "runtime" / "lib" / "a.pyd").is_file() and not old.exists()
+    entries = bld._binary_manifest_entries(tmp_path)
+    installs = sorted(e["install"] for e in entries)
+    assert installs == ["Mycelian.exe", "runtime/lib/a.pyd", "runtime/python314.dll"]
+    assert all(e["action"] == "replace" and e["os"] == "windows" for e in entries)
+    assert next(e for e in entries if e["install"] == "Mycelian.exe")["path"] == "packaged/windows/Mycelian.exe"
+

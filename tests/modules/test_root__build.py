@@ -844,6 +844,18 @@ def test_create_spec_file_linux_with_icon(spec_env, set_os, monkeypatch):
     ast.parse(text)
 
 
+def test_create_spec_file_windows_folder_layout(spec_env, set_os, monkeypatch):
+    set_os("windows")
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "folder")
+    monkeypatch.setattr(bld, "VERSION_FILE", None)
+    text = bld.create_spec_file().read_text(encoding="utf-8")
+    assert "FOLDER_LAYOUT = True" in text
+    assert "contents_directory='runtime'" in text and "coll = COLLECT(" in text
+    ast.parse(text)
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "onefile")
+    assert "FOLDER_LAYOUT = False" in bld.create_spec_file().read_text(encoding="utf-8")
+
+
 def _fake_win_sys(base: Path, executable: Path):
     return types.SimpleNamespace(
         version_info=(3, 14, 0),

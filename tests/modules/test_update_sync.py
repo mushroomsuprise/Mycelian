@@ -1345,3 +1345,90 @@ def test_sync_release_refuses_manifest_for_another_version(install):
 def test_same_version():
     assert us._same_version("1.14", "v1.14.0") and not us._same_version("1.14.1", "1.14.0")
     assert us._same_version("odd", "odd") and not us._same_version("", "1.0")
+
+
+# --------------------------------------------------------------------------- parallel downloads
+
+
+def test_sync_release_downloads_in_parallel_and_keeps_file_order(install, monkeypatch):
+    names = [f"runtime/lib{i:02d}.pyd" for i in range(20)]
+    install.add("Mycelian", b"bin")
+    for i, name in enumerate(names):
+        install.add(name, f"lib {i}".encode(), os_name=None)
+    real = us._download_file
+    live = {"now": 0, "max": 0}
+
+    async def tracking(session, url, dest, sha, progress, cancel):
+        live["now"] += 1
+        live["max"] = max(live["max"], live["now"])
+        try:
+            await asyncio.sleep(0.01 if "lib0" in url else 0.001)  # finish out of order
+            await real(session, url, dest, sha, progress, cancel)
+        finally:
+            live["now"] -= 1
+
+    monkeypatch.setattr(us, "_download_file", tracking)
+    state = {}
+    assert sync(state) == 4242
+    assert 1 < live["max"] <= us.DOWNLOAD_CONCURRENCY
+    assert state["files_done"] == 21
+    copies = [l.split("\t")[2] for l in install.launches[0]["plan"].splitlines() if l.startswith("COPY")]
+    root = install.root
+    assert copies[:-1] == [str(root / "Mycelian")] + [str(root / n) for n in names]  # release order
+
+
+def test_sync_release_first_failure_stops_the_other_downloads(install, monkeypatch):
+    install.add("Mycelian", b"bin")
+    for i in range(12):
+        install.add(f"runtime/f{i}.dat", b"x", os_name=None)
+    started, finished = [], []
+
+    async def flaky(session, url, dest, sha, progress, cancel):
+        started.append(url)
+        if url.endswith("f3.dat"):
+            raise us.UpdateSyncError("Downloaded f3.dat did not match the release manifest.")
+        await asyncio.sleep(0.05)
+        finished.append(url)
+
+    monkeypatch.setattr(us, "_download_file", flaky)
+    with pytest.raises(us.UpdateSyncError, match="did not match"):
+        sync()
+    assert len(finished) < len(started) and install.launches == []
+    assert not install.stagings[0].exists()
+
+
+def test_run_all_or_fail_passes_cancellation_through():
+    async def body():
+        async def slow():
+            await asyncio.sleep(10)
+
+        task = asyncio.ensure_future(us._run_all_or_fail([slow(), slow()]))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(body())
+    asyncio.run(us._run_all_or_fail([]))
+
+
+def test_moving_between_onefile_and_folder_layouts():
+    """Folder build -> every runtime file is managed; going back removes them (downgrade)."""
+    onefile = [{"install": "Mycelian.exe", "path": "packaged/windows/Mycelian.exe", "sha256": "a" * 64,
+                "action": "replace"}]
+    folder = [{"install": "Mycelian.exe", "path": "packaged/windows/Mycelian.exe", "sha256": "b" * 64,
+               "action": "replace"}] + [
+        {"install": f"runtime/f{i}.pyd", "path": f"packaged/windows/runtime/f{i}.pyd", "sha256": f"{i:064x}",
+         "action": "replace"} for i in range(3)]
+    installed_onefile = {"files": {"Mycelian.exe": {"sha256": "a" * 64, "action": "replace"}}}
+    up = us.plan_changes(folder, installed_onefile, lambda e: False)
+    assert [e["install"] for e in up["downloads"]] == ["Mycelian.exe", "runtime/f0.pyd", "runtime/f1.pyd",
+                                                      "runtime/f2.pyd"]
+    assert up["deletes"] == []
+    installed_folder = {"files": up["files"]}
+    down = us.plan_changes(onefile, installed_folder, lambda e: False)
+    assert [e["install"] for e in down["downloads"]] == ["Mycelian.exe"]
+    assert sorted(d["install"] for d in down["deletes"]) == ["runtime/f0.pyd", "runtime/f1.pyd", "runtime/f2.pyd"]
+    # an unchanged runtime file is not downloaded again
+    again = us.plan_changes(folder, installed_folder, lambda e: True, lambda e: e["install"] != "Mycelian.exe")
+    assert [e["install"] for e in again["downloads"]] == ["Mycelian.exe"]
