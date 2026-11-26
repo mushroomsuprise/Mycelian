@@ -166,7 +166,12 @@ class InstalledPackageTests(unittest.TestCase):
             self.skipTest("PyInstaller not installed")
         if not exe.is_file():
             self.skipTest("no packaged Windows build")
-        toc = CArchiveReader(str(exe)).toc
+        toc = list(CArchiveReader(str(exe)).toc)
+        # Folder layout (build.py --layout folder): the data files sit in runtime\ next to
+        # the exe instead of inside it, so they are part of what ships too.
+        runtime = exe.parent / "runtime"
+        if runtime.is_dir():
+            toc += [p.relative_to(runtime).as_posix() for p in runtime.rglob("*") if p.is_file()]
         datas = [(name, "", "DATA") for name in toc]
         kept, _removed = bf.filter_unused_data(datas)  # raises if REQUIRED_DATA lost
         kept_names = {bf.normalize_dest(e[0]) for e in kept}

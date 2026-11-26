@@ -958,8 +958,9 @@ def exe_env(root, monkeypatch, run):
     return root
 
 
-def test_build_executable_windows(exe_env, run, set_os, messages):
+def test_build_executable_windows(exe_env, run, set_os, messages, monkeypatch):
     set_os("windows")
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "onefile")
 
     def make(cmd, kwargs):
         (exe_env / "builds" / "Mycelian.exe").write_bytes(b"\0" * 2 * 1024 * 1024)
@@ -971,6 +972,21 @@ def test_build_executable_windows(exe_env, run, set_os, messages):
     assert cmd == [sys.executable, "-m", "PyInstaller", "--clean", "--noconfirm", str(exe_env / "mycelian_improved.spec"), "--distpath", str(exe_env / "builds")]
     assert kwargs["cwd"] == exe_env
     assert _texts(messages) == ["Build completed successfully", "Compiled Mycelian.exe (2.0 MB)"]
+
+
+def test_build_executable_windows_folder_layout(exe_env, run, set_os, messages, monkeypatch):
+    set_os("windows")
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "folder")
+
+    def make(cmd, kwargs):
+        folder = exe_env / "builds" / "Mycelian"
+        (folder / "runtime").mkdir(parents=True)
+        (folder / "Mycelian.exe").write_bytes(b"\0" * 1024 * 1024)
+        (folder / "runtime" / "python314.dll").write_bytes(b"\0" * 1024 * 1024)
+
+    run.on([sys.executable, "-m", "PyInstaller"], effect=make)
+    assert bld.build_executable() == (True, exe_env / "builds")
+    assert _texts(messages) == ["Build completed successfully", "Compiled Mycelian\\ (2 files, 2.0 MB)"]
 
 
 def test_build_executable_macos_bundle(exe_env, run, set_os, messages):

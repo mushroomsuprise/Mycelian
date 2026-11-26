@@ -285,6 +285,36 @@ def test_copy_binaries_to_project_root(tmp_path, set_os):
     assert list(dist.iterdir()) == []
 
 
+def test_copy_binaries_onefile_drops_stale_runtime_folder(tmp_path, set_os, monkeypatch):
+    # Mycelian.iss ships "runtime\*" when present: a one-file build must not carry the
+    # runtime folder of an earlier folder-layout build into its installer.
+    set_os("windows")
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "onefile")
+    stale = tmp_path / "runtime" / "python314.dll"
+    stale.parent.mkdir()
+    stale.write_bytes(b"old")
+    dist = tmp_path / "builds"
+    dist.mkdir()
+    (dist / "Mycelian.exe").write_bytes(b"app")
+    (dist / "merge_template_configs.exe").write_bytes(b"helper")
+    app, _ = bld.copy_binaries_to_project_root(tmp_path, dist)
+    assert app.read_bytes() == b"app"
+    assert not (tmp_path / "runtime").exists()
+
+
+def test_copy_binaries_onefile_keeps_runtime_folder_off_windows(tmp_path, set_os):
+    set_os("linux")
+    keep = tmp_path / "runtime" / "notes.txt"
+    keep.parent.mkdir()
+    keep.write_text("not ours")
+    dist = tmp_path / "builds"
+    dist.mkdir()
+    (dist / "Mycelian").write_bytes(b"app")
+    (dist / "merge_template_configs").write_bytes(b"helper")
+    bld.copy_binaries_to_project_root(tmp_path, dist)
+    assert keep.read_text() == "not ours"
+
+
 def test_copy_binaries_macos_bundle(tmp_path, set_os):
     set_os("macos")
     dist = tmp_path / "builds"
@@ -542,6 +572,7 @@ def test_write_update_manifest_without_git(manifest_env, monkeypatch, messages):
 @pytest.mark.parametrize("os_name,dest_name", [("windows", "Mycelian.exe"), ("linux", "Mycelian")])
 def test_publish_packaged_release_file(tmp_path, set_os, monkeypatch, messages, os_name, dest_name):
     set_os(os_name)
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "onefile")  # folder layout: see the test below
     stale = tmp_path / "packaged" / os_name / "stale"
     stale.parent.mkdir(parents=True)
     stale.write_text("old")
@@ -1238,15 +1269,18 @@ def test_copy_build_artifact_keeps_bundle_links(tmp_path):
 # --------------------------------------------------------------------------- Windows folder layout
 
 
-def test_folder_layout_is_windows_only_and_opt_in(monkeypatch, set_os):
+def test_folder_layout_is_windows_only_and_the_default(monkeypatch, set_os):
     set_os("windows")
-    assert bld.WINDOWS_LAYOUT_DEFAULT == "onefile"
+    assert bld.WINDOWS_LAYOUT_DEFAULT == "folder"
     monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "folder")
     assert bld.folder_layout() is True
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "onefile")
+    assert bld.folder_layout() is False
+    monkeypatch.setattr(bld, "WINDOWS_LAYOUT", "folder")
     set_os("linux")
     assert bld.folder_layout() is False
-    assert bld._parse_args(["--layout", "folder"]).layout == "folder"
-    assert bld._parse_args([]).layout == "onefile"
+    assert bld._parse_args(["--layout", "onefile"]).layout == "onefile"
+    assert bld._parse_args([]).layout == "folder"
 
 
 def test_copy_binaries_folder_layout(tmp_path, set_os, monkeypatch):
