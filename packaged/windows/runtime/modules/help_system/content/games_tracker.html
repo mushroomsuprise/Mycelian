@@ -1,0 +1,141 @@
+<p class="hx-lead">The Games Tracker keeps every PlayStation and Steam game you have played, with trophy and achievement progress and cover art. Changes after the first import reach Statistics, chatbot events and connectors.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Games Tracker</span></span> · options in <span class="hx-path"><span>Settings</span><span>Games Tracker</span></span></span>
+  <span>{{icon:link}} Uses the accounts from <a href="help:integrations_psn">PSN</a> and <a href="help:integrations_steam">Steam</a></span>
+</div>
+
+<h2>What it tracks</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Platform</th><th>Which games</th><th>Progress</th></tr></thead>
+<tbody>
+<tr><td>{{brand:psn}} PlayStation</td><td>Every title with a trophy list on the account set in Settings → PSN</td><td>Trophies by grade (platinum, gold, silver, bronze) and PlayStation's own completion percentage</td></tr>
+<tr><td>Steam</td><td>Games on the profile set in Settings → Steam that have playtime</td><td>Achievements unlocked out of the game's total</td></tr>
+</tbody>
+</table></div>
+
+<p>Syncing runs on its own background threads, so the app stays responsive. The library is checked again every few minutes (10 by default), and the game you're playing updates within about 15 seconds through the PSN and Steam connections.</p>
+
+<p>To keep requests to PlayStation and Steam low, a routine check reads only the recently played part of the library (usually one request), and the whole library is read on <strong>Sync now</strong> and every 6 hours. Trophy and achievement names, icons and group details are read once per game and kept; after that each check asks only what you've earned. Settings → PSN, Steam and Games Tracker show how much of each platform's request limit Mycelian is using, with a graph you can switch between the last hour, 24 hours and 7 days (hover it for the exact numbers). The history is kept on this computer for a month, so it's still there after a restart. Steam's limit is published: 100,000 requests a day. Sony doesn't publish one for PlayStation, so the PSN figure is measured against the community estimate of about 300 requests per 15 minutes; the line turns into a warning from 80%. If PlayStation or Steam asks Mycelian to slow down, it pauses for the time they ask and keeps showing the last data.</p>
+
+<h2>The first import is silent</h2>
+
+<p>The first sync for an account reads your whole library without counting anything, so years of trophies don't flood Statistics or chat. From then on, each change is an event:</p>
+
+<ul>
+  <li><strong>Unlock</strong>: a trophy or achievement was earned. PlayStation unlocks carry the grade.</li>
+  <li><strong>Completed</strong>: a platinum, or every Steam achievement (a perfect game).</li>
+  <li><strong>Started</strong>: a game showed up in the library for the first time.</li>
+  <li><strong>Milestone</strong>: a game crossed one of your progress milestones (25, 50 and 75% by default).</li>
+</ul>
+
+<p>Connecting a different account starts a new silent import for that platform. <strong>Reset baseline</strong> in Settings → Games Tracker does the same for the current accounts.</p>
+
+<h2>The Games Tracker tab</h2>
+
+<h3>Overview and library</h3>
+<p>The header pills show each platform's state: game count, <em>importing n / total</em> during a sync, or <em>not connected</em>. <strong>Sync now</strong> reads both libraries again, and <strong>Options</strong> opens Settings → Games Tracker. Below the overview, search, filter (<em>All</em>, <em>PlayStation</em>, <em>Steam</em>), status (<em>In progress</em>, <em>Not started</em>, <em>Completed</em>, <em>Has goals</em>, <em>No goals</em>, <em>Hidden</em>) and sort the cards (recently played, most or least complete, name A–Z or Z–A, most trophies, most playtime, recently added). Each card shows the cover, platform, completion, trophy counts and, when the game has goals, its first three goals with a bar each. Your filter and sort choices are remembered.</p>
+
+<h3>Goals</h3>
+<p>Give any game as many goals as you like from its settings ({{icon:settings}} on the card), under <strong>Goals</strong>. Each goal shows on the card with its own bar and percent.</p>
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Type</th><th>Done when</th></tr></thead>
+<tbody>
+<tr><td><strong>Manual</strong></td><td>You count it yourself with {{icon:remove}} / {{icon:add}}, for example <em>Get all endings</em>, 2 of 5. A count of 1 works like a checkbox.</td></tr>
+<tr><td><strong>Platinum / 100%</strong></td><td>You earn the platinum (PlayStation) or unlock every achievement (Steam).</td></tr>
+<tr><td><strong>Trophies / achievements</strong></td><td>You have earned N of them in the game. On PlayStation you can count one grade only, for example 10 gold trophies.</td></tr>
+<tr><td><strong>Completion %</strong></td><td>The game's completion reaches the percent you set.</td></tr>
+<tr><td><strong>Specific trophy / achievement</strong></td><td>The one you pick from the game's list unlocks.</td></tr>
+</tbody>
+</table></div>
+<p>Goals change straight away; there's no Save. Use {{icon:edit}} to rename a goal or change its target, and the arrows to reorder. Automatic goals follow the game, so a goal that is already met when you add it starts out done, without an event. Goals stay with a game when you switch accounts, and go away when you remove the game.</p>
+
+<h3>Speedrun info</h3>
+<p>Under <strong>Speedrun info</strong> in a game's settings, link one or more LiveSplit split files (<code>.lss</code>), one per category you run. Type a <strong>Category</strong> (for example <em>Any%</em>), or leave it empty to use the category saved in the file, then click <strong>Choose split file…</strong>. For each file the card and the Game panel show the category, your personal best and how many attempts you've made (plus how many you finished).</p>
+<ul>
+  <li><strong>Live:</strong> Mycelian notices when LiveSplit saves the file and reads it again a few seconds later.</li>
+  <li><strong>Read-only, never in LiveSplit's way:</strong> the file is only ever read, never changed or locked. Mycelian checks for changes without opening it, reads it only after a save has finished, and closes it within milliseconds. If LiveSplit saves at that exact moment, Windows makes the save wait for Mycelian to close (a few milliseconds) instead of failing, and Mycelian reads again on its next check.</li>
+  <li><strong>Times:</strong> {{icon:edit}} on a split file sets <em>Times</em>: <em>Automatic</em> uses real time, or game time when the file only has game times. You can also rename the category or point it at another file there.</li>
+</ul>
+
+<h3>Backlog</h3>
+<p>Games with goals sit in their own <strong>Backlog</strong> section above the library, with their own search, platform filter, goal filter (<em>All goals</em>, <em>Goals open</em>, <em>Goals complete</em>) and sort (closest to done, least progress, recently played, name, most goals, newest goal). A game stays in the backlog after all its goals are done; filter to <em>Goals open</em> to hide those. Turn off <em>Keep games with goals in a Backlog section</em> in Settings → Games Tracker to keep them in the library with everything else.</p>
+
+<h3>Game settings</h3>
+<p>The {{icon:settings}} button on a card opens its settings:</p>
+<ul>
+  <li><strong>Display title</strong>: what overlays, chat and connectors show.</li>
+  <li><strong>NPWR ID</strong> and <strong>NP Title ID</strong> (PlayStation): which trophy list the game's presence maps to. <strong>Re-resolve NPWR from Title ID</strong> asks PlayStation for the right NPWR ID. This replaces the game cache that used to be on the PSN tab.</li>
+  <li><strong>Hide from tracker</strong>: the game keeps syncing but leaves the grid and the totals.</li>
+  <li><strong>Remove from cache</strong>: forgets the game until the next sync finds it again.</li>
+</ul>
+
+<h2>Settings → Games Tracker</h2>
+<p>The tracker's options have their own Settings tab, with <strong>Save</strong> and <strong>Discard</strong> like the other Settings tabs. Turn each platform on or off, choose whether changes count in Statistics and fire chatbot and connector events, and set the sync interval, how long cover art is kept (30 days by default; covers that failed are retried after 6 hours, or straight away with <strong>Sync now</strong>) and the progress milestones. <strong>Clear covers</strong> downloads all cover art again, and <strong>Reset baseline</strong> makes current progress the new starting point.</p>
+
+<h2>Export</h2>
+
+<p><strong>Export</strong> in the tab header saves an image or a spreadsheet; pick one under <em>Format</em>. <strong>Export card</strong> in a game's settings goes straight to that game's image.</p>
+
+<h3>Image (PNG)</h3>
+<p>A picture in your theme colors, like the Statistics highlights image:</p>
+<ul>
+  <li><strong>Library recap</strong>: headline tiles, a grid of games, the trophy cabinet and recent unlocks.</li>
+  <li><strong>Game spotlight</strong>: one game's cover, progress, grade breakdown, trophy groups and recent unlocks.</li>
+</ul>
+<p>Pick a layout (Wide 16:9, Portrait 4:5 or Square 1:1), a title, platforms, a period, which sections and tiles to show, and how the grid picks games. Images are saved to the <code>exports</code> folder in the Mycelian data folder. Your choices are remembered.</p>
+
+<h3>Spreadsheet (XLSX)</h3>
+<p>Your library as an Excel workbook that also opens in Numbers, LibreOffice and Google Sheets:</p>
+<ul>
+  <li><strong>Games</strong>: one row per game with completion, earned and total, PlayStation trophies by grade, Steam playtime, last played and first seen dates, and the NPWR / App ID and NP Title ID. Numbers and dates are real values, and the header row has filters.</li>
+  <li><strong>Summary</strong>: the totals, the same ones as the overview.</li>
+  <li><strong>Unlock history</strong> (optional): every unlock, completion, new game and milestone since the first import, with grade and rarity.</li>
+</ul>
+<p>Choose the platforms and whether hidden games are listed (they get a <em>Hidden</em> column and are never counted in the summary). The file is saved to the same <code>exports</code> folder as <code>games_library_&lt;date&gt;.xlsx</code>.</p>
+
+<h2>Chatbot, connectors and overlays</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Where</th><th>What you get</th></tr></thead>
+<tbody>
+<tr><td>Chatbot events</td><td><em>Game unlock</em>, <em>Game completed</em>, <em>Game started</em>, <em>Game milestone</em>, with platform, grade and milestone filters and variables such as <code>{game_title}</code>, <code>{unlock_name}</code> and <code>{progress}</code></td></tr>
+<tr><td>Goal events</td><td><em>Goal progress</em> and <em>Goal completed</em>, filtered by platform, game, goal name and type (manual or automatic). Variables: <code>{goal_name}</code>, <code>{goal_current}</code>, <code>{goal_target}</code>, <code>{goal_progress}</code>, <code>{goals_done}</code>, <code>{goals_total}</code>, <code>{goals_remaining}</code> and <code>{all_goals_done}</code> (true when it was the game's last open goal). Both are chatbot events and connector triggers.</td></tr>
+<tr><td>Anywhere in chat</td><td><code>{games.total}</code>, <code>{games.psn.platinums}</code>, <code>{games.steam.perfect}</code>, <code>{games.current.title}</code>, <code>{games.current.progress}</code>, <code>{games.backlog.count}</code>, <code>{games.goals.done}</code>, <code>{games.goals.active}</code> and more</td></tr>
+<tr><td>Connectors</td><td>The same triggers, the <em>Game lookup</em> action for any game's progress and goals, and <em>Update game goal</em>, which counts a manual goal up or down, sets it, marks it done or resets it</td></tr>
+<tr><td>Statistics</td><td>A Games Tracker card with trophies by grade, achievements, platinums, perfect games, games started and milestones</td></tr>
+<tr><td>HTTP API</td><td><code>/api/game-tracker/export.png</code> and <code>/api/game-tracker/export.xlsx</code> return the image or the spreadsheet with your saved options. <code>/api/game-tracker/backlog</code> lists the games with goals.</td></tr>
+<tr><td>Overlays</td><td><code>game_tracker_event</code> for each change (goal changes included), <code>game_tracker_update</code> with the library totals and <code>game_tracker_game</code> with one game and its goals whenever it changes</td></tr>
+</tbody>
+</table></div>
+
+<h3>Chat commands for any game</h3>
+<p>In a chatbot command, add the <strong>A game's progress</strong> lookup (group <em>Games</em>). It searches your library for the text after the command, forgiving case, ™ symbols, missing spaces and small typos. Left blank, it uses your most recently played game. Hidden games are left out.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Command</th><th>Reply</th><th>Fallback text</th></tr></thead>
+<tbody>
+<tr><td><code>!progress</code></td><td><code>{game_title}: {game_progress}% ({game_trophies})</code></td><td><code>I haven't played {game_query} yet.</code></td></tr>
+<tr><td><code>!haveyouplayed</code></td><td><code>Yes! {game_title} on {game_console}, {game_progress}% done, last played {game_last_played}.</code></td><td><code>Nope, I haven't played {game_query}.</code></td></tr>
+</tbody>
+</table></div>
+
+<p>Other variables: <code>{game_played}</code> (yes/no), <code>{game_earned}</code>, <code>{game_total}</code>, <code>{game_completed}</code> (yes/no), <code>{game_platform}</code> and <code>{game_playtime}</code> (Steam). Without fallback text, a game that isn't in the library still posts the normal reply, with <code>{game_played}</code> set to <em>no</em>. The lookup's <em>Platform</em> option limits it to PlayStation or Steam.</p>
+
+<p>Goals too: <code>{game_goals}</code> lists them with progress (<em>Get all endings 2/5 (40%), Platinum (78%)</em>), plus <code>{game_goals_done}</code>, <code>{game_goals_total}</code>, <code>{game_goal_next}</code> (the furthest along that isn't done) and <code>{game_goal_next_progress}</code>. For one goal by position use <code>{game_goal_1_name}</code>, <code>{game_goal_1_progress}</code>, <code>{game_goal_1_current}</code>, <code>{game_goal_1_target}</code> and <code>{game_goal_1_done}</code> (1 to 10). For example <code>!goals</code> → <code>{game_title} goals: {game_goals}</code>.</p>
+
+<h3>Counting a goal from chat</h3>
+<p>Make a connector with a <em>Chat message</em> trigger and the condition <em>message starts with</em> <code>!ending</code>, then add the <strong>Update game goal</strong> action: pick the game (or leave it blank for the last played one), type part of the goal's name, and choose <em>Count up</em>. Only manual goals can be changed; automatic ones follow the game.</p>
+<p>On a Stream Deck, the <strong>Game Goal</strong> key does the same with a press: pick the game, the manual goal, <em>Add</em> or <em>Subtract</em> and the amount. The key shows the goal's count.</p>
+
+<h2>Game panel in Spore Studio</h2>
+<p>The <strong>Game panel</strong> block (group <em>Data</em>) shows a game card like the one in the tracker: cover, completion bar, trophies or achievements and its goals. Under <em>Show</em>, choose:</p>
+<ul>
+  <li><strong>selected</strong>: the games you tick under <em>Games</em>. Pick several and the panel rotates between them, in the order you picked them, every <em>Rotate every</em> seconds.</li>
+  <li><strong>backlog</strong>: every game with goals, open ones first.</li>
+  <li><strong>current</strong>: the game you played last.</li>
+</ul>
+<p>The panel updates live as you earn trophies or count goals; you don't need a Data feed. Switches choose what shows (cover, trophies, goals, speedrun info, last played, page dots) and how many goals are listed. With <strong>Auto size</strong> on (the default), everything grows to fill the block: a bigger block, or fewer rows shown, means bigger text. When it rotates, every game is sized like the fullest one so the text doesn't jump. Turn it off to set the size yourself with <em>Size</em>. The editor's preview is drawn by the same code as the overlay, using your real games.</p>
+
+<div class="hx-callout hx-note"><p>PlayStation trophy lists must be visible to the account Mycelian signs in with. Steam achievements need a public profile and game details.</p></div>

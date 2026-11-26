@@ -1,0 +1,272 @@
+<p class="hx-lead">When the fields in <a href="help:template_configuration">Source Settings</a> are not enough, add your own CSS in the OBS browser source. It is applied on top of the template, so you can restyle, hide or animate any part of an overlay.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} OBS → source <strong>Properties</strong> → <strong>Custom CSS</strong></span>
+  <span>{{icon:info}} Per browser source</span>
+</div>
+
+<div class="hx-callout hx-important"><p>Mycelian's Source Settings has no Custom CSS field. CSS goes in the <strong>Custom CSS</strong> box of each OBS browser source. Try a field in Source Settings first; colors, fonts, sizes and animations are usually already there.</p></div>
+
+<h2>What CSS can do</h2>
+
+<figure class="hx-figure">
+  <div class="hm" data-tabs>
+    <div class="hm-subtabs">
+      <span class="hm-subtab is-active" data-tab="before">Before</span>
+      <span class="hm-subtab" data-tab="after">After custom CSS</span>
+    </div>
+    <div class="hm-frame">
+      <div data-panel="before" class="is-active">
+        <div class="hm-stage hm-stage-mid">
+          <div class="hm-ov-alert">
+            <span class="hm-ov-gif"><span class="hx-mi">celebration</span></span>
+            <span class="hm-ov-user">ViewerName</span>
+            <span class="hm-ov-text">thanks for the Tier 1 sub!</span>
+            <span class="hm-ov-msg">Great stream!</span>
+          </div>
+        </div>
+      </div>
+      <div data-panel="after">
+        <div class="hm-stage hm-stage-mid">
+          <div class="hm-ov-alert is-styled">
+            <span class="hm-ov-gif"><span class="hx-mi">celebration</span></span>
+            <span class="hm-ov-user">ViewerName</span>
+            <span class="hm-ov-text">thanks for the Tier 1 sub!</span>
+            <span class="hm-ov-msg">Great stream!</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>A simplified Alerts overlay. Switch tabs to see the effect of the CSS below: a framed card, a bigger uppercase name, a bouncing image, and the viewer message hidden.</figcaption>
+</figure>
+
+<pre><code>/* Frame the whole alert */
+.alert-display {
+    background: rgba(20, 20, 30, 0.85);
+    border: 3px solid gold;
+    border-radius: 14px;
+}
+
+/* Bigger, uppercase name. !important beats the color/size the template sets. */
+.alert-username {
+    color: gold !important;
+    font-size: 48px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* Bounce the image */
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-20px); }
+}
+.alert-gif {
+    animation: bounce 1s ease-in-out infinite;
+}
+
+/* Hide the viewer's message */
+.alert-message {
+    display: none !important;
+}
+</code></pre>
+
+<h2>Add CSS to a browser source</h2>
+
+<section class="hx-guide" data-guide="template_custom_css_add" data-title="Add custom CSS">
+  <div class="hx-step">
+    <h3>Open the source properties</h3>
+    <p>In OBS, double-click the browser source that shows the overlay (or right-click it and choose <strong>Properties</strong>).</p>
+  </div>
+  <div class="hx-step">
+    <h3>Add your rules to Custom CSS</h3>
+    <p>Scroll to <strong>Custom CSS</strong>. Keep the rule OBS puts there by default if it is present; it makes the page background transparent. Add your rules below it.</p>
+    <pre><code>body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }
+
+.alert-username { color: gold !important; }
+</code></pre>
+  </div>
+  <div class="hx-step">
+    <h3>Click OK and test</h3>
+    <p>OBS reloads the page with your CSS. Trigger a test alert or event to check it (see <a href="help:alert_testing">Testing Alerts</a>).</p>
+  </div>
+</section>
+
+<div class="hx-callout hx-note"><p>The CSS belongs to that one OBS source. Another source showing the same template, and the Source Settings preview, do not get it. Sources created with Mycelian's <strong>Add to OBS</strong> button start with an empty Custom CSS box.</p></div>
+
+<h2>Finding the right selector</h2>
+
+<p>These classes come from the built-in templates:</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="alerts" class="is-active">Alerts</button>
+    <button data-tab="chat">Chat</button>
+    <button data-tab="title">Title &amp; Counter</button>
+    <button data-tab="bars">Sub / Bit Bar</button>
+    <button data-tab="spotify">Spotify</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="alerts">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Selector</th><th>Element</th></tr></thead>
+    <tbody>
+    <tr><td><code>#alertContainer</code></td><td>Outer wrapper</td></tr>
+    <tr><td><code>.alert-display</code></td><td>The alert box</td></tr>
+    <tr><td><code>.alert-background</code></td><td>Background layer</td></tr>
+    <tr><td><code>.alert-gif</code></td><td>GIF / image</td></tr>
+    <tr><td><code>.alert-header</code></td><td>Row with name and event text</td></tr>
+    <tr><td><code>.alert-username</code></td><td>The viewer's name</td></tr>
+    <tr><td><code>.alert-text</code></td><td>Event line, e.g. "cheered 100 bits!"</td></tr>
+    <tr><td><code>.alert-message</code></td><td>The viewer's message</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="chat">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Selector</th><th>Element</th></tr></thead>
+    <tbody>
+    <tr><td><code>#chat</code></td><td>Message list</td></tr>
+    <tr><td><code>.chat-message</code></td><td>One message</td></tr>
+    <tr><td><code>.message-header</code></td><td>Badges and name row</td></tr>
+    <tr><td><code>.message-badges</code></td><td>Badges</td></tr>
+    <tr><td><code>.message-username</code></td><td>Name (its color is set per user, so use <code>!important</code>)</td></tr>
+    <tr><td><code>.message-content</code></td><td>Message text</td></tr>
+    <tr><td><code>#chat-banner</code></td><td>The manual banner</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="title">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Selector</th><th>Element</th></tr></thead>
+    <tbody>
+    <tr><td><code>.title-text</code></td><td>Title overlay text</td></tr>
+    <tr><td><code>.counter-container</code></td><td>Counter wrapper</td></tr>
+    <tr><td><code>.counter-background</code></td><td>Counter background</td></tr>
+    <tr><td><code>.counter-text</code></td><td>Counter number and text</td></tr>
+    </tbody>
+    </table></div>
+    <p>The Title overlay sizes its text automatically. Changing <code>font-size</code> on <code>.title-text</code> fights Auto Fit; use Max/Min Font Size instead.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="bars">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Selector</th><th>Element</th></tr></thead>
+    <tbody>
+    <tr><td><code>.subbar-container</code> / <code>.bitbar-container</code></td><td>Whole bar</td></tr>
+    <tr><td><code>.subbar-title</code> / <code>.bitbar-title</code></td><td>Title text</td></tr>
+    <tr><td><code>.progress-container</code></td><td>Bar track</td></tr>
+    <tr><td><code>.progress-bar</code></td><td>Filled part</td></tr>
+    <tr><td><code>.progress-text</code></td><td>Count text</td></tr>
+    <tr><td><code>.goal-reached-overlay</code></td><td>Goal-reached effect</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="spotify">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Selector</th><th>Element</th></tr></thead>
+    <tbody>
+    <tr><td><code>.spotify-container</code></td><td>Whole widget</td></tr>
+    <tr><td><code>.album-art</code></td><td>Cover image</td></tr>
+    <tr><td><code>.track-name</code>, <code>.artist-name</code></td><td>Song and artist</td></tr>
+    <tr><td><code>.progress-fill</code></td><td>Playback progress</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+</div>
+
+<p>For any other template, open <code>templates/&lt;name&gt;.html</code> in a text editor and look at the <code>class=</code> and <code>id=</code> names, or open the overlay URL in a desktop browser and use its inspector (right-click → <strong>Inspect</strong>).</p>
+
+<h2>More examples</h2>
+
+<h3>Fonts</h3>
+
+<pre><code>.alert-username,
+.alert-text {
+    font-family: 'Comic Sans MS', cursive !important;
+    font-weight: bold;
+}
+</code></pre>
+
+<p>The font must be installed on the computer running OBS. Fonts in <code>assets/default_assets/fonts/</code> are easier: pick them with a template's Font fields.</p>
+
+<h3>Colors and gradients</h3>
+
+<pre><code>.alert-display {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: 3px solid gold;
+}
+
+.alert-username {
+    color: #ff6b6b !important;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+</code></pre>
+
+<h3>Hide an element</h3>
+
+<pre><code>.message-badges {
+    display: none !important;
+}
+</code></pre>
+
+<h3>Responsive text size</h3>
+
+<pre><code>.alert-text {
+    font-size: clamp(16px, 4vw, 32px) !important;
+}
+</code></pre>
+
+<h3>Frosted background</h3>
+
+<pre><code>.alert-display {
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+}
+</code></pre>
+
+<h2>Useful properties</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Property</th><th>Changes</th></tr></thead>
+<tbody>
+<tr><td><code>color</code>, <code>background</code></td><td>Text color; background color or image</td></tr>
+<tr><td><code>font-family</code>, <code>font-size</code>, <code>font-weight</code></td><td>Typeface, size, thickness</td></tr>
+<tr><td><code>padding</code>, <code>margin</code></td><td>Inner and outer spacing</td></tr>
+<tr><td><code>border</code>, <code>border-radius</code></td><td>Borders and rounded corners</td></tr>
+<tr><td><code>box-shadow</code>, <code>text-shadow</code></td><td>Drop shadows</td></tr>
+<tr><td><code>opacity</code>, <code>display</code></td><td>Transparency; <code>display: none</code> hides</td></tr>
+<tr><td><code>transform</code>, <code>animation</code></td><td>Scale, rotate, move; animated effects</td></tr>
+</tbody>
+</table></div>
+
+<p>To learn CSS: <a href="https://developer.mozilla.org/en-US/docs/Web/CSS">MDN Web Docs</a>, <a href="https://css-tricks.com">CSS-Tricks</a>.</p>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>My CSS does nothing</summary>
+  <ul>
+    <li>Check the selector spelling against the tables above or the template's HTML.</li>
+    <li>Many templates set colors, fonts and sizes from Source Settings directly on the element. Add <code>!important</code> to override those.</li>
+    <li>Make sure you clicked <strong>OK</strong> in the source properties. If needed, click <strong>Refresh cache of current page</strong>.</li>
+  </ul>
+</details>
+
+<details class="hx-details">
+  <summary>The overlay has a white or black background now</summary>
+  <p>You removed OBS's default <code>body { background-color: rgba(0, 0, 0, 0); … }</code> rule. Add it back at the top of Custom CSS.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Moving the overlay with CSS cuts it off</summary>
+  <p>CSS can only draw inside the browser source's Width × Height. Position the source in OBS instead, or make the source bigger.</p>
+</details>
+
+<details class="hx-details">
+  <summary>My style broke after a Source Settings change</summary>
+  <p>A value you saved in Source Settings may now conflict with your CSS. Rules with <code>!important</code> always win; otherwise the template's own value may apply.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:template_configuration">{{icon:tune}}<span><strong>Source Settings</strong><span class="hx-card-text">Change styles without writing CSS</span></span></a>
+  <a class="hx-card" href="help:spore_studio_design">{{icon:brush}}<span><strong>Spore Studio design</strong><span class="hx-card-text">Build an overlay that looks the way you want from the start</span></span></a>
+</div>

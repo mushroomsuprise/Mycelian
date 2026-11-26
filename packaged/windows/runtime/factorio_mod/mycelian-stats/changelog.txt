@@ -1,0 +1,28 @@
+---------------------------------------------------------------------------------------------------
+Version: 1.0.4
+Date: 2026-09-07
+  Features:
+    - Export fluid production per visited planet so the Fluids overlay can cycle with Power and Production.
+---------------------------------------------------------------------------------------------------
+Version: 1.0.3
+Date: 2026-09-07
+  Features:
+    - Export power and production stats for every visited planet so the overlay can cycle surfaces.
+---------------------------------------------------------------------------------------------------
+Version: 1.0.2
+Date: 2026-09-07
+  Features:
+    - Export 60-sample flow graphs for production, consumption, fluids, science, and power.
+    - Space platforms report origin and destination so transit reads as Nauvis -> Gleba.
+---------------------------------------------------------------------------------------------------
+Version: 1.0.1
+Date: 2026-09-07
+  Bugfixes:
+    - Export readable space-platform status instead of numeric enum values.
+    - Record visited planets from generated surfaces and parked platforms.
+    - Format play time with days when the map is older than 24 hours.
+---------------------------------------------------------------------------------------------------
+Version: 1.0.0
+Date: 2026-09-07
+  Features:
+    - Export power, production, science, research, planet, and misc stats for the Mycelian overlay.

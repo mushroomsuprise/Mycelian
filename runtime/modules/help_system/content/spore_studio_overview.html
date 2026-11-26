@@ -1,0 +1,368 @@
+<p class="hx-lead">Spore Studio is Mycelian's visual editor for <a href="help:templates_intro">browser source overlays</a>. You drag blocks onto a canvas, style them, wire them to live events, and click <strong>Save</strong>. Mycelian then writes the overlay HTML, its JSON config, and an editor file that Spore Studio reopens later.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Main window</span><span>Spore Studio</span></span></span>
+  <span>{{icon:dns}} Needs the overlay server (starts with the alert system)</span>
+</div>
+
+<h2>The editor at a glance</h2>
+
+<p>Spore Studio runs inside the <strong>Spore Studio</strong> tab. Click the inspector tabs on the right of this picture to see what each one holds. Most toolbar and tab buttons are icons; hover one in the real editor to see its name.</p>
+
+<figure class="hx-figure">
+  <div class="hm hm-ss">
+    <div class="hm-ss-hostbar">
+      <span class="hm-ss-hostbtn"><span class="hx-mi">refresh</span>Reload editor</span>
+      <span class="hm-ss-hostbtn"><span class="hx-mi">open_in_new</span>Open externally</span>
+    </div>
+    <div class="hm-ss-toolbar">
+      <span class="hm-ss-mode"><span class="is-active"><span class="hx-mi">layers</span>Templates</span><span><span class="hx-mi">dashboard</span>Containers</span></span>
+      <span class="hm-ss-tsep"></span>
+      <span class="hm-ss-select"><span class="hx-mi">description</span><b>my_follow_alert</b></span>
+      <span class="hm-ss-btn"><span class="hx-mi">add</span>New</span>
+      <span class="hm-ss-btn hm-ss-icon hm-ss-danger" title="Delete template"><span class="hx-mi">delete</span></span>
+      <span class="hm-ss-tsep"></span>
+      <span class="hm-ss-btnpair"><span class="hm-ss-btn hm-ss-icon" title="Undo"><span class="hx-mi">undo</span></span><span class="hm-ss-btn hm-ss-icon" title="Redo"><span class="hx-mi">redo</span></span></span>
+      <span class="hm-marker" data-n="1"></span>
+      <span class="hm-ss-spacer"></span>
+      <span class="hm-ss-dirty">Unsaved changes</span>
+      <span class="hm-ss-btn hm-ss-icon hm-ss-ghost" title="Tour"><span class="hx-mi">explore</span></span>
+      <span class="hm-ss-btn hm-ss-icon hm-ss-ghost" title="Reload editor"><span class="hx-mi">refresh</span></span>
+      <span class="hm-ss-btn hm-ss-icon hm-ss-ghost" title="Open externally"><span class="hx-mi">open_in_new</span></span>
+      <span class="hm-ss-tsep"></span>
+      <span class="hm-ss-btn"><span class="hx-mi">play_arrow</span>Preview</span>
+      <span class="hm-ss-btn hm-ss-primary"><span class="hx-mi">check</span>Save<span class="hm-ss-kbd">Ctrl S</span></span>
+    </div>
+    <div class="hm-ss-body">
+      <div class="hm-ss-left">
+        <div class="hm-ss-section">
+          <div class="hm-ss-h"><span class="hx-mi">dashboard_customize</span>Blocks <span class="hm-marker" data-n="2"></span><span class="hm-ss-count">22</span></div>
+          <div class="hm-ss-search">Search blocks</div>
+          <div class="hm-ss-group is-collapsed"><div class="hm-ss-group-title">Data<span class="hm-ss-count">5</span></div></div>
+          <div class="hm-ss-group is-collapsed"><div class="hm-ss-group-title">Layout<span class="hm-ss-count">4</span></div></div>
+          <div class="hm-ss-group">
+            <div class="hm-ss-group-title">Media<span class="hm-ss-count">5</span></div>
+            <div class="hm-ss-block"><span class="hm-ss-block-icon"><span class="hx-mi">volume_up</span></span>Audio</div>
+            <div class="hm-ss-block"><span class="hm-ss-block-icon"><span class="hx-mi">language</span></span>Embed</div>
+            <div class="hm-ss-block"><span class="hm-ss-block-icon"><span class="hx-mi">image</span></span>Image</div>
+            <div class="hm-ss-block"><span class="hm-ss-block-icon"><span class="hx-mi">qr_code_2</span></span>QR code</div>
+            <div class="hm-ss-block"><span class="hm-ss-block-icon"><span class="hx-mi">movie</span></span>Video</div>
+          </div>
+          <div class="hm-ss-group is-collapsed"><div class="hm-ss-group-title">Text<span class="hm-ss-count">1</span></div></div>
+          <div class="hm-ss-group is-collapsed"><div class="hm-ss-group-title">Widgets<span class="hm-ss-count">7</span></div></div>
+        </div>
+        <div class="hm-ss-section">
+          <div class="hm-ss-h"><span class="hx-mi">account_tree</span>Outline<span class="hm-ss-count">3</span></div>
+          <div class="hm-ss-outline-head">alert_box</div>
+          <div class="hm-ss-outline-row"><span class="hm-ss-oicon"><span class="hx-mi">check_box_outline_blank</span></span><span class="hm-ss-oid">box</span><span class="hm-ss-otype">container</span></div>
+          <div class="hm-ss-outline-row hm-ss-nest is-selected"><span class="hm-ss-oicon"><span class="hx-mi">title</span></span><span class="hm-ss-oid">who</span><span class="hm-ss-otype">text</span></div>
+          <div class="hm-ss-outline-row hm-ss-nest"><span class="hm-ss-oicon"><span class="hx-mi">image</span></span><span class="hm-ss-oid">art</span><span class="hm-ss-otype">image</span></div>
+        </div>
+        <div class="hm-ss-section">
+          <div class="hm-ss-h"><span class="hx-mi">folder</span>Assets<span class="hm-ss-count">2</span></div>
+          <div class="hm-ss-assettools"><span class="hm-ss-btn hm-ss-sm"><span class="hx-mi">upload</span>Upload</span><span class="hm-ss-btn hm-ss-sm"><span class="hx-mi">folder</span>Reveal folder</span></div>
+          <div class="hm-ss-assets">
+            <div class="hm-ss-asset"><span class="hm-ss-asset-thumb"><span class="hx-mi">image</span></span><span class="hm-ss-asset-name">alert.gif</span><span class="hm-ss-asset-kind">image</span></div>
+            <div class="hm-ss-asset"><span class="hm-ss-asset-thumb"><span class="hx-mi">volume_up</span></span><span class="hm-ss-asset-name">sfx.mp3</span><span class="hm-ss-asset-kind">audio</span><span class="hm-ss-asset-del"><span class="hx-mi">delete</span></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="hm-ss-canvas">
+        <span class="hm-ss-dims">800 × 200</span>
+        <div class="hm-ss-stage">
+          <div class="hm-ss-el hm-ss-container" style="left:6%;top:12%;width:66%;height:76%">box</div>
+          <div class="hm-ss-el hm-ss-media" style="left:9%;top:22%;width:14%;height:56%">art</div>
+          <div class="hm-ss-el hm-ss-text is-selected" style="left:27%;top:34%;width:40%;height:30%">CoolViewer<span class="hm-ss-anim">anim</span></div>
+          <span class="hm-marker hm-pin" data-n="3" style="top:6%;left:80%"></span>
+        </div>
+      </div>
+      <div class="hm-ss-right" data-tabs>
+        <div class="hm-ss-tabs">
+          <span class="hm-ss-tab is-active" data-tab="props" title="Properties"><span class="hx-mi">tune</span><b>Properties</b></span>
+          <span class="hm-ss-tab" data-tab="bind" title="Bindings"><span class="hx-mi">bolt</span><b>Bindings</b></span>
+          <span class="hm-ss-tab" data-tab="sd" title="Stream Deck"><span class="hx-mi">grid_on</span><b>Stream Deck</b></span>
+          <span class="hm-ss-tab" data-tab="sc" title="Source Controls"><span class="hx-mi">toggle_on</span><b>Source Controls</b></span>
+          <span class="hm-ss-tab" data-tab="js" title="Advanced JS"><span class="hx-mi">code</span><b>Advanced JS</b></span>
+          <span class="hm-ss-tab" data-tab="canvas" title="Canvas"><span class="hx-mi">grid_3x3</span><b>Canvas</b></span>
+          <span class="hm-marker" data-n="4"></span>
+        </div>
+        <div class="hm-ss-pane" data-panel="props">
+          <div class="hm-ss-elhead"><span class="hm-ss-elhead-icon"><span class="hx-mi">title</span></span><span class="hm-ss-elhead-text"><b>who</b><span>in <b>box</b></span></span><span class="hm-ss-chip">Text</span></div>
+          <div class="hm-expansion hm-ss-collapse is-open">
+            <div class="hm-expansion-head"><span class="hx-mi">sell</span>Element<span class="hm-ss-sum">alert_box</span></div>
+            <div class="hm-expansion-body">
+              <div class="hm-ss-row"><span class="hm-ss-label">ID</span><span class="hm-ss-input">who</span></div>
+              <div class="hm-ss-row"><span class="hm-ss-label">Category</span><span class="hm-ss-input">alert_box</span></div>
+              <span class="hm-ss-btn hm-ss-sm" style="align-self:flex-start"><span class="hx-mi">open_with</span>Move to canvas</span>
+            </div>
+          </div>
+          <div class="hm-expansion hm-ss-collapse"><div class="hm-expansion-head"><span class="hx-mi">open_with</span>Layout<span class="hm-ss-sum">96, 44 · 300×60</span></div><div class="hm-expansion-body"><div class="hm-ss-pair"><div class="hm-ss-row"><span class="hm-ss-label">X</span><span class="hm-ss-input">96</span></div><div class="hm-ss-row"><span class="hm-ss-label">Y</span><span class="hm-ss-input">44</span></div></div></div></div>
+          <div class="hm-expansion hm-ss-collapse"><div class="hm-expansion-head"><span class="hx-mi">visibility</span>Visibility<span class="hm-ss-sum">Starts hidden</span></div><div class="hm-expansion-body"><span class="hm-check is-on"><i></i>Start hidden until shown</span></div></div>
+          <div class="hm-expansion hm-ss-collapse"><div class="hm-expansion-head"><span class="hx-mi">rotate_right</span>Transformations<span class="hm-ss-sum">None</span></div><div class="hm-expansion-body"><span class="hm-ss-empty">No transform yet.</span></div></div>
+          <div class="hm-expansion hm-ss-collapse"><div class="hm-expansion-head"><span class="hx-mi">rss_feed</span>Data feed<span class="hm-ss-sum">No feed</span></div><div class="hm-expansion-body"><span class="hm-ss-btn hm-ss-sm" style="align-self:flex-start">+ Add feed</span></div></div>
+          <div class="hm-expansion hm-ss-collapse"><div class="hm-expansion-head"><span class="hx-mi">palette</span>Appearance<span class="hm-ss-sum">Arial · 32px</span></div><div class="hm-expansion-body"><div class="hm-ss-row"><span class="hm-ss-label">Text<span class="hm-ss-expose is-on"></span></span><span class="hm-ss-input">Hello</span></div></div></div>
+          <div class="hm-expansion hm-ss-collapse"><div class="hm-expansion-head"><span class="hx-mi">auto_awesome</span>Animations<span class="hm-ss-sum">fade / fade</span></div><div class="hm-expansion-body"><div class="hm-ss-row"><span class="hm-ss-label">Entrance</span><span class="hm-ss-input hm-ss-sel">fade</span></div></div></div>
+        </div>
+        <div class="hm-ss-pane" data-panel="bind">
+          <span class="hm-ss-btn hm-ss-primary hm-ss-wide"><span class="hx-mi">add</span>Add binding</span>
+          <div class="hm-ss-card">
+            <div class="hm-ss-card-head">Binding #1<span class="hm-ss-x">×</span></div>
+            <div class="hm-ss-flow">
+              <div class="hm-ss-flow-head"><span class="hm-ss-badge">1</span>When</div>
+              <div class="hm-ss-row"><span class="hm-ss-label">Trigger</span><span class="hm-ss-input hm-ss-sel">Registry event</span></div>
+              <div class="hm-ss-row"><span class="hm-ss-label">Event</span><span class="hm-ss-input hm-ss-sel">Alert (queue)</span></div>
+            </div>
+            <div class="hm-ss-flow">
+              <div class="hm-ss-flow-head"><span class="hm-ss-badge">2</span>Do this</div>
+              <div class="hm-ss-row"><span class="hm-ss-label">Action</span><span class="hm-ss-input hm-ss-sel">Set text content</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hm-ss-pane" data-panel="sd">
+          <div class="hm-ss-callout">Actions this template offers to the Stream Deck plugin: id, name, socket event, and default data.</div>
+          <div class="hm-ss-emptycard"><span class="hx-mi">grid_on</span><b>No Stream Deck actions yet</b></div>
+          <span class="hm-ss-btn hm-ss-primary hm-ss-wide"><span class="hx-mi">add</span>Add Stream Deck action</span>
+        </div>
+        <div class="hm-ss-pane" data-panel="sc">
+          <div class="hm-ss-emptycard"><span class="hx-mi">toggle_on</span><b>No source controls yet</b>Buttons, toggles and inputs that appear on Mycelian's Source Controls tab for this template.</div>
+          <span class="hm-ss-btn hm-ss-primary hm-ss-wide"><span class="hx-mi">add</span>Add control</span>
+        </div>
+        <div class="hm-ss-pane" data-panel="js">
+          <div class="hm-ss-panecard">
+            <div class="hm-ss-ph"><span class="hx-mi">code</span>Advanced JS</div>
+            <div class="hm-ss-callout">Hand-written JavaScript inserted between the SPORE_STUDIO:user-begin / SPORE_STUDIO:user-end markers in the saved HTML. Persists across saves.</div>
+            <span class="hm-ss-btn hm-ss-wide"><span class="hx-mi">open_in_new</span>Expand editor</span>
+            <div class="hm-ss-input hm-ss-area is-placeholder">// Place advanced custom JavaScript here.</div>
+          </div>
+        </div>
+        <div class="hm-ss-pane" data-panel="canvas">
+          <div class="hm-ss-panecard">
+            <div class="hm-ss-ph"><span class="hx-mi">grid_3x3</span>Canvas</div>
+            <div class="hm-ss-pair"><div class="hm-ss-row"><span class="hm-ss-label">Width (px)</span><span class="hm-ss-input">800</span></div><div class="hm-ss-row"><span class="hm-ss-label">Height (px)</span><span class="hm-ss-input">200</span></div></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Alert system</span><span class="hm-ss-input hm-ss-sel">Queue (next_alert; emit alert_complete…)</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Duration (seconds)</span><span class="hm-ss-input">5</span></div>
+            <span class="hm-ss-hint">Minimum from layout: 5.0s</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Spore Studio in <strong>Templates</strong> mode. The inspector tabs are clickable in this picture; nothing here saves.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Toolbar.</strong> Switch between <strong>Templates</strong> and <a href="help:spore_studio_containers">Containers</a>, pick the active template, create one ({{icon:add}} <strong>New</strong>) or delete it ({{icon:delete}}, <em>Delete template</em>), and undo or redo ({{icon:undo}} {{icon:redo}}).</li>
+  <li data-n="2"><strong>Left column.</strong> <strong>Blocks</strong>, <strong>Outline</strong> and <strong>Assets</strong> are cards, each with a count. <strong>Blocks</strong> is the palette, grouped as Data, Layout, Media, Text and Widgets, with a <em>Search blocks</em> box on top. Groups start collapsed; click a header to open it, and Spore Studio remembers your choice. Typing in the search box shows only the matching blocks. <strong>Outline</strong> lists every element under its category. <strong>Assets</strong> holds this template's files.</li>
+  <li data-n="3"><strong>Canvas.</strong> The design surface, shown at your template's size. The checkerboard marks transparency, so the overlay composites cleanly in OBS. Elements with an entrance or exit animation show an <strong>anim</strong> badge.</li>
+  <li data-n="4"><strong>Inspector tabs.</strong> Each tab is an icon. Only the open tab shows its name; hover the others to see theirs.</li>
+</ol>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Inspector tab</th><th>What it holds</th><th>Read more</th></tr></thead>
+<tbody>
+<tr><td>{{icon:tune}} <strong>Properties</strong></td><td>The selected element: a header card with its ID, where it sits and its block type, then Element, Layout, Visibility, block settings, Transformations, Data feed, Outputs, Appearance, Animations</td><td><a href="help:spore_studio_design">Designing templates</a>, <a href="help:spore_studio_widgets">Widget reference</a></td></tr>
+<tr><td>{{icon:bolt}} <strong>Bindings</strong></td><td>Event or Stream Deck triggers and the actions they run on this element</td><td><a href="help:spore_studio_bindings">Event bindings</a></td></tr>
+<tr><td>{{icon:grid_on}} <strong>Stream Deck</strong></td><td>Actions this template exposes to the Stream Deck plugin</td><td><a href="help:spore_studio_streamdeck">Stream Deck actions</a></td></tr>
+<tr><td>{{icon:toggle_on}} <strong>Source Controls</strong></td><td>Live controls shown on the Source Controls tab</td><td><a href="help:spore_studio_dynamic_controls">Dynamic controls</a></td></tr>
+<tr><td>{{icon:code}} <strong>Advanced JS</strong></td><td>Your own script, kept across saves</td><td><a href="help:spore_studio_advanced_js">Advanced JS reference</a></td></tr>
+<tr><td>{{icon:grid_3x3}} <strong>Canvas</strong></td><td>Template settings: size, alert system, title, duration, Queued, canvas transformations</td><td><a href="help:spore_studio_design">Designing templates</a></td></tr>
+</tbody>
+</table></div>
+
+<p>The <strong>Unsaved changes</strong> pill in the toolbar appears as soon as you edit. Next to it a second pill shows what is loading, such as <em>Loading my_alert…</em> or <em>Legacy template (advanced mode)</em>. There is no separate status bar. Results such as <em>Created “my_alert”</em> and any errors appear as Mycelian pop-ups and in the notification centre (see <a href="help:notifications">Notifications</a>); when Spore Studio is open in an external browser, they show as a short message at the bottom of the editor instead.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="spore_studio_overview_prereqs">
+  <li>The overlay server is running. It starts with the alert system. If you open the tab too early you see <em>Waiting for the overlay server to start…</em> and a <strong>Retry</strong> button. The tab also retries on its own for about a minute.</li>
+  <li><a href="help:obs_setup">OBS</a> or another app that can show a browser source, to put the finished overlay on stream.</li>
+  <li>Optional: you know how <a href="help:templates_intro">templates</a> and <a href="help:alerts_overview">alerts</a> work in Mycelian.</li>
+</ul>
+
+<figure class="hx-figure hx-static">
+  <div class="hm hm-ss">
+    <div class="hm-ss-hostbar">
+      <span class="hm-ss-hostbtn"><span class="hx-mi">refresh</span>Reload editor</span>
+      <span class="hm-ss-hostbtn"><span class="hx-mi">open_in_new</span>Open externally</span>
+    </div>
+    <div class="hm-ss-wait">
+      <span class="hx-mi">hourglass_empty</span>
+      <span class="hm-sm">Waiting for the overlay server to start…</span>
+      <span class="hm-xs hm-muted">Spore Studio runs in-browser inside an iframe served by Mycelian's web engine. The server starts with the alert system.</span>
+      <span class="hm-btn hm-dense"><span class="hx-mi">refresh</span>Retry</span>
+    </div>
+  </div>
+  <figcaption>What the tab shows until the overlay server is up.</figcaption>
+</figure>
+
+<h3>Buttons above the editor</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Button</th><th>Where</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Reload editor</strong></td><td>Bar above the editor, and {{icon:refresh}} in the editor toolbar</td><td>Loads a fresh copy of the editor. Use it after the overlay server restarts or the page looks stale.</td></tr>
+<tr><td><strong>Open externally</strong></td><td>Bar above the editor, and {{icon:open_in_new}} in the editor toolbar</td><td>Opens the editor at <code>http://127.0.0.1:{port}/_spore_studio_editor</code> in your default browser</td></tr>
+<tr><td><strong>Tour</strong></td><td>{{icon:explore}} in the editor toolbar</td><td>Starts a spotlight walkthrough of the editor. It is offered once the first time you open Spore Studio.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Editor toolbar</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Control</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Templates</strong> / <strong>Containers</strong></td><td>Switch between editing one overlay and combining several on one route. See <a href="help:spore_studio_containers">Overlay containers</a>.</td></tr>
+<tr><td>Template dropdown</td><td>The active template. Hand-written templates are listed under <strong>Legacy (advanced mode)</strong>. Switching with unsaved edits asks <em>Discard unsaved changes?</em>: <strong>Keep editing</strong> stays on the current template, <strong>Discard changes</strong> opens the other one.</td></tr>
+<tr><td>{{icon:add}} <strong>New</strong></td><td>Opens the <strong>New template</strong> dialog</td></tr>
+<tr><td>{{icon:delete}} (<em>Delete template</em>)</td><td>Deletes the open Spore template after you confirm. Disabled for legacy templates.</td></tr>
+<tr><td>{{icon:undo}} {{icon:redo}}</td><td>Undo and redo</td></tr>
+<tr><td>{{icon:play_arrow}} <strong>Preview</strong></td><td>Opens the <a href="help:spore_studio_advanced">live preview</a> window with your unsaved changes</td></tr>
+<tr><td>{{icon:check}} <strong>Save</strong></td><td>Writes the overlay files (below). The button shows its shortcut: <kbd>⌘S</kbd> on a Mac, <kbd>Ctrl</kbd> <kbd>S</kbd> elsewhere.</td></tr>
+</tbody>
+</table></div>
+
+<p>Every Spore Studio dialog has a title, a short line under it and a {{icon:close}} button. Press <kbd>Esc</kbd> or click outside a dialog to close it without changes. Deleting a template or a file, and leaving unsaved edits, ask first in the same kind of dialog.</p>
+
+<h2>Create your first template</h2>
+
+<section class="hx-guide" data-guide="spore_studio_overview_first" data-title="First Spore template">
+
+  <div class="hx-step">
+    <h3>Create the template</h3>
+    <p>Click {{icon:add}} <strong>New</strong>. Type a name, pick the alert system, set the size, and click <strong>Create template</strong>.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-ss">
+        <div class="hm-ss-scrim">
+          <div class="hm-ss-dialog">
+            <div class="hm-ss-dlg-head">
+              <span class="hm-ss-dlg-icon"><span class="hx-mi">description</span></span>
+              <div class="hm-ss-dlg-titles"><div class="hm-ss-dialog-title">New template</div><div class="hm-ss-dlg-sub">Start a blank overlay, or copy one you already have.</div></div>
+              <span class="hm-ss-dlg-x"><span class="hx-mi">close</span></span>
+            </div>
+            <div class="hm-ss-dlg-body">
+              <div class="hm-ss-row"><span class="hm-ss-label">Name</span><span class="hm-ss-input is-focused">my_first_overlay</span><span class="hm-ss-help">Letters, numbers, _ and -. It becomes the overlay's address, like <b>/my_alert</b>.</span></div>
+              <div class="hm-ss-row"><span class="hm-ss-label">Alert system</span>
+                <div class="hm-ss-radiocards">
+                  <div class="hm-ss-radiocard is-on"><b><span class="hx-mi">low_priority</span>Queued</b><small>Waits its turn behind other alerts (next_alert). Emit alert_complete in Advanced JS if you use the queue.</small></div>
+                  <div class="hm-ss-radiocard"><b><span class="hx-mi">bolt</span>Instant</b><small>Plays the moment the event arrives (instant_alert).</small></div>
+                </div>
+              </div>
+              <div class="hm-ss-row"><span class="hm-ss-label">Start from</span><span class="hm-ss-input hm-ss-sel">Blank template</span></div>
+              <div class="hm-ss-row"><span class="hm-ss-label">Canvas size (px)</span>
+                <div class="hm-ss-wh"><span class="hm-ss-input">800</span>×<span class="hm-ss-input">200</span></div>
+                <div class="hm-ss-presets"><span class="is-on">Alert · 800×200</span><span>Lower third · 1280×200</span><span>Widget · 440×620</span><span>720p · 1280×720</span><span>1080p · 1920×1080</span></div>
+              </div>
+            </div>
+            <div class="hm-ss-dialog-actions"><span class="hm-ss-btn">Cancel</span><span class="hm-ss-btn hm-ss-primary"><span class="hx-mi">add</span>Create template</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>The New template dialog with its defaults.</figcaption>
+    </figure>
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Field</th><th>Details</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Name</strong></td><td>Becomes the file name and URL. Letters, numbers, <code>_</code> and <code>-</code> only, and it cannot start with <code>_</code>. <code>static</code>, <code>assets</code>, <code>api</code> and <code>debug</code> are reserved, and so is any container route. Press <kbd>Enter</kbd> in this box to create the template.</td></tr>
+    <tr><td><strong>Alert system</strong></td><td>Click a card: <strong>Queued</strong> (<code>next_alert</code>) or <strong>Instant</strong> (<code>instant_alert</code>). See <a href="help:spore_studio_design">Queue vs Instant</a>.</td></tr>
+    <tr><td><strong>Start from</strong></td><td><strong>Blank template</strong>, or a Spore template to copy (for example <code>bitcounter</code>)</td></tr>
+    <tr><td><strong>Canvas size (px)</strong></td><td>Width × height. Default 800 × 200. Click a preset to fill both: <strong>Alert</strong> 800×200, <strong>Lower third</strong> 1280×200, <strong>Widget</strong> 440×620, <strong>720p</strong> 1280×720, <strong>1080p</strong> 1920×1080. You can change the size later on the <strong>Canvas</strong> tab.</td></tr>
+    </tbody>
+    </table></div>
+    <p>If the name is taken or not allowed, the reason shows in the dialog above the buttons.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Add a block</h3>
+    <p>Open a group in <strong>Blocks</strong> (or type in <em>Search blocks</em>) and drag a block, such as <strong>Text</strong>, onto the canvas. The <strong>Which category is it in?</strong> dialog opens: click a category chip or type a new one, then click <strong>Add element</strong>. Style the block in <strong>Properties</strong>.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Add media (optional)</h3>
+    <p>Click <strong>Upload</strong> under <strong>Assets</strong>, or copy files into <code>assets/my_first_overlay/</code>. Drag a file onto the canvas to create an element, or double-click it to set the selected element's source.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Make it react</h3>
+    <p>Use the <strong>Bindings</strong> tab to show, hide or change the block when an event arrives, or the block's <strong>Data feed</strong> section to drive it from live values. See <a href="help:spore_studio_bindings">Event bindings</a> and <a href="help:spore_studio_data_feed">Data feeds</a>.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Test it</h3>
+    <p>Click <strong>Preview</strong> and use the mock buttons to fire test alerts. You do not need to save first.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Save and add it to OBS</h3>
+    <p>Click <strong>Save</strong> (<kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>S</kbd>). In OBS, add a <strong>Browser Source</strong> with this URL and set its width and height to your canvas size:</p>
+    <p><span class="hx-copy" data-copy="http://127.0.0.1:{port}/my_first_overlay">http://127.0.0.1:{port}/my_first_overlay</span></p>
+    <p>Replace <code>{port}</code> with the port your overlay server uses. <span class="hx-path"><span>Settings</span><span>About</span></span> lists the URL for every template under <strong>Browser source URLs</strong>; see <a href="help:obs_setup">Setting Up Browser Sources in OBS</a>. Turn on <strong>Shutdown source when not visible</strong> in OBS if the overlay does not need to run while hidden.</p>
+  </div>
+
+</section>
+
+<div class="hx-callout hx-note"><p>Spore Studio does not control OBS. You add the saved URL as a normal browser source, the same way as the built-in templates.</p></div>
+
+<h2>What Save writes</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>File</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>templates/{name}.html</code></td><td>The overlay OBS loads. Rebuilt on every save.</td></tr>
+<tr><td><code>templates/template_configs/{name}.json</code></td><td><a href="help:template_configuration">Source Settings</a> values, Stream Deck actions, and preview mocks. Values you already tuned are kept.</td></tr>
+<tr><td><code>templates/_spore/{name}.spore.json</code></td><td>The editor model. Spore Studio opens this, not the HTML.</td></tr>
+<tr><td><code>assets/{name}/</code></td><td>Images, video, audio and fonts for this template</td></tr>
+</tbody>
+</table></div>
+
+<p>Saved overlays also send their JavaScript errors and warnings to <code>mycelian.log</code>, tagged with the template name. Check the log when an overlay misbehaves in OBS.</p>
+
+<h2>Template lifecycle</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Action</th><th>How</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><strong>New</strong></td><td>{{icon:add}} <strong>New</strong> → <strong>Create template</strong></td><td>Creates the editor file, the assets folder, and starter HTML and JSON from the Queue or Instant boilerplate</td></tr>
+<tr><td><strong>Copy</strong></td><td><strong>Start from</strong> in the New template dialog</td><td>Clones an existing Spore template's editor model</td></tr>
+<tr><td><strong>Open</strong></td><td>Template dropdown</td><td>Loads <code>templates/_spore/{name}.spore.json</code></td></tr>
+<tr><td><strong>Save</strong></td><td><strong>Save</strong> or <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>S</kbd></td><td>Rebuilds the HTML, merges the JSON config, updates the editor file</td></tr>
+<tr><td><strong>Delete</strong></td><td>{{icon:delete}}, then <strong>Delete template</strong> in the <em>Delete “name”?</em> dialog</td><td>Removes the HTML, JSON config, editor file and <code>assets/{name}/</code>. It can't be undone.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Protected and legacy templates</h3>
+
+<p><code>activity_feed</code> and <code>source_controls</code> are built-in overlays. They are left out of the template list, so they cannot be opened or deleted here.</p>
+
+<p>Templates under <strong>Legacy (advanced mode)</strong> are hand-written HTML without a <code>.spore.json</code> file. They open in a limited mode; see <a href="help:spore_studio_advanced">Preview and legacy templates</a>.</p>
+
+<h2>Keyboard shortcuts</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Z</kbd></td><td>Undo</td></tr>
+<tr><td><kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Y</kbd></td><td>Redo</td></tr>
+<tr><td><kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>S</kbd></td><td>Save</td></tr>
+<tr><td><kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>D</kbd></td><td>Duplicate the selected element</td></tr>
+<tr><td>Arrow keys</td><td>Move the selected element 1 px. Hold <kbd>Shift</kbd> for 10 px.</td></tr>
+<tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Delete the selected element and anything nested in it (ignored while typing in a field)</td></tr>
+<tr><td><kbd>Alt</kbd> while dropping</td><td>Place on the canvas root instead of nesting in a container</td></tr>
+</tbody>
+</table></div>
+
+<h2>Next steps</h2>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_design">{{icon:design_services}}<span><strong>Designing templates</strong><span class="hx-card-text">Canvas, categories, assets, Canvas tab</span></span></a>
+  <a class="hx-card" href="help:spore_studio_widgets">{{icon:widgets}}<span><strong>Widget reference</strong><span class="hx-card-text">Every block and its settings</span></span></a>
+  <a class="hx-card" href="help:spore_studio_bindings">{{icon:bolt}}<span><strong>Event bindings</strong><span class="hx-card-text">Triggers, filters and actions</span></span></a>
+  <a class="hx-card" href="help:spore_studio_counters">{{icon:pin}}<span><strong>Counters</strong><span class="hx-card-text">Totals, rules and progressive goals</span></span></a>
+  <a class="hx-card" href="help:spore_studio_data_feed">{{icon:rss_feed}}<span><strong>Data feeds</strong><span class="hx-card-text">Drive any block from live data</span></span></a>
+  <a class="hx-card" href="help:spore_studio_data_sources">{{icon:query_stats}}<span><strong>Data sources</strong><span class="hx-card-text">Live values and data displays</span></span></a>
+  <a class="hx-card" href="help:spore_studio_streamdeck">{{icon:keyboard}}<span><strong>Stream Deck actions</strong><span class="hx-card-text">Map hardware keys to a template</span></span></a>
+  <a class="hx-card" href="help:spore_studio_dynamic_controls">{{icon:tune}}<span><strong>Dynamic controls</strong><span class="hx-card-text">Live buttons on Source Controls</span></span></a>
+  <a class="hx-card" href="help:spore_studio_advanced">{{icon:preview}}<span><strong>Preview and legacy</strong><span class="hx-card-text">Live preview and older templates</span></span></a>
+  <a class="hx-card" href="help:spore_studio_advanced_js">{{icon:code}}<span><strong>Advanced JS</strong><span class="hx-card-text">Helpers and custom script</span></span></a>
+  <a class="hx-card" href="help:spore_studio_containers">{{icon:dashboard}}<span><strong>Overlay containers</strong><span class="hx-card-text">Several templates on one URL</span></span></a>
+  <a class="hx-card" href="help:spore_studio_examples">{{icon:menu_book}}<span><strong>Examples and recipes</strong><span class="hx-card-text">Step-by-step builds</span></span></a>
+</div>

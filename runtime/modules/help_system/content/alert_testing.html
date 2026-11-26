@@ -1,0 +1,189 @@
+<p class="hx-lead">Mycelian has three ways to try an alert without waiting for a real viewer: <strong>Test Alert</strong> on the Alerts tab, <strong>Replay</strong> (click a past alert) in the Activity Feed, and the <strong>Sample events</strong> buttons in the Source Settings preview. Each one checks something different.</p>
+
+<div class="hx-callout hx-important"><p>Test before you go live. Tests play on the real alerts browser source, so viewers see them if you are streaming.</p></div>
+
+<h2>Pick the right test</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Tool</th><th>Where</th><th>Uses</th><th>Good for</th></tr></thead>
+<tbody>
+<tr><td><strong>Test Alert</strong></td><td><span class="hx-path"><span>Alerts</span><span>any sub-tab</span></span></td><td>The alert as it is now, saved or not</td><td>Checking the GIF, sound, volume, duration and TTS of one alert while you edit</td></tr>
+<tr><td><strong>Replay</strong></td><td><span class="hx-path"><span>Activity Feed</span></span>, click a past event</td><td>Your saved alerts as they are now, matched again for that event's amount</td><td>Checking which alert a real amount picks after you change ranges</td></tr>
+<tr><td><strong>Queue alert</strong> / <strong>Play alert</strong></td><td><span class="hx-path"><span>Source Settings</span><span>alerts</span></span> preview, <strong>Sample events</strong></td><td>A sample alert in the preview pane only</td><td>Checking layout, fonts and colors of the alerts template without touching OBS</td></tr>
+</tbody>
+</table></div>
+
+<h2>Test Alert</h2>
+
+<section class="hx-guide" data-guide="alert_testing_test" data-title="Test one alert">
+  <div class="hx-step">
+    <h3>Open the alert</h3>
+    <p>Go to the <strong>Alerts</strong> tab, pick the sub-tab, and click the alert in the alert list on the left. You can also test a new alert before saving it.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Click Test Alert</h3>
+    <p>The button is in the header row, next to the alert name and its trigger. A pop-up says <em>Test alert sent (Bits)</em> (or the tab you are on), and the alert joins the queue. If alerts are paused, a warning says <em>Alerts are paused</em> instead, and the test plays when you resume.</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hma-shell hma-solo">
+          <div class="hma-detail">
+            <div class="hma-dhead">
+              <div class="hma-dtitle">
+                <span class="hma-h">100-999 Bits</span>
+                <div class="hma-trigger"><span class="hma-trig-label">Triggers on</span><span class="hma-seg"><span>Exact</span><span class="is-on">Range</span></span><span class="hma-input">100</span><span class="hma-dash">to</span><span class="hma-input">999</span><span class="hma-unit">bits</span></div>
+              </div>
+              <span class="hma-pill"><span class="hx-mi">edit</span>Unsaved changes</span>
+              <span class="hma-spacer"></span>
+              <span class="hm-btn hm-outline hm-dense hm-pulse"><span class="hx-mi">play_arrow</span>Test Alert</span>
+              <span class="hm-btn hm-outline hm-dense hma-iconbtn"><span class="hx-mi">content_copy</span></span>
+              <span class="hm-btn hm-danger hm-dense hma-iconbtn"><span class="hx-mi">delete</span></span>
+              <span class="hm-btn hm-dense"><span class="hx-mi">check</span>Save</span>
+            </div>
+          </div>
+        </div>
+        <div class="hm-row hm-end"><span class="hm-toast"><span class="hx-mi">info</span>Test alert sent (Bits)</span></div>
+      </div>
+      <figcaption>Test Alert plays the current settings, including unsaved changes.</figcaption>
+    </figure>
+  </div>
+  <div class="hx-step">
+    <h3>Watch the browser source</h3>
+    <p>The alert appears in OBS (or wherever the alerts source is open) with the username <strong>TestUser</strong>:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hma-stage">
+          <div class="hma-ov">
+            <div class="hma-ov-gif"><span class="hx-mi">gif_box</span></div>
+            <div class="hma-ov-text">
+              <span class="hma-ov-user">TestUser</span>
+              <span class="hma-ov-head">cheered 100 bit(s)!</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Default alerts template. The header text comes from <strong>Bits header text</strong> in Source Settings.</figcaption>
+    </figure>
+  </div>
+  <div class="hx-step">
+    <h3>Adjust and repeat</h3>
+    <p>Change the volume, file or duration and test again. Click <strong>Save</strong> when you are happy.</p>
+  </div>
+</section>
+
+<p>What the test sends:</p>
+
+<ul>
+<li>The amount is the trigger amount, or the lowest amount when the switch is on <strong>Range</strong>. A 100-999 range tests as 100 bits.</li>
+<li>Subscriptions and Gift Subs test as Tier 1. A one-sub gift shows the recipient <strong>TestRecipient</strong>.</li>
+<li>Channel Points test as <em>Test Point Redemption</em> for 1000 points.</li>
+<li>Test alerts do <strong>not</strong> appear in the Activity Feed and are not stored.</li>
+<li>Test Alert does <strong>not</strong> check range matching. It always plays the alert you have open. Use Replay for that.</li>
+<li>Tests are always stackable, so they do not wait behind other test alerts.</li>
+</ul>
+
+<h2>Replay from the Activity Feed</h2>
+
+<p>Every real event is listed on the <strong>Activity Feed</strong> tab (and in its OBS dock). Point at a played alert and it shows <strong>Click to replay</strong>; click anywhere on the row.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm">
+    <div class="hm-af">
+      <div class="hm-af-list is-rows">
+        <div class="hm-af-row is-playing hm-af-k-bits">
+          <span class="hm-af-ico"><span class="hx-mi">diamond</span></span>
+          <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">viewer42</span><span class="hm-af-what">replay · bits</span><span class="hm-af-tag is-replay">Replay</span></span></span>
+          <span class="hm-af-state is-play"><span class="hx-mi">graphic_eq</span>Playing</span><span class="hm-af-time">just now</span>
+          <span class="hm-af-acts"><span><span class="hx-mi">skip_next</span>Skip</span></span><span class="hm-marker" data-n="2"></span>
+        </div>
+        <div class="hm-af-row is-hover hm-af-k-bits">
+          <span class="hm-af-ico"><span class="hx-mi">diamond</span></span>
+          <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">viewer42</span><span class="hm-af-what">cheered</span></span></span>
+          <span class="hm-af-amt">500 bits</span>
+          <span class="hm-af-acts"><span class="hm-af-hint"><span class="hx-mi">replay</span>Click to replay</span></span><span class="hm-marker" data-n="1"></span>
+          <span class="hm-af-time">12m</span><span class="hm-af-seq">#38</span>
+        </div>
+        <div class="hm-af-row hm-af-k-follow">
+          <span class="hm-af-ico"><span class="hx-mi">favorite</span></span>
+          <span class="hm-af-body"><span class="hm-af-line"><span class="hm-af-user">newfriend</span><span class="hm-af-what">followed</span></span></span>
+          <span class="hm-af-time">15m</span><span class="hm-af-seq">#37</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Replaying the 500-bit cheer: the replay plays at the top with a <strong>Replay</strong> tag.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1">Click a played row to replay it. A pop-up says <em>Replaying the Bits alert</em>.</li>
+  <li data-n="2">The replay joins the queue like a new alert and can be stopped with <strong>Skip</strong>.</li>
+</ol>
+
+<p>A replay keeps the stored event (viewer, amount, message and details) and matches it against your <em>current</em> saved alerts, using their media, sound, duration and text-to-speech as they are now. If you just changed a range, replaying a 500-bit cheer shows which alert 500 bits now picks. If no alert matches that event any more, Mycelian says <em>This alert can't be replayed</em> instead. Replays don't add a feed row, aren't stored, and don't change statistics, counters, goals or connectors. While alerts are paused, a replay waits until you resume. More in <a href="help:activity_feed">Activity Feed</a>.</p>
+
+<div class="hx-callout hx-tip"><p>No events yet? Have a friend follow, or cheer 1 bit yourself, then replay that row while you tune your alerts.</p></div>
+
+<h2>Preview the template</h2>
+
+<p>To check how alerts look rather than which one plays, open <strong>Source Settings</strong> and select the <strong>alerts</strong> template. Under the preview, <strong>Sample events</strong> has <strong>Queue alert</strong>, <strong>Play alert</strong> and <strong>Refresh</strong>. These play a sample in the preview only; OBS does not show them.</p>
+
+<h2>Checklist</h2>
+
+<p>Tick these off for each alert type you use. Progress is saved.</p>
+
+<h3>Basics</h3>
+<ul class="hx-checklist" data-checklist="alert_testing_basic">
+  <li>The image appears and animates.</li>
+  <li>The sound plays at a comfortable level next to your game and voice.</li>
+  <li>The alert stays up long enough to read, then leaves.</li>
+  <li>TTS (if on) reads the right text.</li>
+</ul>
+
+<h3>Ranges</h3>
+<ul class="hx-checklist" data-checklist="alert_testing_ranges">
+  <li>Each range's Min and Max were checked with Replay or a real event.</li>
+  <li>An amount between two ranges (for example 99 and 100) picks the alert you expect.</li>
+  <li>No two ranges overlap.</li>
+</ul>
+
+<h3>Randomizer</h3>
+<ul class="hx-checklist" data-checklist="alert_testing_random">
+  <li>Several tests in a row play different sounds.</li>
+  <li>The rare sound turns up at least once (raise its chance to 100 to check, then set it back).</li>
+  <li>Random files are about as loud as the primary sound.</li>
+</ul>
+
+<h3>Under load</h3>
+<ul class="hx-checklist" data-checklist="alert_testing_load">
+  <li>Five quick tests in a row play cleanly, one after another.</li>
+  <li><strong>Pause</strong> on the Activity Feed holds the queue (the waiting alerts are listed in order) and <strong>Resume</strong> releases it.</li>
+  <li><strong>Skip</strong> ends the alert on screen at once and the next one starts.</li>
+  <li>OBS stays smooth while large GIFs play.</li>
+</ul>
+
+<h2>If the test fails</h2>
+
+<details class="hx-details">
+  <summary>Nothing appears</summary>
+  <p>Check the alerts browser source URL in OBS (<span class="hx-copy" data-copy="http://127.0.0.1:5000/alerts">http://127.0.0.1:5000/alerts</span>), that the source is visible, and that <strong>Overlay Server</strong> in the status footer is green. Also check the Activity Feed does not show <strong>Alerts paused</strong>; if it does, click <strong>Resume</strong>. More in <a href="help:troubleshooting_alerts">Troubleshooting Alerts</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The image shows but there is no sound</summary>
+  <p>Check the Activity Feed is not muted (the button reads <strong>Unmute</strong> when it is), the alert's <strong>Volume</strong> is above 0, and the browser source is not muted in the OBS mixer. See <a href="help:troubleshooting_audio">Audio Troubleshooting</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>The wrong alert plays for a real event</summary>
+  <p>Test Alert always plays the open alert, so it cannot show this. Click the event in the Activity Feed to replay it, then look for overlapping ranges or a missing range. See <a href="help:alert_configuration">Configuring Alert Settings</a>.</p>
+</details>
+
+<details class="hx-details">
+  <summary>A watch-streak test plays but real streaks do not</summary>
+  <p><strong>Enable Watch Streak Alerts</strong> in <span class="hx-path"><span>Source Settings</span><span>alerts</span></span> is off by default. Turn it on.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:troubleshooting_alerts">{{icon:build}}<span><strong>Troubleshooting Alerts</strong><span class="hx-card-text">Step-by-step diagnosis</span></span></a>
+  <a class="hx-card" href="help:alert_media">{{icon:perm_media}}<span><strong>Alert Media</strong><span class="hx-card-text">Files, folders and random sounds</span></span></a>
+  <a class="hx-card" href="help:obs_setup">{{brand:obs}}<span><strong>OBS Browser Sources</strong><span class="hx-card-text">Add the alerts source</span></span></a>
+</div>
