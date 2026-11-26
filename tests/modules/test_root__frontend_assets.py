@@ -119,7 +119,7 @@ def node_compile_errors(items: List[Dict[str, Any]]) -> List[str]:
         [NODE, "--experimental-vm-modules", "--no-warnings", "-e", _NODE_CHECKER],
         input=json.dumps(items),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8",
         timeout=60,
         check=False,
     )
@@ -191,7 +191,7 @@ def test_js_file_discovery_finds_the_shipped_scripts():
 @needs_node
 @pytest.mark.parametrize("path", JS_FILES, ids=lambda p: p.relative_to(ROOT).as_posix())
 def test_js_file_passes_node_check(path):
-    proc = subprocess.run([NODE, "--check", str(path)], capture_output=True, text=True, timeout=60, check=False)
+    proc = subprocess.run([NODE, "--check", str(path)], capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
     assert proc.returncode == 0, f"node --check {path.relative_to(ROOT)} failed:\n{proc.stderr}"
 
 
@@ -199,7 +199,7 @@ def test_js_file_passes_node_check(path):
 def test_node_check_rejects_broken_js(tmp_path):
     bad = tmp_path / "broken.js"
     bad.write_text("function (", encoding="utf-8")
-    proc = subprocess.run([NODE, "--check", str(bad)], capture_output=True, text=True, timeout=60, check=False)
+    proc = subprocess.run([NODE, "--check", str(bad)], capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
     assert proc.returncode != 0
     assert "SyntaxError" in proc.stderr
 
@@ -577,7 +577,7 @@ def test_factorio_settings_have_locale_names():
 @pytest.mark.skipif(LUAC is None, reason="luac is not installed; Lua syntax of the Factorio mod is not checked")
 @pytest.mark.parametrize("path", sorted(FACTORIO_MOD.rglob("*.lua")), ids=lambda p: p.name)
 def test_factorio_lua_parses(path):
-    proc = subprocess.run([LUAC, "-p", str(path)], capture_output=True, text=True, timeout=60, check=False)
+    proc = subprocess.run([LUAC, "-p", str(path)], capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
     assert proc.returncode == 0, proc.stderr
 
 
@@ -673,7 +673,7 @@ TSC = ROOT / "streamdeck-plugin" / "mycelian" / "node_modules" / ".bin" / ("tsc.
                     reason="streamdeck-plugin/mycelian/node_modules (local tsc) is not installed")
 def test_streamdeck_plugin_type_checks():
     proc = subprocess.run([str(TSC), "--noEmit", "-p", str(ROOT / "streamdeck-plugin" / "mycelian")],
-                          capture_output=True, text=True, timeout=120, check=False, cwd=str(ROOT))
+                          capture_output=True, text=True, encoding="utf-8", timeout=120, check=False, cwd=str(ROOT))
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
@@ -727,7 +727,7 @@ def _random_container(rng, percents: bool = True) -> Dict[str, Any]:
 def _js_solve(cases):
     proc = subprocess.run(
         [NODE, "-e", _LAYOUT_RUNNER, str(ROOT / "assets" / "default_assets" / "spore_studio" / "container_layout.js")],
-        input=json.dumps(cases), capture_output=True, text=True, timeout=60, check=False,
+        input=json.dumps(cases), capture_output=True, text=True, encoding="utf-8", timeout=60, check=False,
     )
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)

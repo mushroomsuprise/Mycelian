@@ -1576,7 +1576,7 @@
 }
 .help-doc .hm-ss-space {                       /* dashed outline of a shared space */
     position: absolute;
-    border: 2px dashed #4fc3f7;
+    border: 2px dashed var(--color-info);
     border-radius: 3px;
     pointer-events: none;
 }
@@ -1587,8 +1587,8 @@
     bottom: 100%;
     padding: 0 5px;
     border-radius: 3px 3px 0 0;
-    background: #4fc3f7;
-    color: #111;
+    background: var(--color-info);
+    color: var(--color-text-inverse);
     font-size: 8.5px;
     font-weight: 700;
     white-space: nowrap;
@@ -1599,9 +1599,9 @@
     top: 3px;
     padding: 0 4px;
     border-radius: 4px;
-    border: 1px solid #4fc3f7;
-    background: rgba(0, 0, 0, 0.72);
-    color: #fff;
+    border: 1px solid var(--color-info);
+    background: color-mix(in srgb, var(--color-bg-base) 72%, transparent);
+    color: var(--color-text-primary);
     font-size: 8px;
     font-weight: 650;
 }
@@ -1626,9 +1626,9 @@
     height: 14px;
     margin: -7px 0 0 -7px;
     border-radius: 50%;
-    border: 1px solid #111;
-    background: #4fc3f7;
-    color: #111;
+    border: 1px solid var(--color-text-inverse);
+    background: var(--color-info);
+    color: var(--color-text-inverse);
     font-size: 9px;
     font-weight: 800;
     line-height: 12px;

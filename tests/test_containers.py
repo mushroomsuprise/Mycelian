@@ -584,7 +584,7 @@ class JsSolverParityTests(unittest.TestCase):
             [node, "-e", runner, str(script), json.dumps(cases)],
             check=False,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         js_layouts = json.loads(completed.stdout)
