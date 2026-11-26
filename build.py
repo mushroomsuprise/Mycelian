@@ -133,7 +133,7 @@ OUTPUT_PATH = "builds"
 #              process instead of two, and the updater downloads only changed files.
 # Ship one release with the parallel updater downloads before switching to "folder", so
 # most installs fetch the ~1,600 runtime files in parallel when they move over.
-WINDOWS_LAYOUT_DEFAULT = "onefile"
+WINDOWS_LAYOUT_DEFAULT = "folder"
 WINDOWS_RUNTIME_DIR = "runtime"
 WINDOWS_LAYOUT = WINDOWS_LAYOUT_DEFAULT
 
