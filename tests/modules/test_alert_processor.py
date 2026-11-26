@@ -285,6 +285,22 @@ def test_drop_missing_alert_audio(monkeypatch):
     assert "Donation" in notes[0]["message"]
 
 
+def test_drop_missing_alert_audio_saved_assets_prefix(monkeypatch):
+    # Alert Settings saves folders as "assets/alerts/...": the overlay plays them through
+    # the /assets route, so the file lives at alerts/... inside the assets folder.
+    notes = _audio_env(monkeypatch, existing={"alerts/points/TidusLaugh.mp3"})
+    for audio_dir in ("assets/alerts/points", "assets\\alerts\\points\\", "Assets/alerts/points"):
+        data = {"single_audio_dir": audio_dir, "single_audio_name": "TidusLaugh.mp3"}
+        ap._drop_missing_alert_audio(data)
+        assert data == {"single_audio_dir": audio_dir, "single_audio_name": "TidusLaugh.mp3"}
+    assert notes == []
+    # Really missing: still cleared and reported, with the path as the user saved it.
+    data = {"alert_name": "Points", "single_audio_dir": "assets/alerts/points", "single_audio_name": "gone.mp3"}
+    ap._drop_missing_alert_audio(data)
+    assert data["single_audio_dir"] == "" and data["single_audio_name"] == ""
+    assert notes[0]["dedupe_key"] == "alerts:audio_missing:assets/alerts/points/gone.mp3"
+
+
 @pytest.mark.parametrize("audio_dir,audio_name", [
     ("donations", "donation.mp3"),           # present
     ("", "donation.mp3"),                     # no audio configured

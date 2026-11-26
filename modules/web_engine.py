@@ -4485,6 +4485,32 @@ class WebEngine:
         ).start()
 
     _TWITCH_API_BATCH_MAX = 8
+    # Overlays stop waiting for a twitch-api-response after 30 s (title.html's
+    # API_WATCHDOG_MS); a reply slower than this is reported so a log shows why.
+    _TWITCH_API_SLOW_REPLY_SEC = 25.0
+    _TWITCH_API_SLOW_REPLY_LOG_EVERY_SEC = 600.0
+
+    def _note_slow_twitch_api_reply(
+        self, endpoint: str, received_at: float, started_at: float
+    ) -> None:
+        """Warn (at most every 10 min) when an overlay's Helix reply went out late."""
+        now = time.monotonic()
+        total = now - received_at
+        if total < self._TWITCH_API_SLOW_REPLY_SEC:
+            return
+        last = getattr(self, "_twitch_api_slow_reply_logged_at", None)
+        if last is not None and now - last < self._TWITCH_API_SLOW_REPLY_LOG_EVERY_SEC:
+            return
+        self._twitch_api_slow_reply_logged_at = now
+        logger.warning(
+            "Overlay Twitch API reply took %.0fs (%.0fs waiting for the Twitch API "
+            "worker, %.0fs for Twitch; %s more queued): %s",
+            total,
+            started_at - received_at,
+            now - started_at,
+            self._twitch_api_queue.qsize(),
+            endpoint,
+        )
 
     def _submit_twitch_api_coro(self, coro) -> None:
         self.ensure_twitch_api_worker()
@@ -9686,7 +9712,10 @@ class WebEngine:
                     )
                     return
 
+                received_at = time.monotonic()
+
                 async def handle_request():
+                    started_at = time.monotonic()
                     try:
                         api_response = await twitch.twitch_api.generic_api_call(
                             url=endpoint,
@@ -9703,6 +9732,9 @@ class WebEngine:
                             "twitch-api-response", response_data, to=client_sid
                         )
                         logger.debug("Twitch API request successful for %s", endpoint)
+                        self._note_slow_twitch_api_reply(
+                            endpoint, received_at, started_at
+                        )
                     except Exception as e:
                         err = str(e)
                         if err.startswith(

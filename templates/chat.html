@@ -4815,6 +4815,9 @@
         var ffzPollFloor = FFZ_POLL_BASE_MS;
         var ffzPollSuccessStreak = 0;
         var ffzRateLimitedUntil = 0;
+        // Every chat source on the PC polls FFZ from the same IP, so rate limits come
+        // in runs: warn once per run, not on every backoff step.
+        var ffzRateLimitWarned = false;
         var ffzFetchPromise = null;
         var ffzGlobalSignature = null;
         var ffzUserSignature = null;
@@ -5517,7 +5520,23 @@
             ffzPollDelay = Math.min(FFZ_POLL_MAX_MS, Math.max(ffzPollFloor, ffzPollDelay) * 2);
             ffzPollSuccessStreak = 0;
             ffzRateLimitedUntil = Date.now() + FFZ_POLL_COOLDOWN_MS;
-            console.warn('FFZ emote poll rate limited; backing off to ' + ffzPollDelay + 'ms');
+            if (!ffzRateLimitWarned) {
+                ffzRateLimitWarned = true;
+                console.warn('FFZ emote poll rate limited; backing off to ' + ffzPollDelay +
+                    'ms (further rate limits are not logged until a poll succeeds)');
+            } else {
+                chatLog('FFZ emote poll rate limited again; backing off to', ffzPollDelay);
+            }
+        }
+
+        function noteFfzPollOk() {
+            ffzRateLimitWarned = false;
+            ffzPollSuccessStreak++;
+            if (ffzPollDelay > ffzPollFloor && ffzPollSuccessStreak >= FFZ_POLL_EASE_AFTER) {
+                ffzPollDelay = Math.max(ffzPollFloor, Math.floor(ffzPollDelay / 2));
+                ffzPollSuccessStreak = 0;
+                chatLog('FFZ poll interval eased to', ffzPollDelay);
+            }
         }
 
         function scheduleFfzPoll(delay) {
@@ -5553,12 +5572,7 @@
                     return;
                 }
                 if (result && result.ok) {
-                    ffzPollSuccessStreak++;
-                    if (ffzPollDelay > ffzPollFloor && ffzPollSuccessStreak >= FFZ_POLL_EASE_AFTER) {
-                        ffzPollDelay = Math.max(ffzPollFloor, Math.floor(ffzPollDelay / 2));
-                        ffzPollSuccessStreak = 0;
-                        chatLog('FFZ poll interval eased to', ffzPollDelay);
-                    }
+                    noteFfzPollOk();
                 } else {
                     // Network error or bad status: back off like a rate limit so an
                     // offline machine doesn't retry FFZ every ~1 s.

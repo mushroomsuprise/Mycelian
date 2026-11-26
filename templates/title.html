@@ -214,9 +214,16 @@
         var STREAMER_INFO_RETRY_MAX_MS = 30000;
 
         var pendingApiRequestId = null;
+        var pendingApiRequestSentAt = 0;
         var apiWatchdogTimer = null;
         var API_WATCHDOG_MS = 30000;
         var apiTimeoutStreak = 0;
+        // Requests the watchdog gave up on (id -> sent time). A reply that is only
+        // late still carries current channel data, so it is used, not ignored;
+        // ignoring it left every reply "late" and the timeout run never ended.
+        var timedOutApiRequests = {};
+        var TIMED_OUT_API_REQUESTS_KEEP = 8;
+        var apiTimeoutRunReported = false;
         var apiRetryTimer = null;
         var apiRetryMs = 5000;
         var API_RETRY_BASE_MS = 5000;
@@ -801,19 +808,22 @@
 
             pendingApiRequestId = 'title_channel_' + Date.now() + '_' +
                 Math.random().toString(36).slice(2, 8);
+            pendingApiRequestSentAt = Date.now();
 
             clearApiWatchdog();
             apiWatchdogTimer = setTimeout(function () {
                 // The server's bounded Twitch worker queue drops requests without
                 // replying; without this the overlay would block fetches forever.
                 apiWatchdogTimer = null;
+                rememberTimedOutApiRequest(pendingApiRequestId, pendingApiRequestSentAt);
                 pendingApiRequestId = null;
                 apiTimeoutStreak += 1;
-                // One slow reply is routine (the retry fixes it); only report
-                // a run of them.
-                if (apiTimeoutStreak >= 2) {
+                // One slow reply is routine (the retry fixes it); report a run of
+                // them once, not on every poll while it lasts.
+                if (apiTimeoutStreak >= 2 && !apiTimeoutRunReported) {
+                    apiTimeoutRunReported = true;
                     console.warn('Twitch API request timed out ' + apiTimeoutStreak +
-                        ' times in a row; will retry');
+                        ' times in a row; will retry (not logged again until a reply arrives)');
                 }
                 scheduleApiRetry();
             }, API_WATCHDOG_MS);
@@ -906,16 +916,57 @@
             scheduleStreamerInfoRetry();
         });
 
+        function rememberTimedOutApiRequest(requestId, sentAt) {
+            if (!requestId) {
+                return;
+            }
+            timedOutApiRequests[requestId] = sentAt;
+            var ids = Object.keys(timedOutApiRequests);
+            if (ids.length > TIMED_OUT_API_REQUESTS_KEEP) {
+                delete timedOutApiRequests[ids[0]];
+            }
+        }
+
+        // Exact id match only: a response for another overlay or another kind of
+        // request must not be mistaken for one of ours.
+        function claimApiResponse(requestId) {
+            if (!requestId) {
+                return null;
+            }
+            if (requestId === pendingApiRequestId) {
+                return { late: false };
+            }
+            if (Object.prototype.hasOwnProperty.call(timedOutApiRequests, requestId)) {
+                var sentAt = timedOutApiRequests[requestId];
+                delete timedOutApiRequests[requestId];
+                return { late: true, waitedMs: Date.now() - sentAt };
+            }
+            return null;
+        }
+
+        function noteApiReplyArrived(claim) {
+            if (claim.late && apiTimeoutRunReported) {
+                console.warn('Twitch API reply arrived ' + Math.round(claim.waitedMs / 1000) +
+                    's after it was requested (the overlay waits ' + (API_WATCHDOG_MS / 1000) +
+                    's); used it anyway');
+            } else if (apiTimeoutRunReported) {
+                console.log('Twitch API replies are back after ' + apiTimeoutStreak + ' timeouts');
+            }
+            apiTimeoutStreak = 0;
+            apiTimeoutRunReported = false;
+        }
+
         socket.on('twitch-api-response', function (data) {
-            // Exact match: a stale or unrelated response must not be mistaken for
-            // the one this overlay is waiting on.
-            if (!data || !data.requestId || data.requestId !== pendingApiRequestId) {
+            var claim = claimApiResponse(data && data.requestId);
+            if (!claim) {
                 return;
             }
 
-            pendingApiRequestId = null;
-            clearApiWatchdog();
-            apiTimeoutStreak = 0;
+            if (!claim.late) {
+                pendingApiRequestId = null;
+                clearApiWatchdog();
+            }
+            noteApiReplyArrived(claim);
 
             var channels = data.success && data.data && data.data.data;
             if (Array.isArray(channels) && channels.length > 0) {

@@ -298,6 +298,24 @@ def test_twitch_api_request_syncs_tokens_and_succeeds(engine, sio, helix, expiry
     assert _responses(engine, sio) == [{"success": True, "data": {"data": ["ok"]}, "requestId": "ok"}]
 
 
+def test_slow_twitch_api_reply_is_reported_rarely(engine, monkeypatch):
+    warnings = []
+    monkeypatch.setattr(web_engine.logger, "warning", lambda msg, *a: warnings.append(msg % a))
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(web_engine.time, "monotonic", lambda: clock["t"])
+    engine._note_slow_twitch_api_reply(URL, 990.0, 999.0)  # 10 s: overlays still waiting
+    assert warnings == []
+    engine._note_slow_twitch_api_reply(URL, 960.0, 995.0)  # 40 s: the overlay gave up
+    assert warnings == [f"Overlay Twitch API reply took 40s (35s waiting for the Twitch API worker, "
+                        f"5s for Twitch; 0 more queued): {URL}"]
+    clock["t"] += 60
+    engine._note_slow_twitch_api_reply(URL, clock["t"] - 40, clock["t"] - 5)
+    assert len(warnings) == 1  # at most every 10 minutes
+    clock["t"] += 600
+    engine._note_slow_twitch_api_reply(URL, clock["t"] - 40, clock["t"] - 5)
+    assert len(warnings) == 2
+
+
 def test_twitch_api_request_json_data_preferred(engine, sio, helix):
     sio.emit("twitch-api-request", {"endpoint": URL, "requestId": "j", "json_data": {"a": 1}, "json": {"b": 2}})
     helix.run()

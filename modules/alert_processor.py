@@ -331,8 +331,12 @@ def _drop_missing_alert_audio(alert_data: dict) -> None:
     rel = _alert_audio_relpath(audio_dir, audio_name)
     if not rel or "://" in rel or rel.startswith("/") or ":" in rel.split("/", 1)[0]:
         return  # URL or absolute path: not served from assets, leave it alone
+    # Saved folders look like "assets/alerts/points": the overlay requests that path
+    # relative to its page, i.e. the /assets/<file> route, which resolves <file> inside
+    # the assets folder. Look the file up the same way, without the "assets/" prefix.
+    lookup = rel[len("assets/"):] if rel.lower().startswith("assets/") else rel
     try:
-        if web_engine._resolved_assets_file(rel):
+        if web_engine._resolved_assets_file(lookup):
             return
     except Exception:
         return
