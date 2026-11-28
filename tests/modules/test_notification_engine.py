@@ -178,8 +178,21 @@ def test_get_clear_remove_history(ne_env, monkeypatch):
     ne.remove_history_item("a")
     assert [e["id"] for e in ne._history] == ["b"]
     assert json.loads((ne_env.tmp / "history.json").read_text()) == [{"id": "b"}]
-    ne.clear_history()
-    assert ne._history == [] and refreshed == [1, 1]
+    removed = ne.clear_history()
+    assert ne._history == [] and refreshed == [1, 1] and removed == [{"id": "b"}]
+
+
+def test_restore_history_merges_sorted_and_capped(ne_env, monkeypatch):
+    refreshed = []
+    monkeypatch.setattr(ne, "_trigger_history_refresh", lambda: refreshed.append(1))
+    monkeypatch.setattr(ne, "_history", [{"id": "new", "ts": 5}])
+    ne.restore_history([])
+    assert refreshed == []
+    ne.restore_history([{"id": "old", "ts": 1}, {"id": "new", "ts": 5}, {"id": "mid", "ts": 3}])
+    assert [e["id"] for e in ne._history] == ["old", "mid", "new"] and refreshed == [1]
+    monkeypatch.setattr(ne, "MAX_HISTORY_ITEMS", 2)
+    ne.restore_history([{"id": "x", "ts": 0}])
+    assert [e["id"] for e in ne._history] == ["mid", "new"]
 
 
 # --------------------------------------------------------------------------- clipboard

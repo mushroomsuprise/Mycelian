@@ -342,7 +342,7 @@ def test_unsaved_dialog_stay(shell, start, flag, message):
         # While the dialog is open, other switches are reverted
         set_main(user, tabs, "Connectors")
         assert "build Connectors" not in shell.log
-        click(user, button(user, "Stay"))
+        click(user, button(user, "Keep editing"))
         set_main(user, tabs, "Connectors")  # dialog closed and still dirty: prompts again
         await user.should_see(message)
 

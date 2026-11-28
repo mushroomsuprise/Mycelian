@@ -186,7 +186,7 @@ def test_tab_is_a_main_tab_before_settings():
     assert "Games Tracker" in tab_visibility._MAIN_TAB_LABELS
     assert "game_tracker" in notify_settings.SOURCE_IDS
     main = (ROOT / "modules" / "mainuiwindow.py").read_text()
-    assert main.index('ui.tab("Spore Studio")') < main.index('ui.tab("Games Tracker")') < main.index('ui.tab("Settings")')
+    assert main.index('ui.tab("Spore Studio"') < main.index('ui.tab("Games Tracker"') < main.index('ui.tab("Settings"')
     # Its options are a Settings sub-tab right after Game Hooks.
     sub = ui_tab_transitions.SETTINGS_TAB_ORDER
     assert sub[sub.index("Game Hooks") + 1] == "Games Tracker"

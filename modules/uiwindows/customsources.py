@@ -3062,7 +3062,7 @@ def _prompt_unsaved_config(
             _apply_config_selection(next_name, config_parser, config_container)
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Stay", on_click=stay).props("outline")
+            ui.button("Keep editing", on_click=stay).props("outline")
             ui.button("Discard and switch", on_click=discard_and_switch).props(
                 "outline"
             )
@@ -3736,7 +3736,7 @@ def reset_config(config_parser, config_select, config_container):
             _perform_config_reset(config_parser, config_name, config_container)
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Stay", on_click=dialog.close).props("outline")
+            ui.button("Keep editing", on_click=dialog.close).props("outline")
             ui.button("Discard changes", on_click=confirm_reset).props("color=primary")
         dialog.open()
 

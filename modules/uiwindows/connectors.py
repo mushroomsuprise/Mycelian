@@ -35,7 +35,7 @@ from nicegui import context, ui
 
 from ..ui_tooltip import tip
 from ..notification_engine import notify
-from ..ui_buttons import primary_button
+from ..ui_buttons import destructive_button, primary_button
 
 
 from .. import (
@@ -1289,19 +1289,26 @@ def delete_connector(connector_id: str):
             notify("", type="error", source="connectors", title="Couldn't delete the connector",
                    hint="Try again.", details=f"{type(e).__name__}: {e}")
 
+    try:
+        existing = connector_manager.get_manager().get_connector(connector_id)
+    except Exception:
+        existing = None
+    display_name = ((existing.name or "").strip() if existing is not None else "") or "this connector"
+    quoted = f"“{display_name}”" if existing is not None and (existing.name or "").strip() else display_name
+
     # Show confirmation dialog
     with ui.dialog().props("persistent") as dialog:
-        with ui.card():
-            ui.label("Confirm Delete").classes("text-lg font-semibold mb-2")
+        with ui.card().classes("w-[440px] max-w-full"):
+            ui.label(f"Delete {quoted}?").classes("text-lg font-semibold mb-2")
             ui.label(
-                "Are you sure you want to delete this connector? This action cannot be undone."
+                "Its trigger, conditions and actions are removed. This can't be undone."
             ).classes("mb-4")
 
             with ui.row().classes("w-full justify-end gap-2"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
-                ui.button(
-                    "Delete", on_click=lambda: [confirm_delete(), dialog.close()]
-                ).classes("btn-danger")
+                destructive_button(
+                    "Delete", lambda: [confirm_delete(), dialog.close()], icon="delete"
+                )
 
     dialog.open()
 

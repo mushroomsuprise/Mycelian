@@ -87,6 +87,14 @@ def tip(element: Any, text: str) -> Any:
     return element
 
 
+def icon_label(text: str) -> str:
+    """Props for an icon-only button: a screen-reader name plus the shared tooltip.
+
+    Usage: ``ui.button(icon="close", ...).props(icon_label("Remove"))``.
+    """
+    return f"aria-label={_attr(text)} {TOOLTIP_ATTR}={_attr(text)}"
+
+
 def _attr(text: str) -> str:
     # NiceGUI parses props like an HTML attribute list; quote and escape the value.
     escaped = str(text).replace("\\", "\\\\").replace('"', '\\"')

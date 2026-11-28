@@ -418,7 +418,7 @@
     }
     else if (a === 'person') { this.openDialog(t.getAttribute('data-user') || ''); }
     else if (a === 'dialog-close') { this.closeDialog(); }
-    else if (a === 'settings' || a === 'help' || a === 'storage' || a === 'copy-dock') { this.send(a, {}); }
+    else if (a === 'settings' || a === 'help' || a === 'storage' || a === 'copy-dock' || a === 'connect-twitch') { this.send(a, {}); }
   };
 
   Feed.prototype.onChange = function (e) {
@@ -735,8 +735,10 @@
     return '<div class="afx-day' + (cls ? ' ' + cls : '') + '">' + esc(text) + (arrow || '') + '</div>';
   };
 
-  Feed.prototype.emptyHtml = function (icon, text, clear) {
-    return '<div class="afx-empty">' + mi(icon) + esc(text) + (clear ? '<br><button type="button" data-a="clear-filters">Show everything</button>' : '') + '</div>';
+  Feed.prototype.emptyHtml = function (icon, text, clear, action) {
+    var btn = clear ? '<br><button type="button" data-a="clear-filters">Show everything</button>'
+      : action ? '<br><button type="button" data-a="' + esc(action.a) + '">' + esc(action.label) + '</button>' : '';
+    return '<div class="afx-empty">' + mi(icon) + esc(text) + btn + '</div>';
   };
 
   Feed.prototype.filtering = function () {
@@ -862,8 +864,12 @@
     var pg = this.feedPages();
     var first = pg.page === 1;
     var empty = function () {
-      return self.filtering() && s.live.length ? self.emptyHtml('filter_alt_off', 'Nothing matches your filters or search.', true)
-        : self.emptyHtml('dynamic_feed', 'No events yet. Follows, subs, cheers and raids show up here as they happen.');
+      if (self.filtering() && s.live.length) { return self.emptyHtml('filter_alt_off', 'Nothing matches your filters or search.', true); }
+      if (!self.dock && s.meta.twitch_connected === false) {
+        return self.emptyHtml('link_off', 'No events yet. Twitch isn\u2019t connected, so follows, subs, cheers and raids can\u2019t arrive.',
+          false, { a: 'connect-twitch', label: 'Connect Twitch' });
+      }
+      return self.emptyHtml('dynamic_feed', 'No events yet. Follows, subs, cheers and raids show up here as they happen.');
     };
     if (st.layout === 'ticker') {
       var html = '';

@@ -32,6 +32,7 @@ from typing import Dict, List, Optional
 
 import aiohttp
 from nicegui import run, ui
+from ..ui_tooltip import icon_label
 from ..notification_engine import nav_actions_settings, notify, notify_progress
 from ..ui_timer import layout_schedule
 
@@ -847,7 +848,7 @@ class SettingsUI:
                         ui.label("Mycelian Changelog").classes("text-2xl font-bold")
                         ui.button(icon="close", on_click=changelog_dialog.close).props(
                             "flat round"
-                        )
+                        ).props(icon_label("Close"))
 
                     # Content area with scroll
                     with ui.scroll_area().classes("w-full").style("height: 70vh"):
@@ -1750,7 +1751,7 @@ class SettingsUI:
                     dialog.close()
 
             with ui.row().classes("w-full justify-end gap-2"):
-                ui.button("Stay", on_click=stay).props("outline")
+                ui.button("Keep editing", on_click=stay).props("outline")
                 ui.button("Discard and switch", on_click=confirm_switch).props(
                     "outline"
                 )

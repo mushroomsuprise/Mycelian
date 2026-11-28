@@ -19,6 +19,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from nicegui import context, ui
 
+from ..ui_tooltip import icon_label
+
 logger = logging.getLogger(__name__)
 
 PREVIEW_JS_ASSET = "default_assets/mycelian_media_preview.js"
@@ -74,7 +76,7 @@ def preview_button(tooltip: str, *, icon: str = "play_arrow", on_pick: Optional[
     ``on_pick(file_name)`` runs when a random-folder button picks a file to play.
     """
     ensure_preview_script()
-    button = ui.button(icon=icon).props("flat round dense size=sm").classes("mpv-btn")
+    button = ui.button(icon=icon).props("flat round dense size=sm").props(icon_label("Play preview")).classes("mpv-btn")
     button._props["data-icon"] = icon
 
     def picked(event: Any) -> None:

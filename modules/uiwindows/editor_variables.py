@@ -15,6 +15,7 @@ import json
 from typing import Any, Callable, Dict, List, Optional
 
 from nicegui import ui
+from ..ui_tooltip import icon_label
 
 from ..notification_engine import notify
 
@@ -154,7 +155,7 @@ class VariableKit:
         with container:
             with ui.element("div").classes("flex items-center gap-1").style("padding: 2px 4px 4px"):
                 if back is not None:
-                    ui.button(icon="arrow_back", on_click=back).props("flat round dense size=sm")
+                    ui.button(icon="arrow_back", on_click=back).props("flat round dense size=sm").props(icon_label("Back"))
                 raw_html(f'<span class="ce-vm-label">Format <code>{{{esc(key)}}}</code></span>', "")
             for opt in [{"format": "", "label": "As is"}] + list(self.date_formats()):
                 token = "{" + key + (":" + opt["format"] if opt["format"] else "") + "}"

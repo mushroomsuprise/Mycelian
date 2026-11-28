@@ -170,11 +170,28 @@ def get_history() -> List[Dict[str, Any]]:
         return list(_history)
 
 
-def clear_history() -> None:
+def clear_history() -> list:
+    """Empty the history; returns the removed entries so the caller can offer Undo."""
     global _history
     _ensure_history_loaded()
     with _history_lock:
-        _history = []
+        removed, _history = list(_history), []
+        save_history()
+    _trigger_history_refresh()
+    return removed
+
+
+def restore_history(entries: list) -> None:
+    """Put entries back (Undo after Clear all), keeping anything newer and the size cap."""
+    global _history
+    if not entries:
+        return
+    _ensure_history_loaded()
+    with _history_lock:
+        known = {h.get("id") for h in _history}
+        merged = [e for e in entries if e.get("id") not in known] + list(_history)
+        merged.sort(key=lambda h: float(h.get("ts") or 0))
+        _history = merged[-MAX_HISTORY_ITEMS:]
         save_history()
     _trigger_history_refresh()
 

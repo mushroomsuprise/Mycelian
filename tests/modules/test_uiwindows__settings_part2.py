@@ -392,7 +392,7 @@ def test_dirty_switch_opens_dialog_and_stay(shell):
         # While the dialog is open, another switch is reverted
         set_tab(user, shell, "PSN")
         assert s._settings_tabs.value == "Twitch"
-        click(user, button(user, "Stay"))
+        click(user, button(user, "Keep editing"))
         assert s._unsaved_dialog_open is False and s._settings_tabs.value == "Twitch"
         assert s._settings_jump.value == "Twitch"
         assert ("enter", "OBS") not in shell.log

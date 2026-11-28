@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from nicegui import background_tasks, run, ui
+from ..ui_tooltip import icon_label
 
 from .. import connector_actions, connector_integration, connector_manager, connector_triggers
 from .. import connector_variables as cv
@@ -1284,7 +1285,8 @@ class ConnectorEditor:
                 ui.button(icon="delete", on_click=lambda _e, i=idx: self._remove_action(i)).props("flat round dense").classes(
                     "is-danger").tooltip("Remove")
                 ui.button(icon="expand_less" if action.get("open") else "expand_more",
-                          on_click=lambda _e, i=idx: self._toggle_action(i)).props("flat round dense")
+                          on_click=lambda _e, i=idx: self._toggle_action(i)).props("flat round dense").props(
+                    icon_label("Collapse" if action.get("open") else "Expand"))
             body = ui.element("div").classes("ce-action-body")
             refs["body"] = body
         card.classes(add="is-open" if action.get("open") else "")
@@ -1532,7 +1534,8 @@ class ConnectorEditor:
                         else:
                             ui.element("div")
                         ui.button(icon="close", on_click=lambda _e, i=n: remove(i)).props(
-                            "flat round dense" + (" disable" if len(steps) == 1 else "")).classes("is-danger")
+                            "flat round dense" + (" disable" if len(steps) == 1 else "")).props(
+                            icon_label("Remove step")).classes("is-danger")
                 add = ui.element("div").classes("ce-add").style("height: 28px")
                 with add:
                     _html(_ic("add"))
@@ -1582,7 +1585,8 @@ class ConnectorEditor:
                 for entry in list(channels):
                     with ui.element("div").classes("ce-chip"):
                         ui.label(f"{entry.get('guild_name') or entry.get('guild_id')} / #{entry.get('channel_name') or entry.get('channel_id')}")
-                        ui.button(icon="close", on_click=lambda _e, k=key_of(entry): remove(k)).props("flat round dense size=xs")
+                        ui.button(icon="close", on_click=lambda _e, k=key_of(entry): remove(k)).props("flat round dense size=xs").props(
+                            icon_label("Remove channel"))
 
         def remove(key: str) -> None:
             channels[:] = [e for e in channels if key_of(e) != key]

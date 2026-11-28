@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from nicegui import background_tasks, run, ui
 
-from ..ui_tooltip import tip
+from ..ui_tooltip import icon_label, tip
 
 from ..chatbot_core import Greeting, Quote
 from ..chatbot_manager import DEFAULT_QUOTE_REPLY_FORMAT, get_manager
@@ -189,7 +189,7 @@ def _dialog_shell(title: str, sub: str, icon: str):
             with ui.element("div").classes("ce-head-text"):
                 ui.label(title).classes("ce-step-title")
                 ui.label(sub).classes("ce-step-sub")
-            ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+            ui.button(icon="close", on_click=dialog.close).props("flat round dense").props(icon_label("Close"))
         body = ui.element("div").classes("qg-body")
         foot = ui.element("div").classes("ce-foot")
     return dialog, body, foot

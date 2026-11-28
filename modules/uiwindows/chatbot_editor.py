@@ -22,6 +22,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from nicegui import background_tasks, ui
+from ..ui_tooltip import icon_label
 
 from ..chatbot_core import ChatCommand, ChatEvent, EventType
 from ..chatbot_manager import get_manager
@@ -702,7 +703,7 @@ class ChatbotEditor:
                 for alias in list(s.aliases):
                     with ui.element("div").classes("ce-alias"):
                         ui.label(f"!{alias}")
-                        ui.button(icon="close", on_click=lambda _e, a=alias: remove(a)).props("flat round dense size=xs")
+                        ui.button(icon="close", on_click=lambda _e, a=alias: remove(a)).props("flat round dense size=xs").props(icon_label(f"Remove !{alias}"))
                 entry = ui.input(placeholder="Add another…" if s.aliases else "Add another, e.g. dc").props("borderless dense")
 
                 def commit(_e=None) -> None:
@@ -1217,7 +1218,8 @@ class ChatbotEditor:
                                            on_change=lambda e, i=idx: (rows.__setitem__(i, (rows[i][0], e.value or "")), write(rows))).props("outlined dense")
                             self.vars.button(val)
                             self.vars.track(val)
-                        ui.button(icon="close", on_click=lambda _e, i=idx: (rows.pop(i), write(rows), render())).props("flat round dense").classes("is-danger")
+                        ui.button(icon="close", on_click=lambda _e, i=idx: (rows.pop(i), write(rows), render())).props("flat round dense").props(
+                            icon_label("Remove parameter")).classes("is-danger")
                 add = ui.label("+ Add parameter").classes("ce-link").style("font-size: .74rem")
                 add.on("click", lambda: (rows.append(("", "")), render()))
 
@@ -1302,7 +1304,8 @@ class ChatbotEditor:
             with ui.element("div").classes("ce-dc"):
                 _html(_glyph("discord"))
                 ui.label(f"{entry.get('guild_name') or entry.get('guild_id')} / #{entry.get('channel_name') or entry.get('channel_id')}")
-                ui.button(icon="close", on_click=lambda _e, e2=entry: self._remove_discord(e2)).props("flat round dense size=xs")
+                ui.button(icon="close", on_click=lambda _e, e2=entry: self._remove_discord(e2)).props("flat round dense size=xs").props(
+                    icon_label("Remove channel"))
         with ui.button("Channel", icon="add").props("outline no-caps dense color=primary"):
             with ui.menu() as menu:
                 self._discord_menu(menu)
@@ -1550,7 +1553,7 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
             with ui.element("div").style("flex: 1 1 auto"):
                 ui.label("Edit custom variable" if existing else "New custom variable").classes("ce-step-title")
                 ui.label("Works in every command and event reply.").classes("ce-step-sub")
-            ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+            ui.button(icon="close", on_click=dialog.close).props("flat round dense").props(icon_label("Close"))
         with ui.element("div").classes("cv-body"):
             with ui.element("div").classes("ce-row"):
                 ui.label("Name").classes("ce-mini")
@@ -1698,7 +1701,7 @@ def open_custom_variable_builder(name: Optional[str], on_saved: Callable[[], Non
                                 kit.button(val)
                                 kit.track(val)
                             ui.button(icon="close", on_click=lambda _e, i=idx: (rows.pop(i), write(), render_rows())).props(
-                                "flat round dense").classes("is-danger")
+                                "flat round dense").props(icon_label("Remove parameter")).classes("is-danger")
                     add = ui.label("+ Add parameter").classes("ce-link").style("font-size: .74rem")
                     add.on("click", lambda: (rows.append(("", "")), render_rows()))
 

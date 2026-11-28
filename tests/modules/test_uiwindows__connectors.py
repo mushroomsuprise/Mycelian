@@ -615,7 +615,7 @@ def test_delete_connector_paths(env):
     async def check(user):
         add(env, conn("b"))
         cx.delete_connector("b")
-        await user.should_see("Confirm Delete")
+        await user.should_see("Delete “Conn b”?")  # names the connector
         cx.connector_cards["b"] = object()
         confirm("b")
         assert "b" not in env.mgr.connectors and env.notes[-1][0] == "Deleted “Conn b”"

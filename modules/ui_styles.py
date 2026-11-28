@@ -417,8 +417,8 @@ body:not(.body--dark) .text-grey {
     border-width: 1px !important;
     border-style: solid !important;
     border-color: var(--color-error, #ef4444) !important;
-    background-color: rgba(127, 29, 29, 0.55) !important;
-    color: #fecaca !important;
+    background-color: color-mix(in srgb, var(--color-error, #ef4444) 35%, transparent) !important;
+    color: color-mix(in srgb, var(--color-error, #ef4444) 35%, var(--color-text-primary)) !important;
 }
 
 #mute-alerts-btn.muted:hover {
@@ -652,6 +652,16 @@ body:not(.body--dark) .text-grey {
 }
 
 .mycelian-sub-tab-shell .q-tab--active .q-tab__icon {
+    color: var(--color-primary) !important;
+}
+
+.mycelian-main-tab-shell .mycelian-main-tabs .q-tab__icon {
+    width: 1.15em;
+    height: 1.15em;
+    font-size: 1.15em;
+}
+
+.mycelian-main-tab-shell .mycelian-main-tabs .q-tab--active .q-tab__icon {
     color: var(--color-primary) !important;
 }
 
@@ -1324,7 +1334,7 @@ button.alert-delete-btn,
 .q-btn.alert-delete-btn:hover,
 button.alert-delete-btn:hover,
 .alert-delete-btn:hover {
-    background-color: rgb(185, 28, 28) !important;
+    background-color: color-mix(in srgb, var(--color-error) 80%, black) !important;
 }
 
 .q-btn.alert-save-btn,
@@ -1339,7 +1349,7 @@ button.alert-save-btn,
 .q-btn.alert-save-btn:hover,
 button.alert-save-btn:hover,
 .alert-save-btn:hover {
-    background-color: rgb(21, 128, 61) !important;
+    background-color: color-mix(in srgb, var(--color-success) 80%, black) !important;
 }
 
 .q-btn.alert-duplicate-btn,
@@ -2276,9 +2286,30 @@ body:not(.body--dark) .notification-tray-badge {
 """
 
 
+# Accessibility: a visible ring for keyboard focus (mouse clicks don't show it), and
+# near-instant motion when the OS asks for reduced motion.
+ACCESSIBILITY_CSS = """
+:where(button, a[href], [role="button"], [tabindex]:not([tabindex="-1"]),
+       .q-btn, .q-tab, .q-item, .q-toggle, .q-checkbox, .q-radio):focus-visible {
+    outline: 2px solid var(--color-primary) !important;
+    outline-offset: 2px !important;
+}
+.q-field :focus-visible { outline: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+"""
+
+
 def get_full_theme_css() -> str:
     """Get combined base and component CSS"""
-    return BASE_CSS + COMPONENT_CSS
+    return BASE_CSS + COMPONENT_CSS + ACCESSIBILITY_CSS
 
 
 SUB_TAB_SEAM_SCRIPT = """

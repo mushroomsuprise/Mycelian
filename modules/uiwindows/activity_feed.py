@@ -3213,7 +3213,17 @@ def _meta_state() -> Dict[str, Any]:
             dock_open = "activity_feed" in engine._overlay_connected_routes()
     except Exception:
         dock_open = None
-    return {"app": True, "dock_open": dock_open}
+    return {"app": True, "dock_open": dock_open, "twitch_connected": _twitch_connected()}
+
+
+def _twitch_connected() -> Optional[bool]:
+    """Twitch login state for the empty feed's "Connect Twitch" hint (None if unknown)."""
+    try:
+        from modules import twitch
+
+        return bool(twitch.get_twitch_connection_status().get("is_valid"))
+    except Exception:
+        return None
 
 
 def _feed_tab_hidden() -> bool:
@@ -3480,6 +3490,10 @@ def handle_feed_action(action: str, data: Optional[Dict[str, Any]] = None) -> An
             _open_settings_section("aps-storage")
         elif action == "help":
             _open_help()
+        elif action == "connect-twitch":
+            from ..help_system.contextual_help import navigate_to_settings_subtab
+
+            navigate_to_settings_subtab("Twitch")
         elif action == "copy-dock":
             _copy_dock_link()
         else:

@@ -343,7 +343,7 @@ def test_prompt_save_is_busy_until_finished(env, monkeypatch):
         user.find("Save and switch").click()
         assert "cb" in pending
         # While saving, the other buttons and a second save do nothing.
-        user.find("Stay").click()
+        user.find("Keep editing").click()
         user.find("Discard and switch").click()
         user.find("Save and switch").click()
         assert log == [] and env.state.unsaved_prompt_open is True
@@ -375,7 +375,7 @@ def test_prompt_stay(env):
     def fn(user):
         env.state.unsaved_prompt_open = True
         al._prompt_unsaved_alert("bits", "Keep editing?", on_discard=lambda: log.append("x"), on_saved=lambda: log.append("y"))
-        user.find("Stay").click()
+        user.find(kind=ui.button, content="Keep editing").click()
         assert env.state.unsaved_prompt_open is False and log == []
 
     run([], fn)

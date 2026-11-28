@@ -231,6 +231,21 @@ test("app feed builds the shell with header pill, tabs, search and filter menu",
     assert.equal(s.F.instances.includes(s.f), false);
 });
 
+test("empty app feed offers Connect Twitch when Twitch is not connected (not in the dock)", () => {
+    const s = feed();
+    s.f.set("meta", { app: true, twitch_connected: false });
+    const btn = s.q('.afx-empty [data-a="connect-twitch"]');
+    assert.ok(btn && btn.textContent === "Connect Twitch");
+    assert.ok(s.q(".afx-empty").textContent.includes("Twitch isn\u2019t connected"));
+    fire(s.win, btn, "click");
+    assert.deepEqual(s.sent.at(-1), ["connect-twitch", {}]);
+    s.f.set("meta", { app: true, twitch_connected: true });
+    assert.equal(s.q('[data-a="connect-twitch"]'), null);
+    const d = feed({ dock: true });
+    d.f.set("meta", { twitch_connected: false });
+    assert.equal(d.q('[data-a="connect-twitch"]'), null);
+});
+
 test("dock feed has the compact head and no app-only controls", () => {
     const s = feed({ dock: true });
     assert.equal(s.f.root.className, "afx is-dock");

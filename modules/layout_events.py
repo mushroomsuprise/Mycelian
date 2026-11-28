@@ -28,6 +28,7 @@ EVENT_GT_DRAWER_WIDTH = "mycelian-gtr-drawer-width"
 EVENT_FEED = "mycelian-afx"
 EVENT_TOAST_ACTION = "mycelian-toast-action"
 EVENT_WINDOW_GEOMETRY = "mycelian-window-geometry"
+EVENT_SAVE_SHORTCUT = "mycelian-save"
 
 EVENTS = (
     EVENT_COLOR_PICKER,
@@ -36,6 +37,7 @@ EVENTS = (
     EVENT_FEED,
     EVENT_TOAST_ACTION,
     EVENT_WINDOW_GEOMETRY,
+    EVENT_SAVE_SHORTCUT,
 )
 
 Handler = Callable[[Any], Any]

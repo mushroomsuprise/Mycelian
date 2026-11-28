@@ -202,7 +202,7 @@ def test_reset_config_dirty_asks_first(env, monkeypatch):
     async def check(user):
         user.find("go").click()
         await user.should_see("Go back to the last saved version of tpl? Your unsaved edits will be lost.")
-        fire(user, button(user, "Stay"))
+        fire(user, button(user, "Keep editing"))
         assert resets == []
         fire(user, button(user, "Discard changes"))
         assert resets == ["tpl"]

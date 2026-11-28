@@ -32,6 +32,9 @@ NC_CSS = """
 .ncx-link { font-size: .76rem; font-weight: 650; cursor: pointer; color: color-mix(in srgb, var(--color-primary) 55%, var(--color-text-primary)); }
 .ncx-link:hover { text-decoration: underline; }
 .ncx-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px 16px; }
+.ncx-chip:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.ncx-undo { display: flex; align-items: center; gap: 8px; margin: 0 12px 10px 16px; padding: 4px 4px 4px 12px;
+  border-radius: 8px; background: var(--color-bg-surface); border: 1px solid var(--color-border-default); font-size: .8125rem; }
 .ncx-chip { --c: var(--color-text-muted); display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; cursor: pointer;
   font-size: .74rem; font-weight: 650; color: var(--color-text-secondary); border: 1px solid var(--color-border-default); user-select: none; }
 .ncx-chip:hover { color: var(--color-text-primary); }
@@ -96,6 +99,10 @@ class _CenterState:
     new_pill: Optional[ui.label] = None
     foot_count: Optional[ui.label] = None
     badge: Optional[ui.label] = None
+    undo_bar: Optional[ui.element] = None
+    undo_label: Optional[ui.label] = None
+    cleared: list = []
+    undo_timer: Any = None
 
 
 S = _CenterState()
@@ -190,6 +197,10 @@ def render() -> None:
         with S.chips:
             for key, label, color in _FILTERS:
                 chip = ui.element("div").classes("ncx-chip" + (" is-on" if S.level_filter == key else ""))
+                # Reachable and usable from the keyboard like a button.
+                chip.props(f'tabindex=0 role=button aria-pressed={"true" if S.level_filter == key else "false"}')
+                chip.on("keydown.enter", lambda _e, k=key: _set_filter(k))
+                chip.on("keydown.space.prevent", lambda _e, k=key: _set_filter(k))
                 if color:
                     chip.style(f"--c: var(--color-notify-{color})")
                 with chip:
@@ -284,6 +295,46 @@ def _refresh() -> None:
     update_badge()
 
 
+_UNDO_SECONDS = 8.0
+
+
+def clear_all() -> None:
+    """Clear the history, with an Undo bar in the panel for a few seconds."""
+    removed = ne.clear_history() or []
+    if not isinstance(removed, list) or not removed:
+        return
+    S.cleared = removed
+    bar, label = S.undo_bar, S.undo_label
+    if bar is None or getattr(bar, "is_deleted", False):
+        return
+    n = len(removed)
+    if label is not None:
+        label.set_text(f"Cleared {n} notification{'s' if n != 1 else ''}.")
+    bar.set_visibility(True)
+    if S.undo_timer is not None:
+        try:
+            S.undo_timer.cancel()
+        except Exception:
+            pass
+    from .ui_timer import layout_schedule
+
+    S.undo_timer = layout_schedule(_UNDO_SECONDS, _expire_undo, once=True)
+
+
+def undo_clear() -> None:
+    entries, S.cleared = S.cleared, []
+    if entries:
+        ne.restore_history(entries)
+    _expire_undo()
+
+
+def _expire_undo() -> None:
+    S.cleared = []
+    S.undo_timer = None
+    if S.undo_bar is not None and not getattr(S.undo_bar, "is_deleted", False):
+        S.undo_bar.set_visibility(False)
+
+
 def create_notification_tray_button() -> None:
     """The bell (with unread badge) in the header row, and the side panel it opens."""
     from .help_system.help_render import inject_page_stylesheet, promote_color_importance
@@ -305,8 +356,12 @@ def create_notification_tray_button() -> None:
             update_badge()
 
     def close() -> None:
-        if S.dialog is not None:
-            S.dialog.close()
+        if S.dialog is not None and S.dialog.value:
+            S.dialog.close()  # after_close runs from the value change
+        else:
+            after_close()
+
+    def after_close() -> None:
         ui.run_javascript("window.MycelianToast&&MycelianToast.suppress(false)")
         S.last_read_ts = time.time()
         update_badge()
@@ -318,9 +373,10 @@ def create_notification_tray_button() -> None:
 
         navigate_to_settings_subtab("App Settings", main_tab="Settings")
 
-    # Seamless right panel: no backdrop, the app stays usable; only the close button dismisses it.
-    with ui.dialog().props("seamless position=right persistent full-height no-esc-dismiss") as dlg, ui.card().classes("ncx-card"):
+    # Seamless right panel: no backdrop, the app stays usable. The close button or Esc dismisses it.
+    with ui.dialog().props("seamless position=right full-height") as dlg, ui.card().classes("ncx-card"):
         S.dialog = dlg
+        dlg.on_value_change(lambda e: None if e.value else after_close())
         with ui.element("div").classes("ncx-head"):
             ui.label("Notifications").classes("ncx-title")
             S.new_pill = ui.label("").classes("ncx-pill")
@@ -329,8 +385,14 @@ def create_notification_tray_button() -> None:
             from .help_system.contextual_help import help_button
 
             help_button(topic_id="notifications", tooltip="How notifications work", size="sm")
-            ui.button(icon="delete_sweep", on_click=lambda: ne.clear_history()).props("flat round dense").tooltip("Clear all")
+            ui.button(icon="delete_sweep", on_click=clear_all).props("flat round dense").tooltip("Clear all")
             ui.button(icon="close", on_click=close).props("flat round dense").tooltip("Close")
+        S.undo_bar = ui.element("div").classes("ncx-undo")
+        with S.undo_bar:
+            S.undo_label = ui.label("")
+            ui.element("div").classes("ncx-spacer")
+            ui.button("Undo", icon="undo", on_click=undo_clear).props("flat dense color=primary")
+        S.undo_bar.set_visibility(False)
         S.chips = ui.element("div").classes("ncx-chips")
         with ui.element("div").classes("ncx-search"):
             search = ui.input(placeholder="Search notifications").props("outlined dense clearable").classes("w-full")

@@ -244,11 +244,23 @@ def test_current_queue_state(monkeypatch):
 
 def test_queue_sig_and_meta(monkeypatch):
     assert feed._queue_sig({"a": 1, "server_now_ms": 5}) == feed._queue_sig({"a": 1, "server_now_ms": 9})
-    assert feed._meta_state() == {"app": True, "dock_open": None}
+    monkeypatch.setattr(feed, "_twitch_connected", lambda: None)
+    assert feed._meta_state() == {"app": True, "dock_open": None, "twitch_connected": None}
     monkeypatch.setattr(web_engine, "web_engine_instance", SimpleNamespace(_overlay_connected_routes=lambda: {"activity_feed"}))
     assert feed._meta_state()["dock_open"] is True
     monkeypatch.setattr(web_engine, "web_engine_instance", SimpleNamespace(_overlay_connected_routes=lambda: 1 / 0))
     assert feed._meta_state()["dock_open"] is None
+
+
+def test_twitch_connected_reads_the_login_state(monkeypatch):
+    from modules import twitch
+
+    monkeypatch.setattr(twitch, "get_twitch_connection_status", lambda: {"is_valid": True})
+    assert feed._twitch_connected() is True
+    monkeypatch.setattr(twitch, "get_twitch_connection_status", lambda: {"is_valid": False})
+    assert feed._twitch_connected() is False
+    monkeypatch.setattr(twitch, "get_twitch_connection_status", lambda: 1 / 0)
+    assert feed._twitch_connected() is None
 
 
 def test_poll_queue(monkeypatch):

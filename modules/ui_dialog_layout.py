@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Generator, Optional
 
 from nicegui import ui
+from .ui_tooltip import icon_label
 
 
 @dataclass
@@ -60,7 +61,7 @@ def app_form_dialog(
                     )
                     ui.button(icon="close", on_click=close).props(
                         "flat round"
-                    ).classes("secondary-text")
+                    ).props(icon_label("Close")).classes("secondary-text")
 
                 body = ui.column().classes("p-4 gap-4 w-full")
                 footer = ui.row().classes(

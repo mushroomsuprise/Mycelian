@@ -423,7 +423,7 @@ def _prompt_unsaved_alert(alert_type: str, message: str, on_discard, on_saved) -
             _save_alert_type(alert_type, finished)
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Stay", on_click=stay).props("outline")
+            ui.button("Keep editing", on_click=stay).props("outline")
             ui.button("Discard and switch", on_click=discard).props("outline")
             ui.button("Save and switch", on_click=save_and_continue).props(
                 "color=primary"
@@ -1464,25 +1464,18 @@ def _build_alert_shell(alert_type: str, select, save_handler) -> None:
                 banner.visible = False
                 _el(alert_type)["channel_points_locked_banner"] = banner
             with ui.element("div").classes("alr-dbody"):
-                if alert_type == "points":
-                    with ui.element("div").classes("alr-col"):
-                        _build_playback_section(alert_type)
-                        create_visual_settings_section(alert_type)
-                        create_tts_settings_section(alert_type)
-                    with ui.element("div").classes("alr-col"):
-                        create_audio_settings_section(alert_type)
-                        create_randomizer_settings_section(alert_type)
-                    with ui.element("div").classes("alr-col"):
+                # Same order on every alert type; Channel Points adds its Twitch
+                # reward options under the randomizer.
+                with ui.element("div").classes("alr-col"):
+                    _build_playback_section(alert_type)
+                    create_visual_settings_section(alert_type)
+                with ui.element("div").classes("alr-col"):
+                    create_audio_settings_section(alert_type)
+                    create_tts_settings_section(alert_type)
+                with ui.element("div").classes("alr-col"):
+                    create_randomizer_settings_section(alert_type)
+                    if alert_type == "points":
                         create_twitch_options_section(alert_type)
-                else:
-                    with ui.element("div").classes("alr-col"):
-                        _build_playback_section(alert_type)
-                        create_visual_settings_section(alert_type)
-                    with ui.element("div").classes("alr-col"):
-                        create_audio_settings_section(alert_type)
-                        create_tts_settings_section(alert_type)
-                    with ui.element("div").classes("alr-col"):
-                        create_randomizer_settings_section(alert_type)
     _refresh_alert_dims(alert_type)
     _render_alert_list(alert_type)
 

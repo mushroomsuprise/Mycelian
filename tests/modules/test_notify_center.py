@@ -57,7 +57,8 @@ def eng(monkeypatch):
     monkeypatch.setattr(ne, "get_history", lambda: list(e.history))
     monkeypatch.setattr(ne, "_call_actions", e.call_actions)
     monkeypatch.setattr(ne, "remove_history_item", lambda i: e.calls.append(("remove", i)))
-    monkeypatch.setattr(ne, "clear_history", lambda: e.calls.append(("clear",)))
+    monkeypatch.setattr(ne, "clear_history", lambda: e.calls.append(("clear",)) or list(e.history))
+    monkeypatch.setattr(ne, "restore_history", lambda entries: e.calls.append(("restore", len(entries))))
     monkeypatch.setattr(ne, "run_entry_action", lambda i, idx: e.calls.append(("run", i, idx)))
     monkeypatch.setattr(ne, "run_action", lambda a, message, entry: e.calls.append(("action", a, message, entry["id"])))
     monkeypatch.setattr(ne, "_find_entry", lambda i: next((h for h in e.history if h.get("id") == i), None))
@@ -369,6 +370,14 @@ def test_create_tray_button_full_flow(eng, monkeypatch):
         clear = next(b for b in user.find(kind=ui.button).elements if b.props.get("icon") == "delete_sweep")
         click(user, clear)
         assert ("clear",) in eng.calls
+        # Clear all can be undone for a few seconds
+        assert nc.S.undo_bar.visible and nc.S.undo_label.text.startswith("Cleared ")
+        undo = next(b for b in user.find(kind=ui.button).elements if b.text == "Undo")
+        click(user, undo)
+        assert ("restore", len(eng.history)) in eng.calls and not nc.S.undo_bar.visible
+        # filter chips work from the keyboard
+        chip = nc.S.chips.default_slot.children[1]
+        assert chip.props.get("tabindex") == "0" and chip.props.get("role") == "button"
         # bell again closes
         click(user, bell)
         assert dlg.value is False and js[-1].endswith("suppress(false)")

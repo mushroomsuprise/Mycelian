@@ -187,9 +187,10 @@ def test_wrap_variable_value_stringifies():
     assert ">42<" in tab._wrap_variable_value(42)
 
 
-def test_custom_css_is_balanced():
-    assert tab.CUSTOM_CSS.count("{") == tab.CUSTOM_CSS.count("}")
-    assert ".chatbot-card" in tab.CUSTOM_CSS
+def test_old_global_chatbot_stylesheet_is_gone():
+    # The cards use the shared cx- styles; the old page-wide sheet leaked hover rules
+    # onto every .control-button once the Chatbot tab had been opened.
+    assert not hasattr(tab, "CUSTOM_CSS")
 
 
 @pytest.mark.parametrize("pattern,text,group", [

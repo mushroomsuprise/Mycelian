@@ -201,7 +201,7 @@ def test_prompt_stay(env, prompt_setup):
     async def check(user):
         user.find("go").click()
         await user.should_see("You have unsaved changes to a. Save them before switching?")
-        fire(user, _btn(user, "Stay"))
+        fire(user, _btn(user, "Keep editing"))
         assert prompt_setup["applied"] == [] and prompt_setup["sel"].value == "a"
         assert cs.form_data_store["a"] == {"x": 2}
 

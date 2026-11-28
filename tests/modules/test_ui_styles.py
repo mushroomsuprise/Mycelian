@@ -54,7 +54,8 @@ def test_css_uses_theme_variables_defined_somewhere():
 
 
 def test_full_theme_css_is_concatenation():
-    assert ui_styles.get_full_theme_css() == ui_styles.BASE_CSS + ui_styles.COMPONENT_CSS
+    assert ui_styles.get_full_theme_css() == ui_styles.BASE_CSS + ui_styles.COMPONENT_CSS + ui_styles.ACCESSIBILITY_CSS
+    assert ":focus-visible" in ui_styles.ACCESSIBILITY_CSS and "prefers-reduced-motion" in ui_styles.ACCESSIBILITY_CSS
 
 
 def test_component_css_contains_status_footer_badge_styles():

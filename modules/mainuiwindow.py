@@ -39,6 +39,11 @@ from nicegui import app, ui
 
 from modules.nicegui_outbox_patch import ensure_outbox_snapshot_patch
 
+# Quasar upper-cases button labels unless each button opts out; a few dialogs forgot
+# to, so their buttons shouted in ALL CAPS. Make sentence case the default for every
+# button created in this process.
+ui.button.default_props("no-caps")
+
 # Make the NiceGUI per-client outbox loop resilient to the weakref/GC race that
 # raises "dictionary changed size during iteration" before any client connects.
 ensure_outbox_snapshot_patch()
@@ -265,9 +270,12 @@ def apply_theme(theme_name: str):
             shared=True,
         )
         ui.add_head_html(SUB_TAB_SEAM_SCRIPT, shared=True)
+        from .ui_shortcuts import SHORTCUTS_HEAD_HTML, install as install_shortcuts
         from .ui_tooltip import TOOLTIP_HEAD_HTML
 
         ui.add_head_html(TOOLTIP_HEAD_HTML, shared=True)
+        ui.add_head_html(SHORTCUTS_HEAD_HTML, shared=True)
+        install_shortcuts()
 
         _base_css_injected = True
         logger.info(
@@ -1420,16 +1428,16 @@ def create_ui_elements():
                 "main-tab-header-row w-full items-end gap-1 flex-nowrap shrink-0"
             ):
                 with ui.column().classes("grow min-w-0"):
-                    with ui.tabs().classes("w-full mycelian-main-tabs") as tabs:
-                        activity_tab = ui.tab("Activity Feed")
-                        alerts_tab = ui.tab("Alerts")
-                        source_settings_tab = ui.tab("Source Settings")
-                        source_controls_tab = ui.tab("Source Controls")
-                        connectors_tab = ui.tab("Connectors")
-                        chatbot_tab = ui.tab("Chatbot")
-                        spore_studio_tab = ui.tab("Spore Studio")
-                        games_tracker_tab = ui.tab("Games Tracker")
-                        settings_tab = ui.tab("Settings")
+                    with ui.tabs().classes("w-full mycelian-main-tabs").props("inline-label") as tabs:
+                        activity_tab = ui.tab("Activity Feed", icon="dynamic_feed")
+                        alerts_tab = ui.tab("Alerts", icon="notifications_active")
+                        source_settings_tab = ui.tab("Source Settings", icon="tune")
+                        source_controls_tab = ui.tab("Source Controls", icon="smart_button")
+                        connectors_tab = ui.tab("Connectors", icon="hub")
+                        chatbot_tab = ui.tab("Chatbot", icon="smart_toy")
+                        spore_studio_tab = ui.tab("Spore Studio", icon="brush")
+                        games_tracker_tab = ui.tab("Games Tracker", icon="sports_esports")
+                        settings_tab = ui.tab("Settings", icon="settings")
 
                 main_tabs_by_label = {
                     "Activity Feed": activity_tab,
@@ -1939,7 +1947,7 @@ def create_ui_elements():
                             on_save(finished)
 
                         with ui.row().classes("w-full justify-end gap-2"):
-                            ui.button("Stay", on_click=stay).props("outline")
+                            ui.button("Keep editing", on_click=stay).props("outline")
                             ui.button(
                                 "Discard and leave", on_click=confirm_leave
                             ).props("outline")
