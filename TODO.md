@@ -62,6 +62,7 @@ YouTube Integration:
     [] - Add secondary credentials system for YouTube to have a "chatbot", similar to the Twitch system
 
 Kik Integration:
+    [] - Confirm whether "Kik" means Kick (kick.com). If so, the items below are the Kick integration: chat in the chat overlay, follows/subs/gifts as alerts, chatbot and connector send target, activity feed badges
     [] - Add in Kik integration service
     [] - Add in chat messages so they appear in the main chat box. Make this a toggle option in the JSON file. Default to being off.
     [] - Add Kik to the alerts alerts, matching up the Kik equivalent to the current Twitch configurations
@@ -75,3 +76,22 @@ Game Tracker:
     [] - Have the PSN API load in the data of all games played into the game cache, resolve NPWR ID's, store progress, expose values to Stastitics (only deltas after initial load, do not bomb the stats with the initial load). Expose to the chatbot command/events engine, and to the connectors system. Move the PSN Game cache setup to the new Games Tracker tab, with all options to adjust
     [] - Repeat above, but for Steam games (will need to get API details).
     [] - Get game cover art pics via the services, and cache them with a TTL
+
+Future Ideas - Integrations:
+    [] - TikTok LIVE integration: gifts, likes, follows, shares and chat into alerts, the activity feed and connectors (e.g. via the TikTokLive library)
+    [] - More tip platforms via webhook: Ko-fi, Throne, Fourthwall and Patreon feeding the existing donation alert pipeline
+    [] - Two-way Discord: Discord triggers (message in a channel, member joined) and an automatic end-of-stream recap post
+
+Future Ideas - OBS Docks:
+    [] - Alert queue dock: pause, skip, replay and remove queued alerts from inside OBS
+    [] - Quick-actions dock: a grid of connector buttons inside OBS
+
+Future Ideas - Chatbot:
+    [] - Loyalty points and watch time: currency earned per minute and per event, !points, !gamble, leaderboard, spend on rewards
+    [] - Moderation filters and actions: link, caps, spam and banned-word filters; connector actions to time out, ban and delete messages
+    [] - Viewer queue (join list): !join and !leave, a dock to pick the next viewer, and an overlay list for viewer games
+    [] - Ad manager: dock and overlay countdown before ads, chat warning and a snooze button (ad break trigger and snooze action already exist)
+
+Future Ideas - UI:
+    [] - Regroup Settings: replace the 16-tab strip with a side list grouped as Connections / Features / Data / App; remove the duplicate Games Tracker settings; move appearance options into Theme
+    [] - Clarify the overlay tabs: group Source Settings, Source Controls and Spore Studio into one Overlays area, or rename them (Overlay Config / Live Controls / Designer)
