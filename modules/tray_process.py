@@ -253,6 +253,17 @@ def _run_pystray(conn: Any, icon_path: str, minimized: bool) -> None:
 
     icon = pystray.Icon(APP_NAME, image, APP_NAME, menu)
 
+    on_main = _call_on_main_thread
+
+    def safe(fn):
+        def run() -> None:
+            try:
+                fn()
+            except Exception:
+                pass
+
+        return run
+
     def reader() -> None:
         """Drain parent commands until the pipe closes."""
         while True:
@@ -266,25 +277,16 @@ def _run_pystray(conn: Any, icon_path: str, minimized: bool) -> None:
             if command == "stop":
                 break
             if command == "set_state":
+                # No menu item depends on this (Restore stays enabled), so the menu
+                # is not rebuilt.
                 state["minimized"] = bool(message.get("minimized", False))
-                try:
-                    icon.update_menu()
-                except Exception:
-                    pass
             elif command == "set_update":
                 state["update_available"] = bool(message.get("available", False))
-                try:
-                    icon.update_menu()
-                except Exception:
-                    pass
+                on_main(safe(icon.update_menu))
             elif command == "notify":
-                try:
-                    icon.notify(
-                        str(message.get("message", "")),
-                        str(message.get("title", APP_NAME)),
-                    )
-                except Exception:
-                    pass
+                text = str(message.get("message", ""))
+                title = str(message.get("title", APP_NAME))
+                on_main(safe(lambda t=text, h=title: icon.notify(t, h)))
         try:
             icon.stop()
         except Exception:
@@ -296,6 +298,24 @@ def _run_pystray(conn: Any, icon_path: str, minimized: bool) -> None:
         _send(conn, {"action": "ready"})
 
     icon.run(setup=setup)
+
+
+def _call_on_main_thread(fn) -> None:
+    """Run ``fn`` on the tray's main thread where the platform requires it.
+
+    On macOS, pystray's ``update_menu`` / ``notify`` touch AppKit (NSStatusItem,
+    NSMenu), which must only happen on the main thread; calling them from the reader
+    thread kills the tray process with SIGTRAP on current macOS.
+    """
+    if sys.platform == "darwin":
+        try:
+            from PyObjCTools import AppHelper
+
+            AppHelper.callAfter(fn)
+            return
+        except Exception:
+            pass
+    fn()
 
 
 def _send(conn: Any, payload: dict) -> None:

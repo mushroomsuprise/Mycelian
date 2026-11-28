@@ -221,7 +221,8 @@ def test_pystray_menu_callbacks(fake_pystray):
     assert icon.stopped == 2
 
 
-def test_pystray_reader_commands(fake_pystray):
+def test_pystray_reader_commands(fake_pystray, monkeypatch):
+    monkeypatch.setattr(tp, "_call_on_main_thread", lambda fn: fn())
     conn = FakeConn([
         "not a dict",
         {"cmd": "set_state", "minimized": True},
@@ -234,14 +235,16 @@ def test_pystray_reader_commands(fake_pystray):
     ])
     tp._run_pystray(conn, "icon.png", False)
     icon = FakeIcon.instances[0]
-    assert icon.menu_updates == 2
+    # set_state does not rebuild the menu (nothing in it depends on the state).
+    assert icon.menu_updates == 1
     assert items_by_text(icon)["Update available"].visible(None) is True
     assert icon.notifications == [("M", "T"), ("", "Mycelian")]
     assert icon.stopped == 1
     assert len(conn.incoming) == 1
 
 
-def test_pystray_reader_swallows_icon_errors(fake_pystray):
+def test_pystray_reader_swallows_icon_errors(fake_pystray, monkeypatch):
+    monkeypatch.setattr(tp, "_call_on_main_thread", lambda fn: fn())
     conn = FakeConn([
         {"cmd": "set_state"},
         {"cmd": "set_update"},
@@ -264,7 +267,7 @@ def test_pystray_reader_swallows_icon_errors(fake_pystray):
     finally:
         FakeIcon.__init__ = orig_init
     icon = FakeIcon.instances[0]
-    assert icon.menu_updates == 2 and icon.notifications == [] and icon.stopped == 1
+    assert icon.menu_updates == 1 and icon.notifications == [] and icon.stopped == 1
     assert conn.sent == [{"action": "ready"}]
 
 
@@ -522,3 +525,21 @@ def test_run_tray_dispatches(monkeypatch, platform, backend):
     monkeypatch.setattr(tp, "_run_pystray", lambda *a: calls.append(("pystray", a)))
     tp.run_tray("conn", "i.png", True)
     assert calls == [(backend, ("conn", "i.png", True))]
+
+
+def test_call_on_main_thread_uses_appkit_main_thread_on_macos(monkeypatch):
+    import types
+
+    queued, ran = [], []
+    helper = types.SimpleNamespace(callAfter=lambda fn: queued.append(fn))
+    monkeypatch.setitem(sys.modules, "PyObjCTools", types.SimpleNamespace(AppHelper=helper))
+    monkeypatch.setitem(sys.modules, "PyObjCTools.AppHelper", helper)
+    monkeypatch.setattr(tp.sys, "platform", "darwin")
+    tp._call_on_main_thread(lambda: ran.append("mac"))
+    # Queued for the main runloop, not run on the reader thread.
+    assert ran == [] and len(queued) == 1
+    queued[0]()
+    assert ran == ["mac"]
+    monkeypatch.setattr(tp.sys, "platform", "win32")
+    tp._call_on_main_thread(lambda: ran.append("win"))
+    assert ran == ["mac", "win"]
