@@ -572,8 +572,11 @@ def test_toggle_connector(env):
     add(env, conn("a"))
 
     async def check(user):
+        card = cx.connector_cards["a"]
         cx.toggle_connector("a", False)
         assert not env.mgr.connectors["a"].enabled and env.notes[-1][0] == "“Conn a” turned off"
+        # A top-level card is patched in place, not rebuilt with the whole grid.
+        assert cx.connector_cards["a"] is card and "is-off" in card.classes
         cx.toggle_connector("a", False)  # already off: no flip, still confirms
         assert env.notes[-1][0] == "“Conn a” turned off"
         cx.toggle_connector("ghost", True)

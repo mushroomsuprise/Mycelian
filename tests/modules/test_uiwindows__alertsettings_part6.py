@@ -344,6 +344,13 @@ def test_refresh_alert_dropdowns(env, monkeypatch):
     assert list(bits["alert_select"].options) == ["new", "bits5"] and bits["alert_select"].value == "new"
     assert subs["alert_select"].value == "subs_fallback"
     assert loads == [1] and env.state.suppress_selection_handler_depth == 0
+    # only= refreshes one type: no reward reload, other lists untouched
+    env.save("bits", "bits6", {})
+    al.refresh_alert_dropdowns(only="subs")
+    assert loads == [1] and list(bits["alert_select"].options) == ["new", "bits5"]
+    al.refresh_alert_dropdowns(only="bits")
+    assert list(bits["alert_select"].options) == ["new", "bits5", "bits6"]
+    al.refresh_alert_dropdowns(only="nope")  # unknown type: nothing
     monkeypatch.setattr(al, "get_alerts_for_type", lambda t: (_ for _ in ()).throw(RuntimeError()))
     al.refresh_alert_dropdowns()  # logged
 

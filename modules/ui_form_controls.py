@@ -9,6 +9,8 @@ from typing import Any, Callable, List, Optional, Union
 
 from nicegui import ui
 
+from .ui_tooltip import tip
+
 _DEFAULT_CLASSES = "w-full"
 _FIELD_PROPS = "outlined dense"
 
@@ -32,8 +34,9 @@ def copy_text_button(text: str, *, tooltip: str = "Copy") -> Any:
 
 
 def _with_tooltip(element: Any, tooltip: str) -> Any:
+    # One shared tooltip (modules/ui_tooltip.py) instead of a component per field.
     if tooltip:
-        element.tooltip(tooltip).classes("bg-theme-surface")
+        tip(element, tooltip).classes("bg-theme-surface")
     return element
 
 

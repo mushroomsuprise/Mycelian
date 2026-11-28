@@ -32,6 +32,7 @@ from typing import Any, Dict, Optional
 from nicegui import ui
 from ..notification_engine import notify
 from ..ui_buttons import apply_flat_btn_props
+from ..ui_timer import layout_schedule
 
 from ..help_system.contextual_help import set_chatbot_ui_references
 
@@ -554,8 +555,9 @@ def create_chatbot_tab():
                 predictions_tab = ui.tab("Predictions")
 
             set_chatbot_ui_references(chatbot_tabs)
+            chatbot_tabs.on_value_change(_on_chatbot_subtab_change)
 
-            with ui.tab_panels(chatbot_tabs, value=commands_tab).classes(
+            with ui.tab_panels(chatbot_tabs, value=commands_tab, animated=False).classes(
                 "w-full grow flex-1 min-h-0"
             ):
                 # Commands Tab
@@ -599,7 +601,7 @@ def create_chatbot_tab():
 
                 # Giveaways Tab
                 with ui.tab_panel(giveaways_tab).classes(
-                    "transition-all duration-300 w-full h-full flex flex-col min-h-0"
+                    "w-full h-full flex flex-col min-h-0"
                 ):
                     giveaways_container = ui.element("div").classes(
                         "w-full h-full min-h-0 flex flex-col"
@@ -607,7 +609,7 @@ def create_chatbot_tab():
 
                 # Polls Tab
                 with ui.tab_panel(polls_tab).classes(
-                    "transition-all duration-300 w-full h-full flex flex-col min-h-0"
+                    "w-full h-full flex flex-col min-h-0"
                 ):
                     polls_container = ui.element("div").classes(
                         "w-full h-full min-h-0 flex flex-col"
@@ -615,7 +617,7 @@ def create_chatbot_tab():
 
                 # Predictions Tab
                 with ui.tab_panel(predictions_tab).classes(
-                    "transition-all duration-300 w-full h-full flex flex-col min-h-0"
+                    "w-full h-full flex flex-col min-h-0"
                 ):
                     predictions_container = ui.element("div").classes(
                         "w-full h-full min-h-0 flex flex-col"
@@ -683,33 +685,71 @@ def get_container_for_tab(tab_type: str):
         return None
 
 
-def load_chatbot_items():
-    """Load and display chatbot items for all tabs initially"""
+_CHATBOT_SUBTAB_KIND = {
+    "Commands": "commands",
+    "Events": "events",
+    "Quotes": "quotes",
+    "Greetings": "greetings",
+    "Giveaways": "giveaways",
+    "Polls": "polls",
+    "Predictions": "predictions",
+}
+# Sub-tabs whose panel has been built for the current Chatbot tab.
+_built_chatbot_kinds: set = set()
 
-    for kind in ("commands", "events"):
+
+def _build_chatbot_kind(kind: str) -> None:
+    """Build one sub-tab's panel (once per Chatbot tab build)."""
+    if kind in _built_chatbot_kinds:
+        return
+    container = get_container_for_tab(kind)
+    if container is None or getattr(container, "is_deleted", False):
+        return
+    _built_chatbot_kinds.add(kind)
+    container.clear()
+    if kind in ("commands", "events"):
         panel = _items_panels.get(kind)
-        container = get_container_for_tab(kind)
-        if panel is not None and container is not None:
-            container.clear()
+        if panel is not None:
             panel.build(container)
-
-    for kind in ("quotes", "greetings"):
-        container = get_container_for_tab(kind)
-        if container is not None:
-            panel = _qg_panels.setdefault(kind, QuotesPanel() if kind == "quotes" else GreetingsPanel())
-            panel.build(container)
-
+        return
+    if kind in ("quotes", "greetings"):
+        panel = _qg_panels.setdefault(kind, QuotesPanel() if kind == "quotes" else GreetingsPanel())
+        panel.build(container)
+        return
     panel_classes = {"giveaways": GiveawaysPanel, "polls": PollsPanel, "predictions": PredictionsPanel}
-    for kind, panel_class in panel_classes.items():
+    panel_class = panel_classes.get(kind)
+    if panel_class is None:
+        return
+    panel = _gp_panels.setdefault(kind, panel_class())
+    try:
+        panel.build(container)
+    except Exception as e:
+        logger.error("Error loading %s: %s", kind, e, exc_info=True)
+        with container:
+            ui.label(f"Error loading {kind}: {e}").classes("text-red-400")
+
+
+def _on_chatbot_subtab_change(e) -> None:
+    """Build a sub-tab the first time it is shown, a few frames after the switch paints."""
+    from ..ui_tab_transitions import _tab_label
+
+    kind = _CHATBOT_SUBTAB_KIND.get(_tab_label(getattr(e, "value", None)), "")
+    if not kind or kind in _built_chatbot_kinds:
+        return
+    layout_schedule(0.05, lambda k=kind: _build_chatbot_kind(k), once=True)
+
+
+def load_chatbot_items():
+    """Build the Commands panel now; other sub-tabs build when first opened."""
+    _built_chatbot_kinds.clear()
+    for kind in ("quotes", "greetings", "giveaways", "polls", "predictions"):
         container = get_container_for_tab(kind)
         if container is not None:
-            panel = _gp_panels.setdefault(kind, panel_class())
-            try:
-                panel.build(container)
-            except Exception as e:
-                logger.error("Error loading %s: %s", kind, e, exc_info=True)
-                with container:
-                    ui.label(f"Error loading {kind}: {e}").classes("text-red-400")
+            container.clear()
+            with container:
+                ui.spinner("dots").classes("mx-auto mt-8").props("size=2.5rem")
+    _build_chatbot_kind("commands")
+    _build_chatbot_kind("events")
 
 
 def show_create_chatbot_dialog(item_type: str):
@@ -787,20 +827,49 @@ def _item_label(manager, item_id: str) -> str:
     return ""
 
 
+_ITEM_TYPE_TO_KIND = {"command": "commands", "event": "events", "quote": "quotes"}
+
+
+def _item_kind(manager, item_id: str) -> str:
+    """Which chatbot sub-tab lists ``item_id`` ("" when it is gone)."""
+    if item_id in manager.commands:
+        return "commands"
+    if item_id in manager.events:
+        return "events"
+    if item_id in manager.quotes:
+        return "quotes"
+    return ""
+
+
+def _refresh_kind(kind: str) -> None:
+    """Refresh one sub-tab, or all of them when the kind is unknown."""
+    if kind:
+        refresh_tab_content(kind)
+    else:
+        refresh_chatbot_items()
+
+
 def toggle_chatbot_item(item_id: str, enabled: bool):
     """Toggle a chatbot item's enabled state"""
+    kind = ""
     try:
         manager = get_chatbot_manager()
         label = _item_label(manager, item_id)
+        kind = _item_kind(manager, item_id)
         success = manager.toggle_item(item_id, enabled)
 
         if success:
             notify(f"“{label}” turned {'on' if enabled else 'off'}", type="success", source="chatbot")
-            refresh_chatbot_items()
+            panel = _items_panels.get(kind)
+            if panel is not None:
+                # The card's switch and style already flipped; only counts and filter change.
+                panel.after_toggle()
+            else:
+                _refresh_kind(kind)
         else:
             # The item is gone (deleted elsewhere); the refresh drops its card.
             notify("That item no longer exists. The list was refreshed.", type="info", source="chatbot")
-            refresh_chatbot_items()
+            _refresh_kind(kind)
     except Exception as e:
         logger.error(f"Error toggling chatbot item: {e}", exc_info=True)
         notify(
@@ -811,7 +880,7 @@ def toggle_chatbot_item(item_id: str, enabled: bool):
             hint="Try again.",
             details=f"{type(e).__name__}: {e}",
         )
-        refresh_chatbot_items()  # put the switch back to the stored state
+        _refresh_kind(kind)  # put the switch back to the stored state
 
 
 def reset_command_counter(command_id: str):
@@ -825,10 +894,10 @@ def reset_command_counter(command_id: str):
 
             if success:
                 notify(f"Counter for “{label}” reset to 0", type="success", source="chatbot")
-                refresh_chatbot_items()
+                refresh_tab_content("commands")
             else:
                 notify("That command no longer exists. The list was refreshed.", type="info", source="chatbot")
-                refresh_chatbot_items()
+                refresh_tab_content("commands")
         except Exception as e:
             logger.error(f"Error resetting command counter: {e}", exc_info=True)
             notify(
@@ -988,11 +1057,11 @@ def delete_chatbot_item(item_id: str, item_type: str):
 
             if success:
                 notify(f"Deleted “{label}”", type="success", source="chatbot")
-                refresh_chatbot_items()
+                _refresh_kind(_ITEM_TYPE_TO_KIND.get(item_type, ""))
             else:
                 # remove_* is False only when the item is already gone.
                 notify("That item no longer exists. The list was refreshed.", type="info", source="chatbot")
-                refresh_chatbot_items()
+                _refresh_kind(_ITEM_TYPE_TO_KIND.get(item_type, ""))
         except Exception as e:
             logger.error(f"Error deleting chatbot item: {e}", exc_info=True)
             notify(

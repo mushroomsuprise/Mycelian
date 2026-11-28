@@ -560,6 +560,11 @@ def test_open_grid_images(root, media, notes):
         # animated gif preview has a Length row
         gif = [c for c in cards if "anim.gif" in htmls(c)][0]
         fire(user, gif)
+        # The animation length is read on a worker thread, then patched in.
+        for _ in range(200):
+            if "Length" in htmls(p.preview):
+                break
+            await asyncio.sleep(0.01)
         assert p.selected.name == "anim.gif" and "Length" in htmls(p.preview)
         # show all files: notes.txt appears dimmed with a tooltip
         p.only_box.set_value(False)

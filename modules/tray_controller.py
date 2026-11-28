@@ -5,11 +5,12 @@
 Owns the tray child process (see :mod:`modules.tray_process`) and drives the native
 window across the pywebview process boundary.
 
-Minimising does more than hide the window: after hiding it we point the webview at
-``about:blank``. That tears down Vue, Quasar and the whole DOM, and it drops the
-NiceGUI websocket so every client-bound ``ui.timer`` stops with it. Restoring loads
-the application URL again, which produces a fresh client and rebuilds the UI through
-``build_root_ui``.
+Minimising does more than hide the window: once it has stayed hidden for
+``_BLANK_AFTER_HIDE_SEC`` we point the webview at ``about:blank``. That tears down Vue,
+Quasar and the whole DOM, and it drops the NiceGUI websocket so every client-bound
+``ui.timer`` stops with it. Restoring a blanked window loads the application URL again,
+which produces a fresh client and rebuilds the UI through ``build_root_ui``. A window
+restored before the delay is simply shown again, with no rebuild.
 
 Because the window lives in a spawn child, all window calls are asynchronous messages
 on NiceGUI's ``method_queue``. Nothing here may assume the call has taken effect by
@@ -33,6 +34,10 @@ BLANK_URL = "about:blank"
 # a white flash while NiceGUI boots.
 _RESTORE_PAINT_DELAY_SEC = 0.4
 
+# A window hidden to the tray keeps its UI this long before it is unloaded, so a quick
+# restore just shows it again instead of rebuilding every tab.
+_BLANK_AFTER_HIDE_SEC = 300.0
+
 _SPAWN_CONTEXT = multiprocessing.get_context("spawn")
 
 _state_lock = threading.RLock()
@@ -40,6 +45,9 @@ _process: Optional[Any] = None
 _conn: Optional[Any] = None
 _reader_thread: Optional[threading.Thread] = None
 _minimized = False
+# True once the hidden window has been pointed at about:blank (the UI is unloaded).
+_blanked = False
+_blank_timer: Optional[threading.Timer] = None
 _window_url: Optional[str] = None
 _tray_unavailable_reason: Optional[str] = None
 _native_handlers_registered = False
@@ -227,16 +235,15 @@ def minimize_to_tray(*, reason: str = "user") -> bool:
 
         try:
             # Order matters: drop the Dock icon before hiding, so macOS cannot order
-            # the window back on screen from a Dock click and reveal the blank page.
+            # the window back on screen from a Dock click.
             set_dock_visible(False)
             window.hide()
-            push_window_method("mycelian_prepare_for_blank")
-            window.load_url(BLANK_URL)
         except Exception as e:
             logger.error("Tray: failed to minimize window: %s", e, exc_info=True)
             return False
 
         _minimized = True
+        _schedule_blank()
 
     _suspend_ui_health_monitor(True)
     _send_to_tray({"cmd": "set_state", "minimized": True})
@@ -244,9 +251,49 @@ def minimize_to_tray(*, reason: str = "user") -> bool:
     return True
 
 
+def _schedule_blank() -> None:
+    """Unload the hidden UI after ``_BLANK_AFTER_HIDE_SEC`` unless restored first."""
+    global _blank_timer
+    _cancel_blank()
+    timer = threading.Timer(_BLANK_AFTER_HIDE_SEC, _blank_if_still_hidden)
+    timer.daemon = True
+    _blank_timer = timer
+    timer.start()
+
+
+def _cancel_blank() -> None:
+    global _blank_timer
+    timer, _blank_timer = _blank_timer, None
+    if timer is not None:
+        try:
+            timer.cancel()
+        except Exception:
+            pass
+
+
+def _blank_if_still_hidden() -> bool:
+    """Point the hidden window at about:blank so Vue, the DOM and UI timers stop."""
+    global _blanked
+    with _state_lock:
+        if not _minimized or _blanked:
+            return False
+        window = _main_window()
+        if window is None:
+            return False
+        try:
+            push_window_method("mycelian_prepare_for_blank")
+            window.load_url(BLANK_URL)
+        except Exception as e:
+            logger.error("Tray: failed to unload the hidden UI: %s", e, exc_info=True)
+            return False
+        _blanked = True
+    logger.info("Tray: hidden window unloaded after %.0f s", _BLANK_AFTER_HIDE_SEC)
+    return True
+
+
 def restore_from_tray(*, reason: str = "user") -> bool:
-    """Reload the UI and show the window again."""
-    global _minimized
+    """Show the window again, reloading the UI if it was unloaded."""
+    global _minimized, _blanked
 
     with _state_lock:
         window = _main_window()
@@ -259,17 +306,21 @@ def restore_from_tray(*, reason: str = "user") -> bool:
             logger.error("Tray: application URL unknown; cannot restore the window")
             return False
 
+        _cancel_blank()
         try:
             set_dock_visible(True)
-            if _minimized:
+            if _minimized and _blanked:
                 window.load_url(url)
             window.show()
             window.restore()
         except Exception as e:
             logger.error("Tray: failed to restore window: %s", e, exc_info=True)
+            if _minimized and not _blanked:
+                _schedule_blank()
             return False
 
         _minimized = False
+        _blanked = False
 
     _suspend_ui_health_monitor(False)
     _send_to_tray({"cmd": "set_state", "minimized": False})
@@ -280,7 +331,7 @@ def restore_from_tray(*, reason: str = "user") -> bool:
 
 def _restore_with_paint_delay() -> None:
     """Restore from a worker thread, revealing the window once the page has loaded."""
-    global _minimized
+    global _minimized, _blanked
 
     window = _main_window()
     url = get_window_url()
@@ -289,17 +340,19 @@ def _restore_with_paint_delay() -> None:
         return
 
     with _state_lock:
-        was_minimized = _minimized
+        _cancel_blank()
+        reload_ui = _minimized and _blanked
         try:
             set_dock_visible(True)
-            if was_minimized:
+            if reload_ui:
                 window.load_url(url)
         except Exception as e:
             logger.error("Tray: failed to reload the UI: %s", e, exc_info=True)
             return
         _minimized = False
+        _blanked = False
 
-    if was_minimized:
+    if reload_ui:
         time.sleep(_RESTORE_PAINT_DELAY_SEC)
 
     try:
@@ -715,9 +768,10 @@ def initialize() -> None:
 
 def _mark_started_minimized() -> None:
     """Record that the window was created hidden and blank by ``start_ui``."""
-    global _minimized
+    global _minimized, _blanked
     with _state_lock:
         _minimized = True
+        _blanked = True  # created on about:blank: nothing to unload
     set_dock_visible(False)
     _suspend_ui_health_monitor(True)
     _send_to_tray({"cmd": "set_state", "minimized": True})

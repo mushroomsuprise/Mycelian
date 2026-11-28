@@ -208,6 +208,35 @@ def animation_timing(path: Optional[Path]) -> Optional[AnimationTiming]:
     return _timing_cache[key]
 
 
+_TIMING_MISS = object()
+
+
+def cached_animation_timing(path: Optional[Path]):
+    """The cached timing for ``path``, or ``_TIMING_MISS`` when it still has to be read.
+
+    Reading steps through every frame, which can take a while for a large animation,
+    so UI code checks the cache first and reads misses with :func:`animation_timing_async`.
+    """
+    if path is None:
+        return None
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return _timing_cache.get((str(path), stat.st_mtime_ns, stat.st_size), _TIMING_MISS)
+
+
+def timing_is_pending(value) -> bool:
+    return value is _TIMING_MISS
+
+
+async def animation_timing_async(path: Optional[Path]) -> Optional[AnimationTiming]:
+    """:func:`animation_timing` on a worker thread so the UI loop never steps frames."""
+    from nicegui import run
+
+    return await run.io_bound(animation_timing, path)
+
+
 def _read_animation_timing(path: Path) -> Optional[AnimationTiming]:
     try:
         from PIL import Image

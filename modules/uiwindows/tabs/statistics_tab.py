@@ -467,6 +467,17 @@ class StatisticsTab:
         self._lifetime_labels = {}
         self._overview_refs = {}
         self._export_preview = None
+        self._render_token = getattr(self, "_render_token", 0) + 1
+        if self.section == "overview":
+            # ~10 SQLite queries: run them on a worker thread, not the UI loop.
+            with self.body:
+                with ui.element("div").classes("mst-card mst-empty"):
+                    ui.spinner("dots").props("size=2rem")
+            background_tasks.create(
+                self._render_overview_async(self._render_token),
+                name="statistics_overview_build",
+            )
+            return
         try:
             with self.body:
                 {
@@ -629,9 +640,38 @@ class StatisticsTab:
         prev_series = ins.timeseries(rng.previous(), bucket=series["bucket"]) if self._comparing else None
         return {"summary": summary, "prev": prev, "series": series, "prev_series": prev_series}
 
-    def _build_overview(self) -> None:
+    def _overview_bundle(self):
+        """(range, (data, spotlight picks, heatmap grid)), all queried in one go."""
         rng = self._range()
-        data = self._overview_data(rng)
+        return rng, (self._overview_data(rng), self._spotlight_picks(rng), self._heatmap_grid(rng))
+
+    async def _render_overview_async(self, token: int) -> None:
+        try:
+            result = await run.io_bound(self._overview_bundle)
+            error = None
+        except Exception as e:
+            result, error = None, e
+        if token != getattr(self, "_render_token", 0) or self.section != "overview":
+            return  # the user changed range or section while the queries ran
+        if self.body is None or getattr(self.body, "is_deleted", False):
+            return
+        self.body.clear()
+        try:
+            if error is not None:
+                raise error
+            rng, bundle = result
+            with self.body:
+                self._build_overview(rng, bundle)
+        except Exception as e:
+            logger.error("Error building statistics section overview: %s", e, exc_info=True)
+            with self.body:
+                with ui.element("div").classes("mst-card mst-empty"):
+                    ui.html(_icon("error_outline") + "Statistics could not be loaded. Check the log for details.", sanitize=False)
+
+    def _build_overview(self, rng: Optional[DateRange] = None, bundle=None) -> None:
+        if rng is None or bundle is None:
+            rng, bundle = self._overview_bundle()
+        data, picks, grid = bundle
         summary, series = data["summary"], data["series"]
 
         if summary["total_events"] == 0:
@@ -646,14 +686,14 @@ class StatisticsTab:
 
         with ui.element("div").classes("mst-grid mst-grid-main"):
             self._build_trend_card(rng, data)
-            self._build_spotlight_card(rng)
+            self._build_spotlight_card(rng, picks)
 
         with ui.element("div").classes("mst-grid mst-grid-2"):
             # The holder (display: contents) lets the live tick redraw the card in place.
             self._overview_refs["mix"] = ui.element("div").style("display: contents")
             self._build_heatmap_card()
         self._redraw_card("mix", self._mix_key(summary), lambda: self._build_mix_card(summary))
-        self._update_heatmap(self._heatmap_grid(rng))
+        self._update_heatmap(grid)
         self._overview_refs["series_bucket"] = series["bucket"]
 
     def _empty_range_notice(self, rng: DateRange) -> None:
@@ -854,7 +894,7 @@ class StatisticsTab:
     def _spotlight_filtered(self) -> bool:
         return bool(self.filters.get("spotlight_hidden") or self.hidden_viewers or self._active_types() != MOST_ACTIVE_TYPES)
 
-    def _build_spotlight_card(self, rng: DateRange) -> None:
+    def _build_spotlight_card(self, rng: DateRange, picks=None) -> None:
         with ui.element("div").classes("mst-card"):
             with ui.element("div").classes("mst-card-head"):
                 with ui.column().classes("gap-0 grow"):
@@ -863,7 +903,7 @@ class StatisticsTab:
                 self._spotlight_filter_button()
             box = ui.element("div").classes("mst-grid").style("gap:8px")
         self._overview_refs["spotlight"] = box
-        self._fill_spotlight(box, self._spotlight_picks(rng))
+        self._fill_spotlight(box, picks if picks is not None else self._spotlight_picks(rng))
 
     def _spotlight_filter_button(self) -> None:
         """Filter menu: which picks show, what "Most active" counts, hidden viewers."""

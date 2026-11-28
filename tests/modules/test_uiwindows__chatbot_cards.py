@@ -406,22 +406,32 @@ def test_search_and_status_filters(env):
 
     async def check(user, panel):
         search = [i for i in user.find(ui.input).elements if i.props.get("placeholder") == "Search name, command or reply"][0]
+        # Cards are built once; search and filters only show or hide them.
+        built = cards_in(panel)
+        assert len(built) == 3
+
+        def shown():
+            return [c for c in cards_in(panel) if c.visible]
+
         with user.client:
             search.value = "  DC "
         assert panel.query == "dc"
-        assert len(cards_in(panel)) == 1
+        assert len(shown()) == 1 and cards_in(panel) == built
+        assert not panel._no_match.visible
         with user.client:
             search.value = "zzz"
         assert "Nothing matches your search or filter." in [el.text for el in walk(panel.grid, ui.label)]
+        assert panel._no_match.visible and shown() == []
         with user.client:
             search.value = None
-        assert len(cards_in(panel)) == 3
+        assert len(shown()) == 3 and not panel._no_match.visible
         fire(user, panel._chips["off"])
         assert panel.status == "off" and "is-on" in panel._chips["off"].classes
         assert "is-on" not in panel._chips["all"].classes
-        assert len(cards_in(panel)) == 1
+        assert len(shown()) == 1
         fire(user, panel._chips["on"])
-        assert len(cards_in(panel)) == 2
+        assert len(shown()) == 2
+        assert "debounce=250" in str(search.props) or search.props.get("debounce") == "250"
 
     mount("commands", lambda: items, actions, check)
 

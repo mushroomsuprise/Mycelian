@@ -67,6 +67,8 @@ class DeferredServiceManager:
         self._retry_thread = None
         self._shutdown = False
         self._progress_callback = progress_callback
+        # Set once the deferred pass (and its retries) has finished.
+        self.ready = threading.Event()
 
     def register(
         self,
@@ -164,6 +166,7 @@ class DeferredServiceManager:
             if failed_services and not self._shutdown:
                 self._retry_failed_services(failed_services)
 
+            self.ready.set()
             if not self._shutdown:
                 logger.info("Deferred initialization completed for all services")
                 # Final progress update

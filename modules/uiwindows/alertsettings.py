@@ -30,6 +30,7 @@ import threading
 import time
 from contextlib import contextmanager
 from types import SimpleNamespace
+from typing import Optional
 
 from nicegui import background_tasks, context, ui
 from ..notification_engine import nav_actions_main_tab, nav_actions_settings, nav_alerts, notify, notify_progress
@@ -332,7 +333,6 @@ def _activate_alert_tab(tab_name: str) -> None:
     """Show an alert-type tab and reload its selected alert."""
     if not tab_name:
         return
-    _ensure_lazy_alert_panel(tab_name)
     alert_settings_state.active_tab_name = tab_name
     tabs = alert_settings_state.tabs_component
     alert_settings_state.tab_switch_guard = True
@@ -341,6 +341,15 @@ def _activate_alert_tab(tab_name: str) -> None:
             tabs.value = tab_name
     finally:
         alert_settings_state.tab_switch_guard = False
+    if tab_name in _LAZY_ALERT_PANEL_BUILDERS:
+        # Build a few frames later so the switch and the spinner show first.
+        def _build_then_init(name: str = tab_name) -> None:
+            _ensure_lazy_alert_panel(name)
+            if alert_settings_state.active_tab_name == name:
+                initialize_tab_values(name)
+
+        layout_schedule(0.05, _build_then_init, once=True)
+        return
     initialize_tab_values(tab_name)
 
 
@@ -845,10 +854,24 @@ def _media_card(alert_type: str, *, icon: str, browse: str, dir_key: str, file_k
         state["token"] += 1
         set_meta("")
         if preview == "image":
-            timing = media_preview.animation_timing(media_preview.asset_file(directory, filename)) if filename else None
-            if timing:
-                set_meta(media_preview.format_seconds(timing.seconds),
-                         f"One play of the animation · {media_preview.describe_animation(timing)}")
+            path = media_preview.asset_file(directory, filename) if filename else None
+
+            def show_timing(timing) -> None:
+                if timing:
+                    set_meta(media_preview.format_seconds(timing.seconds),
+                             f"One play of the animation · {media_preview.describe_animation(timing)}")
+
+            cached = media_preview.cached_animation_timing(path)
+            if not media_preview.timing_is_pending(cached):
+                show_timing(cached)
+            else:
+                # Stepping every frame of a big GIF stalls the UI; read it on a worker.
+                async def fill_timing(token: int = state["token"]) -> None:
+                    timing = await media_preview.animation_timing_async(path)
+                    if token == state["token"]:
+                        show_timing(timing)
+
+                background_tasks.create(fill_timing(), name="alert-animation-length")
         elif preview == "sound" and play_btn is not None:
             url = media_preview.media_url(media_preview.asset_file(directory, filename)) if filename else ""
             media_preview.set_button_data(play_btn, src=url)
@@ -1213,6 +1236,31 @@ def _refresh_tab_count(alert_type: str, count: int) -> None:
         label.visible = count > 0
 
 
+def _on_alert_select_change(alert_type: str) -> None:
+    """Selecting an alert usually only moves the highlight; rebuild only when the list changed."""
+    view = _view(alert_type)
+    entries, options = _alert_list_entries(alert_type)
+    items = view.get("items")
+    if items is not None and view.get("list_sig") == (_list_signature(entries), str(view.get("query") or "").strip().lower()):
+        select = _el(alert_type).get("alert_select")
+        current = select.value if select is not None else None
+        for alert_id, item in items.items():
+            if getattr(item, "is_deleted", False):
+                break
+            if alert_id == current:
+                item.classes(add="is-active")
+            else:
+                item.classes(remove="is-active")
+        else:
+            _sync_alert_list_header(alert_type, entries, options, current)
+            return
+    _render_alert_list(alert_type)
+
+
+def _list_signature(entries) -> tuple:
+    return tuple(tuple(str(part) for part in entry) for entry in entries)
+
+
 def _render_alert_list(alert_type: str) -> None:
     """Redraw the alert list and the header title from the selector's options/value."""
     view = _view(alert_type)
@@ -1225,13 +1273,9 @@ def _render_alert_list(alert_type: str) -> None:
     query = str(view.get("query") or "").strip().lower()
     _refresh_tab_count(alert_type, len(entries))
 
-    new_btn = view.get("new")
-    if new_btn is not None:
-        if current == "new":
-            new_btn.classes(add="is-active")
-        else:
-            new_btn.classes(remove="is-active")
-
+    items = {}
+    view["items"] = items
+    view["list_sig"] = (_list_signature(entries), query)
     container.clear()
     with container:
         shown = 0
@@ -1246,6 +1290,7 @@ def _render_alert_list(alert_type: str) -> None:
                 classes += " is-off"
             item = ui.element("div").on("click", lambda _e, at=alert_type, aid=alert_id: _pick_alert(at, aid))
             item.classes(classes)
+            items[alert_id] = item
             with item:
                 ui.html(
                     f'<div class="alr-item-top"><span class="alr-item-name">{html_lib.escape(name)}</span>{meta}</div>'
@@ -1257,7 +1302,18 @@ def _render_alert_list(alert_type: str) -> None:
             if not message:
                 message = "No alerts match your search." if query else "No alerts yet. Click New alert to make one."
             ui.label(message).classes("alr-empty")
+    _sync_alert_list_header(alert_type, entries, options, current)
 
+
+def _sync_alert_list_header(alert_type: str, entries, options, current) -> None:
+    """The New button highlight and the header title for the selected alert."""
+    view = _view(alert_type)
+    new_btn = view.get("new")
+    if new_btn is not None:
+        if current == "new":
+            new_btn.classes(add="is-active")
+        else:
+            new_btn.classes(remove="is-active")
     title = view.get("title")
     if title is not None:
         if current is None:
@@ -1281,7 +1337,7 @@ def _build_alert_list(alert_type: str, select) -> None:
     view = _view(alert_type)
     with ui.element("div").classes("alr-rail"):
         with ui.element("div").classes("alr-rail-head"):
-            search = ui.input(placeholder="Search").props("dense outlined clearable")
+            search = ui.input(placeholder="Search").props("dense outlined clearable debounce=250")
             with search.add_slot("prepend"):
                 ui.icon("search").classes("text-base")
 
@@ -1319,7 +1375,7 @@ def _build_alert_list(alert_type: str, select) -> None:
                     "A level alert plays as a train reaches each level. Set up “New all-time high” "
                     "to play instead when a train beats your channel's record."
                 ).classes("text-xs text-theme-secondary")
-    select.on_value_change(lambda _e, at=alert_type: _render_alert_list(at))
+    select.on_value_change(lambda _e, at=alert_type: _on_alert_select_change(at))
 
 
 # ----- header ---------------------------------------------------------------
@@ -1494,15 +1550,16 @@ def create_alert_settings_tab():
                     return
                 request_alert_tab_change(current_alert_tab)
 
-            layout_schedule(0.4, check_alert_tab_changes, active=True)
+            # Safety net only: the value-change event above handles normal switches.
+            layout_schedule(2.0, check_alert_tab_changes, active=True)
 
             # Main content area with tab panels
-            with ui.tab_panels(alert_tabs, value=bits_tab).classes(
+            with ui.tab_panels(alert_tabs, value=bits_tab, animated=False).classes(
                 "w-full flex-1 min-h-0 grow"
             ):
                 # Bits Alerts Tab
                 with ui.tab_panel(bits_tab).classes(
-                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                    "w-full h-full min-h-0 flex flex-col"
                 ):
                     create_alert_type_panel("bits")
 
@@ -1511,22 +1568,25 @@ def create_alert_settings_tab():
                     holder = ui.column().classes(
                         "w-full h-full min-h-0 flex flex-col"
                     )
+                    with holder:
+                        ui.spinner("dots").classes("mx-auto mt-8").props("size=2.5rem")
 
                     def build(holder=holder, builder=builder):
+                        holder.clear()
                         with holder:
                             builder()
 
                     _LAZY_ALERT_PANEL_BUILDERS[tab_name] = build
 
                 with ui.tab_panel(subs_tab).classes(
-                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                    "w-full h-full min-h-0 flex flex-col"
                 ):
                     _defer_alert_panel(
                         "Subscriptions", lambda: create_alert_type_panel("subs")
                     )
 
                 with ui.tab_panel(streaks_tab).classes(
-                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                    "w-full h-full min-h-0 flex flex-col"
                 ):
                     _defer_alert_panel(
                         "Streaks", lambda: create_alert_type_panel("streaks")
@@ -1534,7 +1594,7 @@ def create_alert_settings_tab():
 
                 # Gift Sub Alerts Tab
                 with ui.tab_panel(giftsubs_tab).classes(
-                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                    "w-full h-full min-h-0 flex flex-col"
                 ):
                     _defer_alert_panel(
                         "Gift Subs", lambda: create_alert_type_panel("giftsubs")
@@ -1542,7 +1602,7 @@ def create_alert_settings_tab():
 
                 # Donation Alerts Tab
                 with ui.tab_panel(donations_tab).classes(
-                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                    "w-full h-full min-h-0 flex flex-col"
                 ):
                     _defer_alert_panel(
                         "Donations", lambda: create_alert_type_panel("donations")
@@ -1550,7 +1610,7 @@ def create_alert_settings_tab():
 
                 # Raid Alerts Tab
                 with ui.tab_panel(raids_tab).classes(
-                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                    "w-full h-full min-h-0 flex flex-col"
                 ):
                     _defer_alert_panel(
                         "Raids", lambda: create_alert_type_panel("raids")
@@ -1558,7 +1618,7 @@ def create_alert_settings_tab():
 
                 # Hype Train Alerts Tab
                 with ui.tab_panel(hypetrain_tab).classes(
-                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                    "w-full h-full min-h-0 flex flex-col"
                 ):
                     _defer_alert_panel(
                         "Hype Train", lambda: create_alert_type_panel("hypetrain")
@@ -1566,7 +1626,7 @@ def create_alert_settings_tab():
 
                 # Follow Alerts Tab
                 with ui.tab_panel(follows_tab).classes(
-                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                    "w-full h-full min-h-0 flex flex-col"
                 ):
                     _defer_alert_panel(
                         "Follows", lambda: create_alert_type_panel("follows")
@@ -1574,7 +1634,7 @@ def create_alert_settings_tab():
 
                 # Channel Points Tab
                 with ui.tab_panel(points_tab).classes(
-                    "transition-all duration-300 w-full h-full min-h-0 flex flex-col"
+                    "w-full h-full min-h-0 flex flex-col"
                 ):
                     _defer_alert_panel("Channel Points", create_points_alert_panel)
 
@@ -1637,7 +1697,7 @@ def initialize_tab_values(tab_name):
             alert_settings_state.set_current_tab(alert_type)
             logger.debug(f"Current tab set to: {alert_settings_state.current_tab}")
 
-            refresh_alert_dropdowns()
+            refresh_alert_dropdowns(only=alert_type)
 
             # Store current values for the tab
             store_original_values(alert_type)
@@ -4667,8 +4727,12 @@ def confirm_delete_alert(dialog, alert_type: str, alert_id: str):
         )
 
 
-def refresh_alert_dropdowns():
-    """Refresh all alert dropdowns to show updated alert lists after data changes"""
+def refresh_alert_dropdowns(only: Optional[str] = None):
+    """Refresh alert dropdowns to show updated alert lists after data changes.
+
+    ``only`` limits the refresh to one alert type (a sub-tab switch only needs
+    the arriving tab, not all nine lists and a Channel Points reward reload).
+    """
     with suppress_alert_selection_handler():
         try:
             # Get all alert types that have dropdowns
@@ -4684,6 +4748,8 @@ def refresh_alert_dropdowns():
                 "points",
             ]
 
+            if only:
+                alert_types = [only] if only in alert_types else []
             for alert_type in alert_types:
                 # Check if the elements exist for this alert type
                 elements = alert_settings_state.get_elements(alert_type)
@@ -4711,8 +4777,9 @@ def refresh_alert_dropdowns():
                     if special and special[0] not in alert_options:
                         alert_options[special[0]] = special[1]
 
-                    # Update the select options
-                    alert_select.options = alert_options
+                    # Update the select options (skip the round trip when unchanged)
+                    if alert_select.options != alert_options:
+                        alert_select.options = alert_options
 
                     # If the current selection is no longer valid, reset to "new"
                     if alert_select.value not in alert_options:

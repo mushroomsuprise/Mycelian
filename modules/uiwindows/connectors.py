@@ -32,6 +32,8 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from nicegui import context, ui
+
+from ..ui_tooltip import tip
 from ..notification_engine import notify
 from ..ui_buttons import primary_button
 
@@ -734,7 +736,7 @@ def load_connectors():
                     ui.button(
                         "Open", icon="open_in_new", on_click=lambda f=folder_id: _open_folder_floating_window(f)
                     ).props("flat dense no-caps").classes("cx-open px-2")
-                    with ui.button(icon="more_horiz").props("flat round dense size=sm").tooltip("More"):
+                    with tip(ui.button(icon="more_horiz").props("flat round dense size=sm"), "More"):
                         with ui.menu().props("auto-close"):
                             ui.menu_item("Rename folder", on_click=lambda f=folder_id: show_rename_folder_dialog(f))
                             ui.menu_item("Delete folder…", on_click=lambda f=folder_id: show_delete_folder_dialog(f))
@@ -979,13 +981,13 @@ def create_connector_card(
                 name = ui.label(connector.name or "Untitled").classes("cx-name")
                 name.on("dblclick", lambda cid=connector_id: show_edit_connector_dialog(cid))
                 if connector.description:
-                    ui.label(connector.description).classes("cx-desc").tooltip(connector.description)
+                    tip(ui.label(connector.description).classes("cx-desc"), connector.description)
                 else:
                     ui.label("No description").classes("cx-desc is-empty")
-            ui.switch(
+            tip(ui.switch(
                 value=connector.enabled,
                 on_change=lambda e, cid=connector_id: toggle_connector(cid, e.value),
-            ).props("dense color=positive").tooltip("Turn this connector on or off")
+            ).props("dense color=positive"), "Turn this connector on or off")
 
         ui.html(_connector_flow_html(connector), sanitize=False).classes("cx-flow")
 
@@ -1001,20 +1003,20 @@ def create_connector_card(
                 stat_el = ui.html(stat, sanitize=False).classes("contents")
                 if connector.last_triggered:
                     full = datetime.datetime.fromtimestamp(connector.last_triggered).strftime("%Y-%m-%d %H:%M")
-                    stat_el.tooltip(f"Last run {full}")
+                    tip(stat_el, f"Last run {full}")
             else:
                 ui.html(
                     '<span class="cx-stat is-muted"><span class="cx-icon">schedule</span>Never run</span>',
                     sanitize=False,
                 ).classes("contents")
             ui.element("div").classes("cx-spacer")
-            ui.button(
+            tip(ui.button(
                 icon="play_arrow", on_click=lambda cid=connector_id: test_connector(cid)
-            ).props("flat round dense size=sm").tooltip("Test connector")
-            ui.button(
+            ).props("flat round dense size=sm"), "Test connector")
+            tip(ui.button(
                 icon="edit", on_click=lambda cid=connector_id: show_edit_connector_dialog(cid)
-            ).props("flat round dense size=sm").tooltip("Edit connector")
-            with ui.button(icon="more_horiz").props("flat round dense size=sm").tooltip("More"):
+            ).props("flat round dense size=sm"), "Edit connector")
+            with tip(ui.button(icon="more_horiz").props("flat round dense size=sm"), "More"):
                 with ui.menu().props("auto-close"):
                     ui.menu_item("Duplicate", on_click=lambda cid=connector_id: duplicate_connector(cid))
                     ui.menu_item("Delete…", on_click=lambda cid=connector_id: delete_connector(cid))
@@ -1228,12 +1230,36 @@ def toggle_connector(connector_id: str, enabled: bool):
         else:
             notify("", type="error", source="connectors",
                    title=f"Couldn't turn “{connector.name}” {'on' if enabled else 'off'}", hint="Try again.")
-        refresh_connectors()
+        if not (success and _patch_toggled_card(connector_id, connector, manager)):
+            refresh_connectors()
     except Exception as e:
         logger.error(f"Error toggling connector: {e}", exc_info=True)
         notify("", type="error", source="connectors", title="Couldn't change the connector",
                hint="Try again.", details=f"{type(e).__name__}: {e}")
         refresh_connectors()
+
+
+def _patch_toggled_card(connector_id: str, connector, manager) -> bool:
+    """Update one top-level card after a toggle instead of rebuilding the whole grid.
+
+    Returns False when a full refresh is still needed (the card is inside a folder,
+    whose tile shows on/off counts, or the card is not on screen).
+    """
+    card = connector_cards.get(connector_id)
+    if card is None or getattr(card, "is_deleted", False) or connector_parent_folder.get(connector_id):
+        return False
+    if connector.enabled:
+        card.classes(remove="is-off")
+    else:
+        card.classes(add="is-off")
+    try:
+        folders = (connector_layout_store.load_layout().get("folders") or {})
+        _update_toolbar_counts(manager.get_all_connectors(), len(folders))
+    except Exception:
+        logger.debug("Could not update connector counts", exc_info=True)
+        return False
+    update_search_visibility()
+    return True
 
 
 def delete_connector(connector_id: str):

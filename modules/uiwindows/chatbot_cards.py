@@ -17,6 +17,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from nicegui import ui
 
+from ..ui_tooltip import tip
+
 from ..notification_engine import notify
 from .service_brand_icons import SERVICE_BRAND_SVG
 
@@ -311,6 +313,10 @@ class ItemsPanel:
         self._sub: Optional[ui.label] = None
         self._chips: Dict[str, ui.element] = {}
         self._badges: Dict[str, ui.label] = {}
+        # Cards are built once per refresh; search and the On/Off filter only show/hide them.
+        self._items: Dict[str, Any] = {}
+        self._cards: Dict[str, ui.element] = {}
+        self._no_match: Optional[ui.element] = None
 
     def build(self, container: ui.element) -> None:
         icon, title, sub, placeholder, new_label, *_ = _KIND_TEXT[self.kind]
@@ -322,7 +328,7 @@ class ItemsPanel:
                         ui.label(title).classes("cx-bar-title")
                         self._sub = ui.label(sub).classes("cx-bar-sub")
                     ui.element("div").classes("cx-spacer")
-                    search = ui.input(placeholder=placeholder).props("outlined dense clearable").classes("cx-search")
+                    search = ui.input(placeholder=placeholder).props("outlined dense clearable debounce=250").classes("cx-search")
                     with search.add_slot("prepend"):
                         ui.icon("search").classes("text-base")
                     search.on_value_change(lambda e: self._set_query(e.value or ""))
@@ -343,13 +349,47 @@ class ItemsPanel:
 
     def _set_query(self, query: str) -> None:
         self.query = query.strip().lower()
-        self.refresh()
+        self._apply_filter()
 
     def _set_status(self, key: str) -> None:
         self.status = key
         for k, chip in self._chips.items():
             chip.classes(add="is-on") if k == key else chip.classes(remove="is-on")
-        self.refresh()
+        self._apply_filter()
+
+    def _matches(self, item: Any) -> bool:
+        if self.status != "all" and (self.status == "on") != bool(getattr(item, "enabled", True)):
+            return False
+        return not self.query or self.query in search_blob(item, self.kind)
+
+    def _apply_filter(self) -> None:
+        """Show the cards that match the search and On/Off filter without rebuilding them."""
+        any_shown = False
+        for iid, card in self._cards.items():
+            item = self._items.get(iid)
+            show = item is not None and self._matches(item)
+            card.set_visibility(show)
+            any_shown = any_shown or show
+        if self._no_match is not None:
+            self._no_match.set_visibility(bool(self._items) and not any_shown)
+
+    def _update_counts(self) -> None:
+        items = self._items
+        on = sum(1 for i in items.values() if getattr(i, "enabled", True))
+        counts = {"all": len(items), "on": on, "off": len(items) - on}
+        for key, badge in self._badges.items():
+            badge.set_text(str(counts[key]))
+        if self._sub is not None:
+            noun = "command" if self.kind == "commands" else "event"
+            base = _KIND_TEXT[self.kind][2]
+            self._sub.set_text(f"{base} {len(items)} {noun}{'s' if len(items) != 1 else ''}, {on} on." if items else base)
+
+    def after_toggle(self) -> None:
+        """An item was turned on/off: its card already flipped, so only counts and filter change."""
+        if self.grid is None or getattr(self.grid, "is_deleted", False):
+            return
+        self._update_counts()
+        self._apply_filter()
 
     def refresh(self) -> None:
         if self.grid is None or getattr(self.grid, "is_deleted", False):
@@ -369,44 +409,38 @@ class ItemsPanel:
                 dedupe_key=f"chatbot:list_failed:{self.kind}",
                 dedupe_cooldown_sec=300,
             )
-        on = sum(1 for i in items.values() if getattr(i, "enabled", True))
-        counts = {"all": len(items), "on": on, "off": len(items) - on}
-        for key, badge in self._badges.items():
-            badge.set_text(str(counts[key]))
-        if self._sub is not None:
-            noun = "command" if self.kind == "commands" else "event"
-            base = _KIND_TEXT[self.kind][2]
-            self._sub.set_text(f"{base} {len(items)} {noun}{'s' if len(items) != 1 else ''}, {on} on." if items else base)
-        shown = {
-            iid: item for iid, item in items.items()
-            if (self.status == "all" or (self.status == "on") == bool(getattr(item, "enabled", True)))
-            and (not self.query or self.query in search_blob(item, self.kind))
-        }
+        self._items = items
+        self._update_counts()
+        self._cards = {}
+        self._no_match = None
         self.grid.clear()
         with self.grid:
             if not items:
                 self._empty()
-            elif not shown:
-                with ui.element("div").classes("cx-empty"):
-                    ui.html(_icon("search_off"), sanitize=False).classes("contents")
-                    ui.label("Nothing matches your search or filter.")
-            else:
-                with ui.element("div").classes("cx-grid"):
-                    for iid, item in sorted(shown.items(), key=lambda kv: str(getattr(kv[1], "name", "")).lower()):
-                        try:
-                            (self._command_card if self.kind == "commands" else self._event_card)(iid, item)
-                        except Exception as exc:
-                            logger.error("Could not draw chatbot card %s: %s", iid, exc, exc_info=True)
-                            notify(
-                                f"“{getattr(item, 'name', '') or iid}” is missing from the list but still works.",
-                                type="warning",
-                                source="chatbot",
-                                title=f"Couldn't show one of your {self.kind}",
-                                hint="Restart Mycelian. If it keeps happening, copy the details and report it.",
-                                details=f"{iid}: {type(exc).__name__}: {exc}",
-                                dedupe_key=f"chatbot:card_failed:{iid}",
-                                dedupe_cooldown_sec=300,
-                            )
+                return
+            self._no_match = ui.element("div").classes("cx-empty")
+            with self._no_match:
+                ui.html(_icon("search_off"), sanitize=False).classes("contents")
+                ui.label("Nothing matches your search or filter.")
+            with ui.element("div").classes("cx-grid"):
+                for iid, item in sorted(items.items(), key=lambda kv: str(getattr(kv[1], "name", "")).lower()):
+                    try:
+                        card = (self._command_card if self.kind == "commands" else self._event_card)(iid, item)
+                        if card is not None:
+                            self._cards[iid] = card
+                    except Exception as exc:
+                        logger.error("Could not draw chatbot card %s: %s", iid, exc, exc_info=True)
+                        notify(
+                            f"“{getattr(item, 'name', '') or iid}” is missing from the list but still works.",
+                            type="warning",
+                            source="chatbot",
+                            title=f"Couldn't show one of your {self.kind}",
+                            hint="Restart Mycelian. If it keeps happening, copy the details and report it.",
+                            details=f"{iid}: {type(exc).__name__}: {exc}",
+                            dedupe_key=f"chatbot:card_failed:{iid}",
+                            dedupe_cooldown_sec=300,
+                        )
+        self._apply_filter()
 
     def _empty(self) -> None:
         icon, *_rest = _KIND_TEXT[self.kind]
@@ -418,7 +452,7 @@ class ItemsPanel:
             ui.button(button, icon="add", on_click=self.actions.new).props("unelevated no-caps color=primary")
 
     def _card_shell(self, iid: str, item: Any, tile_html: str, subtitle_html: str, reply: str, tags: List[str],
-                    noun: str, extra_buttons: Callable[[], None]) -> None:
+                    noun: str, extra_buttons: Callable[[], None]) -> ui.element:
         enabled = bool(getattr(item, "enabled", True))
         card = ui.element("div").classes("cx-card" + ("" if enabled else " is-off"))
         with card:
@@ -435,7 +469,7 @@ class ItemsPanel:
                     c.classes(remove="is-off") if e.value else c.classes(add="is-off")
                     self.actions.toggle(i, bool(e.value))
 
-                ui.switch(value=enabled, on_change=flip).props("dense color=positive").tooltip("Turn on or off")
+                tip(ui.switch(value=enabled, on_change=flip).props("dense color=positive"), "Turn on or off")
             ui.label(reply or "No reply yet").classes("cx-reply" + ("" if reply else " is-empty"))
             ui.html(f'<div class="cx-tags">{"".join(tags)}</div>', sanitize=False).classes("contents")
             with ui.element("div").classes("cx-foot"):
@@ -450,14 +484,16 @@ class ItemsPanel:
                             sanitize=False).classes("contents")
                 ui.element("div").classes("cx-spacer")
                 extra_buttons()
-                ui.button(icon="play_arrow", on_click=lambda i=iid: self.actions.test(i)).props("flat round dense").tooltip("Test with sample data")
-                ui.button(icon="edit", on_click=lambda i=iid: self.actions.edit(i)).props("flat round dense").tooltip("Edit")
-                with ui.button(icon="more_horiz").props("flat round dense").tooltip("More"):
+                tip(ui.button(icon="play_arrow", on_click=lambda i=iid: self.actions.test(i)).props("flat round dense"),
+                    "Test with sample data")
+                tip(ui.button(icon="edit", on_click=lambda i=iid: self.actions.edit(i)).props("flat round dense"), "Edit")
+                with tip(ui.button(icon="more_horiz").props("flat round dense"), "More"):
                     with ui.menu().props("auto-close"):
                         ui.menu_item("Duplicate", on_click=lambda i=iid: self.actions.duplicate(i))
                         ui.menu_item("Delete…", on_click=lambda i=iid: self.actions.delete(i))
+        return card
 
-    def _command_card(self, iid: str, command: Any) -> None:
+    def _command_card(self, iid: str, command: Any) -> ui.element:
         ctype = _value(command, "command_type", "basic")
         lookup = _command_lookup(command)
         icon = "travel_explore" if lookup else {"counter": "plus_one", "reset": "restart_alt"}.get(ctype, "chat")
@@ -472,12 +508,12 @@ class ItemsPanel:
 
         def extra() -> None:
             if ctype == "counter" and self.actions.reset_counter:
-                ui.button(icon="restart_alt", on_click=lambda i=iid: self.actions.reset_counter(i)).props("flat round dense").tooltip(
+                tip(ui.button(icon="restart_alt", on_click=lambda i=iid: self.actions.reset_counter(i)).props("flat round dense"),
                     "Reset the counter to 0")
 
-        self._card_shell(iid, command, f'<span class="cx-tile">{_icon(icon)}</span>', subtitle, reply, tags, "use", extra)
+        return self._card_shell(iid, command, f'<span class="cx-tile">{_icon(icon)}</span>', subtitle, reply, tags, "use", extra)
 
-    def _event_card(self, iid: str, event: Any) -> None:
+    def _event_card(self, iid: str, event: Any) -> ui.element:
         et = _value(event, "event_type", "")
         key = event_glyph_key(et)
         tile_cls = {"twitch": "is-twitch", "youtube": "is-youtube", "volunteer_activism": "is-tips"}.get(key, "")
@@ -488,5 +524,5 @@ class ItemsPanel:
         missing = unfilled_tokens(template, reply)
         if missing:
             tags.insert(0, _tag("is-warn", _icon("help_outline"), f"Check {missing[0]}" + (f" +{len(missing) - 1}" if len(missing) > 1 else "")))
-        self._card_shell(iid, event, f'<span class="cx-tile {tile_cls}">{_brand(key)}</span>', subtitle, reply, tags, "run",
-                         lambda: None)
+        return self._card_shell(iid, event, f'<span class="cx-tile {tile_cls}">{_brand(key)}</span>', subtitle, reply, tags, "run",
+                                lambda: None)

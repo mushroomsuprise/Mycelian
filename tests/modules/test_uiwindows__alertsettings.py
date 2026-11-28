@@ -269,8 +269,14 @@ def test_activate_alert_tab(env, monkeypatch):
     tabs = E.FakeEl("Bits")
     env.state.tabs_component = tabs
     al._LAZY_ALERT_PANEL_BUILDERS["Raids"] = lambda: builds.append(env.state.tab_switch_guard)
+    before = len(env.scheduled)
     al._activate_alert_tab("Raids")
-    assert builds == [False] and tabs.value == "Raids"
+    # The switch happens now; the unbuilt form builds a few frames later.
+    assert builds == [] and tabs.value == "Raids" and inits == []
+    deferred = [f for d, f, _kw in env.scheduled[before:] if d == 0.05]
+    assert len(deferred) == 1
+    deferred[0]()
+    assert builds == [False]
     assert env.state.active_tab_name == "Raids" and env.state.tab_switch_guard is False
     assert inits == ["Raids"]
     env.state.tabs_component = None

@@ -164,7 +164,7 @@ def test_apply_theme_first_call_injects_head_css(theme_env):
     assert tm.calls == [("load", "dark"), ("set", "dark")]
     ids = [h.split("'")[1] if h.startswith("<style") else "script" for h, _ in theme_env.heads]
     assert ids == ["mycelian-theme-vars", "mycelian-base-css", "mycelian-quasar-brand", "mycelian-font-override",
-                   "script"]
+                   "script", "script"]  # sub-tab seams, then the shared tooltip
     assert all(shared for _h, shared in theme_env.heads)
     assert mw._base_css_injected is True and theme_env.js == []
 

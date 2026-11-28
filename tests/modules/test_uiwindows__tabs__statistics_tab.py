@@ -30,7 +30,7 @@ import pytest  # noqa: E402
 from nicegui import ui  # noqa: E402
 from nicegui.testing.user_interaction import UserInteraction  # noqa: E402
 from PIL import Image  # noqa: E402
-from ui_sim import run_ui  # noqa: E402
+from ui_sim import run_ui, until  # noqa: E402
 
 import modules  # noqa: E402
 import modules.statistics_manager as sm  # noqa: E402
@@ -169,7 +169,13 @@ def run_tab(build_tab, check):
     def build():
         build_tab.build(ui.column())
 
-    run_ui(build, check)
+    async def settled_check(user):
+        # The overview's queries run on a worker thread; wait for the cards to replace the spinner.
+        await until(lambda: build_tab.body is not None
+                    and not any(isinstance(e, ui.spinner) for e in build_tab.body.descendants()))
+        await check(user)
+
+    run_ui(build, settled_check)
 
 
 # --------------------------------------------------------------------------- module helpers
@@ -470,6 +476,8 @@ def test_range_buttons_switch_presets(ctx):
         click_text(user, "Today")
         assert tab.range_key == "today"
         await user.should_see("Today · compared with the previous 1 day")
+        # The overview queries run on a worker thread before the cards are built.
+        assert await until(lambda: "series_bucket" in tab._overview_refs)
         assert tab._overview_refs["series_bucket"] == "hour"
 
     run_tab(tab, check)

@@ -39,7 +39,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from nicegui import run, ui
+from nicegui import background_tasks, run, ui
 from nicegui.elements.mixins.text_element import TextElement
 
 from .. import template_config_parser, web_engine
@@ -679,6 +679,8 @@ def create_source_controls_tab():
                 with ui.element("div").classes("scx-body"):
                     source_controls_container = ui.element("div").classes("scx-grid")
                     view.grid = source_controls_container
+                    with source_controls_container:
+                        ui.spinner("dots").classes("mx-auto mt-8").props("size=2.5rem")
                     view.empty_search = ui.element("div").classes("scx-empty")
                     with view.empty_search:
                         _icon("search_off")
@@ -709,7 +711,22 @@ def load_source_controls():
 
     _take_dirty()
     view.generation = _engine_generation()
-    configs, hidden, errors = _fetch_source_controls()
+    # A cold fetch reads every template config: do it on a worker thread so opening
+    # the tab (or pressing Refresh) never stalls the UI loop.
+    view.load_token = getattr(view, "load_token", 0) + 1
+    background_tasks.create(_load_async(view, view.load_token), name="source_controls_load")
+
+
+async def _load_async(view: "_SourceControlsView", token: int) -> None:
+    try:
+        configs, hidden, errors = await run.io_bound(_fetch_source_controls)
+    except Exception:
+        logger.error("Could not load source controls", exc_info=True)
+        return
+    if token != getattr(view, "load_token", 0):
+        return  # a newer load is on its way
+    if view.grid is None or view.grid.is_deleted:
+        return
     _notify_config_errors(errors)
     view.render(configs, hidden)
 

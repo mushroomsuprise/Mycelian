@@ -185,11 +185,12 @@ def test_build_default_shell(shell):
         assert set(s._tabs_by_name) == {label for _c, label in TAB_MODULES.values()}
         assert s._active_tab_name == "Twitch" and s._accepted_settings_tab == "Twitch"
         assert ("refs",) in shell.log
-        # Eager tabs are built at once; the rest show a spinner
+        # No subtab builds while Settings opens; every one shows a spinner first
         built = [e[1] for e in shell.log if e[0] == "build"]
-        assert built == ["Statistics", "App Settings", "About"]
-        assert s._settings_loaded_tabs == {"Statistics", "App Settings", "About"}
+        assert built == []
+        assert s._settings_loaded_tabs == set()
         assert hasattr(s._settings_tab_containers["OBS"], "_loading_spinner")
+        assert hasattr(s._settings_tab_containers["Statistics"], "_loading_spinner")
         await user.should_see("Loading...")
         # Timers: tab poll, initial lazy load, unsaved-change poll
         assert timer(shell, 2.0).kw == {"active": True}
@@ -230,11 +231,13 @@ def test_build_initializes_state_when_needed(shell):
     run_ui(build_shell(shell), check)
 
 
-def test_initial_tab_already_loaded_skips_lazy_load(shell):
+def test_initial_app_settings_tab_loads_lazily(shell):
     shell.settings.last_settings_tab = "App Settings"
 
     async def check(user):
-        assert all(t.interval != 0.05 for t in shell.timers)
+        assert "App Settings" not in shell.ui._settings_loaded_tabs
+        timer(shell, 0.05).cb()
+        assert "App Settings" in shell.ui._settings_loaded_tabs
 
     run_ui(build_shell(shell), check)
 
@@ -243,7 +246,13 @@ def test_tab_change_event_lazy_loads(shell):
     async def check(user):
         s = shell.ui
         tabs = s._settings_tabs
+        before = len(shell.timers)
         UserInteraction(user, {tabs}, None).trigger("change", {"value": "OBS"})
+        # The build waits a few frames so the switch and spinner paint first.
+        assert "OBS" not in s._settings_loaded_tabs
+        deferred = [t for t in shell.timers[before:] if t.interval == 0.05]
+        assert len(deferred) == 1
+        deferred[0].cb()
         assert "OBS" in s._settings_loaded_tabs
         await user.should_see("OBS content")
         # Already loaded / unknown / event without a value: nothing more happens

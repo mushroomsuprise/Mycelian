@@ -127,6 +127,12 @@ class FakeContainer:
     def clear(self):
         self.cleared += 1
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
 
 @pytest.fixture
 def mgr(monkeypatch):
@@ -279,13 +285,19 @@ def test_load_chatbot_items_builds_every_panel(monkeypatch, clean_globals):
         monkeypatch.setattr(tab, f"{k}_container", c)
     for name in ("QuotesPanel", "GreetingsPanel", "GiveawaysPanel", "PollsPanel", "PredictionsPanel"):
         monkeypatch.setattr(tab, name, type(name, (FakePanel,), {}))
+    spinner = SimpleNamespace(classes=lambda *_a, **_k: SimpleNamespace(props=lambda *_a, **_k: None))
+    monkeypatch.setattr(tab.ui, "spinner", lambda *_a, **_k: spinner)
     tab._items_panels["commands"] = FakePanel()
     tab._items_panels["events"] = FakePanel()
 
     tab.load_chatbot_items()
 
+    # Commands and Events build at once; the other sub-tabs show a spinner until opened.
     assert containers["commands"].cleared == 1 and containers["events"].cleared == 1
     assert tab._items_panels["commands"].built == [containers["commands"]]
+    assert tab._qg_panels == {} and tab._gp_panels == {}
+    for kind in ("quotes", "greetings", "giveaways", "polls", "predictions"):
+        tab._build_chatbot_kind(kind)
     assert type(tab._qg_panels["quotes"]).__name__ == "QuotesPanel"
     assert type(tab._qg_panels["greetings"]).__name__ == "GreetingsPanel"
     assert type(tab._gp_panels["giveaways"]).__name__ == "GiveawaysPanel"
@@ -293,11 +305,29 @@ def test_load_chatbot_items_builds_every_panel(monkeypatch, clean_globals):
     assert tab._gp_panels["polls"].built == [containers["polls"]]
     assert type(tab._gp_panels["predictions"]).__name__ == "PredictionsPanel"
     assert tab._gp_panels["predictions"].built == [containers["predictions"]]
+    tab._build_chatbot_kind("quotes")  # already built: no second build
+    assert len(tab._qg_panels["quotes"].built) == 1
 
     # A second load reuses the existing panels (setdefault).
     quotes_panel = tab._qg_panels["quotes"]
     tab.load_chatbot_items()
+    tab._build_chatbot_kind("quotes")
     assert tab._qg_panels["quotes"] is quotes_panel and len(quotes_panel.built) == 2
+
+
+def test_subtab_change_schedules_first_build(monkeypatch, clean_globals):
+    scheduled = []
+    monkeypatch.setattr(tab, "layout_schedule", lambda delay, fn, once=False: scheduled.append((delay, fn)))
+    built = []
+    monkeypatch.setattr(tab, "_build_chatbot_kind", lambda kind: built.append(kind))
+    monkeypatch.setattr(tab, "_built_chatbot_kinds", {"commands"})
+    tab._on_chatbot_subtab_change(SimpleNamespace(value="Commands"))  # already built
+    tab._on_chatbot_subtab_change(SimpleNamespace(value="Nope"))
+    assert scheduled == []
+    tab._on_chatbot_subtab_change(SimpleNamespace(value="Polls"))
+    assert [d for d, _ in scheduled] == [0.05]
+    scheduled[0][1]()
+    assert built == ["polls"]
 
 
 def test_load_chatbot_items_skips_missing_containers(clean_globals):
@@ -320,6 +350,7 @@ def test_load_chatbot_items_shows_error_label_when_panel_fails(monkeypatch, clea
         tab.giveaways_container = c
         tab.polls_container = ui.column()
         tab.load_chatbot_items()
+        tab._build_chatbot_kind("giveaways")
 
     async def check(user):
         await user.should_see("Error loading giveaways: kaput")
@@ -469,12 +500,25 @@ def test_item_label_variants():
 @pytest.mark.parametrize("enabled,word", [(True, "on"), (False, "off")])
 def test_toggle_success_notifies_and_refreshes(monkeypatch, mgr, notes, enabled, word):
     refreshed = []
-    monkeypatch.setattr(tab, "refresh_chatbot_items", lambda: refreshed.append(1))
+    monkeypatch.setattr(tab, "refresh_chatbot_items", lambda: refreshed.append("all"))
+    monkeypatch.setattr(tab, "refresh_tab_content", lambda kind: refreshed.append(kind))
+    monkeypatch.setattr(tab, "_items_panels", {})
     mgr.commands["c"] = _cmd("c", word="hi")
     tab.toggle_chatbot_item("c", enabled)
     assert mgr.calls == [("toggle", "c", enabled)]
     assert notes.messages == [f"“!hi” turned {word}"]
-    assert notes.types == ["success"] and refreshed == [1]
+    # Only the Commands sub-tab refreshes, not all seven.
+    assert notes.types == ["success"] and refreshed == ["commands"]
+
+
+def test_toggle_with_built_panel_only_updates_counts(monkeypatch, mgr, notes):
+    refreshed, toggled = [], []
+    monkeypatch.setattr(tab, "refresh_chatbot_items", lambda: refreshed.append("all"))
+    monkeypatch.setattr(tab, "refresh_tab_content", lambda kind: refreshed.append(kind))
+    monkeypatch.setattr(tab, "_items_panels", {"events": SimpleNamespace(after_toggle=lambda: toggled.append(1))})
+    mgr.events["e"] = SimpleNamespace(name="Follow thanks", enabled=True)
+    tab.toggle_chatbot_item("e", False)
+    assert toggled == [1] and refreshed == []
 
 
 def test_toggle_missing_item_is_info(monkeypatch, mgr, notes):
@@ -607,6 +651,8 @@ def test_notify_duplicate_failed_defaults(notes):
 
 def _dialog_test(build_action, click, monkeypatch, refreshed):
     monkeypatch.setattr(tab, "refresh_chatbot_items", lambda: refreshed.append(1))
+    # Deletes and counter resets refresh only the affected sub-tab.
+    monkeypatch.setattr(tab, "refresh_tab_content", lambda kind: refreshed.append(1))
 
     def build():
         ui.label("host")
@@ -634,6 +680,7 @@ def test_reset_counter_dialog_resets(monkeypatch, mgr, notes):
         user.find(kind=ui.button, content="Reset").click()
 
     monkeypatch.setattr(tab, "refresh_chatbot_items", lambda: refreshed.append(1))
+    monkeypatch.setattr(tab, "refresh_tab_content", lambda kind: refreshed.append(1) if kind == "commands" else None)
     run_ui(build, check)
     assert shown
     assert mgr.calls == [("reset", "c")]
@@ -784,8 +831,8 @@ def test_create_chatbot_tab_builds_all_sub_tabs(monkeypatch, clean_globals, mgr)
     for kind in ("commands", "events", "quotes", "greetings", "giveaways", "polls", "predictions"):
         assert tab.get_container_for_tab(kind) is not None
     assert tab._items_panels["commands"].built and tab._items_panels["events"].built
-    assert set(tab._qg_panels) == {"quotes", "greetings"}
-    assert set(tab._gp_panels) == {"giveaways", "polls", "predictions"}
+    # The other sub-tabs build the first time they are opened.
+    assert tab._qg_panels == {} and tab._gp_panels == {}
 
     # The item providers read the manager.
     items_cmds, cmd_actions = actions["commands"]

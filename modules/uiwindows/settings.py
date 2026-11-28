@@ -1238,6 +1238,12 @@ class SettingsUI:
 
                                     self._settings_loaded_tabs.add(tab_name)
                                     self._note_settings_tab_loaded(tab_name)
+                                    # Built off-screen (preload, Settings hidden, or the
+                                    # user moved on): keep its timers stopped until shown.
+                                    if getattr(self, "_settings_background_paused", False):
+                                        self._stop_tab_timers(tab_name)
+                                    elif tab_name != self._active_tab_name:
+                                        self._pause_preloaded_tab(tab_name)
                                 except Exception as e:
                                     logger.error(
                                         f"Error loading settings tab {tab_name}: {e}",
@@ -1289,18 +1295,24 @@ class SettingsUI:
                         with tab_panels_container:
                             for tab_name in settings_panel_order:
                                 with ui.tab_panel(tab_name).classes(_TAB_PANEL_CLASSES):
-                                    with ui.scroll_area().classes("w-full h-full grow"):
+                                    # A plain overflow div: 16 QScrollAreas each kept their
+                                    # own resize observers running. Padding/gap match it.
+                                    with ui.element("div").classes(
+                                        "w-full h-full grow min-h-0 overflow-y-auto overflow-x-hidden "
+                                        "flex flex-col items-start"
+                                    ).style(
+                                        "padding: var(--nicegui-default-padding); "
+                                        "gap: var(--nicegui-default-gap)"
+                                    ):
                                         container = ui.column().classes(
                                             "w-full gap-4"
                                         )
                                         self._settings_tab_containers[tab_name] = (
                                             container
                                         )
-                                        _eager_tabs = {
-                                            "App Settings",
-                                            "Statistics",
-                                            "About",
-                                        }
+                                        # Every subtab builds on first open (or in the
+                                        # idle preload); none block opening Settings.
+                                        _eager_tabs: set = set()
                                         if tab_name in _eager_tabs:
                                             with StartupTimer(
                                                 f"settings_{tab_name.lower().replace(' ', '_')}_tab"
@@ -1335,13 +1347,26 @@ class SettingsUI:
                                     val = args["value"]
                             return _tab_label(val)
 
+                        def _load_if_needed(name: str) -> None:
+                            if (
+                                name in self._settings_tab_containers
+                                and name not in self._settings_loaded_tabs
+                            ):
+                                load_tab_content(name)
+
                         def on_settings_tab_change(e):
                             new_tab = _settings_tab_from_event(e)
                             if (
                                 new_tab in self._settings_tab_containers
                                 and new_tab not in self._settings_loaded_tabs
                             ):
-                                load_tab_content(new_tab)
+                                # Build a few frames later so the switch and the
+                                # spinner paint before the (possibly slow) build.
+                                layout_schedule(
+                                    0.05,
+                                    lambda t=new_tab: _load_if_needed(t),
+                                    once=True,
+                                )
 
                         tabs.on("change", on_settings_tab_change)
 
@@ -1421,10 +1446,14 @@ class SettingsUI:
                     current_tab = self._tabs_by_name.get(prev_name)
                     if current_tab:
                         current_tab.on_exit()
+                    elif prev_name == "About":
+                        self._about_lifecycle("on_exit")
                     next_tab = self._tabs_by_name.get(new_name)
                     if next_tab:
                         next_tab.on_enter()
                         self._snapshot_tab_fields(next_tab)
+                    elif new_name == "About":
+                        self._about_lifecycle("on_enter")
                     self._active_tab_name = new_name
                     self._accepted_settings_tab = new_name
                     self._sync_settings_jump(new_name)
@@ -1462,6 +1491,17 @@ class SettingsUI:
 
         # Log timing summary
         # log_startup_summary()
+
+    def _about_lifecycle(self, method: str) -> None:
+        """About is not in ``_tabs_by_name`` (no fields to save), but its timer
+        still needs pausing when it is hidden."""
+        about = getattr(self, "_about_tab", None)
+        fn = getattr(about, method, None)
+        if callable(fn):
+            try:
+                fn()
+            except Exception:
+                logger.debug("About tab %s failed", method, exc_info=True)
 
     def _build_about_tab(self, container):
         """Build the About tab content (see tabs/about_tab.py)."""
@@ -1746,10 +1786,25 @@ class SettingsUI:
             return True
         return False
 
+    def _stop_tab_timers(self, name: str) -> None:
+        """Call a subtab's ``on_exit`` (resume/``on_enter`` restarts it)."""
+        if name == "About":
+            self._about_lifecycle("on_exit")
+            return
+        tab = (getattr(self, "_tabs_by_name", None) or {}).get(name)
+        if tab is not None and hasattr(tab, "on_exit"):
+            try:
+                tab.on_exit()
+            except Exception:
+                logger.debug("Settings tab on_exit failed for %s", name, exc_info=True)
+
     def _pause_preloaded_tab(self, name: str) -> None:
         """A subtab built in the background starts its status timers; stop them
         until the user opens it (``on_enter`` restarts them and refreshes at once)."""
         if name == getattr(self, "_active_tab_name", ""):
+            return
+        if name == "About":
+            self._about_lifecycle("on_exit")
             return
         tab = (getattr(self, "_tabs_by_name", None) or {}).get(name)
         if tab is None or not hasattr(tab, "on_exit"):
@@ -1773,12 +1828,15 @@ class SettingsUI:
             except Exception:
                 pass
         tabs = getattr(self, "_tabs_by_name", None) or {}
-        tab = tabs.get(getattr(self, "_active_tab_name", "") or "")
+        active = getattr(self, "_active_tab_name", "") or ""
+        tab = tabs.get(active)
         if tab is not None and hasattr(tab, "on_exit"):
             try:
                 tab.on_exit()
             except Exception:
                 logger.debug("Settings tab on_exit failed", exc_info=True)
+        elif active == "About":
+            self._about_lifecycle("on_exit")
 
     def resume_background_work(self) -> None:
         """Restart Settings polls when the Settings tab is showing again."""
@@ -1796,12 +1854,15 @@ class SettingsUI:
             except Exception:
                 pass
         tabs = getattr(self, "_tabs_by_name", None) or {}
-        tab = tabs.get(getattr(self, "_active_tab_name", "") or "")
+        active = getattr(self, "_active_tab_name", "") or ""
+        tab = tabs.get(active)
         if tab is not None and hasattr(tab, "on_enter"):
             try:
                 tab.on_enter()
             except Exception:
                 logger.debug("Settings tab on_enter failed", exc_info=True)
+        elif active == "About":
+            self._about_lifecycle("on_enter")
 
     def has_unsaved_changes(self) -> bool:
         """Check if any settings tab has unsaved changes."""

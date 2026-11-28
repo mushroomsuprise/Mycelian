@@ -2196,6 +2196,9 @@ class _SectionHandle:
     visible: bool = True
     shown: int = 0
     head_html: str = ""
+    # Rows of a closed section are built the first time it opens (or a filter needs them).
+    body: Any = None
+    built: bool = True
 
 
 # config, sections (list of _SectionHandle), rows ({id: _RowHandle}), changed (set),
@@ -2225,8 +2228,41 @@ def _section_head_html(title: str, count: int) -> str:
     )
 
 
+def _section_count(sec: _SectionHandle) -> int:
+    """Settings in a section (its element count until the rows are built)."""
+    return len(sec.rows) if sec.built else len(sec.section.elements)
+
+
+def _section_has_changes(sec: _SectionHandle, changed: set) -> bool:
+    if sec.built:
+        return any(r.element_id in changed for r in sec.rows)
+    return any(str(el.get("id")) in changed for el in sec.section.elements)
+
+
+def _ensure_section_built(sec: _SectionHandle) -> None:
+    """Build a closed section's rows (deferred so big templates open fast)."""
+    if sec.built or sec.body is None or getattr(sec.body, "is_deleted", False):
+        return
+    config_name = _form_state.get("config")
+    form_data = form_data_store.get(config_name, {}) if config_name else {}
+    rows = _form_state.get("rows")
+    if rows is None:
+        rows = _form_state["rows"] = {}
+    sec.built = True
+    with sec.body:
+        for element in sec.section.elements:
+            handle = render_form_element(element, form_data, config_name)
+            if handle is not None:
+                sec.rows.append(handle)
+                rows[handle.element_id] = handle
+    changed = _form_state.get("changed") or set()
+    for handle in sec.rows:
+        if handle.element_id in changed:
+            handle.row.classes(add="is-changed")
+
+
 def _update_section_head(sec: _SectionHandle) -> None:
-    content = _section_head_html(sec.section.title, sec.shown if _filtering() else len(sec.rows))
+    content = _section_head_html(sec.section.title, sec.shown if _filtering() else _section_count(sec))
     if content != sec.head_html:
         sec.head_html = content
         sec.head.set_content(content)
@@ -2237,6 +2273,7 @@ def _set_section_open(sec: _SectionHandle, open_: bool) -> None:
         return
     sec.is_open = open_
     if open_:
+        _ensure_section_built(sec)
         sec.root.classes(remove="is-closed")
     else:
         sec.root.classes(add="is-closed")
@@ -2269,8 +2306,8 @@ def _render_nav() -> None:
         if filtering and not sec.shown:
             continue
         shown_any = True
-        count = sec.shown if filtering else len(sec.rows)
-        dot = '<span class="dot" title="Has unsaved changes"></span>' if any(r.element_id in changed for r in sec.rows) else ""
+        count = sec.shown if filtering else _section_count(sec)
+        dot = '<span class="dot" title="Has unsaved changes"></span>' if _section_has_changes(sec, changed) else ""
         parts.append(
             f'<div class="ssx-navitem" data-nav="{_esc(sec.section.key)}" title="{_esc(sec.section.title)}">'
             f'<span class="nm">{_esc(sec.section.title)}</span>{dot}<span class="n">{count}</span></div>'
@@ -2306,7 +2343,7 @@ def _refresh_meta() -> None:
     if not _form_state.get("config"):
         meta.set_text("")
         return
-    settings = sum(len(sec.rows) for sec in sections)
+    settings = sum(_section_count(sec) for sec in sections)
     meta.set_text(
         f"{settings} setting{'s' if settings != 1 else ''} · {len(sections)} section{'s' if len(sections) != 1 else ''}"
     )
@@ -2360,6 +2397,13 @@ def _apply_filters() -> None:
     changed_only = bool(st.get("changed_only"))
     changed = st.get("changed") or set()
     filtering = bool(term) or changed_only
+    if filtering:
+        # Matches in a closed, unbuilt section open it, so build its rows first.
+        for sec in _sections():
+            if not sec.built and any(
+                row_matches_filters(el, term, changed_only, changed) for el in sec.section.elements
+            ):
+                _ensure_section_built(sec)
     total = 0
     for sec in _sections():
         shown = 0
@@ -2897,8 +2941,8 @@ def create_custom_sources_tab():
         _bind_split_divider_js()
         _apply_inline_preview_visibility(bool(_pst_initial.get("show_inline_preview", True)), persist=False)
 
-        # Load the config files initially
-        load_config_files(config_parser, config_select, config_container)
+        # Load the config files initially (the shared parser cache is already fresh)
+        load_config_files(config_parser, config_select, config_container, reload_from_disk=False)
 
 
 def _listed_config_names(config_parser) -> List[str]:
@@ -2910,14 +2954,19 @@ def _listed_config_names(config_parser) -> List[str]:
     )
 
 
-def load_config_files(config_parser, config_select, config_container):
-    """Load the template list; keep the open template selected when it still exists."""
+def load_config_files(config_parser, config_select, config_container, *, reload_from_disk: bool = True):
+    """Load the template list; keep the open template selected when it still exists.
+
+    ``reload_from_disk`` drops the shared parser cache first (the Reload button). The
+    first build of the tab skips that: the cache is already kept fresh on save.
+    """
     global _active_config_name, _suppress_config_change
     _invalidate_preview_route_cache()
-    try:
-        config_parser.invalidate_cache()
-    except Exception:
-        logger.debug("Template list cache refresh failed", exc_info=True)
+    if reload_from_disk:
+        try:
+            config_parser.invalidate_cache()
+        except Exception:
+            logger.debug("Template list cache refresh failed", exc_info=True)
     configs = _listed_config_names(config_parser)
 
     if configs:
@@ -3123,14 +3172,16 @@ def render_config_ui(config_parser, config_name, container, search_term=None):
                 )
                 body = ui.element("div").classes("ssx-sec-body")
                 section_rows: List[_RowHandle] = []
-                with body:
-                    for element in section.elements:
-                        handle = render_form_element(element, form_data, config_name)
-                        if handle is not None:
-                            section_rows.append(handle)
-                            rows[handle.element_id] = handle
+                if open_:
+                    with body:
+                        for element in section.elements:
+                            handle = render_form_element(element, form_data, config_name)
+                            if handle is not None:
+                                section_rows.append(handle)
+                                rows[handle.element_id] = handle
             sec = _SectionHandle(
-                section=section, root=root, head=head, rows=section_rows, dom_id=dom_id, is_open=open_, head_html=head_html
+                section=section, root=root, head=head, rows=section_rows, dom_id=dom_id, is_open=open_,
+                head_html=head_html, body=body, built=open_,
             )
             handles.append(sec)
         if not sections:

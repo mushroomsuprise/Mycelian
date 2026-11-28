@@ -80,6 +80,9 @@ def shell(monkeypatch):
                           settings=SimpleNamespace(last_main_tab="Activity Feed", start_maximized=False,
                                                    window_width=0, window_height=0, window_x=0, window_y=0),
                           updates=[], saves=0)
+    # Clicked tabs normally build a few frames later (so the spinner paints first);
+    # build at once here so each check sees the result. Deferral has its own test.
+    monkeypatch.setattr(mw.LazyTabPanel, "ensure_loaded_soon", lambda self, delay=0.0: self.ensure_loaded())
 
     def fake_module(name, **attrs):
         mod = types.ModuleType(f"modules.uiwindows.{name}")
@@ -478,6 +481,21 @@ def test_switch_to_every_lazy_tab(shell):
         for label in LAZY:
             set_main(user, tabs, label)
             assert f"build {label}" in shell.log
+
+    run_ui(mw.create_ui_elements, check)
+
+
+def test_spore_studio_lives_in_a_layer_that_follows_the_tab(shell):
+    async def check(user):
+        tabs = tabs_el(user)
+        host = next(e for e in user.client.elements.values() if "mycelian-persistent-tab" in e.classes)
+        assert host.visible is False
+        set_main(user, tabs, "Spore Studio")
+        assert "build Spore Studio" in shell.log and host.visible is True
+        set_main(user, tabs, "Alerts")
+        assert host.visible is False
+        set_main(user, tabs, "Spore Studio")
+        assert host.visible is True and shell.log.count("build Spore Studio") == 1
 
     run_ui(mw.create_ui_elements, check)
 
@@ -942,3 +960,63 @@ def test_preload_settings_loop_stops_when_client_lost(shell, preload, monkeypatc
         assert shell.log.count("preload settings subtab") == 1
 
     run_ui(build, check)
+
+
+def test_clicked_tab_builds_after_the_switch_paints(monkeypatch):
+    """A click schedules the build instead of running it inside the handler."""
+    scheduled = []
+    monkeypatch.setattr(mw, "layout_schedule", lambda delay, fn, once=False: scheduled.append((delay, fn)))
+    built = []
+    panel = mw.LazyTabPanel("Alerts", lambda: built.append("Alerts"))
+
+    class Box:
+        client = None
+
+        def clear(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    panel.container = Box()
+    panel.ensure_loaded_soon()
+    panel.ensure_loaded_soon()  # a second click while pending schedules nothing more
+    assert built == [] and len(scheduled) == 1
+    assert scheduled[0][0] == mw._LAZY_CLICK_BUILD_DELAY_SEC
+    scheduled[0][1]()
+    assert built == ["Alerts"] and panel.loaded
+    panel.ensure_loaded_soon()
+    assert len(scheduled) == 1
+
+
+def test_hover_prefetch_builds_only_if_pointer_stays(monkeypatch):
+    scheduled = []
+    monkeypatch.setattr(mw, "layout_schedule", lambda delay, fn, once=False: scheduled.append((delay, fn)))
+    built = []
+
+    class Box:
+        client = None
+
+        def clear(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    panel = mw.LazyTabPanel("Chatbot", lambda: built.append("Chatbot"))
+    panel.container = Box()
+    panel.prefetch_on_hover()
+    panel.cancel_hover_prefetch()
+    scheduled.pop(0)[1]()  # hover timer fires after the pointer left: nothing happens
+    assert scheduled == [] and built == []
+    panel.prefetch_on_hover()
+    scheduled.pop(0)[1]()  # pointer stayed: the deferred build is scheduled
+    assert len(scheduled) == 1
+    scheduled.pop(0)[1]()
+    assert built == ["Chatbot"]

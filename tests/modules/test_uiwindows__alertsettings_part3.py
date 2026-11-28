@@ -35,10 +35,13 @@ def env(monkeypatch, tmp_path):
 @pytest.mark.parametrize("tab,alert_type", list(al.ALERT_TAB_TO_TYPE.items()) + [("Bogus", "bits")])
 def test_initialize_tab_values_sets_current_tab(env, monkeypatch, tab, alert_type):
     calls = []
-    monkeypatch.setattr(al, "refresh_alert_dropdowns", lambda: calls.append("refresh"))
+    only = []
+    monkeypatch.setattr(al, "refresh_alert_dropdowns", lambda only_type=None, **kw: (calls.append("refresh"), only.append(kw.get("only", only_type))))
     monkeypatch.setattr(al, "load_twitch_point_rewards", lambda: calls.append("rewards"))
     al.initialize_tab_values(tab)
     assert env.state.current_tab == alert_type and calls == ["refresh"]
+    # Only the arriving tab's list is refreshed.
+    assert only == [alert_type]
     assert env.state.suppress_selection_handler_depth == 0
     if alert_type == "points":
         env.run_scheduled()
@@ -46,7 +49,7 @@ def test_initialize_tab_values_sets_current_tab(env, monkeypatch, tab, alert_typ
 
 
 def test_initialize_tab_values_points_loader_error(env, monkeypatch):
-    monkeypatch.setattr(al, "refresh_alert_dropdowns", lambda: None)
+    monkeypatch.setattr(al, "refresh_alert_dropdowns", lambda **_kw: None)
     monkeypatch.setattr(al, "load_twitch_point_rewards", lambda: (_ for _ in ()).throw(RuntimeError("x")))
     al.initialize_tab_values("Channel Points")
     env.run_scheduled()  # logged, not raised
@@ -54,7 +57,7 @@ def test_initialize_tab_values_points_loader_error(env, monkeypatch):
 
 def test_initialize_tab_values_reloads_selected_alert(env, monkeypatch):
     loads = []
-    monkeypatch.setattr(al, "refresh_alert_dropdowns", lambda: None)
+    monkeypatch.setattr(al, "refresh_alert_dropdowns", lambda **_kw: None)
     monkeypatch.setattr(al, "load_alert_settings", lambda *a, **k: loads.append((a, k)))
     E.make_form("raids", "raids10")
     al.initialize_tab_values("Raids")
@@ -67,7 +70,7 @@ def test_initialize_tab_values_reloads_selected_alert(env, monkeypatch):
 
 
 def test_initialize_tab_values_outer_error(env, monkeypatch):
-    monkeypatch.setattr(al, "refresh_alert_dropdowns", lambda: (_ for _ in ()).throw(RuntimeError()))
+    monkeypatch.setattr(al, "refresh_alert_dropdowns", lambda **_kw: (_ for _ in ()).throw(RuntimeError()))
     al.initialize_tab_values("Bits")
     assert env.state.suppress_selection_handler_depth == 0
 

@@ -17,6 +17,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from nicegui import background_tasks, run, ui
 
+from ..ui_tooltip import tip
+
 from ..chatbot_core import Greeting, Quote
 from ..chatbot_manager import DEFAULT_QUOTE_REPLY_FORMAT, get_manager
 from ..notification_engine import notify
@@ -132,6 +134,34 @@ def _inject_styles() -> None:
     inject_page_stylesheet("mycelian-chatbot-qg-dialogs", promote_color_importance(scope_selectors(QG_DIALOG_CSS, ".cxe")))
 
 
+# Cards drawn per page: long quote / greeting lists add more on request instead of
+# building thousands of elements at once.
+_PAGE_SIZE = 60
+
+
+def _paged_cards(items: list, render_one, page: int = _PAGE_SIZE) -> None:
+    """A card grid that shows ``page`` cards, then a "Show more" button for the rest."""
+    grid = ui.element("div").classes("cx-grid")
+    more = ui.element("div").classes("w-full flex justify-center py-3")
+    state = {"shown": 0}
+
+    def add_page() -> None:
+        start = state["shown"]
+        chunk = items[start:start + page]
+        with grid:
+            for item in chunk:
+                render_one(item)
+        state["shown"] = start + len(chunk)
+        more.clear()
+        left = len(items) - state["shown"]
+        if left > 0:
+            with more:
+                ui.button(f"Show {min(page, left)} more ({left} left)", icon="expand_more", on_click=add_page).props(
+                    "flat no-caps color=primary")
+
+    add_page()
+
+
 def _toolbar(icon: str, title: str, sub: str, placeholder: str, new_label: str, on_new, on_search, on_refresh,
              extra: Optional[Callable[[], None]] = None) -> ui.label:
     with ui.element("div").classes("cx-bar"):
@@ -140,13 +170,13 @@ def _toolbar(icon: str, title: str, sub: str, placeholder: str, new_label: str, 
             ui.label(title).classes("cx-bar-title")
             sub_label = ui.label(sub).classes("cx-bar-sub")
         ui.element("div").classes("cx-spacer")
-        search = ui.input(placeholder=placeholder).props("outlined dense clearable").classes("cx-search")
+        search = ui.input(placeholder=placeholder).props("outlined dense clearable debounce=250").classes("cx-search")
         with search.add_slot("prepend"):
             ui.icon("search").classes("text-base")
         search.on_value_change(lambda e: on_search((e.value or "").strip().lower()))
         if extra:
             extra()
-        ui.button(icon="refresh", on_click=on_refresh).props("outline dense color=primary").tooltip("Reload")
+        tip(ui.button(icon="refresh", on_click=on_refresh).props("outline dense color=primary"), "Reload")
         ui.button(new_label, icon="add", on_click=on_new).props("unelevated no-caps color=primary")
     return sub_label
 
@@ -297,9 +327,7 @@ class QuotesPanel:
                     _html(_icon("search_off"))
                     ui.label("No quotes match your search.")
                 return
-            with ui.element("div").classes("cx-grid"):
-                for quote in quotes:
-                    self._card(quote, usage.get(quote.quote_id, 0))
+            _paged_cards(quotes, lambda quote: self._card(quote, usage.get(quote.quote_id, 0)))
 
     def _card(self, quote: Quote, used: int) -> None:
         with ui.element("div").classes("cx-card is-quote"):
@@ -310,7 +338,7 @@ class QuotesPanel:
                         ui.label(f"— {quote.author}").classes("qg-by")
                     else:
                         ui.label("No author").classes("qg-by is-empty")
-                ui.button(icon="send", on_click=lambda q=quote: post_quote(q)).props("flat round dense").tooltip("Post this quote in chat now")
+                tip(ui.button(icon="send", on_click=lambda q=quote: post_quote(q)).props("flat round dense"), "Post this quote in chat now")
             ui.label(quote.text).classes("qg-quote")
             _html(f'<div class="qg-meta"><span>{_icon("person_add")}Added by {_esc(quote.added_by or "unknown")}</span>'
                   f'<span>{_icon("event")}{_esc(_date(quote.date_added))}</span></div>')
@@ -320,9 +348,9 @@ class QuotesPanel:
                 else:
                     _html(f'<span class="cx-stat is-muted">{_icon("schedule")}Never used</span>')
                 ui.element("div").classes("cx-spacer")
-                ui.button(icon="content_copy", on_click=lambda q=quote: self._duplicate(q)).props("flat round dense").tooltip("Duplicate")
-                ui.button(icon="edit", on_click=lambda q=quote: open_quote_editor(q.quote_id, self.refresh)).props("flat round dense").tooltip("Edit")
-                with ui.button(icon="more_horiz").props("flat round dense").tooltip("More"):
+                tip(ui.button(icon="content_copy", on_click=lambda q=quote: self._duplicate(q)).props("flat round dense"), "Duplicate")
+                tip(ui.button(icon="edit", on_click=lambda q=quote: open_quote_editor(q.quote_id, self.refresh)).props("flat round dense"), "Edit")
+                with tip(ui.button(icon="more_horiz").props("flat round dense"), "More"):
                     with ui.menu().props("auto-close"):
                         ui.menu_item("Copy the quote text", on_click=lambda q=quote: (
                             ui.clipboard.write(q.text), notify(f"Quote #{q.quote_number} copied", type="success", source="chatbot")))
@@ -705,9 +733,7 @@ class GreetingsPanel:
                     _html(_icon("search_off"))
                     ui.label("No greetings match your search.")
                 return
-            with ui.element("div").classes("cx-grid"):
-                for greeting in shown:
-                    self._card(greeting)
+            _paged_cards(shown, self._card)
 
     def _card(self, greeting: Greeting) -> None:
         card = ui.element("div").classes("cx-card" + ("" if greeting.enabled else " is-off"))
@@ -723,7 +749,7 @@ class GreetingsPanel:
                     get_manager().update_greeting(g.greeting_id, enabled=bool(e.value))
                     c.classes(remove="is-off") if e.value else c.classes(add="is-off")
 
-                ui.switch(value=greeting.enabled, on_change=flip).props("dense color=positive").tooltip("Turn this greeting on or off")
+                tip(ui.switch(value=greeting.enabled, on_change=flip).props("dense color=positive"), "Turn this greeting on or off")
             ui.label(render_greeting_preview(greeting.greeting_text, name)).classes("cx-reply")
             with ui.element("div").classes("cx-foot"):
                 if greeting.last_greeted:
@@ -733,8 +759,8 @@ class GreetingsPanel:
                 ui.element("div").classes("cx-spacer")
                 ui.button(icon="restart_alt", on_click=lambda g=greeting: self._reset_one(g)).props("flat round dense").tooltip(
                     "Greet again the next time they chat")
-                ui.button(icon="edit", on_click=lambda g=greeting: open_greeting_editor(g.greeting_id, self.refresh)).props("flat round dense").tooltip("Edit")
-                with ui.button(icon="more_horiz").props("flat round dense").tooltip("More"):
+                tip(ui.button(icon="edit", on_click=lambda g=greeting: open_greeting_editor(g.greeting_id, self.refresh)).props("flat round dense"), "Edit")
+                with tip(ui.button(icon="more_horiz").props("flat round dense"), "More"):
                     with ui.menu().props("auto-close"):
                         ui.menu_item("Delete…", on_click=lambda g=greeting: confirm_delete_greeting(g, self.refresh))
 

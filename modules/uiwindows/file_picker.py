@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
-from nicegui import ui
+from nicegui import background_tasks, ui
 
 from ..notification_engine import notify
 from ..ui_buttons import outline_button, primary_button
@@ -855,15 +855,35 @@ class _FilePicker:
                 dims = image_dimensions(entry.path)
                 if dims:
                     rows.append(("Dimensions", dims))
-                from .media_preview import animation_timing, describe_animation, format_seconds
+                from .media_preview import (
+                    animation_timing_async,
+                    cached_animation_timing,
+                    describe_animation,
+                    format_seconds,
+                    timing_is_pending,
+                )
 
-                timing = animation_timing(entry.path)
-                if timing:
-                    rows.append(("Length", f"{format_seconds(timing.seconds)} · {describe_animation(timing, frames=False)}"))
+                def length_row(timing) -> Tuple[str, str]:
+                    return ("Length", f"{format_seconds(timing.seconds)} · {describe_animation(timing, frames=False)}")
+
+                timing = cached_animation_timing(entry.path)
+                pending = timing_is_pending(timing)
+                if not pending and timing:
+                    rows.append(length_row(timing))
             rows.append(("Modified", format_time(entry.mtime)))
             if not entry.usable:
                 rows.append(("Usable here", "No"))
-            self._rows(rows)
+            rows_el = self._rows(rows)
+            if kind == "image" and pending:
+                # Stepping every frame of a big GIF stalls the UI; read it on a worker.
+                async def fill_length(path=entry.path, base=list(rows), el=rows_el) -> None:
+                    found = await animation_timing_async(path)
+                    if found and not getattr(el, "is_deleted", False):
+                        keys = [k for k, _v in base]
+                        at = keys.index("Modified") if "Modified" in keys else len(base)
+                        el.set_content(self._rows_html([*base[:at], length_row(found), *base[at:]]))
+
+                background_tasks.create(fill_length(), name="file-picker-animation-length")
 
     def _volume_row(self, *, muted: bool) -> None:
         """Preview volume (0-100). A video starts muted until the slider is moved."""
@@ -897,11 +917,12 @@ class _FilePicker:
             ui.html(lines + more, sanitize=False).classes("fpk-pv-list")
 
     @staticmethod
-    def _rows(rows: Sequence[Tuple[str, str]]) -> None:
-        ui.html(
-            "".join(f"<div><span>{html_lib.escape(k)}</span><b>{html_lib.escape(v)}</b></div>" for k, v in rows if v),
-            sanitize=False,
-        ).classes("fpk-pv-rows")
+    def _rows_html(rows: Sequence[Tuple[str, str]]) -> str:
+        return "".join(f"<div><span>{html_lib.escape(k)}</span><b>{html_lib.escape(v)}</b></div>" for k, v in rows if v)
+
+    @staticmethod
+    def _rows(rows: Sequence[Tuple[str, str]]) -> ui.html:
+        return ui.html(_FilePicker._rows_html(rows), sanitize=False).classes("fpk-pv-rows")
 
     def _allowed(self, path: Path) -> bool:
         within = self.cfg.within

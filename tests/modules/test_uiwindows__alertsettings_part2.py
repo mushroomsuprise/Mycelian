@@ -84,10 +84,14 @@ def test_create_alert_settings_tab(env, monkeypatch):
         assert "alert_select" in env.el("bits")
         # recorded timers: the tab watcher, 3 points loaders, Bits init (+ panel timers)
         delays = [d for d, _fn, _kw in env.scheduled]
-        assert 0.4 in delays and delays.count(1.5) == 1 and 3.0 in delays
+        assert 2.0 in delays and delays.count(1.5) == 1 and 3.0 in delays
 
         # Switching tabs builds the lazy panel and initializes it.
+        before = len(env.scheduled)
         state.tabs_component.value = "Raids"
+        # The build runs a few frames after the switch so the spinner shows first.
+        assert "Raids" in al._LAZY_ALERT_PANEL_BUILDERS
+        next(f for d, f, _kw in env.scheduled[before:] if d == 0.05)()
         assert "Raids" not in al._LAZY_ALERT_PANEL_BUILDERS
         assert "alert_select" in env.el("raids") and inits[-1] == "Raids"
         assert state.active_tab_name == "Raids"
@@ -100,7 +104,9 @@ def test_create_alert_settings_tab(env, monkeypatch):
         state.current_tab = "points"
         points_loaders[0]()  # select not built yet
         assert loads == []
+        before = len(env.scheduled)
         state.tabs_component.value = "Channel Points"
+        next(f for d, f, _kw in env.scheduled[before:] if d == 0.05)()
         assert "alert_select" in env.el("points")
         state.current_tab = "points"
         points_loaders[1]()

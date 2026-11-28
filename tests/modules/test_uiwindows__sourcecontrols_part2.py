@@ -19,7 +19,7 @@ from modules import chat_banner  # noqa: E402
 from modules import notification_engine  # noqa: E402
 from modules.help_system import contextual_help, help_render  # noqa: E402
 from modules.uiwindows import sourcecontrols as sc  # noqa: E402
-from ui_sim import run_ui  # noqa: E402
+from ui_sim import run_ui, until  # noqa: E402
 
 
 class FakeEngine:
@@ -160,7 +160,8 @@ def test_create_tab_renders_cards_search_and_buttons(env, monkeypatch):
         # refresh header button rebuilds
         env["engine"].configs = {}
         fire(user, head_btns[1])
-        assert view.cards == {}
+        # Refresh reads the configs on a worker thread, then re-renders.
+        assert await until(lambda: view.cards == {})
         assert view.pill.text == "0 templates · 0 controls"
         assert "No source controls yet" in text_of(view.grid)
         assert "is-icon" in head_btns[1].classes

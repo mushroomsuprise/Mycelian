@@ -48,3 +48,14 @@ def run_ui(build: Callable[[], None], check: Optional[Callable[[User], Awaitable
         # build UI outside a page would fail.
         for client_id in set(Client.instances) - before:
             Client.instances.pop(client_id, None)
+
+
+async def until(predicate: Callable[[], bool], timeout: float = 2.0) -> bool:
+    """Wait until ``predicate()`` is true (UI work that finishes on a worker thread)."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not predicate():
+        if loop.time() >= deadline:
+            return False
+        await asyncio.sleep(0.01)
+    return True

@@ -19,6 +19,9 @@ import pytest
 
 from modules import tray_controller as tc
 
+# Captured before the autouse fixture swaps it for a recorder.
+_REAL_SCHEDULE_BLANK = tc._schedule_blank
+
 
 # --------------------------------------------------------------------------- fixtures / fakes
 
@@ -29,6 +32,8 @@ def _reset_state(monkeypatch):
         "_conn": None,
         "_reader_thread": None,
         "_minimized": False,
+        "_blanked": False,
+        "_blank_timer": None,
         "_window_url": None,
         "_tray_unavailable_reason": None,
         "_native_handlers_registered": False,
@@ -37,6 +42,9 @@ def _reset_state(monkeypatch):
         "_quit_requested": False,
     }.items():
         monkeypatch.setattr(tc, name, value)
+    # Never start the real unload timer; tests call _blank_if_still_hidden themselves.
+    scheduled = []
+    monkeypatch.setattr(tc, "_schedule_blank", lambda: scheduled.append(1))
 
 
 class RecThread:
@@ -437,15 +445,33 @@ def test_minimize_starts_tray_and_hides(monkeypatch, pushed, sent, fakes):
     monkeypatch.setattr(tc, "start_tray", lambda: started.append(1) or True)
     assert tc.minimize_to_tray(reason="x") is True
     assert started == [1]
-    assert pushed == [("mycelian_set_dock_visible", False), ("mycelian_prepare_for_blank",)]
-    assert win.calls == [("hide",), ("load_url", tc.BLANK_URL)]
+    # Hidden now; the UI is only unloaded later if the window stays hidden.
+    assert pushed == [("mycelian_set_dock_visible", False)]
+    assert win.calls == [("hide",)]
     assert fakes.suspended == [True]
     assert sent == [{"cmd": "set_state", "minimized": True}]
-    assert tc._minimized is True
+    assert tc._minimized is True and tc._blanked is False
+    assert tc._blank_if_still_hidden() is True
+    assert pushed[-1] == ("mycelian_prepare_for_blank",)
+    assert win.calls == [("hide",), ("load_url", tc.BLANK_URL)]
+    assert tc._blanked is True
+    assert tc._blank_if_still_hidden() is False  # already unloaded
+
+
+def test_blank_skipped_when_restored_or_failing(monkeypatch, pushed, caplog):
+    win = FakeWindow(fail={"load_url"})
+    monkeypatch.setattr(tc, "_main_window", lambda: win)
+    assert tc._blank_if_still_hidden() is False  # not minimized: nothing to unload
+    monkeypatch.setattr(tc, "_minimized", True)
+    with caplog.at_level(logging.ERROR, logger=tc.logger.name):
+        assert tc._blank_if_still_hidden() is False
+    assert "failed to unload the hidden UI" in caplog.text and tc._blanked is False
+    monkeypatch.setattr(tc, "_main_window", lambda: None)
+    assert tc._blank_if_still_hidden() is False
 
 
 def test_minimize_failure_keeps_state(monkeypatch, pushed, sent, caplog):
-    win = FakeWindow(fail={"load_url"})
+    win = FakeWindow(fail={"hide"})
     monkeypatch.setattr(tc, "_main_window", lambda: win)
     monkeypatch.setattr(tc, "is_tray_running", lambda: True)
     with caplog.at_level(logging.ERROR, logger=tc.logger.name):
@@ -464,14 +490,16 @@ def test_restore_without_window_or_url(monkeypatch, caplog):
     assert "application URL unknown" in caplog.text
 
 
-@pytest.mark.parametrize("was_minimized", [True, False])
-def test_restore_success(monkeypatch, pushed, sent, fakes, was_minimized):
+@pytest.mark.parametrize("was_minimized,blanked", [(True, True), (True, False), (False, False)])
+def test_restore_success(monkeypatch, pushed, sent, fakes, was_minimized, blanked):
     win = FakeWindow()
     monkeypatch.setattr(tc, "_main_window", lambda: win)
     monkeypatch.setattr(tc, "_window_url", "http://u/")
     monkeypatch.setattr(tc, "_minimized", was_minimized)
+    monkeypatch.setattr(tc, "_blanked", blanked)
     assert tc.restore_from_tray(reason="r") is True
-    expected = ([("load_url", "http://u/")] if was_minimized else []) + [("show",), ("restore",)]
+    # Only an unloaded (blank) window reloads the UI; a recently hidden one is just shown.
+    expected = ([("load_url", "http://u/")] if blanked else []) + [("show",), ("restore",)]
     assert win.calls == expected
     assert pushed == [("mycelian_set_dock_visible", True)]
     assert fakes.suspended == [False] and fakes.flushed == 1
@@ -505,6 +533,7 @@ def test_paint_delay_restore_from_minimized(monkeypatch, pushed, sent, fakes, sl
     monkeypatch.setattr(tc, "_main_window", lambda: win)
     monkeypatch.setattr(tc, "_window_url", "http://u/")
     monkeypatch.setattr(tc, "_minimized", True)
+    monkeypatch.setattr(tc, "_blanked", True)
     tc._restore_with_paint_delay()
     assert win.calls == [("load_url", "http://u/"), ("show",), ("restore",)]
     assert sleeps == [tc._RESTORE_PAINT_DELAY_SEC]
@@ -527,6 +556,7 @@ def test_paint_delay_restore_reload_error(monkeypatch, pushed, sent, fakes):
     monkeypatch.setattr(tc, "_main_window", lambda: win)
     monkeypatch.setattr(tc, "_window_url", "http://u/")
     monkeypatch.setattr(tc, "_minimized", True)
+    monkeypatch.setattr(tc, "_blanked", True)
     tc._restore_with_paint_delay()
     assert tc._minimized is True and sent == []
 
@@ -993,7 +1023,7 @@ def test_initialize_start_minimized_tray_failed(orchestration, fakes, caplog):
 def test_mark_started_minimized(monkeypatch, pushed, sent, fakes, caplog):
     with caplog.at_level(logging.INFO, logger=tc.logger.name):
         tc._mark_started_minimized()
-    assert tc._minimized is True
+    assert tc._minimized is True and tc._blanked is True  # created blank: restore reloads
     assert pushed == [("mycelian_set_dock_visible", False)]
     assert fakes.suspended == [True]
     assert sent == [{"cmd": "set_state", "minimized": True}]
@@ -1067,3 +1097,30 @@ def test_close_request_quits_when_minimize_fails(monkeypatch, caplog):
         tc.handle_close_request()
     assert calls == ["window_close"]
     assert "minimize failed on close; quitting instead" in caplog.text
+
+
+
+def test_schedule_and_cancel_blank_timer(monkeypatch):
+    made = []
+
+    class FakeTimer:
+        def __init__(self, delay, fn):
+            self.delay, self.fn, self.daemon = delay, fn, False
+            self.started = self.cancelled = False
+            made.append(self)
+
+        def start(self):
+            self.started = True
+
+        def cancel(self):
+            self.cancelled = True
+
+    monkeypatch.setattr(tc.threading, "Timer", FakeTimer)
+    _REAL_SCHEDULE_BLANK()
+    first = made[0]
+    assert first.delay == tc._BLANK_AFTER_HIDE_SEC and first.fn is tc._blank_if_still_hidden
+    assert first.started and first.daemon and tc._blank_timer is first
+    _REAL_SCHEDULE_BLANK()  # rescheduling cancels the earlier timer
+    assert first.cancelled and tc._blank_timer is made[1]
+    tc._cancel_blank()
+    assert made[1].cancelled and tc._blank_timer is None

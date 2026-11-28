@@ -265,6 +265,9 @@ def apply_theme(theme_name: str):
             shared=True,
         )
         ui.add_head_html(SUB_TAB_SEAM_SCRIPT, shared=True)
+        from .ui_tooltip import TOOLTIP_HEAD_HTML
+
+        ui.add_head_html(TOOLTIP_HEAD_HTML, shared=True)
 
         _base_css_injected = True
         logger.info(
@@ -963,6 +966,12 @@ def cleanup_resources():
         # Don't re-raise exceptions during cleanup
 
 
+# Click-triggered tab builds wait this long so the panel switch + spinner paint first.
+_LAZY_CLICK_BUILD_DELAY_SEC = 0.05
+# A pointer resting this long on an unbuilt tab starts its build before the click.
+_HOVER_PREFETCH_SEC = 0.25
+
+
 class LazyTabPanel:
     """Tab panel that loads content lazily on first access"""
 
@@ -972,22 +981,107 @@ class LazyTabPanel:
         self.loaded = False
         self.container = None
         self.spinner = None
+        self._build_pending = False
+        self._hover_token = None
+        self.last_build_ms = 0.0
+        self.last_build_elements = 0
 
     def ensure_loaded(self):
         """Load content if not already loaded"""
-        if not self.loaded and self.container:
-            # Clear the container and remove the spinner
-            self.container.clear()
+        if self.loaded or not self.container:
+            return
+        self._build_pending = False
+        client = getattr(self.container, "client", None)
+        elements_before = _client_element_count(client)
+        started = time.perf_counter()
+        # Clear the container and remove the spinner
+        self.container.clear()
 
-            # Load the actual content
-            with self.container:
-                self.build_func()
+        # Load the actual content
+        with self.container:
+            self.build_func()
 
-            self.loaded = True
-            logger.debug(f"Lazy loaded tab: {self.name}")
+        self.loaded = True
+        self.last_build_ms = (time.perf_counter() - started) * 1000.0
+        self.last_build_elements = _client_element_count(client) - elements_before
+        logger.debug(
+            "Built main tab %s in %.0f ms (%d elements)",
+            self.name,
+            self.last_build_ms,
+            self.last_build_elements,
+        )
+
+    def ensure_loaded_soon(self, delay: float = _LAZY_CLICK_BUILD_DELAY_SEC) -> None:
+        """Build on a later loop turn so the tab switch and spinner reach the window first.
+
+        A build inside the click handler holds NiceGUI's outbox until it returns, so
+        the panel switch and the finished tab arrive together and the spinner never
+        shows. Deferring by a few frames lets the switch paint immediately.
+        """
+        if self.loaded or self._build_pending or not self.container:
+            return
+        self._build_pending = True
+
+        def _build() -> None:
+            if not self._build_pending:
+                return
+            try:
+                self.ensure_loaded()
+            except Exception as exc:
+                self._build_pending = False
+                logger.error("Building tab %s failed: %s", self.name, exc, exc_info=True)
+                return
+            ms = getattr(self, "last_build_ms", 0.0)
+            if ms >= _LAZY_PRELOAD_SLOW_MS:
+                logger.warning(
+                    "Opening %s held the UI for %.0f ms (%d elements)",
+                    self.name,
+                    ms,
+                    getattr(self, "last_build_elements", 0),
+                )
+
+        try:
+            layout_schedule(delay, _build, once=True)
+        except Exception as exc:
+            logger.debug("Deferred build for %s not scheduled (%s); building now", self.name, exc)
+            _build()
+
+    def prefetch_on_hover(self, delay: float = _HOVER_PREFETCH_SEC) -> None:
+        """Start building when the pointer rests on the tab, just before a likely click."""
+        if self.loaded or self._build_pending or not self.container:
+            return
+        token = object()
+        self._hover_token = token
+
+        def _go() -> None:
+            if self._hover_token is token and not self.loaded:
+                self._hover_token = None
+                self.ensure_loaded_soon(0)
+
+        try:
+            layout_schedule(delay, _go, once=True)
+        except Exception:
+            self._hover_token = None
+
+    def cancel_hover_prefetch(self) -> None:
+        # Only drops a hover that has not started; a click's build is never cancelled.
+        self._hover_token = None
 
 
+
+def _client_element_count(client: Any) -> int:
+    try:
+        return len(client.elements) if client is not None else 0
+    except Exception:
+        return 0
+
+
+
+
+# Longest wait for startup to finish before preloading anyway.
 _LAZY_PRELOAD_DELAY_SEC = 30.0
+# Pause after startup finishes before the first preload build.
+_LAZY_PRELOAD_AFTER_READY_SEC = 2.0
 _LAZY_PRELOAD_GAP_SEC = 1.0
 _LAZY_PRELOAD_STEP_TIMEOUT_SEC = 180.0
 # Each build runs on the UI loop, so wait until the user has left the window alone
@@ -1120,8 +1214,26 @@ def _start_lazy_tab_preload(lazy_tabs: dict, tabs) -> None:
 
         return _run
 
+    def _wait_for_startup() -> bool:
+        # Start once deferred services have finished instead of after a fixed
+        # 30 s, so tabs clicked early are usually warm already.
+        try:
+            from .service_manager import get_service_manager
+
+            ready = get_service_manager().ready
+        except Exception:
+            ready = None
+        waited = 0.0
+        while waited < _LAZY_PRELOAD_DELAY_SEC:
+            if ready is not None and ready.is_set():
+                break
+            if not _sleep_gap(0.5):
+                return False
+            waited += 0.5
+        return _sleep_gap(_LAZY_PRELOAD_AFTER_READY_SEC)
+
     def _worker() -> None:
-        if not _sleep_gap(_LAZY_PRELOAD_DELAY_SEC):
+        if not _wait_for_startup():
             return
         logger.info("Lazy tab preload starting for client %s", client_id)
         for name in wanted_main:
@@ -1354,8 +1466,11 @@ def create_ui_elements():
             with ui.element("div").classes("main-content"):
                 # Initialize lazy tabs dictionary
                 lazy_tabs = {}
+                # Tabs whose content lives outside the tab panels (see below).
+                persistent_hosts: Dict[str, Any] = {}
 
-                with ui.tab_panels(tabs, value=initial_main_tab).classes(
+                # No slide animation: whole-panel slides made every switch feel slow.
+                with ui.tab_panels(tabs, value=initial_main_tab, animated=False).classes(
                     "w-full flex-1 min-h-0 overflow-hidden flex flex-col"
                 ) as tab_panels:
                     # Set references for help system context detection
@@ -1406,7 +1521,14 @@ def create_ui_elements():
                     def build_spore_studio_tab():
                         from .uiwindows.spore_studio import create_spore_studio_tab
 
-                        create_spore_studio_tab()
+                        # Built into a persistent layer: Quasar's keep-alive detaches
+                        # hidden panels, which reloads the editor iframe on every return.
+                        host = persistent_hosts.get("Spore Studio")
+                        if host is None:
+                            create_spore_studio_tab()
+                            return
+                        with host:
+                            create_spore_studio_tab()
 
                     def build_source_settings_tab():
                         from .uiwindows.customsources import create_custom_sources_tab
@@ -1446,6 +1568,21 @@ def create_ui_elements():
                                     .props("size=3rem")
                                 )
                                 lazy_tabs[tab_name].spinner = spinner
+
+                # Spore Studio's editor iframe sits in this layer over the panels and is
+                # only hidden (display:none keeps an iframe loaded) when another tab shows.
+                spore_host = ui.element("div").classes(
+                    "mycelian-persistent-tab absolute inset-0 flex flex-col min-h-0 p-4"
+                ).style("z-index: 3")
+                spore_host.set_visibility(initial_main_label == "Spore Studio")
+                persistent_hosts["Spore Studio"] = spore_host
+
+                def sync_persistent_hosts() -> None:
+                    showing = main_tab_name(tabs.value)
+                    for host_label, host in persistent_hosts.items():
+                        visible = showing == host_label
+                        if host.visible != visible:
+                            host.set_visibility(visible)
 
                 # Add tab change handler for unsaved changes warning and lazy loading
                 def main_tab_name(tab) -> str:
@@ -1561,8 +1698,9 @@ def create_ui_elements():
                             )
 
                     new_tab_name = main_tab_name(new_tab) or get_tab_name(new_tab)
+                    sync_persistent_hosts()
                     if new_tab_name in lazy_tabs:
-                        lazy_tabs[new_tab_name].ensure_loaded()
+                        lazy_tabs[new_tab_name].ensure_loaded_soon()
                     try:
                         from .uiwindows.settings import settings_ui
 
@@ -1593,14 +1731,6 @@ def create_ui_elements():
                     nonlocal previous_tab
                     current_tab = tabs.value
                     if current_tab != previous_tab:
-                        from .ui_tab_transitions import (
-                            MAIN_TAB_ORDER,
-                            apply_tab_slide_direction,
-                        )
-
-                        apply_tab_slide_direction(
-                            tab_panels, previous_tab, current_tab, MAIN_TAB_ORDER
-                        )
                         # The tab already changed, but we need to check if it should be allowed
                         # Temporarily set tabs.value back to the old tab for the handler
                         old_current = previous_tab
@@ -1613,6 +1743,19 @@ def create_ui_elements():
                         previous_tab = tabs.value
 
                 tabs.on_value_change(on_main_tab_change)
+
+                for hover_label, hover_tab in main_tabs_by_label.items():
+                    hover_panel = lazy_tabs.get(hover_label)
+                    if hover_panel is None:
+                        continue
+                    hover_tab.on(
+                        "mouseenter",
+                        lambda _e, p=hover_panel: p.prefetch_on_hover(),
+                    )
+                    hover_tab.on(
+                        "mouseleave",
+                        lambda _e, p=hover_panel: p.cancel_hover_prefetch(),
+                    )
                 layout_schedule(
                     5.0, check_tab_changes, active=True
                 )

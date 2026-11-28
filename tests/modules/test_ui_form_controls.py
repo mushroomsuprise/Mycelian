@@ -27,6 +27,11 @@ def _tooltips(el):
             if isinstance(t, ui.tooltip) and t.props.get("target") == f"#{el.html_id}"]
 
 
+def _shared_tip(el):
+    """Form fields use the shared tooltip: the text rides on a data attribute, no component."""
+    return el.props.get("data-mtip")
+
+
 def _build(fn):
     made = {}
 
@@ -45,9 +50,9 @@ def test_with_tooltip_adds_tooltip_class():
         made["b"] = fc._with_tooltip(ui.label("y"), "")
 
     run_ui(build)
-    assert [t.text for t in _tooltips(made["a"])] == ["Help text"]
+    assert _shared_tip(made["a"]) == "Help text" and _tooltips(made["a"]) == []
     assert "bg-theme-surface" in made["a"].classes
-    assert _tooltips(made["b"]) == []
+    assert _tooltips(made["b"]) == [] and _shared_tip(made["b"]) is None
     assert "bg-theme-surface" not in made["b"].classes
 
 
@@ -62,7 +67,7 @@ def test_form_select():
     assert el.props.get("label") == "L"
     el.set_value("b")
     assert changes == ["b"]
-    assert [t.text for t in _tooltips(el)] == ["Pick"]
+    assert _shared_tip(el) == "Pick"
 
 
 def test_form_select_dict_options_custom_classes_no_tooltip():

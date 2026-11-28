@@ -292,6 +292,38 @@ def test_render_config_ui_sections_and_after_render(env, monkeypatch):
     run_ui(build, check)
 
 
+def test_closed_sections_build_rows_on_first_open_or_search(env):
+    parser = FakeParser({"t": _sections_cfg(5)})
+    holder = {}
+    cs._custom_sources_ctx.update(form_id="F", nav_list=FakeEl(), meta_label=FakeEl())
+
+    def build():
+        holder["c"] = ui.element("div")
+        cs.render_config_ui(parser, "t", holder["c"])
+
+    def inputs(sec):
+        return [e for e in sec.body.descendants() if isinstance(e, ui.input)]
+
+    async def check(user):
+        handles = cs._sections()
+        # The first three sections are open and built; closed ones wait until needed.
+        assert [h.built for h in handles] == [True, True, True, False, False]
+        assert inputs(handles[3]) == [] and "T3" not in cs._form_state["rows"]
+        # Counts still report every setting.
+        assert cs._custom_sources_ctx["meta_label"].text == "5 settings · 5 sections"
+        with user.client:
+            cs._set_section_open(handles[3], True)
+        assert handles[3].built and len(inputs(handles[3])) == 1 and "T3" in cs._form_state["rows"]
+        # A search hit in a closed, unbuilt section builds and opens it.
+        cs._form_state["search"] = "text 4"
+        with user.client:
+            cs._apply_filters()
+        assert handles[4].built and handles[4].is_open and handles[4].shown == 1
+        cs._form_state["search"] = ""
+
+    run_ui(build, check)
+
+
 def test_render_config_ui_keeps_baseline_and_edits(env):
     parser = FakeParser({"t": _sections_cfg(1)})
     cs.form_data_store["t"] = {"T0": "edited"}
