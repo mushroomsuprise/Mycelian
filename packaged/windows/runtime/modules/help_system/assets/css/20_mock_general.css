@@ -1,0 +1,662 @@
+/* =========================================================================
+   Mycelian Help — general mock pieces (Getting Started, Settings, Connection
+   Guides hub). Scoped under .help-doc .hm, theme variables only.
+   ========================================================================= */
+
+/* ---- Service status footer, faithful copy of .service-status-footer ------
+   (modules/ui_styles.py). The core .hm-footer is a simplified version; these
+   pieces add the pill badge, the dot, the default looks (Name over status,
+   Tiles with a status dot) and the original minimal ring mode.             */
+
+.help-doc .hm .hm-sf {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px 16px;
+    min-height: 36px;
+    padding: 6px 12px;
+    margin-top: 6px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-accent);
+    border-radius: 10px;
+    line-height: 1;
+}
+
+.help-doc .hm .hm-sf-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    white-space: nowrap;
+    position: relative;
+}
+
+.help-doc .hm .hm-sf-item:hover { background: var(--color-hover-overlay); }
+
+.help-doc .hm .hm-sf-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+}
+
+.help-doc .hm .hm-sf-icon .hx-brand,
+.help-doc .hm .hm-sf-icon svg { width: 14px; height: 14px; font-size: 14px; display: block; }
+
+.help-doc .hm .hm-sf-name { font-size: 12px; font-weight: 500; color: var(--color-text-primary); }
+
+.help-doc .hm .hm-sf-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: var(--hm-sf, var(--color-text-secondary));
+}
+
+.help-doc .hm .hm-sf-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--hm-sf, var(--color-text-secondary));
+    background: color-mix(in srgb, var(--hm-sf, var(--color-text-secondary)) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--hm-sf, var(--color-text-secondary)) 25%, transparent);
+}
+
+/* Tier colors (same mapping as footer_status_tier) */
+.help-doc .hm .hm-sf-success { --hm-sf: var(--color-success); }
+.help-doc .hm .hm-sf-info { --hm-sf: var(--color-info); }
+.help-doc .hm .hm-sf-muted { --hm-sf: var(--color-text-secondary); }
+.help-doc .hm .hm-sf-warning { --hm-sf: var(--color-warning); }
+.help-doc .hm .hm-sf-error { --hm-sf: var(--color-error); }
+
+/* Minimal mode: icon with a status-colored ring, name and badge hidden */
+.help-doc .hm .hm-sf.hm-sf-minimal .hm-sf-item:not(.hm-sf-progress) { gap: 0; padding: 2px; }
+.help-doc .hm .hm-sf.hm-sf-minimal .hm-sf-item:not(.hm-sf-progress) .hm-sf-name,
+.help-doc .hm .hm-sf.hm-sf-minimal .hm-sf-item:not(.hm-sf-progress) .hm-sf-dot,
+.help-doc .hm .hm-sf.hm-sf-minimal .hm-sf-item:not(.hm-sf-progress) .hm-sf-badge { display: none; }
+
+.help-doc .hm .hm-sf.hm-sf-minimal .hm-sf-item:not(.hm-sf-progress) .hm-sf-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    box-shadow: 0 0 0 2px var(--hm-sf, var(--color-text-muted));
+}
+
+/* Name over status (default full look): icon tile with a corner dot, name above the status word */
+.help-doc .hm .hm-sf.hm-sf-stacked { gap: 4px; }
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-item {
+    display: inline-grid;
+    grid-template-columns: 22px auto;
+    grid-template-rows: auto auto;
+    column-gap: 7px;
+    align-items: center;
+    height: 30px;
+    padding: 0 9px 0 5px;
+    border-radius: 9px;
+}
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-icon {
+    grid-column: 1; grid-row: 1 / span 2;
+    width: 22px; height: 22px; border-radius: 7px; box-sizing: border-box;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-icon svg { width: 13px; height: 13px; }
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-name { grid-column: 2; grid-row: 1; align-self: end; font-size: 11.5px; font-weight: 650; line-height: 1.15; }
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-dot {
+    grid-column: 1; grid-row: 1 / span 2; align-self: end; justify-self: end;
+    margin: 0 -2px -2px 0;
+    box-shadow: 0 0 0 2px var(--color-bg-elevated);
+}
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-badge {
+    grid-column: 2; grid-row: 2; align-self: start;
+    padding: 0; border: 0; background: none; border-radius: 0;
+    font-size: 10px; font-weight: 550; line-height: 1.2; text-transform: none; letter-spacing: 0;
+    color: var(--color-text-muted);
+}
+.help-doc .hm .hm-sf.hm-sf-stacked :is(.hm-sf-warning, .hm-sf-error, .hm-sf-info) .hm-sf-badge { color: var(--hm-sf); }
+.help-doc .hm .hm-sf.hm-sf-stacked :is(.hm-sf-warning, .hm-sf-error) { background: color-mix(in srgb, var(--hm-sf) 11%, transparent); }
+.help-doc .hm .hm-sf.hm-sf-stacked .hm-sf-muted { opacity: .6; }
+
+/* Tiles with a status dot (default minimal look) */
+.help-doc .hm .hm-sf.hm-sf-tiles { gap: 6px; }
+.help-doc .hm .hm-sf.hm-sf-minimal.hm-sf-tiles .hm-sf-item:not(.hm-sf-progress) {
+    justify-content: center;
+    width: 26px; height: 26px; padding: 0; box-sizing: border-box; border-radius: 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm .hm-sf.hm-sf-minimal.hm-sf-tiles .hm-sf-item:not(.hm-sf-progress) .hm-sf-icon { box-shadow: none; border-radius: 0; width: 15px; height: 15px; }
+.help-doc .hm .hm-sf.hm-sf-minimal.hm-sf-tiles .hm-sf-item:not(.hm-sf-progress) .hm-sf-icon svg { width: 15px; height: 15px; }
+.help-doc .hm .hm-sf.hm-sf-minimal.hm-sf-tiles .hm-sf-item:not(.hm-sf-progress) .hm-sf-dot {
+    display: block; position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px;
+    box-shadow: 0 0 0 2px var(--color-bg-elevated);
+}
+.help-doc .hm .hm-sf.hm-sf-tiles :is(.hm-sf-warning, .hm-sf-error) {
+    background: color-mix(in srgb, var(--hm-sf) 14%, var(--color-bg-surface)) !important;
+    border-color: color-mix(in srgb, var(--hm-sf) 50%, transparent) !important;
+}
+.help-doc .hm .hm-sf.hm-sf-tiles .hm-sf-muted .hm-sf-icon { opacity: .4; filter: grayscale(1); }
+
+.help-doc .hm .hm-field.hm-select.is-disabled { opacity: .45; }
+
+/* Hover tooltip used in mocks to show the status word (data-tip) */
+.help-doc .hm .hm-sf-item[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    right: 0;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 20;
+}
+
+/* ---- Main window shell ------------------------------------------------- */
+
+.help-doc .hm .hm-win-body {
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.help-doc .hm .hm-feed-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    font-size: 0.82rem;
+}
+
+.help-doc .hm .hm-feed-row .hx-mi { color: var(--color-primary); }
+.help-doc .hm .hm-feed-row .hm-feed-time { margin-left: auto; color: var(--color-text-muted); font-size: 0.72rem; }
+
+/* Settings "Jump to" select sits above the sub-tab strip */
+.help-doc .hm .hm-jump { width: 14rem; max-width: 100%; margin-bottom: 6px; }
+
+/* ---- Source URL card (Settings → About → Available Source URLs) ------- */
+
+.help-doc .hm .hm-url-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 8px;
+}
+
+.help-doc .hm .hm-url-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    min-width: 0;
+}
+
+.help-doc .hm .hm-url-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.help-doc .hm .hm-url-card-title { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.help-doc .hm .hm-url-card-badge {
+    font-size: 0.68rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.help-doc .hm .hm-url-card-btns { margin-left: auto; display: inline-flex; gap: 4px; flex: 0 0 auto; }
+
+.help-doc .hm .hm-url-card-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    border-radius: 4px;
+    border: 1px solid var(--color-primary);
+    color: var(--color-primary);
+}
+
+.help-doc .hm .hm-url-card-btn .hx-mi { font-size: 16px; }
+.help-doc .hm .hm-url-card-btn .hx-brand svg { width: 14px; height: 14px; }
+
+/* ---- Dialog card (Quasar q-dialog > q-card) --------------------------- */
+
+.help-doc .hm .hm-gn-dialog {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 16px;
+    border-radius: 8px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
+    box-shadow: 0 10px 30px var(--color-bg-overlay);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.help-doc .hm .hm-gn-dialog-title { font-size: 1.05rem; font-weight: 700; }
+
+/* ---- Neutral third-party app window (OBS) ----------------------------- */
+
+.help-doc .hm .hm-ext {
+    border: 1px solid var(--color-border-default);
+    border-radius: 6px;
+    background: var(--color-bg-surface);
+    overflow: hidden;
+}
+
+.help-doc .hm .hm-ext-bar {
+    padding: 5px 10px;
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    background: var(--color-bg-base);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hm .hm-ext-body { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+.help-doc .hm .hm-ext-menu {
+    display: flex;
+    flex-direction: column;
+    min-width: 180px;
+    max-width: 240px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    background: var(--color-bg-elevated);
+    font-size: 0.82rem;
+}
+
+.help-doc .hm .hm-ext-menu > span { padding: 5px 10px; }
+.help-doc .hm .hm-ext-menu > span.is-hot { background: var(--color-primary-light); color: var(--color-text-primary); }
+
+/* ---- Game Hooks card (content-card with a 2px state border) ----------- */
+
+.help-doc .hm .hm-hook-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 4px;
+    background: var(--color-bg-surface);
+    border: 2px solid transparent;
+    min-width: 0;
+}
+
+.help-doc .hm .hm-hook-card.is-ok { border-color: var(--color-success); }
+.help-doc .hm .hm-hook-card.is-warn { border-color: var(--color-warning); }
+.help-doc .hm .hm-hook-card.is-err { border-color: var(--color-error); }
+.help-doc .hm .hm-hook-card.is-unsupported { border-color: var(--color-error); opacity: 0.6; }
+
+.help-doc .hm .hm-os {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.help-doc .hm .hm-os > span {
+    font-size: 0.62rem;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--color-border-default);
+    color: var(--color-text-primary);
+}
+
+.help-doc .hm .hm-os > span.is-off { opacity: 0.45; color: var(--color-text-muted); }
+
+/* ---- Theme swatches (read the live theme variables) ------------------- */
+
+.help-doc .hm .hm-swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 6px;
+}
+
+.help-doc .hm .hm-gn-swatch { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 9px; color: var(--color-text-muted); }
+.help-doc .hm .hm-gn-swatch > i { width: 100%; height: 22px; border-radius: 3px; border: 1px solid var(--color-border-default); }
+.help-doc .hm .hm-swatch-primary > i { background: var(--color-primary); }
+.help-doc .hm .hm-swatch-base > i { background: var(--color-bg-base); }
+.help-doc .hm .hm-swatch-surface > i { background: var(--color-bg-surface); }
+.help-doc .hm .hm-swatch-elevated > i { background: var(--color-bg-elevated); }
+.help-doc .hm .hm-swatch-text > i { background: var(--color-text-primary); }
+.help-doc .hm .hm-swatch-muted > i { background: var(--color-text-muted); }
+.help-doc .hm .hm-swatch-success > i { background: var(--color-success); }
+.help-doc .hm .hm-swatch-warning > i { background: var(--color-warning); }
+.help-doc .hm .hm-swatch-error > i { background: var(--color-error); }
+.help-doc .hm .hm-swatch-info > i { background: var(--color-info); }
+
+/* ---- Alert preview (what a test alert looks like on the overlay) ------ */
+
+.help-doc .hm .hm-overlay {
+    position: relative;
+    height: 190px;
+    max-width: 100%;
+    border-radius: 6px;
+    background: var(--color-bg-base);
+    border: 1px dashed var(--color-border-default);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.help-doc .hm .hm-overlay-alert {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+}
+
+.help-doc .hm .hm-overlay-gif {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    background: var(--color-primary-light);
+    border: 1px solid var(--color-border-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-primary);
+}
+
+.help-doc .hm .hm-overlay-gif .hx-mi { font-size: 30px; }
+.help-doc .hm .hm-overlay-name { font-weight: 700; color: var(--color-primary); }
+
+@media (max-width: 700px) {
+    .help-doc .hm .hm-url-grid { grid-template-columns: 1fr; }
+}
+
+/* Sub-tab strip that wraps onto two rows (Settings has 14 tabs) */
+.help-doc .hm .hm-subtabs.hm-wrap { flex-wrap: wrap; row-gap: 4px; }
+.help-doc .hm .hm-subtabs.hm-wrap .hm-subtab { flex: 0 0 auto; border-radius: 8px; border: 1px solid var(--color-border-subtle); }
+.help-doc .hm .hm-subtabs.hm-wrap .hm-subtab.is-active { border-color: var(--color-border-accent); margin-bottom: 0; padding-bottom: 0; }
+.help-doc .hm .hm-subtabs.hm-wrap + .hm-frame { margin-top: 6px; }
+
+/* ---- Pop-up notification, copy of assets/default_assets/mycelian_toast.js --
+   <div class="hm-gn-pop is-error">: hm-gn-pop-ico, -top (-lvl, -dot, -count),
+   -x, -title, -msg, -fix, -prog, -acts > -btn(.is-main), -bar. Style variants
+   st-chip st-minimal st-tinted st-glass (accent bar is the default).          */
+
+.help-doc .hm .hm-gn-pops { display: flex; flex-direction: column; gap: 10px; max-width: 392px; }
+.help-doc .hm .hm-gn-pop {
+    --c: var(--color-notify-info);
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 3px 11px;
+    max-width: 392px;
+    padding: 12px 8px 13px 14px;
+    border-radius: var(--notify-radius, 12px);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    box-shadow: 0 10px 26px var(--color-bg-overlay);
+    overflow: hidden;
+    line-height: 1.4;
+}
+.help-doc .hm .hm-gn-pop.is-error { --c: var(--color-notify-error); }
+.help-doc .hm .hm-gn-pop.is-warning { --c: var(--color-notify-warning); }
+.help-doc .hm .hm-gn-pop.is-success { --c: var(--color-notify-success); }
+.help-doc .hm .hm-gn-pop::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
+.help-doc .hm .hm-gn-pop-ico {
+    grid-row: span 4;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c);
+    background: color-mix(in srgb, var(--c) 15%, transparent);
+}
+.help-doc .hm .hm-gn-pop-ico .hx-mi { font-size: 19px; color: var(--c); }
+.help-doc .hm .hm-gn-pop-spin {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2.5px solid color-mix(in srgb, var(--c) 30%, transparent);
+    border-top-color: var(--c);
+    animation: hm-gn-spin 0.9s linear infinite;
+}
+@keyframes hm-gn-spin { to { transform: rotate(360deg); } }
+.help-doc .hm .hm-gn-pop-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+.help-doc .hm .hm-gn-pop-lvl { color: var(--c); }
+.help-doc .hm .hm-gn-pop-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--color-text-muted); flex: none; }
+.help-doc .hm .hm-gn-pop-count {
+    display: inline-flex;
+    align-items: center;
+    height: 17px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0;
+    color: var(--c);
+    background: color-mix(in srgb, var(--c) 16%, transparent);
+}
+.help-doc .hm .hm-gn-pop-x { grid-row: 1; grid-column: 3; color: var(--color-text-muted); }
+.help-doc .hm .hm-gn-pop-x .hx-mi { font-size: 16px; }
+.help-doc .hm .hm-gn-pop-title { grid-column: 2 / span 2; font-size: 0.9rem; font-weight: 650; line-height: 1.3; color: var(--color-text-primary); }
+.help-doc .hm .hm-gn-pop-msg { grid-column: 2 / span 2; font-size: 0.8rem; color: var(--color-text-secondary); }
+.help-doc .hm .hm-gn-pop-fix {
+    grid-column: 2 / span 2;
+    display: flex;
+    gap: 7px;
+    margin-top: 6px;
+    padding: 7px 9px;
+    border-radius: 8px;
+    font-size: 0.76rem;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm .hm-gn-pop-fix .hx-mi { font-size: 15px; color: var(--color-warning); }
+.help-doc .hm .hm-gn-pop-prog {
+    grid-column: 2 / span 2;
+    height: 5px;
+    margin-top: 8px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--c) 18%, transparent);
+    overflow: hidden;
+}
+.help-doc .hm .hm-gn-pop-prog > i { display: block; width: 35%; height: 100%; border-radius: 3px; background: var(--c); }
+.help-doc .hm .hm-gn-pop-acts { grid-column: 2 / span 2; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.help-doc .hm .hm-gn-pop-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 0.74rem;
+    font-weight: 650;
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border-default);
+}
+.help-doc .hm .hm-gn-pop-btn .hx-mi { font-size: 15px; }
+.help-doc .hm .hm-gn-pop-btn.is-main {
+    color: var(--color-text-primary);
+    border-color: var(--color-border-accent);
+    background: var(--color-primary-light);
+}
+.help-doc .hm .hm-gn-pop-bar { position: absolute; left: 0; bottom: 0; height: 2px; width: 60%; background: var(--c); opacity: 0.85; }
+.help-doc .hm .hm-gn-pop.st-chip::before { display: none; }
+.help-doc .hm .hm-gn-pop.st-minimal::before { display: none; }
+.help-doc .hm .hm-gn-pop.st-minimal .hm-gn-pop-ico { width: 10px; height: 10px; margin-top: 4px; grid-row: span 1; background: var(--c); }
+.help-doc .hm .hm-gn-pop.st-minimal .hm-gn-pop-ico > * { display: none; }
+.help-doc .hm .hm-gn-pop.st-tinted::before { display: none; }
+.help-doc .hm .hm-gn-pop.st-tinted {
+    background: color-mix(in srgb, var(--c) 18%, var(--color-bg-surface));
+    border-color: color-mix(in srgb, var(--c) 40%, var(--color-border-default));
+}
+.help-doc .hm .hm-gn-pop.st-tinted .hm-gn-pop-ico { background: var(--c); }
+.help-doc .hm .hm-gn-pop.st-tinted .hm-gn-pop-ico .hx-mi { color: #fff; }
+.help-doc .hm .hm-gn-pop.st-glass::before { display: none; }
+.help-doc .hm .hm-gn-pop.st-glass {
+    background: color-mix(in srgb, var(--color-bg-surface) 72%, transparent);
+    border-color: color-mix(in srgb, var(--c) 35%, var(--color-border-subtle));
+}
+.help-doc .hm .hm-gn-pop.st-glass .hm-gn-pop-ico { box-shadow: 0 0 14px color-mix(in srgb, var(--c) 45%, transparent); }
+
+/* ---- Notification centre panel, copy of modules/notify_center.py ------ */
+
+.help-doc .hm .hm-gn-nc {
+    max-width: 430px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 10px;
+    background: var(--color-bg-surface);
+    overflow: hidden;
+}
+.help-doc .hm .hm-gn-nc-head { display: flex; align-items: center; gap: 8px; padding: 12px 10px 10px 16px; }
+.help-doc .hm .hm-gn-nc-title { font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm .hm-gn-nc-pill {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+}
+.help-doc .hm .hm-gn-nc-link { font-size: 0.76rem; font-weight: 650; color: var(--color-primary); }
+.help-doc .hm .hm-gn-nc-head .hx-mi { font-size: 20px; color: var(--color-text-secondary); }
+.help-doc .hm .hm-gn-nc-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px 16px; }
+.help-doc .hm .hm-gn-nc-chip {
+    --c: var(--color-text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 650;
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border-default);
+}
+.help-doc .hm .hm-gn-nc-chip > i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.help-doc .hm .hm-gn-nc-chip b { font-weight: 800; color: var(--color-text-muted); }
+.help-doc .hm .hm-gn-nc-chip.is-on { color: var(--color-text-primary); background: var(--color-bg-base); border-color: var(--color-border-accent); }
+.help-doc .hm .hm-gn-nc-chip.is-error { --c: var(--color-notify-error); }
+.help-doc .hm .hm-gn-nc-chip.is-warning { --c: var(--color-notify-warning); }
+.help-doc .hm .hm-gn-nc-chip.is-info { --c: var(--color-notify-info); }
+.help-doc .hm .hm-gn-nc-chip.is-success { --c: var(--color-notify-success); }
+.help-doc .hm .hm-gn-nc-search { padding: 0 12px 10px 16px; }
+.help-doc .hm .hm-gn-nc-group {
+    padding: 10px 16px 4px;
+    border-top: 1px solid var(--color-border-subtle);
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+.help-doc .hm .hm-gn-nc-item {
+    --c: var(--color-notify-info);
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 2px 10px;
+    padding: 9px 12px 10px 16px;
+}
+.help-doc .hm .hm-gn-nc-item.is-hover { background: var(--color-bg-base); }
+.help-doc .hm .hm-gn-nc-item.is-error { --c: var(--color-notify-error); }
+.help-doc .hm .hm-gn-nc-item.is-warning { --c: var(--color-notify-warning); }
+.help-doc .hm .hm-gn-nc-item.is-success { --c: var(--color-notify-success); }
+.help-doc .hm .hm-gn-nc-ico {
+    grid-row: span 3;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--c) 15%, transparent);
+}
+.help-doc .hm .hm-gn-nc-ico .hx-mi { font-size: 16px; color: var(--c); }
+.help-doc .hm .hm-gn-nc-t { font-size: 0.84rem; font-weight: 650; line-height: 1.3; color: var(--color-text-primary); }
+.help-doc .hm .hm-gn-nc-time { font-size: 0.68rem; color: var(--color-text-muted); white-space: nowrap; }
+.help-doc .hm .hm-gn-nc-m { grid-column: 2 / span 2; font-size: 0.76rem; color: var(--color-text-secondary); }
+.help-doc .hm .hm-gn-nc-meta { grid-column: 2 / span 2; display: flex; align-items: center; gap: 6px; font-size: 0.68rem; color: var(--color-text-muted); }
+.help-doc .hm .hm-gn-nc-meta strong { font-weight: 700; }
+.help-doc .hm .hm-gn-nc-tag { padding: 0 6px; border-radius: 999px; border: 1px solid var(--color-border-subtle); }
+.help-doc .hm .hm-gn-nc-unread { position: absolute; left: 6px; top: 20px; width: 6px; height: 6px; border-radius: 50%; background: var(--color-primary); }
+.help-doc .hm .hm-gn-nc-tools { grid-column: 2 / span 2; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.help-doc .hm .hm-gn-nc-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--color-border-subtle);
+    font-size: 0.74rem;
+    color: var(--color-text-muted);
+}
+
+/* ---- App Settings → Notifications: level cards and feature grid -------- */
+
+.help-doc .hm .hm-gn-levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.help-doc .hm .hm-gn-level {
+    --c: var(--color-notify-info);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-base);
+    font-size: 0.8rem;
+}
+.help-doc .hm .hm-gn-level.is-error { --c: var(--color-notify-error); }
+.help-doc .hm .hm-gn-level.is-warning { --c: var(--color-notify-warning); }
+.help-doc .hm .hm-gn-level.is-success { --c: var(--color-notify-success); }
+.help-doc .hm .hm-gn-level-top { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--color-text-primary); }
+.help-doc .hm .hm-gn-level-top > i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.help-doc .hm .hm-gn-level-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--color-text-secondary); }
+.help-doc .hm .hm-gn-mx th > i { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--c, var(--color-text-muted)); }
+.help-doc .hm .hm-gn-mx th.is-error { --c: var(--color-notify-error); }
+.help-doc .hm .hm-gn-mx th.is-warning { --c: var(--color-notify-warning); }
+.help-doc .hm .hm-gn-mx th.is-info { --c: var(--color-notify-info); }
+.help-doc .hm .hm-gn-mx th.is-success { --c: var(--color-notify-success); }
+.help-doc .hm .hm-gn-mx td:not(:first-child), .help-doc .hm .hm-gn-mx th:not(:first-child) { text-align: center; }
+
+@media (max-width: 700px) {
+    .help-doc .hm .hm-gn-levels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .help-doc .hm .hm-gn-pop-spin { animation: none; }
+}

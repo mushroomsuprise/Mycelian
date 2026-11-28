@@ -146,6 +146,22 @@ class CappedFileHandler(logging.FileHandler):
         self._approx_size = os.path.getsize(self.baseFilename)
         return self._approx_size > self.max_bytes
 
+    def _bytes_on_disk(self, text: str, stream) -> int:
+        """Size *text* takes in the file: encoded, and with text-mode newlines.
+
+        Counting characters undercounts on Windows, where each "\\n" is written as
+        "\\r\\n", so the file crept past max_bytes before the real size was read.
+        The stream's codec is used: ``self.encoding`` may be the pseudo-name "locale".
+        """
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        try:
+            size = len(text.encode(encoding, errors="replace"))
+        except LookupError:
+            size = len(text.encode("utf-8", errors="replace"))
+        if os.linesep != "\n":
+            size += text.count("\n") * (len(os.linesep) - 1)
+        return size
+
     def emit(self, record):
         if self.baseFilename is None:
             return
@@ -156,9 +172,10 @@ class CappedFileHandler(logging.FileHandler):
                     self.stream = self._open()
                 msg = self.format(record)
                 stream = self.stream
-                stream.write(msg + self.terminator)
+                text = msg + self.terminator
+                stream.write(text)
                 self.flush()
-                if self.trim and self._over_cap(len(msg) + len(self.terminator)):
+                if self.trim and self._over_cap(self._bytes_on_disk(text, stream)):
                     if self.stream:
                         self.stream.close()
                         self.stream = None

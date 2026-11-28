@@ -1,0 +1,80 @@
+<p class="hx-lead">With your own Discord bot connected, Mycelian can post to the Discord channels you choose: automatic <strong>go-live</strong> announcements, <strong>Chatbot</strong> replies and <strong>Connector</strong> messages.</p>
+
+<div class="hx-meta">
+  <span>{{icon:send}} Send-only</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>Discord</span></span></span>
+</div>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:guide_discord">{{brand:discord}}<span><strong>Connect Discord</strong><span class="hx-card-text">Create the bot, paste its token, invite it to your server</span></span></a>
+</div>
+
+<p>The bot uses a bot token, never your Discord password. The token is stored encrypted in the app database. It sends messages only, so privileged intents such as Server Members or Message Content are <strong>not</strong> needed.</p>
+
+<h2>Go-live announcements</h2>
+
+<p>Under <strong>Go-live announcement</strong> on <span class="hx-path"><span>Settings</span><span>Discord</span></span>, turn on <strong>Announce when you go live</strong>, add one or more channels, and click <strong>Save</strong> in the header. Mycelian then posts your message the first time <strong>Twitch</strong> or <strong>YouTube</strong> goes live in a session.</p>
+
+<figure class="hx-figure">
+  <div class="hm">
+    <div class="hm-col">
+      <div class="hm-it-sec"><span class="hx-mi">campaign</span>Go-live announcement</div>
+      <div class="hm-it-row"><div><div class="hm-it-row-title">Announce when you go live</div><div class="hm-it-row-sub">Once per stream when Twitch or YouTube goes live. Multi-stream safe, never sent twice.</div></div><span class="hm-switch is-on"><i></i></span></div>
+      <div>
+        <div class="hm-it-label">Message <span class="hx-mi">help_outline</span></div>
+        <div class="hm-field hm-nolabel hm-textarea"><span class="hm-value">Stream is live on {platform}! {url}</span></div>
+      </div>
+      <div class="hm-it-tokens"><span class="hm-it-token">{platform}</span><span class="hm-it-token">{title}</span><span class="hm-it-token">{url}</span></div>
+      <div class="hm-it-label">Channels</div>
+      <div class="hm-it-list">
+        <div class="hm-it-li"><span class="hx-mi">tag</span><span class="hm-it-li-main">announcements</span><span class="hm-it-li-muted">My Stream Server</span><span class="hx-mi">close</span></div>
+        <div class="hm-it-li"><span class="hx-mi">tag</span><span class="hm-it-li-main">going-live</span><span class="hm-it-li-muted">Friends</span><span class="hx-mi">close</span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Settings → Discord → Go-live announcement. One message goes to every listed channel. Click a placeholder chip to add it to the end of the message. The switch is only a picture.</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Placeholder</th><th>Becomes</th></tr></thead>
+<tbody>
+<tr><td><code>{platform}</code></td><td><code>Twitch</code> or <code>YouTube</code>, whichever went live first</td></tr>
+<tr><td><code>{title}</code></td><td>For YouTube, the latest video title Mycelian knows. Twitch go-live posts leave it empty</td></tr>
+<tr><td><code>{url}</code></td><td>Your Twitch channel link or YouTube live link</td></tr>
+</tbody>
+</table></div>
+
+<p>The default message is <code>Stream is live on {platform}! {url}</code>.</p>
+
+<div class="hx-callout hx-note"><p>Multi-streaming sends only one message. When the second platform goes live, Discord is not posted again. The session resets once both Twitch and YouTube are offline, so the next stream announces again.</p></div>
+
+<h2>Chatbot and Connectors</h2>
+
+<p>The servers and channels your bot can see also appear in these places once the bot is connected:</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Where</th><th>How</th></tr></thead>
+<tbody>
+<tr><td><strong>Chatbot</strong> commands and events</td><td>In the reply step, <strong>Discord</strong> → <strong>Channel</strong> adds Discord channels for the reply. It is separate from <strong>Send to</strong> Twitch / YouTube, so a reply can go to Discord only. See <a href="help:chatbot_commands">Chatbot Commands</a>.</td></tr>
+<tr><td><strong>Connectors</strong></td><td>Use the <strong>Send Discord Message</strong> action, not the Twitch/YouTube chat action. See <a href="help:connector_actions">Connector Actions</a>.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Status</h2>
+
+<p>Discord appears in the status footer once a bot token is saved. The status colors and fixes are in <a href="help:guide_discord">Connect Discord</a>; the full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<h2>Troubleshooting</h2>
+
+<details class="hx-details">
+  <summary>The tab says Auth failed</summary>
+  <p>Reset the bot token in the Developer Portal, paste it, and click <strong>Connect</strong>.</p>
+</details>
+<details class="hx-details">
+  <summary>No servers are listed</summary>
+  <p>Invite the bot to at least one server, then click the {{icon:refresh}} icon next to <strong>Add</strong> (<em>Reload servers and channels</em>). The Server and Channel pickers only show while the bot is connected.</p>
+</details>
+<details class="hx-details">
+  <summary>Messages are not sent</summary>
+  <p>Make sure the bot's role can <strong>View Channel</strong> and <strong>Send Messages</strong> in that channel.</p>
+</details>

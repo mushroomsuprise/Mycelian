@@ -1,0 +1,316 @@
+<p class="hx-lead">A container is one browser-source URL that shows several templates at once. Each template stays its own page and is loaded in a frame inside the container. Mycelian does not merge the HTML files.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Spore Studio</span><span>Containers</span></span></span>
+  <span>{{icon:save}} Saved to <code>templates/_containers/{route}.json</code></span>
+</div>
+
+<p>Use a container when you want one OBS browser source for a whole layout, such as a game scene with a chat box, a goal bar and a now-playing card. Every template inside it still keeps its own URL.</p>
+
+<h2>The Containers screen</h2>
+
+<p>Click <strong>Containers</strong> at the left of the Spore Studio toolbar. The columns change to a template library, a container canvas, and container settings.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm hm-ss">
+    <div class="hm-ss-toolbar">
+      <span class="hm-ss-mode"><span><span class="hx-mi">layers</span>Templates</span><span class="is-active"><span class="hx-mi">dashboard</span>Containers</span></span>
+      <span class="hm-ss-tsep"></span>
+      <span class="hm-ss-select"><span class="hx-mi">description</span><b>Game layout /game_layout</b></span>
+      <span class="hm-ss-btn"><span class="hx-mi">add</span>New</span>
+      <span class="hm-ss-btn hm-ss-icon" title="Duplicate this container"><span class="hx-mi">layers</span></span>
+      <span class="hm-ss-btn hm-ss-icon hm-ss-danger" title="Delete this container"><span class="hx-mi">delete</span></span>
+      <span class="hm-ss-tsep"></span>
+      <span class="hm-ss-btnpair"><span class="hm-ss-btn hm-ss-icon" title="Undo"><span class="hx-mi">undo</span></span><span class="hm-ss-btn hm-ss-icon" title="Redo"><span class="hx-mi">redo</span></span></span>
+      <span class="hm-ss-spacer"></span>
+      <span class="hm-ss-btn hm-ss-icon hm-ss-ghost" title="Tour"><span class="hx-mi">explore</span></span>
+      <span class="hm-ss-btn hm-ss-icon hm-ss-ghost" title="Reload editor"><span class="hx-mi">refresh</span></span>
+      <span class="hm-ss-btn hm-ss-icon hm-ss-ghost" title="Open externally"><span class="hx-mi">open_in_new</span></span>
+      <span class="hm-ss-tsep"></span>
+      <span class="hm-ss-select" title="Simulate"><span class="hx-mi">science</span>Live content</span>
+      <span class="hm-ss-btn"><span class="hx-mi">check_box_outline_blank</span>Placeholders</span>
+      <span class="hm-ss-btn"><span class="hx-mi">play_arrow</span>Preview</span>
+      <span class="hm-ss-btn hm-ss-primary"><span class="hx-mi">check</span>Save<span class="hm-ss-kbd">Ctrl S</span></span>
+      <span class="hm-marker" data-n="1"></span>
+    </div>
+    <div class="hm-ss-body">
+      <div class="hm-ss-left">
+        <div class="hm-ss-section">
+          <div class="hm-ss-h"><span class="hx-mi">layers</span>Templates <span class="hm-marker" data-n="2"></span></div>
+          <p class="hm-ss-hint" style="margin-bottom:6px">Drag a template onto the canvas. Any template can be placed, including ones not made in Spore Studio.</p>
+          <div class="hm-ss-search">Search templates</div>
+          <div class="hm-ss-outline-head">Spore Studio</div>
+          <div class="hm-ss-tpl"><span class="hx-mi">description</span>bitcounter<span class="hx-mi">drag_indicator</span></div>
+          <div class="hm-ss-tpl"><span class="hx-mi">description</span>poll<span class="hx-mi">drag_indicator</span></div>
+          <div class="hm-ss-outline-head">Built-in</div>
+          <div class="hm-ss-tpl"><span class="hx-mi">description</span>activity_feed<span class="hx-mi">drag_indicator</span></div>
+          <div class="hm-ss-tpl"><span class="hx-mi">description</span>source_controls<span class="hx-mi">drag_indicator</span></div>
+          <div class="hm-ss-outline-head">Other templates</div>
+          <div class="hm-ss-tpl"><span class="hx-mi">description</span>chat<span class="hx-mi">drag_indicator</span></div>
+        </div>
+      </div>
+      <div class="hm-ss-canvas">
+        <div class="hm-ss-stage hm-ss-16x9">
+          <div class="hm-ss-slot" style="left:0;top:0;width:64%;height:100%">game_frame<span class="hm-ss-badge is-fixed">Fixed</span></div>
+          <div class="hm-ss-space" data-label="Space 1 · top to bottom" style="left:66%;top:8%;width:34%;height:76%"></div>
+          <div class="hm-ss-slot is-selected is-flex" style="left:66%;top:8%;width:34%;height:46%">chat<span class="hm-ss-badge">Fills leftover</span></div>
+          <div class="hm-ss-minline" style="left:66%;top:30%;width:34%"></div>
+          <span class="hm-ss-flow" style="left:83%;top:55%">↕</span>
+          <div class="hm-ss-slot" style="left:66%;top:56%;width:34%;height:28%">ff7<span class="hm-ss-badge">Fits content</span></div>
+          <div class="hm-ss-slot is-missing" style="left:66%;top:86%;width:34%;height:14%">old_banner (missing)</div>
+          <span class="hm-marker hm-pin" data-n="3" style="top:40%;left:30%"></span>
+        </div>
+      </div>
+      <div class="hm-ss-right">
+        <div class="hm-ss-panecard">
+          <div class="hm-ss-ph"><span class="hx-mi">description</span>chat <span class="hm-marker" data-n="4"></span></div>
+          <div class="hm-ss-row"><span class="hm-ss-label">Template</span><span class="hm-ss-input hm-ss-sel">chat</span></div>
+          <div class="hm-ss-grouplabel"><span class="hx-mi">height</span>Sizing</div>
+          <div class="hm-ss-seg"><span>Fixed</span><span>Fits its content</span><span class="is-on">Fills leftover space</span></div>
+          <p class="hm-ss-summary">“chat” takes the space “ff7” isn't using, never smaller than 200px. When space is tight its picture is cropped (the template sees a smaller window and re-flows).</p>
+          <div class="hm-ss-row"><span class="hm-ss-label">Shares space with</span><span class="hm-ss-input hm-ss-sel">● Space 1 – ff7</span></div>
+          <div class="hm-ss-row"><span class="hm-ss-label">Never smaller than</span><span class="hm-ss-input">200 px</span></div>
+          <div class="hm-ss-grouplabel"><span class="hx-mi">open_with</span>Position and size</div>
+          <div class="hm-ss-quad">
+            <div class="hm-ss-row"><span class="hm-ss-label">X</span><span class="hm-ss-input">1272</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">Y</span><span class="hm-ss-input">0</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">W</span><span class="hm-ss-input">648</span></div>
+            <div class="hm-ss-row"><span class="hm-ss-label">H</span><span class="hm-ss-input">626</span></div>
+          </div>
+          <div class="hm-ss-grouplabel"><span class="hx-mi">visibility</span>Behaviour</div>
+          <span class="hm-switch is-on"><i></i>Visible</span>
+          <span class="hm-switch"><i></i>Lock position</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Containers mode with <code>chat</code> selected. <code>chat</code> and <code>ff7</code> share the dashed space: when FF7 shows more (its enemies panel), chat gets smaller.</figcaption>
+</figure>
+
+<ol class="hx-annotations">
+  <li data-n="1"><strong>Toolbar.</strong> Pick a container, create one ({{icon:add}} <strong>New</strong>), duplicate it ({{icon:layers}}, <em>Duplicate this container</em>), delete it ({{icon:delete}}), undo and redo ({{icon:undo}} {{icon:redo}}). <strong>Simulate</strong> (the menu that says <em>Live content</em>) pretends every “Fits its content” box is empty, half full or full so you can see how the other boxes react; nothing is saved. <strong>Placeholders</strong> shows template names instead of live previews, which keeps the editor light when many templates are placed. <strong>Preview</strong> opens the saved route. <strong>Save</strong> writes the container.</li>
+  <li data-n="2"><strong>Templates.</strong> Every template you can place, grouped as <strong>Spore Studio</strong>, <strong>Built-in</strong> (<code>activity_feed</code> and <code>source_controls</code>, which Spore Studio cannot edit but can place) and <strong>Other templates</strong>. Type in <em>Search templates</em> to filter. Drag a row onto the canvas, or double-click it to add it.</li>
+  <li data-n="3"><strong>Canvas.</strong> Each rectangle is a box showing one template. Drag to move it and drag any edge to resize it; while you drag, every box shows the size you drew it at. The badge in the corner says how the box sizes itself, a dashed outline marks a shared space, and the ↕ arrow shows which box gives room to which (see <a href="#hx-sizing-and-shared-spaces">Sizing and shared spaces</a>). A box whose template no longer exists is marked <strong>(missing)</strong>.</li>
+  <li data-n="4"><strong>Inspector.</strong> Settings for the selected box: <strong>Sizing</strong> first, then <strong>Position and size</strong>, <strong>Behaviour</strong>, <strong>Audio</strong> and <strong>Stacking</strong>. On/off settings are switches. Click empty canvas to see <strong>Container settings</strong> instead.</li>
+</ol>
+
+<h2>Create a container</h2>
+
+<section class="hx-guide" data-guide="spore_studio_containers_create" data-title="New container">
+  <div class="hx-step">
+    <h3>Start a new container</h3>
+    <p>In Containers mode, click {{icon:add}} <strong>New</strong>. The <strong>New container</strong> dialog opens. Enter a <strong>Name</strong>. The <strong>Route path</strong> fills in from the name (<em>The address OBS loads, like /stream_layout. It follows the name until you edit it.</em>); change it if you want a different URL, such as <code>game_layout</code>. Pick a <strong>Resolution</strong>: 1920 × 1080, 1280 × 720, 1080 × 1920 or 720 × 1280. This is the size of the OBS browser source. Click <strong>Create</strong>. If the route is taken or the name is not allowed, the reason shows in the dialog.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Place templates</h3>
+    <p>Drag templates from the <strong>Templates</strong> list onto the canvas. Spore Studio templates, built-in templates and hand-written HTML templates can all be placed. A container cannot be placed inside another container.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Arrange the boxes and let them make room</h3>
+    <p>Move and resize the boxes. If one box (like FF7 or alerts) changes how much it shows, set it to <strong>Fits its content</strong> and the box next to it (like chat) to <strong>Fills leftover space</strong> (see <a href="#hx-sizing-and-shared-spaces">Sizing and shared spaces</a>).</p>
+  </div>
+  <div class="hx-step">
+    <h3>Save and add it to OBS</h3>
+    <p>Click <strong>Save</strong>. The route is listed on <span class="hx-path"><span>Settings</span><span>About</span></span> with a <strong>Container</strong> badge and a count of the templates inside. Add it to OBS as a browser source at the container's resolution: <span class="hx-copy" data-copy="http://127.0.0.1:{port}/game_layout">http://127.0.0.1:{port}/game_layout</span></p>
+  </div>
+</section>
+
+<h2>Container settings</h2>
+
+<p>With no box selected, the inspector shows <strong>Container settings</strong>, and below them the list of <strong>Shared spaces</strong>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Name</strong></td><td>Display name</td></tr>
+<tr><td><strong>Route path</strong></td><td>The URL path. The full URL is shown under it in a {{icon:link}} chip; that is the address to use as an OBS browser source.</td></tr>
+<tr><td><strong>Resolution</strong></td><td>A preset size, or <strong>Custom</strong></td></tr>
+<tr><td><strong>Width</strong> / <strong>Height</strong></td><td>Canvas size in pixels, 50–7680 by 50–4320</td></tr>
+<tr><td><strong>Background</strong></td><td><strong>Transparent</strong> or <strong>Solid color</strong> (then pick a <strong>Color</strong>: the swatch opens the <a href="help:color_picker">color picker</a> with solid, fully opaque colors only)</td></tr>
+<tr><td><strong>Gap between boxes in a shared space</strong></td><td>Slider and number, 0–200 px, between boxes that share space. A box that has closed up takes no gap. You can also drag the bar between boxes in a space.</td></tr>
+<tr><td><strong>Snap grid (px)</strong></td><td>0–64. Only helps you place slots; it does not change the layout.</td></tr>
+<tr><td><strong>Enabled (show on the About page and serve the route)</strong></td><td>A switch. Turn off to stop serving the route without deleting the container</td></tr>
+<tr><td><strong>Shared spaces</strong></td><td>One card per space: its colour, name (type to rename it), its boxes in stack order and its direction. <strong>Show on canvas</strong> outlines its boxes; <strong>Stop sharing</strong> makes them all Fixed again.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Slot settings</h2>
+
+<p>Boxes are independent rectangles. Only boxes in the same shared space affect each other; a box on the right can grow down through the same band as a box on the left without moving it.</p>
+
+<p>The box inspector is headed with the template's name, then <strong>Template</strong>, then groups of settings. On/off settings are switches.</p>
+
+<div class="hx-tabs">
+  <div class="hx-tab-list">
+    <button data-tab="pos" class="is-active">Position and size</button>
+    <button data-tab="beh">Behaviour</button>
+    <button data-tab="fit">Audio</button>
+    <button data-tab="link">Sizing</button>
+    <button data-tab="stack">Stacking</button>
+  </div>
+  <div class="hx-tab-panel" data-panel="pos">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Template</strong></td><td>Above the groups. Swap which template this slot shows.</td></tr>
+    <tr><td><strong>X, Y, W, H</strong></td><td>Position and size in pixels. Each shows its percent of the canvas.</td></tr>
+    <tr><td><strong>Z-order</strong></td><td>Stacking order, 0–999. <strong>Bring forward</strong> and <strong>Send backward</strong> under <strong>Stacking</strong> change it by one.</td></tr>
+    <tr><td><strong>Opacity %</strong></td><td>0–100</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="beh">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Visible</strong></td><td>Hide the slot without removing it</td></tr>
+    <tr><td><strong>Lock position</strong></td><td>Stops accidental drags</td></tr>
+    <tr><td><strong>Click-through</strong></td><td>Mouse clicks pass through the slot</td></tr>
+    <tr><td><strong>Padding same on all sides</strong> / <strong>Padding</strong></td><td>One value, or Top, Right, Bottom and Left separately (0–400 px)</td></tr>
+    <tr><td><strong>Fit</strong></td><td><strong>Native (template fills the slot)</strong>, or <strong>Scale from design size</strong>, which shrinks or grows a fixed design to fit the slot</td></tr>
+    <tr><td><strong>Design width</strong> / <strong>Design height</strong></td><td>Shown for Scale. The size the template was designed at.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="fit">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Mute audio</strong></td><td>Silences this template inside the container only</td></tr>
+    <tr><td><strong>Volume</strong></td><td>0–100, inside the container only</td></tr>
+    </tbody>
+    </table></div>
+    <p>Mute and Volume never change the template's own URL. Opened on its own, it still plays at full volume.</p>
+  </div>
+  <div class="hx-tab-panel" data-panel="link">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Fixed</strong> / <strong>Fits its content</strong> / <strong>Fills leftover space</strong></td><td>How the box sizes itself. A sentence under the buttons says what will happen in plain words. See <a href="#hx-sizing-and-shared-spaces">Sizing and shared spaces</a>.</td></tr>
+    <tr><td><strong>Shares space with</strong></td><td>Which shared space the box is in. Each space has a colour and lists its other boxes. <strong>+ New shared space</strong> starts another one.</td></tr>
+    <tr><td><strong>Boxes stack</strong></td><td><strong>Top to bottom</strong> or <strong>Left to right</strong>. Changing it changes the whole space.</td></tr>
+    <tr><td><strong>Never smaller than</strong> / <strong>Never bigger than</strong></td><td>A number in <strong>px</strong> or <strong>% of space</strong> (a share of the whole shared space, not of the canvas). Leave <em>Never bigger than</em> empty for no limit.</td></tr>
+    <tr><td><strong>When nothing shows</strong></td><td>Fits its content only. <strong>Close up (down to its minimum)</strong> or <strong>Keep its drawn size</strong>.</td></tr>
+    <tr><td><strong>Preview as</strong></td><td>Fits its content only. <strong>Live</strong>, <strong>Empty</strong>, <strong>Half</strong> or <strong>Full</strong>: pretend sizes for the editor, never saved.</td></tr>
+    <tr><td><strong>Move up in stack</strong> / <strong>Move down in stack</strong></td><td>Change the box's order inside its space</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+  <div class="hx-tab-panel" data-panel="stack">
+    <div class="hx-table-wrap"><table>
+    <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><strong>Bring forward</strong> / <strong>Send backward</strong></td><td>Change Z-order by one</td></tr>
+    <tr><td><strong>Remove from container</strong></td><td>Takes the slot out. The template itself is not deleted.</td></tr>
+    </tbody>
+    </table></div>
+  </div>
+</div>
+
+<h2>Sizing and shared spaces</h2>
+
+<p>Boxes can make room for each other. The usual case: chat sits above FF7, and when FF7 pops in its enemies panel, chat gets shorter so the panel has room. When the panel goes away, chat grows back. This works with every template (built-in, your own and Spore Studio ones) without changing them.</p>
+
+<figure class="hx-figure hx-static">
+  <div class="hm hm-ss">
+    <div class="hm-ss-canvas">
+      <div class="hm-ss-stage hm-ss-2x1">
+        <div class="hm-ss-space" data-label="Space 1 · top to bottom" style="left:4%;top:12%;width:42%;height:84%"></div>
+        <div class="hm-ss-slot is-flex" style="left:4%;top:12%;width:42%;height:52%">chat<span class="hm-ss-badge">Fills leftover</span></div>
+        <span class="hm-ss-flow" style="left:25%;top:65%">↕</span>
+        <div class="hm-ss-slot" style="left:4%;top:66%;width:42%;height:30%">ff7 · battle<span class="hm-ss-badge">Fits content</span></div>
+        <div class="hm-ss-space" data-label="Space 1 · top to bottom" style="left:54%;top:12%;width:42%;height:84%"></div>
+        <div class="hm-ss-slot is-flex" style="left:54%;top:12%;width:42%;height:30%">chat<span class="hm-ss-badge">Fills leftover</span></div>
+        <div class="hm-ss-minline" style="left:54%;top:30%;width:42%"></div>
+        <div class="hm-ss-crop" style="left:54%;top:41%;width:42%"></div>
+        <span class="hm-ss-flow" style="left:75%;top:43%">↕</span>
+        <div class="hm-ss-slot" style="left:54%;top:44%;width:42%;height:52%">ff7 · enemies panel showing<span class="hm-ss-badge">Fits content</span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption>The same shared space twice. Left: FF7 shows only its party, so chat gets most of the room. Right: the enemies panel appears, FF7 grows and chat is cropped down toward its minimum (dashed line).</figcaption>
+</figure>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Sizing</th><th>What the box does</th><th>Good for</th></tr></thead>
+<tbody>
+<tr><td><strong>Fixed</strong></td><td>Stays exactly where and how big you drew it. It never moves for other boxes.</td><td>Game capture frame, webcam border, logos</td></tr>
+<tr><td><strong>Fits its content</strong></td><td>Grows and shrinks with what the template is showing right now, up to the size you drew it. When it shows nothing it closes up (or keeps its size, if you choose). Mycelian looks at what is actually on screen: text, pictures and coloured boxes. Invisible wrappers, faded-out parts and anything cut off at the edge don't count.</td><td>FF7, alerts, goal bars, now playing</td></tr>
+<tr><td><strong>Fills leftover space</strong></td><td>Gets whatever room the <em>Fits its content</em> boxes don't use. Its real size changes: the template sees a smaller window and re-flows (chat keeps its newest messages in view). It is never smaller than its minimum.</td><td>Chat, activity feed</td></tr>
+</tbody>
+</table></div>
+
+<section class="hx-guide" data-guide="spore_studio_containers_sizing" data-title="Make chat give way to FF7">
+  <div class="hx-step">
+    <h3>Place the two boxes</h3>
+    <p>Put <code>chat</code> where it should be and <code>ff7</code> under it, in the same column. Draw FF7 as big as it can ever get (all panels showing).</p>
+  </div>
+  <div class="hx-step">
+    <h3>Set FF7 to Fits its content</h3>
+    <p>Select <code>ff7</code> and click <strong>Fits its content</strong> under <strong>Sizing</strong>. Chat, the box next to it, joins the same shared space as <strong>Fills leftover space</strong> automatically. A dashed outline shows the space on the canvas.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Give chat a minimum</h3>
+    <p>Select <code>chat</code> and set <strong>Never smaller than</strong>, for example <em>200 px</em> or <em>25 % of space</em>. A dashed line on the canvas shows it.</p>
+  </div>
+  <div class="hx-step">
+    <h3>Try it with Simulate</h3>
+    <p>In the toolbar, change <em>Live content</em> to <strong>Pretend all full</strong> and then <strong>Pretend all empty</strong>, and watch chat shrink and grow. A banner above the canvas reminds you that you are previewing pretend sizes; click <strong>Back to live</strong> when you are done. Then <strong>Save</strong>.</p>
+  </div>
+</section>
+
+<h3>What the canvas shows</h3>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Mark</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Dashed coloured outline</td><td>The area a shared space covers: from where its first box starts to where its last box ends. Boxes only share that area; the rest of the canvas is untouched.</td></tr>
+<tr><td>Corner badge</td><td><strong>Fixed</strong>, <strong>Fits content</strong> or <strong>Fills leftover</strong>, and <em>pretend …</em> while you simulate</td></tr>
+<tr><td>↕ or ↔ circle</td><td>Where two boxes meet. Hover it to see which box gets the room the other isn't using.</td></tr>
+<tr><td>Dashed amber box</td><td>The size a <em>Fits its content</em> box can grow to (the size you drew it)</td></tr>
+<tr><td>Dashed line inside a box</td><td>The minimum of a <em>Fills leftover space</em> box</td></tr>
+<tr><td>Red striped edge</td><td>A <em>Fills leftover space</em> box is smaller than you drew it, so its picture is being cropped</td></tr>
+</tbody>
+</table></div>
+
+<p>Changes on stream are instant. A box that hasn't loaded yet keeps the size you drew it until Mycelian can see its content.</p>
+
+<details class="hx-details">
+  <summary>For template authors: control what gets measured</summary>
+  <p>Mycelian measures your template from outside, so you usually don't need to do anything. To measure only part of the page, add <code>data-mycelian-content</code> to the element that holds the content. To report the size yourself, send <code>parent.postMessage({type: "mycelian-content-size", width: 400, height: 120}, "*")</code> (send <code>0, 0</code> when nothing shows). Send <code>{type: "mycelian-content-size", auto: true}</code> to go back to automatic measuring.</p>
+</details>
+
+<h2>Duplicate and delete</h2>
+
+<p>{{icon:layers}} (<em>Duplicate this container</em>) opens the <strong>Duplicate container</strong> dialog (<em>Copies the saved version of this container to a new route.</em>). <strong>Name</strong> and <strong>Route path</strong> start as the original's name plus <code> copy</code> and its route plus <code>_copy</code>; change them, then click <strong>Duplicate</strong>.</p>
+
+<p>{{icon:delete}} asks <em>Delete container /game_layout?</em>: <em>The route stops working in OBS. The templates inside it are not deleted.</em> Click <strong>Delete container</strong> to confirm.</p>
+
+<p>Switching to <strong>Templates</strong> or to another container with unsaved changes asks <em>Discard unsaved container changes?</em>: <strong>Keep editing</strong> stays, <strong>Discard changes</strong> drops the edits. Every dialog closes with <kbd>Esc</kbd> or a click outside it.</p>
+
+<h2>Warnings</h2>
+
+<p>When sizing settings can't all be met, a warning appears above the canvas. <strong>Show box</strong> / <strong>Show boxes</strong> selects and outlines the boxes it is about.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Warning</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td><em>The boxes in shared space “Space 1” need more room than the space has …</em></td><td>Lower a minimum, lower the gap, or make the space bigger by drawing its boxes larger</td></tr>
+<tr><td><em>In shared space “Space 1”, the minimum of “ff7” is bigger than the size it was drawn at …</em></td><td>Draw the box larger or lower its minimum</td></tr>
+<tr><td><em>The boxes in shared space “Space 1” aren't in the same column …</em></td><td>Line the boxes up so they overlap, one above the other (or side by side for <em>Left to right</em>)</td></tr>
+<tr><td><em>“poll” is set to scale from its design size, so it can't fit its content …</em></td><td>Set its <strong>Fit</strong> to <strong>Native</strong>, or make it <strong>Fixed</strong></td></tr>
+<tr><td><em>“old_banner” was not found …</em></td><td>Pick another template for the box or remove it</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-tip"><p>Deleting a template asks first and names the containers that use it. Its slot stays: the editor marks it <strong>(missing)</strong>, and on stream that spot is simply empty. Pick another template for the slot or remove it.</p></div>
+
+<details class="hx-details">
+  <summary>Can I name a template the same as a container route?</summary>
+  <p>No. New template names that match an existing container route are refused, so the two URLs cannot collide.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:spore_studio_overview">{{icon:palette}}<span><strong>Spore Studio overview</strong><span class="hx-card-text">The editor and its toolbar</span></span></a>
+  <a class="hx-card" href="help:obs_setup">{{brand:obs}}<span><strong>OBS setup</strong><span class="hx-card-text">Add a browser source</span></span></a>
+</div>

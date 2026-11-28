@@ -1,0 +1,749 @@
+/* =========================================================================
+   Mycelian Help — document components (hx-*)
+   Every color comes from the theme manager's --color-* variables so help
+   pages follow whichever theme is active. Do not hardcode colors here.
+   ========================================================================= */
+
+.help-doc.help-doc {  /* doubled: out-ranks the app's light-mode div rule */
+    max-width: 860px;
+    width: 100%;
+    color: var(--color-text-secondary);
+    font-size: 0.925rem;
+    line-height: 1.65;
+}
+
+.help-doc > :first-child { margin-top: 0; }
+
+.help-doc h2 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin: 2.1rem 0 0.75rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--color-border-subtle);
+    scroll-margin-top: 16px;
+}
+
+.help-doc h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin: 1.5rem 0 0.5rem;
+    scroll-margin-top: 16px;
+}
+
+.help-doc h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin: 1.1rem 0 0.4rem;
+}
+
+.help-doc p { margin: 0 0 0.8rem; }
+.help-doc strong { color: var(--color-text-primary); font-weight: 600; }
+.help-doc em { color: var(--color-text-secondary); }
+
+.help-doc ul,
+.help-doc ol {
+    margin: 0 0 0.9rem;
+    padding-left: 1.4rem;
+}
+
+.help-doc li { margin: 0.25rem 0; }
+.help-doc li > ul,
+.help-doc li > ol { margin: 0.25rem 0 0.25rem; }
+.help-doc ul > li::marker { color: var(--color-primary); }
+.help-doc ol > li::marker { color: var(--color-primary); font-weight: 600; }
+
+.help-doc hr {
+    border: none;
+    border-top: 1px solid var(--color-border-subtle);
+    margin: 1.75rem 0;
+}
+
+.help-doc a {
+    color: var(--color-primary);
+    text-decoration: none;
+    border-bottom: 1px solid var(--color-border-accent);
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.help-doc a:hover {
+    color: var(--color-primary-hover);
+    border-bottom-color: var(--color-primary);
+}
+
+.help-doc a.hx-ext::after {
+    content: ' \2197';
+    font-size: 0.75em;
+}
+
+.help-doc code {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+}
+
+.help-doc pre {
+    position: relative;
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-default);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 0 0 1rem;
+    overflow-x: auto;
+    line-height: 1.5;
+}
+
+.help-doc pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-size: 0.82rem;
+    color: var(--color-text-primary);
+    white-space: pre;
+}
+
+.help-doc .hx-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font: inherit;
+    font-size: 0.72rem;
+    padding: 3px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border-default);
+    background: var(--color-bg-surface);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.help-doc pre:hover .hx-copy-btn,
+.help-doc .hx-copy-btn:focus-visible { opacity: 1; }
+.help-doc .hx-copy-btn:hover { color: var(--color-primary); border-color: var(--color-primary); }
+.help-doc .hx-copy-btn.is-copied { color: var(--color-success); border-color: var(--color-success); opacity: 1; }
+
+/* Inline copyable value: <span class="hx-copy" data-copy="http://localhost:17563">…</span> */
+.help-doc .hx-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border-accent);
+    border-radius: 6px;
+    padding: 0.1em 0.5em;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+
+.help-doc .hx-copy::after {
+    font-family: 'Material Icons';
+    content: 'content_copy';
+    font-size: 0.95em;
+    color: var(--color-text-muted);
+}
+
+.help-doc .hx-copy:hover { border-color: var(--color-primary); }
+.help-doc .hx-copy.is-copied::after { content: 'check'; color: var(--color-success); }
+
+.help-doc kbd,
+.help-doc .hx-kbd {
+    display: inline-block;
+    font-family: inherit;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0.05em 0.45em;
+}
+
+/* Material icon token: {{icon:name}} */
+.help-doc .hx-mi {
+    font-family: 'Material Icons';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 1.15em;
+    line-height: 1;
+    vertical-align: -0.2em;
+    letter-spacing: normal;
+    text-transform: none;
+    white-space: nowrap;
+    direction: ltr;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'liga';
+}
+
+/* Brand mark token: {{brand:twitch}} */
+.help-doc .hx-brand {
+    display: inline-flex;
+    vertical-align: -0.2em;
+}
+
+/* UI path breadcrumb: <span class="hx-path"><span>Settings</span><span>Twitch</span></span> */
+.help-doc .hx-path {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    background: var(--color-primary-light);
+    border: 1px solid var(--color-border-accent);
+    border-radius: 6px;
+    padding: 0.05em 0.5em;
+}
+
+.help-doc .hx-path > span + span::before {
+    content: '\203A';
+    margin: 0 4px 0 2px;
+    color: var(--color-text-muted);
+    font-weight: 400;
+}
+
+/* ---- Lead paragraph & meta strip ------------------------------------- */
+
+.help-doc .hx-lead {
+    font-size: 1.02rem;
+    color: var(--color-text-secondary);
+    margin-bottom: 1.1rem;
+}
+
+.help-doc .hx-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 1.25rem;
+}
+
+.help-doc .hx-meta > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 999px;
+    padding: 3px 10px;
+}
+
+.help-doc .hx-meta .hx-mi { color: var(--color-primary); font-size: 1rem; }
+
+/* ---- Callouts --------------------------------------------------------- */
+
+.help-doc .hx-callout {
+    position: relative;
+    margin: 0 0 1rem;
+    padding: 10px 14px 10px 42px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border-subtle);
+    border-left: 3px solid var(--hx-callout-color, var(--color-info));
+    background: color-mix(in srgb, var(--hx-callout-color, var(--color-info)) 8%, var(--color-bg-elevated));
+}
+
+.help-doc .hx-callout::before {
+    position: absolute;
+    left: 13px;
+    top: 10px;
+    font-family: 'Material Icons';
+    font-size: 19px;
+    line-height: 1.4;
+    color: var(--hx-callout-color, var(--color-info));
+    content: 'info';
+}
+
+.help-doc .hx-callout > :last-child { margin-bottom: 0; }
+.help-doc .hx-callout .hx-callout-title {
+    display: block;
+    font-weight: 700;
+    color: var(--hx-callout-color, var(--color-info));
+    margin-bottom: 2px;
+}
+
+.help-doc .hx-tip { --hx-callout-color: var(--color-success); }
+.help-doc .hx-tip::before { content: 'lightbulb'; }
+.help-doc .hx-note { --hx-callout-color: var(--color-info); }
+.help-doc .hx-warning { --hx-callout-color: var(--color-warning); }
+.help-doc .hx-warning::before { content: 'warning'; }
+.help-doc .hx-important { --hx-callout-color: var(--color-error); }
+.help-doc .hx-important::before { content: 'error'; }
+
+/* ---- Tables ----------------------------------------------------------- */
+
+.help-doc .hx-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    margin: 0 0 1rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 8px;
+}
+
+.help-doc table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.help-doc th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    background: var(--color-bg-surface);
+    border-bottom: 1px solid var(--color-border-default);
+    padding: 8px 12px;
+}
+
+.help-doc td {
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--color-border-subtle);
+    vertical-align: top;
+}
+
+.help-doc tr:last-child td { border-bottom: none; }
+.help-doc tbody tr:hover td { background: var(--color-hover-overlay); }
+
+/* Existing status swatches used by status-footer docs */
+.help-doc .help-status-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+.help-doc .help-status-swatch-success { background: var(--color-success); }
+.help-doc .help-status-swatch-info { background: var(--color-info); }
+.help-doc .help-status-swatch-muted { background: var(--color-text-muted); }
+.help-doc .help-status-swatch-warning { background: var(--color-warning); }
+.help-doc .help-status-swatch-error { background: var(--color-error); }
+
+/* ---- Link cards ------------------------------------------------------- */
+
+.help-doc .hx-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    margin: 0 0 1.25rem;
+}
+
+.help-doc a.hx-card {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    border: 1px solid var(--color-border-subtle);
+    border-left: 3px solid var(--color-border-accent);
+    border-radius: 8px;
+    background: var(--color-bg-surface);
+    padding: 10px 12px;
+    color: var(--color-text-secondary);
+    transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.help-doc a.hx-card:hover {
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 6%, var(--color-bg-surface));
+    transform: translateY(-1px);
+}
+
+.help-doc a.hx-card > .hx-mi,
+.help-doc a.hx-card > .hx-brand { font-size: 1.35rem; color: var(--color-primary); margin-top: 1px; }
+.help-doc a.hx-card strong { display: block; font-size: 0.88rem; margin-bottom: 1px; }
+.help-doc a.hx-card span.hx-card-text { display: block; font-size: 0.78rem; color: var(--color-text-muted); line-height: 1.4; }
+
+/* ---- Tabs: <div class="hx-tabs"> <div class="hx-tab-list"><button data-tab="a">…</button></div>
+         <div class="hx-tab-panel" data-panel="a">…</div> </div> ------------------------------- */
+
+.help-doc .hx-tabs { margin: 0 0 1.1rem; }
+
+.help-doc .hx-tab-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    border-bottom: 1px solid var(--color-border-accent);
+}
+
+.help-doc .hx-tab-list > button {
+    font: inherit;
+    font-size: 0.84rem;
+    font-weight: 500;
+    padding: 6px 14px;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    background: var(--color-bg-surface);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    margin-bottom: -1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.help-doc .hx-tab-list > button:hover { color: var(--color-text-secondary); }
+
+.help-doc .hx-tab-list > button.is-active {
+    background: var(--color-bg-elevated);
+    color: var(--color-primary);
+    font-weight: 600;
+    border-color: var(--color-border-accent);
+}
+
+.help-doc .hx-tab-panel {
+    border: 1px solid var(--color-border-accent);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 14px 16px 4px;
+    background: var(--color-bg-elevated);
+}
+
+.help-doc .hx-tab-panel:not(.is-active) { display: none; }
+
+/* ---- Step-by-step guides -------------------------------------------- */
+/* <section class="hx-guide" data-guide="twitch">
+       <div class="hx-step"><h3>Title</h3> … </div> …
+   </section>
+   JS adds numbering, a progress bar, and "Mark step done" toggles. */
+
+.help-doc .hx-guide {
+    margin: 0 0 1.5rem;
+    border: 1px solid var(--color-border-accent);
+    border-radius: 10px;
+    background: var(--color-bg-elevated);
+    overflow: hidden;
+}
+
+.help-doc .hx-guide-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--color-bg-surface);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hx-guide-head .hx-guide-title {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    font-size: 0.88rem;
+    white-space: nowrap;
+}
+
+.help-doc .hx-guide-progress {
+    flex: 1;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-border-default);
+    overflow: hidden;
+}
+
+.help-doc .hx-guide-progress > span {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--color-primary);
+    border-radius: inherit;
+    transition: width 0.25s ease;
+}
+
+.help-doc .hx-guide-count {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+
+.help-doc .hx-guide-reset {
+    font: inherit;
+    font-size: 0.75rem;
+    border: none;
+    background: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 2px 4px;
+}
+
+.help-doc .hx-guide-reset:hover { color: var(--color-primary); }
+
+.help-doc .hx-guide.is-complete .hx-guide-progress > span { background: var(--color-success); }
+
+.help-doc .hx-step {
+    position: relative;
+    padding: 14px 16px 6px 60px;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.help-doc .hx-step:last-child { border-bottom: none; }
+
+.help-doc .hx-step::before {
+    content: attr(data-step);
+    position: absolute;
+    left: 16px;
+    top: 13px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    background: var(--color-primary-light);
+    border: 1px solid var(--color-border-accent);
+}
+
+.help-doc .hx-step::after {
+    content: '';
+    position: absolute;
+    left: 29px;
+    top: 45px;
+    bottom: -14px;
+    width: 2px;
+    background: var(--color-border-subtle);
+}
+
+.help-doc .hx-step:last-child::after { display: none; }
+
+.help-doc .hx-step.is-done::before {
+    content: '\2713';
+    color: var(--color-text-inverse);
+    background: var(--color-success);
+    border-color: var(--color-success);
+}
+
+.help-doc .hx-step > h3,
+.help-doc .hx-step > h4 {
+    margin: 2px 0 6px;
+    border: none;
+    padding: 0;
+}
+
+.help-doc .hx-step.is-done > h3,
+.help-doc .hx-step.is-done > h4 { color: var(--color-text-muted); }
+
+.help-doc .hx-step-done {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: inherit;
+    font-size: 0.78rem;
+    margin: 2px 0 10px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border-default);
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.help-doc .hx-step-done::before {
+    font-family: 'Material Icons';
+    content: 'radio_button_unchecked';
+    font-size: 15px;
+}
+
+.help-doc .hx-step-done:hover { border-color: var(--color-success); color: var(--color-success); }
+
+.help-doc .hx-step.is-done .hx-step-done {
+    border-color: var(--color-success);
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 10%, transparent);
+}
+
+.help-doc .hx-step.is-done .hx-step-done::before { content: 'check_circle'; }
+
+/* ---- Checklist: <ul class="hx-checklist" data-checklist="key"><li>…</li></ul> ---- */
+
+.help-doc ul.hx-checklist {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 8px;
+    background: var(--color-bg-surface);
+}
+
+.help-doc ul.hx-checklist > li {
+    position: relative;
+    margin: 0;
+    padding: 8px 12px 8px 40px;
+    border-bottom: 1px solid var(--color-border-subtle);
+    cursor: pointer;
+    user-select: none;
+}
+
+.help-doc ul.hx-checklist > li:last-child { border-bottom: none; }
+.help-doc ul.hx-checklist > li:hover { background: var(--color-hover-overlay); }
+
+.help-doc ul.hx-checklist > li::before {
+    position: absolute;
+    left: 12px;
+    top: 8px;
+    font-family: 'Material Icons';
+    content: 'check_box_outline_blank';
+    font-size: 19px;
+    line-height: 1.3;
+    color: var(--color-text-muted);
+}
+
+.help-doc ul.hx-checklist > li.is-checked::before { content: 'check_box'; color: var(--color-primary); }
+.help-doc ul.hx-checklist > li.is-checked { color: var(--color-text-muted); }
+
+/* ---- Collapsible FAQ: <details class="hx-details"><summary>Q</summary>A</details> ---- */
+
+.help-doc details.hx-details {
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 8px;
+    background: var(--color-bg-surface);
+    margin: 0 0 8px;
+    overflow: hidden;
+}
+
+.help-doc details.hx-details > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 9px 12px 9px 36px;
+    position: relative;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    font-size: 0.88rem;
+}
+
+.help-doc details.hx-details > summary::-webkit-details-marker { display: none; }
+
+.help-doc details.hx-details > summary::before {
+    position: absolute;
+    left: 10px;
+    top: 8px;
+    font-family: 'Material Icons';
+    content: 'chevron_right';
+    font-size: 20px;
+    line-height: 1.2;
+    color: var(--color-primary);
+    transition: transform 0.15s ease;
+}
+
+.help-doc details.hx-details[open] > summary::before { transform: rotate(90deg); }
+.help-doc details.hx-details[open] > summary { border-bottom: 1px solid var(--color-border-subtle); }
+.help-doc details.hx-details > :not(summary) { margin-left: 14px; margin-right: 14px; }
+.help-doc details.hx-details > :nth-child(2) { margin-top: 10px; }
+
+/* ---- Figure (wraps a mock UI) ---------------------------------------- */
+
+.help-doc figure.hx-figure {
+    margin: 0 0 1.25rem;
+}
+
+.help-doc figure.hx-figure > figcaption {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    margin-top: 6px;
+    display: block;
+}
+
+.help-doc figure.hx-figure > figcaption::before {
+    font-family: 'Material Icons';
+    content: 'touch_app';
+    font-size: 15px;
+    color: var(--color-primary);
+    vertical-align: -3px;
+    margin-right: 6px;
+}
+
+.help-doc figure.hx-figure.hx-static > figcaption::before { content: 'visibility'; }
+
+/* Numbered annotation list paired with .hm-marker badges inside a mock */
+.help-doc ol.hx-annotations {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 1.25rem;
+    counter-reset: none;
+}
+
+.help-doc ol.hx-annotations > li {
+    position: relative;
+    padding: 5px 8px 5px 36px;
+    margin: 0;
+    border-radius: 6px;
+    transition: background 0.15s ease;
+}
+
+.help-doc ol.hx-annotations > li::before {
+    content: attr(data-n);
+    position: absolute;
+    left: 6px;
+    top: 6px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+}
+
+.help-doc ol.hx-annotations > li.is-hot { background: var(--color-primary-light); }
+
+/* ---- Two-column layout for mock + explanation ------------------------- */
+
+.help-doc .hx-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+    margin: 0 0 1.25rem;
+}
+
+.help-doc .hx-split > * { min-width: 0; }
+
+@media (max-width: 1100px) {
+    .help-doc .hx-split { grid-template-columns: 1fr; }
+}
+
+/* Small inline status badge used in prose: <span class="hx-badge hx-ok">Connected</span> */
+.help-doc .hx-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+    vertical-align: 0.05em;
+}
+
+.help-doc .hx-badge::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.help-doc .hx-badge.hx-ok { color: var(--color-success); }
+.help-doc .hx-badge.hx-warn { color: var(--color-warning); }
+.help-doc .hx-badge.hx-err { color: var(--color-error); }
+.help-doc .hx-badge.hx-info { color: var(--color-info); }

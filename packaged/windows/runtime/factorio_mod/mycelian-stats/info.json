@@ -1,0 +1,8 @@
+{
+  "name": "mycelian-stats",
+  "version": "1.0.4",
+  "title": "Mycelian Stats",
+  "author": "Mycelian",
+  "factorio_version": "2.0",
+  "description": "Exports factory statistics (power, production, science, planets) for the Mycelian overlay. Read-only; no gameplay changes."
+}

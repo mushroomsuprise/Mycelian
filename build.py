@@ -105,8 +105,8 @@ def get_os_specific_icon_path(os_name):
 # ============================================================================
 
 # Version and Build Date - Update these for new releases
-VERSION = "1.14.3"
-BUILD_DATE = "November 8th 2026"
+VERSION = "1.14.5"
+BUILD_DATE = "November 26th 2026"
 BUILD_NUMBER = "dev"
 
 # Stream Deck plugin version (manifest.json "Version"; Elgato semver, e.g. 0.2.2.0)
@@ -133,7 +133,7 @@ OUTPUT_PATH = "builds"
 #              process instead of two, and the updater downloads only changed files.
 # Ship one release with the parallel updater downloads before switching to "folder", so
 # most installs fetch the ~1,600 runtime files in parallel when they move over.
-WINDOWS_LAYOUT_DEFAULT = "onefile"
+WINDOWS_LAYOUT_DEFAULT = "folder"
 WINDOWS_RUNTIME_DIR = "runtime"
 WINDOWS_LAYOUT = WINDOWS_LAYOUT_DEFAULT
 
@@ -1771,6 +1771,10 @@ def copy_binaries_to_project_root(project_root: Path, dist_dir: Path):
         if src.exists() and src.resolve() != helper_dest.resolve():
             src.unlink()
         return app_dest, helper_dest
+    if CURRENT_OS == "windows":
+        # A runtime\ left by an earlier folder-layout build would otherwise be packed
+        # into this one-file installer by Mycelian.iss ("runtime\*").
+        shutil.rmtree(project_root / WINDOWS_RUNTIME_DIR, ignore_errors=True)
     _copy_build_artifact(dist_dir / app_binary_name(), app_dest)
     _copy_build_artifact(dist_dir / merge_helper_name(), helper_dest)
     for name in (app_binary_name(), merge_helper_name()):

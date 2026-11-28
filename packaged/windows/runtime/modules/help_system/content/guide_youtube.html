@@ -1,0 +1,381 @@
+<p class="hx-lead">YouTube needs up to two things from the <strong>Google Cloud Console</strong>: an <strong>API key</strong> to watch channels for new uploads, and an <strong>OAuth client</strong> to read live chat, memberships and Super Chats. Set up the API key first. Live chat is optional.</p>
+
+<div class="hx-meta">
+  <span>{{icon:schedule}} 5 minutes, plus 10 for live chat</span>
+  <span>{{icon:person}} Google account that owns the channel</span>
+  <span>{{icon:place}} <span class="hx-path"><span>Settings</span><span>YouTube</span></span></span>
+</div>
+
+<p>After you connect, see <a href="help:integrations_youtube">YouTube Integration</a> for chatbot variables, the playlist filter and how YouTube events map to alerts.</p>
+
+<h2>Before you start</h2>
+
+<ul class="hx-checklist" data-checklist="guide_youtube_prereqs">
+  <li>You can sign in to the <a href="https://console.cloud.google.com/">Google Cloud Console</a>. A free account is enough.</li>
+  <li>You have the URL of every channel you want to watch, for example <code>https://youtube.com/@YourChannel</code>.</li>
+  <li>For live chat: Mycelian is open on this computer. Google sign-in returns to <span class="hx-copy" data-copy="http://127.0.0.1:9974">http://127.0.0.1:9974</span>, which only works on the machine running Mycelian.</li>
+</ul>
+
+<h2>Part 1: API key for uploads</h2>
+
+<section class="hx-guide" data-guide="guide_youtube_apikey" data-title="YouTube API key">
+
+  <div class="hx-step">
+    <h3>Create a project and turn on the YouTube API</h3>
+    <ol>
+      <li>In the <a href="https://console.cloud.google.com/">Google Cloud Console</a>, create a project (or pick one) from the project menu at the top.</li>
+      <li>Open <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com">YouTube Data API v3</a> in the API Library and click <strong>Enable</strong>.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Create an API key</h3>
+    <p>Go to <span class="hx-path"><span>APIs &amp; Services</span><span>Credentials</span></span>, click <strong>Create credentials</strong> and choose <strong>API key</strong>.</p>
+
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-browser">
+        <div class="hm-browser-bar"><span class="hm-browser-url">console.cloud.google.com/apis/credentials</span></div>
+        <div class="hm-browser-body">
+          <div class="hm-h2">API key created</div>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow" data-label="Your API key"><span class="hm-value hm-mono">AIzaSy••••••••••••••••••••••••••••</span></div>
+            <span class="hm-btn hm-icon-only"><span class="hx-mi">content_copy</span></span>
+            <span class="hm-marker" data-n="1"></span>
+          </div>
+          <div class="hm-row hm-between"><span class="hm-muted hm-sm">Restrict the key to prevent unauthorized use.</span><span class="hm-btn hm-outline hm-dense">Edit API key</span><span class="hm-marker" data-n="2"></span></div>
+          <div class="hm-row hm-end"><span class="hm-btn hm-flat">Close</span></div>
+        </div>
+      </div>
+      <figcaption>Google's page, simplified.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1">Copy the key. It starts with <code>AIza</code>.</li>
+      <li data-n="2">Optional: under <strong>API restrictions</strong>, choose <strong>Restrict key</strong> and select only <strong>YouTube Data API v3</strong>.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Enter the key and your channels in Mycelian</h3>
+    <p>Open <span class="hx-path"><span>Settings</span><span>YouTube</span></span>.</p>
+
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-subtabs">
+          <span class="hm-subtab">{{brand:twitch}} Twitch</span>
+          <span class="hm-subtab">{{brand:obs}} OBS</span>
+          <span class="hm-subtab">{{brand:psn}} PSN</span>
+          <span class="hm-subtab">{{brand:spotify}} Spotify</span>
+          <span class="hm-subtab is-active">{{brand:youtube}} YouTube</span>
+          <span class="hm-subtab">{{brand:streamlabs}} Streamlabs</span>
+        </div>
+        <div class="hm-it">
+          <div class="hm-it-head">
+            <span class="hm-it-brand">{{brand:youtube}}</span>
+            <div><div class="hm-it-name">YouTube</div><div class="hm-it-sub">Latest videos, live chat, memberships and Super Chats</div></div>
+            <span class="hm-it-pill">Channel lookups: no API key</span>
+            <span class="hm-it-pill">Live chat: not set up</span>
+            <span class="hm-it-pill is-edit">Unsaved changes</span>
+            <span class="hm-it-tools"><span class="hx-mi">help_outline</span><span class="hm-btn hm-outline hm-dense">Discard</span><span class="hm-btn hm-dense hm-pulse"><span class="hx-mi">check</span>Save</span><span class="hm-marker" data-n="3"></span></span>
+          </div>
+          <div class="hm-it-body">
+            <div class="hm-it-col">
+              <div class="hm-it-sec"><span class="hx-mi">account_circle</span>Connections</div>
+              <div class="hm-it-acct">
+                <div class="hm-it-acct-top">
+                  <div class="hm-it-who">
+                    <span class="hm-it-ava is-empty">{{brand:youtube}}</span>
+                    <div><div class="hm-it-kicker">Live chat &amp; alerts (Google sign-in)</div><div class="hm-it-acct-name">Not signed in</div><div class="hm-it-state">Add OAuth credentials, then Connect</div></div>
+                  </div>
+                  <div class="hm-it-actions"><span class="hm-btn hm-dense"><span class="hx-mi">login</span>Connect</span></div>
+                </div>
+                <div class="hm-expansion hm-it-fold">
+                  <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>OAuth client ID &amp; secret<span class="hm-it-tag is-missing">Needed to connect</span></div>
+                  <div class="hm-expansion-body"><span class="hm-muted hm-xs">Part 2 covers this card.</span></div>
+                </div>
+              </div>
+              <div class="hm-it-acct">
+                <div class="hm-it-acct-top">
+                  <div class="hm-it-who">
+                    <span class="hm-it-ava is-empty">{{brand:youtube}}</span>
+                    <div><div class="hm-it-kicker">Channel lookups (API key)</div><div class="hm-it-acct-name">1 channel watched</div><div class="hm-it-state">Add an API key to look up channels</div></div>
+                  </div>
+                  <div class="hm-it-actions"><span class="hx-mi">refresh</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">wifi_tethering</span>Test</span><span class="hm-marker" data-n="4"></span></div>
+                </div>
+                <div class="hm-expansion hm-it-fold is-open">
+                  <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>API key<span class="hm-it-tag is-missing">Needed to connect</span></div>
+                  <div class="hm-expansion-body">
+                    <div class="hm-row hm-nowrap">
+                      <div class="hm-grow"><div class="hm-it-label">YouTube Data API v3 key <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel is-focused"><span class="hm-value hm-secret">••••••••••••••••</span><span class="hx-mi">visibility_off</span></div></div>
+                      <span class="hm-marker" data-n="1"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="hm-it-col">
+              <div class="hm-it-sec"><span class="hx-mi">subscriptions</span>Channels to watch<span class="hm-it-sec-right">1</span></div>
+              <div class="hm-it-list">
+                <div class="hm-it-li"><span class="hx-mi">smart_display</span><span class="hm-it-li-main">https://youtube.com/@YourChannel</span><span class="hx-mi">close</span></div>
+              </div>
+              <div class="hm-it-add"><div class="hm-field hm-nolabel"><span class="hm-placeholder">https://youtube.com/@Channel</span></div><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">add</span>Add</span><span class="hm-marker" data-n="2"></span></div>
+              <div class="hm-it-hint"><span class="hx-mi">content_paste</span><span>Have a list? <span class="hm-it-link">Paste several at once</span></span></div>
+              <div class="hm-it-sec"><span class="hx-mi">playlist_remove</span>Ignore playlists<span class="hm-it-sec-right">0</span></div>
+              <div class="hm-it-list"><div class="hm-it-empty">No playlists ignored.</div></div>
+              <div class="hm-it-add"><div class="hm-field hm-nolabel"><span class="hm-placeholder">Playlist name</span></div><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">add</span>Add</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Settings → YouTube, with the <strong>Options</strong> switches under the cards left out. Until OAuth credentials are saved, the live chat fold starts open too. Click a fold's title to open or close it.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1">On the <strong>Channel lookups (API key)</strong> card, open <strong>API key</strong> and paste the key into <strong>YouTube Data API v3 key</strong>. The field is masked; the eye icon shows it. The tag changes from <strong>Needed to connect</strong> to <strong>Saved</strong> once it is saved.</li>
+      <li data-n="2">Under <strong>Channels to watch</strong>, type or paste a channel URL and press <kbd>Enter</kbd> or click <strong>Add</strong>. It joins the list; click its <strong>×</strong> (<em>Remove channel</em>) to remove it. These formats work: <code>https://youtube.com/@Handle</code>, <code>https://youtube.com/channel/UC…</code>, <code>https://youtube.com/c/Name</code>, <code>https://youtube.com/user/Name</code>. <strong>Paste several at once</strong> opens a <strong>Channel URLs, separated by |</strong> field that holds the same list as one line (<code>url1|url2</code>).</li>
+      <li data-n="3">Click <strong>Save</strong> in the header.</li>
+      <li data-n="4">Then click <strong>Test</strong> on the <strong>Channel lookups</strong> card. The {{icon:refresh}} icon (<em>Check now</em>) only re-reads the status.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Check the upload status</h3>
+    <p><strong>Test</strong> shows a <em>"Testing the YouTube connection"</em> notice that ends with <em>"YouTube connection works"</em>, and the card fills in:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-it">
+          <div class="hm-it-head">
+            <span class="hm-it-brand">{{brand:youtube}}</span>
+            <div><div class="hm-it-name">YouTube</div><div class="hm-it-sub">Latest videos, live chat, memberships and Super Chats</div></div>
+            <span class="hm-it-pill is-ok">Channel lookups working</span>
+            <span class="hm-it-pill">Live chat: not set up</span>
+          </div>
+          <div class="hm-it-body">
+            <div class="hm-it-col">
+              <div class="hm-it-acct">
+                <div class="hm-it-acct-top">
+                  <div class="hm-it-who">
+                    <span class="hm-it-ava is-empty">{{brand:youtube}}</span>
+                    <div><div class="hm-it-kicker">Channel lookups (API key)</div><div class="hm-it-acct-name">1 channel watched</div><div class="hm-it-state is-ok">Working · latest video found</div></div>
+                  </div>
+                  <div class="hm-it-actions"><span class="hx-mi">refresh</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">wifi_tethering</span>Test</span></div>
+                </div>
+                <div class="hm-it-meta">
+                  <div><span class="hm-it-k">Latest video</span><span class="hm-it-v">My latest upload</span><span class="hm-it-s">YourChannel</span></div>
+                </div>
+                <div class="hm-expansion hm-it-fold">
+                  <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>API key<span class="hm-it-tag">Saved</span></div>
+                  <div class="hm-expansion-body"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="hm-footer">
+          <span class="hm-footer-item">{{brand:internet}} Internet <span class="hm-dot hm-ok"></span></span>
+          <span class="hm-footer-item">{{brand:twitch}} Twitch <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+          <span class="hm-footer-item">{{brand:youtube}} YouTube <span class="hm-dot hm-ok"></span><span class="hm-ok">Connected</span></span>
+        </div>
+      </div>
+      <figcaption>The Channel lookups card after a working test. The YouTube item appears in the status footer once an API key is saved.</figcaption>
+    </figure>
+    <p>If only some channels work, the card and its pill show <strong>Partial</strong> with a count such as <code>Partial (1/2 channels)</code>. Check the failing URL. <em>"Couldn't reach YouTube"</em> means the key or a URL is wrong, or the daily quota is used up.</p>
+  </div>
+
+</section>
+
+<h2>Part 2: Live chat and alerts (optional)</h2>
+
+<p>Live chat needs an OAuth client from the same Google Cloud project. It lets Mycelian read your live chat, post chatbot replies, and turn memberships and Super Chats into alerts.</p>
+
+<section class="hx-guide" data-guide="guide_youtube_oauth" data-title="YouTube live chat">
+
+  <div class="hx-step">
+    <h3>Set up the OAuth consent screen</h3>
+    <ol>
+      <li>In the Cloud Console, open <span class="hx-path"><span>APIs &amp; Services</span><span>OAuth consent screen</span></span>.</li>
+      <li>Choose <strong>External</strong>. Fill in the app name (for example <em>Mycelian</em>), your support email and developer contact email.</li>
+      <li>Under <strong>Test users</strong> (called <strong>Audience</strong> in newer consoles), add the Google account that owns your channel.</li>
+    </ol>
+    <div class="hx-callout hx-note"><p>You do not need to publish or verify the app for personal use. Google will warn that the app is unverified when you sign in; that is expected for your own client.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Create an OAuth client ID</h3>
+    <p>Go to <span class="hx-path"><span>APIs &amp; Services</span><span>Credentials</span></span>, click <strong>Create credentials</strong> and choose <strong>OAuth client ID</strong>.</p>
+
+    <figure class="hx-figure hx-static">
+      <div class="hm hm-browser">
+        <div class="hm-browser-bar"><span class="hm-browser-url">console.cloud.google.com/apis/credentials/oauthclient</span></div>
+        <div class="hm-browser-body">
+          <div class="hm-h2">Create OAuth client ID</div>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-select hm-grow" data-label="Application type"><span class="hm-value">Web application</span></div>
+            <span class="hm-marker" data-n="1"></span>
+          </div>
+          <div class="hm-field" data-label="Name"><span class="hm-value">Mycelian</span></div>
+          <span class="hm-label">Authorized redirect URIs</span>
+          <div class="hm-row hm-nowrap">
+            <div class="hm-field hm-grow is-focused" data-label="URIs 1"><span class="hm-value hm-mono">http://127.0.0.1:9974</span></div>
+            <span class="hm-marker" data-n="2"></span>
+          </div>
+          <div class="hm-row"><span class="hm-btn hm-outline hm-dense">+ Add URI</span></div>
+          <div class="hm-row"><span class="hm-btn">Create</span></div>
+        </div>
+      </div>
+      <figcaption>Google's form, simplified. Field names match the real form.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1">Choose <strong>Web application</strong>. Desktop and other types do not accept this redirect URI.</li>
+      <li data-n="2">Under <strong>Authorized redirect URIs</strong>, click <strong>Add URI</strong> and enter <span class="hx-copy" data-copy="http://127.0.0.1:9974">http://127.0.0.1:9974</span> exactly: <code>http</code>, <code>127.0.0.1</code>, port <code>9974</code>, no trailing slash.</li>
+    </ol>
+    <p>After <strong>Create</strong>, Google shows the <strong>Client ID</strong> (ends in <code>.apps.googleusercontent.com</code>) and <strong>Client secret</strong> (starts with <code>GOCSPX-</code>). Copy both.</p>
+  </div>
+
+  <div class="hx-step">
+    <h3>Paste the client into Mycelian and connect</h3>
+    <p>On <span class="hx-path"><span>Settings</span><span>YouTube</span></span>, use the <strong>Live chat &amp; alerts (Google sign-in)</strong> card at the top of the left column. Open <strong>OAuth client ID &amp; secret</strong> and paste both values.</p>
+
+    <figure class="hx-figure">
+      <div class="hm">
+        <div class="hm-it">
+          <div class="hm-it-body">
+            <div class="hm-it-col">
+              <div class="hm-it-sec"><span class="hx-mi">account_circle</span>Connections</div>
+              <div class="hm-it-acct">
+                <div class="hm-it-acct-top">
+                  <div class="hm-it-who">
+                    <span class="hm-it-ava is-empty">{{brand:youtube}}</span>
+                    <div><div class="hm-it-kicker">Live chat &amp; alerts (Google sign-in)</div><div class="hm-it-acct-name">Not signed in</div><div class="hm-it-state">Add OAuth credentials, then Connect</div></div>
+                  </div>
+                  <div class="hm-it-actions"><span class="hm-btn hm-dense hm-pulse"><span class="hx-mi">login</span>Connect</span><span class="hm-marker" data-n="3"></span></div>
+                </div>
+                <div class="hm-expansion hm-it-fold is-open">
+                  <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>OAuth client ID &amp; secret<span class="hm-it-tag is-missing">Needed to connect</span></div>
+                  <div class="hm-expansion-body">
+                    <div class="hm-grid-2">
+                      <div><div class="hm-it-label">OAuth Client ID <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel is-focused"><span class="hm-placeholder">xxxx.apps.googleusercontent.com</span><span class="hx-mi">visibility_off</span></div></div>
+                      <div><div class="hm-it-label">OAuth Client Secret <span class="hx-mi">help_outline</span></div><div class="hm-field hm-nolabel"><span class="hm-placeholder">GOCSPX-...</span><span class="hx-mi">visibility_off</span></div></div>
+                    </div>
+                    <div class="hm-row hm-nowrap"><div class="hm-it-copy hm-grow"><span class="hm-it-copy-k">Redirect URI</span><span class="hm-it-copy-v">http://127.0.0.1:9974</span><span class="hx-mi">content_copy</span></div><span class="hm-marker" data-n="1"></span></div>
+                    <div class="hm-it-hint"><span class="hx-mi">info</span><span>Create an OAuth client (Web application) and add the redirect URI above. Connect uses these values. <span class="hm-it-link">Google Cloud console credentials</span></span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="hm-it-sec"><span class="hx-mi">tune</span>Options<span class="hm-marker" data-n="2"></span></div>
+              <div>
+                <div class="hm-it-row"><div><div class="hm-it-row-title">Read live chat</div><div class="hm-it-row-sub">Poll live chat for messages and alerts while you're live</div></div><span class="hm-switch is-on"><i></i></span></div>
+                <div class="hm-it-row"><div><div class="hm-it-row-title">Process YouTube alerts</div><div class="hm-it-row-sub">Off: memberships and Super Chats still reach chat and Connectors, but skip the alert queue</div></div><span class="hm-switch is-on"><i></i></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>The live chat card and the <strong>Options</strong> under the cards. Click the fold or a switch to see it change; nothing is saved.</figcaption>
+    </figure>
+
+    <ol class="hx-annotations">
+      <li data-n="1">Paste the <strong>OAuth Client ID</strong> and <strong>OAuth Client Secret</strong> (both masked). The <strong>Redirect URI</strong> box shows <code>http://127.0.0.1:9974</code>; its copy icon copies it.</li>
+      <li data-n="2"><strong>Read live chat</strong> and <strong>Process YouTube alerts</strong> are on by default. See <a href="help:integrations_youtube">YouTube Integration</a> for what they do.</li>
+      <li data-n="3"><strong>Connect</strong> saves the client values and opens your browser. If either field is empty you see <em>"Enter your Google OAuth Client ID and Client Secret first"</em>.</li>
+    </ol>
+  </div>
+
+  <div class="hx-step">
+    <h3>Approve access in Google</h3>
+    <p>Sign in with the Google account that owns the channel. If Google says the app is not verified, click <strong>Continue</strong>. Pick your channel if asked, and allow access to <strong>manage your YouTube account</strong>; Mycelian needs it to read live chat and post chatbot replies.</p>
+    <p>The browser then shows <em>"Authorization Successful!"</em>. Close the tab.</p>
+    <div class="hx-callout hx-note"><p>While Mycelian waits, the button reads <strong>Connecting...</strong>. Mycelian waits 5 minutes for you to approve. After that, the card's <strong>Live status</strong> shows <strong>Authorization timeout</strong>; click <strong>Connect</strong> again.</p></div>
+  </div>
+
+  <div class="hx-step">
+    <h3>Check live status</h3>
+    <p>Mycelian shows <em>"YouTube live chat connected"</em>. The card shows your channel name with <strong>Offline</strong>, the header pill reads <strong>Live chat ready</strong>, and the button now reads <strong>Reconnect</strong>:</p>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-it-acct">
+          <div class="hm-it-acct-top">
+            <div class="hm-it-who">
+              <span class="hm-it-ava">Y</span>
+              <div><div class="hm-it-kicker">Live chat &amp; alerts (Google sign-in)</div><div class="hm-it-acct-name">YourChannel</div><div class="hm-it-state is-ok">Offline · signed in, reads chat when you go live</div></div>
+            </div>
+            <div class="hm-it-actions"><span class="hx-mi">logout</span><span class="hm-btn hm-outline hm-dense"><span class="hx-mi">login</span>Reconnect</span></div>
+          </div>
+          <div class="hm-it-meta">
+            <div><span class="hm-it-k">Live status</span><span class="hm-it-v">Offline</span></div>
+          </div>
+          <div class="hm-expansion hm-it-fold">
+            <div class="hm-expansion-head"><span class="hx-mi">vpn_key</span>OAuth client ID &amp; secret<span class="hm-it-tag">Saved</span></div>
+            <div class="hm-expansion-body"></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Authorized while you are not live. Once you go live the card says <strong>Live · reading chat</strong>, <strong>Live status</strong> turns green and the pill reads <strong>Live chat: Live</strong>. The {{icon:logout}} icon is <strong>Disconnect</strong>.</figcaption>
+    </figure>
+    <p>When you start a broadcast, Mycelian can take up to a minute to find it.</p>
+  </div>
+
+</section>
+
+<h2>Connection status</h2>
+
+<p>The footer item follows <strong>Channel lookups</strong> (the API key card), not live chat. That card's state line and pill show the text in the middle column; when it works the card says <strong>Working</strong> and the pill <strong>Channel lookups working</strong>. The full legend is in <a href="help:status_footer">Status Footer</a>.</p>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Footer</th><th>Tab shows</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><span class="help-status-swatch help-status-swatch-success"></span> Connected</td><td>Connected (<em>n</em> channels)</td><td>Every channel is being read</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-warning"></span> Partial</td><td>Partial (<em>x</em>/<em>n</em> channels)</td><td>Some channels worked and some did not</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Idle</td><td>Add an API key to look up channels (no key), Channel URLs Required</td><td>A key or channel URL is still missing</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-muted"></span> Disconnected</td><td>Disconnected</td><td>YouTube is not connected</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-info"></span> Quota Exceed…</td><td>Quota Exceeded (retry in 1 hour)</td><td>The daily API quota ran out. Mycelian retries after an hour</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> Error</td><td>All Channels Failed, Error: …</td><td>Every channel failed, or the request failed</td></tr>
+<tr><td><span class="help-status-swatch help-status-swatch-error"></span> No Internet / Unreachable</td><td>No Internet, Service Unreachable</td><td>This computer is offline, or YouTube cannot be reached</td></tr>
+</tbody>
+</table></div>
+
+<p><strong>Live status</strong> on the live chat card has its own values: <strong>Not authorized</strong>, <strong>Opening browser...</strong>, <strong>Offline</strong>, <strong>Live</strong>, <strong>Authorized (channel unknown)</strong>, <strong>Quota exceeded</strong>, <strong>Token refresh failed</strong>, and error texts such as <strong>Token exchange failed</strong> or <strong>Authorization error: …</strong>.</p>
+
+<h2>If something goes wrong</h2>
+
+<details class="hx-details">
+  <summary>Google says "Error 400: redirect_uri_mismatch"</summary>
+  <p>The OAuth client does not list the exact redirect URI, or it is not a <strong>Web application</strong> client. Edit the client, add <span class="hx-copy" data-copy="http://127.0.0.1:9974">http://127.0.0.1:9974</span> under <strong>Authorized redirect URIs</strong>, save, wait a few minutes, and click <strong>Connect</strong> again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Google says "Access blocked" or "access_denied"</summary>
+  <p>Your Google account is not a test user of the consent screen. Add it under <strong>Test users</strong> (or <strong>Audience</strong>) and try again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Channel lookups say All Channels Failed</summary>
+  <p>Check that the channel URLs are correct and the channels are public, that <strong>YouTube Data API v3</strong> is enabled in the project, and that the API key's restrictions allow it.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Live status stays "Not authorized" or shows "OAuth credentials required"</summary>
+  <p>Fill in both fields under <strong>OAuth client ID &amp; secret</strong>, make sure they come from a <strong>Web application</strong> client, and finish the browser consent with the channel owner's account.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Live status says "OAuth server error"</summary>
+  <p>Mycelian could not open port <code>9974</code> for the sign-in callback. Close whatever else is using it, or a second copy of Mycelian, and try again.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Live status stays Offline while I am streaming</summary>
+  <p>Wait up to a minute after going live. Live streaming must be enabled on the channel, and the account you authorized must own the broadcast.</p>
+</details>
+
+<details class="hx-details">
+  <summary>Chatbot replies do not post to YouTube</summary>
+  <p>If you connected with an older version of Mycelian that asked for read-only access, click the {{icon:logout}} <strong>Disconnect</strong> icon on the live chat card, then <strong>Connect</strong> to grant the current permission.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:integrations_youtube">{{brand:youtube}}<span><strong>YouTube Integration</strong><span class="hx-card-text">Variables, playlist filter, alerts and quota</span></span></a>
+  <a class="hx-card" href="help:chatbot_variables">{{icon:data_object}}<span><strong>Chatbot Variables</strong><span class="hx-card-text">Share your latest upload in chat</span></span></a>
+  <a class="hx-card" href="help:connection_guides_overview">{{icon:power}}<span><strong>All connection guides</strong><span class="hx-card-text">Twitch, OBS, Spotify, PSN and more</span></span></a>
+</div>

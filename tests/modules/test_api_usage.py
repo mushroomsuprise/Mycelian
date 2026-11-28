@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -72,7 +73,9 @@ def test_today_starts_at_local_midnight():
 
 
 def test_history_is_stored_and_read_back(tmp_path):
-    now = ts("2026-11-07T15:00:30")
+    # Loading keeps only the last MEMORY_DAYS by the real clock, so a fixed date here
+    # stops being "recent" a few days after it was written.
+    now = float(int(time.time()))
     api_usage.record("PSN", "/a", 200, now=now - 120)
     api_usage.record("PSN", "/a", 429, now=now - 120)
     api_usage.record("YouTube", "/youtube/v3/search", 200, cost=100, now=now)

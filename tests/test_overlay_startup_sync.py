@@ -91,6 +91,11 @@ class OverlayClientCountTests(unittest.TestCase):
 class StartupObsEnqueueTests(unittest.TestCase):
     def setUp(self) -> None:
         _reset_obs_browser_refresh_gate_for_tests()
+        # overlay_source_routes() also lists containers saved under templates/;
+        # keep whatever is on disk out of these route assertions.
+        containers = patch("modules.spore_studio.containers.list_enabled_routes", return_value=[])
+        containers.start()
+        self.addCleanup(containers.stop)
 
     def tearDown(self) -> None:
         _reset_obs_browser_refresh_gate_for_tests()

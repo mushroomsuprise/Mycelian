@@ -318,7 +318,10 @@ def test_top_level_side_effects_in_app_process(env):
     ns = env.run()
     assert env.mod("modules.ssl_certs").ensure_ssl_certificates.calls == [((), {})]
     assert env.signals.calls == [((signal.SIGINT, ns["signal_handler"]), {}), ((signal.SIGTERM, ns["signal_handler"]), {})]
-    assert env.atexit.calls == [((ns["emergency_stats_save"],), {})]
+    # Only main.py's own handlers: a library imported for the first time here (e.g.
+    # certifi's exit_cacert_ctx) may register one too, depending on test order.
+    main_handlers = [c for c in env.atexit.calls if getattr(c[0][0], "__globals__", None) is ns]
+    assert main_handlers == [((ns["emergency_stats_save"],), {})]
     assert os.environ[_PID_ENV] == str(os.getpid())
     prof = env.mod("modules.startup_profiler")
     assert prof.configure_startup_profiling.calls == [((False,), {})]

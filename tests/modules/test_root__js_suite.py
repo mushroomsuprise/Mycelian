@@ -41,7 +41,7 @@ def test_js_suite_passes():
         [NODE, "--test", "--test-reporter=spec", "tests/js/"],
         cwd=str(ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8",
         timeout=600,
         env=env,
         check=False,

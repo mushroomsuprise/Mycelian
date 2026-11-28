@@ -1,0 +1,66 @@
+/* =========================================================================
+   Mock pieces for service connection guides (Discord, Streamlabs,
+   StreamElements, Stream Deck). Theme variables only.
+   ========================================================================= */
+
+/* Stream Deck hardware: a small grid of keys */
+.help-doc .hm .hm-deck {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 64px));
+    gap: 8px;
+    padding: 12px;
+    width: max-content;
+    max-width: 100%;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+    border-radius: 14px;
+}
+
+.help-doc .hm .hm-deck-key {
+    aspect-ratio: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 4px;
+    border-radius: 8px;
+    background: var(--color-bg-base);
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-primary);
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: pre-line;
+    overflow: hidden;
+}
+
+.help-doc .hm .hm-deck-key.is-empty { opacity: 0.45; }
+.help-doc .hm .hm-deck-key.is-set { border-color: var(--color-primary); }
+.help-doc .hm .hm-deck-key.hm-err { color: var(--color-error); }
+
+/* Stream Deck app: action list on the right, property inspector below */
+.help-doc .hm .hm-sd-action {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+}
+
+.help-doc .hm .hm-sd-action > .hx-mi { font-size: 18px; color: var(--color-text-muted); }
+
+.help-doc .hm .hm-sd-pi-row {
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+}
+
+.help-doc .hm .hm-sd-pi-row > :first-child { color: var(--color-text-secondary); text-align: right; }
+
+@media (max-width: 520px) {
+    .help-doc .hm .hm-sd-pi-row { grid-template-columns: minmax(0, 1fr); }
+    .help-doc .hm .hm-sd-pi-row > :first-child { text-align: left; }
+}

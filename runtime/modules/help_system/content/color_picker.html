@@ -1,0 +1,136 @@
+<p class="hx-lead">Every color swatch in Mycelian opens the same color picker: in <a href="help:template_configuration">Source Settings</a>, in <span class="hx-path"><span>Settings</span><span>Theme</span></span> and in <a href="help:spore_studio_design">Spore Studio</a>. It does solid colors with transparency, and gradients where a fill can take one.</p>
+
+<div class="hx-meta">
+  <span>{{icon:place}} <span class="hx-path"><span>Source Settings</span></span>, <span class="hx-path"><span>Settings</span><span>Theme</span></span>, <span class="hx-path"><span>Spore Studio</span></span></span>
+</div>
+
+<h2>Open the picker</h2>
+
+<p>Click a color swatch. The picker opens next to the swatch and moves to stay on screen. Only one picker is open at a time. What you pick shows straight away in the preview, the theme preview or the Spore Studio canvas, so you can judge it in place before you keep it.</p>
+
+<h2>Solid colors</h2>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-tp-cp">
+          <div class="hm-tp-cp-body">
+            <div class="hm-tp-cp-sv"><span class="hm-tp-cp-knob" style="left:70%;top:25%"></span><span class="hm-marker hm-pin" data-n="1" style="top:6px;left:6px"></span></div>
+            <div class="hm-tp-cp-bar hm-tp-cp-hue"><span class="hm-tp-cp-knob" style="left:76%"></span></div>
+            <div class="hm-tp-cp-bar hm-tp-cp-alpha"><span class="hm-tp-cp-knob" style="left:75%"></span></div>
+            <div class="hm-tp-cp-row"><span class="hm-tp-cp-seg"><span>HEX</span><span class="is-on">RGB</span></span><span class="hm-tp-cp-inp is-text">rgba(124, 58, 237, 0.75)</span><span class="hm-tp-cp-inp is-num">75</span><span class="hm-tp-cp-unit">%</span><span class="hm-tp-cp-ib"><span class="hx-mi">colorize</span></span><span class="hm-marker" data-n="2"></span></div>
+            <div class="hm-tp-cp-sect"><span>Opacity</span><span class="hm-marker" data-n="3"></span></div>
+            <div class="hm-tp-cp-chips"><span>100%</span><span class="is-on">75%</span><span>50%</span><span>25%</span><span><span class="hx-mi">block</span></span></div>
+            <div class="hm-tp-cp-compare"><span class="is-before">Before</span><span class="is-new">New</span></div>
+            <div class="hm-tp-cp-sect"><span>Template colours</span><span class="hm-tp-cp-link">Show all 46</span></div>
+            <div class="hm-tp-cp-swatches">
+              <i style="--hm-sw: var(--color-error)"></i><i style="--hm-sw: var(--color-warning)"></i><i style="--hm-sw: var(--color-success)"></i><i style="--hm-sw: var(--color-info)"></i><i style="--hm-sw: var(--color-primary)"></i>
+              <i style="--hm-sw: var(--color-text-primary)"></i><i style="--hm-sw: var(--color-text-muted)"></i><i style="--hm-sw: var(--color-bg-surface)"></i><i style="--hm-sw: var(--color-bg-base)"></i><i style="--hm-sw: var(--color-primary-hover)"></i>
+            </div>
+            <div class="hm-tp-cp-sect"><span>Recent</span><span class="hm-marker" data-n="4"></span></div>
+            <div class="hm-tp-cp-swatches"><i style="--hm-sw: var(--color-primary)"></i><i style="--hm-sw: var(--color-success)"></i><i style="--hm-sw: var(--color-warning)"></i></div>
+          </div>
+          <div class="hm-tp-cp-foot"><span class="hx-mi">info</span><span class="hm-tp-cp-hint">Changes show in the preview as you pick</span><span class="hm-tp-cp-btn">Cancel</span><span class="hm-tp-cp-btn is-primary">Done</span><span class="hm-marker" data-n="5"></span></div>
+        </div>
+      </div>
+      <figcaption>The picker for the chat template's <strong>Message Background</strong> in Source Settings.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <ol class="hx-annotations">
+      <li data-n="1">Drag in the square to set how strong and how bright the color is. The rainbow bar below sets the hue, and the checkered bar under it sets the opacity.</li>
+      <li data-n="2"><strong>HEX</strong> / <strong>RGB</strong> switches how the value is written. Type a color into the box (<code>#hex</code>, <code>rgb()</code>, <code>rgba()</code>, <code>hsl()</code>, a color name or <code>transparent</code>), and the opacity in percent next to it. {{icon:colorize}} <strong>Pick a colour from the screen</strong> is an eyedropper; it only appears where the system supports it.</li>
+      <li data-n="3">One click sets 100%, 75%, 50% or 25% opacity. {{icon:block}} is <strong>Fully transparent</strong>.</li>
+      <li data-n="4"><strong>Before</strong> is the color you started with (click it to go back to it), <strong>New</strong> is the current one. <strong>Template colours</strong> are the colors the template suggests for this setting; <strong>Show all</strong> lists every one when there are more than twenty. <strong>Recent</strong> holds the last ten solid colors you kept.</li>
+      <li data-n="5"><strong>Done</strong> keeps the color, <strong>Cancel</strong> puts the old one back.</li>
+    </ol>
+  </div>
+</div>
+
+<h3>Transparency</h3>
+
+<p>Lower the opacity to let what is behind the overlay show through. The checkerboard behind the bars, the swatches and the Before / New strip shows how see-through the color is. At 0% the value becomes <code>transparent</code>.</p>
+
+<p>The value is written back in the format it came in. An opaque color stays <code>#hex</code> (or <code>rgb()</code> if it was written that way), a see-through color is written as <code>rgba(r, g, b, opacity)</code>, and a color you did not change is left exactly as it was.</p>
+
+<h2>Gradients</h2>
+
+<p>Where a fill can be a gradient, the picker has <strong>Solid</strong> and <strong>Gradient</strong> tabs. Opening <strong>Gradient</strong> starts a two-stop gradient from the current color; going back to <strong>Solid</strong> uses the color of the selected stop.</p>
+
+<div class="hx-split">
+  <div>
+    <figure class="hx-figure hx-static">
+      <div class="hm">
+        <div class="hm-tp-cp">
+          <div class="hm-tp-cp-title">Background</div>
+          <div class="hm-tp-cp-tabs"><span><span class="hx-mi">circle</span>Solid</span><span class="is-active"><span class="hx-mi">gradient</span>Gradient</span></div>
+          <div class="hm-tp-cp-body">
+            <div class="hm-tp-cp-row"><span class="hm-tp-cp-seg"><span class="is-on">Linear</span><span>Radial</span></span><span class="hm-tp-spacer"></span><span class="hm-tp-cp-angle"></span><span class="hm-tp-cp-inp is-num">90</span><span class="hm-tp-cp-unit">°</span><span class="hm-marker" data-n="6"></span></div>
+            <div class="hm-tp-cp-gbar"><span class="hm-tp-cp-stop is-on" style="left:0%;--hm-sw: var(--color-primary)"></span><span class="hm-tp-cp-stop" style="left:60%;--hm-sw: var(--color-info)"></span><span class="hm-tp-cp-stop" style="left:100%;--hm-sw: var(--color-success)"></span><span class="hm-marker hm-pin" data-n="7" style="top:3px;left:40%"></span></div>
+            <div class="hm-tp-cp-row"><span class="hm-tp-cp-mini"></span><span class="hm-tp-cp-inp is-text">#7c3aed</span><span class="hm-tp-cp-inp is-num">100</span><span class="hm-tp-cp-unit">%</span><span class="hm-tp-cp-inp is-num">0</span><span class="hm-tp-cp-unit">pos</span><span class="hm-tp-cp-ib"><span class="hx-mi">delete</span></span><span class="hm-marker" data-n="8"></span></div>
+            <div class="hm-tp-cp-sv is-short"><span class="hm-tp-cp-knob" style="left:75%;top:20%"></span></div>
+            <div class="hm-tp-cp-bar hm-tp-cp-hue"><span class="hm-tp-cp-knob" style="left:76%"></span></div>
+            <div class="hm-tp-cp-bar hm-tp-cp-alpha"><span class="hm-tp-cp-knob" style="left:100%"></span></div>
+            <div class="hm-tp-cp-sect"><span>Result</span><span><span class="hm-tp-cp-link">Edit as CSS</span><span class="hm-marker" data-n="9"></span></span></div>
+            <div class="hm-tp-cp-compare is-single"><span class="is-grad"></span></div>
+            <div class="hm-tp-cp-css">linear-gradient(90deg, #7c3aed 0%, #3b82f6 60%, #22c55e 100%)</div>
+          </div>
+          <div class="hm-tp-cp-foot"><span class="hx-mi">touch_app</span><span class="hm-tp-cp-hint">Click the bar to add a stop · drag to move</span><span class="hm-tp-cp-btn">Cancel</span><span class="hm-tp-cp-btn is-primary">Done</span></div>
+        </div>
+      </div>
+      <figcaption>A gradient for a block's <strong>Background</strong> in Spore Studio.</figcaption>
+    </figure>
+  </div>
+  <div>
+    <ol class="hx-annotations">
+      <li data-n="6"><strong>Linear</strong> or <strong>Radial</strong>. A linear gradient has an angle: drag the dial (hold <kbd>Shift</kbd> to snap to 15°) or type degrees. Radial gradients spread out from the middle and have no angle.</li>
+      <li data-n="7">The stops. Click the bar to add a stop (it takes the color at that point), drag a stop to move it, click a stop to select it. A selected stop also moves with the arrow keys and is removed with <kbd>Delete</kbd>.</li>
+      <li data-n="8">The selected stop: its color, opacity and position in percent, and {{icon:delete}} <strong>Remove this stop</strong>. A gradient keeps at least two stops. The square and bars below change the selected stop's color.</li>
+      <li data-n="9">The finished gradient and its CSS. <strong>Edit as CSS</strong> lets you type or paste a gradient; while the text is not a valid gradient yet, the last valid one is kept. Gradients the stop editor can't show (for example a conic or repeating gradient) are kept as written and can be edited here.</li>
+    </ol>
+  </div>
+</div>
+
+<h2>Keep or cancel</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>To</th><th>Do this</th></tr></thead>
+<tbody>
+<tr><td>Keep the color</td><td><strong>Done</strong>, <kbd>Enter</kbd> in one of the picker's boxes, or click anywhere outside the picker</td></tr>
+<tr><td>Put the old color back</td><td><strong>Cancel</strong> or <kbd>Esc</kbd></td></tr>
+<tr><td>Start again without closing</td><td>Click <strong>Before</strong></td></tr>
+</tbody>
+</table></div>
+
+<p>Keeping a color only changes the form. In Source Settings and on the Theme tab you still click <strong>Save</strong> (or <strong>Apply</strong>); in Spore Studio the change goes into the editor's undo history and is saved with the template.</p>
+
+<h2>Where it is used</h2>
+
+<div class="hx-table-wrap"><table>
+<thead><tr><th>Place</th><th>Opacity</th><th>Gradients</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><a href="help:template_configuration">Source Settings</a></td><td>Yes</td><td>Only when the value already is a gradient</td><td>The template's <code>options</code> list becomes <strong>Template colours</strong>. You can also type a value into the box next to the swatch and press <kbd>Enter</kbd>.</td></tr>
+<tr><td><span class="hx-path"><span>Settings</span><span>Theme</span></span></td><td>Only for colors that already have transparency</td><td>No, theme colors are solid</td><td>The picker is titled with the color's name. Its footer says <em>The preview follows as you pick</em>, or <em>Started at N% opacity</em> for a see-through color.</td></tr>
+<tr><td><a href="help:spore_studio_design">Spore Studio</a></td><td>Yes</td><td>On fills: <strong>Background</strong>, <strong>Fill</strong> and <strong>Highlight background</strong> of every block except QR, plus <strong>Track color</strong> / <strong>Fill color</strong> (progress bar), <strong>Track color</strong> (poll), <strong>Progress color</strong> (now playing), <strong>Row background</strong> (list) and the divider's color</td><td>The picker is titled with the property's name. The box next to the swatch also takes a typed gradient.</td></tr>
+<tr><td><a href="help:spore_studio_containers">Overlay containers</a></td><td>No</td><td>No</td><td>The container background is a solid <code>#hex</code> color.</td></tr>
+</tbody>
+</table></div>
+
+<div class="hx-callout hx-tip"><p>A gradient in Spore Studio is exported as a background layer. An image set on the same element stays on top of it.</p></div>
+
+<details class="hx-details">
+  <summary>There is no eyedropper button</summary>
+  <p>The eyedropper uses a browser feature that not every system has. When it is missing, the button is left out; type the color or pick it in the square instead.</p>
+</details>
+
+<details class="hx-details">
+  <summary>My value looks different after picking</summary>
+  <p>Only colors you change are rewritten. A picked opaque color keeps the format the value came in (<code>#hex</code> or <code>rgb()</code>); a see-through one becomes <code>rgba()</code>; a gradient becomes CSS text such as <code>linear-gradient(90deg, …)</code>.</p>
+</details>
+
+<div class="hx-cards">
+  <a class="hx-card" href="help:template_configuration">{{icon:tune}}<span><strong>Source Settings</strong><span class="hx-card-text">Template settings, preview and Save</span></span></a>
+  <a class="hx-card" href="help:settings_overview">{{icon:palette}}<span><strong>Theme</strong><span class="hx-card-text">The app's colors, under Settings</span></span></a>
+  <a class="hx-card" href="help:spore_studio_design">{{icon:brush}}<span><strong>Spore Studio</strong><span class="hx-card-text">Block properties and fills</span></span></a>
+</div>
